@@ -32,7 +32,8 @@ never hardcode branch names, package ids, skills, or build tools here:
   `git merge --ff-only <prefix>/*`, `git branch -d <prefix>/*`. All other branch/checkout ops need confirmation.
 - **Never read secrets** and **never log tokens** — enforced by the plugin's guard hooks; do not work around them.
 - If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command.
-- Every manifest write goes through `Edit` and must keep the JSON valid (re-parse after editing).
+- Every manifest write goes through `Edit` and must keep the JSON valid — after each mutation run
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` and fix any findings before proceeding.
 - **Task fields:** `commit` (SHA after task commit), `dependsOn` (task-id array), `attempts` (int, increment per
   execution), `startedAt`/`completedAt` (ISO), `risk` (`low`|`med`|`high`|null), `verifiedBy` (test names added),
   `maxAttempts` (int, default 3). Phase fields: `branch`, `mergedAt`. Treat missing fields as null/0.
@@ -62,7 +63,10 @@ Read the manifest and print:
 1. Per-phase line: `id — title — status (done/total tasks) — branch (if set)`.
 2. Per-task rows grouped by phase: `id | title | status | model | unmet blockers | commit (short SHA or —)`.
 3. A **"Ready now"** list: every ready task, with its model.
-Do not modify anything.
+4. If `bugs[]` exists and is non-empty: counts by bug status, plus every non-closed bug whose
+   materialized task (`taskId`) is ready now.
+Do not modify anything. Related commands: `/audit:init` (generate this manifest),
+`/audit:task` (add a task), `/audit:bug` (track bugs).
 
 ## Subcommand: `next`
 1. Find the first **ready** task (phase order, then task-id order).
@@ -132,6 +136,8 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
         - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit again).
+          **If `task.bugId` is set**, in that same Edit also flip the linked bug in the top-level
+          `bugs[]`: `status = "fixed"`, `fixedIn = <that SHA>`.
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
    - **failure** → leave `status = "in_progress"` (or `"blocked"` if attempts exhausted), put the reason in
      `task.outcome.technical`, and report it. Do not mark done, do not commit.
