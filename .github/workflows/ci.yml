@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  selftests:
+    name: selftests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Hook + validator selftests (stdlib only)
+        shell: bash
+        run: |
+          set -e
+          for f in plugins/audit/hooks/_config.py \
+                   plugins/audit/hooks/require-plan.py \
+                   plugins/audit/hooks/guard-edits.py \
+                   plugins/audit/hooks/guard-secrets-read.py \
+                   plugins/audit/hooks/remind-tdd.py \
+                   plugins/audit/scripts/validate-manifest.py; do
+            echo "== $f"
+            python "$f" --selftest
+          done
+      - name: Launcher resolves an interpreter (python3 -> python -> py)
+        shell: bash
+        run: |
+          set -e
+          # a Bash payload the guard allows: launcher must exec python and exit 0
+          printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
+            | sh plugins/audit/hooks/py-launch.sh guard-secrets-read.py ask
+      - name: Launcher fails LOUD without any interpreter (ask JSON)
+        shell: bash
+        run: |
+          set -e
+          out=$(env PATH=/nonexistent "$(command -v sh)" plugins/audit/hooks/py-launch.sh guard-edits.py ask < /dev/null)
+          echo "$out"
+          echo "$out" | grep -q '"permissionDecision":"ask"'
+      - name: Blocked edit emits canonical deny JSON
+        shell: bash
+        run: |
+          set -e
+          # literal backslash-n sequences: JSON-escaped newlines, printf-safe
+          big=$(python -c 'print("x\\n" * 120, end="")')
+          out=$(printf '{"tool_name":"Edit","tool_input":{"file_path":"src/x.ts","new_string":"%s"},"session_id":"ci","cwd":"/tmp","hook_event_name":"PreToolUse"}' "$big" \
+            | sh plugins/audit/hooks/py-launch.sh require-plan.py ask)
+          echo "$out" | grep -q '"permissionDecision": *"deny"'
+
+  manifests:
+    name: manifest validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Structural validator (the plugin's own) on starter + dogfood manifest
+        run: |
+          python plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
+          python plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: JSON Schema validation (ajv, draft 2020-12)
+        run: |
+          npx --yes ajv-cli validate --spec=draft2020 \
+            -s plugins/audit/schema/audit-plan.schema.json \
+            -d plugins/audit/templates/audit-plan.starter.json
+          npx --yes ajv-cli validate --spec=draft2020 \
+            -s plugins/audit/schema/audit-plan.schema.json \
+            -d docs/audit/audit-plan.json
+
+  plugin-validate:
+    name: claude plugin validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Validate marketplace + plugin manifests
+        run: |
+          claude plugin validate .
+          claude plugin validate plugins/audit
