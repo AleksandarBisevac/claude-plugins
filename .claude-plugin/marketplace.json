@@ -8,7 +8,7 @@
     {
       "name": "audit",
       "source": "./plugins/audit",
-      "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline orchestrator with plan-first + secret-safety hooks. Configure per-repo via .claude/audit.config.json."
+      "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline: /audit execution, /audit:init multi-agent manifest generation, /audit:task + /audit:bug tracking (red-first TDD bug fixes), plan-first + secret-safety + TDD-reminder hooks. Configure per-repo via .claude/audit.config.json."
     }
   ]
 }
