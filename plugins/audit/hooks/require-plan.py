@@ -11,7 +11,8 @@ This is the PLUGIN version — every project-specific value comes from the consu
 repo's `.claude/audit.config.json` (loaded by _config.py) with safe defaults:
   manifestPath, exemptGlobs, trivialLineThreshold, stateDir, logsDir, bypassKeyword.
 
-Decision order (ALLOW = exit 0; BLOCK = stderr msg + exit 2, PreToolUse only):
+Decision order (ALLOW = silent exit 0; BLOCK = permissionDecision "deny" JSON
+on stdout + exit 0 — the canonical PreToolUse protocol — PreToolUse only):
   1. No file_path / unknown tool / parse error → ALLOW (never break legit work).
   2. Target matches an exempt glob (from config) → ALLOW.
   3. Target belongs to a task whose status == "in_progress" in the manifest → ALLOW.
@@ -33,8 +34,10 @@ TRANSACTIONAL STATE (decide at PreToolUse, commit at PostToolUse):
   and two files racing the single free slot are both allowed once — the second
   file blocks from its NEXT edit onward.
 
-Contract: exit 2 + stderr blocks the edit and tells Claude why (PreToolUse).
-PostToolUse always exits 0. Any unexpected input / exception exits 0.
+Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
+"permissionDecisionReason": ...}} on stdout and exits 0 (the deprecated exit-2 +
+stderr channel is indistinguishable from a hook crash). PostToolUse always
+exits 0 silently. Any unexpected input / exception exits 0.
 
 Run `python3 require-plan.py --selftest` to exercise the core decision function.
 """
@@ -109,9 +112,20 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
 
 
+def _deny_payload(msg: str) -> dict:
+    """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "[require-plan] " + msg,
+        }
+    }
+
+
 def block(msg: str) -> None:
-    sys.stderr.write("[require-plan] " + msg + "\n")
-    sys.exit(2)
+    print(json.dumps(_deny_payload(msg)))
+    sys.exit(0)
 
 
 # --- core decision ------------------------------------------------------------
@@ -364,6 +378,15 @@ def _selftest() -> int:
         encoding="utf-8")
     results.append(wrote)
     print("%s f1 bypass logged to provided logs_dir" % ("PASS" if wrote else "FAIL"))
+
+    # (j) deny payload is canonical PreToolUse JSON
+    blob = json.loads(json.dumps(_deny_payload("why")))
+    hso = blob.get("hookSpecificOutput") or {}
+    ok = (hso.get("hookEventName") == "PreToolUse"
+          and hso.get("permissionDecision") == "deny"
+          and str(hso.get("permissionDecisionReason", "")).startswith("[require-plan]"))
+    results.append(ok)
+    print("%s j1 deny payload is canonical PreToolUse JSON" % ("PASS" if ok else "FAIL"))
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

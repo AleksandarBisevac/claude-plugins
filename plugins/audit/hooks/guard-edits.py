@@ -26,7 +26,9 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
      the plan-first opt-out without a user prompt. Those files may only be
      created by detect-plan-skip.py (i.e. by the USER typing the keyword).
 
-Contract: exit code 2 + stderr blocks the edit and tells Claude why.
+Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
+"permissionDecisionReason": ...}} on stdout and exits 0 — the canonical
+PreToolUse protocol (the exit-2 + stderr channel is deprecated).
 Unexpected input exits 0 (never break legitimate work).
 """
 import json
@@ -94,9 +96,20 @@ def _self_edit_target(path: str, root) -> bool:
         return False
 
 
+def _deny_payload(msg: str) -> dict:
+    """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "[guard-edits] " + msg,
+        }
+    }
+
+
 def block(msg: str) -> None:
-    sys.stderr.write("[guard-edits] " + msg + "\n")
-    sys.exit(2)
+    print(json.dumps(_deny_payload(msg)))
+    sys.exit(0)
 
 
 def decide(data: dict, *, cfg=None):
@@ -248,6 +261,15 @@ def _selftest() -> int:
           ".claude/state/plan-bypass-abc.json", "{}")
     check("f2 other state files allowed", "allow", "Write",
           ".claude/state/tdd-reminder-abc.json", "{}")
+
+    # deny payload is canonical PreToolUse JSON
+    blob = json.loads(json.dumps(_deny_payload("why")))
+    hso = blob.get("hookSpecificOutput") or {}
+    ok = (hso.get("hookEventName") == "PreToolUse"
+          and hso.get("permissionDecision") == "deny"
+          and str(hso.get("permissionDecisionReason", "")).startswith("[guard-edits]"))
+    results.append(ok)
+    print("%s j1 deny payload is canonical PreToolUse JSON" % ("PASS" if ok else "FAIL"))
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

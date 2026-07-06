@@ -6,8 +6,8 @@
 # Resolves a Python interpreter (python3 -> python -> py) and execs it on
 # hooks/<script.py>. `exec` hands the hook's stdin straight to the script
 # (single consumption — a `python3 ... || python ...` fallback would eat the
-# payload on the first try AND would turn a legitimate exit-2 block into a
-# retry) and propagates the script's exit code unchanged.
+# payload on the first try and re-run the script on ANY nonzero exit) and
+# propagates the script's exit code unchanged.
 #
 # Uses only shell builtins until an interpreter is found, so it behaves the
 # same even with a broken PATH.

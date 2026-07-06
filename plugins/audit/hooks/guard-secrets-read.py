@@ -42,7 +42,10 @@ static text inspection (heredocs into interpreters, obfuscated redirects —
 upstream anthropics/claude-code#29709); the complete control would be a
 PostToolUse diff/worktree check (out of scope, documented in SECURITY.md).
 
-Contract: exit code 2 + stderr blocks the tool call. Any unexpected input exits 0.
+Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
+"permissionDecisionReason": ...}} on stdout and exits 0 — the canonical
+PreToolUse protocol (the exit-2 + stderr channel is deprecated). Any
+unexpected input exits 0.
 Run `python3 guard-secrets-read.py --selftest` to exercise the decision core.
 """
 import json
@@ -145,9 +148,20 @@ ECHO_SECRET = re.compile(
 )
 
 
+def _deny_payload(msg: str) -> dict:
+    """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "[guard-secrets-read] " + msg,
+        }
+    }
+
+
 def block(msg: str) -> None:
-    sys.stderr.write("[guard-secrets-read] " + msg + "\n")
-    sys.exit(2)
+    print(json.dumps(_deny_payload(msg)))
+    sys.exit(0)
 
 
 def _extra_patterns(cfg):
@@ -470,6 +484,16 @@ def _selftest() -> int:
     check("u1 unhandled tool allowed", "allow",
           {"tool_name": "Glob", "tool_input": {"pattern": ".env"}, "cwd": str(tmp)})
     check("u2 empty input allowed", "allow", {"cwd": str(tmp)})
+
+    # --- deny payload is canonical PreToolUse JSON ---
+    blob = json.loads(json.dumps(_deny_payload("why")))
+    hso = blob.get("hookSpecificOutput") or {}
+    ok = (hso.get("hookEventName") == "PreToolUse"
+          and hso.get("permissionDecision") == "deny"
+          and str(hso.get("permissionDecisionReason", "")).startswith(
+              "[guard-secrets-read]"))
+    results.append(ok)
+    print("%s j1 deny payload is canonical PreToolUse JSON" % ("PASS" if ok else "FAIL"))
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
