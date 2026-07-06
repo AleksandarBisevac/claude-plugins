@@ -19,18 +19,28 @@ Covered read vectors:
   - Grep tool  → path/glob against SECRET_PATH/SECRET_GLOB (+ extras). Grep prints
                  matching *lines*, so a Grep over `.env` would leak contents. The
                  `pattern` is the query, NOT a target, and is ignored.
-  - Bash       → (a) shell read verbs piped at a secret file token;
+  - Bash       → (a) shell read verbs aimed at a secret file token — including the
+                     indirect ones: `git show HEAD:.env`, `git cat-file`,
+                     `source .env` / `. .env`, and copy-verbs (`cp`/`mv`/`rsync`/
+                     `install`) that would relocate a secret for later reading;
                  (b) inline-eval reads (python/node/ruby/perl/… -c/-e) whose code text
                      references a secret-file token;
-                 (c) env-value dumps (printenv/env) and echoing token-like variables;
-                 (d) best-effort: inline-eval WRITES to a non-exempt source path (a
-                     known plan-first bypass vector — steer to Edit/Write instead).
+                 (c) env-value dumps (printenv/env) and echoing token-like variables.
 
-Trade-off (accepted): the inline-eval matcher is text-based and may over-block an
-innocent one-liner that merely mentions `.env`. We accept over-blocking on the read
-side — a harmless retry vs. an irreversible leak. Listing NAMES is never blocked.
-Full Bash-write coverage is undecidable by static text inspection; the recommended
-complete control is a PostToolUse diff/worktree check (out of scope here).
+Plan-first backstop for Bash WRITES (this is the only hook that sees Bash):
+  - inline-eval writes to a non-exempt source path;
+  - the high-signal shell write forms into a non-exempt source file that no
+    in_progress manifest task covers: `sed -i`, `tee <file>`, and `>`/`>>`
+    redirects (which also catches `cat > file <<EOF` heredocs). The block
+    message steers to the Edit/Write tools, which the plan gate governs.
+
+Trade-off (accepted): the matchers are text-based and may over-block an innocent
+one-liner that merely mentions `.env` (e.g. `cp .env.example .env`). We accept
+over-blocking on the read side — a harmless retry vs. an irreversible leak.
+Listing NAMES is never blocked. FULL Bash-write coverage is undecidable by
+static text inspection (heredocs into interpreters, obfuscated redirects —
+upstream anthropics/claude-code#29709); the complete control would be a
+PostToolUse diff/worktree check (out of scope, documented in SECURITY.md).
 
 Contract: exit code 2 + stderr blocks the tool call. Any unexpected input exits 0.
 Run `python3 guard-secrets-read.py --selftest` to exercise the decision core.
@@ -61,7 +71,7 @@ SECRET_PATH = re.compile(
 
 SECRET_GLOB = re.compile(
     r"""(
-        (^|/)\.env(?!\.(?:example|sample|template|dist|defaults)\b)
+        (^|/)\.env(?!\.(?:example|sample|template|dist|defaults))
       | (^|/)credentials
       | \.p12\b
       | \.mobileprovision\b
@@ -76,7 +86,9 @@ SECRET_GLOB = re.compile(
 # --- secret references inside a Bash command ------------------------------------
 _READ_VERB = (
     r"(?:cat|bat|head|tail|sed|awk|nl|less|more|strings|xxd|od|hexdump"
-    r"|grep|rg|tee|dd|base64|openssl|gpg)"
+    r"|grep|rg|tee|dd|base64|openssl|gpg"
+    r"|cp|mv|rsync|install|source"
+    r"|git\s+(?:show|cat-file))"
 )
 _SECRET_TOKEN = (
     r"(?:\.env(?!\.(?:example|sample|template|dist|defaults))(?:\.|\b)"
@@ -85,6 +97,10 @@ _SECRET_TOKEN = (
 )
 BASH_FILE_READ = re.compile(
     r"\b" + _READ_VERB + r"\b[^|&;\n]*?" + _SECRET_TOKEN, re.IGNORECASE
+)
+# `. .env` — POSIX dot-sourcing (the bare-dot form of `source`)
+DOT_SOURCE_SECRET = re.compile(
+    r"(?:^|[;&|(]\s*)\.\s+[^|&;\n]*?" + _SECRET_TOKEN, re.IGNORECASE
 )
 
 _INLINE_EVAL = re.compile(
@@ -112,6 +128,14 @@ _EXEMPT_WRITE_PATH = re.compile(
     r"(?:\.claude/|docs/audit/|\.spec\.|\.test\.|\.md['\"\s])",
     re.IGNORECASE,
 )
+
+# --- shell write forms into files (plan-first backstop) --------------------------
+_SHELL_REDIRECT = re.compile(r"(?<![0-9&<>])>{1,2}\s*([^\s|&;<>]+)")
+_TEE_CLAUSE = re.compile(r"\btee\b([^|&;\n]*)", re.IGNORECASE)
+_SED_INPLACE_CLAUSE = re.compile(
+    r"\bsed\b[^|&;\n]*?\s(?:-i|--in-place)\b[^|&;\n]*", re.IGNORECASE
+)
+_PATHY_TOKEN = re.compile(r"[\w@~./+-]+\.[A-Za-z][A-Za-z0-9]{0,9}")
 
 ENV_DUMP = re.compile(r"(?:^|[|&;]\s*)(?:printenv\b|env\s*(?:$|[|&>]))", re.IGNORECASE)
 ECHO_SECRET = re.compile(
@@ -141,12 +165,72 @@ def _hits_extra(text, extras):
     return any(rx.search(text) for rx in extras)
 
 
+def _shell_write_targets(cmd: str):
+    """Best-effort extraction of file paths a shell command WRITES to."""
+    targets = []
+    for m in _SHELL_REDIRECT.finditer(cmd):
+        t = m.group(1).strip("'\"")
+        if t and not t.startswith(("&", "(")) and t != "/dev/null":
+            targets.append(t)
+    for m in _TEE_CLAUSE.finditer(cmd):
+        for tok in m.group(1).split():
+            tok = tok.strip("'\"")
+            if tok and not tok.startswith("-"):
+                targets.append(tok)
+    for m in _SED_INPLACE_CLAUSE.finditer(cmd):
+        targets.extend(_PATHY_TOKEN.findall(m.group(0)))
+    return targets
+
+
+def _source_exts(cfg):
+    """Source-file extensions, derived from tddReminder.sourceGlobs (`**/*.ts`
+    → `.ts`) so a project's idea of 'source' is configured in ONE place."""
+    exts = set()
+    try:
+        for g in _config.tdd_reminder(cfg).get("sourceGlobs") or []:
+            g = str(g)
+            if g.startswith("**/*."):
+                exts.add(g[4:].lower())
+    except Exception:
+        pass
+    return exts or {".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rb",
+                    ".java", ".cs", ".kt", ".swift", ".rs"}
+
+
+def _source_write_hit(cmd: str, root, cfg):
+    """First non-exempt SOURCE file (not covered by an in_progress task) that
+    `cmd` writes to via sed -i / tee / a >(>) redirect — or None."""
+    targets = _shell_write_targets(cmd)
+    if not targets:
+        return None
+    exts = _source_exts(cfg)
+    exempt = cfg.get("exemptGlobs") or _config.DEFAULTS["exemptGlobs"]
+    manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
+    in_prog = None
+    for t in targets:
+        low = t.lower()
+        if not any(low.endswith(e) for e in exts):
+            continue
+        rel = _config.rel_path(root, t)
+        if _config.matches_exempt(rel, exempt):
+            continue
+        if in_prog is None:
+            in_prog = _config.in_progress_files(root, manifest_rel)
+        if rel in in_prog or any(
+            rel.startswith(f) for f in in_prog if f.endswith("/")
+        ):
+            continue
+        return rel
+    return None
+
+
 # --- decision core (pure; returns ("allow"|"block", message) for testability) ---
 def decide(data: dict, *, cfg=None):
     tool = data.get("tool_name", "")
     ti = data.get("tool_input", {}) or {}
+    root = _config.repo_root(data)
     if cfg is None:
-        cfg = _config.load(_config.repo_root(data))
+        cfg = _config.load(root)
     extras = _extra_patterns(cfg)
 
     if tool == "Read":
@@ -184,11 +268,13 @@ def decide(data: dict, *, cfg=None):
             return ("block",
                     "Echoing a token/secret variable is blocked (Rule #2). "
                     "Print only a prefix (first 6 chars) + length if you must debug.")
-        if BASH_FILE_READ.search(cmd) or (extras and _hits_extra(cmd, extras)
-                                          and BASH_FILE_READ.search(cmd + " ")):
+        if (BASH_FILE_READ.search(cmd) or DOT_SOURCE_SECRET.search(cmd)
+                or (extras and _hits_extra(cmd, extras)
+                    and BASH_FILE_READ.search(cmd + " "))):
             return ("block",
-                    "Reading a secret file's contents via shell is blocked (Rule #1). "
-                    "Reading file names is fine; contents are not.")
+                    "Reading, sourcing or copying a secret file via shell is blocked "
+                    "(Rule #1). Reading file names is fine; contents are not — and "
+                    "copying/moving a secret only relocates the leak.")
         if _INLINE_EVAL.search(cmd) and (SECRET_TOKEN_RE.search(cmd)
                                          or _hits_extra(cmd, extras)):
             return ("block",
@@ -208,6 +294,14 @@ def decide(data: dict, *, cfg=None):
                     "Use the Edit/Write tools so guard-edits and require-plan can review "
                     "the change. This is a best-effort backstop — full Bash-write "
                     "coverage needs a PostToolUse diff check.")
+        hit = _source_write_hit(cmd, root, cfg)
+        if hit:
+            return ("block",
+                    "Shell write into a source file bypasses the plan-first gate: %s\n"
+                    "Use the Edit/Write tools (guard-edits + require-plan review the "
+                    "change), or cover the file with an in_progress task in the audit "
+                    "manifest. Exempt paths (docs, tests, .claude/**) are unaffected."
+                    % hit)
         return ("allow", "bash: no secret read")
 
     return ("allow", "unhandled tool")
@@ -232,12 +326,16 @@ def main() -> None:
 # --- selftest -------------------------------------------------------------------
 def _selftest() -> int:
     """Exercise the decision core with fictional secret paths (never real files)."""
-    results = []
-    cfg = dict(_config.DEFAULTS)
+    import tempfile
+    from pathlib import Path
 
-    def check(name, expected, data):
+    results = []
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    tmp = Path(tempfile.mkdtemp(prefix="guard-secrets-selftest-"))
+
+    def check(name, expected, data, *, use_cfg=None):
         try:
-            verdict, _ = decide(data, cfg=cfg)
+            verdict, _ = decide(data, cfg=use_cfg or cfg)
         except Exception as exc:  # pragma: no cover
             verdict = "EXC:%s" % exc
         ok = verdict == expected
@@ -246,7 +344,8 @@ def _selftest() -> int:
               % ("PASS" if ok else "FAIL", name, expected, verdict))
 
     def read(fp):
-        return {"tool_name": "Read", "tool_input": {"file_path": fp}}
+        return {"tool_name": "Read", "tool_input": {"file_path": fp},
+                "cwd": str(tmp)}
 
     def grep(pattern="x", path=None, glob=None):
         ti = {"pattern": pattern}
@@ -254,10 +353,11 @@ def _selftest() -> int:
             ti["path"] = path
         if glob is not None:
             ti["glob"] = glob
-        return {"tool_name": "Grep", "tool_input": ti}
+        return {"tool_name": "Grep", "tool_input": ti, "cwd": str(tmp)}
 
     def bash(cmd):
-        return {"tool_name": "Bash", "tool_input": {"command": cmd}}
+        return {"tool_name": "Bash", "tool_input": {"command": cmd},
+                "cwd": str(tmp)}
 
     # --- Read tool ---
     check("r1 Read .env blocked", "block", read("apps/foo/.env"))
@@ -295,6 +395,22 @@ def _selftest() -> int:
     check("b11 cat .env blocked", "block", bash("cat apps/foo/.env"))
     check("b12 printenv blocked", "block", bash("printenv"))
 
+    # --- indirect reads: git show, source, dot-source, copy-verbs ---
+    check("i1 git show HEAD:.env blocked", "block", bash("git show HEAD:.env"))
+    check("i2 git cat-file -p HEAD:.env blocked", "block",
+          bash("git cat-file -p HEAD:.env"))
+    check("i3 git show of source file allowed", "allow",
+          bash("git show HEAD:src/app.ts"))
+    check("i4 source .env blocked", "block", bash("source .env && npm start"))
+    check("i5 dot-source .env blocked", "block", bash(". .env && npm start"))
+    check("i6 source nvm.sh allowed", "allow",
+          bash("source ~/.nvm/nvm.sh && nvm use"))
+    check("i7 cp .env to /tmp blocked", "block", bash("cp .env /tmp/e"))
+    check("i8 mv secret keystore blocked", "block",
+          bash("mv android/release.keystore /tmp/k"))
+    check("i9 cp between source files allowed", "allow",
+          bash("cp src/a.ts src/b.bak"))
+
     # --- Listing NAMES stays allowed ---
     check("n1 ls .env* allowed", "allow", bash("ls .env*"))
     check("n4 find -name .env allowed", "allow", bash("find . -name '.env'"))
@@ -306,30 +422,54 @@ def _selftest() -> int:
           bash("python3 -c \"open('.claude/state/x.json','w').write('{}')\""))
     check("w5 node -e write to *.spec.ts allowed", "allow",
           bash("node -e \"fs.writeFileSync('src/foo/a.spec.ts','test')\""))
-    check("w8 plain echo > .ts allowed (not inline-eval)", "allow",
+
+    # --- shell writes into source files (plan-first backstop) ---
+    check("s1 echo > source file blocked", "block",
           bash("echo 'x' > src/foo/a.ts"))
+    check("s2 sed -i on source file blocked", "block",
+          bash("sed -i 's/a/b/' src/app.ts"))
+    check("s3 tee into source file blocked", "block",
+          bash("cat patch.txt | tee src/app.py"))
+    check("s4 heredoc redirect into source blocked", "block",
+          bash("cat > src/gen.ts <<'EOF'\nexport {}\nEOF"))
+    check("s5 append redirect into source blocked", "block",
+          bash("echo '// x' >> src/app.go"))
+    check("s6 redirect to log file allowed", "allow",
+          bash("npm test > out.log 2>&1"))
+    check("s7 redirect of grep output to /tmp allowed", "allow",
+          bash("grep -r foo src/app.ts > /tmp/out.txt"))
+    check("s8 write to exempt .md allowed", "allow",
+          bash("echo hi > NOTES.md"))
+    check("s9 write to test file allowed", "allow",
+          bash("echo 'test' > src/foo/a.spec.ts"))
+    check("s10 sed without -i (stdout) allowed", "allow",
+          bash("sed 's/a/b/' src/app.ts"))
+
+    # --- shell write covered by an in_progress task → allowed ---
+    manifest_dir = tmp / "docs" / "audit"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    (manifest_dir / "audit-plan.json").write_text(json.dumps({
+        "meta": {"version": 2},
+        "phases": [{"id": "P0", "title": "p", "status": "in_progress", "tasks": [
+            {"id": "P0.1", "title": "t", "status": "in_progress",
+             "files": ["src/covered/mod.ts"], "tests": {"mode": "gate-only"}},
+        ]}],
+    }), encoding="utf-8")
+    check("s11 sed -i on in_progress-covered file allowed", "allow",
+          bash("sed -i 's/a/b/' src/covered/mod.ts"))
 
     # --- extra pattern from config ---
     cfg_extra = _config._deep_merge(
         _config.DEFAULTS, {"secretPatterns": {"extra": [r"\.secretrc$"]}})
-
-    def check_extra(name, expected, data):
-        try:
-            verdict, _ = decide(data, cfg=cfg_extra)
-        except Exception as exc:  # pragma: no cover
-            verdict = "EXC:%s" % exc
-        ok = verdict == expected
-        results.append(ok)
-        print("%s %s (expected %s, got %s)"
-              % ("PASS" if ok else "FAIL", name, expected, verdict))
-
-    check_extra("x1 Read .secretrc (extra) blocked", "block", read("app/.secretrc"))
-    check_extra("x2 Read normal (extra cfg) allowed", "allow", read("app/index.ts"))
+    check("x1 Read .secretrc (extra) blocked", "block", read("app/.secretrc"),
+          use_cfg=cfg_extra)
+    check("x2 Read normal (extra cfg) allowed", "allow", read("app/index.ts"),
+          use_cfg=cfg_extra)
 
     # --- malformed / unhandled → allow ---
     check("u1 unhandled tool allowed", "allow",
-          {"tool_name": "Glob", "tool_input": {"pattern": ".env"}})
-    check("u2 empty input allowed", "allow", {})
+          {"tool_name": "Glob", "tool_input": {"pattern": ".env"}, "cwd": str(tmp)})
+    check("u2 empty input allowed", "allow", {"cwd": str(tmp)})
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
