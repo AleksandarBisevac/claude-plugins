@@ -1,0 +1,41 @@
+{
+  "//": "Copy to <your-repo>/.claude/audit.config.json and edit. EVERY key is optional; omit any to take the default. This is Layer 1 of the plugin's extensibility model — no code editing needed.",
+
+  "manifestPath": "docs/audit/audit-plan.json",
+
+  "exemptGlobs": [
+    "docs/audit/**",
+    "**/*.md",
+    ".claude/**",
+    "**/*.spec.*",
+    "**/*.test.*"
+  ],
+
+  "trivialLineThreshold": 80,
+
+  "stateDir": ".claude/state",
+  "logsDir": ".claude/logs",
+
+  "bypassKeyword": "#no-plan",
+
+  "secretPatterns": {
+    "//": "Extra regexes (added to the built-in env/credentials/key/cert set) matched against target paths/commands.",
+    "extra": [
+      "\\.secretrc$",
+      "(^|/)vault\\.(?:json|ya?ml)$"
+    ]
+  },
+
+  "guardEdits": {
+    "//": "tokenVars: identifier names treated as auth tokens for the logging ban. customRules: project-specific banned patterns, each fires only when the edited path starts with pathPrefix.",
+    "tokenVars": ["accessToken", "refreshToken", "idToken"],
+    "customRules": [
+      {
+        "//": "ILLUSTRATIVE example: forbid removeAllListeners() in a realtime/subscription layer (a common footgun that nukes sibling listeners). Replace path + pattern with your own, or leave customRules empty ([]).",
+        "pathPrefix": "src/realtime/",
+        "bannedPattern": "\\.removeAllListeners\\s*\\(",
+        "message": "removeAllListeners() removes OTHER subscribers' listeners. Track this instance's listener in a ref and remove only it."
+      }
+    ]
+  }
+}

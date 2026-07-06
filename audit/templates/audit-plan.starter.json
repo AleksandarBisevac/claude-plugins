@@ -1,0 +1,71 @@
+{
+  "$schema": "https://raw.githubusercontent.com/TODO-you/claude-audit-plugin/main/plugins/audit/schema/audit-plan.schema.json",
+  "meta": {
+    "version": 2,
+    "repo": "TODO-your-repo",
+    "title": "Audit & test-driven fix pipeline",
+    "createdISO": "TODO-YYYY-MM-DDThh:mm:ssZ",
+    "developmentBranch": "main",
+    "branchPrefix": "audit",
+    "reviewSkill": null,
+    "runtimeBoot": null,
+    "nodePreamble": null,
+    "commit": { "type": "chore", "coauthor": null },
+    "buildCommands": {
+      "lint": "npm run lint --",
+      "test": "npm test --",
+      "typecheck": "npm run typecheck --"
+    },
+    "signOffChecklist": ["allTasksDone", "reviewResolved", "testGateGreen"],
+    "statusLegend": ["pending", "in_progress", "blocked", "done"]
+  },
+  "phases": [
+    {
+      "id": "P0",
+      "title": "Example phase",
+      "status": "pending",
+      "model": "sonnet",
+      "blockedBy": [],
+      "desiredOutcome": "Describe what success looks like for this phase.",
+      "testGate": ["test", "typecheck"],
+      "baseRef": null,
+      "branch": null,
+      "mergedAt": null,
+      "review": { "tool": null, "model": "sonnet", "status": "pending", "findings": [] },
+      "summary": null,
+      "tasks": [
+        {
+          "id": "P0.1",
+          "title": "Example task",
+          "status": "pending",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/example/module.ts"],
+          "docs": [],
+          "description": "State the problem, the approach, and key decisions.",
+          "tests": {
+            "mode": "regression",
+            "add": ["locks the corrected behavior of module.ts"],
+            "expectRedFirst": false,
+            "gate": ["test:example"]
+          },
+          "outcome": { "technical": null, "descriptive": null },
+          "commit": null,
+          "attempts": 0,
+          "maxAttempts": 3,
+          "startedAt": null,
+          "completedAt": null,
+          "risk": "low",
+          "verifiedBy": []
+        }
+      ]
+    }
+  ],
+  "fileIndex": {
+    "src/example/module.ts": ["P0.1"]
+  },
+  "deferred": { "note": "Out-of-scope items logged here.", "target": null, "items": [] },
+  "proposals": []
+}

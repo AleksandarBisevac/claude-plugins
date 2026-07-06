@@ -1,0 +1,14 @@
+{
+  "name": "claude-audit-plugin",
+  "owner": {
+    "name": "Aleksandar Bisevac",
+    "email": "alek.bisevac@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "audit",
+      "source": "./plugins/audit",
+      "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline orchestrator with plan-first + secret-safety hooks. Configure per-repo via .claude/audit.config.json."
+    }
+  ]
+}
