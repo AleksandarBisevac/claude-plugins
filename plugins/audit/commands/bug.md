@@ -1,6 +1,6 @@
 ---
-description: Track bugs in the audit manifest — report (add), list, materialize a TDD fix task (fix), or close. Execution of the fix stays in /audit; the repro test must fail red-first, proving the bug.
-argument-hint: add "<title>" | list [all|<status>] | fix <bugId> [--phase <id>] | close <bugId> [wontfix]
+description: 'Track bugs in the audit manifest — report (add), list, materialize a TDD fix task (fix), or close. Execution of the fix stays in /audit; the repro test must fail red-first, proving the bug.'
+argument-hint: 'add "<title>" | list [all|<status>] | fix <bugId> [--phase <id>] | close <bugId> [wontfix]'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 

@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest (interactive). Allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates — the task is then executable via /audit.
-argument-hint: add "<title>" [--phase <id>]
+argument-hint: 'add "<title>" [--phase <id>]'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
