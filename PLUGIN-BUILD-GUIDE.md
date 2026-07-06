@@ -1,7 +1,7 @@
 # Plugin build & handoff guide
 
 This repository is a **standalone Claude Code plugin** that packages a manifest-driven
-`/audit` fix-pipeline plus four guard hooks. It was extracted (de-coupled, IP-scrubbed)
+`/audit` fix-pipeline plus five guard hooks. It was extracted (de-coupled, IP-scrubbed)
 from an internal project's `.claude/` tooling so it can be reused in **any** repo and
 published on a personal marketplace. This single document is self-sufficient: it explains
 every file, why its contents are shaped the way they are, how to finish/publish it, and how
@@ -33,9 +33,13 @@ grep -riE '<client-name>|<internal-lib>|<bundle-id>' .   # must print nothing
 
 ```
 claude-plugins/                           # this repo (personal, public)
+  README.md                               # repo landing page
   PLUGIN-BUILD-GUIDE.md                   # ← you are here
+  CHANGELOG.md / SECURITY.md / CONTRIBUTING.md
   LICENSE                                 # MIT
   .gitignore
+  .github/workflows/ci.yml                # selftests + validators on ubuntu/windows
+  docs/audit/audit-plan.json              # DOGFOOD manifest: this repo's roadmap, CI-validated
   .claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")
   plugins/
@@ -48,17 +52,18 @@ claude-plugins/                           # this repo (personal, public)
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
       hooks/
         hooks.json                        # wires the 5 hooks to events (${CLAUDE_PLUGIN_ROOT})
+        py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
         _config.py                        # shared config loader + path/manifest helpers
-        require-plan.py                   # plan-first enforcement
-        detect-plan-skip.py               # arms the single-use plan-first bypass
-        guard-secrets-read.py             # blocks reading secrets / dumping env
-        guard-edits.py                    # blocks token-logging + project custom rules
+        require-plan.py                   # plan-first enforcement (Pre observes, Post commits state)
+        detect-plan-skip.py               # arms the single-use plan-first bypass + config-error warning
+        guard-secrets-read.py             # blocks secret reads (direct+indirect) + shell source writes
+        guard-edits.py                    # token-logging ban, custom rules, self-edit/forgery block
         remind-tdd.py                     # non-blocking TDD nudge (PostToolUse)
       reference/
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
       schema/audit-plan.schema.json       # JSON Schema (draft 2020-12) for the manifest
       scripts/
-        validate-manifest.py              # dependency-free referential validator
+        validate-manifest.py              # dependency-free referential validator (cycles, links)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -92,9 +97,13 @@ structured config like globs/customRules).
 
 ### `plugins/audit/commands/audit.md`
 The orchestrator, as a command with YAML frontmatter (`description`, `argument-hint`,
-`allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep`). Logic preserved from the original:
-readiness rule, branch-per-phase, per-task subagent spawn with model+skills, TDD/regression/
-gate-only discipline, per-task commit, phase sign-off, resume-after-interruption, reporting.
+`allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion` — values are
+QUOTED strings; an unquoted description containing `: ` silently drops ALL frontmatter).
+Logic preserved from the original: readiness rule, branch-per-phase, per-task subagent spawn
+with model+skills, TDD/regression/gate-only discipline, per-task commit, phase sign-off,
+an invocable `resume` subcommand, reporting — plus the 0.3.0 guards: preflight
+(config/manifest/usage), `run` status guards, infra-vs-test failure split, unconditional
+high-risk confirmation, `--no-ff` fallback when ff-merge fails, `desiredOutcome` wiring.
 **De-coupling:** it reads `meta.developmentBranch` / `branchPrefix` / `reviewSkill` (null → skip)
 / `runtimeBoot` (null → skip) / `nodePreamble` (null → run gates directly) / `commit` /
 `buildCommands`. It hardcodes no branch, package id, skill, or build tool. New safety: honors
@@ -117,63 +126,85 @@ short forms may collide with built-ins like `/init`). All three read
   Execution stays exclusively in `/audit` — no second execution engine.
 
 ### `plugins/audit/hooks/hooks.json`
-Maps events → scripts using `${CLAUDE_PLUGIN_ROOT}`:
-- PreToolUse `Read|Grep|Bash` → `guard-secrets-read.py`
-- PreToolUse `Edit|Write|MultiEdit` → `guard-edits.py`, then `require-plan.py`
-- PostToolUse `Edit|Write|MultiEdit` → `remind-tdd.py`
-- UserPromptSubmit → `detect-plan-skip.py`
+Maps events → scripts, every entry running through
+`sh "${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh" <script> <ask|open>` with a 10 s timeout:
+- PreToolUse `Read|Grep|Bash` → `guard-secrets-read.py` (fail mode **ask**)
+- PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
+- PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), then `remind-tdd.py` (both **open**)
+- UserPromptSubmit → `detect-plan-skip.py` (**open**)
+
+`py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
+`exec`s the script (stdin passes through once, exit code propagates). With NO
+interpreter, `ask` mode emits `permissionDecision: "ask"` JSON — the guarded tool
+call surfaces a manual prompt instead of silently proceeding (fail-LOUD); `open`
+mode exits silently (advisory hooks must never block). Fail modes are hardcoded
+here because reading config requires Python (chicken-and-egg).
 
 ### `plugins/audit/hooks/_config.py`
 Shared, dependency-free config loader. `repo_root(data)` resolves the consuming repo
 (`CLAUDE_PROJECT_DIR` → stdin `cwd` → `getcwd`). `load(root)` reads
-`<root>/.claude/audit.config.json` and deep-merges it over `DEFAULTS`; **never raises** (returns
-defaults on any error — hooks must not break legit work). Typed getters: `state_dir`, `logs_dir`,
-`token_vars`, `custom_rules`, `extra_secret_patterns`, `tdd_reminder`. Also hosts the shared
-path/manifest helpers (`rel_path`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
+`<root>/.claude/audit.config.json` and deep-merges it (deep-copied — no aliasing of DEFAULTS)
+over `DEFAULTS`; **never raises**. An ABSENT config silently yields defaults; a
+PRESENT-but-malformed one yields defaults **plus a `_configError` marker** that
+detect-plan-skip surfaces once per session (a broken config must not silently drop custom
+rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
+`extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
+(`rel_path`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
-Each hook does `sys.path.insert(0, dirname(__file__)); import _config`.
+Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selftest` (6 cases).
 
 ### `plugins/audit/hooks/require-plan.py`
-Plan-first gate on Edit/Write/MultiEdit. ALLOW/BLOCK order: unknown tool/no path → allow; exempt
-glob (config) → allow; file covered by an `in_progress` manifest task → allow; single-use bypass
-armed → consume + log + allow; else first small (`<= trivialLineThreshold`) non-exempt file per
-session → allow, a 2nd distinct file or an over-threshold change → **block** with guidance. All
-tunables from config (`manifestPath`, `exemptGlobs`, `trivialLineThreshold`, `stateDir`,
-`logsDir`, `bypassKeyword`). `_matches_exempt` understands `dir/**` and `**/*.ext` glob forms.
-`--selftest` covers exempt/first-file/second-file/over-threshold/bypass paths (generic paths, no
-project coupling).
+Plan-first gate on Edit/Write/MultiEdit/NotebookEdit, registered under BOTH PreToolUse and
+PostToolUse. ALLOW/BLOCK order: unknown tool/no path → allow; exempt glob (config) → allow;
+file covered by an `in_progress` manifest task → allow; single-use bypass armed → allow;
+else first small (change **magnitude** = max(added lines, chars/200, removed lines)
+`<= trivialLineThreshold`) non-exempt file per session → allow, a 2nd distinct file or an
+over-threshold change → **deny** (canonical `permissionDecision` JSON) with guidance.
+**Transactional state**: PreToolUse only observes (the edit may still be denied by a sibling
+hook or the user); PostToolUse — which fires only after a successful edit — consumes the
+bypass (logged) and records the free-file slot. All tunables from config (`manifestPath`,
+`exemptGlobs`, `trivialLineThreshold`, `stateDir`, `logsDir`, `bypassKeyword`).
+`--selftest` (22 cases).
 
 ### `plugins/audit/hooks/detect-plan-skip.py`
 UserPromptSubmit logger. If the prompt contains `bypassKeyword` (config; default `#no-plan`),
-writes `stateDir/plan-bypass-<session>.json` and appends to `logsDir/plan-bypass.log`. Never
-blocks. `require-plan.py` consumes (deletes) that file on the next non-trivial edit — single-use.
+writes `stateDir/plan-bypass-<session>.json`, appends to `logsDir/plan-bypass.log`, and tells
+the user (systemMessage) the bypass is live. Also surfaces `_configError` (malformed config)
+once per session. Never blocks. `require-plan.py`'s PostToolUse pass consumes (deletes) the
+bypass file after the next non-trivial edit actually happens — single-use.
 
 ### `plugins/audit/hooks/guard-secrets-read.py`
 Read/Grep/Bash secret backstop. Blocks: reading secret file *contents* (`.env`, `credentials*`,
 `.p12/.mobileprovision/.keystore/.jks/.p8/.pem`) via the Read tool, via Grep path/glob (Grep
-prints file lines), via shell read-verbs, and via inline-eval one-liners (`python -c`, `node -e`,
-…); also blocks `printenv`/`env` dumps and echoing token-like vars; best-effort blocks inline-eval
-*writes* to non-exempt source (a known plan-first bypass vector). Listing NAMES stays allowed.
-`secretPatterns.extra` (config) adds patterns. `--selftest` (29 cases) uses fictional paths only.
+prints file lines), via shell read-verbs — including the indirect ones (`git show`/`cat-file`,
+`source`/dot-source, and `cp`/`mv`/`rsync`/`install` relocating a secret) — and via inline-eval
+one-liners (`python -c`, `node -e`, …); also blocks `printenv`/`env` dumps and echoing
+token-like vars. Plan-first backstop for Bash writes: inline-eval writes AND the high-signal
+shell write forms (`sed -i`, `tee`, `>`/`>>` redirects — heredoc redirects included) into
+non-exempt source files not covered by an `in_progress` task (source extensions derive from
+`tddReminder.sourceGlobs`). Listing NAMES stays allowed. `secretPatterns.extra` (config) adds
+patterns. `--selftest` (49 cases) uses fictional paths only.
 
 ### `plugins/audit/hooks/guard-edits.py`
-Edit/Write/MultiEdit content guard. (1) Runs `guardEdits.customRules` (config) — each
+Edit/Write/MultiEdit/NotebookEdit content guard. (1) Path-based protection first: denies edits
+of the INSTALLED plugin's own files (self-edit; dev-checkout exempt) and writes to
+`plan-bypass-*` state files (bypass forgery). (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the
 one-library listener rule that used to be hardcoded is now just an example in the config
-template). (2) Token-logging ban built dynamically from `guardEdits.tokenVars` — blocks
+template). (3) Token-logging ban built dynamically from `guardEdits.tokenVars` — blocks
 `console.*`/`Sentry.*`/`remoteLog(… token …)` and `Bearer ${token}`, allowing `.slice` prefix
 debug. `--selftest` builds its token test-input at runtime (`"access"+"Token"`) so this source
-file itself never trips a token-logging guard.
+file itself never trips a token-logging guard (13 cases).
 
 ### `plugins/audit/hooks/remind-tdd.py`
-PostToolUse (Edit|Write|MultiEdit) **non-blocking** TDD nudge: when a SOURCE file changes and
+PostToolUse (Edit|Write|MultiEdit|NotebookEdit) **non-blocking** TDD nudge: when a SOURCE file changes and
 no TEST file was touched this session, prints `hookSpecificOutput.additionalContext` (exit 0 —
 never blocks; PostToolUse is the only event with a first-class non-blocking Claude-visible
 channel). Records test-file touches BEFORE any warn logic (the hook watches its own Edit
 stream — that ordering is the whole mechanism). Throttled (once per file + global
 `throttleMinutes` gap) and manifest-aware: silent when the file is covered by an
 `in_progress` `gate-only` task (`inProgressPolicy`: skip-gate-only | skip-all | warn-always).
-All tunables under config `tddReminder`. `--selftest` (12 cases).
+All tunables under config `tddReminder`. `--selftest` (13 cases).
 
 ### `plugins/audit/reference/manifest-conventions.md`
 Shared conventions every command reads first (lives OUTSIDE `commands/` so it can't register
@@ -184,8 +215,11 @@ templates, fileIndex maintenance, done-phase immutability.
 ### `plugins/audit/scripts/validate-manifest.py`
 Dependency-free referential validator the commands run after every manifest mutation —
 checks the JSON Schema can't express: unique ids, resolvable `blockedBy`/`dependsOn`,
-`fileIndex` integrity, `bugs[]` shape + `bug.taskId ↔ task.bugId` cross-links, enums.
-Exit 0 clean / 1 with findings. `--selftest` (14 cases).
+dependency **cycles** (incl. task-blocked-by-own-phase deadlocks), **bidirectional**
+`fileIndex ↔ task.files` integrity, `bugs[]` shape + **reciprocal**
+`bug.taskId ↔ task.bugId` cross-links, enums, plus non-fatal WARNINGs for unknown/typo'd
+keys (did-you-mean) and pre-0.3 status combinations.
+Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest` (29 cases).
 
 ### `plugins/audit/schema/audit-plan.schema.json`
 JSON Schema (draft 2020-12) for the manifest. Back-compatible: only `meta`/`phases` (and per-item
@@ -195,9 +229,13 @@ manifest validates unchanged after adding `$schema`. Enforces enums on `status`,
 tdd-vs-regression meaning + adds `expectRedFirst`; documents the `blockedBy` (hard gate) vs
 `dependsOn` (intra-phase ordering) split; defines `finding` and `deferred.items` as
 `string`-or-`object`; adds `task.maxAttempts`; documents that the orchestrator writes `outcome`;
-adds `meta.buildCommands` and `meta.signOffChecklist` so gate strings and DoD aren't hardcoded.
+adds `meta.buildCommands` so gate strings aren't hardcoded.
 v0.2.0 adds the optional top-level `bugs[]` (`$defs/bug`, `$defs/bugStatus`: open | triaged |
 in_progress | fixed | wontfix) and `task.bugId` — all optional, back-compatible.
+v0.3.0 sets the canonical `$id`, adds the `^BUG-\d+$` pattern, and REMOVES the never-read
+meta fields (`signOffChecklist`, `autoMode`, `modelPolicy`, `testPolicy`, `reviewPolicy`,
+`skillsPolicy`, `statusLegend`, `phase.signOff`) — legacy manifests still validate
+(`additionalProperties: true`; the structural validator accepts the legacy names silently).
 
 ### `plugins/audit/templates/audit.config.example.json`
 Copy to `<repo>/.claude/audit.config.json`. Every key optional. Contains an **illustrative**
@@ -214,28 +252,40 @@ one-minute manifest overview.
 
 ---
 
-## 3. Finish & publish — DONE (v0.2.0)
+## 3. Finish & publish — DONE (v0.2.0), hardened (v0.3.0), release-quality (v0.4.0)
 
-All of the original TODOs are resolved: `plugin.json` author/homepage/license filled,
-`marketplace.json` owner filled + renamed to `claude-plugins`, starter `$schema` URL points at
-this repo, MIT `LICENSE` + `.gitignore` added, git history initialized. Published at
-`https://github.com/AleksandarBisevac/claude-plugins`. To release a new version: bump
-`plugin.json` `version`, update §1/§2 if files changed, run §4, tag `v<version>`, push.
+All of the original TODOs are resolved: `plugin.json` author/homepage/license/repository
+filled, `marketplace.json` owner + description filled (marketplace **name is
+`quality-gates`** — the GitHub repo is named `claude-plugins`, the two intentionally
+differ; see §2), starter `$schema` URL points at this repo, MIT `LICENSE` + `.gitignore`
+added. Published at `https://github.com/AleksandarBisevac/claude-plugins`.
+Releases follow `CONTRIBUTING.md`: one commit = version bump + CHANGELOG entry +
+annotated `v<version>` tag; push `--follow-tags` only after CI is green.
 
 ## 4. Verify
 
-```bash
-# 1. Hooks + validator pass their own selftests
-python3 plugins/audit/hooks/require-plan.py --selftest
-python3 plugins/audit/hooks/guard-edits.py --selftest
-python3 plugins/audit/hooks/guard-secrets-read.py --selftest
-python3 plugins/audit/hooks/remind-tdd.py --selftest
-python3 plugins/audit/scripts/validate-manifest.py --selftest
+CI (`.github/workflows/ci.yml`) runs 1–2 plus `claude plugin validate` on
+ubuntu + windows for every push/PR. Locally:
 
-# 2. Schema + validator accept the starter (and any real manifest)
+```bash
+# 1. Hooks + validator pass their own selftests (all six, stdlib only)
+for f in plugins/audit/hooks/_config.py \
+         plugins/audit/hooks/require-plan.py \
+         plugins/audit/hooks/guard-edits.py \
+         plugins/audit/hooks/guard-secrets-read.py \
+         plugins/audit/hooks/remind-tdd.py \
+         plugins/audit/scripts/validate-manifest.py; do
+  python3 "$f" --selftest || exit 1
+done
+# launcher fails LOUD without an interpreter (permissionDecision "ask" JSON):
+env PATH=/nonexistent /bin/sh plugins/audit/hooks/py-launch.sh guard-edits.py ask < /dev/null
+
+# 2. Schema + validator accept the starter AND the dogfood manifest
 python3 plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
+python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
 npx ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.schema.json \
   -d plugins/audit/templates/audit-plan.starter.json
+claude plugin validate . && claude plugin validate plugins/audit
 
 # 3. IP scrub — must print nothing (substitute your source project's identifiers)
 grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
@@ -245,9 +295,11 @@ grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
 /plugin install audit@quality-gates
 #   generate the manifest with /audit:init (or copy the templates), then:
 /audit status
-#   edit a non-exempt file with no plan → require-plan blocks; add #no-plan (or your
-#   bypassKeyword) → logged bypass; a custom rule blocks under its pathPrefix only;
-#   edit a source file with no test touched → remind-tdd nudges (non-blocking).
+#   edit a non-exempt file with no plan → require-plan denies; add #no-plan (or your
+#   bypassKeyword) → armed + logged bypass, consumed only after a successful edit;
+#   a custom rule blocks under its pathPrefix only; sed -i into a source file → denied;
+#   edit a source file with no test touched → remind-tdd nudges (non-blocking);
+#   interrupt a phase mid-run → /audit resume picks up at the first commit-less task.
 /audit:bug add "..." ; /audit:bug fix BUG-1 ; /audit run BF1.1
 ```
 
