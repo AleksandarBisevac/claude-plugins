@@ -4,13 +4,21 @@ Structural validator for the audit manifest — dependency-free (stdlib only).
 
 Complements the JSON Schema (schema/audit-plan.schema.json) with the referential
 checks a schema cannot express: unique ids, resolvable blockedBy/dependsOn,
-fileIndex integrity, and the bugs[] <-> task.bugId cross-links. Commands run it
-after EVERY manifest mutation (the Edit-and-revalidate rule in
-reference/manifest-conventions.md).
+dependency CYCLES, fileIndex integrity in BOTH directions, and reciprocal
+bugs[] <-> task.bugId cross-links. Commands run it after EVERY manifest
+mutation (the Edit-and-revalidate rule in reference/manifest-conventions.md).
+
+Output classes:
+  FINDING  — structural defect; the manifest is INVALID (exit 1).
+  WARNING  — suspicious but tolerated (unknown/typo'd keys, pre-0.3 status
+             combinations); exit stays 0 when there are only warnings.
 
 Usage:
-  python3 validate-manifest.py <manifest-path>   # exit 0 = valid; exit 1 = findings
+  python3 validate-manifest.py <manifest-path>
   python3 validate-manifest.py --selftest
+
+Exit codes: 0 = valid (warnings allowed) · 1 = findings · 2 = usage error or
+unreadable/unparseable file.
 
 The core `validate(manifest)` is pure and never raises on arbitrary JSON input —
 shape surprises become findings, not tracebacks.
@@ -25,6 +33,36 @@ RISK = ("low", "med", "high", None)
 BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix")
 BUG_ID_RE = re.compile(r"^BUG-\d+$")
 
+# Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
+# — additionalProperties stays permissive for forward/backward compatibility.
+# The "legacy" names below were removed from the schema in v0.3.0 but remain
+# silently accepted in pre-0.3 manifests.
+KNOWN_ROOT = {"$schema", "meta", "phases", "fileIndex", "bugs", "deferred",
+              "proposals"}
+KNOWN_META = {"version", "repo", "title", "createdISO", "node",
+              "developmentBranch", "branchPrefix", "reviewSkill", "runtimeBoot",
+              "nodePreamble", "commit", "buildCommands",
+              # legacy (pre-0.3, ignored by the orchestrator):
+              "signOffChecklist", "autoMode", "modelPolicy", "testPolicy",
+              "reviewPolicy", "skillsPolicy", "statusLegend"}
+KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
+               "desiredOutcome", "testGate", "baseRef", "branch", "mergedAt",
+               "review", "reviewFindings", "summary", "tasks",
+               # legacy (pre-0.3):
+               "signOff"}
+KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
+              "dependsOn", "files", "docs", "description", "tests", "outcome",
+              "commit", "attempts", "maxAttempts", "startedAt", "completedAt",
+              "risk", "verifiedBy", "bugId"}
+KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
+             "description", "repro", "expected", "actual", "files", "taskId",
+             "fixedIn", "notes"}
+
+
+def _strip_line_suffix(entry):
+    """`a/b.tsx:291-294,308` -> `a/b.tsx` (same rule as hooks/_config.py)."""
+    return str(entry).replace("\\", "/").split(":", 1)[0]
+
 
 def _require_fields(obj, where, findings):
     ok = True
@@ -35,24 +73,111 @@ def _require_fields(obj, where, findings):
     return ok
 
 
+def _unknown_keys(obj, known, where, warnings):
+    """Warn on keys we do not recognize; case-insensitive 'did you mean'."""
+    if not isinstance(obj, dict):
+        return
+    lower = {k.lower(): k for k in known}
+    for k in obj:
+        ks = str(k)
+        # "_" = internal, "$" = JSON-Schema keywords, "//" = comment convention
+        if ks in known or ks.startswith(("_", "$", "//")):
+            continue
+        hint = lower.get(ks.lower())
+        if hint:
+            warnings.append("%s: unknown key '%s' — did you mean '%s'?"
+                            % (where, ks, hint))
+        else:
+            warnings.append("%s: unknown key '%s' (typo? unknown keys are "
+                            "ignored by the orchestrator)" % (where, ks))
+
+
+def _cycle_findings(phases, findings):
+    """Detect dependency cycles over the waits-on graph.
+
+    Edges: task -> its blockedBy/dependsOn targets; phase -> its blockedBy
+    targets; phase -> each of its tasks (a phase is done only after its tasks),
+    which catches the task-blockedBy-its-own-phase deadlock.
+    """
+    edges = {}
+
+    def add_edge(a, b):
+        if a and b:
+            edges.setdefault(a, []).append(b)
+
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        pid = phase.get("id")
+        for ref in phase.get("blockedBy") or []:
+            add_edge(pid, ref)
+        for task in phase.get("tasks") or []:
+            if not isinstance(task, dict):
+                continue
+            tid = task.get("id")
+            add_edge(pid, tid)
+            for ref in task.get("blockedBy") or []:
+                add_edge(tid, ref)
+            for ref in task.get("dependsOn") or []:
+                add_edge(tid, ref)
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color, reported = {}, set()
+    for start in list(edges):
+        if color.get(start, WHITE) != WHITE:
+            continue
+        stack = [(start, iter(edges.get(start, ())))]
+        color[start] = GRAY
+        path = [start]
+        while stack:
+            node, it = stack[-1]
+            nxt = next(it, None)
+            if nxt is None:
+                stack.pop()
+                path.pop()
+                color[node] = BLACK
+                continue
+            c = color.get(nxt, WHITE)
+            if c == GRAY:
+                i = path.index(nxt) if nxt in path else len(path) - 1
+                cyc = path[i:] + [nxt]
+                key = frozenset(cyc)
+                if key not in reported:
+                    reported.add(key)
+                    findings.append(
+                        "dependency cycle (blockedBy/dependsOn can never be "
+                        "satisfied): %s" % " -> ".join(str(x) for x in cyc))
+            elif c == WHITE:
+                color[nxt] = GRAY
+                stack.append((nxt, iter(edges.get(nxt, ()))))
+                path.append(nxt)
+
+
 def validate(manifest):
-    """Return a list of finding strings; empty list = valid."""
-    f = []
+    """Return (findings, warnings) — two lists of strings; empty findings = valid."""
+    f, w = [], []
     if not isinstance(manifest, dict):
-        return ["manifest root must be a JSON object"]
+        return (["manifest root must be a JSON object"], w)
+
+    _unknown_keys(manifest, KNOWN_ROOT, "manifest root", w)
 
     meta = manifest.get("meta")
     if not isinstance(meta, dict):
         f.append("meta: missing or not an object")
-    elif not isinstance(meta.get("version"), int):
-        f.append("meta.version: missing or not an integer")
+    else:
+        _unknown_keys(meta, KNOWN_META, "meta", w)
+        if not isinstance(meta.get("version"), int):
+            f.append("meta.version: missing or not an integer")
 
     phases = manifest.get("phases")
     if not isinstance(phases, list):
         f.append("phases: missing or not an array")
         phases = []
 
-    phase_ids, task_ids, task_bug_links = [], [], []
+    phase_ids, task_ids = [], []
+    task_bug_links = []       # (twhere, task_id, bugId)
+    task_by_id = {}
+    task_files = {}           # task_id -> files list
 
     for pi, phase in enumerate(phases):
         if not isinstance(phase, dict):
@@ -61,6 +186,7 @@ def validate(manifest):
         pid = phase.get("id")
         pwhere = "phase %s" % (pid or ("phases[%d]" % pi))
         _require_fields(phase, pwhere, f)
+        _unknown_keys(phase, KNOWN_PHASE, pwhere, w)
         if pid:
             phase_ids.append(pid)
         if phase.get("status") not in STATUS:
@@ -73,22 +199,37 @@ def validate(manifest):
             tid = task.get("id")
             twhere = "task %s" % (tid or ("%s.tasks[%d]" % (pwhere, ti)))
             _require_fields(task, twhere, f)
+            _unknown_keys(task, KNOWN_TASK, twhere, w)
             if tid:
                 task_ids.append(tid)
+                task_by_id[tid] = task
+                files = task.get("files")
+                if isinstance(files, list) and files:
+                    task_files[tid] = files
             if task.get("status") not in STATUS:
                 f.append("%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS)))
+            if (phase.get("status") == "pending"
+                    and task.get("status") == "in_progress"):
+                w.append("%s is in_progress but its %s is still 'pending' — "
+                         "pre-0.3 manifest? /audit resume expects the phase to "
+                         "be 'in_progress' too" % (twhere, pwhere))
             tests = task.get("tests")
+            if "tests" in task and tests is not None and not isinstance(tests, dict):
+                f.append("%s: tests must be an object with a 'mode', got %s"
+                         % (twhere, type(tests).__name__))
             if isinstance(tests, dict) and tests.get("mode") not in TESTS_MODE:
                 f.append("%s: tests.mode %r not in %s" % (twhere, tests.get("mode"), list(TESTS_MODE)))
             if "risk" in task and task.get("risk") not in RISK:
                 f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
             if task.get("bugId"):
-                task_bug_links.append((twhere, task["bugId"]))
+                task_bug_links.append((twhere, tid, task["bugId"]))
 
     # -- unique ids across phases + tasks + bugs -------------------------------
     bugs = manifest.get("bugs")
     bug_list = bugs if isinstance(bugs, list) else []
     bug_ids = [b.get("id") for b in bug_list if isinstance(b, dict) and b.get("id")]
+    bug_by_id = {b["id"]: b for b in bug_list
+                 if isinstance(b, dict) and b.get("id")}
 
     all_ids = phase_ids + task_ids + bug_ids
     seen = set()
@@ -99,7 +240,7 @@ def validate(manifest):
 
     known = set(phase_ids) | set(task_ids)
 
-    # -- blockedBy / dependsOn resolve ------------------------------------------
+    # -- blockedBy / dependsOn resolve + cycles ---------------------------------
     for pi, phase in enumerate(phases):
         if not isinstance(phase, dict):
             continue
@@ -118,13 +259,26 @@ def validate(manifest):
                 if ref not in task_ids:
                     f.append("%s: dependsOn '%s' does not resolve to a task" % (twhere, ref))
 
-    # -- fileIndex integrity -----------------------------------------------------
+    _cycle_findings(phases, f)
+
+    # -- fileIndex integrity (both directions) -----------------------------------
     file_index = manifest.get("fileIndex")
     if isinstance(file_index, dict):
+        stripped_index = {}
         for fpath, refs in file_index.items():
+            key = _strip_line_suffix(fpath)
+            bucket = stripped_index.setdefault(key, set())
             for ref in refs if isinstance(refs, list) else []:
+                bucket.add(ref)
                 if ref not in task_ids:
                     f.append("fileIndex['%s']: task '%s' does not exist" % (fpath, ref))
+        for tid, files in task_files.items():
+            for fentry in files:
+                key = _strip_line_suffix(fentry)
+                if tid not in stripped_index.get(key, set()):
+                    f.append("task %s: file '%s' missing from fileIndex "
+                             "(fileIndex['%s'] must include '%s')"
+                             % (tid, fentry, key, tid))
 
     # -- bugs[] ------------------------------------------------------------------
     if bugs is not None and not isinstance(bugs, list):
@@ -136,36 +290,53 @@ def validate(manifest):
         bid = bug.get("id")
         bwhere = "bug %s" % (bid or ("bugs[%d]" % bi))
         _require_fields(bug, bwhere, f)
+        _unknown_keys(bug, KNOWN_BUG, bwhere, w)
         if bid and not BUG_ID_RE.match(str(bid)):
             f.append("%s: id must match BUG-<number>" % bwhere)
         if bug.get("status") not in BUG_STATUS:
             f.append("%s: status %r not in %s" % (bwhere, bug.get("status"), list(BUG_STATUS)))
-        if bug.get("taskId") and bug["taskId"] not in task_ids:
-            f.append("%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"]))
+        if bug.get("taskId"):
+            if bug["taskId"] not in task_ids:
+                f.append("%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"]))
+            else:
+                linked = task_by_id.get(bug["taskId"]) or {}
+                if linked.get("bugId") != bid:
+                    f.append("%s: taskId '%s' but that task's bugId is %r — "
+                             "link must be reciprocal"
+                             % (bwhere, bug["taskId"], linked.get("bugId")))
 
-    for twhere, bug_ref in task_bug_links:
+    for twhere, tid, bug_ref in task_bug_links:
         if bug_ref not in bug_ids:
             f.append("%s: bugId '%s' does not resolve to a bug" % (twhere, bug_ref))
+        else:
+            linked = bug_by_id.get(bug_ref) or {}
+            if linked.get("taskId") != tid:
+                f.append("%s: bugId '%s' but that bug's taskId is %r — "
+                         "link must be reciprocal"
+                         % (twhere, bug_ref, linked.get("taskId")))
 
-    return f
+    return (f, w)
 
 
 def main(argv):
     if len(argv) != 1:
-        print("usage: validate-manifest.py <manifest-path>")
-        return 1
+        sys.stderr.write("usage: validate-manifest.py <manifest-path>\n")
+        return 2
     try:
         with open(argv[0], "r", encoding="utf-8") as fh:
             manifest = json.load(fh)
     except Exception as exc:
-        print("FINDING: cannot read/parse %s: %s" % (argv[0], exc))
-        return 1
+        sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (argv[0], exc))
+        return 2
 
     try:
-        findings = validate(manifest)
+        findings, warnings = validate(manifest)
     except Exception as exc:  # defensive; validate() should never raise
         print("FINDING: internal validator error: %s" % exc)
         return 1
+
+    for line in warnings:
+        print("WARNING: " + line)
 
     if findings:
         for line in findings:
@@ -174,9 +345,10 @@ def main(argv):
         return 1
 
     n_tasks = sum(len(p.get("tasks") or []) for p in manifest.get("phases", []) if isinstance(p, dict))
-    print("OK: %s valid (%d phases, %d tasks, %d bugs)"
+    print("OK: %s valid (%d phases, %d tasks, %d bugs%s)"
           % (argv[0], len(manifest.get("phases", [])), n_tasks,
-             len(manifest.get("bugs") or [])))
+             len(manifest.get("bugs") or []),
+             ", %d warning(s)" % len(warnings) if warnings else ""))
     return 0
 
 
@@ -188,6 +360,7 @@ def _valid_manifest():
             {"id": "P0", "title": "Phase", "status": "pending", "tasks": [
                 {"id": "P0.1", "title": "Task", "status": "pending",
                  "tests": {"mode": "regression"}, "risk": "low",
+                 "files": ["src/a.ts"],
                  "blockedBy": [], "dependsOn": []},
                 {"id": "P0.2", "title": "Task 2", "status": "pending",
                  "dependsOn": ["P0.1"], "bugId": "BUG-1"},
@@ -206,17 +379,20 @@ def _selftest():
 
     results = []
 
-    def check(name, expect_finding, mutate=None):
+    def check(name, expect_finding, mutate=None, *, expect_warning=None):
         m = copy.deepcopy(_valid_manifest())
         if mutate:
             mutate(m)
-        findings = validate(m)
+        findings, warnings = validate(m)
         if expect_finding is None:
             ok = findings == []
             detail = "expected clean, got %s" % (findings or "clean")
         else:
             ok = any(expect_finding in x for x in findings)
             detail = "expected finding ~%r in %s" % (expect_finding, findings)
+        if ok and expect_warning is not None:
+            ok = any(expect_warning in x for x in warnings)
+            detail = "expected warning ~%r in %s" % (expect_warning, warnings)
         results.append(ok)
         print("%s %s (%s)" % ("PASS" if ok else "FAIL", name, detail))
 
@@ -242,23 +418,73 @@ def _selftest():
     check("v10 missing meta.version", "meta.version",
           lambda m: m["meta"].pop("version"))
     check("v11 dangling fileIndex ref", "fileIndex['src/a.ts']: task 'GONE'",
-          lambda m: m.update(fileIndex={"src/a.ts": ["GONE"]}))
+          lambda m: m.update(fileIndex={"src/a.ts": ["GONE", "P0.1"]}))
     check("v12 dangling phase blockedBy", "blockedBy 'PX' does not resolve",
           lambda m: m["phases"][0].update(blockedBy=["PX"]))
 
-    # CLI path: valid file -> exit 0; garbage file -> exit 1
+    # --- new in 0.3.0: cycles ---
+    check("c1 two-task dependsOn cycle", "dependency cycle",
+          lambda m: (m["phases"][0]["tasks"][0].update(dependsOn=["P0.2"]),
+                     m["phases"][0]["tasks"][1].update(dependsOn=["P0.1"])))
+    check("c2 self-loop", "dependency cycle",
+          lambda m: m["phases"][0]["tasks"][0].update(dependsOn=["P0.1"]))
+    check("c3 task blockedBy its own phase", "dependency cycle",
+          lambda m: m["phases"][0]["tasks"][0].update(blockedBy=["P0"]))
+    check("c4 acyclic chain stays clean", None,
+          lambda m: m["phases"][0]["tasks"][1].update(blockedBy=["P0.1"]))
+
+    # --- new in 0.3.0: reciprocity ---
+    check("r1 bug->task without task->bug", "link must be reciprocal",
+          lambda m: m["phases"][0]["tasks"][1].pop("bugId"))
+    check("r2 task->bug without bug->task", "link must be reciprocal",
+          lambda m: m["bugs"][0].update(taskId=None))
+
+    # --- new in 0.3.0: fileIndex bidirectional ---
+    check("f1 task file missing from fileIndex", "missing from fileIndex",
+          lambda m: m["phases"][0]["tasks"][0].update(files=["src/other.ts"]))
+    check("f2 line-suffix entries match stripped", None,
+          lambda m: m["phases"][0]["tasks"][0].update(files=["src/a.ts:10-20"]))
+
+    # --- new in 0.3.0: tests must be an object ---
+    check("t1 tests as string is a finding", "tests must be an object",
+          lambda m: m["phases"][0]["tasks"][0].update(tests="tdd"))
+
+    # --- new in 0.3.0: warnings ---
+    check("w1 unknown key warns with did-you-mean", None,
+          lambda m: m["phases"][0]["tasks"][0].update(dependson=["P0.2"]),
+          expect_warning="did you mean 'dependsOn'")
+    check("w2 unknown key warns", None,
+          lambda m: m["meta"].update(frobnicate=True),
+          expect_warning="unknown key 'frobnicate'")
+    check("w3 legacy meta keys stay silent", None,
+          lambda m: m["meta"].update(signOffChecklist=["x"], statusLegend=["y"]))
+    check("w4 in_progress task in pending phase warns", None,
+          lambda m: m["phases"][0]["tasks"][0].update(status="in_progress"),
+          expect_warning="still 'pending'")
+
+    # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os
     fd, path = tempfile.mkstemp(suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(_valid_manifest(), fh)
     ok = main([path]) == 0
     results.append(ok)
-    print("%s c1 CLI accepts valid file" % ("PASS" if ok else "FAIL"))
+    print("%s c5 CLI accepts valid file (exit 0)" % ("PASS" if ok else "FAIL"))
+    bad = copy.deepcopy(_valid_manifest())
+    bad["phases"][0]["tasks"][0]["status"] = "doing"
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write("{not json")
+        json.dump(bad, fh)
     ok = main([path]) == 1
     results.append(ok)
-    print("%s c2 CLI rejects unparseable file" % ("PASS" if ok else "FAIL"))
+    print("%s c6 CLI reports findings (exit 1)" % ("PASS" if ok else "FAIL"))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("{not json")
+    ok = main([path]) == 2
+    results.append(ok)
+    print("%s c7 CLI rejects unparseable file (exit 2)" % ("PASS" if ok else "FAIL"))
+    ok = main([]) == 2
+    results.append(ok)
+    print("%s c8 CLI usage error (exit 2)" % ("PASS" if ok else "FAIL"))
     os.unlink(path)
 
     all_pass = all(results)

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.com/schemas/audit-plan.schema.json",
+  "$id": "https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/schema/audit-plan.schema.json",
   "title": "Audit Plan Manifest",
   "description": "Schema for the /audit orchestrator manifest (default docs/audit/audit-plan.json). All fields new in the plugin version are OPTIONAL so a pre-existing manifest validates unchanged after adding \"$schema\". additionalProperties is permissive at object levels to stay back-compatible; enums are enforced on the orchestrator-controlled fields (task/phase status, tests.mode, task.risk) to catch typos, while human-authored review fields (review.status, finding.severity) stay free-text.",
   "type": "object",
@@ -82,18 +82,7 @@
           "type": "object",
           "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...).",
           "additionalProperties": { "type": "string" }
-        },
-        "signOffChecklist": {
-          "type": "array",
-          "description": "Default Definition-of-Done steps for every phase (moved out of per-phase boilerplate). A phase may override with its own signOff.",
-          "items": { "type": "string" }
-        },
-        "autoMode": { "type": "object", "additionalProperties": true },
-        "modelPolicy": { "type": "object", "additionalProperties": true },
-        "testPolicy": { "type": "object", "additionalProperties": true },
-        "reviewPolicy": { "type": "object", "additionalProperties": true },
-        "skillsPolicy": { "type": "object", "additionalProperties": true },
-        "statusLegend": { "type": "array", "items": { "type": "string" } }
+        }
       }
     },
     "phase": {
@@ -111,7 +100,10 @@
           "items": { "type": "string" }
         },
         "docs": { "type": "array", "items": { "type": "string" } },
-        "desiredOutcome": { "type": "string" },
+        "desiredOutcome": {
+          "type": "string",
+          "description": "One-line statement of what success looks like for the phase. Shown by /audit status, given to every task subagent, and phase.summary must address it at sign-off."
+        },
         "testGate": {
           "type": "array",
           "description": "Commands (or 'key:project' entries resolved via meta.buildCommands) that must all pass at sign-off.",
@@ -123,17 +115,12 @@
         "review": { "$ref": "#/$defs/review" },
         "reviewFindings": {
           "type": "object",
-          "description": "Running tally of sign-off findings.",
+          "description": "Legacy (pre-plugin manifests) running tally of sign-off findings — informational only; the orchestrator does not read it.",
           "additionalProperties": true,
           "properties": {
             "found": { "type": "integer" },
             "resolved": { "type": "integer" }
           }
-        },
-        "signOff": {
-          "type": "array",
-          "description": "Per-phase Definition-of-Done override. Omit to use meta.signOffChecklist.",
-          "items": { "type": "string" }
         },
         "summary": { "type": ["string", "null"] },
         "tasks": { "type": "array", "items": { "$ref": "#/$defs/task" } }
@@ -197,7 +184,7 @@
       "required": ["id", "title", "status"],
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "string", "description": "BUG-<n>, allocated repo-wide." },
+        "id": { "type": "string", "pattern": "^BUG-\\d+$", "description": "BUG-<n>, allocated repo-wide." },
         "title": { "type": "string" },
         "status": { "$ref": "#/$defs/bugStatus" },
         "severity": {

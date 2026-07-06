@@ -12,12 +12,11 @@
     "nodePreamble": null,
     "commit": { "type": "chore", "coauthor": null },
     "buildCommands": {
+      "//": "EXAMPLE commands (npm) — replace with your repo's real lint/test/typecheck commands.",
       "lint": "npm run lint --",
       "test": "npm test --",
       "typecheck": "npm run typecheck --"
-    },
-    "signOffChecklist": ["allTasksDone", "reviewResolved", "testGateGreen"],
-    "statusLegend": ["pending", "in_progress", "blocked", "done"]
+    }
   },
   "phases": [
     {
