@@ -1,10 +1,10 @@
 {
-  "$schema": "https://raw.githubusercontent.com/TODO-you/claude-audit-plugin/main/plugins/audit/schema/audit-plan.schema.json",
+  "$schema": "https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/schema/audit-plan.schema.json",
   "meta": {
     "version": 2,
-    "repo": "TODO-your-repo",
+    "repo": "my-app",
     "title": "Audit & test-driven fix pipeline",
-    "createdISO": "TODO-YYYY-MM-DDThh:mm:ssZ",
+    "createdISO": "2026-01-01T00:00:00Z",
     "developmentBranch": "main",
     "branchPrefix": "audit",
     "reviewSkill": null,

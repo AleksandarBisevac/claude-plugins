@@ -32,7 +32,7 @@ grep -riE '<client-name>|<internal-lib>|<bundle-id>' .   # must print nothing
 ## 1. Directory tree
 
 ```
-claude-audit-plugin/                      # this repo (personal, public)
+claude-plugins/                           # this repo (personal, public)
   PLUGIN-BUILD-GUIDE.md                   # ← you are here
   .claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")
@@ -67,7 +67,7 @@ Claude Code plugin mechanics used here (all confirmed against the plugin docs):
 
 ### `.claude-plugin/marketplace.json`
 Marketplace root. Lists a single plugin `audit` at `./plugins/audit`. **TODO:** fill `owner.name`
-/ `owner.email`. Users add it with `/plugin marketplace add <you>/claude-audit-plugin`.
+/ `owner.email`. Users add it with `/plugin marketplace add AleksandarBisevac/claude-plugins`.
 
 ### `plugins/audit/.claude-plugin/plugin.json`
 Plugin manifest. `name: "audit"` drives the command/skill namespace. **TODO:** fill `author`,
@@ -111,7 +111,7 @@ tunables from config (`manifestPath`, `exemptGlobs`, `trivialLineThreshold`, `st
 project coupling).
 
 ### `plugins/audit/hooks/detect-plan-skip.py`
-UserPromptSubmit logger. If the prompt contains `bypassKeyword` (config; default `#bez-plana`),
+UserPromptSubmit logger. If the prompt contains `bypassKeyword` (config; default `#no-plan`),
 writes `stateDir/plan-bypass-<session>.json` and appends to `logsDir/plan-bypass.log`. Never
 blocks. `require-plan.py` consumes (deletes) that file on the next non-trivial edit — single-use.
 
@@ -161,7 +161,7 @@ one-minute manifest overview.
 
 1. Fill the `TODO:` fields: `plugin.json` (author/homepage/license), `marketplace.json` (owner),
    `audit-plan.starter.json` (`$schema` URL, repo, createdISO).
-2. Pick the repo name (this guide assumes `claude-audit-plugin`) and a license (README says MIT).
+2. Pick the repo name (this guide assumes `claude-plugins`) and a license (README says MIT).
 3. `git init` in this tree, commit, push to your personal GitHub.
 4. Install & smoke-test (see §4), then tag a release if you set an explicit `version`.
 
@@ -174,18 +174,18 @@ python3 plugins/audit/hooks/guard-edits.py --selftest
 python3 plugins/audit/hooks/guard-secrets-read.py --selftest
 
 # 2. Schema validates the starter (and any real manifest)
-npx ajv-cli validate -s plugins/audit/schema/audit-plan.schema.json \
+npx ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.schema.json \
   -d plugins/audit/templates/audit-plan.starter.json
 
 # 3. IP scrub — must print nothing (substitute your source project's identifiers)
 grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
 
 # 4. End-to-end in a throwaway repo
-/plugin marketplace add /abs/path/to/claude-audit-plugin
-/plugin install audit@claude-audit-plugin
+/plugin marketplace add /abs/path/to/claude-plugins
+/plugin install audit@claude-plugins
 #   add .claude/audit.config.json + docs/audit/audit-plan.json (from templates), then:
 /audit status
-#   edit a non-exempt file with no plan → require-plan blocks; add #bez-plana (or your
+#   edit a non-exempt file with no plan → require-plan blocks; add #no-plan (or your
 #   bypassKeyword) → logged bypass; a custom rule blocks under its pathPrefix only.
 ```
 

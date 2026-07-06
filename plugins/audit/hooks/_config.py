@@ -41,7 +41,7 @@ DEFAULTS = {
     "trivialLineThreshold": 80,
     "stateDir": ".claude/state",
     "logsDir": ".claude/logs",
-    "bypassKeyword": "#bez-plana",
+    "bypassKeyword": "#no-plan",
     "secretPatterns": {"extra": []},
     "guardEdits": {
         "tokenVars": ["accessToken", "refreshToken", "idToken"],

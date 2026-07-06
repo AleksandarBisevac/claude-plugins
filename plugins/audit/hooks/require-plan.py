@@ -233,7 +233,7 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
         if len(files_list) > 0
         else "%d added lines (> %d)" % (added, threshold)
     )
-    keyword = cfg.get("bypassKeyword") or "#bez-plana"
+    keyword = cfg.get("bypassKeyword") or _config.DEFAULTS["bypassKeyword"]
     return (
         "block",
         "Non-trivial change without an active plan (%s): %s\n"

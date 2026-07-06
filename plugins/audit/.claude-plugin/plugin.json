@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline. Ships the /audit orchestrator command plus plan-first + secret-safety + token-logging guard hooks. Parameterized per-repo via .claude/audit.config.json — no company/project coupling.",
   "author": {
-    "name": "TODO: your name",
-    "email": "TODO: your@email"
+    "name": "Aleksandar Bisevac",
+    "email": "alek.bisevac@gmail.com"
   },
-  "homepage": "TODO: https://github.com/<you>/claude-audit-plugin",
+  "homepage": "https://github.com/AleksandarBisevac/claude-plugins",
   "license": "MIT",
   "keywords": [
     "audit",

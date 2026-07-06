@@ -23,7 +23,7 @@ never hardcode branch names, package ids, skills, or build tools here:
 - `meta.buildCommands` — optional template map `{lint,test,typecheck}`; gate entries like `"test:<project>"`
   resolve against it, else a gate string is run verbatim.
 
-## Non-negotiable guardrails (from manifest `meta.autoMode`)
+## Non-negotiable guardrails
 
 - **Git: read / pull / commit allowed.** Commit after each successful task and after phase sign-off.
   **NEVER `git push` or force-push.** All other `git reset`/`rebase`/`clean` require explicit human confirmation.
@@ -142,7 +142,7 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
 Run only when **all** tasks in the phase are `done`. All review/test work runs on the phase branch.
 
 1. **`reviewResolved`** — compute the phase's changed files (union of `files` across its tasks, cross-checked with
-   `meta.fileIndex`). **If `meta.reviewSkill` is set**, invoke that Skill scoped to `git diff <phase.baseRef> -- <files>`;
+   the manifest's top-level `fileIndex`). **If `meta.reviewSkill` is set**, invoke that Skill scoped to `git diff <phase.baseRef> -- <files>`;
    record results in `phase.review.findings`, and for each actionable finding spawn a fix subagent
    (`model = phase.review.model`) that may edit implementation AND tests; loop until clean or each remaining finding
    is explicitly triaged with a written justification. **If `meta.reviewSkill` is null**, skip this step — tests are

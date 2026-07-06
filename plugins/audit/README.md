@@ -25,8 +25,8 @@ generic; everything project-specific is supplied by a small per-repo config file
 ## Install
 
 ```bash
-/plugin marketplace add <you>/claude-audit-plugin      # or a local path during dev
-/plugin install audit@claude-audit-plugin
+/plugin marketplace add AleksandarBisevac/claude-plugins   # or a local path during dev
+/plugin install audit@claude-plugins
 ```
 
 Then create the manifest and (optionally) the config in your repo:
@@ -56,7 +56,7 @@ Optional. Absent → safe defaults. Read by the hooks from `${CLAUDE_PROJECT_DIR
 | `exemptGlobs` | Globs exempt from plan-first | `docs/audit/**`, `**/*.md`, `.claude/**`, `**/*.spec.*`, `**/*.test.*` |
 | `trivialLineThreshold` | Max added lines for the 1st free code file/session | `80` |
 | `stateDir` / `logsDir` | Where state + bypass log live | `.claude/state` / `.claude/logs` |
-| `bypassKeyword` | Single-use plan-first opt-out keyword | `#bez-plana` |
+| `bypassKeyword` | Single-use plan-first opt-out keyword | `#no-plan` |
 | `secretPatterns.extra` | Extra secret-path regexes (added to the built-in set) | `[]` |
 | `guardEdits.tokenVars` | Identifier names treated as auth tokens | `accessToken`, `refreshToken`, `idToken` |
 | `guardEdits.customRules` | Project banned patterns `{pathPrefix, bannedPattern, message}` | `[]` |
@@ -86,5 +86,5 @@ A phase runs on a `audit/<id>-<slug>` branch, commits per task, and merges fast-
 `meta.developmentBranch` after sign-off. Validate anytime:
 
 ```bash
-npx ajv-cli validate -s schema/audit-plan.schema.json -d docs/audit/audit-plan.json
+npx ajv-cli validate --spec=draft2020 -s schema/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```

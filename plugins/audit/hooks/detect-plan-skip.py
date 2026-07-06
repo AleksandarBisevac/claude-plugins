@@ -2,7 +2,7 @@
 """
 UserPromptSubmit hook — plan-first opt-out logger.
 
-Watches every submitted prompt for the bypass keyword (default `#bez-plana`,
+Watches every submitted prompt for the bypass keyword (default `#no-plan`,
 overridable via `.claude/audit.config.json` → bypassKeyword, case-insensitive).
 When present, it ARMS a single-use plan-first bypass for the current session:
   - writes <stateDir>/plan-bypass-<session_id>.json ({ts, reason})
@@ -40,7 +40,7 @@ def main() -> None:
     try:
         root = _config.repo_root(data)
         cfg = _config.load(root)
-        keyword = (cfg.get("bypassKeyword") or "#bez-plana").lower()
+        keyword = (cfg.get("bypassKeyword") or _config.DEFAULTS["bypassKeyword"]).lower()
 
         prompt = _prompt_text(data)
         if keyword not in prompt.lower():
