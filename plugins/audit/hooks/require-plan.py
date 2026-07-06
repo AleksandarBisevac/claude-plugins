@@ -24,7 +24,6 @@ input / exception exits 0.
 
 Run `python3 require-plan.py --selftest` to exercise the core decision function.
 """
-import fnmatch
 import json
 import os
 import sys
@@ -35,79 +34,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
 
 
-# --- helpers ------------------------------------------------------------------
-def _rel_path(root: Path, file_path: str) -> str:
-    """Path of file_path RELATIVE to repo root, posix-style. Falls back gracefully."""
-    fp = str(file_path).replace("\\", "/")
-    try:
-        p = Path(fp)
-        if not p.is_absolute():
-            p = (root / p)
-        rel = os.path.relpath(str(p), str(root))
-    except Exception:
-        rel = fp
-    return rel.replace("\\", "/")
-
-
-def _matches_exempt(rel: str, globs) -> bool:
-    """Generic exempt matcher that understands the common `**` glob forms.
-
-    Handles:  `dir/**` (recursive prefix), `**/*.ext` (basename), and plain fnmatch.
-    """
-    base = rel.split("/")[-1]
-    for g in globs or ():
-        g = str(g)
-        if fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(base, g):
-            return True
-        # `some/dir/**` → recursive prefix match
-        if g.endswith("/**"):
-            prefix = g[:-3]
-            if rel == prefix or rel.startswith(prefix + "/"):
-                return True
-        # `**/*.ext` or `**/name` → match against the basename
-        if g.startswith("**/"):
-            if fnmatch.fnmatch(base, g[3:]):
-                return True
-    return False
-
-
-def _strip_line_suffix(entry: str) -> str:
-    """`a/b.tsx:291-294,308` -> `a/b.tsx`."""
-    s = str(entry).replace("\\", "/")
-    return s.split(":", 1)[0]
-
-
-def _in_progress_files(root: Path, manifest_rel: str) -> set:
-    """Files belonging to tasks whose status == 'in_progress', plus their fileIndex
-    siblings keyed by the same path."""
-    files: set = set()
-    try:
-        with open(root / manifest_rel, "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except Exception:
-        return files
-
-    in_progress_task_ids: set = set()
-    try:
-        for phase in manifest.get("phases", []) or []:
-            for task in phase.get("tasks", []) or []:
-                if task.get("status") == "in_progress":
-                    tid = task.get("id")
-                    if tid:
-                        in_progress_task_ids.add(tid)
-                    for f in task.get("files", []) or []:
-                        files.add(_strip_line_suffix(f))
-    except Exception:
-        pass
-
-    try:
-        for fpath, task_ids in (manifest.get("fileIndex", {}) or {}).items():
-            if any(t in in_progress_task_ids for t in (task_ids or [])):
-                files.add(_strip_line_suffix(fpath))
-    except Exception:
-        pass
-
-    return files
+# --- helpers (shared implementations live in _config.py) -----------------------
+_rel_path = _config.rel_path
+_matches_exempt = _config.matches_exempt
+_strip_line_suffix = _config.strip_line_suffix
+_in_progress_files = _config.in_progress_files
 
 
 def _added_line_count(tool: str, ti: dict) -> int:

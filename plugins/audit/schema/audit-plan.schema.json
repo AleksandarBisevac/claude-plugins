@@ -16,7 +16,12 @@
       "additionalProperties": { "type": "array", "items": { "type": "string" } }
     },
     "deferred": { "$ref": "#/$defs/deferred" },
-    "proposals": { "type": "array", "items": { "$ref": "#/$defs/proposal" } }
+    "proposals": { "type": "array", "items": { "$ref": "#/$defs/proposal" } },
+    "bugs": {
+      "type": "array",
+      "description": "Optional bug tracker. Bugs live outside phases (a reported bug is not yet a plan); /audit:bug fix materializes a bug into a tdd task in a bugfix phase, linked via bug.taskId <-> task.bugId.",
+      "items": { "$ref": "#/$defs/bug" }
+    }
   },
   "$defs": {
     "status": {
@@ -176,7 +181,55 @@
           "type": "array",
           "description": "Test names/ids this task added, linking code to its guard.",
           "items": { "type": "string" }
+        },
+        "bugId": {
+          "type": ["string", "null"],
+          "description": "Link to bugs[].id when this task was materialized via /audit:bug fix. The orchestrator flips that bug to 'fixed' (+fixedIn) when the task commits."
         }
+      }
+    },
+    "bugStatus": {
+      "description": "Bug lifecycle. in_progress = materialized into a task; fixed = that task committed.",
+      "enum": ["open", "triaged", "in_progress", "fixed", "wontfix"]
+    },
+    "bug": {
+      "type": "object",
+      "required": ["id", "title", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "description": "BUG-<n>, allocated repo-wide." },
+        "title": { "type": "string" },
+        "status": { "$ref": "#/$defs/bugStatus" },
+        "severity": {
+          "type": ["string", "null"],
+          "description": "Free-text (low/med/high/...), consistent with finding.severity."
+        },
+        "reportedAt": { "type": ["string", "null"], "description": "ISO timestamp." },
+        "reportedBy": { "type": ["string", "null"] },
+        "description": { "type": "string" },
+        "repro": {
+          "description": "Reproduction steps: a string or array of step strings.",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "expected": { "type": "string" },
+        "actual": { "type": "string" },
+        "files": {
+          "type": "array",
+          "description": "Suspected repo-relative files (optional :line-range suffix).",
+          "items": { "type": "string" }
+        },
+        "taskId": {
+          "type": ["string", "null"],
+          "description": "Task materialized for this bug via /audit:bug fix; null until then."
+        },
+        "fixedIn": {
+          "type": ["string", "null"],
+          "description": "Commit SHA of the fixing task; written by the /audit orchestrator."
+        },
+        "notes": { "type": ["string", "null"] }
       }
     },
     "tests": {

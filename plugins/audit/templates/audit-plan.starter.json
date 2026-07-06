@@ -67,5 +67,6 @@
     "src/example/module.ts": ["P0.1"]
   },
   "deferred": { "note": "Out-of-scope items logged here.", "target": null, "items": [] },
-  "proposals": []
+  "proposals": [],
+  "bugs": []
 }
