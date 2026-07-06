@@ -44,7 +44,8 @@
     "enabled": true,
     "sourceGlobs": [
       "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.py", "**/*.go",
-      "**/*.rb", "**/*.java", "**/*.cs", "**/*.kt", "**/*.swift", "**/*.rs"
+      "**/*.rb", "**/*.java", "**/*.cs", "**/*.kt", "**/*.swift", "**/*.rs",
+      "**/*.ipynb"
     ],
     "testGlobs": [
       "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.*",

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-PostToolUse nudge (matcher: Edit|Write|MultiEdit) — non-blocking TDD reminder.
+PostToolUse nudge (matcher: Edit|Write|MultiEdit|NotebookEdit) — non-blocking
+TDD reminder.
 
 When a SOURCE file is modified and no TEST file has been touched in the session,
 this hook injects a reminder Claude sees (`hookSpecificOutput.additionalContext`)
@@ -82,11 +83,11 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, now: float = None):
     """Returns ("record"|"warn"|"silent", detail). `cfg`/`state_dir`/`now` are
     injectable for --selftest; state reads/writes go through the state file."""
     tool = data.get("tool_name", "")
-    if tool not in ("Write", "Edit", "MultiEdit"):
+    if tool not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         return ("silent", "unknown tool")
 
     ti = data.get("tool_input", {}) or {}
-    file_path = ti.get("file_path", "")
+    file_path = ti.get("file_path", "") or ti.get("notebook_path", "")
     if not file_path:
         return ("silent", "no file_path")
 
@@ -184,7 +185,9 @@ def _selftest() -> int:
     t0 = 1_000_000.0
 
     def payload(file_path, *, sid, tool="Edit"):
-        return {"tool_name": tool, "tool_input": {"file_path": file_path},
+        ti = ({"notebook_path": file_path} if tool == "NotebookEdit"
+              else {"file_path": file_path})
+        return {"tool_name": tool, "tool_input": ti,
                 "session_id": sid, "cwd": str(tmp)}
 
     results = []
@@ -246,6 +249,11 @@ def _selftest() -> int:
     cfg_off["tddReminder"] = dict(_config.DEFAULTS["tddReminder"], enabled=False)
     check("e1 disabled", "silent",
           payload("src/foo/z.ts", sid="tdd-session-e"), use_cfg=cfg_off)
+
+    # (g) NotebookEdit counts as a source edit (notebook_path, *.ipynb glob)
+    check("g1 notebook edit without test warns", "warn",
+          payload("notebooks/train.ipynb", sid="tdd-session-g",
+                  tool="NotebookEdit"))
 
     # (f) warn detail is valid additionalContext JSON when serialized
     verdict, detail = decide(payload("src/foo/f.ts", sid="tdd-session-f"),
