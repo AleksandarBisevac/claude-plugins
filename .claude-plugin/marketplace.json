@@ -1,5 +1,6 @@
 {
   "name": "quality-gates",
+  "description": "Quality-gate plugins for Claude Code: manifest-driven audit/fix pipelines with enforced plan-first, secret-safety and TDD discipline.",
   "owner": {
     "name": "Aleksandar Bisevac",
     "email": "alek.bisevac@gmail.com"
