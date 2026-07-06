@@ -77,7 +77,10 @@ Claude Code plugin mechanics used here (all confirmed against the plugin docs):
 ## 2. File-by-file logic
 
 ### `.claude-plugin/marketplace.json`
-Marketplace root (`name: "claude-plugins"` — the repo can host more plugins later). Lists the
+Marketplace root (`name: "quality-gates"` — everything in the suite is a gate: plan gate,
+test gate, sign-off gate, secret guard. Note: Claude Code REJECTS marketplace names that
+impersonate official ones, e.g. anything "claude-*" — the GitHub repo may be named
+`claude-plugins`, but this `name` field may not). Lists the
 plugin `audit` at `./plugins/audit`. Users add it with
 `/plugin marketplace add AleksandarBisevac/claude-plugins`.
 
@@ -239,7 +242,7 @@ grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
 
 # 4. End-to-end in a throwaway repo
 /plugin marketplace add /abs/path/to/claude-plugins
-/plugin install audit@claude-plugins
+/plugin install audit@quality-gates
 #   generate the manifest with /audit:init (or copy the templates), then:
 /audit status
 #   edit a non-exempt file with no plan → require-plan blocks; add #no-plan (or your

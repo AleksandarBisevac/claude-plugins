@@ -37,7 +37,7 @@ project-specific is supplied by a small per-repo config file.
 
 ```bash
 /plugin marketplace add AleksandarBisevac/claude-plugins   # or a local path during dev
-/plugin install audit@claude-plugins
+/plugin install audit@quality-gates
 ```
 
 Then create the manifest — either **generate** it:
