@@ -100,8 +100,9 @@ Optional. Absent → safe defaults. Read by the hooks from `${CLAUDE_PROJECT_DIR
 | `tddReminder.inProgressPolicy` | Manifest interplay: `skip-gate-only` \| `skip-all` \| `warn-always` | `skip-gate-only` |
 
 Manifest-level knobs live in the manifest's `meta` block (all optional): `developmentBranch`,
-`branchPrefix`, `reviewSkill`, `runtimeBoot`, `nodePreamble`, `commit`, `buildCommands`,
-`signOffChecklist`. See the schema for exact shapes and defaults.
+`branchPrefix`, `reviewSkill`, `runtimeBoot`, `nodePreamble`, `commit`, `buildCommands`.
+See the schema for exact shapes and defaults. Per-phase, `desiredOutcome` states what
+success looks like — `/audit` shows it, feeds it to task subagents, and sign-off must address it.
 
 ## Extending (three layers, no plugin editing)
 

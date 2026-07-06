@@ -1,6 +1,6 @@
 ---
-description: Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings into a schema-valid plan for /audit to execute.
-argument-hint: [optional scope/goals — you will be interviewed for the rest]
+description: 'Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings into a schema-valid plan for /audit to execute.'
+argument-hint: '[optional scope/goals — you will be interviewed for the rest]'
 allowed-tools: Read, Write, Edit, Bash, Agent, Glob, Grep, AskUserQuestion
 ---
 
@@ -56,7 +56,9 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 
 1. **Dedupe** findings by file + title similarity; keep the higher severity.
 2. **Group into phases**: `P0` = build/test health + safety blockers (anything that gates
-   verification of later work), then thematic phases by dimension/subsystem. Respect the
+   verification of later work), then thematic phases by dimension/subsystem. Give every
+   phase a one-line `desiredOutcome` (what success looks like — `/audit` displays it and
+   sign-off must address it). Respect the
    size appetite; overflow goes to `deferred.items` (with reasons) or `proposals`.
 3. **Finding → task** using the conventions doc's new-task template. Rules:
    - Incorrect behavior (bug-like) → `tests.mode: "tdd"`, `expectRedFirst: true`,

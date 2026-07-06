@@ -46,7 +46,9 @@ Every newly created task MUST be initialized with ALL of:
 A newly created phase MUST be initialized with: `status: "pending"`,
 `baseRef: null`, `branch: null`, `mergedAt: null`,
 `review: {tool: null, model: "sonnet", status: "pending", findings: []}`,
-`summary: null`, and a `testGate` derived from `meta.buildCommands` keys.
+`summary: null`, a one-line `desiredOutcome` (what success looks like — `/audit`
+shows it, gives it to task subagents, and sign-off must address it), and a
+`testGate` derived from `meta.buildCommands` keys.
 
 ## fileIndex maintenance
 
