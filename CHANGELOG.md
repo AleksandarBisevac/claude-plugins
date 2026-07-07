@@ -4,6 +4,34 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.6.1] - 2026-07-07
+
+Fix: git repo in a subdirectory (found by end-to-end testing against a real Nx
+monorepo where the git root was `test/`, not the project dir).
+
+### Fixed
+- **The orchestrator assumed the project dir IS the git root.** When the git
+  repo lived in a subdirectory, every git operation failed (`not a git
+  repository`), the manifest (outside the git tree) could not be committed, and
+  `guard-bash-writes` went silent — all four failures were silent. Now:
+  - `meta.gitRoot` (+ `gitRoot` in `.claude/audit.config.json`) — path of the
+    git root relative to the project dir (default `.`). `/audit` runs
+    `git -C <gitRoot>`, runs gates there, and strips the prefix when staging;
+    `guard-bash-writes` runs its git check there too.
+  - **`/audit` preflight** verifies the git root is a git repo and STOPS with
+    guidance if not — turning a silent 4-way break into one clear message. It
+    also warns when the manifest lives outside the git root.
+  - `/audit:init` detects the git root and sets `meta.gitRoot`; `/audit` reads
+    the 0.2.0-era `meta.workspaceRoot` as a fallback, so existing manifests work.
+- Validator no longer warns on `phase.description` (now a real schema field) or
+  on the 0.2.0-era `meta.notes`/`meta.workspaceRoot`/`meta.baseCommit`/`task.details`
+  keys — a 0.2.0-generated manifest dropped from 21 warnings to 0.
+
+### Added
+- README: "Git repo in a subdirectory" and "Troubleshooting" sections
+  (git-root preflight, stale version-pinned permission after `/plugin update`,
+  interpreter/Git-Bash, state files). 185 selftest cases.
+
 ## [0.6.0] - 2026-07-07
 
 Agents & full-coverage enforcement: prompt discipline becomes mechanical.

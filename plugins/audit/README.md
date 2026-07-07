@@ -163,6 +163,7 @@ to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | Key | Purpose | Default |
 |---|---|---|
 | `manifestPath` | Path to the manifest | `docs/audit/audit-plan.json` |
+| `gitRoot` | Git repo root relative to the project dir (set when git/the workspace is in a subdir; keep in sync with manifest `meta.gitRoot`) | `.` |
 | `exemptGlobs` | Globs exempt from plan-first | `docs/audit/**`, `**/*.md`, `.claude/**`, `**/*.spec.*`, `**/*.test.*` |
 | `trivialLineThreshold` | Max change magnitude for the 1st free code file/session | `80` |
 | `stateDir` / `logsDir` | Where state + bypass log live (add both to `.gitignore`) | `.claude/state` / `.claude/logs` |
@@ -200,6 +201,39 @@ Add `meta.ado` to the manifest and `/audit:sync` links the tracker to your board
 Auth belongs to `az login` (locally) or the `AZURE_DEVOPS_EXT_PAT` variable (CI) — the
 plugin never stores or prints credentials. For pipelines, `docs/examples/azure-pipelines.yml`
 shows the validate → gate → report flow.
+
+## Git repo in a subdirectory (monorepo / workspace)
+
+The orchestrator runs git and gate commands in the **git root**. If your git repo (or Nx/Turborepo
+workspace) lives in a subdirectory of where you open Claude Code — so the project dir is NOT itself a
+git repo — set the git root in both places:
+
+```jsonc
+// manifest meta
+"gitRoot": "test"
+// .claude/audit.config.json
+"gitRoot": "test"
+```
+
+`/audit:init` detects this and sets `meta.gitRoot` for you (older 0.2.0 manifests used `meta.workspaceRoot`,
+which `/audit` still reads as a fallback). Task `files` stay project-dir-relative (e.g. `test/src/foo.ts`);
+the orchestrator strips the prefix when staging. `/audit` **preflights** this: if the resolved git root
+isn't a git repo it stops with guidance instead of failing mid-run. Prefer keeping the manifest **inside**
+the git root (e.g. `test/docs/audit/audit-plan.json`) so its status history can be committed.
+
+## Troubleshooting
+
+- **`/audit` stops with "git root is not a git repository".** Your git repo is in a subdir — set
+  `gitRoot` (see above). This is the preflight doing its job.
+- **A permission prompt keeps reappearing after `/plugin update`.** Claude Code may have captured an
+  allow-rule pinned to the old version's cache path (e.g. `…/audit/0.2.0/scripts/…`). After an update
+  the path becomes `…/0.6.1/…`; remove the stale pinned entry from `.claude/settings.local.json` (the
+  commands invoke scripts via `${CLAUDE_PLUGIN_ROOT}`, which tracks the current version automatically).
+- **Guards don't fire at all.** Ensure Python is reachable (`python3`, `python`, or `py`) and, on
+  Windows, that you're in Git Bash (see Requirements). A missing interpreter makes the blocking guards
+  prompt for manual approval rather than silently passing.
+- **`.claude/state` / `.claude/logs` showing up as untracked.** Add them to `.gitignore`; the plugin
+  garbage-collects entries older than 7 days but never commits them.
 
 ## Repos without tests
 
