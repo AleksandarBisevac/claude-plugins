@@ -40,20 +40,27 @@ BUG_ID_RE = re.compile(r"^BUG-\d+$")
 KNOWN_ROOT = {"$schema", "meta", "phases", "fileIndex", "bugs", "deferred",
               "proposals"}
 KNOWN_META = {"version", "repo", "title", "createdISO", "node",
-              "developmentBranch", "branchPrefix", "reviewSkill", "runtimeBoot",
-              "nodePreamble", "commit", "buildCommands", "ado",
+              "developmentBranch", "branchPrefix", "gitRoot", "reviewSkill",
+              "runtimeBoot", "nodePreamble", "commit", "buildCommands", "ado",
+              # tolerated (older /audit:init wrote these; informational):
+              "notes", "baseCommit",
+              # workspaceRoot: 0.2.0-era name for gitRoot; audit.md reads it as
+              # a fallback when meta.gitRoot is absent.
+              "workspaceRoot",
               # legacy (pre-0.3, ignored by the orchestrator):
               "signOffChecklist", "autoMode", "modelPolicy", "testPolicy",
               "reviewPolicy", "skillsPolicy", "statusLegend"}
 KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
-               "desiredOutcome", "testGate", "baseRef", "branch", "mergedAt",
-               "review", "reviewFindings", "summary", "tasks",
+               "description", "desiredOutcome", "testGate", "baseRef", "branch",
+               "mergedAt", "review", "reviewFindings", "summary", "tasks",
                # legacy (pre-0.3):
                "signOff"}
 KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               "dependsOn", "files", "docs", "description", "tests", "outcome",
               "commit", "attempts", "maxAttempts", "startedAt", "completedAt",
-              "risk", "verifiedBy", "bugId", "ado"}
+              "risk", "verifiedBy", "bugId", "ado",
+              # tolerated (older /audit:init wrote this; informational):
+              "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
              "description", "repro", "expected", "actual", "files", "taskId",
              "fixedIn", "notes", "ado"}
@@ -488,6 +495,19 @@ def _selftest():
           expect_warning="unknown key 'frobnicate'")
     check("w3 legacy meta keys stay silent", None,
           lambda m: m["meta"].update(signOffChecklist=["x"], statusLegend=["y"]))
+
+    # w5: the 0.5.1/0.6.1-known keys must produce NEITHER findings NOR warnings
+    m5 = copy.deepcopy(_valid_manifest())
+    m5["meta"].update(gitRoot="test", notes="n")
+    m5["phases"][0].update(description="d")
+    m5["phases"][0]["tasks"][0].update(details="dt")
+    f5, w5warn = validate(m5)
+    noise = [x for x in w5warn if any(k in x for k in
+             ("gitRoot", "description", "details", "notes"))]
+    ok = f5 == [] and noise == []
+    results.append(ok)
+    print("%s w5 gitRoot/description/details/notes -> no findings, no warnings (%s)"
+          % ("PASS" if ok else "FAIL", "clean" if ok else (f5 or noise)))
     check("w4 in_progress task in pending phase warns", None,
           lambda m: m["phases"][0]["tasks"][0].update(status="in_progress"),
           expect_warning="still 'pending'")

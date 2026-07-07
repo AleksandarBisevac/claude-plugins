@@ -19,9 +19,23 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 2. If no file exists at `manifestPath`: **STOP**. Point to `/audit:init` (generates the manifest)
    or to copying the plugin's `templates/audit-plan.starter.json`. Never invent a manifest.
 3. Unknown subcommand → print the subcommand list with one-line descriptions and STOP.
+4. **Git-root check** (before any mutating subcommand). Resolve the git root (see below) and run
+   `git -C <gitRoot> rev-parse --show-toplevel`. If it fails (the git root is not a git repo):
+   **STOP** and tell the human: set `meta.gitRoot` to the path of the git repo relative to the
+   project directory (e.g. `"test"` for a workspace-in-a-subdir), OR run `/audit:init` from inside
+   the git repo. Do NOT run git operations from a non-repo — that is the failure the check prevents.
+   Also: if `<manifestPath>` resolves OUTSIDE `<gitRoot>`, WARN that the manifest's status history
+   cannot be committed alongside task work (resume's git reconstruction is limited) and recommend
+   moving the manifest under the git root.
 
 **Config resolution.** Everything project-specific comes from the manifest's `meta` block (with safe defaults);
 never hardcode branch names, package ids, skills, or build tools here:
+- `meta.gitRoot` — path (relative to the project dir) of the git repository root, where ALL git
+  operations and build/gate commands run. Default `.` (the project dir IS the git root — the normal
+  case). **Back-compat:** if `meta.gitRoot` is absent, fall back to `meta.workspaceRoot`, else `.`.
+  When it is not `.`: run every git command as `git -C <gitRoot> …`, run gates from `<gitRoot>`, and
+  when staging strip the `<gitRoot>/` prefix from each `task.files` entry (they are project-dir-relative)
+  to get its git-root-relative path.
 - `meta.developmentBranch` — the parent branch audit branches fork from and merge back into (default `main`).
 - `meta.branchPrefix` — prefix for per-phase branches (default `audit`).
 - `meta.reviewSkill` — skill invoked at phase sign-off (default **null** → skip; tests are the signer).
@@ -34,6 +48,10 @@ never hardcode branch names, package ids, skills, or build tools here:
 
 ## Non-negotiable guardrails
 
+- **All git and gate commands run in `<gitRoot>`** (resolved above; `.` = project dir). Use
+  `git -C <gitRoot> …` for every git call, and run build/gate commands from `<gitRoot>` (do NOT add a
+  `cd <subdir>` of your own — the manifest's gate commands are already relative to the git root). When
+  staging `task.files`, convert each to git-root-relative by stripping the `<gitRoot>/` prefix.
 - **Git: read / pull / commit allowed.** Commit after each successful task and after phase sign-off.
   **NEVER `git push` or force-push.** All other `git reset`/`rebase`/`clean` require explicit human confirmation.
   If `meta.commit.coauthor` is set, end every commit message with it.
@@ -197,8 +215,11 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
         (AskUserQuestion) before committing — always, no exceptions.
      b. Set `task.status = "done"`, `task.completedAt = <ISO now>`, fill `task.outcome` and `task.verifiedBy`.
         (The **orchestrator**, not the subagent, writes `outcome`.)
-     c. **Commit the task's work** on the phase branch:
-        - Stage the task's `files` plus the manifest.
+     c. **Commit the task's work** on the phase branch (all git via `git -C <gitRoot>`):
+        - Stage the task's `files` (each stripped of the `<gitRoot>/` prefix). Stage the manifest too
+          **only if it lives inside `<gitRoot>`**; if it is outside (e.g. at the project dir while the
+          git repo is a subdir), it cannot be committed — proceed without it (the preflight already
+          warned that status history isn't versioned in that layout).
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
         - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit again).

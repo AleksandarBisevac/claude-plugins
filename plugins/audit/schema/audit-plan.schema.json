@@ -51,6 +51,10 @@
           "type": "string",
           "description": "Prefix for per-phase branches, e.g. 'audit' -> audit/<phaseId>-<slug>. Default 'audit'."
         },
+        "gitRoot": {
+          "type": "string",
+          "description": "Path (relative to the project directory) of the git repository root, where all git operations and build/gate commands run. Default '.' (the project directory IS the git root — the normal case). Set to e.g. 'test' when the git repo / workspace lives in a subdirectory; the orchestrator then runs `git -C <gitRoot>` and strips the prefix when staging. Keep it in sync with the hooks' `gitRoot` in .claude/audit.config.json."
+        },
         "reviewSkill": {
           "type": ["string", "null"],
           "description": "Skill invoked at phase sign-off. null (default) => skip review; tests are the signer."
@@ -130,6 +134,7 @@
           "items": { "type": "string" }
         },
         "docs": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string", "description": "Optional prose description of the phase (free text; informational)." },
         "desiredOutcome": {
           "type": "string",
           "description": "One-line statement of what success looks like for the phase. Shown by /audit status, given to every task subagent, and phase.summary must address it at sign-off."

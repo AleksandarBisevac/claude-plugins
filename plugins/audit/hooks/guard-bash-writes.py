@@ -8,12 +8,15 @@ heredocs piped into interpreters, obfuscated redirects, etc.).
 Two branches by tool_name:
   Edit/Write/MultiEdit/NotebookEdit → RECORD the file as tool-edited (those
       files went through guard-edits + require-plan already).
-  Bash → diff `git status --porcelain` against the session's last-seen dirty
-      set. NEW dirty files that are SOURCE files, not exempt, not the
-      manifest/lock, not tool-edited, and not covered by an in_progress task
-      → inject a NON-blocking additionalContext warning (once per file per
-      session). PostToolUse cannot undo the write — but the model gets told,
-      in-band, that it just sidestepped the plan gate.
+  Bash → diff `git status --porcelain` (run in the configured `gitRoot`, so it
+      works when the git repo lives in a subdirectory) against the session's
+      last-seen dirty set. Dirty paths are translated back to project-relative
+      (gitRoot-prefixed) to match task files and exempt globs. NEW dirty files
+      that are SOURCE files, not exempt, not the manifest/lock, not tool-edited,
+      and not covered by an in_progress task → inject a NON-blocking
+      additionalContext warning (once per file per session). PostToolUse cannot
+      undo the write — but the model gets told, in-band, that it just
+      sidestepped the plan gate.
 
 State: <stateDir>/bash-writes-<session_id>.json
   {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...]}
@@ -118,11 +121,16 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
             _save_state(sd, session_id, state)
         return ("record", "tool-edited: %s" % rel)
 
-    # branch 2: Bash — diff the working tree against what we last saw
+    # branch 2: Bash — diff the working tree against what we last saw.
+    # Run git in the configured gitRoot (subdir-aware) and translate the
+    # gitRoot-relative paths back to project-relative to match everything else.
     if dirty is None:
-        dirty = _git_dirty(root)
+        dirty = _git_dirty(_config.git_root_dir(root, cfg))
     if dirty is None:
         return ("silent", "not a git repo / git unusable")
+    prefix = _config.git_root_rel(cfg)
+    if prefix:
+        dirty = [prefix + "/" + p for p in dirty]
 
     new = [f for f in dirty if f not in state["seenDirty"]]
     state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))
@@ -288,6 +296,32 @@ def _selftest() -> int:
     # (g) non-git directory → silent
     check("g1 non-git dir silent", "silent",
           payload("Bash", sid="bw-g"))
+
+    # (h) NESTED gitRoot: project dir is NOT git, git repo is in a subdir.
+    # With gitRoot config the guard runs git there and reports project-relative.
+    proj = tmp / "proj"
+    sub = proj / "sub"
+    (sub / "src").mkdir(parents=True, exist_ok=True)
+    os.environ["CLAUDE_PROJECT_DIR"] = str(proj)
+    cfg_nested = _config._deep_merge(_config.DEFAULTS, {"gitRoot": "sub"})
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=str(sub), check=True,
+                       capture_output=True, timeout=10)
+        (sub / "src" / "shellmade.ts").write_text("export const x=1\n",
+                                                  encoding="utf-8")
+        data = {"tool_name": "Bash", "tool_input": {"command": "x"},
+                "session_id": "bw-h", "cwd": str(proj)}
+        verdict, detail = decide(data, cfg=cfg_nested, state_dir=sd)
+        # project-relative path is gitRoot-prefixed: sub/src/shellmade.ts
+        ok = verdict == "warn" and "sub/src/shellmade.ts" in detail
+    except Exception as exc:  # pragma: no cover
+        ok = False
+        print("   (nested git integration error: %s)" % exc)
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    results.append(ok)
+    print("%s h1 nested gitRoot: git runs in subdir, path project-relative"
+          % ("PASS" if ok else "FAIL"))
 
     if prev_env is None:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)

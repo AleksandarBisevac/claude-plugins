@@ -20,6 +20,10 @@ them as configuration.
 
 Config keys (all optional; defaults in DEFAULTS below):
   manifestPath            str   — path to the audit manifest, repo-relative
+  gitRoot                 str   — path (relative to the project dir) of the git
+                                  repo root, where guard-bash-writes runs git.
+                                  Default '.' (project dir IS the git root).
+                                  Keep in sync with the manifest's meta.gitRoot.
   exemptGlobs             [str] — globs exempt from plan-first enforcement
   trivialLineThreshold    int   — max added lines for the 1st free code file/session
   stateDir                str   — where per-session state files live
@@ -49,6 +53,7 @@ CONFIG_REL = ".claude/audit.config.json"
 
 DEFAULTS = {
     "manifestPath": "docs/audit/audit-plan.json",
+    "gitRoot": ".",
     "exemptGlobs": [
         "docs/audit/**",
         "**/*.md",
@@ -140,6 +145,21 @@ def load(root):
 
 
 # Convenience typed getters (defensive; never raise) --------------------------
+def git_root_dir(root, cfg):
+    """Absolute path of the git repository root: <project dir>/<cfg.gitRoot>.
+    Defaults to the project dir itself ('.')."""
+    gr = (cfg.get("gitRoot") or ".").strip()
+    if gr in ("", "."):
+        return Path(root)
+    return Path(root) / gr
+
+
+def git_root_rel(cfg):
+    """The gitRoot path prefix ('' when the project dir IS the git root)."""
+    gr = (cfg.get("gitRoot") or ".").strip().replace("\\", "/").strip("/")
+    return "" if gr in ("", ".") else gr
+
+
 def state_dir(root, cfg):
     return root / (cfg.get("stateDir") or DEFAULTS["stateDir"])
 

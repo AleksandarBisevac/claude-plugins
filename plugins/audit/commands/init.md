@@ -34,10 +34,15 @@ Merge `$ARGUMENTS` with answers to (ask only what `$ARGUMENTS` doesn't cover):
 ## 3. Recon (orchestrator, read-only)
 
 With Bash/Glob/Grep — never reading secrets:
-1. Top-level layout, approx file count (`git ls-files | wc -l`), main languages.
-2. Detect build/test/lint commands (package.json scripts, Makefile, pyproject, etc.)
-   → draft `meta.buildCommands` (keys `lint`/`test`/`typecheck`/… mapping to real commands).
-3. Split the included scope into 2–6 coherent **subsystems** (by directory/domain).
+1. **Locate the git root.** Run `git rev-parse --show-toplevel`. If the project dir is NOT itself a
+   git repo but a subdirectory is (common with a workspace in `test/`, `app/`, `packages/…`), record
+   that subdir path (relative to the project dir) as **`meta.gitRoot`** (default `"."` when the project
+   dir IS the git root). All git operations and gate commands will run there.
+2. Top-level layout, approx file count (`git ls-files | wc -l`, run in the git root), main languages.
+3. Detect build/test/lint commands (package.json scripts, Makefile, pyproject, etc.)
+   → draft `meta.buildCommands` (keys `lint`/`test`/`typecheck`/… mapping to real commands). Write them
+   **relative to `meta.gitRoot`** (do NOT prefix a `cd <subdir>` — the orchestrator runs them there).
+4. Split the included scope into 2–6 coherent **subsystems** (by directory/domain).
 
 ## 4. Fan-out (multi-agent)
 
@@ -75,8 +80,13 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 4. **Assemble the manifest**: `$schema` (the plugin schema URL), `meta`
    (`version: 2`, `repo` from `git remote get-url origin` or the directory name,
    `createdISO` from `date -u +%Y-%m-%dT%H:%M:%SZ`, `developmentBranch`, `branchPrefix: "audit"`,
-   `commit`, detected `buildCommands`, defaults elsewhere), `phases`, top-level `fileIndex`
-   built from every task's `files`, `bugs: []`, `deferred`, `proposals`.
+   `gitRoot` (from step 3.1), `commit`, detected `buildCommands`, defaults elsewhere), `phases`,
+   top-level `fileIndex` built from every task's `files`, `bugs: []`, `deferred`, `proposals`.
+   Task `files` and `fileIndex` keys are **project-dir-relative** (they include the `gitRoot` prefix,
+   e.g. `test/src/foo.ts` when `gitRoot` is `test`). When `gitRoot` is not `.`, prefer writing the
+   manifest INSIDE the git root (set `manifestPath` accordingly, e.g. `test/docs/audit/audit-plan.json`,
+   and mirror `gitRoot` into `.claude/audit.config.json`) so the orchestrator can commit its status
+   history; note this to the user.
 
 ## 6. Write + validate
 

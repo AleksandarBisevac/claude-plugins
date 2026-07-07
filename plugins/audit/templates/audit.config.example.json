@@ -3,6 +3,9 @@
 
   "manifestPath": "docs/audit/audit-plan.json",
 
+  "//gitRoot": "Path of the git repo root relative to this project dir. Default '.' (project dir IS the git root). Set to e.g. 'test' when git/the workspace lives in a subdirectory; keep in sync with the manifest's meta.gitRoot.",
+  "gitRoot": ".",
+
   "exemptGlobs": [
     "docs/audit/**",
     "**/*.md",
