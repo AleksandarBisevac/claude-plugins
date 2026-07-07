@@ -77,6 +77,10 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    - `tests.gate`: entries resolving via the detected `meta.buildCommands` keys.
    - `model`: `haiku` for mechanical low-risk, `sonnet` default, your strongest tier for `risk: "high"`.
    - `files` from the finding; `blockedBy`/`dependsOn` only where a real ordering exists.
+     **Never route a task at files inside a git submodule** (paths under a `.gitmodules` entry):
+     the orchestrator commits from the parent repo and cannot stage submodule-internal files. If a
+     finding lands inside a submodule, either scope a SEPARATE manifest with `meta.gitRoot` set to
+     that submodule, or record it in `deferred` with the reason — do not put it in a parent task.
 4. **Assemble the manifest**: `$schema` (the plugin schema URL), `meta`
    (`version: 2`, `repo` from `git remote get-url origin` or the directory name,
    `createdISO` from `date -u +%Y-%m-%dT%H:%M:%SZ`, `developmentBranch`, `branchPrefix: "audit"`,

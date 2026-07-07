@@ -47,6 +47,57 @@ def _load_validator():
     return mod
 
 
+# --- submodule conflict detection (preflight guard) -----------------------------
+# The orchestrator commits from ONE git repo (the resolved gitRoot). Files that
+# live inside a git SUBMODULE belong to a separate nested repo — the parent
+# cannot stage them ("Pathspec is in submodule"), so a task touching them would
+# fail at commit time. This flags them up front.
+
+def parse_gitmodules(text):
+    """Submodule paths (git-root-relative) from a .gitmodules file's text."""
+    paths = []
+    for line in str(text).splitlines():
+        s = line.strip()
+        # `.gitmodules` uses `path = <dir>` inside each [submodule "..."] block
+        if s.lower().startswith("path") and "=" in s:
+            val = s.split("=", 1)[1].strip().replace("\\", "/").strip("/")
+            if val:
+                paths.append(val)
+    return paths
+
+
+def _strip_git_root(path, git_root):
+    """Project-relative file -> git-root-relative (drop the gitRoot prefix and any
+    `:line` suffix)."""
+    p = str(path).replace("\\", "/").split(":", 1)[0]
+    gr = str(git_root or "").replace("\\", "/").strip("/")
+    if gr and (p == gr or p.startswith(gr + "/")):
+        return p[len(gr) + 1:]
+    return p
+
+
+def submodule_conflicts(manifest, submodule_paths, git_root=""):
+    """List of (task_id, file, submodule) for each task file that lives inside a
+    submodule. `files` are project-relative (gitRoot-prefixed); `submodule_paths`
+    are git-root-relative. Path-boundary safe: 'vendor/child' matches
+    'vendor/child/x' but NOT 'vendor/child-other/x'."""
+    subs = [str(s).replace("\\", "/").strip("/") for s in (submodule_paths or []) if s]
+    out = []
+    for ph in manifest.get("phases") or []:
+        if not isinstance(ph, dict):
+            continue
+        for t in ph.get("tasks") or []:
+            if not isinstance(t, dict):
+                continue
+            for f in t.get("files") or []:
+                rel = _strip_git_root(f, git_root)
+                for s in subs:
+                    if rel == s or rel.startswith(s + "/"):
+                        out.append((t.get("id"), f, s))
+                        break
+    return out
+
+
 def ready_tasks(manifest):
     """Task ids ready to run — mirrors /audit's readiness rule: status pending,
     own blockedBy satisfied, own dependsOn all done, phase blockedBy satisfied
@@ -138,6 +189,18 @@ def evaluate_gate(summary, conditions):
     return failed
 
 
+def _extract_opt(args, flag):
+    """Pull `--flag value` out of args; return the value or None."""
+    if flag in args:
+        i = args.index(flag)
+        if i + 1 >= len(args):
+            return "__MISSING__"
+        val = args[i + 1]
+        del args[i:i + 2]
+        return val
+    return None
+
+
 def main(argv):
     args = list(argv)
     want_json = "--json" in args
@@ -145,6 +208,15 @@ def main(argv):
     for flag in ("--json", "--gate"):
         while flag in args:
             args.remove(flag)
+
+    # --submodules <.gitmodules path> [--git-root <prefix>]: preflight guard,
+    # exits 1 when a task file lives inside a submodule. Standalone mode.
+    gitmodules = _extract_opt(args, "--submodules")
+    git_root_prefix = _extract_opt(args, "--git-root") or ""
+    if git_root_prefix == "__MISSING__":
+        sys.stderr.write("usage: --git-root <prefix>\n")
+        return 2
+
     conditions = list(DEFAULT_GATE)
     if "--fail-on" in args:
         i = args.index("--fail-on")
@@ -161,7 +233,7 @@ def main(argv):
     if len(args) != 1:
         sys.stderr.write(
             "usage: audit-status.py <manifest> [--json] [--gate] "
-            "[--fail-on <c1,c2,...>]\n")
+            "[--fail-on <c1,c2,...>] [--submodules <.gitmodules> [--git-root <prefix>]]\n")
         return 2
 
     try:
@@ -170,6 +242,32 @@ def main(argv):
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (args[0], exc))
         return 2
+
+    if gitmodules is not None:
+        if gitmodules == "__MISSING__":
+            sys.stderr.write("usage: --submodules <path-to-.gitmodules>\n")
+            return 2
+        try:
+            with open(gitmodules, "r", encoding="utf-8") as fh:
+                sub_paths = parse_gitmodules(fh.read())
+        except (FileNotFoundError, NotADirectoryError):
+            sub_paths = []  # no .gitmodules => no submodules => clean
+        except Exception as exc:
+            sys.stderr.write("ERROR: cannot read %s: %s\n" % (gitmodules, exc))
+            return 2
+        conflicts = submodule_conflicts(manifest, sub_paths, git_root_prefix)
+        if conflicts:
+            for tid, f, sub in conflicts:
+                print("SUBMODULE CONFLICT: task %s file '%s' is inside submodule '%s'"
+                      % (tid, f, sub))
+            print("\n%d task file(s) live inside a submodule — the orchestrator "
+                  "cannot commit them from the parent repo. Point meta.gitRoot at "
+                  "the submodule, or remove those files from the task(s)."
+                  % len(conflicts))
+            return 1
+        print("OK: no task files inside submodules (%d submodule(s) checked)"
+              % len(sub_paths))
+        return 0
 
     vm = _load_validator()
     try:
@@ -300,6 +398,37 @@ def _selftest():
           blob["tasks"]["total"] == 3 and blob["bugs"]["total"] == 1
           and blob["phases"][0]["done"] == 1 and blob["valid"] is True)
 
+    # (s) submodule conflict detection
+    check("s1 parse_gitmodules extracts paths", parse_gitmodules(
+        '[submodule "vendor/child"]\n\tpath = vendor/child\n\turl = ../child\n'
+        '[submodule "libs/x"]\n  path = libs/x\n  url = ../x\n')
+        == ["vendor/child", "libs/x"])
+    subm = {"meta": {"version": 2}, "phases": [{"id": "P0", "title": "p",
+        "status": "pending", "tasks": [
+            {"id": "P0.1", "title": "in submodule", "status": "pending",
+             "files": ["vendor/child/src/foo.ts"]},
+            {"id": "P0.2", "title": "boundary — NOT in submodule", "status": "pending",
+             "files": ["vendor/child-other/x.ts"]},
+            {"id": "P0.3", "title": "outside", "status": "pending",
+             "files": ["src/app.ts"]},
+        ]}]}
+    conf = submodule_conflicts(subm, ["vendor/child"])
+    check("s2 file inside submodule flagged", conf == [("P0.1", "vendor/child/src/foo.ts", "vendor/child")],
+          repr(conf))
+    check("s3 path-boundary: child-other NOT flagged",
+          all(c[0] != "P0.2" for c in conf))
+    # git_root prefix stripping: files are project-relative, submodules git-root-relative
+    subm_gr = {"meta": {"version": 2}, "phases": [{"id": "P0", "title": "p",
+        "status": "pending", "tasks": [{"id": "P0.1", "title": "t", "status": "pending",
+        "files": ["test/vendor/child/src/foo.ts", "test/src/app.ts"]}]}]}
+    conf_gr = submodule_conflicts(subm_gr, ["vendor/child"], git_root="test")
+    check("s4 gitRoot prefix stripped before match",
+          [c[0] for c in conf_gr] == ["P0.1"] and conf_gr[0][1].startswith("test/vendor"))
+    check("s5 :line suffix tolerated", submodule_conflicts(
+        {"meta": {}, "phases": [{"id": "P", "title": "p", "status": "pending",
+         "tasks": [{"id": "P.1", "title": "t", "status": "pending",
+                    "files": ["vendor/child/a.ts:10-20"]}]}]}, ["vendor/child"]) != [])
+
     # (c) CLI: exit codes 0 / 1 / 2
     import tempfile
     fd, path = tempfile.mkstemp(suffix=".json")
@@ -321,6 +450,26 @@ def _selftest():
         fh.write("{not json")
     check("c5 CLI unreadable manifest (exit 2)", main([path, "--gate"]) == 2)
     os.unlink(path)
+
+    # (cs) CLI --submodules mode
+    fd, mpath = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(subm, fh)  # has P0.1 inside vendor/child
+    fd, gm = tempfile.mkstemp(suffix=".gitmodules")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write('[submodule "vendor/child"]\n\tpath = vendor/child\n\turl = ../child\n')
+    check("cs1 CLI flags submodule conflict (exit 1)",
+          main([mpath, "--submodules", gm]) == 1)
+    check("cs2 CLI clean when no .gitmodules (exit 0)",
+          main([mpath, "--submodules", os.path.join(tempfile.gettempdir(), "nope.gitmodules")]) == 0)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 2}, "phases": [{"id": "P", "title": "p",
+            "status": "pending", "tasks": [{"id": "P.1", "title": "t",
+            "status": "pending", "files": ["src/app.ts"]}]}]}, fh)
+    check("cs3 CLI clean when no task in a submodule (exit 0)",
+          main([mpath, "--submodules", gm]) == 0)
+    os.unlink(mpath)
+    os.unlink(gm)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

@@ -27,6 +27,13 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
    Also: if `<manifestPath>` resolves OUTSIDE `<gitRoot>`, WARN that the manifest's status history
    cannot be committed alongside task work (resume's git reconstruction is limited) and recommend
    moving the manifest under the git root.
+5. **Submodule check** (before any mutating subcommand). If `<gitRoot>/.gitmodules` exists, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> --submodules "<gitRoot>/.gitmodules" --git-root "<gitRoot>"`
+   (omit `--git-root` when gitRoot is `.`). Exit 1 means one or more `task.files` live inside a git
+   **submodule** — a separate nested repo the parent CANNOT stage/commit (`git add` fails with
+   "Pathspec is in submodule"). **STOP** and relay its output: point `meta.gitRoot` at that submodule
+   (to audit it directly), or remove those files from the task(s). Do not start a run that will fail
+   at commit time.
 
 **Config resolution.** Everything project-specific comes from the manifest's `meta` block (with safe defaults);
 never hardcode branch names, package ids, skills, or build tools here:

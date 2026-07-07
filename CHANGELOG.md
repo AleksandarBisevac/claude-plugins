@@ -4,6 +4,30 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.6.2] - 2026-07-07
+
+Submodule preflight guard.
+
+### Added
+- **Git-submodule detection.** The orchestrator commits from one repo (the git
+  root); files inside a submodule belong to a separate nested repo the parent
+  cannot stage (`git add` → "Pathspec is in submodule") — so a task touching
+  them would fail at commit time. `/audit` now **preflights** this: when
+  `<gitRoot>/.gitmodules` exists it checks every `task.files` entry and STOPS
+  with guidance (point `meta.gitRoot` at the submodule, or drop those files)
+  instead of failing mid-run.
+  - `scripts/audit-status.py` gains `parse_gitmodules()` + `submodule_conflicts()`
+    (pure, path-boundary safe: `vendor/child` matches `vendor/child/x` but not
+    `vendor/child-other/x`) and a `--submodules <.gitmodules> [--git-root
+    <prefix>]` CLI mode (exit 1 on conflict). 22 selftest cases.
+  - `/audit:init` no longer routes tasks at files inside a submodule (defers
+    them instead); README Troubleshooting documents the boundary.
+
+### Note
+Plan-first and secret guards still apply to submodule paths by path (they don't
+touch git). Only the per-task commit and the PostToolUse shell-write check are
+submodule-boundary limited — both now surfaced rather than silent.
+
 ## [0.6.1] - 2026-07-07
 
 Fix: git repo in a subdirectory (found by end-to-end testing against a real Nx

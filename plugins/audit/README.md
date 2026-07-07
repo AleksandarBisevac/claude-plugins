@@ -234,6 +234,12 @@ the git root (e.g. `test/docs/audit/audit-plan.json`) so its status history can 
   prompt for manual approval rather than silently passing.
 - **`.claude/state` / `.claude/logs` showing up as untracked.** Add them to `.gitignore`; the plugin
   garbage-collects entries older than 7 days but never commits them.
+- **Git submodules.** The orchestrator commits from one repo (the git root); files inside a
+  submodule belong to a separate nested repo the parent can't stage. `/audit` preflights this — if a
+  `task.files` entry is inside a submodule it **stops** and tells you to either point `meta.gitRoot` at
+  that submodule (to audit it directly) or drop those files from the task. Plan-first / secret guards
+  still apply to submodule paths by path; only the per-task commit and the PostToolUse shell-write
+  check are submodule-boundary limited.
 
 ## Repos without tests
 

@@ -264,7 +264,10 @@ Headless rollup + CI gate, stdlib-only; imports validate-manifest.py as a librar
 importlib. `--json` prints the machine-readable summary (phases done/total, tasks/bugs by
 status, ready-task list mirroring /audit's readiness rule); `--gate` exits 1 on tripped
 conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--fail-on`
-(also `open-bugs`, `in-progress` for release freezes). Exit 0/1/2. `--selftest` (14 cases).
+(also `open-bugs`, `in-progress` for release freezes). `--submodules <.gitmodules> [--git-root
+<prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
+inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
+(22 cases).
 
 ### `plugins/audit/scripts/render-report.py` (v0.5.0)
 Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero network fetches):
