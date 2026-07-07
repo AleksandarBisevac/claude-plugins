@@ -170,7 +170,11 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
       development-branch verification — it applies on the `run` and `next` paths too).
 2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the manifest).
    If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
-3. **Spawn a subagent** via the `Agent` tool with `model = task.model`:
+3. **Spawn the plugin's executor agent** via the `Agent` tool —
+   `subagent_type: "audit:audit-executor"`, `model = task.model`. Its tool list is pinned
+   (no web tools, no nested agents) and its system prompt carries the invariants; if that
+   agent type is unavailable (older Claude Code), fall back to a general-purpose subagent
+   and restate every rule below inline. In the spawn prompt:
    - Tell it to **first invoke each skill in `task.skills`** via the `Skill` tool (load conventions before coding).
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
@@ -215,11 +219,15 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
 Run only when **all** tasks in the phase are `done`. All review/test work runs on the phase branch.
 
 1. **`reviewResolved`** — compute the phase's changed files (union of `files` across its tasks, cross-checked with
-   the manifest's top-level `fileIndex`). **If `meta.reviewSkill` is set**, invoke that Skill scoped to `git diff <phase.baseRef> -- <files>`;
-   record results in `phase.review.findings`, and for each actionable finding spawn a fix subagent
-   (`model = phase.review.model`) that may edit implementation AND tests; loop until clean or each remaining finding
-   is explicitly triaged with a written justification. **If `meta.reviewSkill` is null**, skip this step — tests are
-   the signer.
+   the manifest's top-level `fileIndex`). **If `meta.reviewSkill` is set**, spawn the plugin's reviewer agent
+   (`subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`) with the diff scope
+   (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, and the skill name — it invokes the
+   skill itself and returns structured findings (it has no edit tools by design, and the diff stays out of YOUR
+   context). Record results in `phase.review.findings`; for each actionable finding spawn an
+   `audit:audit-executor` fix run (`model = phase.review.model`) that may edit implementation AND tests; loop until
+   clean or each remaining finding is explicitly triaged with a written justification. Fall back to a
+   general-purpose subagent with the same rules if the agent type is unavailable. **If `meta.reviewSkill` is
+   null**, skip this step — tests are the signer.
 2. **`testGateGreen`** — run the full `phase.testGate` (run `meta.nodePreamble` first, un-piped, if set). All commands
    must pass **after** any review-driven changes. Tests are the final signer. Surface manual items as human action items.
 3. **`runtimeBootGreen`** — **only if `meta.runtimeBoot` is set** and the phase touched app source under

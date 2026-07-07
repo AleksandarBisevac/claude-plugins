@@ -41,12 +41,16 @@ With Bash/Glob/Grep — never reading secrets:
 
 ## 4. Fan-out (multi-agent)
 
-Spawn read-only explorer subagents **in ONE message** (they run in parallel).
+Spawn the plugin's explorer agents (`Agent` tool, `subagent_type: "audit:audit-explorer"`)
+**in ONE message** (they run in parallel). The agent is **mechanically read-only** — its
+tool list has no Edit/Write/Bash — and its system prompt already carries the hard rules and
+the JSON return format; if the agent type is unavailable (older Claude Code), fall back to
+general-purpose subagents and restate those rules inline.
 Shard = subsystem × selected dimensions, **capped at 6 agents** (merge shards when over).
 Every prompt must include:
 - The subsystem's directories, the dimensions to audit, the user's pain-point hints.
-- **Hard rules**: read-only; NEVER read secret files (`.env`, credentials, keys) — names only;
-  skip vendored/generated code.
+- **Hard rules** (restated even though the agent knows them): read-only; NEVER read secret
+  files (`.env`, credentials, keys) — names only; skip vendored/generated code.
 - **Return format**: ONLY a JSON array of findings, each
   `{"title", "category", "severity": "low|med|high", "files": ["path[:lines]"], "evidence", "suggestedFix", "suggestedTests": [".."], "risk": "low|med|high"}`.
 
