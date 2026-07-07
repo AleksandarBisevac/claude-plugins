@@ -22,13 +22,15 @@ its own hooks.
 ## Tests (run before every PR)
 
 ```bash
-# all six selftest suites (hooks + validator) — stdlib only, no deps
+# all eight selftest suites (hooks + scripts) — stdlib only, no deps
 for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/require-plan.py \
          plugins/audit/hooks/guard-edits.py \
          plugins/audit/hooks/guard-secrets-read.py \
          plugins/audit/hooks/remind-tdd.py \
-         plugins/audit/scripts/validate-manifest.py; do
+         plugins/audit/scripts/validate-manifest.py \
+         plugins/audit/scripts/audit-status.py \
+         plugins/audit/scripts/render-report.py; do
   python3 "$f" --selftest || exit 1
 done
 

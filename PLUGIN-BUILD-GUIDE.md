@@ -50,6 +50,7 @@ claude-plugins/                           # this repo (personal, public)
         init.md                           # /audit:init — multi-agent manifest generation
         task.md                           # /audit:task — interactive task creation
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
+        sync.md                           # /audit:sync — Azure DevOps work-item sync
       hooks/
         hooks.json                        # wires the 5 hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
@@ -64,6 +65,8 @@ claude-plugins/                           # this repo (personal, public)
       schema/audit-plan.schema.json       # JSON Schema (draft 2020-12) for the manifest
       scripts/
         validate-manifest.py              # dependency-free referential validator (cycles, links)
+        audit-status.py                   # headless rollup + CI gate (--json/--gate)
+        render-report.py                  # self-contained HTML+MD report (CI artifact)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -124,6 +127,12 @@ short forms may collide with built-ins like `/init`). All three read
   `fix` (materializes a `tdd` + `expectRedFirst` task into a rolling `BF<n>` phase,
   links `bug.taskId ↔ task.bugId`, hands off to `/audit run`) · `close` ([wontfix]).
   Execution stays exclusively in `/audit` — no second execution engine.
+- **sync** (v0.5.0) — `push [bugs|tasks|all]` · `pull` · `status`: mirrors manifest
+  bugs/tasks into Azure DevOps work items via the `az boards` CLI (azure-devops MCP tools
+  as an optional fast-path), configured by `meta.ado`; idempotent by design — the
+  write-back `item.ado = {id,url,lastSyncedAt}` lands immediately after each create, so
+  interrupted runs converge. One direction per invocation; confirmation before the first
+  outward write; credentials never touched (az login / AZURE_DEVOPS_EXT_PAT).
 
 ### `plugins/audit/hooks/hooks.json`
 Maps events → scripts, every entry running through
@@ -219,7 +228,21 @@ dependency **cycles** (incl. task-blocked-by-own-phase deadlocks), **bidirection
 `fileIndex ↔ task.files` integrity, `bugs[]` shape + **reciprocal**
 `bug.taskId ↔ task.bugId` cross-links, enums, plus non-fatal WARNINGs for unknown/typo'd
 keys (did-you-mean) and pre-0.3 status combinations.
-Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest` (29 cases).
+Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest` (33 cases).
+
+### `plugins/audit/scripts/audit-status.py` (v0.5.0)
+Headless rollup + CI gate, stdlib-only; imports validate-manifest.py as a library via
+importlib. `--json` prints the machine-readable summary (phases done/total, tasks/bugs by
+status, ready-task list mirroring /audit's readiness rule); `--gate` exits 1 on tripped
+conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--fail-on`
+(also `open-bugs`, `in-progress` for release freezes). Exit 0/1/2. `--selftest` (14 cases).
+
+### `plugins/audit/scripts/render-report.py` (v0.5.0)
+Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero network fetches):
+phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's rollup
+(single source of truth). Every manifest string is HTML-escaped — manifest content is
+untrusted — and only http(s) URLs render as links (`javascript:` degrades to text).
+`--selftest` (13 cases, incl. XSS cases).
 
 ### `plugins/audit/schema/audit-plan.schema.json`
 JSON Schema (draft 2020-12) for the manifest. Back-compatible: only `meta`/`phases` (and per-item
@@ -268,13 +291,15 @@ CI (`.github/workflows/ci.yml`) runs 1–2 plus `claude plugin validate` on
 ubuntu + windows for every push/PR. Locally:
 
 ```bash
-# 1. Hooks + validator pass their own selftests (all six, stdlib only)
+# 1. Hooks + scripts pass their own selftests (all eight, stdlib only)
 for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/require-plan.py \
          plugins/audit/hooks/guard-edits.py \
          plugins/audit/hooks/guard-secrets-read.py \
          plugins/audit/hooks/remind-tdd.py \
-         plugins/audit/scripts/validate-manifest.py; do
+         plugins/audit/scripts/validate-manifest.py \
+         plugins/audit/scripts/audit-status.py \
+         plugins/audit/scripts/render-report.py; do
   python3 "$f" --selftest || exit 1
 done
 # launcher fails LOUD without an interpreter (permissionDecision "ask" JSON):

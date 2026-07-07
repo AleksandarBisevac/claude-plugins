@@ -17,6 +17,15 @@ project-specific is supplied by a small per-repo config file.
   fileIndex maintenance, revalidation).
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
   task** (the repro test must fail before the fix) executed by `/audit`.
+- **`/audit:sync`** — mirror bugs/tasks into **Azure DevOps work items** (`push`), import
+  assigned ADO bugs (`pull`), or diff link state (`status`). Explicit, idempotent, one
+  direction per invocation; `az boards` CLI contract with the azure-devops MCP tools as an
+  optional fast-path.
+- **`/audit report`** — self-contained HTML + Markdown status report (phase progress, task
+  tables, bug rollup, ADO links) — publishable as a CI artifact.
+- **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
+  a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
+  tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
 - **Hooks** (all launched via `py-launch.sh`, which resolves `python3` → `python` → `py`;
   the blocking guards fail **loud** — a manual-approval prompt — if no interpreter exists;
   every hook has a 10 s timeout):
@@ -51,7 +60,8 @@ project-specific is supplied by a small per-repo config file.
 - **POSIX `sh`** for the hook launcher. On **Windows** that means running Claude Code
   inside **Git Bash** (which also provides `sh`); with `cmd`/PowerShell-only sessions the
   hooks surface as non-blocking errors instead of running.
-- Optional: Node/`npx` for JSON-Schema validation with `ajv-cli` (skipped when absent).
+- Optional: Node/`npx` for JSON-Schema validation with `ajv-cli` (skipped when absent);
+  the `az` CLI + `azure-devops` extension for `/audit:sync`.
 
 ## Install
 
@@ -114,6 +124,7 @@ Run it:
 /audit phase P0        # run a whole phase, then sign it off
 /audit review P0       # re-run a phase's sign-off
 /audit resume          # continue an interrupted phase run
+/audit report          # write audit-report.html + .md next to the manifest
 /audit:task add "..."  # add a tracked task (--phase <id> to target a phase)
 ```
 
@@ -159,6 +170,26 @@ Manifest-level knobs live in the manifest's `meta` block (all optional): `develo
 See the schema for exact shapes and defaults. Per-phase, `desiredOutcome` states what
 success looks like — `/audit` shows it, feeds it to task subagents, and sign-off must address it.
 
+## Azure DevOps (optional)
+
+Add `meta.ado` to the manifest and `/audit:sync` links the tracker to your board:
+
+```json
+"ado": { "organization": "<org>", "project": "<project>",
+         "areaPath": null, "iterationPath": null,
+         "types": { "bug": "Bug", "task": "Task" } }
+```
+
+- `/audit:sync push` — create/update work items from manifest bugs (add `tasks`/`all` for
+  tasks); shows the plan and asks before the first write; write-back `ado: {id, url,
+  lastSyncedAt}` per item makes re-runs converge.
+- `/audit:sync pull` — import assigned, unlinked ADO bugs as manifest bugs (you pick which).
+- `/audit:sync status` — read-only drift table (manifest state vs ADO state).
+
+Auth belongs to `az login` (locally) or the `AZURE_DEVOPS_EXT_PAT` variable (CI) — the
+plugin never stores or prints credentials. For pipelines, `docs/examples/azure-pipelines.yml`
+shows the validate → gate → report flow.
+
 ## Repos without tests
 
 "Test-driven" needs tests to drive. In a repo with **no test runner**, gate entries are
@@ -170,10 +201,12 @@ commands and will tell you when it finds none.
 
 ## Concurrency
 
-Run **one Claude session per clone** when using `/audit`. Parallel *subagents* within a
-session are safe by design (disjoint `files`, the orchestrator serializes commits), but two
-independent sessions will fight over the working tree, branches and the manifest. A manifest
-lockfile is planned (v0.5).
+Mutating subcommands (`next`, `run`, `phase`, `review`, `resume`) hold
+**`<manifestPath>.lock`**: a second session is refused with the holder's info, and a stale
+lock (>60 min — a crashed run) offers a confirmed takeover. `status` and `report` never
+lock. Add `*.lock` in the manifest directory to `.gitignore`. The lock protects the
+manifest — the working tree and branches are still shared, so one Claude session per clone
+remains the recommendation.
 
 ## Extending (three layers, no plugin editing)
 

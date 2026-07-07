@@ -4,6 +4,40 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.5.0] - 2026-07-07
+
+Features for team use (Azure DevOps focus).
+
+### Added
+- **`/audit:sync`** (`push [bugs|tasks|all]` · `pull` · `status`): mirrors manifest
+  bugs/tasks into Azure DevOps work items and back. Contract = the `az boards`
+  CLI (headless-capable; azure-devops MCP tools as an optional fast-path);
+  configured by the new `meta.ado` block; idempotent — the write-back
+  `item.ado = {id, url, lastSyncedAt}` lands immediately after each create so
+  interrupted runs converge; plan + confirmation before the first outward
+  write; credentials never stored or printed (`az login` /
+  `AZURE_DEVOPS_EXT_PAT`).
+- **`scripts/audit-status.py`** — headless rollup + **CI gate**: `--json`
+  (phases/tasks/bugs/ready summary), `--gate` exits 1 on tripped conditions
+  (default `invalid,open-high-bugs,blocked-tasks`; also `open-bugs`,
+  `in-progress` via `--fail-on`). Wired into this repo's CI against the
+  dogfood manifest; `docs/examples/azure-pipelines.yml` shows the
+  validate → gate → report pipeline for consuming repos.
+- **`/audit report`** + **`scripts/render-report.py`** — self-contained
+  HTML + Markdown status report (inline CSS, zero network fetches; every
+  manifest string escaped, only http(s) URLs rendered as links), publishable
+  as a CI artifact.
+- **Concurrency lock**: mutating subcommands hold `<manifestPath>.lock` —
+  a second session is refused with holder info; a stale lock (>60 min)
+  offers a confirmed takeover; `status`/`report` never lock.
+- Schema (additive): `meta.ado`, `task.ado`, `bug.ado` (`$defs/adoLink`);
+  validator checks their shape and accepts the new keys.
+
+### Fixed
+- `require-plan` no longer gates the manifest itself or its lockfile when a
+  custom `manifestPath` falls outside the exempt globs (previously the
+  orchestrator's own manifest writes could be blocked).
+
 ## [0.4.0] - 2026-07-07
 
 Release-quality envelope: docs, CI, policies, canonical hook protocol.

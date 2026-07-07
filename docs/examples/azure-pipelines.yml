@@ -1,0 +1,54 @@
+# Azure Pipelines example — gate a build on the audit manifest's state and
+# publish the audit report as a build artifact.
+#
+# The three scripts are dependency-free Python stdlib; they are fetched from a
+# PINNED release tag of the plugin repo (bump the tag deliberately — or vendor
+# the scripts into your repo and skip the curl step entirely).
+#
+# Optional: /audit:sync works headless here too — provide a PAT via the
+# AZURE_DEVOPS_EXT_PAT secret variable (az devops reads it; never echo it).
+
+trigger:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  auditPlugin: https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v0.5.0/plugins/audit
+  manifest: docs/audit/audit-plan.json
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.12'
+
+  - script: |
+      set -e
+      mkdir -p $(Agent.TempDirectory)/audit
+      for s in validate-manifest.py audit-status.py render-report.py; do
+        curl -fsSL "$(auditPlugin)/scripts/$s" -o "$(Agent.TempDirectory)/audit/$s"
+      done
+    displayName: Fetch audit scripts (pinned tag)
+
+  - script: python "$(Agent.TempDirectory)/audit/validate-manifest.py" "$(manifest)"
+    displayName: Validate audit manifest (structure, links, cycles)
+
+  - script: |
+      python "$(Agent.TempDirectory)/audit/audit-status.py" "$(manifest)" --gate
+    displayName: 'Gate: manifest valid, no open high-severity bugs, no blocked tasks'
+    # tune with e.g.  --fail-on invalid,open-bugs,in-progress  for a release freeze
+
+  - script: |
+      python "$(Agent.TempDirectory)/audit/render-report.py" "$(manifest)" \
+        --out-dir "$(Build.ArtifactStagingDirectory)"
+    displayName: Render audit report
+    condition: succeededOrFailed()
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: $(Build.ArtifactStagingDirectory)
+      artifactName: audit-report
+    displayName: Publish audit report
+    condition: succeededOrFailed()

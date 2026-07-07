@@ -27,7 +27,9 @@ jobs:
                    plugins/audit/hooks/guard-edits.py \
                    plugins/audit/hooks/guard-secrets-read.py \
                    plugins/audit/hooks/remind-tdd.py \
-                   plugins/audit/scripts/validate-manifest.py; do
+                   plugins/audit/scripts/validate-manifest.py \
+                   plugins/audit/scripts/audit-status.py \
+                   plugins/audit/scripts/render-report.py; do
             echo "== $f"
             python "$f" --selftest
           done
@@ -67,6 +69,12 @@ jobs:
         run: |
           python plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
           python plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
+      - name: CI gate + report smoke on the dogfood manifest
+        run: |
+          python plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate
+          python plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report
+          test -s /tmp/audit-report/audit-report.html
+          test -s /tmp/audit-report/audit-report.md
       - uses: actions/setup-node@v4
         with:
           node-version: 20
