@@ -196,19 +196,8 @@ def _shell_write_targets(cmd: str):
     return targets
 
 
-def _source_exts(cfg):
-    """Source-file extensions, derived from tddReminder.sourceGlobs (`**/*.ts`
-    → `.ts`) so a project's idea of 'source' is configured in ONE place."""
-    exts = set()
-    try:
-        for g in _config.tdd_reminder(cfg).get("sourceGlobs") or []:
-            g = str(g)
-            if g.startswith("**/*."):
-                exts.add(g[4:].lower())
-    except Exception:
-        pass
-    return exts or {".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rb",
-                    ".java", ".cs", ".kt", ".swift", ".rs"}
+# shared with guard-bash-writes.py — ONE definition of "source file"
+_source_exts = _config.source_exts
 
 
 def _source_write_hit(cmd: str, root, cfg):

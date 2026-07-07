@@ -39,6 +39,11 @@
     ]
   },
 
+  "bashWriteCheck": {
+    "//": "PostToolUse git-status diff check (guard-bash-writes.py): warns — non-blocking — when a shell command modifies a source file no in_progress task covers. Needs a git repo; silent otherwise.",
+    "enabled": true
+  },
+
   "tddReminder": {
     "//": "Non-blocking TDD nudge (remind-tdd.py): warns Claude when a source file changes and no test file was touched this session. Never blocks. Set enabled:false to turn off. inProgressPolicy: skip-gate-only (default) | skip-all | warn-always — controls whether files covered by an in_progress manifest task are exempt.",
     "enabled": true,

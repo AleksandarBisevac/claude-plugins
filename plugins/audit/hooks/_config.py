@@ -29,6 +29,8 @@ Config keys (all optional; defaults in DEFAULTS below):
   guardEdits.tokenVars    [str] — identifier names treated as auth tokens (logging ban)
   guardEdits.customRules  [obj] — project-specific banned-pattern rules, each:
         { "pathPrefix": "libs/x/", "bannedPattern": "<regex>", "message": "<why>" }
+  bashWriteCheck.enabled  bool  — PostToolUse git-status diff check for shell
+        writes into source files (guard-bash-writes.py); default true
   tddReminder             obj   — non-blocking TDD nudge (remind-tdd.py):
         enabled (bool), sourceGlobs [str], testGlobs [str], throttleMinutes (int),
         inProgressPolicy ("skip-gate-only" | "skip-all" | "warn-always")
@@ -63,6 +65,7 @@ DEFAULTS = {
         "tokenVars": ["accessToken", "refreshToken", "idToken"],
         "customRules": [],
     },
+    "bashWriteCheck": {"enabled": True},
     "tddReminder": {
         "enabled": True,
         "sourceGlobs": [
@@ -178,6 +181,32 @@ def tdd_reminder(cfg):
         return merged
     except Exception:
         return copy.deepcopy(DEFAULTS["tddReminder"])
+
+
+def bash_write_check_enabled(cfg):
+    try:
+        bw = (cfg or {}).get("bashWriteCheck")
+        if isinstance(bw, dict) and "enabled" in bw:
+            return bool(bw["enabled"])
+    except Exception:
+        pass
+    return True
+
+
+def source_exts(cfg):
+    """Source-file extensions derived from tddReminder.sourceGlobs
+    (`**/*.ts` → `.ts`) — ONE place defines what 'source' means for the
+    shell-write guards and the TDD nudge alike."""
+    exts = set()
+    try:
+        for g in tdd_reminder(cfg).get("sourceGlobs") or []:
+            g = str(g)
+            if g.startswith("**/*."):
+                exts.add(g[4:].lower())
+    except Exception:
+        pass
+    return exts or {".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rb",
+                    ".java", ".cs", ".kt", ".swift", ".rs"}
 
 
 # Shared path/manifest helpers (require-plan.py + remind-tdd.py) ---------------
