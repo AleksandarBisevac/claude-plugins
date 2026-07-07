@@ -14,7 +14,8 @@ Config: `.claude/audit.config.json` → `tddReminder` (see _config.DEFAULTS):
   sourceGlobs       [str] — files that count as source (warn candidates)
   testGlobs         [str] — files that count as tests (touching one silences
                             the reminder for the rest of the session)
-  throttleMinutes   int   — global minimum gap between warnings
+  throttleMinutes   int   — per-session minimum gap between warnings
+                            (concurrent sessions throttle independently)
   inProgressPolicy  str   — interplay with the /audit pipeline:
         "skip-gate-only" (default) — silent when the file is covered by an
             in_progress task whose tests.mode == "gate-only" (such tasks
