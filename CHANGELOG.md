@@ -4,6 +4,40 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.6.0] - 2026-07-07
+
+Agents & full-coverage enforcement: prompt discipline becomes mechanical.
+
+### Added
+- **Plugin agents** (`agents/`): the commands now spawn pinned-tool subagents
+  instead of free-form ones — `audit-explorer` (Glob/Grep/Read only:
+  **mechanically read-only**, used by `/audit:init` fan-out), `audit-executor`
+  (no web tools, no nested agents; task execution and review fixes),
+  `audit-reviewer` (no edit tools; sign-off review runs the project review
+  skill inside the agent, keeping the diff out of the orchestrator's context).
+  Tool lists are a hard boundary independent of subagent hook inheritance
+  (#43772); commands fall back to general subagents on older Claude Code.
+- **`guard-bash-writes.py`** (PostToolUse `Bash` + edit tools): git-status
+  diff check that catches ANY shell write into a source file no tool edit and
+  no `in_progress` task accounts for — the statically-undecidable residual of
+  the PreToolUse text checks (#29709) — and tells the model in-band
+  (non-blocking; needs a git repo; `bashWriteCheck.enabled`, default true).
+- **State GC**: session state files (incl. forgotten armed bypasses) older
+  than 7 days are garbage-collected on prompt submission;
+  `detect-plan-skip.py` gains a selftest.
+- CI: ten selftest suites (183 cases); GitHub Actions bumped off the
+  deprecated Node 20 action majors; repo `.gitignore` covers the dogfood
+  manifest's runtime artifacts (`*.lock`, `audit-report.*`).
+
+### Changed
+- `_config.py`: shared `source_exts()` (one definition of "source file" for
+  the shell-write guards and the TDD nudge) and `bashWriteCheck` defaults.
+- CONTRIBUTING: commands-vs-skills decision re-evaluated with agents shipped
+  (still NO-GO — invocation surface unchanged); plugin evals documented as
+  deferred while `claude plugin eval` is early access (schema not public).
+- `remind-tdd.py` docstring: the throttle is per-session, not global
+  (concurrent sessions throttle independently).
+
 ## [0.5.0] - 2026-07-07
 
 Features for team use (Azure DevOps focus).

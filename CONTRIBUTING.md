@@ -22,11 +22,13 @@ its own hooks.
 ## Tests (run before every PR)
 
 ```bash
-# all eight selftest suites (hooks + scripts) — stdlib only, no deps
+# all ten selftest suites (hooks + scripts) — stdlib only, no deps
 for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/require-plan.py \
+         plugins/audit/hooks/detect-plan-skip.py \
          plugins/audit/hooks/guard-edits.py \
          plugins/audit/hooks/guard-secrets-read.py \
+         plugins/audit/hooks/guard-bash-writes.py \
          plugins/audit/hooks/remind-tdd.py \
          plugins/audit/scripts/validate-manifest.py \
          plugins/audit/scripts/audit-status.py \
@@ -90,3 +92,17 @@ for new plugins. We evaluated migrating and decided **NO-GO for now**:
 
 **Revisit trigger:** when the plugin ships `agents/` (planned v0.5+/v0.6 —
 skills can pin an `agent`), or if Claude Code deprecates `commands/`.
+
+**Re-evaluated at v0.6.0 (agents/ shipped): still NO-GO.** The agents are
+spawned by the commands via `subagent_type` — nothing about the invocation
+surface changed, so the original rationale holds unchanged. Next trigger:
+`commands/` deprecation only.
+
+### Plugin evals (evaluated 2026-07, v0.6.0): deferred — feature is early access
+
+`claude plugin eval` (evals/**/case.yaml + graders) is the right tool for
+testing the COMMAND PROSE (the orchestrator behavior CI cannot reach), but as
+of v0.6.0 it prints "currently in early access" and `eval init` does not
+scaffold — the case schema is not public. Adopt as soon as it opens up:
+priority cases are `/audit status` on a missing manifest, `run` guards on a
+done task, and the `#no-plan` bypass round-trip.

@@ -26,6 +26,11 @@ project-specific is supplied by a small per-repo config file.
 - **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
+- **Pinned-tool agents** (`agents/`) — the orchestrator spawns the plugin's own subagents
+  instead of free-form ones: `audit-explorer` is **mechanically read-only** (no Edit/Write/
+  Bash in its tool list — not a prompt request, a hard boundary), `audit-executor` has no
+  web tools and no nested agents, `audit-reviewer` can analyze but cannot edit. Commands
+  fall back to general subagents on older Claude Code versions.
 - **Hooks** (all launched via `py-launch.sh`, which resolves `python3` → `python` → `py`;
   the blocking guards fail **loud** — a manual-approval prompt — if no interpreter exists;
   every hook has a 10 s timeout):
@@ -43,8 +48,13 @@ project-specific is supplied by a small per-repo config file.
     (`sed -i`, `tee`, `>` redirects) that bypass the plan gate.
   - `guard-edits.py` (PreToolUse: edits) — blocks token-logging, project-defined banned
     patterns, edits of the installed plugin's own files, and bypass-state forgery.
+  - `guard-bash-writes.py` (PostToolUse: Bash + edits) — **non-blocking** git-status diff
+    check: when a shell command modifies a source file that no tool edit and no
+    `in_progress` task accounts for, the model is told — in-band — that it just sidestepped
+    the plan gate (the statically-undecidable residual of the PreToolUse checks).
   - `remind-tdd.py` (PostToolUse: edits) — **non-blocking** nudge when source
     changes with no test touched in the session; throttled, manifest-aware, configurable.
+  - Stale session state (incl. forgotten armed bypasses) is garbage-collected after 7 days.
 - **`schema/audit-plan.schema.json`** — a JSON Schema (draft 2020-12) for the manifest, so
   editors and CI validate it — plus `scripts/validate-manifest.py`, a dependency-free
   referential validator (unique ids, dependency **cycles**, reciprocal bug↔task links,
@@ -160,6 +170,7 @@ to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `secretPatterns.extra` | Extra secret-path regexes (added to the built-in set) | `[]` |
 | `guardEdits.tokenVars` | Identifier names treated as auth tokens | `accessToken`, `refreshToken`, `idToken` |
 | `guardEdits.customRules` | Project banned patterns `{pathPrefix, bannedPattern, message}` | `[]` |
+| `bashWriteCheck.enabled` | PostToolUse git-status diff check for shell writes into source | `true` |
 | `tddReminder.enabled` | Master switch for the non-blocking TDD nudge | `true` |
 | `tddReminder.sourceGlobs` / `testGlobs` | What counts as source vs test files (source also feeds the shell-write guard) | common code (incl. `.ipynb`) / test patterns |
 | `tddReminder.throttleMinutes` | Minimum gap between nudges | `10` |

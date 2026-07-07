@@ -14,8 +14,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Hook + validator selftests (stdlib only)
@@ -24,8 +24,10 @@ jobs:
           set -e
           for f in plugins/audit/hooks/_config.py \
                    plugins/audit/hooks/require-plan.py \
+                   plugins/audit/hooks/detect-plan-skip.py \
                    plugins/audit/hooks/guard-edits.py \
                    plugins/audit/hooks/guard-secrets-read.py \
+                   plugins/audit/hooks/guard-bash-writes.py \
                    plugins/audit/hooks/remind-tdd.py \
                    plugins/audit/scripts/validate-manifest.py \
                    plugins/audit/scripts/audit-status.py \
@@ -61,8 +63,8 @@ jobs:
     name: manifest validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Structural validator (the plugin's own) on starter + dogfood manifest
@@ -75,7 +77,7 @@ jobs:
           python plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report
           test -s /tmp/audit-report/audit-report.html
           test -s /tmp/audit-report/audit-report.md
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
       - name: JSON Schema validation (ajv, draft 2020-12)
@@ -91,8 +93,8 @@ jobs:
     name: claude plugin validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
       - name: Install Claude Code CLI

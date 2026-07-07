@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 node_modules/
 *.log
+
+# audit plugin runtime artifacts (this repo dogfoods its own manifest)
+docs/audit/*.lock
+docs/audit/audit-report.html
+docs/audit/audit-report.md

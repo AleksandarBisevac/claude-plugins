@@ -1,7 +1,7 @@
 # Plugin build & handoff guide
 
 This repository is a **standalone Claude Code plugin** that packages a manifest-driven
-`/audit` fix-pipeline plus five guard hooks. It was extracted (de-coupled, IP-scrubbed)
+`/audit` fix-pipeline plus six guard hooks and three pinned-tool agents. It was extracted (de-coupled, IP-scrubbed)
 from an internal project's `.claude/` tooling so it can be reused in **any** repo and
 published on a personal marketplace. This single document is self-sufficient: it explains
 every file, why its contents are shaped the way they are, how to finish/publish it, and how
@@ -51,14 +51,19 @@ claude-plugins/                           # this repo (personal, public)
         task.md                           # /audit:task — interactive task creation
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
         sync.md                           # /audit:sync — Azure DevOps work-item sync
+      agents/
+        audit-explorer.md                 # mechanically read-only auditor (no Edit/Write/Bash)
+        audit-executor.md                 # task executor (no web tools, no nested agents)
+        audit-reviewer.md                 # sign-off reviewer (no edit tools)
       hooks/
-        hooks.json                        # wires the 5 hooks to events (${CLAUDE_PLUGIN_ROOT})
+        hooks.json                        # wires the 6 hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
         _config.py                        # shared config loader + path/manifest helpers
         require-plan.py                   # plan-first enforcement (Pre observes, Post commits state)
-        detect-plan-skip.py               # arms the single-use plan-first bypass + config-error warning
+        detect-plan-skip.py               # arms the plan-first bypass + config-error warning + state GC
         guard-secrets-read.py             # blocks secret reads (direct+indirect) + shell source writes
         guard-edits.py                    # token-logging ban, custom rules, self-edit/forgery block
+        guard-bash-writes.py              # PostToolUse git-status diff check (unplanned shell writes)
         remind-tdd.py                     # non-blocking TDD nudge (PostToolUse)
       reference/
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
@@ -139,7 +144,8 @@ Maps events → scripts, every entry running through
 `sh "${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh" <script> <ask|open>` with a 10 s timeout:
 - PreToolUse `Read|Grep|Bash` → `guard-secrets-read.py` (fail mode **ask**)
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
-- PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), then `remind-tdd.py` (both **open**)
+- PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits; all **open**)
+- PostToolUse `Bash` → `guard-bash-writes.py` (the diff check; **open**)
 - UserPromptSubmit → `detect-plan-skip.py` (**open**)
 
 `py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
@@ -179,8 +185,31 @@ bypass (logged) and records the free-file slot. All tunables from config (`manif
 UserPromptSubmit logger. If the prompt contains `bypassKeyword` (config; default `#no-plan`),
 writes `stateDir/plan-bypass-<session>.json`, appends to `logsDir/plan-bypass.log`, and tells
 the user (systemMessage) the bypass is live. Also surfaces `_configError` (malformed config)
-once per session. Never blocks. `require-plan.py`'s PostToolUse pass consumes (deletes) the
-bypass file after the next non-trivial edit actually happens — single-use.
+once per session, and opportunistically garbage-collects session state files older than 7
+days (incl. forgotten armed bypasses). Never blocks. `require-plan.py`'s PostToolUse pass
+consumes (deletes) the bypass file after the next non-trivial edit actually happens —
+single-use. `--selftest` (4 cases).
+
+### `plugins/audit/hooks/guard-bash-writes.py` (v0.6.0)
+PostToolUse watcher — the "complete control" for shell writes the PreToolUse text
+inspection cannot decide (upstream #29709). Edit-tool events RECORD the touched file;
+Bash events diff `git status --porcelain -uall` against the session's last-seen dirty set:
+a NEW dirty source file that is not exempt, not the manifest/lock, not tool-edited, and not
+covered by an `in_progress` task triggers a non-blocking `additionalContext` warning (once
+per file per session). Needs a git repo; git errors/timeouts (5 s) are silent. Config:
+`bashWriteCheck.enabled` (default true). `--selftest` (13 cases incl. a real `git init`
+integration case).
+
+### `plugins/audit/agents/` (v0.6.0)
+Three pinned-tool agents the commands spawn via `subagent_type` (with a general-subagent
+fallback for older Claude Code): `audit-explorer` (Glob/Grep/Read — mechanically read-only;
+/audit:init fan-out), `audit-executor` (Read/Edit/Write/Glob/Grep/Bash/Skill — no web tools,
+no nested agents; task execution and review fixes), `audit-reviewer`
+(Read/Glob/Grep/Bash/Skill — no edit tools; sign-off review runs the project review skill
+inside the agent so the diff stays out of the orchestrator's context). Tool lists are a hard
+boundary that does not depend on subagent hook inheritance (#43772); the agent system
+prompts carry the invariants (no commits, no stash, red-first discipline, JSON return
+shapes) while spawn prompts add the per-task specifics.
 
 ### `plugins/audit/hooks/guard-secrets-read.py`
 Read/Grep/Bash secret backstop. Blocks: reading secret file *contents* (`.env`, `credentials*`,
@@ -291,11 +320,13 @@ CI (`.github/workflows/ci.yml`) runs 1–2 plus `claude plugin validate` on
 ubuntu + windows for every push/PR. Locally:
 
 ```bash
-# 1. Hooks + scripts pass their own selftests (all eight, stdlib only)
+# 1. Hooks + scripts pass their own selftests (all ten, stdlib only)
 for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/require-plan.py \
+         plugins/audit/hooks/detect-plan-skip.py \
          plugins/audit/hooks/guard-edits.py \
          plugins/audit/hooks/guard-secrets-read.py \
+         plugins/audit/hooks/guard-bash-writes.py \
          plugins/audit/hooks/remind-tdd.py \
          plugins/audit/scripts/validate-manifest.py \
          plugins/audit/scripts/audit-status.py \
