@@ -1,6 +1,6 @@
 ---
-description: 'Manifest-driven audit/fix pipeline orchestrator. Reads the audit manifest and executes phases/tasks with per-task model + skills, TDD gates, and optional review sign-off. Subcommands: status | next | run <taskId> | phase <id> | review <phaseId> | resume.'
-argument-hint: 'status | next | run <taskId> | phase <id> | review <phaseId> | resume'
+description: 'Manifest-driven audit/fix pipeline orchestrator. Reads the audit manifest and executes phases/tasks with per-task model + skills, TDD gates, and optional review sign-off. Subcommands: status | next | run <taskId> | phase <id> | review <phaseId> | resume | report.'
+argument-hint: 'status | next | run <taskId> | phase <id> | review <phaseId> | resume | report'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -78,7 +78,7 @@ Read the manifest and print:
 5. If `bugs[]` exists and is non-empty: counts by bug status, plus every non-closed bug whose
    materialized task (`taskId`) is ready now.
 Do not modify anything. Related commands: `/audit:init` (generate this manifest),
-`/audit:task` (add a task), `/audit:bug` (track bugs).
+`/audit:task` (add a task), `/audit:bug` (track bugs), `/audit:sync` (Azure DevOps work items).
 
 ## Subcommand: `next`
 1. Find the first **ready** task (phase order, then task-id order).
@@ -111,6 +111,35 @@ Run **Phase sign-off** for `<phaseId>` on demand (e.g. to re-run after fixes).
 ## Subcommand: `resume`
 Run **Resume after interruption** (below). Use after a crash, a lost session, or any interrupted
 `phase`/`next`/`run` — `status` flags when this applies.
+
+## Subcommand: `report`
+Read-only. Run
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath>`
+(artifacts land next to the manifest; pass `--out-dir <dir>` through when the human asks)
+and print the written paths. The report is self-contained HTML + Markdown — shareable as a
+CI artifact. Never locks, never mutates.
+
+---
+
+## Concurrency lock
+
+Two sessions mutating one manifest/working tree corrupt each other. Every **mutating**
+subcommand (`next`, `run`, `phase`, `review`, `resume`) holds `<manifestPath>.lock`:
+
+1. **Acquire (at subcommand start).** If the lock file exists, read it
+   (`{hostname, startedAt, note}`):
+   - `startedAt` younger than **60 minutes** → REFUSE: print the holder info and stop —
+     another session is (or very recently was) working this manifest.
+   - older → stale (a crashed run): ask the human (AskUserQuestion) to confirm **takeover**,
+     then overwrite the lock.
+   Otherwise create it via Bash:
+   `printf '{"hostname":"%s","startedAt":"%s","note":"audit orchestrator"}' "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > <manifestPath>.lock`
+2. **Release** — delete the lock at the END of the subcommand, including failure paths you
+   control (a refusal that never acquired it releases nothing). Human-confirmation pauses
+   (AskUserQuestion) keep the lock — that is still your run.
+3. `status` and `report` never lock and never wait for one.
+4. Never commit the lock file (do not `git add` it); recommend `.gitignore`-ing
+   `*.lock` under the manifest directory.
 
 ---
 

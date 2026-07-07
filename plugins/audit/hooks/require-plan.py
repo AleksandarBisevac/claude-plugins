@@ -160,7 +160,12 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
     ld = logs_dir if logs_dir is not None else _config.logs_dir(root, cfg)
     rel = _rel_path(root, file_path)
 
-    # 2. exempt globs
+    # 2a. the manifest itself and its lockfile ARE the plan — never gated,
+    #     even when a custom manifestPath falls outside the exempt globs
+    if rel == manifest_rel or rel == manifest_rel + ".lock":
+        return ("allow", "manifest/lock path: %s" % rel)
+
+    # 2b. exempt globs
     if _matches_exempt(rel, exempt):
         return ("allow", "exempt path: %s" % rel)
 
@@ -318,6 +323,31 @@ def _selftest() -> int:
           payload("Write", "docs/audit/x.json", content="{}"))
     check("a3 *.spec.ts", "allow",
           payload("Write", "src/foo/bar.spec.ts", content="test('x',()=>{})"))
+
+    # (a4-a6) the manifest + its lock are never gated, even with a custom
+    # manifestPath OUTSIDE the exempt globs
+    cfg_custom = dict(cfg)
+    cfg_custom["manifestPath"] = "planning/plan.json"
+
+    def check_custom(name, expected, data):
+        try:
+            verdict, _ = decide(data, cfg=cfg_custom, state_dir=sd, logs_dir=ld)
+        except Exception as exc:  # pragma: no cover
+            verdict = "EXC:%s" % exc
+        ok = verdict == expected
+        results.append(ok)
+        print("%s %s (expected %s, got %s)"
+              % ("PASS" if ok else "FAIL", name, expected, verdict))
+
+    check_custom("a4 custom-path manifest edit allowed", "allow",
+                 payload("Edit", "planning/plan.json", new_string=big,
+                         sid="selftest-session-a4"))
+    check_custom("a5 custom-path lockfile allowed", "allow",
+                 payload("Write", "planning/plan.json.lock", content="{}",
+                         sid="selftest-session-a4"))
+    check_custom("a6 sibling file still gated", "block",
+                 payload("Write", "planning/other.json", content=big,
+                         sid="selftest-session-a6"))
 
     # (b) transactional slot: Pre allows but does NOT record; the matching Post
     #     records; only then does a second distinct file block.
