@@ -15,7 +15,7 @@
       "coauthor": "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     },
     "buildCommands": {
-      "selftests": "for f in plugins/audit/hooks/_config.py plugins/audit/hooks/require-plan.py plugins/audit/hooks/guard-edits.py plugins/audit/hooks/guard-secrets-read.py plugins/audit/hooks/remind-tdd.py plugins/audit/scripts/validate-manifest.py plugins/audit/scripts/audit-status.py plugins/audit/scripts/render-report.py; do python3 \"$f\" --selftest || exit 1; done",
+      "selftests": "for f in plugins/audit/hooks/_config.py plugins/audit/hooks/require-plan.py plugins/audit/hooks/detect-plan-skip.py plugins/audit/hooks/guard-edits.py plugins/audit/hooks/guard-secrets-read.py plugins/audit/hooks/guard-bash-writes.py plugins/audit/hooks/remind-tdd.py plugins/audit/scripts/validate-manifest.py plugins/audit/scripts/audit-status.py plugins/audit/scripts/render-report.py; do python3 \"$f\" --selftest || exit 1; done",
       "validate": "python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json",
       "plugin-validate": "claude plugin validate . && claude plugin validate plugins/audit",
       "gate": "python3 plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate",
@@ -791,6 +791,189 @@
           "verifiedBy": []
         }
       ]
+    },
+    {
+      "id": "P4",
+      "title": "v0.6.0 agents & full-coverage enforcement",
+      "status": "done",
+      "model": "sonnet",
+      "blockedBy": [],
+      "desiredOutcome": "Prompt discipline becomes mechanical: subagents get pinned tool lists instead of polite instructions, the last statically-undecidable shell-write vector is watched after the fact, and session state stops accumulating forever.",
+      "testGate": [
+        "selftests",
+        "validate",
+        "gate",
+        "plugin-validate"
+      ],
+      "baseRef": null,
+      "branch": null,
+      "mergedAt": null,
+      "review": {
+        "tool": null,
+        "model": "sonnet",
+        "status": "skipped",
+        "findings": []
+      },
+      "summary": "Shipped as four direct-to-main commits, tagged v0.6.0. Ten selftest suites (183 cases) green on ubuntu+windows; plugin evals deliberately deferred while claude plugin eval is early access (schema not public) — recorded in CONTRIBUTING with priority cases.",
+      "tasks": [
+        {
+          "id": "P4.1",
+          "title": "Pinned-tool agents: audit-explorer / audit-executor / audit-reviewer",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": [
+            "plugins/audit/agents/audit-explorer.md",
+            "plugins/audit/agents/audit-executor.md",
+            "plugins/audit/agents/audit-reviewer.md",
+            "plugins/audit/commands/audit.md",
+            "plugins/audit/commands/init.md"
+          ],
+          "docs": [],
+          "description": "Commands spawn the plugin agents via subagent_type instead of free-form subagents: explorer is mechanically read-only (Glob/Grep/Read), executor has no web tools and no nested agents, reviewer has no edit tools and runs the review skill inside the agent (diff stays out of orchestrator context). General-subagent fallback for older Claude Code.",
+          "tests": {
+            "mode": "regression",
+            "add": [
+              "claude plugin validate accepts agents/",
+              "call sites document the fallback"
+            ],
+            "expectRedFirst": false,
+            "gate": [
+              "plugin-validate"
+            ]
+          },
+          "outcome": {
+            "technical": "Three agent definitions with pinned tool frontmatter; audit.md step 3 + sign-off review and init.md fan-out rewired.",
+            "descriptive": "Read-only is now a tool-list fact, not a request."
+          },
+          "commit": "ef63b54",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-07T16:00:00+02:00",
+          "completedAt": "2026-07-07T16:00:00+02:00",
+          "risk": "med",
+          "verifiedBy": []
+        },
+        {
+          "id": "P4.2",
+          "title": "guard-bash-writes: PostToolUse git-status diff check",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": [
+            "plugins/audit/hooks/guard-bash-writes.py",
+            "plugins/audit/hooks/hooks.json",
+            "plugins/audit/hooks/_config.py",
+            "plugins/audit/hooks/guard-secrets-read.py",
+            "plugins/audit/templates/audit.config.example.json"
+          ],
+          "docs": [],
+          "description": "Close SECURITY.md bypass class #1 residual (#29709): after every Bash call, diff git status -uall against the session's dirty set; new unplanned source files trigger a non-blocking in-band notice. Edit-tool events record their files; bashWriteCheck.enabled config; shared _config.source_exts().",
+          "tests": {
+            "mode": "regression",
+            "add": [
+              "13 selftest cases incl. real git-init integration",
+              "tool-edited and in_progress-covered files stay silent"
+            ],
+            "expectRedFirst": false,
+            "gate": [
+              "selftests"
+            ]
+          },
+          "outcome": {
+            "technical": "New hook registered under PostToolUse Bash + edit matchers via py-launch (open mode).",
+            "descriptive": "The last big documented bypass class is now watched, not just documented."
+          },
+          "commit": "9d81006",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-07T16:00:00+02:00",
+          "completedAt": "2026-07-07T16:00:00+02:00",
+          "risk": "med",
+          "verifiedBy": []
+        },
+        {
+          "id": "P4.3",
+          "title": "State GC + detect-plan-skip selftest + remind-tdd docstring",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": [
+            "plugins/audit/hooks/detect-plan-skip.py",
+            "plugins/audit/hooks/remind-tdd.py"
+          ],
+          "docs": [],
+          "description": "Session state files were never deleted (stale plan-gate mis-fires, immortal armed bypasses). Prompt submission now GCs files older than 7 days; detect-plan-skip gains a selftest; remind-tdd docstring corrected (throttle is per-session).",
+          "tests": {
+            "mode": "regression",
+            "add": [
+              "stale files removed, fresh kept, foreign json untouched"
+            ],
+            "expectRedFirst": false,
+            "gate": [
+              "selftests"
+            ]
+          },
+          "outcome": {
+            "technical": "_gc_state() with 4 selftest cases; GC covers plan-bypass-* too.",
+            "descriptive": "A forgotten #no-plan bypass now expires instead of living forever."
+          },
+          "commit": "520db04",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-07T16:00:00+02:00",
+          "completedAt": "2026-07-07T16:00:00+02:00",
+          "risk": "low",
+          "verifiedBy": []
+        },
+        {
+          "id": "P4.4",
+          "title": "v0.6.0 docs/CI envelope",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": [
+            "README.md",
+            "plugins/audit/README.md",
+            "SECURITY.md",
+            "CONTRIBUTING.md",
+            "CHANGELOG.md",
+            "PLUGIN-BUILD-GUIDE.md",
+            ".gitignore",
+            ".github/workflows/ci.yml"
+          ],
+          "docs": [],
+          "description": "Docs synced to the new reality (agents, bash guard, GC); SECURITY bypass classes updated; CONTRIBUTING records the re-evaluated skills NO-GO and the evals deferral (early access); CI runs ten suites and bumps actions off deprecated Node 20 majors; .gitignore covers dogfood runtime artifacts.",
+          "tests": {
+            "mode": "gate-only",
+            "add": [],
+            "expectRedFirst": false,
+            "gate": [
+              "selftests",
+              "plugin-validate"
+            ]
+          },
+          "outcome": {
+            "technical": "Ten-suite loop everywhere a loop is documented (CI, CONTRIBUTING, BUILD-GUIDE).",
+            "descriptive": "Docs and CI tell the same story as the code."
+          },
+          "commit": "140c3b9",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-07T16:00:00+02:00",
+          "completedAt": "2026-07-07T16:00:00+02:00",
+          "risk": "low",
+          "verifiedBy": []
+        }
+      ]
     }
   ],
   "fileIndex": {
@@ -799,22 +982,31 @@
       "P2.6"
     ],
     ".github/workflows/ci.yml": [
-      "P2.5"
+      "P2.5",
+      "P4.4"
+    ],
+    ".gitignore": [
+      "P4.4"
     ],
     "CHANGELOG.md": [
-      "P2.2"
+      "P2.2",
+      "P4.4"
     ],
     "CONTRIBUTING.md": [
-      "P2.2"
+      "P2.2",
+      "P4.4"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
-      "P2.4"
+      "P2.4",
+      "P4.4"
     ],
     "README.md": [
-      "P2.3"
+      "P2.3",
+      "P4.4"
     ],
     "SECURITY.md": [
-      "P2.2"
+      "P2.2",
+      "P4.4"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7"
@@ -830,20 +1022,32 @@
       "P1.6",
       "P2.3",
       "P3.1",
-      "P3.4"
+      "P3.4",
+      "P4.4"
+    ],
+    "plugins/audit/agents/audit-executor.md": [
+      "P4.1"
+    ],
+    "plugins/audit/agents/audit-explorer.md": [
+      "P4.1"
+    ],
+    "plugins/audit/agents/audit-reviewer.md": [
+      "P4.1"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
       "P1.7",
       "P3.3",
-      "P3.4"
+      "P3.4",
+      "P4.1"
     ],
     "plugins/audit/commands/bug.md": [
       "P1.7"
     ],
     "plugins/audit/commands/init.md": [
       "P1.6",
-      "P1.7"
+      "P1.7",
+      "P4.1"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1"
@@ -852,10 +1056,15 @@
       "P1.7"
     ],
     "plugins/audit/hooks/_config.py": [
-      "P1.1"
+      "P1.1",
+      "P4.2"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
-      "P1.1"
+      "P1.1",
+      "P4.3"
+    ],
+    "plugins/audit/hooks/guard-bash-writes.py": [
+      "P4.2"
     ],
     "plugins/audit/hooks/guard-edits.py": [
       "P1.4",
@@ -863,17 +1072,20 @@
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
-      "P2.1"
+      "P2.1",
+      "P4.2"
     ],
     "plugins/audit/hooks/hooks.json": [
-      "P1.2"
+      "P1.2",
+      "P4.2"
     ],
     "plugins/audit/hooks/py-launch.sh": [
       "P1.2",
       "P2.1"
     ],
     "plugins/audit/hooks/remind-tdd.py": [
-      "P1.2"
+      "P1.2",
+      "P4.3"
     ],
     "plugins/audit/hooks/require-plan.py": [
       "P1.3",
@@ -901,7 +1113,8 @@
       "P1.5"
     ],
     "plugins/audit/templates/audit.config.example.json": [
-      "P1.2"
+      "P1.2",
+      "P4.2"
     ]
   },
   "bugs": [
