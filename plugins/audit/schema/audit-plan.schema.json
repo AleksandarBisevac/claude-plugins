@@ -82,7 +82,37 @@
           "type": "object",
           "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...).",
           "additionalProperties": { "type": "string" }
+        },
+        "ado": {
+          "type": ["object", "null"],
+          "description": "Azure DevOps sync configuration for /audit:sync. null/absent => sync refuses with setup guidance. Never store credentials here — auth belongs to `az login` / AZURE_DEVOPS_EXT_PAT.",
+          "additionalProperties": true,
+          "properties": {
+            "organization": { "type": "string", "description": "Organization name or https://dev.azure.com/<org> URL." },
+            "project": { "type": "string" },
+            "areaPath": { "type": ["string", "null"] },
+            "iterationPath": { "type": ["string", "null"] },
+            "types": {
+              "type": "object",
+              "description": "Work-item type mapping. Defaults: bug -> 'Bug', task -> 'Task'.",
+              "additionalProperties": { "type": "string" },
+              "properties": {
+                "bug": { "type": "string" },
+                "task": { "type": "string" }
+              }
+            }
+          }
         }
+      }
+    },
+    "adoLink": {
+      "type": ["object", "null"],
+      "description": "Azure DevOps work-item link, written by /audit:sync after a successful push (never by hand). Additive — absent until the first sync.",
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "integer", "description": "Work-item id in the configured project." },
+        "url": { "type": ["string", "null"], "description": "Web link to the work item." },
+        "lastSyncedAt": { "type": ["string", "null"], "description": "ISO timestamp of the last successful sync of this item." }
       }
     },
     "phase": {
@@ -172,7 +202,8 @@
         "bugId": {
           "type": ["string", "null"],
           "description": "Link to bugs[].id when this task was materialized via /audit:bug fix. The orchestrator flips that bug to 'fixed' (+fixedIn) when the task commits."
-        }
+        },
+        "ado": { "$ref": "#/$defs/adoLink" }
       }
     },
     "bugStatus": {
@@ -216,7 +247,8 @@
           "type": ["string", "null"],
           "description": "Commit SHA of the fixing task; written by the /audit orchestrator."
         },
-        "notes": { "type": ["string", "null"] }
+        "notes": { "type": ["string", "null"] },
+        "ado": { "$ref": "#/$defs/adoLink" }
       }
     },
     "tests": {

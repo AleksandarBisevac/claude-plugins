@@ -41,7 +41,7 @@ KNOWN_ROOT = {"$schema", "meta", "phases", "fileIndex", "bugs", "deferred",
               "proposals"}
 KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               "developmentBranch", "branchPrefix", "reviewSkill", "runtimeBoot",
-              "nodePreamble", "commit", "buildCommands",
+              "nodePreamble", "commit", "buildCommands", "ado",
               # legacy (pre-0.3, ignored by the orchestrator):
               "signOffChecklist", "autoMode", "modelPolicy", "testPolicy",
               "reviewPolicy", "skillsPolicy", "statusLegend"}
@@ -53,10 +53,10 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
 KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               "dependsOn", "files", "docs", "description", "tests", "outcome",
               "commit", "attempts", "maxAttempts", "startedAt", "completedAt",
-              "risk", "verifiedBy", "bugId"}
+              "risk", "verifiedBy", "bugId", "ado"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
              "description", "repro", "expected", "actual", "files", "taskId",
-             "fixedIn", "notes"}
+             "fixedIn", "notes", "ado"}
 
 
 def _strip_line_suffix(entry):
@@ -71,6 +71,22 @@ def _require_fields(obj, where, findings):
             findings.append("%s: missing required '%s'" % (where, key))
             ok = False
     return ok
+
+
+def _check_ado(obj, where, findings):
+    """`ado` (written by /audit:sync) must be null or {id: int, url, lastSyncedAt}."""
+    if "ado" not in obj:
+        return
+    ado = obj.get("ado")
+    if ado is None:
+        return
+    if not isinstance(ado, dict):
+        findings.append("%s: ado must be an object or null, got %s"
+                        % (where, type(ado).__name__))
+        return
+    if "id" in ado and not isinstance(ado.get("id"), int):
+        findings.append("%s: ado.id must be an integer work-item id, got %r"
+                        % (where, ado.get("id")))
 
 
 def _unknown_keys(obj, known, where, warnings):
@@ -221,6 +237,7 @@ def validate(manifest):
                 f.append("%s: tests.mode %r not in %s" % (twhere, tests.get("mode"), list(TESTS_MODE)))
             if "risk" in task and task.get("risk") not in RISK:
                 f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
+            _check_ado(task, twhere, f)
             if task.get("bugId"):
                 task_bug_links.append((twhere, tid, task["bugId"]))
 
@@ -295,6 +312,7 @@ def validate(manifest):
             f.append("%s: id must match BUG-<number>" % bwhere)
         if bug.get("status") not in BUG_STATUS:
             f.append("%s: status %r not in %s" % (bwhere, bug.get("status"), list(BUG_STATUS)))
+        _check_ado(bug, bwhere, f)
         if bug.get("taskId"):
             if bug["taskId"] not in task_ids:
                 f.append("%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"]))
@@ -448,6 +466,18 @@ def _selftest():
     # --- new in 0.3.0: tests must be an object ---
     check("t1 tests as string is a finding", "tests must be an object",
           lambda m: m["phases"][0]["tasks"][0].update(tests="tdd"))
+
+    # --- new in 0.5.0: ado link shape ---
+    check("a1 valid ado link stays clean", None,
+          lambda m: m["phases"][0]["tasks"][0].update(
+              ado={"id": 1234, "url": "https://dev.azure.com/o/p/_workitems/edit/1234",
+                   "lastSyncedAt": "2026-07-07T00:00:00Z"}))
+    check("a2 ado as string is a finding", "ado must be an object",
+          lambda m: m["bugs"][0].update(ado="WI-1234"))
+    check("a3 non-integer ado.id is a finding", "ado.id must be an integer",
+          lambda m: m["phases"][0]["tasks"][0].update(ado={"id": "1234"}))
+    check("a4 null ado stays clean", None,
+          lambda m: m["bugs"][0].update(ado=None))
 
     # --- new in 0.3.0: warnings ---
     check("w1 unknown key warns with did-you-mean", None,
