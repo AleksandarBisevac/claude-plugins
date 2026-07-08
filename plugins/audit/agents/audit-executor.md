@@ -1,6 +1,6 @@
 ---
 name: audit-executor
-description: 'Task executor for the /audit orchestrator. Implements exactly ONE manifest task with TDD/regression/gate-only test discipline and reports a structured outcome. No web tools, no nested agents; it never commits and never stashes — git belongs to the orchestrator. Spawned by the audit plugin; not meant for direct use.'
+description: 'Task executor for the audit orchestrator. Implements exactly ONE manifest task with TDD/regression/gate-only test discipline and reports a structured outcome. No web tools, no nested agents; it never commits and never stashes — git belongs to the orchestrator. Spawned by the audit plugin; not meant for direct use.'
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill
 ---
 

@@ -1,12 +1,12 @@
 ---
-description: 'Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings into a schema-valid plan for /audit to execute.'
+description: 'Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings into a schema-valid plan for the /audit:* commands to execute.'
 argument-hint: '[optional scope/goals — you will be interviewed for the rest]'
 allowed-tools: Read, Write, Edit, Bash, Agent, Glob, Grep, AskUserQuestion
 ---
 
 # /audit:init — generate the audit manifest
 
-Produces the manifest that `/audit` executes. Generation is multi-agent: parallel
+Produces the manifest that the `/audit:*` execution commands run. Generation is multi-agent: parallel
 read-only explorers audit the codebase, the orchestrator (you) synthesizes their
 findings into phases/tasks. **`$ARGUMENTS`** (free text) seeds the interview answers.
 
@@ -18,7 +18,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve
 ## 1. Preflight
 
 If a file already exists at `manifestPath`, ask the user (AskUserQuestion):
-- **Abort** (default) — keep the existing manifest; suggest `/audit status`.
+- **Abort** (default) — keep the existing manifest; suggest `/audit:status`.
 - **Regenerate** — back it up to `<manifestPath>.bak-<UTC timestamp>` first.
 - **Append phases** — keep existing phases; new phases continue the id sequence.
 
@@ -66,7 +66,7 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 1. **Dedupe** findings by file + title similarity; keep the higher severity.
 2. **Group into phases**: `P0` = build/test health + safety blockers (anything that gates
    verification of later work), then thematic phases by dimension/subsystem. Give every
-   phase a one-line `desiredOutcome` (what success looks like — `/audit` displays it and
+   phase a one-line `desiredOutcome` (what success looks like — `/audit:status` displays it and
    sign-off must address it). Respect the
    size appetite; overflow goes to `deferred.items` (with reasons) or `proposals`.
 3. **Finding → task** using the conventions doc's new-task template. Rules:
@@ -105,4 +105,4 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 
 Print: per-phase table (`id — title — task count — dimensions covered`), total task count
 by `tests.mode` and `risk`, what was deferred and why, any open questions for the human,
-and the handoff: **next run `/audit status`, then `/audit phase P0`**.
+and the handoff: **next run `/audit:status`, then `/audit:phase P0`**.

@@ -38,5 +38,5 @@ the manifest. If it doesn't exist, stop and point to `/audit:init` (or the start
 5. **Revalidate**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` —
    fix and re-run until clean.
 6. **Report**: the created task (id, phase, tests.mode, model, risk), whether it is
-   **ready now** (evaluate the /audit readiness rule), and the handoff:
-   `/audit run <taskId>` (or what blocks it).
+   **ready now** (evaluate the orchestrator's readiness rule), and the handoff:
+   `/audit:run <taskId>` (or what blocks it).

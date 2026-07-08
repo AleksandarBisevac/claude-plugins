@@ -4,6 +4,37 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.7.0] - 2026-07-08
+
+Command surface: split the orchestrator into `/audit:<verb>` commands
+(no more `/audit:audit`).
+
+### Changed
+- **The single orchestrator command is gone.** Because Claude Code namespaces
+  plugin commands as `/<plugin>:<command>`, the old `audit.md` was only
+  reachable as the awkward `/audit:audit` (and bare `/audit` — which every doc
+  and the plugin's own recap text wrongly suggested — is not a command at all,
+  producing "Unknown command: /audit"). Each action is now its own verb command:
+  - `/audit:status` · `/audit:next` · `/audit:run <id>` · `/audit:phase <id>` ·
+    `/audit:review <id>` · `/audit:resume` · `/audit:report`
+  - consistent with the existing `/audit:init` · `/audit:task` · `/audit:bug` ·
+    `/audit:sync`.
+- Shared execution logic (config resolution, preflight incl. git-root/submodule/
+  lock, guardrails, readiness, branch-per-phase, Execute-the-task, Phase sign-off,
+  resume, reporting) moved to **`reference/orchestrator.md`**, which every verb
+  command reads; each verb file is thin (its slice + a pointer to the reference).
+- **All handoff/recap text and docs now emit `/audit:<verb>`** — previously the
+  commands' own output told users to run `/audit run …`, `/audit phase …`, etc.,
+  which don't exist, so copy-pasting them failed. Fixed in the command bodies,
+  README, PLUGIN-BUILD-GUIDE, schema descriptions, and hook comments.
+
+### Migration
+No manifest changes. If you used `/audit:audit <sub>` (or tried bare `/audit`),
+switch to the matching verb: `/audit:audit status` → `/audit:status`,
+`/audit:audit run X` → `/audit:run X`, `/audit:audit phase P0` → `/audit:phase P0`.
+After updating, `/reload-plugins` (or restart) so the session picks up the new
+command set.
+
 ## [0.6.2] - 2026-07-07
 
 Submodule preflight guard.

@@ -1,25 +1,24 @@
----
-description: 'Manifest-driven audit/fix pipeline orchestrator. Reads the audit manifest and executes phases/tasks with per-task model + skills, TDD gates, and optional review sign-off. Subcommands: status | next | run <taskId> | phase <id> | review <phaseId> | resume | report.'
-argument-hint: 'status | next | run <taskId> | phase <id> | review <phaseId> | resume | report'
-allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
----
+# Audit orchestrator — shared execution logic
 
-# /audit — manifest-driven execution orchestrator
+Read this FIRST from every `/audit:*` execution command (`status`, `next`, `run`, `phase`,
+`review`, `resume`, `report`) together with `manifest-conventions.md`. Each command does its
+own slice and defers all the shared rules — config resolution, preflight, guardrails,
+readiness, the lock, branch-per-phase, Execute-the-task, Phase sign-off, resume — to this file.
 
 **Source of truth:** the audit manifest. Its path comes from `.claude/audit.config.json`
 → `manifestPath` (default `docs/audit/audit-plan.json`). Read it FIRST on every invocation.
 
-**ARGUMENTS:** `$ARGUMENTS` — first token is the subcommand (default `status` if empty), remainder are its parameters.
+## Preflight
 
-## Preflight (every invocation)
+Run the checks relevant to the command. **Read-only commands (`status`, `report`) run only 1–2;
+mutating commands (`next`, `run`, `phase`, `review`, `resume`) run all of 1–5 before acting.**
 
 1. If `.claude/audit.config.json` exists but is NOT valid JSON: **STOP** and report the parse
    error. A malformed config silently disables the project's custom guard rules (the hooks fall
    back to defaults), so it must be fixed before any audit work.
 2. If no file exists at `manifestPath`: **STOP**. Point to `/audit:init` (generates the manifest)
    or to copying the plugin's `templates/audit-plan.starter.json`. Never invent a manifest.
-3. Unknown subcommand → print the subcommand list with one-line descriptions and STOP.
-4. **Git-root check** (before any mutating subcommand). Resolve the git root (see below) and run
+3. **Git-root check** (mutating commands). Resolve the git root (see below) and run
    `git -C <gitRoot> rev-parse --show-toplevel`. If it fails (the git root is not a git repo):
    **STOP** and tell the human: set `meta.gitRoot` to the path of the git repo relative to the
    project directory (e.g. `"test"` for a workspace-in-a-subdir), OR run `/audit:init` from inside
@@ -27,13 +26,14 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
    Also: if `<manifestPath>` resolves OUTSIDE `<gitRoot>`, WARN that the manifest's status history
    cannot be committed alongside task work (resume's git reconstruction is limited) and recommend
    moving the manifest under the git root.
-5. **Submodule check** (before any mutating subcommand). If `<gitRoot>/.gitmodules` exists, run
+4. **Submodule check** (mutating commands). If `<gitRoot>/.gitmodules` exists, run
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> --submodules "<gitRoot>/.gitmodules" --git-root "<gitRoot>"`
    (omit `--git-root` when gitRoot is `.`). Exit 1 means one or more `task.files` live inside a git
    **submodule** — a separate nested repo the parent CANNOT stage/commit (`git add` fails with
    "Pathspec is in submodule"). **STOP** and relay its output: point `meta.gitRoot` at that submodule
    (to audit it directly), or remove those files from the task(s). Do not start a run that will fail
    at commit time.
+5. **Acquire the lock** (mutating commands) — see **Concurrency lock**.
 
 **Config resolution.** Everything project-specific comes from the manifest's `meta` block (with safe defaults);
 never hardcode branch names, package ids, skills, or build tools here:
@@ -91,82 +91,24 @@ A phase becomes `done` only after **Phase sign-off**. Phase order follows the ma
 **Parallel safety:** tasks whose `files` sets are disjoint AND whose `dependsOn` lists are mutually satisfied may
 run in parallel (spawn multiple Agents in one message). Tasks sharing a file or linked via `dependsOn` run sequentially.
 
----
-
-## Subcommand: `status`
-Read the manifest and print:
-1. Per-phase line: `id — title — status (done/total tasks) — branch (if set) — desiredOutcome (if set)`.
-2. Per-task rows grouped by phase: `id | title | status | model | unmet blockers | commit (short SHA or —)`.
-3. A **"Ready now"** list: every ready task, with its model.
-4. If any phase is `in_progress` with a non-null `branch` (or contains an `in_progress` task):
-   flag it as **resumable** — "interrupted? run `/audit resume`".
-5. If `bugs[]` exists and is non-empty: counts by bug status, plus every non-closed bug whose
-   materialized task (`taskId`) is ready now.
-Do not modify anything. Related commands: `/audit:init` (generate this manifest),
-`/audit:task` (add a task), `/audit:bug` (track bugs), `/audit:sync` (Azure DevOps work items).
-
-## Subcommand: `next`
-1. Find the first **ready** task (phase order, then task-id order).
-2. If none ready: report why (what everything is blocked on) and stop.
-3. Otherwise **Execute the task**, then report its outcome and what is ready next.
-
-## Subcommand: `run <taskId>`
-Execute exactly `<taskId>`, with status guards:
-1. `status == "done"` → refuse: report its `commit`/`outcome`. Offer (AskUserQuestion) an explicit
-   **re-open**: on confirmation, reset `status = "pending"`, `attempts = 0`, clear `commit`,
-   `outcome`, `completedAt`, `verifiedBy` — then execute. Never silently re-run a done task.
-2. `status == "blocked"` → refuse: report why (exhausted attempts / blockers). Offer a confirmed
-   reset of `attempts` to 0 (back to `pending`), then execute.
-3. `status == "in_progress"` → warn: likely an interrupted run — point to `/audit resume`.
-   Proceed only if the human explicitly confirms re-execution.
-4. Unmet blockers → refuse and list them.
-5. Otherwise **Execute the task**.
-
-## Subcommand: `phase <phaseId>`
-1. If the phase is `done` → refuse; point to `review <phaseId>` for a re-run of sign-off.
-2. Execute every **ready** task in the phase in parallel where safe (disjoint `files` and satisfied
-   `dependsOn`), sequentially otherwise. (**Execute the task** performs phase entry — branch,
-   `baseRef`, phase status — on its first run.)
-3. Re-evaluate readiness and repeat until no task in the phase is ready.
-4. When **all** tasks in the phase are `done`, run **Phase sign-off**.
-
-## Subcommand: `review <phaseId>`
-Run **Phase sign-off** for `<phaseId>` on demand (e.g. to re-run after fixes).
-
-## Subcommand: `resume`
-Run **Resume after interruption** (below). Use after a crash, a lost session, or any interrupted
-`phase`/`next`/`run` — `status` flags when this applies.
-
-## Subcommand: `report`
-Read-only. Run
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath>`
-(artifacts land next to the manifest; pass `--out-dir <dir>` through when the human asks)
-and print the written paths. The report is self-contained HTML + Markdown — shareable as a
-CI artifact. Never locks, never mutates.
-
----
-
 ## Concurrency lock
 
-Two sessions mutating one manifest/working tree corrupt each other. Every **mutating**
-subcommand (`next`, `run`, `phase`, `review`, `resume`) holds `<manifestPath>.lock`:
+Two sessions mutating one manifest/working tree corrupt each other. Every **mutating** command
+(`next`, `run`, `phase`, `review`, `resume`) holds `<manifestPath>.lock`:
 
-1. **Acquire (at subcommand start).** If the lock file exists, read it
-   (`{hostname, startedAt, note}`):
+1. **Acquire (at command start).** If the lock file exists, read it (`{hostname, startedAt, note}`):
    - `startedAt` younger than **60 minutes** → REFUSE: print the holder info and stop —
      another session is (or very recently was) working this manifest.
    - older → stale (a crashed run): ask the human (AskUserQuestion) to confirm **takeover**,
      then overwrite the lock.
    Otherwise create it via Bash:
    `printf '{"hostname":"%s","startedAt":"%s","note":"audit orchestrator"}' "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > <manifestPath>.lock`
-2. **Release** — delete the lock at the END of the subcommand, including failure paths you
-   control (a refusal that never acquired it releases nothing). Human-confirmation pauses
-   (AskUserQuestion) keep the lock — that is still your run.
-3. `status` and `report` never lock and never wait for one.
-4. Never commit the lock file (do not `git add` it); recommend `.gitignore`-ing
-   `*.lock` under the manifest directory.
-
----
+2. **Release** — delete the lock at the END of the command, including failure paths you control
+   (a refusal that never acquired it releases nothing). Human-confirmation pauses (AskUserQuestion)
+   keep the lock — that is still your run.
+3. `/audit:status` and `/audit:report` never lock and never wait for one.
+4. Never commit the lock file (do not `git add` it); recommend `.gitignore`-ing `*.lock` under the
+   manifest directory.
 
 ## Branch-per-phase
 
@@ -183,8 +125,6 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
   4. `git switch -c <branch>`, then write the branch name into `phase.branch` (Edit).
 
 **During task execution:** all edits and commits happen on the phase branch. **Push remains FORBIDDEN** — local only.
-
----
 
 ## Execute the task
 
@@ -283,7 +223,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
 1. Read the manifest. Find the phase with `status == "in_progress"` and a non-null `branch`.
    **Pre-0.3 manifests fallback:** if no phase is `in_progress`, use the phase with a non-null `branch`
    whose status != `"done"`, else the phase containing an `in_progress` task. If none of these exist,
-   report "nothing to resume" and suggest `status`. Otherwise `git switch` to its branch.
+   report "nothing to resume" and suggest `/audit:status`. Otherwise `git switch` to its branch.
 2. Compare committed work: `git log --oneline <phase.baseRef>..HEAD`.
 3. Find the resume point: the **first task whose `commit` field is null/missing**:
    - `status == "done"` but no `commit` → the commit step was interrupted; re-commit its files now (standard message, record SHA).
@@ -293,8 +233,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    - `status == "pending"` → resume normally (Execute the task).
 4. Continue normal execution from the resume point.
 
----
-
 ## Reporting
-After any mutating subcommand, print: tasks completed this run (with one-line outcomes), the phase sign-off result if
+
+After any mutating command, print: tasks completed this run (with one-line outcomes), the phase sign-off result if
 reached, and the next ready task(s). Keep the manifest the single source of truth — never track status elsewhere.
+Release the lock.

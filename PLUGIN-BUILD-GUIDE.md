@@ -1,7 +1,7 @@
 # Plugin build & handoff guide
 
 This repository is a **standalone Claude Code plugin** that packages a manifest-driven
-`/audit` fix-pipeline plus six guard hooks and three pinned-tool agents. It was extracted (de-coupled, IP-scrubbed)
+manifest-driven `/audit:*` fix-pipeline plus six guard hooks and three pinned-tool agents. It was extracted (de-coupled, IP-scrubbed)
 from an internal project's `.claude/` tooling so it can be reused in **any** repo and
 published on a personal marketplace. This single document is self-sufficient: it explains
 every file, why its contents are shaped the way they are, how to finish/publish it, and how
@@ -45,8 +45,8 @@ claude-plugins/                           # this repo (personal, public)
   plugins/
     audit/
       .claude-plugin/plugin.json          # plugin manifest (name/version/author/…)
-      commands/
-        audit.md                          # the /audit orchestrator (generic; reads meta.*)
+      commands/                           # execution verbs (each thin; read reference/orchestrator.md)
+        status.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
         init.md                           # /audit:init — multi-agent manifest generation
         task.md                           # /audit:task — interactive task creation
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
@@ -66,6 +66,7 @@ claude-plugins/                           # this repo (personal, public)
         guard-bash-writes.py              # PostToolUse git-status diff check (unplanned shell writes)
         remind-tdd.py                     # non-blocking TDD nudge (PostToolUse)
       reference/
+        orchestrator.md                   # shared execution logic (preflight, lock, Execute-the-task, sign-off)
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
       schema/audit-plan.schema.json       # JSON Schema (draft 2020-12) for the manifest
       scripts/
@@ -80,7 +81,9 @@ claude-plugins/                           # this repo (personal, public)
 
 Claude Code plugin mechanics used here (all confirmed against the plugin docs):
 - `.claude-plugin/plugin.json` — only `name` is strictly required.
-- `commands/*.md` — slash commands (invoked `/audit`; namespaced `/audit:audit` if needed).
+- `commands/*.md` — slash commands, namespaced `/<plugin>:<file>` → `/audit:status`, `/audit:run`,
+  `/audit:phase`, `/audit:init`, … (this Claude Code version has no bare `/audit`; each verb is its
+  own command file so nothing is invoked as the awkward `/audit:audit`).
 - `hooks/hooks.json` — hook wiring; scripts self-reference with **`${CLAUDE_PLUGIN_ROOT}`** and
   read the consuming repo via **`${CLAUDE_PROJECT_DIR}`**.
 - `.claude-plugin/marketplace.json` — marketplace root listing `plugins[].source`.
@@ -98,25 +101,28 @@ plugin `audit` at `./plugins/audit`. Users add it with
 `/plugin marketplace add AleksandarBisevac/claude-plugins`.
 
 ### `plugins/audit/.claude-plugin/plugin.json`
-Plugin manifest. `name: "audit"` drives the command namespace (`/audit`, `/audit:init`,
-`/audit:task`, `/audit:bug`). Author/homepage/license are filled. No `userConfig` is used —
+Plugin manifest. `name: "audit"` drives the command namespace (`/audit:status`, `/audit:run`,
+`/audit:phase`, `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync`, …). Author/homepage/
+license/repository are filled. No `userConfig` is used —
 per-repo config is a plain file the hooks read (simpler than install-time prompts for
 structured config like globs/customRules).
 
-### `plugins/audit/commands/audit.md`
-The orchestrator, as a command with YAML frontmatter (`description`, `argument-hint`,
-`allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion` — values are
-QUOTED strings; an unquoted description containing `: ` silently drops ALL frontmatter).
-Logic preserved from the original: readiness rule, branch-per-phase, per-task subagent spawn
-with model+skills, TDD/regression/gate-only discipline, per-task commit, phase sign-off,
-an invocable `resume` subcommand, reporting — plus the 0.3.0 guards: preflight
-(config/manifest/usage), `run` status guards, infra-vs-test failure split, unconditional
-high-risk confirmation, `--no-ff` fallback when ff-merge fails, `desiredOutcome` wiring.
-**De-coupling:** it reads `meta.developmentBranch` / `branchPrefix` / `reviewSkill` (null → skip)
-/ `runtimeBoot` (null → skip) / `nodePreamble` (null → run gates directly) / `commit` /
-`buildCommands`. It hardcodes no branch, package id, skill, or build tool. New safety: honors
-`task.maxAttempts` (default 3 → mark `blocked`) and states the orchestrator (not the subagent)
-writes `outcome`.
+### `plugins/audit/reference/orchestrator.md` + the execution verb commands (v0.7.0)
+Since 0.7.0 the orchestrator is split: the shared logic lives in `reference/orchestrator.md`, and
+each action is its own thin command file — `status.md`, `next.md`, `run.md`, `phase.md`,
+`review.md`, `resume.md`, `report.md` → `/audit:status`, `/audit:next`, `/audit:run <id>`,
+`/audit:phase <id>`, `/audit:review <id>`, `/audit:resume`, `/audit:report`. (This replaces the
+old single `audit.md`, whose only invocation would have been the awkward `/audit:audit`.) Each verb
+file is a few lines: frontmatter with QUOTED values (an unquoted description containing `: ` silently
+drops ALL frontmatter), plus "read `orchestrator.md` + `manifest-conventions.md`, run this slice."
+`orchestrator.md` holds: config resolution (incl. `meta.gitRoot`), preflight (config/manifest/
+git-root/submodule/lock), guardrails, readiness rule, concurrency lock, branch-per-phase,
+Execute-the-task (executor agent + TDD/regression/gate-only + infra-vs-test failure split +
+per-task commit via `git -C <gitRoot>`), Phase sign-off (reviewer agent, test gate, runtime boot,
+ff/`--no-ff` merge), resume, reporting. **De-coupling:** everything reads `meta.developmentBranch` /
+`branchPrefix` / `gitRoot` / `reviewSkill` (null → skip) / `runtimeBoot` (null → skip) /
+`nodePreamble` / `commit` / `buildCommands` — no hardcoded branch, package id, skill, or build tool.
+Read-only verbs (`status`, `report`) skip the mutating preflight and never lock.
 
 ### `plugins/audit/commands/init.md`, `task.md`, `bug.md`
 The creation-side commands (invoked namespaced: `/audit:init`, `/audit:task`, `/audit:bug` —
@@ -130,8 +136,8 @@ short forms may collide with built-ins like `/init`). All three read
   immutable), full new-task template, id allocation, fileIndex maintenance.
 - **bug** — `add` (BUG-<n>, severity/repro/expected/actual) · `list` (read-only) ·
   `fix` (materializes a `tdd` + `expectRedFirst` task into a rolling `BF<n>` phase,
-  links `bug.taskId ↔ task.bugId`, hands off to `/audit run`) · `close` ([wontfix]).
-  Execution stays exclusively in `/audit` — no second execution engine.
+  links `bug.taskId ↔ task.bugId`, hands off to `/audit:run`) · `close` ([wontfix]).
+  Execution stays exclusively in the `/audit:*` verbs — no second execution engine.
 - **sync** (v0.5.0) — `push [bugs|tasks|all]` · `pull` · `status`: mirrors manifest
   bugs/tasks into Azure DevOps work items via the `az boards` CLI (azure-devops MCP tools
   as an optional fast-path), configured by `meta.ado`; idempotent by design — the
@@ -353,12 +359,12 @@ grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
 /plugin marketplace add /abs/path/to/claude-plugins
 /plugin install audit@quality-gates
 #   generate the manifest with /audit:init (or copy the templates), then:
-/audit status
+/audit:status
 #   edit a non-exempt file with no plan → require-plan denies; add #no-plan (or your
 #   bypassKeyword) → armed + logged bypass, consumed only after a successful edit;
 #   a custom rule blocks under its pathPrefix only; sed -i into a source file → denied;
 #   edit a source file with no test touched → remind-tdd nudges (non-blocking);
-#   interrupt a phase mid-run → /audit resume picks up at the first commit-less task.
+#   interrupt a phase mid-run → /audit:resume picks up at the first commit-less task.
 /audit:bug add "..." ; /audit:bug fix BUG-1 ; /audit run BF1.1
 ```
 
@@ -369,7 +375,7 @@ synthesizes the manifest; `/audit:task add` appends planned work; `/audit:bug ad
 bugs and `/audit:bug fix` materializes one into a red-first `tdd` task in a `BF<n>` phase.
 Every mutation revalidates via `scripts/validate-manifest.py`.
 
-**Execution**: `/audit` drives the manifest, spawning model-assigned subagents that load
+**Execution**: the `/audit:*` verbs drive the manifest, spawning model-assigned subagents that load
 `task.skills`, run `tests.gate`, and commit per task on a phase branch, then sign the phase
 off (optional review skill + test gates + optional runtime boot) and ff-merge into
 `meta.developmentBranch`. When a task carries `bugId`, its commit flips the linked bug to

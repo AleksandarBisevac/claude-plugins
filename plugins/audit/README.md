@@ -7,21 +7,24 @@ project-specific is supplied by a small per-repo config file.
 
 ## What you get
 
-- **`/audit`** — orchestrates phases → tasks from a JSON manifest. Per-task
-  model + skills subagents, TDD/regression/gate-only test discipline, branch-per-phase git flow,
-  gated phase sign-off (optional review skill + test gates + optional runtime boot), and a
-  working **`resume`** for interrupted runs.
+- **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
+  `/audit:run <id>` (one task), `/audit:phase <id>` (whole phase + sign-off),
+  `/audit:review <id>` (re-run sign-off), `/audit:resume` (continue an interrupted run) —
+  orchestrate phases → tasks from a JSON manifest. Per-task model + skills subagents,
+  TDD/regression/gate-only test discipline, branch-per-phase git flow, gated phase sign-off
+  (optional review skill + test gates + optional runtime boot). All share
+  `reference/orchestrator.md`.
 - **`/audit:init`** — multi-agent codebase audit that GENERATES the manifest: interview →
   recon → parallel read-only explorers → synthesized, schema-valid phases/tasks.
 - **`/audit:task`** — add a tracked task interactively (id allocation, field initialization,
   fileIndex maintenance, revalidation).
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
-  task** (the repro test must fail before the fix) executed by `/audit`.
+  task** (the repro test must fail before the fix) executed by `/audit:run`.
 - **`/audit:sync`** — mirror bugs/tasks into **Azure DevOps work items** (`push`), import
   assigned ADO bugs (`pull`), or diff link state (`status`). Explicit, idempotent, one
   direction per invocation; `az boards` CLI contract with the azure-devops MCP tools as an
   optional fast-path.
-- **`/audit report`** — self-contained HTML + Markdown status report (phase progress, task
+- **`/audit:report`** — self-contained HTML + Markdown status report (phase progress, task
   tables, bug rollup, ADO links) — publishable as a CI artifact.
 - **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
@@ -80,8 +83,10 @@ project-specific is supplied by a small per-repo config file.
 /plugin install audit@quality-gates
 ```
 
-Commands appear as `/audit`, `/audit:init`, `/audit:task`, `/audit:bug`. If they don't
-show up immediately, run `/reload-plugins` (or restart the session).
+Commands appear as `/audit:status`, `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:review`,
+`/audit:resume`, `/audit:report`, `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
+action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up immediately,
+run `/reload-plugins` (or restart the session).
 
 ## Installing arms global hooks
 
@@ -129,12 +134,12 @@ curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/ma
 Run it:
 
 ```
-/audit status          # report (phases, tasks, bugs, resumable phases), no changes
-/audit next            # execute the next ready task
-/audit phase P0        # run a whole phase, then sign it off
-/audit review P0       # re-run a phase's sign-off
-/audit resume          # continue an interrupted phase run
-/audit report          # write audit-report.html + .md next to the manifest
+/audit:status          # report (phases, tasks, bugs, resumable phases), no changes
+/audit:next            # execute the next ready task
+/audit:phase P0        # run a whole phase, then sign it off
+/audit:review P0       # re-run a phase's sign-off
+/audit:resume          # continue an interrupted phase run
+/audit:report          # write audit-report.html + .md next to the manifest
 /audit:task add "..."  # add a tracked task (--phase <id> to target a phase)
 ```
 
@@ -144,7 +149,7 @@ Run it:
 /audit:bug add "Login crashes on empty email"   # report → BUG-1 (severity, repro, expected/actual)
 /audit:bug list                                 # open/triaged/in_progress bugs (list all | list <status>)
 /audit:bug fix BUG-1                            # materialize a tdd task in a BF<n> bugfix phase
-/audit run BF1.1                                # repro test red → fix → green → commit; bug flips to fixed
+/audit:run BF1.1                                # repro test red → fix → green → commit; bug flips to fixed
 /audit:bug close BUG-2 wontfix                  # close with a justification
 ```
 
@@ -157,8 +162,8 @@ materializes one into a task whose repro test **must fail on current code first*
 ## Configuration (`.claude/audit.config.json`)
 
 Optional. Absent → safe defaults. **Present but malformed → defaults + a one-time
-warning** (your custom patterns would otherwise silently not apply; `/audit` also refuses
-to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
+warning** (your custom patterns would otherwise silently not apply; the `/audit:*` commands also
+refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 
 | Key | Purpose | Default |
 |---|---|---|
@@ -180,7 +185,7 @@ to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 Manifest-level knobs live in the manifest's `meta` block (all optional): `developmentBranch`,
 `branchPrefix`, `reviewSkill`, `runtimeBoot`, `nodePreamble`, `commit`, `buildCommands`.
 See the schema for exact shapes and defaults. Per-phase, `desiredOutcome` states what
-success looks like — `/audit` shows it, feeds it to task subagents, and sign-off must address it.
+success looks like — `/audit:status` shows it, task subagents receive it, and sign-off must address it.
 
 ## Azure DevOps (optional)
 
@@ -216,15 +221,15 @@ git repo — set the git root in both places:
 ```
 
 `/audit:init` detects this and sets `meta.gitRoot` for you (older 0.2.0 manifests used `meta.workspaceRoot`,
-which `/audit` still reads as a fallback). Task `files` stay project-dir-relative (e.g. `test/src/foo.ts`);
-the orchestrator strips the prefix when staging. `/audit` **preflights** this: if the resolved git root
-isn't a git repo it stops with guidance instead of failing mid-run. Prefer keeping the manifest **inside**
+which the orchestrator still reads as a fallback). Task `files` stay project-dir-relative (e.g. `test/src/foo.ts`);
+the orchestrator strips the prefix when staging. The `/audit:*` commands **preflight** this: if the resolved git root
+isn't a git repo they stop with guidance instead of failing mid-run. Prefer keeping the manifest **inside**
 the git root (e.g. `test/docs/audit/audit-plan.json`) so its status history can be committed.
 
 ## Troubleshooting
 
-- **`/audit` stops with "git root is not a git repository".** Your git repo is in a subdir — set
-  `gitRoot` (see above). This is the preflight doing its job.
+- **An `/audit:*` command stops with "git root is not a git repository".** Your git repo is in a
+  subdir — set `gitRoot` (see above). This is the preflight doing its job.
 - **A permission prompt keeps reappearing after `/plugin update`.** Claude Code may have captured an
   allow-rule pinned to the old version's cache path (e.g. `…/audit/0.2.0/scripts/…`). After an update
   the path becomes `…/0.6.1/…`; remove the stale pinned entry from `.claude/settings.local.json` (the
@@ -235,8 +240,8 @@ the git root (e.g. `test/docs/audit/audit-plan.json`) so its status history can 
 - **`.claude/state` / `.claude/logs` showing up as untracked.** Add them to `.gitignore`; the plugin
   garbage-collects entries older than 7 days but never commits them.
 - **Git submodules.** The orchestrator commits from one repo (the git root); files inside a
-  submodule belong to a separate nested repo the parent can't stage. `/audit` preflights this — if a
-  `task.files` entry is inside a submodule it **stops** and tells you to either point `meta.gitRoot` at
+  submodule belong to a separate nested repo the parent can't stage. The `/audit:*` commands preflight
+  this — if a `task.files` entry is inside a submodule they **stop** and tell you to either point `meta.gitRoot` at
   that submodule (to audit it directly) or drop those files from the task. Plan-first / secret guards
   still apply to submodule paths by path; only the per-task commit and the PostToolUse shell-write
   check are submodule-boundary limited.

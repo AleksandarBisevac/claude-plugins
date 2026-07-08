@@ -1,7 +1,8 @@
 # Manifest conventions
 
 Shared rules for every command that reads or mutates the audit manifest
-(`/audit`, `/audit:init`, `/audit:task`, `/audit:bug`). Read this file FIRST.
+(the `/audit:*` execution commands plus `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync`).
+Read this file FIRST. The execution commands also read `orchestrator.md`.
 
 ## Locating the manifest
 
@@ -46,8 +47,8 @@ Every newly created task MUST be initialized with ALL of:
 A newly created phase MUST be initialized with: `status: "pending"`,
 `baseRef: null`, `branch: null`, `mergedAt: null`,
 `review: {tool: null, model: "sonnet", status: "pending", findings: []}`,
-`summary: null`, a one-line `desiredOutcome` (what success looks like — `/audit`
-shows it, gives it to task subagents, and sign-off must address it), and a
+`summary: null`, a one-line `desiredOutcome` (what success looks like — `/audit:status`
+shows it, task subagents receive it, and sign-off must address it), and a
 `testGate` derived from `meta.buildCommands` keys.
 
 ## fileIndex maintenance

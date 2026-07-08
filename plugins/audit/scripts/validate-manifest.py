@@ -234,7 +234,7 @@ def validate(manifest):
             if (phase.get("status") == "pending"
                     and task.get("status") == "in_progress"):
                 w.append("%s is in_progress but its %s is still 'pending' — "
-                         "pre-0.3 manifest? /audit resume expects the phase to "
+                         "pre-0.3 manifest? /audit:resume expects the phase to "
                          "be 'in_progress' too" % (twhere, pwhere))
             tests = task.get("tests")
             if "tests" in task and tests is not None and not isinstance(tests, dict):

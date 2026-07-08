@@ -8,7 +8,7 @@ secret guards. Deterministic hooks, not prompt suggestions.
 
 | Plugin | What it does |
 |---|---|
-| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit` executes phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, and five guard hooks enforce plan-first development, secret safety and a TDD nudge. |
+| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
 
 ## Install
 

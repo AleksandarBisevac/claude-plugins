@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/schema/audit-plan.schema.json",
   "title": "Audit Plan Manifest",
-  "description": "Schema for the /audit orchestrator manifest (default docs/audit/audit-plan.json). All fields new in the plugin version are OPTIONAL so a pre-existing manifest validates unchanged after adding \"$schema\". additionalProperties is permissive at object levels to stay back-compatible; enums are enforced on the orchestrator-controlled fields (task/phase status, tests.mode, task.risk) to catch typos, while human-authored review fields (review.status, finding.severity) stay free-text.",
+  "description": "Schema for the audit orchestrator manifest (default docs/audit/audit-plan.json). All fields new in the plugin version are OPTIONAL so a pre-existing manifest validates unchanged after adding \"$schema\". additionalProperties is permissive at object levels to stay back-compatible; enums are enforced on the orchestrator-controlled fields (task/phase status, tests.mode, task.risk) to catch typos, while human-authored review fields (review.status, finding.severity) stay free-text.",
   "type": "object",
   "required": ["meta", "phases"],
   "additionalProperties": true,
@@ -137,7 +137,7 @@
         "description": { "type": "string", "description": "Optional prose description of the phase (free text; informational)." },
         "desiredOutcome": {
           "type": "string",
-          "description": "One-line statement of what success looks like for the phase. Shown by /audit status, given to every task subagent, and phase.summary must address it at sign-off."
+          "description": "One-line statement of what success looks like for the phase. Shown by /audit:status, given to every task subagent, and phase.summary must address it at sign-off."
         },
         "testGate": {
           "type": "array",
@@ -250,7 +250,7 @@
         },
         "fixedIn": {
           "type": ["string", "null"],
-          "description": "Commit SHA of the fixing task; written by the /audit orchestrator."
+          "description": "Commit SHA of the fixing task; written by the audit orchestrator."
         },
         "notes": { "type": ["string", "null"] },
         "ado": { "$ref": "#/$defs/adoLink" }

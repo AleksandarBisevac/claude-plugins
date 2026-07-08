@@ -16,7 +16,7 @@ Config: `.claude/audit.config.json` → `tddReminder` (see _config.DEFAULTS):
                             the reminder for the rest of the session)
   throttleMinutes   int   — per-session minimum gap between warnings
                             (concurrent sessions throttle independently)
-  inProgressPolicy  str   — interplay with the /audit pipeline:
+  inProgressPolicy  str   — interplay with the audit pipeline:
         "skip-gate-only" (default) — silent when the file is covered by an
             in_progress task whose tests.mode == "gate-only" (such tasks
             legitimately edit source without new tests)
@@ -120,7 +120,7 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, now: float = None):
     if not _config.matches_exempt(rel, tr.get("sourceGlobs")):
         return ("silent", "not a source file: %s" % rel)
 
-    # 4. Interplay with the /audit pipeline (in_progress task coverage).
+    # 4. Interplay with the audit pipeline (in_progress task coverage).
     policy = tr.get("inProgressPolicy") or "skip-gate-only"
     if policy != "warn-always":
         manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
