@@ -5,6 +5,20 @@ Read this FIRST from every `/audit:*` execution command (`status`, `next`, `run`
 own slice and defers all the shared rules — config resolution, preflight, guardrails,
 readiness, the lock, branch-per-phase, Execute-the-task, Phase sign-off, resume — to this file.
 
+## At a glance
+
+- **Verbs:** `status`/`report` are read-only (no lock); `next`/`run`/`phase`/`review`/`resume`
+  mutate (full preflight + lock + progress output).
+- **Invariants (never violate):** never `git push`/force-push/`stash`; commit only a task's own
+  `files` + the manifest; git runs via `git -C <gitRoot>`, gates run from the project dir verbatim;
+  `risk:"high"` → human confirm before commit and never on `haiku`; every manifest write is
+  re-validated; the manifest is the single source of truth.
+- **A phase run:** preflight → phase branch off `developmentBranch` → Execute each ready task
+  (parallel where `files` disjoint) → Phase sign-off (review? → test gate → runtime boot?) → merge
+  back (ff, else confirmed `--no-ff`) → release lock.
+- **On trouble:** unmet blockers → skip; gates red → retry to `maxAttempts` → `blocked`; gates
+  can't run (infra) → don't burn an attempt, human action item; interrupted → `/audit:resume`.
+
 **Source of truth:** the audit manifest. Its path comes from `.claude/audit.config.json`
 → `manifestPath` (default `docs/audit/audit-plan.json`). Read it FIRST on every invocation.
 
@@ -40,9 +54,11 @@ never hardcode branch names, package ids, skills, or build tools here:
 - `meta.gitRoot` — path (relative to the project dir) of the git repository root, where ALL git
   operations and build/gate commands run. Default `.` (the project dir IS the git root — the normal
   case). **Back-compat:** if `meta.gitRoot` is absent, fall back to `meta.workspaceRoot`, else `.`.
-  When it is not `.`: run every git command as `git -C <gitRoot> …`, run gates from `<gitRoot>`, and
-  when staging strip the `<gitRoot>/` prefix from each `task.files` entry (they are project-dir-relative)
-  to get its git-root-relative path.
+  When it is not `.`: run every GIT command as `git -C <gitRoot> …`, and when staging strip the
+  `<gitRoot>/` prefix from each `task.files` entry (they are project-dir-relative) to get its
+  git-root-relative path. **Build/gate commands are NOT rewritten** — they run from the project dir
+  exactly as the manifest gives them (the manifest, or `/audit:init`, already includes any
+  `cd <gitRoot> && …` prefix needed to reach the workspace). Do not add or strip a `cd` of your own.
 - `meta.developmentBranch` — the parent branch audit branches fork from and merge back into (default `main`).
 - `meta.branchPrefix` — prefix for per-phase branches (default `audit`).
 - `meta.reviewSkill` — skill invoked at phase sign-off (default **null** → skip; tests are the signer).
@@ -55,10 +71,12 @@ never hardcode branch names, package ids, skills, or build tools here:
 
 ## Non-negotiable guardrails
 
-- **All git and gate commands run in `<gitRoot>`** (resolved above; `.` = project dir). Use
-  `git -C <gitRoot> …` for every git call, and run build/gate commands from `<gitRoot>` (do NOT add a
-  `cd <subdir>` of your own — the manifest's gate commands are already relative to the git root). When
-  staging `task.files`, convert each to git-root-relative by stripping the `<gitRoot>/` prefix.
+- **Git commands run via `git -C <gitRoot>`; build/gate commands run from the PROJECT dir verbatim.**
+  Every git call is `git -C <gitRoot> …` (`.` = project dir). Gate commands are run exactly as the
+  manifest specifies, from the project directory — the manifest already carries any `cd <gitRoot> && …`
+  prefix it needs (older `/audit:init` output and hand-written manifests both do this). Do NOT add or
+  remove a `cd` of your own. When staging `task.files`, convert each to git-root-relative by stripping
+  the `<gitRoot>/` prefix.
 - **Git: read / pull / commit allowed.** Commit after each successful task and after phase sign-off.
   **NEVER `git push` or force-push.** All other `git reset`/`rebase`/`clean` require explicit human confirmation.
   If `meta.commit.coauthor` is set, end every commit message with it.
@@ -156,6 +174,9 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
    - The subagent does **not** commit — the orchestrator commits (step 4).
    - **The subagent must NEVER run `git stash`** (a stash in a shared working tree destroys sibling tasks' work).
      For baselines it should use `git diff`/`git show HEAD:<file>` instead. Put this in every subagent prompt.
+   - **No usable return** (the subagent died, timed out, or came back with no parseable outcome / no
+     file changes) is a **failure**, not a success — handle it exactly like a test failure in step 4
+     (leave `in_progress`, do not commit; retry until `attempts >= maxAttempts`, then `blocked`).
 4. On the subagent's return:
    - **success** (all gates green):
      a. **Risk gate first:** if `task.risk == "high"`, **stop and ask the human to confirm**
@@ -233,8 +254,41 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    - `status == "pending"` → resume normally (Execute the task).
 4. Continue normal execution from the resume point.
 
+## Progress output
+
+A phase can run many tasks, gates, and a merge — don't go silent. Emit a short **progress line as each
+step happens** so a long run stays legible (not one dump at the end):
+
+- **Phase entry:** `> PHASE <id> "<title>" — branch <branch> — N tasks ready`.
+- **Each task, at start:** `  > <taskId> "<title>" (model, tests.mode) — running`; when tasks run in
+  parallel, print the group first (`  > parallel: <id>, <id>`).
+- **Each task, on return:** `  [OK] <taskId> — gates green, committed <shortSHA>` /
+  `  [FAIL] <taskId> — <gate> failed (attempt k/max)` / `  [BLOCKED] <taskId> — attempts exhausted` /
+  `  [INFRA] <taskId> — <gate> could not run (human action item)`.
+- **Sign-off:** one line per gate — `  - review: <passed|skipped|N findings>`, `  - testGate: <green|red>`,
+  `  - runtimeBoot: <green|skipped|manual>` — then `[SIGNED OFF] PHASE <id> — merged into <branch>` (or
+  `[MERGE] ff failed — <no-ff|stopped>`).
+
+Use simple ASCII markers (`>` `[OK]` `[FAIL]` `-`) so it reads in any terminal. Keep each line to one sentence.
+
+## Dry-run / preview
+
+`next`, `run`, and `phase` accept a **`--dry-run`** token in their arguments. In dry-run:
+
+- Run only the read-only preflight (config parse + manifest exists + resolve gitRoot); **do NOT
+  acquire the lock, create branches, spawn subagents, run gates, edit the manifest, or commit.**
+- Print the plan the real run would follow and STOP:
+  - the resolved **gitRoot** and **developmentBranch**, and the **phase branch name** that would be created;
+  - the **ready tasks** in execution order, with the **parallel groups** (disjoint `files` + satisfied
+    `dependsOn`) vs the ones that must run sequentially, each with its `model`, `tests.mode`, and gate(s);
+  - any task that is NOT ready and why (unmet `blockedBy`/`dependsOn`);
+  - the **eventual merge target** (`<developmentBranch>`) and whether a fast-forward is currently possible
+    (`git -C <gitRoot> merge-base --is-ancestor` check — informational only);
+  - a closing `DRY RUN — nothing was changed.`
+- `status` and `report` are already read-only previews; `--dry-run` is for the mutating verbs.
+
 ## Reporting
 
-After any mutating command, print: tasks completed this run (with one-line outcomes), the phase sign-off result if
-reached, and the next ready task(s). Keep the manifest the single source of truth — never track status elsewhere.
-Release the lock.
+After any mutating command, print a final summary: tasks completed this run (with one-line outcomes), the
+phase sign-off result if reached, and the next ready task(s) (`/audit:next` / `/audit:phase <id>`). Keep
+the manifest the single source of truth — never track status elsewhere. Release the lock.

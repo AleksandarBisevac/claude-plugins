@@ -4,6 +4,45 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.8.0] - 2026-07-09
+
+Live-validated the orchestrator for the first time, then made a long run legible
+and previewable.
+
+### Fixed
+- **Gate commands broke on git-in-a-subdir manifests** (found by the first real
+  end-to-end run). 0.7.0 told the orchestrator to run gates "from the git root";
+  0.2.0-generated manifests carry `cd <gitRoot> && …` in `buildCommands` and
+  expect the project dir. Now: **git** runs via `git -C <gitRoot>`, **gate
+  commands run from the project dir verbatim** (the manifest carries any needed
+  `cd`), and `/audit:init` prefixes `cd <gitRoot> && ` when the workspace is a
+  subdir. `orchestrator.md`, `init.md`, README updated.
+- A subagent that returns no usable result (died / no parseable outcome / no
+  file change) is now explicitly a failure → retry to `maxAttempts` → `blocked`
+  (previously implicit).
+
+### Added
+- **Progress output** — the execution verbs emit a short line as each step
+  happens (phase entry, per-task start/result/commit, each sign-off gate, merge)
+  so a long `/audit:phase` is legible instead of silent until the end.
+- **`--dry-run`** on `/audit:next`, `/audit:run`, `/audit:phase` — read-only
+  preview of the plan (branch, ready tasks, parallel groups, gates, merge target)
+  with nothing created, spawned, or committed.
+- **Richer `/audit:report`** — an overall progress header (tasks/phases/bugs/
+  ready), per-phase branch + merged-at, and a per-task outcome column; still
+  self-contained and fully escaped. 16 selftest cases.
+- **Readability** — README TL;DR quickstart at top, an "At a glance" summary in
+  `orchestrator.md`, and scannable `[x]/[~]/[!]/[ ]` status markers + an overall
+  line in `/audit:status`.
+
+### Validation
+First real end-to-end `/audit:phase` run against a live repo (throwaway Nx
+monorepo, git in `test/`, nothing pushed): preflight → phase branch → parallel
+subagents → real lint gate → per-task commits (gitRoot prefix stripped, clean
+hygiene) → sign-off → ff-merge, then full restore. Confirmed the 0.6.1 gitRoot
+fix and the lock/preflight work in a live run; surfaced the gate-cd bug fixed
+above.
+
 ## [0.7.0] - 2026-07-08
 
 Command surface: split the orchestrator into `/audit:<verb>` commands

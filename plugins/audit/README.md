@@ -5,6 +5,21 @@ task + bug tracking, multi-agent manifest generation, and guard hooks (plan-firs
 secret-safety, token-logging, TDD nudge). The pipeline logic is generic; everything
 project-specific is supplied by a small per-repo config file.
 
+## TL;DR
+
+```
+/plugin marketplace add AleksandarBisevac/claude-plugins
+/plugin install audit@quality-gates          # then /reload-plugins
+/audit:init                                    # audit the codebase → writes the manifest
+/audit:status                                  # see phases/tasks/bugs + what's ready
+/audit:phase P0                                # run a whole phase (or /audit:run <id> for one task)
+```
+
+Every action is its own `/audit:<verb>` (`status` · `next` · `run` · `phase` · `review` · `resume` ·
+`report` · `init` · `task` · `bug` · `sync`) — there is **no bare `/audit`**. Requirements: Python
+(`python3`/`python`/`py`; Windows = Git Bash). Add `--dry-run` to `next`/`run`/`phase` to preview
+without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
+
 ## What you get
 
 - **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
@@ -209,9 +224,11 @@ shows the validate → gate → report flow.
 
 ## Git repo in a subdirectory (monorepo / workspace)
 
-The orchestrator runs git and gate commands in the **git root**. If your git repo (or Nx/Turborepo
-workspace) lives in a subdirectory of where you open Claude Code — so the project dir is NOT itself a
-git repo — set the git root in both places:
+The orchestrator runs **git** commands in the git root (`git -C <gitRoot>`) and stages task files with
+the `gitRoot` prefix stripped; **build/gate commands run from the project dir** exactly as the manifest
+gives them (so a subdir gate reads `cd test && npx nx …`). If your git repo (or Nx/Turborepo workspace)
+lives in a subdirectory of where you open Claude Code — so the project dir is NOT itself a git repo —
+set the git root in both places:
 
 ```jsonc
 // manifest meta

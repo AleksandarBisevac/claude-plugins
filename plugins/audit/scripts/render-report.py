@@ -45,6 +45,8 @@ th{background:#f6f8fa}
 .fill{background:#1a7f37;height:100%}
 .muted{color:#57606a}.mono{font-family:ui-monospace,monospace;font-size:.9em}
 .outcome{color:#57606a;font-style:italic;margin:.25rem 0 .5rem}
+.overall{background:#f6f8fa;border:1px solid #d1d9e0;border-radius:.5em;padding:.6rem .8rem;margin:1rem 0}
+td.muted{font-size:.88em}
 """
 
 
@@ -83,6 +85,23 @@ def _ado_cell(item):
     return label
 
 
+def _outcome_text(task):
+    """One-line outcome (descriptive, else technical), truncated — for the table."""
+    o = task.get("outcome") if isinstance(task.get("outcome"), dict) else {}
+    txt = str(o.get("descriptive") or o.get("technical") or "").strip()
+    return (txt[:70] + "…") if len(txt) > 71 else txt
+
+
+def _phase_meta(phase):
+    """Compact ' · branch · merged <ts>' suffix for a phase heading (escaped)."""
+    bits = []
+    if phase.get("branch"):
+        bits.append("branch " + e(phase["branch"]))
+    if phase.get("mergedAt"):
+        bits.append("merged " + e(phase["mergedAt"]))
+    return (' <span class="muted">· %s</span>' % " · ".join(bits)) if bits else ""
+
+
 def _bar(done, total):
     pct = int(round(100.0 * done / total)) if total else 0
     return ('<span class="bar"><span class="fill" style="width:%d%%"></span></span> '
@@ -103,12 +122,23 @@ def render_html(manifest, summary):
                    "validator finding(s) — fix before trusting this report."
                    "</strong></p>" % summary["findings"])
 
+    # Overall progress header: total task completion + phase/bug rollup.
+    tdone = sum(p["done"] for p in summary["phases"])
+    ttotal = summary["tasks"]["total"]
+    phdone = sum(1 for p in summary["phases"] if p["status"] == "done")
+    out.append('<div class="overall"><strong>Overall</strong> %s '
+               '<span class="muted">· %d/%d phases signed off · %d open bug(s)'
+               " · %d ready now</span></div>"
+               % (_bar(tdone, ttotal), phdone, len(summary["phases"]),
+                  summary["bugs"]["open"], len(summary["ready"])))
+
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
         out.append("<h2>%s — %s %s</h2>"
                    % (e(psum["id"]), e(psum["title"]), _chip(psum["status"])))
-        out.append("<p>%s</p>" % _bar(psum["done"], psum["total"]))
+        out.append("<p>%s%s</p>" % (_bar(psum["done"], psum["total"]),
+                                    _phase_meta(ph)))
         if ph.get("desiredOutcome"):
             out.append('<p class="outcome">Desired outcome: %s</p>'
                        % e(ph["desiredOutcome"]))
@@ -118,13 +148,15 @@ def render_html(manifest, summary):
                 continue
             rows.append(
                 "<tr><td class=mono>%s</td><td>%s</td><td>%s</td>"
-                "<td>%s</td><td>%s</td><td class=mono>%s</td><td>%s</td></tr>"
+                "<td>%s</td><td>%s</td><td class=mono>%s</td><td>%s</td>"
+                "<td class=muted>%s</td></tr>"
                 % (e(t.get("id")), e(t.get("title")), _chip(t.get("status")),
                    e(t.get("model") or "—"), e(t.get("risk") or "—"),
-                   e((t.get("commit") or "—")[:9]), _ado_cell(t)))
+                   e((t.get("commit") or "—")[:9]), _ado_cell(t),
+                   e(_outcome_text(t))))
         out.append("<table><tr><th>id</th><th>title</th><th>status</th>"
-                   "<th>model</th><th>risk</th><th>commit</th><th>ADO</th></tr>"
-                   "%s</table>" % "".join(rows))
+                   "<th>model</th><th>risk</th><th>commit</th><th>ADO</th>"
+                   "<th>outcome</th></tr>%s</table>" % "".join(rows))
         if ph.get("summary"):
             out.append('<p class="outcome">%s</p>' % e(ph["summary"]))
 
@@ -161,6 +193,11 @@ def render_md(manifest, summary):
            "repo: %s · generated %s" % (cell(meta.get("repo") or "?"), now), ""]
     if not summary["valid"]:
         out += ["**INVALID MANIFEST: %d validator finding(s).**" % summary["findings"], ""]
+    tdone = sum(p["done"] for p in summary["phases"])
+    phdone = sum(1 for p in summary["phases"] if p["status"] == "done")
+    out += ["**Overall:** %d/%d tasks done · %d/%d phases signed off · %d open bug(s) · %d ready now"
+            % (tdone, summary["tasks"]["total"], phdone, len(summary["phases"]),
+               summary["bugs"]["open"], len(summary["ready"])), ""]
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
@@ -268,9 +305,11 @@ def _selftest():
         "phases": [
             {"id": "P1", "title": "Phase & <b>bold</b>", "status": "in_progress",
              "desiredOutcome": "Outcome with <img src=x onerror=alert(1)>",
+             "branch": "audit/p1-x", "mergedAt": "2026-07-09T00:00:00Z",
              "tasks": [
                  {"id": "P1.1", "title": "done task", "status": "done",
                   "commit": "abcdef1234567", "files": ["src/a.ts"],
+                  "outcome": {"descriptive": "did the thing cleanly"},
                   "ado": {"id": 42, "url": "https://dev.azure.com/o/p/_workitems/edit/42"}},
                  {"id": "P1.2", "title": "evil url", "status": "pending",
                   "ado": {"id": 7, "url": "javascript:alert(1)"}},
@@ -311,6 +350,12 @@ def _selftest():
           "| P1.1 | done task | done |" in md_out and "#42" in md_out)
     check("h1 progress bar rendered", 'class="bar"' in html_out
           and "1/2" in html_out)
+    check("h2 overall header present (html + md)",
+          'class="overall"' in html_out and "**Overall:**" in md_out
+          and "phases signed off" in html_out)
+    check("h3 task outcome shown + escaped", "did the thing cleanly" in html_out)
+    check("h4 phase branch/mergedAt meta shown",
+          "branch audit/p1-x" in html_out and "merged 2026-07-09" in html_out)
     check("r1 ready list rendered", "P1.2" in md_out)
 
     rc = main([mp, "--format", "nope"])

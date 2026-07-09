@@ -40,8 +40,10 @@ With Bash/Glob/Grep — never reading secrets:
    dir IS the git root). All git operations and gate commands will run there.
 2. Top-level layout, approx file count (`git ls-files | wc -l`, run in the git root), main languages.
 3. Detect build/test/lint commands (package.json scripts, Makefile, pyproject, etc.)
-   → draft `meta.buildCommands` (keys `lint`/`test`/`typecheck`/… mapping to real commands). Write them
-   **relative to `meta.gitRoot`** (do NOT prefix a `cd <subdir>` — the orchestrator runs them there).
+   → draft `meta.buildCommands` (keys `lint`/`test`/`typecheck`/… mapping to real commands). Commands
+   run from the **project dir**, so when `meta.gitRoot` is not `.` **prefix each with `cd <gitRoot> && `**
+   (e.g. `"lint": "cd test && npx nx run-many -t lint"`). This keeps each gate self-contained and
+   independent of the caller's CWD.
 4. Split the included scope into 2–6 coherent **subsystems** (by directory/domain).
 
 ## 4. Fan-out (multi-agent)

@@ -1288,6 +1288,140 @@
           "verifiedBy": []
         }
       ]
+    },
+    {
+      "id": "P8",
+      "title": "v0.8.0 live shakedown + progress/dry-run/report/readability",
+      "status": "done",
+      "model": "sonnet",
+      "blockedBy": [],
+      "desiredOutcome": "The orchestrator is proven by a real end-to-end run, and a long phase is legible (progress output), previewable (dry-run), and reportable (richer report).",
+      "testGate": [
+        "selftests",
+        "validate",
+        "plugin-validate"
+      ],
+      "baseRef": null,
+      "branch": null,
+      "mergedAt": null,
+      "review": {
+        "tool": null,
+        "model": "sonnet",
+        "status": "skipped",
+        "findings": []
+      },
+      "summary": "First real /audit:phase run (throwaway Nx monorepo, git in test/, nothing pushed) proved preflight/gitRoot/lock/branch/parallel-subagents/commit-hygiene/sign-off/ff-merge live, and found the gate-cd bug (fixed). Then added progress output, --dry-run, a richer report, and a readability pass. 196 selftest cases.",
+      "tasks": [
+        {
+          "id": "P8.1",
+          "title": "Live end-to-end shakedown + gate-cd fix",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": [
+            "plugins/audit/reference/orchestrator.md",
+            "plugins/audit/commands/init.md",
+            "plugins/audit/README.md"
+          ],
+          "docs": [],
+          "description": "First real run surfaced that 0.7.0's 'run gates from gitRoot' broke 0.2.0 manifests whose buildCommands carry 'cd <gitRoot> &&'. Fix: git via git -C <gitRoot>; gates run from the project dir verbatim; init prefixes cd for subdir workspaces. Also: no-result subagent = explicit failure/retry.",
+          "tests": {
+            "mode": "regression",
+            "add": [
+              "shakedown run restored the repo 1:1; commit hygiene held with gitRoot strip"
+            ],
+            "expectRedFirst": false,
+            "gate": [
+              "plugin-validate"
+            ]
+          },
+          "outcome": {
+            "technical": "Validated against a live repo (test-mono-expo, git in test/); nothing pushed; full restore verified.",
+            "descriptive": "The orchestrator now has a real end-to-end run behind it, not just unit tests."
+          },
+          "commit": null,
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-09T10:00:00+02:00",
+          "completedAt": "2026-07-09T10:00:00+02:00",
+          "risk": "med",
+          "verifiedBy": []
+        },
+        {
+          "id": "P8.2",
+          "title": "Progress output + --dry-run",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": [
+            "plugins/audit/reference/orchestrator.md",
+            "plugins/audit/commands/phase.md",
+            "plugins/audit/commands/next.md",
+            "plugins/audit/commands/run.md"
+          ],
+          "docs": [],
+          "description": "Emit per-step progress during a phase; add --dry-run preview (read-only plan, no mutation) to next/run/phase.",
+          "tests": {
+            "mode": "gate-only",
+            "add": [],
+            "expectRedFirst": false,
+            "gate": [
+              "plugin-validate"
+            ]
+          },
+          "outcome": {
+            "technical": "Progress output + Dry-run sections in orchestrator.md; verbs branch on --dry-run.",
+            "descriptive": "A long phase is now legible and previewable."
+          },
+          "commit": null,
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-09T10:00:00+02:00",
+          "completedAt": "2026-07-09T10:00:00+02:00",
+          "risk": "low",
+          "verifiedBy": []
+        },
+        {
+          "id": "P8.3",
+          "title": "Richer report + readability pass",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": [
+            "plugins/audit/scripts/render-report.py",
+            "plugins/audit/commands/status.md"
+          ],
+          "docs": [],
+          "description": "render-report: overall header, per-phase branch/mergedAt, task outcome column (16 selftest cases). README TL;DR, orchestrator At-a-glance, scannable status markers.",
+          "tests": {
+            "mode": "regression",
+            "add": [
+              "16 render-report selftest cases incl. overall header + outcome + phase meta"
+            ],
+            "expectRedFirst": false,
+            "gate": [
+              "selftests"
+            ]
+          },
+          "outcome": {
+            "technical": "All self-contained + escaped; status shows [x]/[~]/[!]/[ ] markers + overall line.",
+            "descriptive": "Status and report read at a glance."
+          },
+          "commit": null,
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-09T10:00:00+02:00",
+          "completedAt": "2026-07-09T10:00:00+02:00",
+          "risk": "low",
+          "verifiedBy": []
+        }
+      ]
     }
   ],
   "fileIndex": {
@@ -1346,7 +1480,8 @@
       "P4.4",
       "P5.3",
       "P6.1",
-      "P7.2"
+      "P7.2",
+      "P8.1"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1"
@@ -1376,13 +1511,16 @@
       "P4.1",
       "P5.1",
       "P6.1",
-      "P7.2"
+      "P7.2",
+      "P8.1"
     ],
     "plugins/audit/commands/next.md": [
-      "P7.1"
+      "P7.1",
+      "P8.2"
     ],
     "plugins/audit/commands/phase.md": [
-      "P7.1"
+      "P7.1",
+      "P8.2"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1"
@@ -1394,10 +1532,12 @@
       "P7.1"
     ],
     "plugins/audit/commands/run.md": [
-      "P7.1"
+      "P7.1",
+      "P8.2"
     ],
     "plugins/audit/commands/status.md": [
-      "P7.1"
+      "P7.1",
+      "P8.3"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1"
@@ -1450,7 +1590,9 @@
       "P7.2"
     ],
     "plugins/audit/reference/orchestrator.md": [
-      "P7.1"
+      "P7.1",
+      "P8.1",
+      "P8.2"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -1464,7 +1606,8 @@
       "P6.1"
     ],
     "plugins/audit/scripts/render-report.py": [
-      "P3.3"
+      "P3.3",
+      "P8.3"
     ],
     "plugins/audit/scripts/validate-manifest.py": [
       "P1.5",

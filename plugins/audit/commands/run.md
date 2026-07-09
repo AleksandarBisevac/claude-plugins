@@ -1,14 +1,19 @@
 ---
-description: 'Audit pipeline: execute exactly one task by id, with status guards (done/blocked/in_progress) and blocker checks.'
-argument-hint: '<taskId>'
+description: 'Audit pipeline: execute exactly one task by id, with status guards (done/blocked/in_progress) and blocker checks. --dry-run previews without mutating.'
+argument-hint: '<taskId> [--dry-run]'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
 # /audit:run — execute one task
 
-`$ARGUMENTS` = the task id to run. Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first. Run the full preflight
-(steps 1–5, including the lock).
+`$ARGUMENTS` = the task id to run (plus optional `--dry-run`). Read
+`${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
+`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first.
+
+**If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section — preview
+whether the task is ready + what would run, and STOP without mutating.
+
+Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go.
 
 Execute exactly `<taskId>`, with status guards:
 1. `status == "done"` → refuse: report its `commit`/`outcome`. Offer (AskUserQuestion) an explicit
