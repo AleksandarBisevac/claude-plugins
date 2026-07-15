@@ -9,8 +9,9 @@ Enforces two universal secret-safety rules as a hard backstop:
 Reading file *names* (e.g. `ls .env*`, Glob on names) stays allowed — only content
 reads are blocked. `.env.example` / `.env.sample` / `.env.template` are safe templates.
 
-The base secret-path set is generic (env, credentials, .p12/.mobileprovision/
-.keystore/.jks/.p8/.pem). A consuming repo can ADD patterns via
+The base secret-path set is generic (env, credentials, SSH private keys
+id_rsa/id_dsa/id_ecdsa/id_ed25519, .p12/.pfx/.mobileprovision/.keystore/.jks/
+.p8/.pem). A consuming repo can ADD patterns via
 `.claude/audit.config.json` → secretPatterns.extra (list of regexes matched against
 the target path/command).
 
@@ -62,7 +63,9 @@ SECRET_PATH = re.compile(
         (^|/)\.env(?!\.(?:example|sample|template|dist|defaults)\b)(\.[^/]+)?$
       | (^|/)credentials[^/]*\.(?:json|plist|p8|pem|key|cer|der|txt|cfg|conf|ya?ml)$
       | (^|/)credentials$
+      | (^|/)id_(?:rsa|dsa|ecdsa|ed25519)$
       | \.p12$
+      | \.pfx$
       | \.mobileprovision$
       | \.keystore$
       | \.jks$
@@ -76,7 +79,9 @@ SECRET_GLOB = re.compile(
     r"""(
         (^|/)\.env(?!\.(?:example|sample|template|dist|defaults))
       | (^|/)credentials
+      | (^|/)id_(?:rsa|dsa|ecdsa|ed25519)\b
       | \.p12\b
+      | \.pfx\b
       | \.mobileprovision\b
       | \.keystore\b
       | \.jks\b
@@ -96,7 +101,9 @@ _READ_VERB = (
 _SECRET_TOKEN = (
     r"(?:\.env(?!\.(?:example|sample|template|dist|defaults))(?:\.|\b)"
     r"|credentials[\w.-]*\.(?:json|plist|p8|pem|key|txt)"
-    r"|\.p12\b|\.mobileprovision\b|\.keystore\b|\.jks\b|\.p8\b|\.pem\b)"
+    r"|(?:^|[/\s'\"])credentials(?=$|[\s'\";|&])"       # bare `~/.aws/credentials`
+    r"|(?:^|[/\s'\"])id_(?:rsa|dsa|ecdsa|ed25519)\b"    # SSH private keys
+    r"|\.p12\b|\.pfx\b|\.mobileprovision\b|\.keystore\b|\.jks\b|\.p8\b|\.pem\b)"
 )
 BASH_FILE_READ = re.compile(
     r"\b" + _READ_VERB + r"\b[^|&;\n]*?" + _SECRET_TOKEN, re.IGNORECASE
@@ -133,7 +140,9 @@ _EXEMPT_WRITE_PATH = re.compile(
 )
 
 # --- shell write forms into files (plan-first backstop) --------------------------
-_SHELL_REDIRECT = re.compile(r"(?<![0-9&<>])>{1,2}\s*([^\s|&;<>]+)")
+# `>`/`>>`, incl. `1>`/`1>>` (explicit stdout) and `>|`/`>>|` (noclobber
+# override); NOT `2>`/`&>` (stderr/both — not a source-file write we gate).
+_SHELL_REDIRECT = re.compile(r"(?<![0-9&<>])1?>{1,2}\|?\s*([^\s|&;<>]+)")
 _TEE_CLAUSE = re.compile(r"\btee\b([^|&;\n]*)", re.IGNORECASE)
 _SED_INPLACE_CLAUSE = re.compile(
     r"\bsed\b[^|&;\n]*?\s(?:-i|--in-place)\b[^|&;\n]*", re.IGNORECASE
@@ -414,6 +423,20 @@ def _selftest() -> int:
     check("i9 cp between source files allowed", "allow",
           bash("cp src/a.ts src/b.bak"))
 
+    # --- SSH private keys + bare aws-style credentials ---
+    check("k1 Read ~/.ssh/id_rsa (SSH private key) blocked", "block",
+          read("~/.ssh/id_rsa"))
+    check("k2 Read .ssh/id_ed25519 blocked", "block", read(".ssh/id_ed25519"))
+    check("k3 Read id_rsa.pub (PUBLIC key) allowed", "allow",
+          read(".ssh/id_rsa.pub"))
+    check("k4 cat ~/.aws/credentials (bare, via Bash) blocked", "block",
+          bash("cat ~/.aws/credentials"))
+    check("k5 cat ~/.ssh/id_rsa via Bash blocked", "block",
+          bash("cat ~/.ssh/id_rsa"))
+    check("k6 Read client.pfx blocked", "block", read("certs/client.pfx"))
+    check("k7 cat credentials.md (not a secret ext) allowed", "allow",
+          bash("cat credentials.md"))
+
     # --- Listing NAMES stays allowed ---
     check("n1 ls .env* allowed", "allow", bash("ls .env*"))
     check("n4 find -name .env allowed", "allow", bash("find . -name '.env'"))
@@ -460,6 +483,10 @@ def _selftest() -> int:
     }), encoding="utf-8")
     check("s11 sed -i on in_progress-covered file allowed", "allow",
           bash("sed -i 's/a/b/' src/covered/mod.ts"))
+    check("s12 stdout `1>` into source file blocked", "block",
+          bash("echo x 1> src/app.ts"))
+    check("s13 clobber `>|` into source file blocked", "block",
+          bash("echo x >| src/app.ts"))
 
     # --- extra pattern from config ---
     cfg_extra = _config._deep_merge(
