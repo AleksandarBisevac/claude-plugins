@@ -9,7 +9,7 @@
     {
       "name": "audit",
       "source": "./plugins/audit",
-      "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline: /audit execution, /audit:init multi-agent manifest generation, /audit:task + /audit:bug tracking (red-first TDD bug fixes), plan-first + secret-safety + TDD-reminder hooks. Configure per-repo via .claude/audit.config.json.",
+      "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline: /audit:* execution (status, next, run, phase, review, resume, report), /audit:init multi-agent manifest generation, /audit:task + /audit:bug tracking (red-first TDD bug fixes), /audit:sync Azure DevOps work-item sync, plan-first + secret-safety + TDD-reminder hooks. Configure per-repo via .claude/audit.config.json.",
       "category": "quality",
       "tags": ["audit", "tdd", "plan-first", "hooks", "quality-gates", "bug-tracking"],
       "strict": true

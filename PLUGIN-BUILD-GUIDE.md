@@ -185,7 +185,7 @@ over-threshold change → **deny** (canonical `permissionDecision` JSON) with gu
 hook or the user); PostToolUse — which fires only after a successful edit — consumes the
 bypass (logged) and records the free-file slot. All tunables from config (`manifestPath`,
 `exemptGlobs`, `trivialLineThreshold`, `stateDir`, `logsDir`, `bypassKeyword`).
-`--selftest` (22 cases).
+`--selftest` (25 cases).
 
 ### `plugins/audit/hooks/detect-plan-skip.py`
 UserPromptSubmit logger. If the prompt contains `bypassKeyword` (config; default `#no-plan`),
@@ -203,7 +203,7 @@ Bash events diff `git status --porcelain -uall` against the session's last-seen 
 a NEW dirty source file that is not exempt, not the manifest/lock, not tool-edited, and not
 covered by an `in_progress` task triggers a non-blocking `additionalContext` warning (once
 per file per session). Needs a git repo; git errors/timeouts (5 s) are silent. Config:
-`bashWriteCheck.enabled` (default true). `--selftest` (13 cases incl. a real `git init`
+`bashWriteCheck.enabled` (default true). `--selftest` (14 cases incl. a real `git init`
 integration case).
 
 ### `plugins/audit/agents/` (v0.6.0)
@@ -219,15 +219,16 @@ shapes) while spawn prompts add the per-task specifics.
 
 ### `plugins/audit/hooks/guard-secrets-read.py`
 Read/Grep/Bash secret backstop. Blocks: reading secret file *contents* (`.env`, `credentials*`,
-`.p12/.mobileprovision/.keystore/.jks/.p8/.pem`) via the Read tool, via Grep path/glob (Grep
+SSH private keys `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`,
+`.p12/.pfx/.mobileprovision/.keystore/.jks/.p8/.pem`) via the Read tool, via Grep path/glob (Grep
 prints file lines), via shell read-verbs — including the indirect ones (`git show`/`cat-file`,
 `source`/dot-source, and `cp`/`mv`/`rsync`/`install` relocating a secret) — and via inline-eval
 one-liners (`python -c`, `node -e`, …); also blocks `printenv`/`env` dumps and echoing
 token-like vars. Plan-first backstop for Bash writes: inline-eval writes AND the high-signal
-shell write forms (`sed -i`, `tee`, `>`/`>>` redirects — heredoc redirects included) into
+shell write forms (`sed -i`, `tee`, `>`/`>>`/`1>`/`>|` redirects — heredoc redirects included) into
 non-exempt source files not covered by an `in_progress` task (source extensions derive from
 `tddReminder.sourceGlobs`). Listing NAMES stays allowed. `secretPatterns.extra` (config) adds
-patterns. `--selftest` (49 cases) uses fictional paths only.
+patterns. `--selftest` (58 cases) uses fictional paths only.
 
 ### `plugins/audit/hooks/guard-edits.py`
 Edit/Write/MultiEdit/NotebookEdit content guard. (1) Path-based protection first: denies edits
@@ -238,7 +239,7 @@ one-library listener rule that used to be hardcoded is now just an example in th
 template). (3) Token-logging ban built dynamically from `guardEdits.tokenVars` — blocks
 `console.*`/`Sentry.*`/`remoteLog(… token …)` and `Bearer ${token}`, allowing `.slice` prefix
 debug. `--selftest` builds its token test-input at runtime (`"access"+"Token"`) so this source
-file itself never trips a token-logging guard (13 cases).
+file itself never trips a token-logging guard (16 cases).
 
 ### `plugins/audit/hooks/remind-tdd.py`
 PostToolUse (Edit|Write|MultiEdit|NotebookEdit) **non-blocking** TDD nudge: when a SOURCE file changes and
@@ -263,7 +264,7 @@ dependency **cycles** (incl. task-blocked-by-own-phase deadlocks), **bidirection
 `fileIndex ↔ task.files` integrity, `bugs[]` shape + **reciprocal**
 `bug.taskId ↔ task.bugId` cross-links, enums, plus non-fatal WARNINGs for unknown/typo'd
 keys (did-you-mean) and pre-0.3 status combinations.
-Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest` (33 cases).
+Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest` (41 cases).
 
 ### `plugins/audit/scripts/audit-status.py` (v0.5.0)
 Headless rollup + CI gate, stdlib-only; imports validate-manifest.py as a library via
@@ -273,14 +274,14 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 (also `open-bugs`, `in-progress` for release freezes). `--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
-(22 cases).
+(33 cases).
 
 ### `plugins/audit/scripts/render-report.py` (v0.5.0)
 Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero network fetches):
 phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's rollup
 (single source of truth). Every manifest string is HTML-escaped — manifest content is
 untrusted — and only http(s) URLs render as links (`javascript:` degrades to text).
-`--selftest` (13 cases, incl. XSS cases).
+`--selftest` (18 cases, incl. XSS cases).
 
 ### `plugins/audit/schema/audit-plan.schema.json`
 JSON Schema (draft 2020-12) for the manifest. Back-compatible: only `meta`/`phases` (and per-item
@@ -365,7 +366,7 @@ grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
 #   a custom rule blocks under its pathPrefix only; sed -i into a source file → denied;
 #   edit a source file with no test touched → remind-tdd nudges (non-blocking);
 #   interrupt a phase mid-run → /audit:resume picks up at the first commit-less task.
-/audit:bug add "..." ; /audit:bug fix BUG-1 ; /audit run BF1.1
+/audit:bug add "..." ; /audit:bug fix BUG-1 ; /audit:run BF1.1
 ```
 
 ## 5. How the pieces relate at runtime
