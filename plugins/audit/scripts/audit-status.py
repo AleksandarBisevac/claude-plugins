@@ -17,7 +17,8 @@ Modes (combinable; --json is the default when neither flag is given):
 Conditions for --fail-on (comma list; the --gate default is
 `invalid,open-high-bugs,blocked-tasks`):
   invalid          the structural validator reports findings
-  open-high-bugs   bugs with severity "high" not yet fixed/wontfix
+  open-high-bugs   high-or-worse severity bugs not yet fixed/wontfix
+                   (high/critical/blocker/severe/fatal/urgent/sev0-1/s0-1/p0-1)
   open-bugs        ANY bug not yet fixed/wontfix
   blocked-tasks    any task with status "blocked"
   in-progress      any phase or task "in_progress" (for release-freeze gates)
@@ -28,6 +29,7 @@ Exit codes: 0 pass · 1 gate failed · 2 usage error / unreadable manifest
 import importlib.util
 import json
 import os
+import re
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +38,20 @@ CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress")
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 CLOSED_BUG = ("fixed", "wontfix")
+
+# "open-high-bugs" must catch high-severity-or-worse, not only the literal word
+# "high" — a bug filed as critical/blocker/sev1/p0 is the LAST thing a merge
+# gate should wave through. Severity is free-text, so normalise (lowercase,
+# drop non-alphanumerics) and match a vocabulary of high-or-worse terms.
+HIGH_SEVERITIES = frozenset({
+    "high", "critical", "crit", "blocker", "severe", "fatal", "urgent",
+    "sev0", "sev1", "s0", "s1", "p0", "p1",
+})
+
+
+def _is_high_severity(severity):
+    """True for high-or-worse free-text severities (see HIGH_SEVERITIES)."""
+    return re.sub(r"[^a-z0-9]", "", str(severity or "").lower()) in HIGH_SEVERITIES
 
 
 def _load_validator():
@@ -83,6 +99,8 @@ def submodule_conflicts(manifest, submodule_paths, git_root=""):
     'vendor/child/x' but NOT 'vendor/child-other/x'."""
     subs = [str(s).replace("\\", "/").strip("/") for s in (submodule_paths or []) if s]
     out = []
+    if not isinstance(manifest, dict):
+        return out
     for ph in manifest.get("phases") or []:
         if not isinstance(ph, dict):
             continue
@@ -102,6 +120,8 @@ def ready_tasks(manifest):
     """Task ids ready to run — mirrors /audit's readiness rule: status pending,
     own blockedBy satisfied, own dependsOn all done, phase blockedBy satisfied
     ('satisfied' = referenced task/phase is done)."""
+    if not isinstance(manifest, dict):
+        return []
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
     status = {}
     for ph in phases:
@@ -140,6 +160,8 @@ def _by_status(items):
 
 def rollup(manifest, findings, warnings):
     """The machine-readable summary both --json and render-report consume."""
+    if not isinstance(manifest, dict):
+        manifest = {}  # non-object root -> empty rollup, never an AttributeError
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
     tasks = [t for p in phases for t in (p.get("tasks") or [])
              if isinstance(t, dict)]
@@ -163,7 +185,7 @@ def rollup(manifest, findings, warnings):
                  "open": len(open_bugs),
                  "openHighSeverity": sum(
                      1 for b in open_bugs
-                     if str(b.get("severity", "")).lower() == "high")},
+                     if _is_high_severity(b.get("severity")))},
         "ready": ready_tasks(manifest),
     }
 
@@ -241,6 +263,10 @@ def main(argv):
             manifest = json.load(fh)
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (args[0], exc))
+        return 2
+    if not isinstance(manifest, dict):
+        sys.stderr.write("ERROR: %s is not a JSON object (got %s)\n"
+                         % (args[0], type(manifest).__name__))
         return 2
 
     if gitmodules is not None:
@@ -392,6 +418,29 @@ def _selftest():
           evaluate_gate(s, DEFAULT_GATE) == []
           and "in-progress" in evaluate_gate(s, ("in-progress",)))
 
+    # (g7) open-high-bugs catches high-OR-WORSE severities, not only "high"
+    for sev in ("critical", "Blocker", "sev1", "P0", "URGENT", "sev-1"):
+        m = copy.deepcopy(_fixture())
+        m["bugs"].append({"id": "BUG-9", "title": "bad", "status": "open",
+                          "severity": sev})
+        s = summarize(m)
+        check("g7 open %r bug trips open-high-bugs" % sev,
+              "open-high-bugs" in evaluate_gate(s, DEFAULT_GATE))
+    # a genuinely low severity must still NOT trip it (no false positive)
+    m = copy.deepcopy(_fixture())
+    m["bugs"].append({"id": "BUG-9", "title": "minor", "status": "open",
+                      "severity": "low"})
+    s = summarize(m)
+    check("g8 open low-severity bug does NOT trip open-high-bugs",
+          "open-high-bugs" not in evaluate_gate(s, DEFAULT_GATE))
+
+    # (nd) a non-object manifest root must never crash the rollup path
+    check("nd1 rollup on list root -> empty, no crash",
+          rollup([], [], [])["tasks"]["total"] == 0)
+    check("nd2 ready_tasks on None root -> [], no crash", ready_tasks(None) == [])
+    check("nd3 submodule_conflicts on scalar root -> [], no crash",
+          submodule_conflicts("nope", ["vendor/x"]) == [])
+
     # (j) --json output round-trips with the expected fields
     blob = json.loads(json.dumps(summarize(_fixture())))
     check("j1 rollup fields present",
@@ -449,6 +498,9 @@ def _selftest():
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("{not json")
     check("c5 CLI unreadable manifest (exit 2)", main([path, "--gate"]) == 2)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(["not", "an", "object"], fh)
+    check("c5b CLI non-object JSON root (exit 2)", main([path, "--gate"]) == 2)
     os.unlink(path)
 
     # (cs) CLI --submodules mode

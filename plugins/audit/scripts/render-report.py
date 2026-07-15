@@ -89,7 +89,7 @@ def _outcome_text(task):
     """One-line outcome (descriptive, else technical), truncated — for the table."""
     o = task.get("outcome") if isinstance(task.get("outcome"), dict) else {}
     txt = str(o.get("descriptive") or o.get("technical") or "").strip()
-    return (txt[:70] + "…") if len(txt) > 71 else txt
+    return (txt[:70].rstrip() + "…") if len(txt) > 70 else txt
 
 
 def _phase_meta(phase):
@@ -111,7 +111,12 @@ def _bar(done, total):
 def render_html(manifest, summary):
     meta = manifest.get("meta") or {}
     now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
-    out = ["<style>%s</style>" % _CSS]
+    # doctype + charset so the file renders standalone (not quirks mode) and its
+    # UTF-8 punctuation (·, —, …) decodes correctly when opened from disk.
+    out = ['<!doctype html>',
+           '<meta charset="utf-8">',
+           '<meta name="viewport" content="width=device-width, initial-scale=1">',
+           "<style>%s</style>" % _CSS]
     out.append("<h1>%s</h1>" % e(meta.get("title") or "Audit report"))
     out.append('<p class="muted">repo: %s · generated %s · %d phases · %d tasks'
                " · %d bugs</p>"
@@ -182,6 +187,11 @@ def render_html(manifest, summary):
 
 
 def render_md(manifest, summary):
+    """Markdown twin of render_html. Only Markdown metacharacters (pipes,
+    newlines) are escaped here — raw HTML inside manifest strings is passed
+    through and relies on the Markdown renderer (e.g. GitHub) to sanitise it.
+    render_html is the hardened, self-contained output; prefer it when the
+    source is untrusted and no sanitising renderer sits in front."""
     meta = manifest.get("meta") or {}
     now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
 
@@ -260,6 +270,10 @@ def main(argv):
             manifest = json.load(fh)
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (manifest_path, exc))
+        return 2
+    if not isinstance(manifest, dict):
+        sys.stderr.write("ERROR: %s is not a JSON object (got %s)\n"
+                         % (manifest_path, type(manifest).__name__))
         return 2
 
     lib = _load_status_lib()
@@ -356,12 +370,19 @@ def _selftest():
     check("h3 task outcome shown + escaped", "did the thing cleanly" in html_out)
     check("h4 phase branch/mergedAt meta shown",
           "branch audit/p1-x" in html_out and "merged 2026-07-09" in html_out)
+    check("h5 html has doctype + charset (standalone render, not quirks mode)",
+          html_out.lstrip().lower().startswith("<!doctype html>")
+          and 'charset="utf-8"' in html_out)
     check("r1 ready list rendered", "P1.2" in md_out)
 
     rc = main([mp, "--format", "nope"])
     check("c3 bad format is usage error (exit 2)", rc == 2)
     rc = main([os.path.join(tmp, "missing.json")])
     check("c4 unreadable manifest (exit 2)", rc == 2)
+    arr = os.path.join(tmp, "arr.json")
+    with open(arr, "w", encoding="utf-8") as fh:
+        json.dump(["not", "an", "object"], fh)
+    check("c5 non-object JSON root is a usage error (exit 2)", main([arr]) == 2)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

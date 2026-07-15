@@ -71,6 +71,14 @@ def _strip_line_suffix(entry):
     return str(entry).replace("\\", "/").split(":", 1)[0]
 
 
+def _safe_list(val):
+    """A blockedBy/dependsOn/tasks value coerced to a list for safe iteration.
+    A non-list (notably a bare string, which must NEVER be iterated
+    per-character) becomes []. The wrong-type diagnostic is emitted by the
+    caller — this only keeps `validate()` from raising on hostile shapes."""
+    return val if isinstance(val, list) else []
+
+
 def _require_fields(obj, where, findings):
     ok = True
     for key in ("id", "title", "status"):
@@ -132,17 +140,20 @@ def _cycle_findings(phases, findings):
         if not isinstance(phase, dict):
             continue
         pid = phase.get("id")
-        for ref in phase.get("blockedBy") or []:
-            add_edge(pid, ref)
-        for task in phase.get("tasks") or []:
+        for ref in _safe_list(phase.get("blockedBy")):
+            if isinstance(ref, str):
+                add_edge(pid, ref)
+        for task in _safe_list(phase.get("tasks")):
             if not isinstance(task, dict):
                 continue
             tid = task.get("id")
             add_edge(pid, tid)
-            for ref in task.get("blockedBy") or []:
-                add_edge(tid, ref)
-            for ref in task.get("dependsOn") or []:
-                add_edge(tid, ref)
+            for ref in _safe_list(task.get("blockedBy")):
+                if isinstance(ref, str):
+                    add_edge(tid, ref)
+            for ref in _safe_list(task.get("dependsOn")):
+                if isinstance(ref, str):
+                    add_edge(tid, ref)
 
     WHITE, GRAY, BLACK = 0, 1, 2
     color, reported = {}, set()
@@ -189,7 +200,9 @@ def validate(manifest):
         f.append("meta: missing or not an object")
     else:
         _unknown_keys(meta, KNOWN_META, "meta", w)
-        if not isinstance(meta.get("version"), int):
+        version = meta.get("version")
+        if not isinstance(version, int) or isinstance(version, bool):
+            # bool is an int subclass in Python — `true` must NOT pass as a version.
             f.append("meta.version: missing or not an integer")
 
     phases = manifest.get("phases")
@@ -215,7 +228,14 @@ def validate(manifest):
         if phase.get("status") not in STATUS:
             f.append("%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS)))
 
-        for ti, task in enumerate(phase.get("tasks") or []):
+        tasks_val = phase.get("tasks")
+        if "tasks" not in phase:
+            w.append("%s: no 'tasks' key — the schema requires one (an empty "
+                     "phase should carry an empty list)" % pwhere)
+        elif not isinstance(tasks_val, list):
+            f.append("%s: tasks must be an array, got %s"
+                     % (pwhere, type(tasks_val).__name__))
+        for ti, task in enumerate(_safe_list(tasks_val)):
             if not isinstance(task, dict):
                 f.append("%s tasks[%d]: not an object" % (pwhere, ti))
                 continue
@@ -269,19 +289,31 @@ def validate(manifest):
         if not isinstance(phase, dict):
             continue
         pwhere = "phase %s" % (phase.get("id") or ("phases[%d]" % pi))
-        for ref in phase.get("blockedBy") or []:
-            if ref not in known:
-                f.append("%s: blockedBy '%s' does not resolve to any task/phase" % (pwhere, ref))
-        for ti, task in enumerate(phase.get("tasks") or []):
+
+        def _check_refs(refs_val, where, field, universe, kind):
+            """Report a non-array value, a non-string entry (which would crash
+            the set-membership test), or an unresolved id — never raise."""
+            if refs_val is not None and not isinstance(refs_val, list):
+                f.append("%s: %s must be an array, got %s"
+                         % (where, field, type(refs_val).__name__))
+            for ref in _safe_list(refs_val):
+                if not isinstance(ref, str):
+                    f.append("%s: %s entry must be a string id, got %r"
+                             % (where, field, ref))
+                elif ref not in universe:
+                    f.append("%s: %s '%s' does not resolve to %s"
+                             % (where, field, ref, kind))
+
+        _check_refs(phase.get("blockedBy"), pwhere, "blockedBy", known,
+                    "any task/phase")
+        for ti, task in enumerate(_safe_list(phase.get("tasks"))):
             if not isinstance(task, dict):
                 continue
             twhere = "task %s" % (task.get("id") or ("%s.tasks[%d]" % (pwhere, ti)))
-            for ref in task.get("blockedBy") or []:
-                if ref not in known:
-                    f.append("%s: blockedBy '%s' does not resolve to any task/phase" % (twhere, ref))
-            for ref in task.get("dependsOn") or []:
-                if ref not in task_ids:
-                    f.append("%s: dependsOn '%s' does not resolve to a task" % (twhere, ref))
+            _check_refs(task.get("blockedBy"), twhere, "blockedBy", known,
+                        "any task/phase")
+            _check_refs(task.get("dependsOn"), twhere, "dependsOn", task_ids,
+                        "a task")
 
     _cycle_findings(phases, f)
 
@@ -292,8 +324,13 @@ def validate(manifest):
         for fpath, refs in file_index.items():
             key = _strip_line_suffix(fpath)
             bucket = stripped_index.setdefault(key, set())
-            for ref in refs if isinstance(refs, list) else []:
-                bucket.add(ref)
+            if not isinstance(refs, list):
+                f.append("fileIndex['%s']: value must be an array of task ids, "
+                         "got %s" % (fpath, type(refs).__name__))
+                continue
+            for ref in refs:
+                if isinstance(ref, str):
+                    bucket.add(ref)  # only hashable str ids enter the set
                 if ref not in task_ids:
                     f.append("fileIndex['%s']: task '%s' does not exist" % (fpath, ref))
         for tid, files in task_files.items():
@@ -511,6 +548,34 @@ def _selftest():
     check("w4 in_progress task in pending phase warns", None,
           lambda m: m["phases"][0]["tasks"][0].update(status="in_progress"),
           expect_warning="still 'pending'")
+
+    # --- robustness: validate() must NEVER raise on hostile shapes, and the
+    #     wrong-type diagnostics must be actionable (regression guard for the
+    #     "never raises on arbitrary JSON" contract + schema drift) ---
+    check("z1 blockedBy as a bare string is a finding (no per-char iteration)",
+          "blockedBy must be an array",
+          lambda m: m["phases"][0]["tasks"][0].update(blockedBy="P0"))
+    check("z2 unhashable blockedBy entry reported, does not crash",
+          "must be a string id",
+          lambda m: m["phases"][0]["tasks"][0].update(blockedBy=[["x"]]))
+    check("z3 unhashable dependsOn entry reported, does not crash",
+          "must be a string id",
+          lambda m: m["phases"][0]["tasks"][1].update(dependsOn=[{"k": "v"}]))
+    check("z4 non-array fileIndex value is a finding",
+          "must be an array of task ids",
+          lambda m: m.update(fileIndex={"src/a.ts": "P0.1"}))
+    check("z5 non-array tasks is a finding",
+          "tasks must be an array",
+          lambda m: m["phases"][0].update(tasks="P0.1"))
+    check("z6 boolean version rejected (bool is not a valid int version)",
+          "meta.version",
+          lambda m: m["meta"].update(version=True))
+    # removing tasks orphans fileIndex/bug links, so clear those too and assert
+    # the bare "no tasks" case is a WARNING, not a hard finding
+    check("z7 absent tasks warns but is not a hard finding", None,
+          lambda m: (m.pop("fileIndex", None), m.pop("bugs", None),
+                     m["phases"][0].pop("tasks", None)),
+          expect_warning="no 'tasks' key")
 
     # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os

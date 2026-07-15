@@ -44,15 +44,17 @@ _PLUGIN_ROOT = os.path.dirname(_HOOKS_DIR)
 
 
 def _token_log_re(token_vars):
-    """A logger call whose args use a token as a *value* (interpolation / arg / concat
-    / object value), not merely a string mentioning the word. `.slice` prefix is allowed."""
+    """A logger call that passes a token as a *value* — as the SOLE/first arg
+    (console.log(accessToken)), a later arg, an interpolation, a concat, an
+    object value, or a property access (this.accessToken). Merely mentioning the
+    word inside a string literal is not enough; a `.slice(...)` prefix debug is
+    allowed."""
     alt = "|".join(re.escape(t) for t in token_vars) or "accessToken"
     return re.compile(
         r"(?:console\.\w+"
         r"|Sentry\.(?:captureMessage|captureException|addBreadcrumb|setExtra|setContext)"
-        r"|remoteLog)\s*\("
-        r"[^)]*?"
-        r"(?:\$\{|,\s*|\+\s*|:\s*)"
+        r"|remoteLog)\s*\(\s*"
+        r"(?:[^)]*?(?:\$\{|,\s*|\+\s*|:\s*|\.\s*))?"
         r"(?:" + alt + r")\b"
         r"(?!\s*\.slice)",
         re.IGNORECASE | re.DOTALL,
@@ -238,6 +240,12 @@ def _selftest() -> int:
           "src/api.ts", "console.log(%s.slice(0,6))" % tok)
     check("t3 innocent code allowed", "allow", "Write",
           "src/api.ts", "const x = 1 + 2;")
+    check("t4 logger with token as SOLE arg blocked", "block", "Write",
+          "src/api.ts", "console.log(%s)" % tok)
+    check("t5 logger with token via property access blocked", "block", "Write",
+          "src/api.ts", "console.log(this.%s)" % tok)
+    check("t6 logger of a DIFFERENT identifier (token-prefix) allowed", "allow",
+          "Write", "src/api.ts", "console.log(%sExpiry)" % tok)
     # NotebookEdit is covered too
     check("n1 notebook cell logging token blocked", "block", "NotebookEdit",
           "notebooks/train.ipynb", "console.log('t', %s)" % tok)
