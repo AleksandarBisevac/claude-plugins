@@ -47,7 +47,119 @@ th{background:#f6f8fa}
 .outcome{color:#57606a;font-style:italic;margin:.25rem 0 .5rem}
 .overall{background:#f6f8fa;border:1px solid #d1d9e0;border-radius:.5em;padding:.6rem .8rem;margin:1rem 0}
 td.muted{font-size:.88em}
+.toolbar{position:sticky;top:0;background:#fff;padding:.6rem 0;margin:1rem 0 .5rem;
+         border-bottom:1px solid #d1d9e0;display:flex;gap:.5rem;align-items:center;
+         flex-wrap:wrap;z-index:2}
+#audit-q{flex:1 1 16rem;min-width:11rem;padding:.35rem .6rem;font:inherit;
+         border:1px solid #d1d9e0;border-radius:.4em}
+#audit-status-filter{display:flex;gap:.3rem;flex-wrap:wrap}
+.fchip{cursor:pointer;border:1px solid #d1d9e0;background:#f6f8fa;color:#1f2328;
+       border-radius:1em;padding:.05rem .6rem;font:inherit;font-size:.85em}
+.fchip.on{background:#0969da;color:#fff;border-color:#0969da}
+table.data th{cursor:pointer;user-select:none;white-space:nowrap}
+table.data th.sorted::after{content:"\\25B2";font-size:.7em;margin-left:.3em;color:#57606a}
+table.data th.sorted[data-sort="desc"]::after{content:"\\25BC"}
+@media print{.toolbar{display:none}}
 """
+
+# Inline, self-contained (no external fetch) filter/sort/search over the report
+# tables. Progressive enhancement: the report is fully readable with JS off.
+_SCRIPT = r"""<script>
+(function () {
+  var q = document.getElementById('audit-q');
+  var count = document.getElementById('audit-count');
+  var chipBar = document.getElementById('audit-status-filter');
+  var tables = [].slice.call(document.querySelectorAll('table.data'));
+  var activeStatus = '';
+
+  function dataRows(t) {
+    return [].slice.call(t.rows).filter(function (r) {
+      return r.getElementsByTagName('th').length === 0;
+    });
+  }
+
+  function apply() {
+    var term = (q ? q.value : '').trim().toLowerCase();
+    var shown = 0, total = 0;
+    tables.forEach(function (t) {
+      dataRows(t).forEach(function (r) {
+        total++;
+        var okText = !term || r.textContent.toLowerCase().indexOf(term) !== -1;
+        var okStatus = !activeStatus || r.getAttribute('data-status') === activeStatus;
+        var show = okText && okStatus;
+        r.style.display = show ? '' : 'none';
+        if (show) shown++;
+      });
+    });
+    if (count) count.textContent = shown + ' / ' + total + ' rows';
+  }
+
+  function natCmp(a, b) {
+    var ax = [], bx = [];
+    a.replace(/(\d+)|(\D+)/g, function (_, n, s) { ax.push([n === undefined ? Infinity : +n, s || '']); });
+    b.replace(/(\d+)|(\D+)/g, function (_, n, s) { bx.push([n === undefined ? Infinity : +n, s || '']); });
+    while (ax.length && bx.length) {
+      var an = ax.shift(), bn = bx.shift();
+      var c = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
+      if (c) return c;
+    }
+    return ax.length - bx.length;
+  }
+
+  tables.forEach(function (t) {
+    var head = t.querySelector('tr');
+    if (!head) return;
+    var ths = head.getElementsByTagName('th');
+    [].forEach.call(ths, function (th, idx) {
+      th.addEventListener('click', function () {
+        var asc = th.getAttribute('data-sort') !== 'asc';
+        [].forEach.call(ths, function (h) {
+          h.removeAttribute('data-sort');
+          h.className = h.className.replace(/\bsorted\b/, '').trim();
+        });
+        th.setAttribute('data-sort', asc ? 'asc' : 'desc');
+        th.className = (th.className + ' sorted').trim();
+        var body = t.tBodies[0] || t;
+        dataRows(t).sort(function (r1, r2) {
+          var c1 = r1.cells[idx] ? r1.cells[idx].textContent.trim() : '';
+          var c2 = r2.cells[idx] ? r2.cells[idx].textContent.trim() : '';
+          return asc ? natCmp(c1, c2) : natCmp(c2, c1);
+        }).forEach(function (r) { body.appendChild(r); });
+      });
+    });
+  });
+
+  if (chipBar) {
+    var seen = {};
+    tables.forEach(function (t) {
+      dataRows(t).forEach(function (r) {
+        var s = r.getAttribute('data-status');
+        if (s) seen[s] = 1;
+      });
+    });
+    Object.keys(seen).sort().forEach(function (s) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fchip';
+      b.setAttribute('data-status-filter', s);
+      b.textContent = s;
+      chipBar.appendChild(b);
+    });
+    chipBar.addEventListener('click', function (e) {
+      var val = e.target && e.target.getAttribute('data-status-filter');
+      if (!val) return;
+      activeStatus = (activeStatus === val) ? '' : val;
+      [].forEach.call(chipBar.children, function (x) {
+        x.className = x.getAttribute('data-status-filter') === activeStatus ? 'fchip on' : 'fchip';
+      });
+      apply();
+    });
+  }
+
+  if (q) q.addEventListener('input', apply);
+  apply();
+})();
+</script>"""
 
 
 def _load_status_lib():
@@ -137,6 +249,15 @@ def render_html(manifest, summary):
                % (_bar(tdone, ttotal), phdone, len(summary["phases"]),
                   summary["bugs"]["open"], len(summary["ready"])))
 
+    # Interactive toolbar (search + per-status quick-filter). Enhanced by
+    # _SCRIPT; with JS off the tables below are still fully readable.
+    out.append(
+        '<div class="toolbar" role="search">'
+        '<input id="audit-q" type="search" aria-label="Filter rows" '
+        'placeholder="Filter rows — id, title, status, model, commit…">'
+        '<span id="audit-status-filter"></span>'
+        '<span id="audit-count" class="muted"></span></div>')
+
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
@@ -152,14 +273,15 @@ def render_html(manifest, summary):
             if not isinstance(t, dict):
                 continue
             rows.append(
-                "<tr><td class=mono>%s</td><td>%s</td><td>%s</td>"
+                '<tr data-status="%s"><td class=mono>%s</td><td>%s</td><td>%s</td>'
                 "<td>%s</td><td>%s</td><td class=mono>%s</td><td>%s</td>"
                 "<td class=muted>%s</td></tr>"
-                % (e(t.get("id")), e(t.get("title")), _chip(t.get("status")),
+                % (e(t.get("status")), e(t.get("id")), e(t.get("title")),
+                   _chip(t.get("status")),
                    e(t.get("model") or "—"), e(t.get("risk") or "—"),
                    e((t.get("commit") or "—")[:9]), _ado_cell(t),
                    e(_outcome_text(t))))
-        out.append("<table><tr><th>id</th><th>title</th><th>status</th>"
+        out.append('<table class="data"><tr><th>id</th><th>title</th><th>status</th>'
                    "<th>model</th><th>risk</th><th>commit</th><th>ADO</th>"
                    "<th>outcome</th></tr>%s</table>" % "".join(rows))
         if ph.get("summary"):
@@ -171,18 +293,20 @@ def render_html(manifest, summary):
         rows = []
         for b in bugs:
             rows.append(
-                "<tr><td class=mono>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+                '<tr data-status="%s"><td class=mono>%s</td><td>%s</td><td>%s</td><td>%s</td>'
                 "<td class=mono>%s</td><td class=mono>%s</td><td>%s</td></tr>"
-                % (e(b.get("id")), e(b.get("title")), _chip(b.get("status")),
+                % (e(b.get("status")), e(b.get("id")), e(b.get("title")),
+                   _chip(b.get("status")),
                    e(b.get("severity") or "—"), e(b.get("taskId") or "—"),
                    e((b.get("fixedIn") or "—")[:9]), _ado_cell(b)))
-        out.append("<table><tr><th>id</th><th>title</th><th>status</th>"
+        out.append('<table class="data"><tr><th>id</th><th>title</th><th>status</th>'
                    "<th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th>"
                    "</tr>%s</table>" % "".join(rows))
 
     if summary["ready"]:
         out.append("<h2>Ready now</h2><p class=mono>%s</p>"
                    % ", ".join(e(r) for r in summary["ready"]))
+    out.append(_SCRIPT)
     return "\n".join(out) + "\n"
 
 
@@ -373,6 +497,12 @@ def _selftest():
     check("h5 html has doctype + charset (standalone render, not quirks mode)",
           html_out.lstrip().lower().startswith("<!doctype html>")
           and 'charset="utf-8"' in html_out)
+    check("h6 interactive toolbar + sortable data tables + inline script present",
+          'id="audit-q"' in html_out and '<table class="data">' in html_out
+          and "<script>" in html_out and "addEventListener" in html_out)
+    check("h7 rows carry data-status for the status quick-filter",
+          'data-status="done"' in html_out and 'data-status="pending"' in html_out
+          and 'data-status="open"' in html_out)
     check("r1 ready list rendered", "P1.2" in md_out)
 
     rc = main([mp, "--format", "nope"])
