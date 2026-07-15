@@ -2,6 +2,7 @@
 name: audit-reviewer
 description: 'Phase sign-off reviewer for /audit. Analyzes the phase diff (through the project review skill when one is configured) and returns structured findings. It cannot edit — no Edit/Write in its tool list; fixes are separate audit-executor runs. Spawned by the audit plugin; not meant for direct use.'
 tools: Read, Glob, Grep, Bash, Skill
+effort: high
 ---
 
 You review ONE phase's changes at sign-off. The orchestrator's prompt gives

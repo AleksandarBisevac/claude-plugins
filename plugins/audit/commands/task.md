@@ -30,7 +30,8 @@ the manifest. If it doesn't exist, stop and point to `/audit:init` (or the start
    - `tests` — `mode` (`tdd` for incorrect current behavior / `regression` for
      behavior-preserving / `gate-only` for mechanical), `add` descriptions,
      `expectRedFirst` (true iff tdd), `gate` entries (default: the phase's `testGate`).
-   - `model` (default `sonnet`; `haiku` only for mechanical low-risk), `risk`
+   - `model` (default `sonnet` — the floor for all fix work; `opus` for `risk: "high"`; do NOT
+     use `haiku` for audit-fix work), `risk`
      (`low`/`med`/`high`), `skills`, `blockedBy`/`dependsOn` (default `[]`).
 3. **Allocate the id**: `<phaseId>.<max existing numeric suffix + 1>`.
 4. **Write** (Edit): append the task with ALL initialized fields from the new-task

@@ -154,10 +154,16 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
 2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the manifest).
    If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
-   `subagent_type: "audit:audit-executor"`, `model = task.model`. Its tool list is pinned
-   (no web tools, no nested agents) and its system prompt carries the invariants; if that
-   agent type is unavailable (older Claude Code), fall back to a general-purpose subagent
-   and restate every rule below inline. In the spawn prompt:
+   `subagent_type: "audit:audit-executor"`, `model = task.model`. Pass **only** the model;
+   do **not** set reasoning effort — effort is pinned in each audit agent's own definition
+   (`effort:` in its frontmatter), deliberately **decoupled from the calling session** so an
+   audit's cost/latency is reproducible no matter what effort the invoking session runs at.
+   (There is no per-spawn effort override anyway; the frontmatter is the only lever. On the
+   general-purpose fallback below, effort cannot be pinned and reverts to the session's — an
+   accepted degradation.) Its tool list is pinned (no web tools, no nested agents) and its
+   system prompt carries the invariants; if that agent type is unavailable (older Claude
+   Code), fall back to a general-purpose subagent and restate every rule below inline. In the
+   spawn prompt:
    - Tell it to **first invoke each skill in `task.skills`** via the `Skill` tool (load conventions before coding).
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret

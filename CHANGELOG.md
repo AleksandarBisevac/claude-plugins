@@ -4,6 +4,32 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.9.0] - 2026-07-15
+
+Made the audit's compute choices deliberate and reproducible instead of
+inherited from the calling session: reasoning effort is now pinned per agent,
+and the task model floor is raised to `sonnet`.
+
+### Changed
+- **Reasoning effort is pinned per agent, no longer inherited from the calling
+  session.** Each audit agent sets `effort` in its own definition:
+  `audit-reviewer` → `high` (sign-off analysis, once per phase), `audit-executor`
+  and `audit-explorer` → `medium`. Previously effort silently rode on whatever
+  the invoking session ran at — a `max`-effort session made every executor run at
+  `max` (observed: ~360k tokens on a single review-fix task) — so an audit's
+  cost/latency was not reproducible. The `Agent` tool has no per-spawn effort
+  override, so the definition frontmatter is the only lever; `orchestrator.md` now
+  states the spawn passes **only** `model`, never effort (and that the
+  general-purpose fallback reverts to session effort — an accepted degradation).
+- **Task model floor raised to `sonnet`; `haiku` is no longer assigned to fix
+  work.** `/audit:init` synthesis and `/audit:task` now default to `sonnet` for
+  all low/med-risk work (mechanical included) and escalate to `opus` for
+  `risk: "high"`. A botched `haiku` attempt burns retries plus a reviewer round,
+  costing more than one clean `sonnet` pass. The `risk:"high"` → never-`haiku`
+  guard in `orchestrator.md`/schema stays as defense for hand-written manifests.
+  This is a creation-time rule — existing manifests with `haiku` tasks are not
+  auto-upgraded.
+
 ## [0.8.0] - 2026-07-09
 
 Live-validated the orchestrator for the first time, then made a long run legible
