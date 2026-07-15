@@ -4,6 +4,62 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+A self gap-audit of the whole plugin (trust core, guards, command surface,
+packaging) drove a round of hardening plus one feature. Deliberately-accepted
+trade-offs documented in `SECURITY.md` (fail-open on internal error, `cp`/`mv`
+Bash-write coverage, name-based secret matching) were left as-is by design.
+Every fix carries a regression selftest (suites now: `_config` 6, `guard-edits`
+16, `guard-secrets-read` 58, `require-plan` 25, `remind-tdd` 13,
+`guard-bash-writes` 14, `detect-plan-skip` 4, `validate-manifest` 41,
+`audit-status` 33, `render-report` 20).
+
+### Added
+- **Interactive HTML report** — the report tables now support a text filter,
+  click-to-sort columns (natural order, so `P2` before `P10`), and per-status
+  quick-filter chips. Inline, self-contained JavaScript: no server, zero network
+  fetches, still one shareable file / CI artifact. Progressive enhancement (fully
+  readable with JS off); the untrusted manifest still cannot inject (every value
+  HTML-escaped; script touches only `textContent`/attributes). Verified
+  end-to-end in a browser.
+
+### Fixed
+- **CI gate false-negative on the worst bugs.** `open-high-bugs` counted only the
+  literal severity `"high"`, so an open `critical`/`blocker`/`sev1`/`p0` bug
+  passed the merge gate. It now matches a normalised high-or-worse vocabulary.
+- **Crash on a malformed manifest.** A non-object JSON root (`null`/`[]`/scalar)
+  raised an uncaught `AttributeError` in `audit-status`/`render-report`; both now
+  exit 2 cleanly, and `validate-manifest` upholds its "never raises on arbitrary
+  JSON" contract (non-list/unhashable `blockedBy`/`dependsOn`/`fileIndex`/`tasks`
+  become findings; boolean `version` rejected).
+- **Manifest concurrency lock now covers `init`/`task`/`bug`/`sync`** (previously
+  only the execution verbs locked). `/audit:init` regenerate can no longer clobber
+  an in-flight run; the quick-mutation commands hold the lock around writes.
+- **Re-opening a `done` bugfix task** now also reopens its linked bug instead of
+  leaving `bugs[]` marked `fixed` at a stale SHA.
+- `/audit:sync` `allowed-tools` now grants the `mcp__azure-devops__wit_*` tools
+  its body tells the model to use; `/audit:status` reads the ready-now list from
+  `audit-status.py` (one implementation of the readiness rule, no drift);
+  `review`/`resume` emit progress output like their siblings.
+- `render-report` HTML now carries `<!doctype>`/charset (standalone render, not
+  quirks mode); the `.md` twin documents that it relies on the renderer to
+  sanitise HTML.
+
+### Security
+- **`guard-secrets-read`** now blocks SSH private keys
+  (`id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`), bare `~/.aws/credentials` read via
+  Bash, and `.pfx`; the shell-write backstop also catches `1>`/`>|` redirects.
+- **`guard-edits`** token-logging ban now catches a token as the sole/first
+  argument (`console.log(accessToken)`) and via property access
+  (`this.accessToken`) — previously only later args / interpolations were caught.
+
+### Docs
+- Marketplace/plugin descriptions no longer advertise a removed bare `/audit`
+  command and now list `/audit:sync`; "five hooks" → "six" in SECURITY/README;
+  residual space-form commands fixed; Python floor notes CI verifies 3.12;
+  build-guide selftest tallies and guard coverage refreshed.
+
 ## [0.9.0] - 2026-07-15
 
 Made the audit's compute choices deliberate and reproducible instead of
