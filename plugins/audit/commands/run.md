@@ -18,7 +18,9 @@ Otherwise run the full preflight (steps 1–5, including the lock) and emit **Pr
 Execute exactly `<taskId>`, with status guards:
 1. `status == "done"` → refuse: report its `commit`/`outcome`. Offer (AskUserQuestion) an explicit
    **re-open**: on confirmation, reset `status = "pending"`, `attempts = 0`, clear `commit`,
-   `outcome`, `completedAt`, `verifiedBy` — then execute. Never silently re-run a done task.
+   `outcome`, `completedAt`, `verifiedBy` — and **if `task.bugId` is set, reopen the linked bug too**
+   (its `bugs[]` entry back to `status: "in_progress"`, clear `fixedIn`) so a re-opened bugfix task
+   never leaves its bug marked `fixed` at a stale SHA — then execute. Never silently re-run a done task.
 2. `status == "blocked"` → refuse: report why (exhausted attempts / blockers). Offer a confirmed
    reset of `attempts` to 0 (back to `pending`), then execute.
 3. `status == "in_progress"` → warn: likely an interrupted run — point to `/audit:resume`.

@@ -8,7 +8,7 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 `$ARGUMENTS` = the phase id. Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
 `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first. Run the full preflight
-(steps 1–5, including the lock).
+(steps 1–5, including the lock) and emit **Progress output** (orchestrator) as you go.
 
 Run **Phase sign-off** (orchestrator) for `<phaseId>` — use when tasks are already `done` and you
 want to re-run the review / test gate / runtime boot / merge (e.g. after applying fixes). Then
