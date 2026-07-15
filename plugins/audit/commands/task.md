@@ -13,6 +13,8 @@ Unknown/empty subcommand → print usage and stop.
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
+This command mutates the manifest — hold the **concurrency lock** (see conventions →
+Concurrency lock) around your writes and release it before reporting.
 
 ## Subcommand: `add "<title>" [--phase <id>]`
 

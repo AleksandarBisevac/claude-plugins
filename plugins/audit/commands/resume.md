@@ -7,7 +7,7 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
 `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first. Run the full preflight
-(steps 1–5, including the lock).
+(steps 1–5, including the lock) and emit **Progress output** (orchestrator) as you go.
 
 Run the **Resume after interruption** procedure (orchestrator): find the in-progress phase and its
 branch, compare committed work, and continue from the first task whose `commit` is null/missing.

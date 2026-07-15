@@ -22,6 +22,11 @@ If a file already exists at `manifestPath`, ask the user (AskUserQuestion):
 - **Regenerate** — back it up to `<manifestPath>.bak-<UTC timestamp>` first.
 - **Append phases** — keep existing phases; new phases continue the id sequence.
 
+On **Regenerate** or **Append**, take the **concurrency lock** (see
+`manifest-conventions.md` → Concurrency lock) BEFORE touching the file: refuse
+while another session's lock is fresh (<60 min) so a generation never clobbers
+an in-flight run, and hold it through write + validate (released in step 7).
+
 ## 2. Interview (BEFORE any exploration)
 
 Merge `$ARGUMENTS` with answers to (ask only what `$ARGUMENTS` doesn't cover):
@@ -111,3 +116,4 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 Print: per-phase table (`id — title — task count — dimensions covered`), total task count
 by `tests.mode` and `risk`, what was deferred and why, any open questions for the human,
 and the handoff: **next run `/audit:status`, then `/audit:phase P0`**.
+Release the concurrency lock if you acquired one in step 1.

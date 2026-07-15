@@ -112,7 +112,9 @@ run in parallel (spawn multiple Agents in one message). Tasks sharing a file or 
 ## Concurrency lock
 
 Two sessions mutating one manifest/working tree corrupt each other. Every **mutating** command
-(`next`, `run`, `phase`, `review`, `resume`) holds `<manifestPath>.lock`:
+holds `<manifestPath>.lock` — the execution verbs (`next`, `run`, `phase`, `review`, `resume`)
+per the protocol here, and the quick-mutation commands (`init`, `task`, `bug`, `sync`) per the
+same protocol restated in `manifest-conventions.md`:
 
 1. **Acquire (at command start).** If the lock file exists, read it (`{hostname, startedAt, note}`):
    - `startedAt` younger than **60 minutes** → REFUSE: print the holder info and stop —

@@ -1,7 +1,7 @@
 ---
 description: 'Sync the audit manifest with Azure DevOps work items — push manifest bugs/tasks to ADO, pull assigned ADO bugs into the manifest, or show link status. Explicit, idempotent, one direction per invocation; configured via meta.ado.'
 argument-hint: 'push [bugs|tasks|all] | pull | status'
-allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
+allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__azure-devops__wit_*
 ---
 
 # /audit:sync — Azure DevOps work-item sync
@@ -33,6 +33,8 @@ and is idempotent (re-running converges; nothing duplicates).
    belongs to `az` / the MCP server.
 5. After EVERY manifest mutation: revalidate with
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>`.
+6. `push`/`pull` write the manifest — hold the **concurrency lock** (see conventions →
+   Concurrency lock) around those writes; `status` is read-only and never locks.
 
 ## Field mapping (both transports)
 
