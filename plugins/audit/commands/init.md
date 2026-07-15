@@ -77,7 +77,10 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    - Behavior-preserving change (refactor/hardening) → `"regression"`.
    - Config/docs/mechanical → `"gate-only"`.
    - `tests.gate`: entries resolving via the detected `meta.buildCommands` keys.
-   - `model`: `haiku` for mechanical low-risk, `sonnet` default, your strongest tier for `risk: "high"`.
+   - `model`: `sonnet` is the floor for ALL fix work (low/med risk, mechanical included);
+     escalate to your strongest tier (`opus`) for `risk: "high"`. Do NOT route audit-fix tasks to
+     `haiku` — a botched cheap attempt burns retries (`maxAttempts`) plus a reviewer round, costing
+     more than one clean `sonnet` pass.
    - `files` from the finding; `blockedBy`/`dependsOn` only where a real ordering exists.
      **Never route a task at files inside a git submodule** (paths under a `.gitmodules` entry):
      the orchestrator commits from the parent repo and cannot stage submodule-internal files. If a
