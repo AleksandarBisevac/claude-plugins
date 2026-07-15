@@ -83,7 +83,7 @@ without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
 ## Requirements
 
 - **Claude Code** (plugin support).
-- **Python 3.8+** reachable on PATH as `python3`, `python`, or `py` — the hooks and the
+- **Python 3.8+** reachable on PATH as `python3`, `python`, or `py` (CI verifies on 3.12) — the hooks and the
   validator are dependency-free stdlib scripts.
 - **POSIX `sh`** for the hook launcher. On **Windows** that means running Claude Code
   inside **Git Bash** (which also provides `sh`); with `cmd`/PowerShell-only sessions the
@@ -105,7 +105,7 @@ run `/reload-plugins` (or restart the session).
 
 ## Installing arms global hooks
 
-> **Read this before installing.** The five guard hooks activate in **every** project and
+> **Read this before installing.** The six guard hooks activate in **every** project and
 > session — before any manifest exists. That is the point (the guards are always-on), but
 > it surprises people: in a repo with no audit manifest, the plan-first gate still allows
 > only **one** small non-manifest-covered source file per session, then blocks the second

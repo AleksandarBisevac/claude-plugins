@@ -19,7 +19,7 @@ secret guards. Deterministic hooks, not prompt suggestions.
 
 > **Before you install**, read [installing arms global hooks](plugins/audit/README.md#installing-arms-global-hooks)
 > — the guard hooks activate in **all** your projects, by design.
-> Requirements: Python 3.8+ reachable as `python3`, `python` or `py`
+> Requirements: Python 3.8+ reachable as `python3`, `python` or `py` (CI verifies on 3.12)
 > (on Windows: run inside Git Bash).
 
 ## This repo, dogfooded

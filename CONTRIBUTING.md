@@ -47,8 +47,9 @@ claude plugin validate .
 claude plugin validate plugins/audit
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same matrix on ubuntu + windows —
-the windows leg proves the `python3` → `python` → `py` interpreter fallback.
+CI (`.github/workflows/ci.yml`) runs the selftest suite on ubuntu + windows —
+the windows leg proves the `python3` → `python` → `py` interpreter fallback
+(the manifest-validation and plugin-validate jobs run on ubuntu).
 
 ## Hard rules
 
@@ -104,5 +105,5 @@ surface changed, so the original rationale holds unchanged. Next trigger:
 testing the COMMAND PROSE (the orchestrator behavior CI cannot reach), but as
 of v0.6.0 it prints "currently in early access" and `eval init` does not
 scaffold — the case schema is not public. Adopt as soon as it opens up:
-priority cases are `/audit status` on a missing manifest, `run` guards on a
+priority cases are `/audit:status` on a missing manifest, `run` guards on a
 done task, and the `#no-plan` bypass round-trip.

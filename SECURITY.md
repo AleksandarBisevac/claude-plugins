@@ -16,7 +16,7 @@ always-on first line.
 
 ## Fail modes (by design)
 
-All five hooks launch through `hooks/py-launch.sh`, which resolves
+All six hooks launch through `hooks/py-launch.sh`, which resolves
 `python3` → `python` → `py`. The fail mode when **no interpreter exists** is
 hardcoded per hook in `hooks/hooks.json` — it cannot live in
 `.claude/audit.config.json` because reading that config requires Python
