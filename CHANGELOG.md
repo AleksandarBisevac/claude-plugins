@@ -4,7 +4,12 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [0.12.0] - 2026-07-16
+
+A visual/UX overhaul of the HTML report: a modern, themeable, responsive design
+built on CSS tokens — light + dark, a pipeline-rail signature, refined components,
+and tasteful motion — with every interaction and invariant of the previous report
+preserved (one self-contained file, zero network fetches, escaped, print-safe).
 
 ### Changed
 - **Report redesign — a modern, themeable visual system.** The HTML report moves
