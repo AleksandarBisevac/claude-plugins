@@ -9,12 +9,14 @@ render as links only when they are http(s).
 
 Usage:
   render-report.py <manifest> [--out-dir DIR] [--format html|md|both]
+                              [--summary-file PATH]
   render-report.py --selftest
 
 Writes audit-report.html / audit-report.md into --out-dir (default: the
 manifest's own directory) and prints the paths.
 Exit codes: 0 ok · 2 usage error / unreadable manifest.
 """
+import base64
 import html
 import importlib.util
 import json
@@ -75,7 +77,18 @@ tr.taskfilter>td{padding:.3rem .6rem .3rem 1.7rem;border-top:none}
 .tf-chip{cursor:pointer;border:1px solid #d1d9e0;background:#fff;color:#1f2328;
          border-radius:1em;padding:0 .5em;font:inherit;font-size:.8em}
 .tf-chip.on{background:#0969da;color:#fff;border-color:#0969da}
-@media print{.toolbar,tr.taskfilter{display:none!important}tr.task{display:table-row!important}}
+.summary{background:#ddf4ff;border:1px solid #b6e3ff;border-radius:.5em;padding:.6rem .8rem;margin:1rem 0}
+.summary>strong{display:block;font-size:.78em;text-transform:uppercase;letter-spacing:.04em;color:#0969da;margin-bottom:.15rem}
+.chip,.fill{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@page{size:A4;margin:1.4cm}
+@media print{
+  body{max-width:none;margin:0;font-size:10.5pt}
+  .toolbar,tr.taskfilter{display:none!important}
+  tr.task{display:table-row!important}
+  tr.phase,tr.task{break-inside:avoid}
+  table.phases thead th{position:static!important}
+  a[href]{color:inherit;text-decoration:none}
+}
 """
 
 # Inline, self-contained (no external fetch) filter/sort/search over the report
@@ -245,6 +258,27 @@ _SCRIPT = r"""<script>
     });
   });
 
+  // Save as PDF — the print stylesheet lays the report out on A4 with every
+  // phase expanded; the browser's print dialog offers "Save as PDF" (no bundled
+  // PDF library, so the file stays small and self-contained).
+  var printBtn = document.getElementById('audit-print');
+  if (printBtn) printBtn.addEventListener('click', function () { window.print(); });
+
+  // Download the Markdown twin (embedded as base64, decoded to a Blob).
+  var dlBtn = document.getElementById('audit-dl-md');
+  if (dlBtn) dlBtn.addEventListener('click', function () {
+    try {
+      var bin = atob(window.AUDIT_MD_B64 || '');
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([bytes], { type: 'text/markdown;charset=utf-8' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = 'audit-report.md';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {}
+  });
+
   wireSort(grouped, true);
   wireSort(bugsTable, false);
   if (q) q.addEventListener('input', refresh);
@@ -346,6 +380,14 @@ def render_html(manifest, summary):
                % (_bar(tdone, ttotal), phdone, len(summary["phases"]),
                   summary["bugs"]["open"], len(summary["ready"])))
 
+    # AI-authored narrative summary (written by /audit:report into
+    # meta.reportSummary); the quantitative "Overall" line above is the
+    # always-present deterministic fallback. Escaped — treated as untrusted.
+    rsum = meta.get("reportSummary")
+    if isinstance(rsum, str) and rsum.strip():
+        out.append('<div class="summary"><strong>Summary</strong>%s</div>'
+                   % e(rsum.strip()))
+
     # Interactive toolbar (search + per-status quick-filter). Enhanced by
     # _SCRIPT; with JS off the tables below are still fully readable.
     out.append(
@@ -354,6 +396,9 @@ def render_html(manifest, summary):
         'placeholder="Filter phases &amp; tasks by text…">'
         '<span class="tbl">Phase status:</span><span id="audit-phase-status"></span>'
         '<button type="button" id="audit-expand" class="fchip">expand all</button>'
+        '<button type="button" id="audit-print" class="fchip" '
+        'title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button>'
+        '<button type="button" id="audit-dl-md" class="fchip">Download .md</button>'
         '<span id="audit-count" class="muted"></span></div>')
 
     # One collapsible table: each phase is a group-row (click to expand its task
@@ -412,6 +457,12 @@ def render_html(manifest, summary):
     if summary["ready"]:
         out.append("<h2>Ready now</h2><p class=mono>%s</p>"
                    % ", ".join(e(r) for r in summary["ready"]))
+    # Embed the Markdown twin as base64 so the "Download .md" button works from a
+    # standalone file. base64 (not raw text) keeps any manifest HTML/`</script>`
+    # out of the page and preserves UTF-8 exactly.
+    md_b64 = base64.b64encode(
+        render_md(manifest, summary).encode("utf-8")).decode("ascii")
+    out.append('<script>window.AUDIT_MD_B64="%s";</script>' % md_b64)
     out.append(_SCRIPT)
     return "\n".join(out) + "\n"
 
@@ -431,6 +482,9 @@ def render_md(manifest, summary):
 
     out = ["# %s" % cell(meta.get("title") or "Audit report"), "",
            "repo: %s · generated %s" % (cell(meta.get("repo") or "?"), now), ""]
+    rsum = meta.get("reportSummary")
+    if isinstance(rsum, str) and rsum.strip():
+        out += ["> " + cell(rsum.strip()), ""]
     if not summary["valid"]:
         out += ["**INVALID MANIFEST: %d validator finding(s).**" % summary["findings"], ""]
     tdone = sum(p["done"] for p in summary["phases"])
@@ -478,20 +532,24 @@ def main(argv):
     args = list(argv)
     out_dir = None
     fmt = "both"
-    for flag, val in (("--out-dir", True), ("--format", True)):
+    summary_file = None
+    for flag in ("--out-dir", "--format", "--summary-file"):
         if flag in args:
             i = args.index(flag)
             if i + 1 >= len(args):
                 sys.stderr.write("usage: %s needs a value\n" % flag)
                 return 2
+            val = args[i + 1]
             if flag == "--out-dir":
-                out_dir = args[i + 1]
+                out_dir = val
+            elif flag == "--format":
+                fmt = val
             else:
-                fmt = args[i + 1]
+                summary_file = val
             del args[i:i + 2]
     if fmt not in ("html", "md", "both") or len(args) != 1:
         sys.stderr.write("usage: render-report.py <manifest> [--out-dir DIR] "
-                         "[--format html|md|both]\n")
+                         "[--format html|md|both] [--summary-file PATH]\n")
         return 2
 
     manifest_path = args[0]
@@ -505,6 +563,22 @@ def main(argv):
         sys.stderr.write("ERROR: %s is not a JSON object (got %s)\n"
                          % (manifest_path, type(manifest).__name__))
         return 2
+
+    # --summary-file lets /audit:report pass an AI-authored narrative summary
+    # WITHOUT mutating the manifest (the command stays read-only). It is injected
+    # into the in-memory manifest's meta.reportSummary; the file is never rewritten.
+    if summary_file:
+        try:
+            with open(summary_file, "r", encoding="utf-8") as fh:
+                text = fh.read().strip()
+            if text:
+                meta = manifest.get("meta")
+                if not isinstance(meta, dict):
+                    meta = manifest["meta"] = {}
+                meta["reportSummary"] = text
+        except Exception as exc:
+            sys.stderr.write("WARNING: could not read --summary-file %s: %s\n"
+                             % (summary_file, exc))
 
     lib = _load_status_lib()
     vm = lib._load_validator()
@@ -545,7 +619,8 @@ def _selftest():
 
     evil_title = "<script>alert(1)</script>"
     manifest = {
-        "meta": {"version": 2, "title": evil_title, "repo": "r"},
+        "meta": {"version": 2, "title": evil_title, "repo": "r",
+                 "reportSummary": "closed all criticals & shipped v0.5.0"},
         "phases": [
             {"id": "P1", "title": "Phase & <b>bold</b>", "status": "in_progress",
              "desiredOutcome": "Outcome with <img src=x onerror=alert(1)>",
@@ -586,8 +661,16 @@ def _selftest():
           'href="javascript:' not in html_out)
     check("x4 https ado url IS a link",
           'href="https://dev.azure.com/o/p/_workitems/edit/42"' in html_out)
-    check("x5 zero external fetches",
-          "http" not in html_out.replace('href="https://dev.azure.com/o/p/_workitems/edit/42"', ""))
+    # exclude the ADO link and the opaque embedded-markdown blob (data, not a fetch)
+    _marker = 'window.AUDIT_MD_B64="'
+    _s = html_out
+    if _marker in _s:
+        _i = _s.index(_marker)
+        _j = _s.index('"', _i + len(_marker))
+        _s = _s[:_i] + _s[_j:]
+    _s = _s.replace('href="https://dev.azure.com/o/p/_workitems/edit/42"', "")
+    check("x5 zero external fetches (ado link + embedded md blob excluded)",
+          "http" not in _s)
     check("m1 md contains phase heading and escaped pipe",
           "## P1" in md_out and "a\\|bug" in md_out)
     check("m2 md table row for the done task",
@@ -612,6 +695,15 @@ def _selftest():
     check("h7 phase + task rows carry data-phase/data-status (grouping + filter)",
           'data-phase="P1"' in html_out and 'data-status="done"' in html_out
           and 'data-status="pending"' in html_out and 'data-status="open"' in html_out)
+    check("h8 AI summary box rendered + escaped (from meta.reportSummary)",
+          '<div class="summary">' in html_out
+          and "closed all criticals &amp; shipped" in html_out)
+    check("h9 PDF (print) + Download .md buttons + embedded md + A4 print CSS",
+          'id="audit-print"' in html_out and 'id="audit-dl-md"' in html_out
+          and 'window.AUDIT_MD_B64="' in html_out and "@page" in html_out
+          and "@media print" in html_out)
+    check("m3 markdown twin carries the summary blockquote",
+          "> closed all criticals" in md_out)
     check("r1 ready list rendered", "P1.2" in md_out)
 
     rc = main([mp, "--format", "nope"])
@@ -622,6 +714,19 @@ def _selftest():
     with open(arr, "w", encoding="utf-8") as fh:
         json.dump(["not", "an", "object"], fh)
     check("c5 non-object JSON root is a usage error (exit 2)", main([arr]) == 2)
+    # --summary-file injects the summary WITHOUT a reportSummary in the manifest
+    sf = os.path.join(tmp, "sum.txt")
+    with open(sf, "w", encoding="utf-8") as fh:
+        fh.write("Injected via CLI summary file.")
+    m2 = json.loads(json.dumps(manifest))
+    m2["meta"].pop("reportSummary", None)
+    mp2 = os.path.join(tmp, "m2.json")
+    with open(mp2, "w", encoding="utf-8") as fh:
+        json.dump(m2, fh)
+    main([mp2, "--out-dir", tmp, "--format", "html", "--summary-file", sf])
+    inj = open(os.path.join(tmp, "audit-report.html"), encoding="utf-8").read()
+    check("c6 --summary-file injects the Summary box (manifest untouched)",
+          '<div class="summary">' in inj and "Injected via CLI summary file." in inj)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
