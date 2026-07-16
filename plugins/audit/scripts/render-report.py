@@ -34,6 +34,14 @@ STATUS_COLORS = {
     "wontfix": "#57606a",
 }
 
+# Risk chips: (background, foreground). Tinted (not solid like status chips) so
+# the two chip families stay visually distinct.
+RISK_COLORS = {
+    "low": ("#dafbe1", "#116329"),
+    "med": ("#fff8c5", "#7d4e00"),
+    "high": ("#ffebe9", "#a40e26"),
+}
+
 _CSS = """
 body{font:15px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif;margin:2rem auto;
      max-width:64rem;padding:0 1rem;color:#1f2328}
@@ -78,9 +86,20 @@ tr.taskfilter>td{padding:.3rem .6rem .3rem 1.7rem;border-top:none}
 .tf-chip{cursor:pointer;border:1px solid #d1d9e0;background:#fff;color:#1f2328;
          border-radius:1em;padding:0 .5em;font:inherit;font-size:.8em}
 .tf-chip.on{background:#0969da;color:#fff;border-color:#0969da}
+.rchip{display:inline-block;padding:0 .45em;border-radius:1em;font-size:.8em;border:1px solid;background:#fff}
+td.when{white-space:nowrap;font-size:.85em;color:#57606a}
+tr.task td.tid{border-left:3px solid #d1d9e0}
+tr.task[data-status="done"] td.tid{border-left-color:#1a7f37}
+tr.task[data-status="in_progress"] td.tid{border-left-color:#9a6700}
+tr.task[data-status="blocked"] td.tid{border-left-color:#cf222e}
+tr.task[data-status="pending"] td.tid{border-left-color:#57606a}
+tr.phase[data-status="done"]>td{border-left:4px solid #1a7f37}
+tr.phase[data-status="in_progress"]>td{border-left:4px solid #9a6700}
+tr.phase[data-status="blocked"]>td{border-left:4px solid #cf222e}
+tr.phase[data-status="pending"]>td{border-left:4px solid #57606a}
 .summary{background:#ddf4ff;border:1px solid #b6e3ff;border-radius:.5em;padding:.6rem .8rem;margin:1rem 0}
 .summary>strong{display:block;font-size:.78em;text-transform:uppercase;letter-spacing:.04em;color:#0969da;margin-bottom:.15rem}
-.chip,.fill{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.chip,.fill,.rchip{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 @page{size:A4;margin:1.4cm}
 @media print{
   body{max-width:none;margin:0;font-size:10.5pt}
@@ -344,6 +363,36 @@ def _outcome_text(task):
     return (txt[:70].rstrip() + "…") if len(txt) > 70 else txt
 
 
+def _short_date(iso):
+    """ISO timestamp -> its date part ('2026-06-28T10:00:00Z' -> '2026-06-28')."""
+    s = str(iso or "")
+    return s.split("T", 1)[0] if "T" in s else s
+
+
+def _timing_cell(task):
+    """Compact completion date for the table, with the full started/completed
+    timestamps on hover. Done -> completed date; started-but-not-done -> the
+    started date (muted); neither -> em dash."""
+    started, completed = task.get("startedAt"), task.get("completedAt")
+    tip = e("started %s · completed %s" % (started or "—", completed or "—"))
+    if completed:
+        return '<span title="%s">%s</span>' % (tip, e(_short_date(completed)))
+    if started:
+        return ('<span class="muted" title="%s">started %s</span>'
+                % (tip, e(_short_date(started))))
+    return '<span class="muted">—</span>'
+
+
+def _risk_chip(risk):
+    """Tinted risk chip (low/med/high); em dash for null/unknown."""
+    r = str(risk or "").lower()
+    if r not in RISK_COLORS:
+        return '<span class="muted">—</span>'
+    bg, fg = RISK_COLORS[r]
+    return ('<span class="rchip" style="background:%s;color:%s;border-color:%s">%s</span>'
+            % (bg, fg, fg, e(r)))
+
+
 def _phase_meta_div(phase):
     """Muted sub-line for a phase group-row: desired outcome, branch, merge
     timestamp, and (once signed off) the summary — all escaped."""
@@ -420,22 +469,22 @@ def render_html(manifest, summary, basename="audit-report"):
     # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
     out.append('<table class="phases"><thead><tr>'
                "<th>id</th><th>title</th><th>status</th><th>model</th>"
-               "<th>risk</th><th>commit</th><th>ADO</th><th>outcome</th>"
-               "</tr></thead><tbody>")
+               "<th>risk</th><th>commit</th><th>done</th><th>ADO</th>"
+               "<th>outcome</th></tr></thead><tbody>")
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
         pid = psum["id"]
         out.append(
             '<tr class="phase" data-phase="%s" data-status="%s" tabindex="0" '
-            'aria-expanded="false"><td colspan="8"><span class="tri"></span> '
+            'aria-expanded="false"><td colspan="9"><span class="tri"></span> '
             '<span class="mono">%s</span> <strong>%s</strong> %s %s%s</td></tr>'
             % (e(pid), e(psum["status"]), e(pid), e(psum["title"]),
                _chip(psum["status"]), _bar(psum["done"], psum["total"]),
                _phase_meta_div(ph)))
         # per-phase task-status filter (shown only when the phase is expanded);
         # _SCRIPT fills .tf-chips from this phase's own task statuses.
-        out.append('<tr class="taskfilter" data-phase="%s"><td colspan="8">'
+        out.append('<tr class="taskfilter" data-phase="%s"><td colspan="9">'
                    '<span class="tf-label">Filter tasks by status:</span>'
                    '<span class="tf-chips"></span></td></tr>' % e(pid))
         for t in ph.get("tasks") or []:
@@ -444,12 +493,12 @@ def render_html(manifest, summary, basename="audit-report"):
             out.append(
                 '<tr class="task" data-phase="%s" data-status="%s">'
                 '<td class="mono tid">%s</td><td>%s</td><td>%s</td>'
-                "<td>%s</td><td>%s</td><td class=mono>%s</td><td>%s</td>"
-                "<td class=muted>%s</td></tr>"
+                "<td>%s</td><td>%s</td><td class=mono>%s</td><td class=when>%s</td>"
+                "<td>%s</td><td class=muted>%s</td></tr>"
                 % (e(pid), e(t.get("status")), e(t.get("id")), e(t.get("title")),
                    _chip(t.get("status")), e(t.get("model") or "—"),
-                   e(t.get("risk") or "—"), e((t.get("commit") or "—")[:9]),
-                   _ado_cell(t), e(_outcome_text(t))))
+                   _risk_chip(t.get("risk")), e((t.get("commit") or "—")[:9]),
+                   _timing_cell(t), _ado_cell(t), e(_outcome_text(t))))
     out.append("</tbody></table>")
 
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
@@ -517,17 +566,19 @@ def render_md(manifest, summary):
                       cell(psum["status"]), psum["done"], psum["total"]))
         if ph.get("desiredOutcome"):
             out.append("_%s_" % cell(ph["desiredOutcome"]))
-        out += ["", "| id | title | status | model | risk | commit | ADO |",
-                "|---|---|---|---|---|---|---|"]
+        out += ["", "| id | title | status | model | risk | commit | done | ADO |",
+                "|---|---|---|---|---|---|---|---|"]
         for t in ph.get("tasks") or []:
             if not isinstance(t, dict):
                 continue
             ado = t.get("ado") if isinstance(t.get("ado"), dict) else None
             ado_txt = "#%s" % ado["id"] if ado and ado.get("id") is not None else "—"
-            out.append("| %s | %s | %s | %s | %s | %s | %s |" % (
+            done_txt = _short_date(t.get("completedAt")) or (
+                "started " + _short_date(t.get("startedAt")) if t.get("startedAt") else "—")
+            out.append("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
                 cell(t.get("id")), cell(t.get("title")), cell(t.get("status")),
                 cell(t.get("model") or "—"), cell(t.get("risk") or "—"),
-                cell((t.get("commit") or "—")[:9]), cell(ado_txt)))
+                cell((t.get("commit") or "—")[:9]), cell(done_txt), cell(ado_txt)))
         out.append("")
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
@@ -649,7 +700,9 @@ def _selftest():
              "branch": "audit/p1-x", "mergedAt": "2026-07-09T00:00:00Z",
              "tasks": [
                  {"id": "P1.1", "title": "done task", "status": "done",
-                  "commit": "abcdef1234567", "files": ["src/a.ts"],
+                  "commit": "abcdef1234567", "files": ["src/a.ts"], "risk": "high",
+                  "startedAt": "2026-07-09T08:00:00Z",
+                  "completedAt": "2026-07-09T09:30:00Z",
                   "outcome": {"descriptive": "did the thing cleanly"},
                   "ado": {"id": 42, "url": "https://dev.azure.com/o/p/_workitems/edit/42"}},
                  {"id": "P1.2", "title": "evil url", "status": "pending",
@@ -724,8 +777,15 @@ def _selftest():
           'id="audit-print"' in html_out and 'id="audit-dl-md"' in html_out
           and 'window.AUDIT_MD_B64="' in html_out and "@page" in html_out
           and "@media print" in html_out)
-    check("m3 markdown twin carries the summary blockquote",
-          "> closed all criticals" in md_out)
+    check("h10 done column: completion date + full timestamps on hover",
+          "<th>done</th>" in html_out and "2026-07-09" in html_out
+          and 'title="started 2026-07-09T08:00:00Z · completed '
+          '2026-07-09T09:30:00Z"' in html_out)
+    check("h11 risk chip + status-colored row edges",
+          '<span class="rchip"' in html_out and ">high</span>" in html_out
+          and 'tr.task[data-status="blocked"] td.tid' in html_out)
+    check("m4 markdown twin has the done column with the completion date",
+          "| done | ADO |" in md_out and "2026-07-09" in md_out)
     check("r1 ready list rendered", "P1.2" in md_out)
 
     rc = main([mp, "--format", "nope"])
