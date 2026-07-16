@@ -22,6 +22,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   value escaped, and fully readable with JS off (rows render expanded; JS
   collapses them). Verified in a browser against a synthetic 40×5 report.
 
+### Added
+- **Report: PDF, an AI summary, and a Markdown download.** A **Save as PDF**
+  button prints the report on **A4 with every phase expanded** (via the browser
+  print dialog + a print stylesheet — no bundled PDF library, so the file stays
+  small and self-contained). A **Summary** box shows an AI-authored narrative
+  when present — `/audit:report` composes 2–4 sentences and passes them via a new
+  `render-report.py --summary-file PATH` (or a manifest `meta.reportSummary`);
+  the file is injected in-memory, so the command stays read-only. A **Download
+  .md** button saves the Markdown twin (embedded as base64) even from a
+  standalone HTML. The quantitative "Overall" line remains the always-present
+  fallback. Verified end-to-end in a browser.
+
 ### Fixed
 - **Validator now flags a `done` phase that still has non-done tasks.** A phase
   is `done` only after sign-off (every task done); `validate-manifest` never
