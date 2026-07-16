@@ -641,7 +641,7 @@
         {
           "id": "P3.1",
           "title": "Azure DevOps work-item sync (/audit:sync push|pull|status)",
-          "status": "pending",
+          "status": "done",
           "model": "opus",
           "skills": [],
           "blockedBy": [],
@@ -681,7 +681,7 @@
         {
           "id": "P3.2",
           "title": "CI headless gate (scripts/audit-status.py --json|--gate)",
-          "status": "pending",
+          "status": "done",
           "model": "sonnet",
           "skills": [],
           "blockedBy": [],
@@ -719,7 +719,7 @@
         {
           "id": "P3.3",
           "title": "/audit report (scripts/render-report.py)",
-          "status": "pending",
+          "status": "done",
           "model": "sonnet",
           "skills": [],
           "blockedBy": [],
@@ -757,7 +757,7 @@
         {
           "id": "P3.4",
           "title": "Concurrency lock (<manifestPath>.lock)",
-          "status": "pending",
+          "status": "done",
           "model": "sonnet",
           "skills": [],
           "blockedBy": [],
