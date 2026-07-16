@@ -235,6 +235,17 @@ def validate(manifest):
         elif not isinstance(tasks_val, list):
             f.append("%s: tasks must be an array, got %s"
                      % (pwhere, type(tasks_val).__name__))
+        # A phase is 'done' only after sign-off, which requires every task done.
+        # A done phase with a non-done task is a stale-status slip the schema
+        # can't express (e.g. a hand-regenerated roadmap that flipped the phase
+        # but not its tasks).
+        if phase.get("status") == "done":
+            not_done = [t.get("id") or "?" for t in _safe_list(tasks_val)
+                        if isinstance(t, dict) and t.get("status") != "done"]
+            if not_done:
+                f.append("%s: status 'done' but %d task(s) are not done (%s) — a "
+                         "phase is done only after ALL its tasks are (sign-off)"
+                         % (pwhere, len(not_done), ", ".join(not_done[:6])))
         for ti, task in enumerate(_safe_list(tasks_val)):
             if not isinstance(task, dict):
                 f.append("%s tasks[%d]: not an object" % (pwhere, ti))
@@ -576,6 +587,9 @@ def _selftest():
           lambda m: (m.pop("fileIndex", None), m.pop("bugs", None),
                      m["phases"][0].pop("tasks", None)),
           expect_warning="no 'tasks' key")
+    check("z8 done phase with a non-done task is a finding",
+          "status 'done' but",
+          lambda m: m["phases"][0].update(status="done"))
 
     # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os

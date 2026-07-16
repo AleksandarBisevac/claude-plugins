@@ -4,6 +4,17 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Fixed
+- **Validator now flags a `done` phase that still has non-done tasks.** A phase
+  is `done` only after sign-off (every task done); `validate-manifest` never
+  checked that invariant, so a stale-status slip passed silently. Added the
+  check + a regression selftest, and corrected the dogfood roadmap manifest's
+  **P3** — its four tasks carried commits + outcomes (the work shipped in
+  v0.5.0) but were still marked `pending` from a hand-regeneration. Surfaced by
+  the interactive report showing P3 as `done` with a `0/4` progress bar.
+
 ## [0.10.0] - 2026-07-16
 
 A self gap-audit of the whole plugin (trust core, guards, command surface,
