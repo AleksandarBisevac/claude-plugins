@@ -4,6 +4,14 @@ A [Claude Code](https://code.claude.com) plugin marketplace with one theme:
 **enforced** engineering discipline — plan gates, test gates, sign-off gates,
 secret guards. Deterministic hooks, not prompt suggestions.
 
+### ▶ See it
+
+A live, interactive audit report (search, filter, collapsible phases, Save-as-PDF) — nothing to install:
+
+**[aleksandarbisevac.github.io/claude-plugins](https://aleksandarbisevac.github.io/claude-plugins/)** · or read the [worked example](examples/).
+
+[![An audit report: summary, progress, phases and bug list](docs/screenshots/overview.png)](https://aleksandarbisevac.github.io/claude-plugins/)
+
 ## Plugins
 
 | Plugin | What it does |
@@ -21,6 +29,23 @@ secret guards. Deterministic hooks, not prompt suggestions.
 > — the guard hooks activate in **all** your projects, by design.
 > Requirements: Python 3.8+ reachable as `python3`, `python` or `py` (CI verifies on 3.12)
 > (on Windows: run inside Git Bash).
+
+## Quickstart
+
+In any git repo you want to audit:
+
+```
+/audit:init            # interview → generates a schema-valid audit manifest
+/audit:status          # see phases, tasks, bugs, and what's ready now
+/audit:phase P0        # run the first phase: branch → tasks (red-first TDD) → gated sign-off
+/audit:report          # render the shareable HTML + Markdown report
+```
+
+`/audit:init` interviews you (scope, dimensions, size) and writes the manifest;
+everything else reads and updates it. The report is one self-contained file
+(open it in a browser, or **Save as PDF**). See the [worked example](examples/)
+for what a manifest and its report look like, or the [plugin README](plugins/audit/README.md)
+for the full command reference.
 
 ## This repo, dogfooded
 

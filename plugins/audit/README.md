@@ -20,6 +20,16 @@ Every action is its own `/audit:<verb>` (`status` · `next` · `run` · `phase` 
 (`python3`/`python`/`py`; Windows = Git Bash). Add `--dry-run` to `next`/`run`/`phase` to preview
 without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
 
+## See it
+
+The **[live demo](https://aleksandarbisevac.github.io/claude-plugins/)** is a real report you can
+click through (search, phase-status filter, expand a phase, **Save as PDF**). The
+[`examples/`](../../examples/) folder holds the manifest behind it.
+
+| Overview | Expand a phase | Filter by status |
+|---|---|---|
+| [![overview](../../docs/screenshots/overview.png)](../../docs/screenshots/overview.png) | [![expanded](../../docs/screenshots/expanded.png)](../../docs/screenshots/expanded.png) | [![filtered](../../docs/screenshots/filtered.png)](../../docs/screenshots/filtered.png) |
+
 ## What you get
 
 - **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
@@ -39,8 +49,9 @@ without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
   assigned ADO bugs (`pull`), or diff link state (`status`). Explicit, idempotent, one
   direction per invocation; `az boards` CLI contract with the azure-devops MCP tools as an
   optional fast-path.
-- **`/audit:report`** — self-contained HTML + Markdown status report (phase progress, task
-  tables, bug rollup, ADO links) — publishable as a CI artifact.
+- **`/audit:report`** — self-contained, **interactive** HTML + Markdown report (collapsible
+  phases, text + status filters, **Save as PDF**, optional AI summary) — publishable as a CI
+  artifact. See [Reports](#reports).
 - **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
@@ -197,10 +208,52 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `tddReminder.throttleMinutes` | Minimum gap between nudges | `10` |
 | `tddReminder.inProgressPolicy` | Manifest interplay: `skip-gate-only` \| `skip-all` \| `warn-always` | `skip-gate-only` |
 
-Manifest-level knobs live in the manifest's `meta` block (all optional): `developmentBranch`,
-`branchPrefix`, `reviewSkill`, `runtimeBoot`, `nodePreamble`, `commit`, `buildCommands`.
-See the schema for exact shapes and defaults. Per-phase, `desiredOutcome` states what
-success looks like — `/audit:status` shows it, task subagents receive it, and sign-off must address it.
+### The manifest's `meta` block
+
+`meta` is the manifest's global configuration — it keeps everything project-specific out of the
+commands. All fields are optional except `version`; the orchestrator resolves them at run time.
+
+| `meta` field | What it's for | Default |
+|---|---|---|
+| `version` | Manifest schema version (**required**). | `2` |
+| `repo` / `title` | Repo name + human title (title heads the report + browser tab). | — |
+| `developmentBranch` | Branch phase branches fork from and merge back into. | `main` |
+| `branchPrefix` | Prefix for per-phase branches → `audit/<phaseId>-<slug>`. | `audit` |
+| `gitRoot` | Git repo root relative to the project dir (set when git lives in a subdir). | `.` |
+| `reviewSkill` | Skill run at phase sign-off; `null` → tests are the signer. | `null` |
+| `runtimeBoot` | `{appRootPath, launch, verify}` smoke gate; `null` → skipped. | `null` |
+| `nodePreamble` | Shell prefix run before build gates (e.g. `nvm use`). | `null` |
+| `commit` | `{type, coauthor}` commit-message conventions. | `{chore, null}` |
+| `buildCommands` | Map so gate entries like `test` resolve to a real command. | — |
+| `ado` | Azure DevOps sync config for `/audit:sync` (never store credentials). | `null` |
+| `reportSummary` | Narrative shown in the report's **Summary** box (usually supplied read-only via `--summary-file`). | `null` |
+| `reportBasename` | Custom report filename, e.g. `q3-audit` → `q3-audit.html/.md`. | `audit-report` |
+
+Per-phase, `desiredOutcome` states what success looks like — `/audit:status` shows it, task
+subagents receive it, and sign-off must address it.
+
+## Reports
+
+`/audit:report` renders the manifest to a shareable report — **one self-contained file, zero
+network fetches, read-only** (it never mutates the manifest). Under the hood it runs:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath> \
+  [--out-dir DIR] [--format html|md|both] [--summary-file PATH] [--basename NAME]
+```
+
+- **HTML** — collapsible phase rows (a 40-phase audit opens as ~40 lines, not one endless scroll),
+  a phase text search + phase-status chips, a per-phase task-status filter, click-to-sort columns,
+  a **Save as PDF** button (browser print → A4, all phases expanded), and a **Download .md** button.
+  Every manifest value is HTML-escaped; the page fetches nothing.
+- **Markdown** (`audit-report.md`) — renders inline on GitHub / in PRs.
+- **Summary box** — pass `--summary-file` (a 2–4 sentence narrative) or set `meta.reportSummary`;
+  `/audit:report` composes one for you. The quantitative "Overall" line is always present.
+- **Filenames** — default `audit-report.html/.md`; override with `--basename` or `meta.reportBasename`.
+
+See the [live demo](https://aleksandarbisevac.github.io/claude-plugins/) and the
+[worked example](../../examples/). The same script runs headless in CI to publish the report as an
+artifact (see `docs/examples/azure-pipelines.yml`).
 
 ## Azure DevOps (optional)
 
