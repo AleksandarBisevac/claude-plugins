@@ -33,6 +33,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   .md** button saves the Markdown twin (embedded as base64) even from a
   standalone HTML. The quantitative "Overall" line remains the always-present
   fallback. Verified end-to-end in a browser.
+- **Onboarding: a worked example, a live demo, and quickstart docs.** New
+  `examples/acme-store/` — a small, schema-valid manifest that covers every
+  phase/task status, a blocked task, cross-task deps, a hard phase gate, the full
+  bug lifecycle (open→triaged→in_progress→fixed→wontfix), a reciprocal bug↔task
+  link, and an ADO link — plus its generated report. CI validates it on every
+  push. A GitHub Pages demo (`docs/index.html` = the example report;
+  `docs/demo-large.html` = a 40×5 report) gives a click-through live link, and the
+  READMEs gain a Quickstart, screenshots, and a per-field **`meta` reference**
+  table + a **Reports** section.
+- **`meta.reportBasename` / `render-report.py --basename`** — custom report
+  filenames (e.g. `q3-audit` → `q3-audit.html/.md`; default `audit-report`),
+  sanitized to `[A-Za-z0-9-_]`. The **Download .md** button uses the same name.
+  Both `reportBasename` and `reportSummary` are now first-class `meta` keys
+  (schema + validator).
 
 ### Fixed
 - **Validator now flags a `done` phase that still has non-done tasks.** A phase
