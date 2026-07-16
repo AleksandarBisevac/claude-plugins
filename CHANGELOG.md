@@ -4,6 +4,24 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Changed
+- **Report redesign — a modern, themeable visual system.** The HTML report moves
+  onto CSS design tokens (a "Slate & Teal" palette) with **light + dark themes**:
+  it follows the OS by default and adds a toolbar toggle that persists. The phases
+  table gains a **pipeline rail** — a continuous status-colored spine with a node
+  per phase and per-task rail segments — as its signature, plus soft cards for the
+  overall/summary bands, pill buttons + a primary Save-as-PDF action, refined
+  status/risk chips, a monospace tabular data-face for ids/SHAs/dates, an animated
+  progress fill, and toolbar elevation on scroll. Tasteful motion throughout,
+  gated by `prefers-reduced-motion`; still one self-contained file, **zero network
+  fetches** (system fonts only), fully escaped, keyboard-navigable, **responsive**
+  (on phones/tablets the wide tables scroll inside their own frame instead of the
+  page), and print/PDF renders on a light A4 sheet regardless of theme. Verified in a browser (light +
+  dark, all interactions, reduced-motion). Status/risk colors moved from inline
+  styles into theme tokens keyed off `data-status`/`data-risk`.
+
 ## [0.11.0] - 2026-07-16
 
 Turned the report into a shareable, scalable artifact and gave the plugin a real
