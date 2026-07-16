@@ -1,6 +1,6 @@
 {
   "name": "audit",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline. Ships /audit:status|next|run|phase|review|resume|report (execution), /audit:init (multi-agent manifest generation), /audit:task (task creation), /audit:bug (bug tracking with red-first TDD fixes), /audit:sync (Azure DevOps work-item sync), plus plan-first + secret-safety + token-logging + TDD-reminder guard hooks. Parameterized per-repo via .claude/audit.config.json — no company/project coupling.",
   "author": {
     "name": "Aleksandar Bisevac",

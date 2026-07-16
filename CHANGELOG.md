@@ -4,7 +4,13 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [0.11.0] - 2026-07-16
+
+Turned the report into a shareable, scalable artifact and gave the plugin a real
+front door. The HTML report is now one collapsible, filterable table that scales
+to 40+ phases, prints to PDF, and can carry an AI summary; a curated
+`examples/acme-store/` audit + a GitHub Pages demo + README quickstart/screenshots
+let people see what the plugin does without installing it.
 
 ### Changed
 - **Interactive report scales to large audits.** The HTML report is now one
