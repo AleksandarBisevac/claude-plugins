@@ -11,14 +11,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   collapsible table: each phase is a group-row (status chip, progress bar,
   desired outcome) that expands to its task rows on click; phases are **collapsed
   by default**, so a 40-phase / 200-task audit opens as ~40 scannable rows
-  instead of one endless scroll. The toolbar is **global**: text search
-  auto-expands matching phases, the status chips filter tasks across every phase
-  (a "blocked" chip shows blocked *tasks*, not every task of a blocked phase),
-  sorting is per-phase (tasks stay grouped under their phase), plus expand-all /
-  collapse-all and sticky headers. Still one self-contained file, zero network
-  fetches, every value escaped, and fully readable with JS off (rows render
-  expanded; JS collapses them). Verified in a browser against a synthetic
-  40×5 report.
+  instead of one endless scroll. Filtering is split by level: the toolbar holds a
+  **phase** text search and **phase-status** chips, both *visually removing*
+  non-matching phases; a **task-status** filter is **contextual** — it appears
+  inside each phase when expanded and filters only that phase's tasks (filtering
+  one phase never touches another). Text search auto-expands matching phases;
+  sort is per-phase (tasks stay grouped); **expand-all / collapse-all persists**
+  across filtering and page reload (localStorage); the page gains a `<title>`
+  (browser-tab name). Still one self-contained file, zero network fetches, every
+  value escaped, and fully readable with JS off (rows render expanded; JS
+  collapses them). Verified in a browser against a synthetic 40×5 report.
 
 ### Fixed
 - **Validator now flags a `done` phase that still has non-done tasks.** A phase
