@@ -49,17 +49,25 @@ th{background:#f6f8fa}
 td.muted{font-size:.88em}
 .toolbar{position:sticky;top:0;background:#fff;padding:.6rem 0;margin:1rem 0 .5rem;
          border-bottom:1px solid #d1d9e0;display:flex;gap:.5rem;align-items:center;
-         flex-wrap:wrap;z-index:2}
+         flex-wrap:wrap;z-index:3}
 #audit-q{flex:1 1 16rem;min-width:11rem;padding:.35rem .6rem;font:inherit;
          border:1px solid #d1d9e0;border-radius:.4em}
 #audit-status-filter{display:flex;gap:.3rem;flex-wrap:wrap}
 .fchip{cursor:pointer;border:1px solid #d1d9e0;background:#f6f8fa;color:#1f2328;
        border-radius:1em;padding:.05rem .6rem;font:inherit;font-size:.85em}
 .fchip.on{background:#0969da;color:#fff;border-color:#0969da}
-table.data th{cursor:pointer;user-select:none;white-space:nowrap}
-table.data th.sorted::after{content:"\\25B2";font-size:.7em;margin-left:.3em;color:#57606a}
-table.data th.sorted[data-sort="desc"]::after{content:"\\25BC"}
-@media print{.toolbar{display:none}}
+table.phases thead th,table.data th{cursor:pointer;user-select:none;white-space:nowrap}
+table.phases thead th{position:sticky;top:2.9rem;z-index:1}
+th.sorted::after{content:"\\25B2";font-size:.7em;margin-left:.3em;color:#57606a}
+th.sorted[data-sort="desc"]::after{content:"\\25BC"}
+tr.phase{background:#f6f8fa;cursor:pointer}
+tr.phase:hover{background:#eef1f4}
+tr.phase>td{border-top:2px solid #c8d1da}
+.tri::before{content:"\\25B6";display:inline-block;width:1em;color:#57606a;font-size:.8em}
+tr.phase.open .tri::before{content:"\\25BC"}
+tr.task>td.tid{padding-left:1.7rem}
+.pmeta{font-size:.85em;margin-top:.15rem}
+@media print{.toolbar{display:none}tr.task{display:table-row!important}}
 """
 
 # Inline, self-contained (no external fetch) filter/sort/search over the report
@@ -69,29 +77,64 @@ _SCRIPT = r"""<script>
   var q = document.getElementById('audit-q');
   var count = document.getElementById('audit-count');
   var chipBar = document.getElementById('audit-status-filter');
-  var tables = [].slice.call(document.querySelectorAll('table.data'));
+  var expandBtn = document.getElementById('audit-expand');
+  var grouped = document.querySelector('table.phases');
+  var bugsTable = document.querySelector('table.bugs');
+  var phaseRows = grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.phase')) : [];
+  var taskRows = grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.task')) : [];
+  var bugRows = bugsTable ? [].slice.call(bugsTable.querySelectorAll('tbody tr')) : [];
+  var expanded = {};       // phaseId -> bool (user's manual expand state)
   var activeStatus = '';
 
-  function dataRows(t) {
-    return [].slice.call(t.rows).filter(function (r) {
-      return r.getElementsByTagName('th').length === 0;
-    });
+  function esc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }
+  function tasksOf(pid) {
+    return grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.task[data-phase="' + esc(pid) + '"]')) : [];
+  }
+  // text and status are separate axes: a phase TITLE text-match reveals the
+  // whole phase, but a status filter always applies per-row (a "blocked" chip
+  // shows blocked tasks, NOT every task of a blocked phase).
+  function textHit(r, term) { return !term || r.textContent.toLowerCase().indexOf(term) !== -1; }
+  function statusHit(r) { return !activeStatus || r.getAttribute('data-status') === activeStatus; }
+  function setOpen(pr, open) {
+    pr.classList.toggle('open', !!open);
+    pr.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
-  function apply() {
+  function refresh() {
     var term = (q ? q.value : '').trim().toLowerCase();
-    var shown = 0, total = 0;
-    tables.forEach(function (t) {
-      dataRows(t).forEach(function (r) {
-        total++;
-        var okText = !term || r.textContent.toLowerCase().indexOf(term) !== -1;
-        var okStatus = !activeStatus || r.getAttribute('data-status') === activeStatus;
-        var show = okText && okStatus;
-        r.style.display = show ? '' : 'none';
-        if (show) shown++;
-      });
+    var filtering = term !== '' || activeStatus !== '';
+    phaseRows.forEach(function (pr) {
+      var tasks = tasksOf(pr.getAttribute('data-phase'));
+      if (filtering) {
+        var pText = textHit(pr, term);   // phase title/meta matched the search text
+        var vis = function (t) { return (pText || textHit(t, term)) && statusHit(t); };
+        var showP = tasks.some(vis) || (term !== '' && pText && statusHit(pr));
+        pr.style.display = showP ? '' : 'none';
+        setOpen(pr, showP);
+        tasks.forEach(function (t) { t.style.display = (showP && vis(t)) ? '' : 'none'; });
+      } else {
+        pr.style.display = '';
+        var open = !!expanded[pr.getAttribute('data-phase')];
+        setOpen(pr, open);
+        tasks.forEach(function (t) { t.style.display = open ? '' : 'none'; });
+      }
     });
-    if (count) count.textContent = shown + ' / ' + total + ' rows';
+    bugRows.forEach(function (b) { b.style.display = (textHit(b, term) && statusHit(b)) ? '' : 'none'; });
+
+    var total = taskRows.length + bugRows.length;
+    if (count) {
+      if (filtering) {
+        var vis = taskRows.filter(function (r) { return r.style.display !== 'none'; }).length
+                + bugRows.filter(function (r) { return r.style.display !== 'none'; }).length;
+        count.textContent = vis + ' / ' + total + ' shown';
+      } else {
+        count.textContent = total + ' rows';
+      }
+    }
+    if (expandBtn && !filtering) {
+      var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
+      expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
+    }
   }
 
   function natCmp(a, b) {
@@ -105,44 +148,60 @@ _SCRIPT = r"""<script>
     }
     return ax.length - bx.length;
   }
+  function cell(r, idx) { return r.cells[idx] ? r.cells[idx].textContent.trim() : ''; }
 
-  tables.forEach(function (t) {
-    var head = t.querySelector('tr');
-    if (!head) return;
-    var ths = head.getElementsByTagName('th');
+  function wireSort(table, withinPhase) {
+    if (!table) return;
+    var ths = table.querySelectorAll('thead th');
     [].forEach.call(ths, function (th, idx) {
       th.addEventListener('click', function () {
         var asc = th.getAttribute('data-sort') !== 'asc';
-        [].forEach.call(ths, function (h) {
-          h.removeAttribute('data-sort');
-          h.className = h.className.replace(/\bsorted\b/, '').trim();
-        });
+        [].forEach.call(ths, function (h) { h.removeAttribute('data-sort'); h.classList.remove('sorted'); });
         th.setAttribute('data-sort', asc ? 'asc' : 'desc');
-        th.className = (th.className + ' sorted').trim();
-        var body = t.tBodies[0] || t;
-        dataRows(t).sort(function (r1, r2) {
-          var c1 = r1.cells[idx] ? r1.cells[idx].textContent.trim() : '';
-          var c2 = r2.cells[idx] ? r2.cells[idx].textContent.trim() : '';
-          return asc ? natCmp(c1, c2) : natCmp(c2, c1);
-        }).forEach(function (r) { body.appendChild(r); });
+        th.classList.add('sorted');
+        var cmp = function (r1, r2) { return asc ? natCmp(cell(r1, idx), cell(r2, idx)) : natCmp(cell(r2, idx), cell(r1, idx)); };
+        if (withinPhase) {
+          phaseRows.forEach(function (pr) {
+            tasksOf(pr.getAttribute('data-phase')).sort(cmp).reverse()
+              .forEach(function (r) { pr.parentNode.insertBefore(r, pr.nextSibling); });
+          });
+        } else {
+          var body = table.tBodies[0];
+          [].slice.call(body.querySelectorAll('tr')).sort(cmp).forEach(function (r) { body.appendChild(r); });
+        }
+        refresh();
       });
     });
+  }
+
+  phaseRows.forEach(function (pr) {
+    function toggle() {
+      var pid = pr.getAttribute('data-phase');
+      expanded[pid] = !expanded[pid];
+      refresh();
+    }
+    pr.addEventListener('click', toggle);
+    pr.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+
+  if (expandBtn) expandBtn.addEventListener('click', function () {
+    var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
+    phaseRows.forEach(function (pr) { expanded[pr.getAttribute('data-phase')] = anyClosed; });
+    refresh();
   });
 
   if (chipBar) {
     var seen = {};
-    tables.forEach(function (t) {
-      dataRows(t).forEach(function (r) {
-        var s = r.getAttribute('data-status');
-        if (s) seen[s] = 1;
-      });
+    phaseRows.concat(taskRows).concat(bugRows).forEach(function (r) {
+      var s = r.getAttribute('data-status');
+      if (s) seen[s] = 1;
     });
     Object.keys(seen).sort().forEach(function (s) {
       var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'fchip';
-      b.setAttribute('data-status-filter', s);
-      b.textContent = s;
+      b.type = 'button'; b.className = 'fchip';
+      b.setAttribute('data-status-filter', s); b.textContent = s;
       chipBar.appendChild(b);
     });
     chipBar.addEventListener('click', function (e) {
@@ -152,12 +211,14 @@ _SCRIPT = r"""<script>
       [].forEach.call(chipBar.children, function (x) {
         x.className = x.getAttribute('data-status-filter') === activeStatus ? 'fchip on' : 'fchip';
       });
-      apply();
+      refresh();
     });
   }
 
-  if (q) q.addEventListener('input', apply);
-  apply();
+  wireSort(grouped, true);
+  wireSort(bugsTable, false);
+  if (q) q.addEventListener('input', refresh);
+  refresh();
 })();
 </script>"""
 
@@ -204,14 +265,19 @@ def _outcome_text(task):
     return (txt[:70].rstrip() + "…") if len(txt) > 70 else txt
 
 
-def _phase_meta(phase):
-    """Compact ' · branch · merged <ts>' suffix for a phase heading (escaped)."""
+def _phase_meta_div(phase):
+    """Muted sub-line for a phase group-row: desired outcome, branch, merge
+    timestamp, and (once signed off) the summary — all escaped."""
     bits = []
+    if phase.get("desiredOutcome"):
+        bits.append("Desired: " + e(phase["desiredOutcome"]))
     if phase.get("branch"):
         bits.append("branch " + e(phase["branch"]))
     if phase.get("mergedAt"):
         bits.append("merged " + e(phase["mergedAt"]))
-    return (' <span class="muted">· %s</span>' % " · ".join(bits)) if bits else ""
+    if phase.get("summary"):
+        bits.append(e(phase["summary"]))
+    return ('<div class="pmeta muted">%s</div>' % " · ".join(bits)) if bits else ""
 
 
 def _bar(done, total):
@@ -256,36 +322,39 @@ def render_html(manifest, summary):
         '<input id="audit-q" type="search" aria-label="Filter rows" '
         'placeholder="Filter rows — id, title, status, model, commit…">'
         '<span id="audit-status-filter"></span>'
+        '<button type="button" id="audit-expand" class="fchip">expand all</button>'
         '<span id="audit-count" class="muted"></span></div>')
 
+    # One collapsible table: each phase is a group-row (click to expand its task
+    # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
+    out.append('<table class="phases"><thead><tr>'
+               "<th>id</th><th>title</th><th>status</th><th>model</th>"
+               "<th>risk</th><th>commit</th><th>ADO</th><th>outcome</th>"
+               "</tr></thead><tbody>")
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
-        out.append("<h2>%s — %s %s</h2>"
-                   % (e(psum["id"]), e(psum["title"]), _chip(psum["status"])))
-        out.append("<p>%s%s</p>" % (_bar(psum["done"], psum["total"]),
-                                    _phase_meta(ph)))
-        if ph.get("desiredOutcome"):
-            out.append('<p class="outcome">Desired outcome: %s</p>'
-                       % e(ph["desiredOutcome"]))
-        rows = []
+        pid = psum["id"]
+        out.append(
+            '<tr class="phase" data-phase="%s" data-status="%s" tabindex="0" '
+            'aria-expanded="false"><td colspan="8"><span class="tri"></span> '
+            '<span class="mono">%s</span> <strong>%s</strong> %s %s%s</td></tr>'
+            % (e(pid), e(psum["status"]), e(pid), e(psum["title"]),
+               _chip(psum["status"]), _bar(psum["done"], psum["total"]),
+               _phase_meta_div(ph)))
         for t in ph.get("tasks") or []:
             if not isinstance(t, dict):
                 continue
-            rows.append(
-                '<tr data-status="%s"><td class=mono>%s</td><td>%s</td><td>%s</td>'
+            out.append(
+                '<tr class="task" data-phase="%s" data-status="%s">'
+                '<td class="mono tid">%s</td><td>%s</td><td>%s</td>'
                 "<td>%s</td><td>%s</td><td class=mono>%s</td><td>%s</td>"
                 "<td class=muted>%s</td></tr>"
-                % (e(t.get("status")), e(t.get("id")), e(t.get("title")),
-                   _chip(t.get("status")),
-                   e(t.get("model") or "—"), e(t.get("risk") or "—"),
-                   e((t.get("commit") or "—")[:9]), _ado_cell(t),
-                   e(_outcome_text(t))))
-        out.append('<table class="data"><tr><th>id</th><th>title</th><th>status</th>'
-                   "<th>model</th><th>risk</th><th>commit</th><th>ADO</th>"
-                   "<th>outcome</th></tr>%s</table>" % "".join(rows))
-        if ph.get("summary"):
-            out.append('<p class="outcome">%s</p>' % e(ph["summary"]))
+                % (e(pid), e(t.get("status")), e(t.get("id")), e(t.get("title")),
+                   _chip(t.get("status")), e(t.get("model") or "—"),
+                   e(t.get("risk") or "—"), e((t.get("commit") or "—")[:9]),
+                   _ado_cell(t), e(_outcome_text(t))))
+    out.append("</tbody></table>")
 
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
@@ -299,9 +368,10 @@ def render_html(manifest, summary):
                    _chip(b.get("status")),
                    e(b.get("severity") or "—"), e(b.get("taskId") or "—"),
                    e((b.get("fixedIn") or "—")[:9]), _ado_cell(b)))
-        out.append('<table class="data"><tr><th>id</th><th>title</th><th>status</th>'
-                   "<th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th>"
-                   "</tr>%s</table>" % "".join(rows))
+        out.append('<table class="data bugs"><thead><tr><th>id</th><th>title</th>'
+                   "<th>status</th><th>severity</th><th>task</th><th>fixedIn</th>"
+                   "<th>ADO</th></tr></thead><tbody>%s</tbody></table>"
+                   % "".join(rows))
 
     if summary["ready"]:
         out.append("<h2>Ready now</h2><p class=mono>%s</p>"
@@ -497,12 +567,14 @@ def _selftest():
     check("h5 html has doctype + charset (standalone render, not quirks mode)",
           html_out.lstrip().lower().startswith("<!doctype html>")
           and 'charset="utf-8"' in html_out)
-    check("h6 interactive toolbar + sortable data tables + inline script present",
-          'id="audit-q"' in html_out and '<table class="data">' in html_out
+    check("h6 collapsible grouped table + toolbar + inline script present",
+          'class="phases"' in html_out and 'tr class="phase"' in html_out
+          and 'tr class="task"' in html_out and "aria-expanded" in html_out
+          and 'id="audit-q"' in html_out and 'id="audit-expand"' in html_out
           and "<script>" in html_out and "addEventListener" in html_out)
-    check("h7 rows carry data-status for the status quick-filter",
-          'data-status="done"' in html_out and 'data-status="pending"' in html_out
-          and 'data-status="open"' in html_out)
+    check("h7 phase + task rows carry data-phase/data-status (grouping + filter)",
+          'data-phase="P1"' in html_out and 'data-status="done"' in html_out
+          and 'data-status="pending"' in html_out and 'data-status="open"' in html_out)
     check("r1 ready list rendered", "P1.2" in md_out)
 
     rc = main([mp, "--format", "nope"])

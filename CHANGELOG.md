@@ -6,6 +6,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Changed
+- **Interactive report scales to large audits.** The HTML report is now one
+  collapsible table: each phase is a group-row (status chip, progress bar,
+  desired outcome) that expands to its task rows on click; phases are **collapsed
+  by default**, so a 40-phase / 200-task audit opens as ~40 scannable rows
+  instead of one endless scroll. The toolbar is **global**: text search
+  auto-expands matching phases, the status chips filter tasks across every phase
+  (a "blocked" chip shows blocked *tasks*, not every task of a blocked phase),
+  sorting is per-phase (tasks stay grouped under their phase), plus expand-all /
+  collapse-all and sticky headers. Still one self-contained file, zero network
+  fetches, every value escaped, and fully readable with JS off (rows render
+  expanded; JS collapses them). Verified in a browser against a synthetic
+  40×5 report.
+
 ### Fixed
 - **Validator now flags a `done` phase that still has non-done tasks.** A phase
   is `done` only after sign-off (every task done); `validate-manifest` never
