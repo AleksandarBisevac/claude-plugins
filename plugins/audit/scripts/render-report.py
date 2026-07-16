@@ -27,86 +27,224 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-STATUS_COLORS = {
-    "done": "#1a7f37", "in_progress": "#9a6700", "blocked": "#cf222e",
-    "pending": "#57606a",
-    "open": "#cf222e", "triaged": "#9a6700", "fixed": "#1a7f37",
-    "wontfix": "#57606a",
-}
-
-# Risk chips: (background, foreground). Tinted (not solid like status chips) so
-# the two chip families stay visually distinct.
-RISK_COLORS = {
-    "low": ("#dafbe1", "#116329"),
-    "med": ("#fff8c5", "#7d4e00"),
-    "high": ("#ffebe9", "#a40e26"),
-}
+# Chip and pipeline-rail colors live in the report's CSS theme tokens (see _CSS),
+# keyed off the `data-status` / `data-risk` attributes the markup carries — so a
+# single token set themes every status/risk consistently in both light and dark.
+# Risk chips render only for these levels:
+_RISK_LEVELS = ("low", "med", "high")
 
 _CSS = """
-body{font:15px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif;margin:2rem auto;
-     max-width:64rem;padding:0 1rem;color:#1f2328}
-h1{font-size:1.5rem}h2{font-size:1.15rem;margin-top:2rem;border-bottom:1px solid #d1d9e0;
-   padding-bottom:.3rem}
-table{border-collapse:collapse;width:100%;margin:.75rem 0;font-size:.92em}
-th,td{border:1px solid #d1d9e0;padding:.35rem .6rem;text-align:left;vertical-align:top}
-th{background:#f6f8fa}
-.chip{display:inline-block;padding:0 .5em;border-radius:1em;color:#fff;font-size:.85em}
-.bar{background:#eaeef2;border-radius:.4em;height:.7em;width:12em;display:inline-block;
-     vertical-align:middle;overflow:hidden}
-.fill{background:#1a7f37;height:100%}
-.muted{color:#57606a}.mono{font-family:ui-monospace,monospace;font-size:.9em}
-.outcome{color:#57606a;font-style:italic;margin:.25rem 0 .5rem}
-.overall{background:#f6f8fa;border:1px solid #d1d9e0;border-radius:.5em;padding:.6rem .8rem;margin:1rem 0}
-td.muted{font-size:.88em}
-.toolbar{position:sticky;top:0;background:#fff;padding:.6rem 0;margin:1rem 0 .5rem;
-         border-bottom:1px solid #d1d9e0;display:flex;gap:.5rem;align-items:center;
-         flex-wrap:wrap;z-index:3}
-#audit-q{flex:1 1 16rem;min-width:11rem;padding:.35rem .6rem;font:inherit;
-         border:1px solid #d1d9e0;border-radius:.4em}
-.tbl{font-size:.82em;color:#57606a}
-#audit-phase-status{display:inline-flex;gap:.3rem;flex-wrap:wrap}
-.fchip{cursor:pointer;border:1px solid #d1d9e0;background:#f6f8fa;color:#1f2328;
-       border-radius:1em;padding:.05rem .6rem;font:inherit;font-size:.85em}
-.fchip.on{background:#0969da;color:#fff;border-color:#0969da}
-table.phases thead th,table.data th{cursor:pointer;user-select:none;white-space:nowrap}
-table.phases thead th{position:sticky;top:2.9rem;z-index:1}
-th.sorted::after{content:"\\25B2";font-size:.7em;margin-left:.3em;color:#57606a}
+/* ---- design tokens (Slate & Teal) ---------------------------------------- */
+:root{
+  color-scheme:light dark;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
+  --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
+  --bg:#f5f7fb;--surface:#ffffff;--surface-2:#eef2f7;--text:#0f172a;--muted:#64748b;
+  --border:#e2e8f0;--border-strong:#cbd5e1;
+  --accent:#0d9488;--accent-solid:#0d9488;--ring:rgba(13,148,136,.35);
+  --st-done:#15803d;--st-prog:#f59e0b;--st-blocked:#dc2626;--st-pending:#64748b;
+  --chip-ink:#ffffff;
+  --rk-low-bg:#dcfce7;--rk-low-fg:#166534;--rk-med-bg:#fef9c3;--rk-med-fg:#854d0e;
+  --rk-high-bg:#fee2e2;--rk-high-fg:#b91c1c;
+  --radius:9px;--radius-lg:14px;--pill:999px;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
+  --shadow-md:0 10px 30px rgba(15,23,42,.14);
+  --dur:.22s;--ease:cubic-bezier(.4,0,.2,1)
+}
+/* dark tokens: OS default (JS off) + explicit toggle. --theme=light pins light. */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
+  --border:#1f2b40;--border-strong:#33425c;
+  --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
+  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
+  --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
+  --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)
+}}
+:root[data-theme="dark"]{
+  --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
+  --border:#1f2b40;--border-strong:#33425c;
+  --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
+  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
+  --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
+  --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)
+}
+/* one status token drives both the pipeline rail and the status chip */
+[data-status="done"],[data-status="fixed"]{--st:var(--st-done)}
+[data-status="in_progress"],[data-status="triaged"]{--st:var(--st-prog)}
+[data-status="blocked"],[data-status="open"]{--st:var(--st-blocked)}
+[data-status="pending"],[data-status="wontfix"]{--st:var(--st-pending)}
+/* amber status chips read best with dark ink (both themes) */
+[data-status="in_progress"] .chip,[data-status="triaged"] .chip,
+.chip[data-status="in_progress"],.chip[data-status="triaged"]{--chip-ink:#78350f}
+
+/* ---- base ---------------------------------------------------------------- */
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);max-width:70rem;
+     margin:0 auto;padding:2rem 1.3rem 4rem;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:2px}
+h1{font-size:1.7rem;font-weight:680;letter-spacing:-.02em;margin:0 0 .15rem}
+h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+   margin:2.4rem 0 .7rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+.meta{color:var(--muted);font-family:var(--mono);font-size:.8rem;margin:0 0 1.3rem;
+      font-variant-numeric:tabular-nums}
+.invalid{color:var(--st-blocked);font-weight:600}
+.muted{color:var(--muted)}
+.mono{font-family:var(--mono);font-size:.86em;font-variant-numeric:tabular-nums}
+
+/* ---- hero / overall band ------------------------------------------------- */
+.overall{display:flex;align-items:center;gap:.7rem 1.3rem;flex-wrap:wrap;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem 1.2rem;margin:1rem 0;
+  box-shadow:var(--shadow-sm)}
+.overall>strong{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
+.overall .muted{font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+
+/* ---- summary card -------------------------------------------------------- */
+.summary{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:var(--radius);padding:.8rem 1rem;margin:1rem 0;box-shadow:var(--shadow-sm)}
+.summary>strong{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--accent);font-weight:700;margin-bottom:.28rem}
+
+/* ---- progress bar (animated fill) ---------------------------------------- */
+.bar{position:relative;display:inline-block;vertical-align:middle;width:13rem;max-width:38vw;
+  height:.62rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--pill);overflow:hidden}
+.fill{height:100%;border-radius:inherit;background:var(--accent);box-shadow:0 0 10px -2px var(--accent);
+  width:var(--w,0);animation:fillIn .9s var(--ease) both}
+@keyframes fillIn{from{width:0}}
+
+/* ---- toolbar ------------------------------------------------------------- */
+.toolbar{position:sticky;top:.5rem;z-index:10;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;
+  padding:.55rem .7rem;margin:1.4rem 0 1rem;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);transition:box-shadow var(--dur) var(--ease)}
+.toolbar.scrolled{box-shadow:var(--shadow-md)}
+#audit-q{flex:1 1 17rem;min-width:11rem;padding:.42rem .85rem;font:inherit;color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
+  transition:border-color var(--dur),box-shadow var(--dur)}
+#audit-q::placeholder{color:var(--muted)}
+#audit-q:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.tbl{font-size:.76rem;color:var(--muted);margin-left:.15rem}
+#audit-phase-status{display:inline-flex;gap:.35rem;flex-wrap:wrap}
+
+/* ---- buttons ------------------------------------------------------------- */
+.btn{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;display:inline-flex;align-items:center;
+  gap:.4em;padding:.44rem .8rem;border-radius:var(--pill);border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease),background var(--dur),border-color var(--dur)}
+.btn:hover{border-color:var(--border-strong);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:active{transform:translateY(0);box-shadow:none}
+.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.btn-primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.btn-primary:hover{filter:brightness(1.08);background:var(--accent-solid);border-color:var(--accent-solid)}
+.btn-icon{padding:.44rem .6rem;font-size:1rem}
+
+/* ---- filter chips (toolbar phase-status + per-phase task-status) --------- */
+.fchip,.tf-chip{cursor:pointer;font:inherit;font-size:.79rem;line-height:1;padding:.3rem .65rem;
+  border-radius:var(--pill);border:1px solid var(--border);background:var(--surface);color:var(--text);
+  transition:background var(--dur),border-color var(--dur),color var(--dur),transform var(--dur) var(--ease)}
+.fchip:hover,.tf-chip:hover{border-color:var(--border-strong);transform:translateY(-1px)}
+.fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.fchip.on,.tf-chip.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.tf-chip{font-size:.73rem;padding:.2rem .55rem}
+
+/* ---- status + risk chips ------------------------------------------------- */
+.chip{display:inline-block;padding:.06rem .6em;border-radius:var(--pill);font-size:.76rem;font-weight:600;
+  letter-spacing:.01em;background:var(--st,var(--st-pending));color:var(--chip-ink)}
+.rchip{display:inline-block;padding:.06rem .55em;border-radius:var(--pill);font-size:.73rem;font-weight:600;border:1px solid transparent}
+.rchip[data-risk="low"]{background:var(--rk-low-bg);color:var(--rk-low-fg);border-color:var(--rk-low-fg)}
+.rchip[data-risk="med"]{background:var(--rk-med-bg);color:var(--rk-med-fg);border-color:var(--rk-med-fg)}
+.rchip[data-risk="high"]{background:var(--rk-high-bg);color:var(--rk-high-fg);border-color:var(--rk-high-fg)}
+
+/* ---- tables -------------------------------------------------------------- */
+.tablewrap{margin:.5rem 0 1rem}
+table.phases,table.data{border-collapse:separate;border-spacing:0;width:100%;font-size:.92rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);margin:0}
+thead th{position:sticky;top:3.5rem;z-index:2;background:var(--surface-2);color:var(--muted);font-weight:700;
+  font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;text-align:left;
+  padding:.55rem .7rem;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+thead th:first-child{border-top-left-radius:var(--radius-lg)}
+thead th:last-child{border-top-right-radius:var(--radius-lg)}
+th.sorted::after{content:"\\25B2";font-size:.75em;margin-left:.35em;color:var(--accent)}
 th.sorted[data-sort="desc"]::after{content:"\\25BC"}
-tr.phase{background:#f6f8fa;cursor:pointer}
-tr.phase:hover{background:#eef1f4}
-tr.phase>td{border-top:2px solid #c8d1da}
-.tri::before{content:"\\25B6";display:inline-block;width:1em;color:#57606a;font-size:.8em}
-tr.phase.open .tri::before{content:"\\25BC"}
-tr.task>td.tid{padding-left:1.7rem}
-.pmeta{font-size:.85em;margin-top:.15rem}
-tr.taskfilter{display:none;background:#fbfcfd}
-tr.taskfilter>td{padding:.3rem .6rem .3rem 1.7rem;border-top:none}
-.tf-label{font-size:.82em;color:#57606a;margin-right:.4rem}
-.tf-chips{display:inline-flex;gap:.3rem;flex-wrap:wrap}
-.tf-chip{cursor:pointer;border:1px solid #d1d9e0;background:#fff;color:#1f2328;
-         border-radius:1em;padding:0 .5em;font:inherit;font-size:.8em}
-.tf-chip.on{background:#0969da;color:#fff;border-color:#0969da}
-.rchip{display:inline-block;padding:0 .45em;border-radius:1em;font-size:.8em;border:1px solid;background:#fff}
-td.when{white-space:nowrap;font-size:.85em;color:#57606a}
-tr.task td.tid{border-left:3px solid #d1d9e0}
-tr.task[data-status="done"] td.tid{border-left-color:#1a7f37}
-tr.task[data-status="in_progress"] td.tid{border-left-color:#9a6700}
-tr.task[data-status="blocked"] td.tid{border-left-color:#cf222e}
-tr.task[data-status="pending"] td.tid{border-left-color:#57606a}
-tr.phase[data-status="done"]>td{border-left:4px solid #1a7f37}
-tr.phase[data-status="in_progress"]>td{border-left:4px solid #9a6700}
-tr.phase[data-status="blocked"]>td{border-left:4px solid #cf222e}
-tr.phase[data-status="pending"]>td{border-left:4px solid #57606a}
-.summary{background:#ddf4ff;border:1px solid #b6e3ff;border-radius:.5em;padding:.6rem .8rem;margin:1rem 0}
-.summary>strong{display:block;font-size:.78em;text-transform:uppercase;letter-spacing:.04em;color:#0969da;margin-bottom:.15rem}
-.chip,.fill,.rchip{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+td{padding:.5rem .7rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+td.when,td.mono{font-variant-numeric:tabular-nums}
+td.muted{font-size:.86em}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:last-child td:first-child{border-bottom-left-radius:var(--radius-lg)}
+tbody tr:last-child td:last-child{border-bottom-right-radius:var(--radius-lg)}
+
+/* ---- phase group-rows: the pipeline rail + status node (signature) ------- */
+tr.phase{cursor:pointer}
+tr.phase>td{position:relative;background:var(--surface-2);border-top:1px solid var(--border-strong);
+  border-left:2px solid var(--st,var(--st-pending));padding:.7rem .75rem .7rem 1.1rem;transition:background var(--dur)}
+tr.phase:hover>td{background:var(--surface)}
+tr.phase>td::before{content:"";position:absolute;left:-6px;top:1.05rem;width:11px;height:11px;border-radius:50%;
+  background:var(--st,var(--st-pending));box-shadow:0 0 0 3px var(--surface)}
+.tri{display:inline-block;width:1em;color:var(--muted);transition:transform var(--dur) var(--ease)}
+.tri::before{content:"\\25B6";font-size:.72em}
+tr.phase.open .tri{transform:rotate(90deg)}
+tr.phase strong{font-weight:650}
+.pmeta{font-size:.82rem;color:var(--muted);margin-top:.28rem}
+
+/* ---- task rows continue the rail ----------------------------------------- */
+tr.task>td{background:var(--surface)}
+tr.task:hover>td{background:var(--surface-2)}
+tr.task>td.tid{padding-left:1.9rem;border-left:2px solid var(--st,var(--border))}
+
+/* ---- per-phase task-status filter row ------------------------------------ */
+tr.taskfilter{display:none}
+tr.taskfilter>td{background:var(--surface);padding:.42rem .7rem .42rem 1.9rem;border-bottom:1px dashed var(--border)}
+.tf-label{font-size:.75rem;color:var(--muted);margin-right:.5rem}
+.tf-chips{display:inline-flex;gap:.35rem;flex-wrap:wrap}
+
+/* ---- load reveal (ends visible -> readable with JS off) ------------------ */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}}
+h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
+.meta{animation-delay:.04s}.overall{animation-delay:.09s}.summary{animation-delay:.14s}
+
+/* ---- colored bits must print --------------------------------------------- */
+.chip,.fill,.rchip,tr.phase>td::before{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+/* ---- responsive: tablet / mobile ----------------------------------------- */
+/* Wide tables (9 / 7 cols) scroll INSIDE their own frame instead of pushing the
+   whole page sideways. The scroll container breaks viewport-sticky headers, so
+   sticky is disabled only at these widths (desktop keeps it). */
+@media (max-width:52rem){
+  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);
+    border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
+  table.phases,table.data{border:none;border-radius:0;box-shadow:none;min-width:34rem}
+  thead th{position:static}
+  thead th:first-child,thead th:last-child,
+  tbody tr:last-child td:first-child,tbody tr:last-child td:last-child{border-radius:0}
+}
+@media (max-width:40rem){
+  body{padding:1.4rem .85rem 3rem;font-size:14.5px}
+  h1{font-size:1.4rem}
+  .overall,.summary{padding:.8rem .9rem}
+  .toolbar{gap:.4rem .5rem}
+  #audit-q{flex-basis:100%;order:-1}
+  .bar{max-width:52vw}
+}
+
+/* ---- reduced motion ------------------------------------------------------ */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-delay:0!important;transition-duration:.001ms!important}
+  .fill{animation:none;width:var(--w,0)}
+}
+
+/* ---- print: force a light sheet + keep the interactive semantics --------- */
 @page{size:A4;margin:1.4cm}
 @media print{
-  body{max-width:none;margin:0;font-size:10.5pt}
+  :root,:root[data-theme="dark"]{--bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
+    --muted:#374151;--border:#d1d5db;--chip-ink:#fff}
+  body{max-width:none;margin:0;padding:0;font-size:10.5pt}
   .toolbar,tr.taskfilter{display:none!important}
   tr.task{display:table-row!important}
   tr.phase,tr.task{break-inside:avoid}
-  table.phases thead th{position:static!important}
+  thead th{position:static!important}
+  table.phases,table.data{box-shadow:none}
   a[href]{color:inherit;text-decoration:none}
 }
 """
@@ -121,6 +259,31 @@ _SCRIPT = r"""<script>
   var expandBtn = document.getElementById('audit-expand');
   var grouped = document.querySelector('table.phases');
   var bugsTable = document.querySelector('table.bugs');
+
+  // Theme: follow the OS by default; the toolbar toggle overrides + persists.
+  var root = document.documentElement;
+  var themeBtn = document.getElementById('audit-theme');
+  var THEME_KEY = 'audit-report-theme';
+  function prefersDark() { return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches; }
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : prefersDark(); }
+  function paintTheme() { if (themeBtn) themeBtn.textContent = isDark() ? '☀' : '☾'; }
+  try { var savedTheme = localStorage.getItem(THEME_KEY); if (savedTheme) root.setAttribute('data-theme', savedTheme); } catch (e) {}
+  paintTheme();
+  if (themeBtn) themeBtn.addEventListener('click', function () {
+    var next = isDark() ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+    paintTheme();
+  });
+
+  // Toolbar elevation once the page scrolls under it.
+  var toolbar = document.querySelector('.toolbar');
+  if (toolbar) {
+    var onScroll = function () { toolbar.classList.toggle('scrolled', (window.scrollY || 0) > 8); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
+
   if (!grouped) return;
   var phaseRows = [].slice.call(grouped.querySelectorAll('tbody tr.phase'));
   var bugRows = bugsTable ? [].slice.call(bugsTable.querySelectorAll('tbody tr')) : [];
@@ -341,8 +504,8 @@ def _report_basename(meta, cli_value):
 
 
 def _chip(status):
-    color = STATUS_COLORS.get(str(status), "#57606a")
-    return '<span class="chip" style="background:%s">%s</span>' % (color, e(status))
+    # Colored by the CSS theme token selected via data-status (see _CSS).
+    return '<span class="chip" data-status="%s">%s</span>' % (e(status), e(status))
 
 
 def _ado_cell(item):
@@ -384,13 +547,12 @@ def _timing_cell(task):
 
 
 def _risk_chip(risk):
-    """Tinted risk chip (low/med/high); em dash for null/unknown."""
+    """Tinted risk chip (low/med/high); em dash for null/unknown. Colored by the
+    CSS theme token selected via data-risk (see _CSS)."""
     r = str(risk or "").lower()
-    if r not in RISK_COLORS:
+    if r not in _RISK_LEVELS:
         return '<span class="muted">—</span>'
-    bg, fg = RISK_COLORS[r]
-    return ('<span class="rchip" style="background:%s;color:%s;border-color:%s">%s</span>'
-            % (bg, fg, fg, e(r)))
+    return '<span class="rchip" data-risk="%s">%s</span>' % (r, e(r))
 
 
 def _phase_meta_div(phase):
@@ -409,8 +571,9 @@ def _phase_meta_div(phase):
 
 
 def _bar(done, total):
+    # Fill width is a CSS var so the stylesheet can animate 0 -> --w on load.
     pct = int(round(100.0 * done / total)) if total else 0
-    return ('<span class="bar"><span class="fill" style="width:%d%%"></span></span> '
+    return ('<span class="bar"><span class="fill" style="--w:%d%%"></span></span> '
             '<span class="muted">%d/%d</span>' % (pct, done, total))
 
 
@@ -425,12 +588,12 @@ def render_html(manifest, summary, basename="audit-report"):
            '<title>%s</title>' % e(meta.get("title") or "Audit report"),
            "<style>%s</style>" % _CSS]
     out.append("<h1>%s</h1>" % e(meta.get("title") or "Audit report"))
-    out.append('<p class="muted">repo: %s · generated %s · %d phases · %d tasks'
+    out.append('<p class="meta">repo: %s · generated %s · %d phases · %d tasks'
                " · %d bugs</p>"
                % (e(meta.get("repo") or "?"), now, len(summary["phases"]),
                   summary["tasks"]["total"], summary["bugs"]["total"]))
     if not summary["valid"]:
-        out.append('<p><strong style="color:#cf222e">INVALID MANIFEST: %d '
+        out.append('<p><strong class="invalid">INVALID MANIFEST: %d '
                    "validator finding(s) — fix before trusting this report."
                    "</strong></p>" % summary["findings"])
 
@@ -459,15 +622,17 @@ def render_html(manifest, summary, basename="audit-report"):
         '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
         'placeholder="Filter phases &amp; tasks by text…">'
         '<span class="tbl">Phase status:</span><span id="audit-phase-status"></span>'
-        '<button type="button" id="audit-expand" class="fchip">expand all</button>'
-        '<button type="button" id="audit-print" class="fchip" '
+        '<button type="button" id="audit-expand" class="btn">expand all</button>'
+        '<button type="button" id="audit-print" class="btn btn-primary" '
         'title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button>'
-        '<button type="button" id="audit-dl-md" class="fchip">Download .md</button>'
+        '<button type="button" id="audit-dl-md" class="btn">Download .md</button>'
+        '<button type="button" id="audit-theme" class="btn btn-icon" '
+        'aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button>'
         '<span id="audit-count" class="muted"></span></div>')
 
     # One collapsible table: each phase is a group-row (click to expand its task
     # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
-    out.append('<table class="phases"><thead><tr>'
+    out.append('<div class="tablewrap"><table class="phases"><thead><tr>'
                "<th>id</th><th>title</th><th>status</th><th>model</th>"
                "<th>risk</th><th>commit</th><th>done</th><th>ADO</th>"
                "<th>outcome</th></tr></thead><tbody>")
@@ -499,7 +664,7 @@ def render_html(manifest, summary, basename="audit-report"):
                    _chip(t.get("status")), e(t.get("model") or "—"),
                    _risk_chip(t.get("risk")), e((t.get("commit") or "—")[:9]),
                    _timing_cell(t), _ado_cell(t), e(_outcome_text(t))))
-    out.append("</tbody></table>")
+    out.append("</tbody></table></div>")
 
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
@@ -513,9 +678,10 @@ def render_html(manifest, summary, basename="audit-report"):
                    _chip(b.get("status")),
                    e(b.get("severity") or "—"), e(b.get("taskId") or "—"),
                    e((b.get("fixedIn") or "—")[:9]), _ado_cell(b)))
-        out.append('<table class="data bugs"><thead><tr><th>id</th><th>title</th>'
+        out.append('<div class="tablewrap"><table class="data bugs"><thead><tr>'
+                   "<th>id</th><th>title</th>"
                    "<th>status</th><th>severity</th><th>task</th><th>fixedIn</th>"
-                   "<th>ADO</th></tr></thead><tbody>%s</tbody></table>"
+                   "<th>ADO</th></tr></thead><tbody>%s</tbody></table></div>"
                    % "".join(rows))
 
     if summary["ready"]:
@@ -781,9 +947,18 @@ def _selftest():
           "<th>done</th>" in html_out and "2026-07-09" in html_out
           and 'title="started 2026-07-09T08:00:00Z · completed '
           '2026-07-09T09:30:00Z"' in html_out)
-    check("h11 risk chip + status-colored row edges",
-          '<span class="rchip"' in html_out and ">high</span>" in html_out
-          and 'tr.task[data-status="blocked"] td.tid' in html_out)
+    check("h11 risk chip (data-risk) + status token drives rail/chip",
+          'class="rchip" data-risk="high"' in html_out and ">high</span>" in html_out
+          and 'class="chip" data-status="done"' in html_out
+          and '[data-status="blocked"]' in html_out and "--st-blocked" in html_out)
+    check("h12 theme toggle + design tokens + dark + reduced-motion present",
+          'id="audit-theme"' in html_out and ":root{" in html_out
+          and "--accent" in html_out and "prefers-color-scheme:dark" in html_out
+          and "prefers-reduced-motion" in html_out)
+    check("h13 responsive: wide tables wrapped + mobile breakpoint",
+          html_out.count('<div class="tablewrap">') == 2
+          and ".tablewrap{overflow-x:auto" in html_out
+          and "@media (max-width:40rem)" in html_out)
     check("m4 markdown twin has the done column with the completion date",
           "| done | ADO |" in md_out and "2026-07-09" in md_out)
     check("r1 ready list rendered", "P1.2" in md_out)

@@ -23,12 +23,14 @@ without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
 ## See it
 
 The **[live demo](https://aleksandarbisevac.github.io/claude-plugins/)** is a real report you can
-click through (search, phase-status filter, expand a phase, **Save as PDF**). The
+click through — search, phase/task filters, expand a phase, **Save as PDF**, and a **light/dark
+toggle** (it follows your OS by default). It's **responsive**, too: on phones and tablets the wide
+tables scroll inside their own frame ([mobile](../../docs/screenshots/mobile.png)). The
 [`examples/`](../../examples/) folder holds the manifest behind it.
 
-| Overview | Expand a phase | Filter by status |
-|---|---|---|
-| [![overview](../../docs/screenshots/overview.png)](../../docs/screenshots/overview.png) | [![expanded](../../docs/screenshots/expanded.png)](../../docs/screenshots/expanded.png) | [![filtered](../../docs/screenshots/filtered.png)](../../docs/screenshots/filtered.png) |
+| Overview | Expand a phase | Filter by status | Dark mode |
+|---|---|---|---|
+| [![overview](../../docs/screenshots/overview.png)](../../docs/screenshots/overview.png) | [![expanded](../../docs/screenshots/expanded.png)](../../docs/screenshots/expanded.png) | [![filtered](../../docs/screenshots/filtered.png)](../../docs/screenshots/filtered.png) | [![dark mode](../../docs/screenshots/dark.png)](../../docs/screenshots/dark.png) |
 
 ## What you get
 
