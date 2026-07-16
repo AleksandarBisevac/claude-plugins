@@ -1,0 +1,487 @@
+{
+  "$schema": "https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/schema/audit-plan.schema.json",
+  "meta": {
+    "version": 2,
+    "repo": "acme-store",
+    "title": "ACME Store — security & correctness audit",
+    "createdISO": "2026-06-28T09:00:00Z",
+    "developmentBranch": "main",
+    "branchPrefix": "audit",
+    "gitRoot": ".",
+    "reviewSkill": null,
+    "runtimeBoot": null,
+    "nodePreamble": null,
+    "commit": { "type": "fix", "coauthor": null },
+    "buildCommands": {
+      "lint": "npm run lint",
+      "test": "npm test",
+      "typecheck": "npm run typecheck"
+    },
+    "ado": {
+      "organization": "acme",
+      "project": "store",
+      "areaPath": null,
+      "iterationPath": null,
+      "types": { "bug": "Bug", "task": "Task" }
+    },
+    "reportBasename": "acme-store-audit",
+    "reportSummary": "Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved."
+  },
+  "phases": [
+    {
+      "id": "P1",
+      "title": "Auth hardening",
+      "status": "done",
+      "model": "sonnet",
+      "blockedBy": [],
+      "desiredOutcome": "Credentials are stored and checked safely: modern password hashing and a rate-limited login path.",
+      "testGate": ["lint", "test"],
+      "baseRef": "0f3a9d1",
+      "branch": "audit/p1-auth-hardening",
+      "mergedAt": "2026-06-30T14:20:00Z",
+      "review": { "tool": null, "model": "sonnet", "status": "passed", "findings": [] },
+      "summary": "Argon2id replaces the legacy MD5 hashing and the login endpoint is now rate-limited. Meets the desired outcome; verified by new tests and a passing review.",
+      "tasks": [
+        {
+          "id": "P1.1",
+          "title": "Hash passwords with Argon2id",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/auth/hash.ts", "src/auth/session.ts"],
+          "docs": [],
+          "description": "Replace the legacy MD5 password hashing with Argon2id, and re-hash on next successful login.",
+          "tests": {
+            "mode": "tdd",
+            "add": ["hashes new passwords with argon2id", "rejects a legacy md5 hash at verify time"],
+            "expectRedFirst": true,
+            "gate": ["lint", "test"]
+          },
+          "outcome": {
+            "technical": "argon2id via the platform crypto lib; migration-on-login path added; 2 new tests.",
+            "descriptive": "Passwords are now stored with a modern, memory-hard hash."
+          },
+          "commit": "9a1f0c2",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-06-28T10:00:00Z",
+          "completedAt": "2026-06-28T11:30:00Z",
+          "risk": "high",
+          "verifiedBy": ["hashes new passwords with argon2id", "rejects a legacy md5 hash at verify time"],
+          "ado": {
+            "id": 1421,
+            "url": "https://dev.azure.com/acme/store/_workitems/edit/1421",
+            "lastSyncedAt": "2026-06-28T12:00:00Z"
+          }
+        },
+        {
+          "id": "P1.2",
+          "title": "Rate-limit the login endpoint",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": ["P1.1"],
+          "files": ["src/auth/login.ts"],
+          "docs": [],
+          "description": "Add a per-IP + per-account rate limit to the login endpoint to blunt credential-stuffing.",
+          "tests": {
+            "mode": "regression",
+            "add": ["returns 429 after N failed attempts within the window"],
+            "expectRedFirst": false,
+            "gate": ["lint", "test"]
+          },
+          "outcome": {
+            "technical": "Sliding-window limiter keyed by IP and account; 1 regression test.",
+            "descriptive": "Repeated failed logins are now throttled."
+          },
+          "commit": "b2d7e58",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-06-29T09:00:00Z",
+          "completedAt": "2026-06-29T10:15:00Z",
+          "risk": "med",
+          "verifiedBy": ["returns 429 after N failed attempts within the window"]
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "Input validation",
+      "status": "in_progress",
+      "model": "sonnet",
+      "blockedBy": [],
+      "desiredOutcome": "Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template.",
+      "testGate": ["lint", "test", "typecheck"],
+      "baseRef": "b2d7e58",
+      "branch": "audit/p2-input-validation",
+      "mergedAt": null,
+      "review": { "tool": null, "model": "sonnet", "status": "pending", "findings": [] },
+      "summary": null,
+      "tasks": [
+        {
+          "id": "P2.1",
+          "title": "Validate the checkout payload",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/checkout/validate.ts"],
+          "docs": [],
+          "description": "Reject malformed checkout payloads (missing items, negative quantities) at the boundary.",
+          "tests": {
+            "mode": "regression",
+            "add": ["rejects a negative quantity", "rejects an empty cart"],
+            "expectRedFirst": false,
+            "gate": ["lint", "test", "typecheck"]
+          },
+          "outcome": {
+            "technical": "Boundary validator + 2 regression tests.",
+            "descriptive": "Malformed checkouts are turned away early."
+          },
+          "commit": "c4a11b9",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-01T09:00:00Z",
+          "completedAt": "2026-07-01T10:00:00Z",
+          "risk": "med",
+          "verifiedBy": ["rejects a negative quantity", "rejects an empty cart"]
+        },
+        {
+          "id": "P2.2",
+          "title": "Sanitize the product-search query",
+          "status": "in_progress",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/search/query.ts"],
+          "docs": [],
+          "description": "Strip and bound the search query before it reaches the query builder (injection + ReDoS surface).",
+          "tests": {
+            "mode": "tdd",
+            "add": ["strips control characters from the query", "caps query length"],
+            "expectRedFirst": true,
+            "gate": ["lint", "test", "typecheck"]
+          },
+          "outcome": { "technical": null, "descriptive": null },
+          "commit": null,
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-02T09:00:00Z",
+          "completedAt": null,
+          "risk": "high",
+          "verifiedBy": []
+        },
+        {
+          "id": "P2.3",
+          "title": "Escape server-rendered template output",
+          "status": "blocked",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/render/template.ts:40-58"],
+          "docs": [],
+          "description": "Ensure user-controlled values are HTML-escaped in the server-rendered templates.",
+          "tests": {
+            "mode": "regression",
+            "add": ["escapes a <script> payload in a product name"],
+            "expectRedFirst": false,
+            "gate": ["lint", "test", "typecheck"]
+          },
+          "outcome": {
+            "technical": "Gates still red after 3 attempts: the legacy engine double-escapes some fields; a shared escaping helper is needed. Escalated to the team.",
+            "descriptive": "Blocked pending a cross-cutting escaping-helper decision."
+          },
+          "commit": null,
+          "attempts": 3,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-02T11:00:00Z",
+          "completedAt": null,
+          "risk": "med",
+          "verifiedBy": []
+        },
+        {
+          "id": "P2.4",
+          "title": "Add zod schemas for cart mutations",
+          "status": "pending",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": ["P2.1"],
+          "files": ["src/checkout/schema.ts"],
+          "docs": [],
+          "description": "Introduce shared zod schemas for add/update/remove cart mutations; wire them into the handlers.",
+          "tests": {
+            "mode": "gate-only",
+            "add": [],
+            "expectRedFirst": false,
+            "gate": ["lint", "test", "typecheck"]
+          },
+          "outcome": { "technical": null, "descriptive": null },
+          "commit": null,
+          "attempts": 0,
+          "maxAttempts": 3,
+          "startedAt": null,
+          "completedAt": null,
+          "risk": "low",
+          "verifiedBy": []
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "title": "Performance pass",
+      "status": "pending",
+      "model": "sonnet",
+      "blockedBy": ["P2"],
+      "desiredOutcome": "The catalog and product pages render without the known redundant work and heavy above-the-fold images.",
+      "testGate": ["lint", "test"],
+      "baseRef": null,
+      "branch": null,
+      "mergedAt": null,
+      "review": { "tool": null, "model": "sonnet", "status": "pending", "findings": [] },
+      "summary": null,
+      "tasks": [
+        {
+          "id": "P3.1",
+          "title": "Memoize the product-list selector",
+          "status": "pending",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/catalog/list.ts"],
+          "docs": [],
+          "description": "Memoize the derived product-list selector so it does not recompute on every render.",
+          "tests": {
+            "mode": "regression",
+            "add": ["selector returns a stable reference for equal inputs"],
+            "expectRedFirst": false,
+            "gate": ["lint", "test"]
+          },
+          "outcome": { "technical": null, "descriptive": null },
+          "commit": null,
+          "attempts": 0,
+          "maxAttempts": 3,
+          "startedAt": null,
+          "completedAt": null,
+          "risk": "low",
+          "verifiedBy": []
+        },
+        {
+          "id": "P3.2",
+          "title": "Lazy-load below-the-fold images",
+          "status": "pending",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/ui/image.ts"],
+          "docs": [],
+          "description": "Add native lazy-loading to below-the-fold catalog images.",
+          "tests": {
+            "mode": "gate-only",
+            "add": [],
+            "expectRedFirst": false,
+            "gate": ["lint", "test"]
+          },
+          "outcome": { "technical": null, "descriptive": null },
+          "commit": null,
+          "attempts": 0,
+          "maxAttempts": 3,
+          "startedAt": null,
+          "completedAt": null,
+          "risk": "low",
+          "verifiedBy": []
+        }
+      ]
+    },
+    {
+      "id": "BF1",
+      "title": "Bugfix batch 1",
+      "status": "in_progress",
+      "model": "sonnet",
+      "blockedBy": [],
+      "desiredOutcome": "Reported bugs are reproduced red-first and fixed.",
+      "testGate": ["test"],
+      "baseRef": "c4a11b9",
+      "branch": "audit/bf1-bugfix-batch-1",
+      "mergedAt": null,
+      "review": { "tool": null, "model": "sonnet", "status": "pending", "findings": [] },
+      "summary": null,
+      "tasks": [
+        {
+          "id": "BF1.1",
+          "title": "Fix BUG-3: cart total off-by-one with stacked discounts",
+          "status": "in_progress",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/cart/total.ts"],
+          "docs": [],
+          "description": "Reproduce the off-by-one when two percentage discounts stack, then correct the rounding order.",
+          "tests": {
+            "mode": "tdd",
+            "add": ["cart total is correct with two stacked percentage discounts"],
+            "expectRedFirst": true,
+            "gate": ["test"]
+          },
+          "outcome": { "technical": null, "descriptive": null },
+          "commit": null,
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-03T09:00:00Z",
+          "completedAt": null,
+          "risk": "med",
+          "verifiedBy": [],
+          "bugId": "BUG-3"
+        },
+        {
+          "id": "BF1.2",
+          "title": "Fix BUG-4: logout leaves the session cookie",
+          "status": "done",
+          "model": "sonnet",
+          "skills": [],
+          "blockedBy": [],
+          "dependsOn": [],
+          "files": ["src/auth/logout.ts", "src/auth/session.ts"],
+          "docs": [],
+          "description": "Reproduce that logout does not clear the session cookie, then clear and invalidate it server-side.",
+          "tests": {
+            "mode": "tdd",
+            "add": ["logout clears the session cookie and invalidates the server session"],
+            "expectRedFirst": true,
+            "gate": ["test"]
+          },
+          "outcome": {
+            "technical": "Cookie cleared with an expired Set-Cookie and the session revoked server-side; 1 red-first test.",
+            "descriptive": "Logging out now actually ends the session."
+          },
+          "commit": "a1b2c3d",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "startedAt": "2026-07-03T11:00:00Z",
+          "completedAt": "2026-07-03T12:00:00Z",
+          "risk": "high",
+          "verifiedBy": ["logout clears the session cookie and invalidates the server session"],
+          "bugId": "BUG-4"
+        }
+      ]
+    }
+  ],
+  "fileIndex": {
+    "src/auth/hash.ts": ["P1.1"],
+    "src/auth/session.ts": ["P1.1", "BF1.2"],
+    "src/auth/login.ts": ["P1.2"],
+    "src/checkout/validate.ts": ["P2.1"],
+    "src/search/query.ts": ["P2.2"],
+    "src/render/template.ts": ["P2.3"],
+    "src/checkout/schema.ts": ["P2.4"],
+    "src/catalog/list.ts": ["P3.1"],
+    "src/ui/image.ts": ["P3.2"],
+    "src/cart/total.ts": ["BF1.1"],
+    "src/auth/logout.ts": ["BF1.2"]
+  },
+  "bugs": [
+    {
+      "id": "BUG-1",
+      "title": "Product images 404 intermittently on Safari",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-06-27T15:00:00Z",
+      "reportedBy": "qa",
+      "description": "Some catalog images intermittently 404 on Safari but load on Chrome.",
+      "repro": ["Open the catalog on Safari", "Hard-refresh a few times", "Observe intermittent broken images"],
+      "expected": "All catalog images load reliably.",
+      "actual": "A subset 404s intermittently on Safari.",
+      "files": ["src/ui/image.ts"],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": null
+    },
+    {
+      "id": "BUG-2",
+      "title": "Checkout is slow on 3G mobile",
+      "status": "triaged",
+      "severity": "low",
+      "reportedAt": "2026-06-27T16:00:00Z",
+      "reportedBy": "support",
+      "description": "Checkout takes several seconds on throttled 3G connections.",
+      "repro": ["Throttle to 3G", "Complete a checkout", "Observe the delay"],
+      "expected": "Checkout completes promptly.",
+      "actual": "Multi-second delay on 3G.",
+      "files": ["src/checkout/validate.ts"],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "Triaged to the performance phase once P2 lands."
+    },
+    {
+      "id": "BUG-3",
+      "title": "Cart total off-by-one with stacked discounts",
+      "status": "in_progress",
+      "severity": "med",
+      "reportedAt": "2026-07-01T12:00:00Z",
+      "reportedBy": "qa",
+      "description": "When two percentage discounts stack, the cart total is off by one cent.",
+      "repro": ["Add two stacking percentage discounts", "View the cart total"],
+      "expected": "Total matches the sum of correctly-rounded line items.",
+      "actual": "Total is off by one cent.",
+      "files": ["src/cart/total.ts"],
+      "taskId": "BF1.1",
+      "fixedIn": null,
+      "notes": null,
+      "ado": {
+        "id": 1508,
+        "url": "https://dev.azure.com/acme/store/_workitems/edit/1508",
+        "lastSyncedAt": "2026-07-03T09:05:00Z"
+      }
+    },
+    {
+      "id": "BUG-4",
+      "title": "Logout does not clear the session cookie",
+      "status": "fixed",
+      "severity": "high",
+      "reportedAt": "2026-07-01T13:00:00Z",
+      "reportedBy": "security",
+      "description": "After logout the session cookie remains and the server session stays valid.",
+      "repro": ["Log in", "Log out", "Replay the old cookie", "Observe you are still authenticated"],
+      "expected": "Logout clears the cookie and invalidates the server session.",
+      "actual": "The old cookie still authenticates.",
+      "files": ["src/auth/logout.ts"],
+      "taskId": "BF1.2",
+      "fixedIn": "a1b2c3d",
+      "notes": null
+    },
+    {
+      "id": "BUG-5",
+      "title": "Dark-mode label contrast below AA",
+      "status": "wontfix",
+      "severity": "low",
+      "reportedAt": "2026-06-26T10:00:00Z",
+      "reportedBy": "design",
+      "description": "Some secondary labels fall below WCAG AA contrast in dark mode.",
+      "repro": ["Enable dark mode", "Inspect secondary label contrast"],
+      "expected": "All text meets AA contrast.",
+      "actual": "Secondary labels are below AA.",
+      "files": ["src/ui/image.ts"],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "Cosmetic; tracked in the design backlog, out of scope for this audit."
+    }
+  ],
+  "deferred": {
+    "note": "Out of scope for this cycle — tracked for a follow-up audit.",
+    "target": null,
+    "items": [
+      "Migrate the catalog page to server components",
+      "Add an end-to-end purchase test"
+    ]
+  },
+  "proposals": []
+}

@@ -67,10 +67,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Structural validator (the plugin's own) on starter + dogfood manifest
+      - name: Structural validator (the plugin's own) on starter + dogfood + example
         run: |
           python plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
           python plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
+          python plugins/audit/scripts/validate-manifest.py examples/acme-store/audit-plan.json
       - name: CI gate + report smoke on the dogfood manifest
         run: |
           python plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate
@@ -88,6 +89,9 @@ jobs:
           npx --yes ajv-cli validate --spec=draft2020 \
             -s plugins/audit/schema/audit-plan.schema.json \
             -d docs/audit/audit-plan.json
+          npx --yes ajv-cli validate --spec=draft2020 \
+            -s plugins/audit/schema/audit-plan.schema.json \
+            -d examples/acme-store/audit-plan.json
 
   plugin-validate:
     name: claude plugin validate
