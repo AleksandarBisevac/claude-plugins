@@ -42,6 +42,9 @@ KNOWN_ROOT = {"$schema", "meta", "phases", "fileIndex", "bugs", "deferred",
 KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               "developmentBranch", "branchPrefix", "gitRoot", "reviewSkill",
               "runtimeBoot", "nodePreamble", "commit", "buildCommands", "ado",
+              # report rendering (render-report.py): narrative summary box +
+              # custom output-file basename. Neither affects orchestration.
+              "reportSummary", "reportBasename",
               # tolerated (older /audit:init wrote these; informational):
               "notes", "baseCommit",
               # workspaceRoot: 0.2.0-era name for gitRoot; audit.md reads it as

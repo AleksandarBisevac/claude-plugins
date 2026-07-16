@@ -59,6 +59,14 @@
           "type": ["string", "null"],
           "description": "Skill invoked at phase sign-off. null (default) => skip review; tests are the signer."
         },
+        "reportSummary": {
+          "type": ["string", "null"],
+          "description": "Optional plain-language narrative shown in a Summary box atop the rendered report (render-report.py). /audit:report usually supplies this via --summary-file (read-only) rather than storing it here."
+        },
+        "reportBasename": {
+          "type": ["string", "null"],
+          "description": "Optional basename for the generated report files, e.g. 'q3-audit' => q3-audit.html/.md (default 'audit-report'). Sanitized to [A-Za-z0-9-_]; overridable per-run with render-report.py --basename."
+        },
         "runtimeBoot": {
           "type": ["object", "null"],
           "description": "Optional runtime smoke gate. null (default) => skipped.",

@@ -9,11 +9,12 @@ render as links only when they are http(s).
 
 Usage:
   render-report.py <manifest> [--out-dir DIR] [--format html|md|both]
-                              [--summary-file PATH]
+                              [--summary-file PATH] [--basename NAME]
   render-report.py --selftest
 
-Writes audit-report.html / audit-report.md into --out-dir (default: the
-manifest's own directory) and prints the paths.
+Writes <basename>.html / <basename>.md into --out-dir (default: the manifest's
+own directory) and prints the paths. `basename` is `--basename` › the manifest's
+`meta.reportBasename` › `audit-report`, sanitized to [A-Za-z0-9-_].
 Exit codes: 0 ok · 2 usage error / unreadable manifest.
 """
 import base64
@@ -273,7 +274,7 @@ _SCRIPT = r"""<script>
       for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       var url = URL.createObjectURL(new Blob([bytes], { type: 'text/markdown;charset=utf-8' }));
       var a = document.createElement('a');
-      a.href = url; a.download = 'audit-report.md';
+      a.href = url; a.download = (window.AUDIT_MD_NAME || 'audit-report.md');
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {}
@@ -304,6 +305,20 @@ def _safe_url(url):
     """Return the url only when it is plain http(s) — else None (render as text)."""
     u = str(url or "")
     return u if u.startswith(("https://", "http://")) else None
+
+
+def _report_basename(meta, cli_value):
+    """Resolve the report file basename: --basename › meta.reportBasename ›
+    'audit-report'. Sanitized to a bare filename ([A-Za-z0-9-_], no path
+    separators / extension) so it can't escape --out-dir or break the download."""
+    raw = cli_value if cli_value else (
+        meta.get("reportBasename") if isinstance(meta, dict) else None)
+    name = os.path.basename(str(raw or "").strip())          # drop any dir parts
+    for ext in (".html", ".md"):                             # tolerate a given ext
+        if name.lower().endswith(ext):
+            name = name[: -len(ext)]
+    name = "".join(c for c in name if c.isalnum() or c in "-_")
+    return name or "audit-report"
 
 
 def _chip(status):
@@ -350,7 +365,7 @@ def _bar(done, total):
             '<span class="muted">%d/%d</span>' % (pct, done, total))
 
 
-def render_html(manifest, summary):
+def render_html(manifest, summary, basename="audit-report"):
     meta = manifest.get("meta") or {}
     now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
     # doctype + charset so the file renders standalone (not quirks mode) and its
@@ -462,7 +477,9 @@ def render_html(manifest, summary):
     # out of the page and preserves UTF-8 exactly.
     md_b64 = base64.b64encode(
         render_md(manifest, summary).encode("utf-8")).decode("ascii")
-    out.append('<script>window.AUDIT_MD_B64="%s";</script>' % md_b64)
+    # basename is sanitized to [A-Za-z0-9-_], so it is safe in a JS string literal.
+    out.append('<script>window.AUDIT_MD_B64="%s";window.AUDIT_MD_NAME="%s.md";</script>'
+               % (md_b64, basename))
     out.append(_SCRIPT)
     return "\n".join(out) + "\n"
 
@@ -533,7 +550,8 @@ def main(argv):
     out_dir = None
     fmt = "both"
     summary_file = None
-    for flag in ("--out-dir", "--format", "--summary-file"):
+    cli_basename = None
+    for flag in ("--out-dir", "--format", "--summary-file", "--basename"):
         if flag in args:
             i = args.index(flag)
             if i + 1 >= len(args):
@@ -544,12 +562,15 @@ def main(argv):
                 out_dir = val
             elif flag == "--format":
                 fmt = val
-            else:
+            elif flag == "--summary-file":
                 summary_file = val
+            else:
+                cli_basename = val
             del args[i:i + 2]
     if fmt not in ("html", "md", "both") or len(args) != 1:
         sys.stderr.write("usage: render-report.py <manifest> [--out-dir DIR] "
-                         "[--format html|md|both] [--summary-file PATH]\n")
+                         "[--format html|md|both] [--summary-file PATH] "
+                         "[--basename NAME]\n")
         return 2
 
     manifest_path = args[0]
@@ -588,16 +609,17 @@ def main(argv):
         findings, warnings = ["internal validator error: %s" % exc], []
     summary = lib.rollup(manifest, findings, warnings)
 
+    basename = _report_basename(manifest.get("meta"), cli_basename)
     out_dir = out_dir or (os.path.dirname(os.path.abspath(manifest_path)) or ".")
     os.makedirs(out_dir, exist_ok=True)
     written = []
     if fmt in ("html", "both"):
-        p = os.path.join(out_dir, "audit-report.html")
+        p = os.path.join(out_dir, basename + ".html")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_html(manifest, summary))
+            fh.write(render_html(manifest, summary, basename))
         written.append(p)
     if fmt in ("md", "both"):
-        p = os.path.join(out_dir, "audit-report.md")
+        p = os.path.join(out_dir, basename + ".md")
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_md(manifest, summary))
         written.append(p)
@@ -727,6 +749,28 @@ def _selftest():
     inj = open(os.path.join(tmp, "audit-report.html"), encoding="utf-8").read()
     check("c6 --summary-file injects the Summary box (manifest untouched)",
           '<div class="summary">' in inj and "Injected via CLI summary file." in inj)
+
+    # --basename controls the output filenames AND the Download-.md name
+    bdir = os.path.join(tmp, "bn")
+    main([mp, "--out-dir", bdir, "--basename", "q3-audit"])
+    bn_html = os.path.join(bdir, "q3-audit.html")
+    check("c7 --basename writes q3-audit.html/.md + sets download name",
+          os.path.exists(bn_html) and os.path.exists(os.path.join(bdir, "q3-audit.md"))
+          and 'window.AUDIT_MD_NAME="q3-audit.md"'
+          in open(bn_html, encoding="utf-8").read())
+    # meta.reportBasename is honored, and a path-y value is sanitized to a bare
+    # name INSIDE out_dir (the leading ../../ is dropped, not traversed).
+    mb = json.loads(json.dumps(manifest))
+    mb["meta"]["reportBasename"] = "../../etc/passwd"
+    mpb = os.path.join(tmp, "mb.json")
+    with open(mpb, "w", encoding="utf-8") as fh:
+        json.dump(mb, fh)
+    bdir2 = os.path.join(tmp, "bn2")
+    main([mpb, "--out-dir", bdir2, "--format", "html"])
+    check("c8 meta.reportBasename sanitized to a bare name (no path escape)",
+          os.path.exists(os.path.join(bdir2, "passwd.html"))
+          and not os.path.exists(os.path.join(bdir2, "audit-report.html"))
+          and not os.path.exists(os.path.join(tmp, "etc", "passwd.html")))
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
