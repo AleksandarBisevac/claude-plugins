@@ -52,7 +52,8 @@ td.muted{font-size:.88em}
          flex-wrap:wrap;z-index:3}
 #audit-q{flex:1 1 16rem;min-width:11rem;padding:.35rem .6rem;font:inherit;
          border:1px solid #d1d9e0;border-radius:.4em}
-#audit-status-filter{display:flex;gap:.3rem;flex-wrap:wrap}
+.tbl{font-size:.82em;color:#57606a}
+#audit-phase-status{display:inline-flex;gap:.3rem;flex-wrap:wrap}
 .fchip{cursor:pointer;border:1px solid #d1d9e0;background:#f6f8fa;color:#1f2328;
        border-radius:1em;padding:.05rem .6rem;font:inherit;font-size:.85em}
 .fchip.on{background:#0969da;color:#fff;border-color:#0969da}
@@ -67,7 +68,14 @@ tr.phase>td{border-top:2px solid #c8d1da}
 tr.phase.open .tri::before{content:"\\25BC"}
 tr.task>td.tid{padding-left:1.7rem}
 .pmeta{font-size:.85em;margin-top:.15rem}
-@media print{.toolbar{display:none}tr.task{display:table-row!important}}
+tr.taskfilter{display:none;background:#fbfcfd}
+tr.taskfilter>td{padding:.3rem .6rem .3rem 1.7rem;border-top:none}
+.tf-label{font-size:.82em;color:#57606a;margin-right:.4rem}
+.tf-chips{display:inline-flex;gap:.3rem;flex-wrap:wrap}
+.tf-chip{cursor:pointer;border:1px solid #d1d9e0;background:#fff;color:#1f2328;
+         border-radius:1em;padding:0 .5em;font:inherit;font-size:.8em}
+.tf-chip.on{background:#0969da;color:#fff;border-color:#0969da}
+@media print{.toolbar,tr.taskfilter{display:none!important}tr.task{display:table-row!important}}
 """
 
 # Inline, self-contained (no external fetch) filter/sort/search over the report
@@ -76,62 +84,59 @@ _SCRIPT = r"""<script>
 (function () {
   var q = document.getElementById('audit-q');
   var count = document.getElementById('audit-count');
-  var chipBar = document.getElementById('audit-status-filter');
+  var phaseStatusBar = document.getElementById('audit-phase-status');
   var expandBtn = document.getElementById('audit-expand');
   var grouped = document.querySelector('table.phases');
   var bugsTable = document.querySelector('table.bugs');
-  var phaseRows = grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.phase')) : [];
-  var taskRows = grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.task')) : [];
+  if (!grouped) return;
+  var phaseRows = [].slice.call(grouped.querySelectorAll('tbody tr.phase'));
   var bugRows = bugsTable ? [].slice.call(bugsTable.querySelectorAll('tbody tr')) : [];
-  var expanded = {};       // phaseId -> bool (user's manual expand state)
-  var activeStatus = '';
+
+  // Expand state persists across filtering AND page reload (best-effort;
+  // localStorage may be unavailable on file:// in some browsers).
+  var STORE = 'audit-report-expanded:' + (document.title || 'report');
+  var expanded = {};
+  try { expanded = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) {}
+  function persist() { try { localStorage.setItem(STORE, JSON.stringify(expanded)); } catch (e) {} }
+
+  var phaseStatus = '';   // toolbar: filter which PHASES show, by phase status
+  var taskStatus = {};    // per phase: filter that phase's TASKS, by task status
 
   function esc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }
-  function tasksOf(pid) {
-    return grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.task[data-phase="' + esc(pid) + '"]')) : [];
-  }
-  // text and status are separate axes: a phase TITLE text-match reveals the
-  // whole phase, but a status filter always applies per-row (a "blocked" chip
-  // shows blocked tasks, NOT every task of a blocked phase).
+  function tasksOf(pid) { return [].slice.call(grouped.querySelectorAll('tbody tr.task[data-phase="' + esc(pid) + '"]')); }
+  function tfOf(pid) { return grouped.querySelector('tbody tr.taskfilter[data-phase="' + esc(pid) + '"]'); }
   function textHit(r, term) { return !term || r.textContent.toLowerCase().indexOf(term) !== -1; }
-  function statusHit(r) { return !activeStatus || r.getAttribute('data-status') === activeStatus; }
-  function setOpen(pr, open) {
-    pr.classList.toggle('open', !!open);
-    pr.setAttribute('aria-expanded', open ? 'true' : 'false');
-  }
+  function setOpen(pr, open) { pr.classList.toggle('open', !!open); pr.setAttribute('aria-expanded', open ? 'true' : 'false'); }
 
   function refresh() {
     var term = (q ? q.value : '').trim().toLowerCase();
-    var filtering = term !== '' || activeStatus !== '';
+    var visP = 0;
     phaseRows.forEach(function (pr) {
-      var tasks = tasksOf(pr.getAttribute('data-phase'));
-      if (filtering) {
-        var pText = textHit(pr, term);   // phase title/meta matched the search text
-        var vis = function (t) { return (pText || textHit(t, term)) && statusHit(t); };
-        var showP = tasks.some(vis) || (term !== '' && pText && statusHit(pr));
-        pr.style.display = showP ? '' : 'none';
-        setOpen(pr, showP);
-        tasks.forEach(function (t) { t.style.display = (showP && vis(t)) ? '' : 'none'; });
-      } else {
-        pr.style.display = '';
-        var open = !!expanded[pr.getAttribute('data-phase')];
-        setOpen(pr, open);
-        tasks.forEach(function (t) { t.style.display = open ? '' : 'none'; });
-      }
+      var pid = pr.getAttribute('data-phase');
+      var tasks = tasksOf(pid);
+      var tf = taskStatus[pid] || '';
+      var pText = textHit(pr, term);
+      var taskShown = function (t) { return (pText || textHit(t, term)) && (!tf || t.getAttribute('data-status') === tf); };
+      var anyTaskText = tasks.some(function (t) { return textHit(t, term); });
+      // phase-level: phase-status filter + text (phase title OR any task matches)
+      var showP = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
+                  && (term === '' || pText || anyTaskText);
+      pr.style.display = showP ? '' : 'none';
+      if (showP) visP++;
+      // open when drilling into tasks (text or task-status filter active), else manual
+      var open = showP && ((term !== '' || tf !== '') || !!expanded[pid]);
+      setOpen(pr, open);
+      var tfRow = tfOf(pid);
+      if (tfRow) tfRow.style.display = open ? '' : 'none';
+      tasks.forEach(function (t) { t.style.display = (open && taskShown(t)) ? '' : 'none'; });
     });
-    bugRows.forEach(function (b) { b.style.display = (textHit(b, term) && statusHit(b)) ? '' : 'none'; });
+    bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
 
-    var total = taskRows.length + bugRows.length;
     if (count) {
-      if (filtering) {
-        var vis = taskRows.filter(function (r) { return r.style.display !== 'none'; }).length
-                + bugRows.filter(function (r) { return r.style.display !== 'none'; }).length;
-        count.textContent = vis + ' / ' + total + ' shown';
-      } else {
-        count.textContent = total + ' rows';
-      }
+      var filtered = term !== '' || phaseStatus !== '';
+      count.textContent = filtered ? (visP + ' / ' + phaseRows.length + ' phases') : (phaseRows.length + ' phases');
     }
-    if (expandBtn && !filtering) {
+    if (expandBtn) {
       var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
       expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
     }
@@ -162,8 +167,10 @@ _SCRIPT = r"""<script>
         var cmp = function (r1, r2) { return asc ? natCmp(cell(r1, idx), cell(r2, idx)) : natCmp(cell(r2, idx), cell(r1, idx)); };
         if (withinPhase) {
           phaseRows.forEach(function (pr) {
-            tasksOf(pr.getAttribute('data-phase')).sort(cmp).reverse()
-              .forEach(function (r) { pr.parentNode.insertBefore(r, pr.nextSibling); });
+            var pid = pr.getAttribute('data-phase');
+            var anchor = tfOf(pid) || pr;   // keep tasks after the phase + its task-filter row
+            tasksOf(pid).sort(cmp).reverse()
+              .forEach(function (r) { anchor.parentNode.insertBefore(r, anchor.nextSibling); });
           });
         } else {
           var body = table.tBodies[0];
@@ -174,46 +181,69 @@ _SCRIPT = r"""<script>
     });
   }
 
-  phaseRows.forEach(function (pr) {
-    function toggle() {
-      var pid = pr.getAttribute('data-phase');
-      expanded[pid] = !expanded[pid];
-      refresh();
-    }
-    pr.addEventListener('click', toggle);
-    pr.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+  // build a toggle-chip bar from a set of statuses
+  function buildChips(host, statuses, dataAttr, onToggle) {
+    Object.keys(statuses).sort().forEach(function (s) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'fchip';
+      b.setAttribute(dataAttr, s); b.textContent = s;
+      host.appendChild(b);
     });
-  });
+    host.addEventListener('click', function (e) {
+      var val = e.target && e.target.getAttribute(dataAttr);
+      if (!val) return;
+      onToggle(val, host, dataAttr);
+    });
+  }
+  function highlight(host, dataAttr, active) {
+    [].forEach.call(host.children, function (x) {
+      x.className = (x.getAttribute(dataAttr) === active ? x.className.split(' ')[0] + ' on' : x.className.split(' ')[0]);
+    });
+  }
 
+  // phase expand/collapse (click or Enter/Space); state persists
+  phaseRows.forEach(function (pr) {
+    function toggle() { var pid = pr.getAttribute('data-phase'); expanded[pid] = !expanded[pid]; persist(); refresh(); }
+    pr.addEventListener('click', toggle);
+    pr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  });
   if (expandBtn) expandBtn.addEventListener('click', function () {
     var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
     phaseRows.forEach(function (pr) { expanded[pr.getAttribute('data-phase')] = anyClosed; });
-    refresh();
+    persist(); refresh();
   });
 
-  if (chipBar) {
-    var seen = {};
-    phaseRows.concat(taskRows).concat(bugRows).forEach(function (r) {
-      var s = r.getAttribute('data-status');
-      if (s) seen[s] = 1;
-    });
-    Object.keys(seen).sort().forEach(function (s) {
-      var b = document.createElement('button');
-      b.type = 'button'; b.className = 'fchip';
-      b.setAttribute('data-status-filter', s); b.textContent = s;
-      chipBar.appendChild(b);
-    });
-    chipBar.addEventListener('click', function (e) {
-      var val = e.target && e.target.getAttribute('data-status-filter');
-      if (!val) return;
-      activeStatus = (activeStatus === val) ? '' : val;
-      [].forEach.call(chipBar.children, function (x) {
-        x.className = x.getAttribute('data-status-filter') === activeStatus ? 'fchip on' : 'fchip';
-      });
+  // toolbar phase-status chips (distinct PHASE statuses)
+  if (phaseStatusBar) {
+    var pseen = {};
+    phaseRows.forEach(function (pr) { var s = pr.getAttribute('data-status'); if (s) pseen[s] = 1; });
+    buildChips(phaseStatusBar, pseen, 'data-ps', function (val, host, attr) {
+      phaseStatus = (phaseStatus === val) ? '' : val;
+      highlight(host, attr, phaseStatus);
       refresh();
     });
   }
+
+  // per-phase task-status chips (contextual — only that phase's task statuses)
+  phaseRows.forEach(function (pr) {
+    var pid = pr.getAttribute('data-phase');
+    var tfRow = tfOf(pid); if (!tfRow) return;
+    var host = tfRow.querySelector('.tf-chips'); if (!host) return;
+    var seen = {};
+    tasksOf(pid).forEach(function (t) { var s = t.getAttribute('data-status'); if (s) seen[s] = 1; });
+    Object.keys(seen).sort().forEach(function (s) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'tf-chip';
+      b.setAttribute('data-ts', s); b.textContent = s;
+      host.appendChild(b);
+    });
+    host.addEventListener('click', function (e) {
+      var val = e.target && e.target.getAttribute('data-ts'); if (!val) return;
+      taskStatus[pid] = (taskStatus[pid] === val) ? '' : val;
+      [].forEach.call(host.children, function (x) { x.className = x.getAttribute('data-ts') === taskStatus[pid] ? 'tf-chip on' : 'tf-chip'; });
+      refresh();
+    });
+  });
 
   wireSort(grouped, true);
   wireSort(bugsTable, false);
@@ -294,6 +324,7 @@ def render_html(manifest, summary):
     out = ['<!doctype html>',
            '<meta charset="utf-8">',
            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+           '<title>%s</title>' % e(meta.get("title") or "Audit report"),
            "<style>%s</style>" % _CSS]
     out.append("<h1>%s</h1>" % e(meta.get("title") or "Audit report"))
     out.append('<p class="muted">repo: %s · generated %s · %d phases · %d tasks'
@@ -319,9 +350,9 @@ def render_html(manifest, summary):
     # _SCRIPT; with JS off the tables below are still fully readable.
     out.append(
         '<div class="toolbar" role="search">'
-        '<input id="audit-q" type="search" aria-label="Filter rows" '
-        'placeholder="Filter rows — id, title, status, model, commit…">'
-        '<span id="audit-status-filter"></span>'
+        '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
+        'placeholder="Filter phases &amp; tasks by text…">'
+        '<span class="tbl">Phase status:</span><span id="audit-phase-status"></span>'
         '<button type="button" id="audit-expand" class="fchip">expand all</button>'
         '<span id="audit-count" class="muted"></span></div>')
 
@@ -342,6 +373,11 @@ def render_html(manifest, summary):
             % (e(pid), e(psum["status"]), e(pid), e(psum["title"]),
                _chip(psum["status"]), _bar(psum["done"], psum["total"]),
                _phase_meta_div(ph)))
+        # per-phase task-status filter (shown only when the phase is expanded);
+        # _SCRIPT fills .tf-chips from this phase's own task statuses.
+        out.append('<tr class="taskfilter" data-phase="%s"><td colspan="8">'
+                   '<span class="tf-label">Filter tasks by status:</span>'
+                   '<span class="tf-chips"></span></td></tr>' % e(pid))
         for t in ph.get("tasks") or []:
             if not isinstance(t, dict):
                 continue
@@ -564,13 +600,14 @@ def _selftest():
     check("h3 task outcome shown + escaped", "did the thing cleanly" in html_out)
     check("h4 phase branch/mergedAt meta shown",
           "branch audit/p1-x" in html_out and "merged 2026-07-09" in html_out)
-    check("h5 html has doctype + charset (standalone render, not quirks mode)",
+    check("h5 html has doctype + charset + title (standalone render, tab name)",
           html_out.lstrip().lower().startswith("<!doctype html>")
-          and 'charset="utf-8"' in html_out)
-    check("h6 collapsible grouped table + toolbar + inline script present",
+          and 'charset="utf-8"' in html_out and "<title>" in html_out)
+    check("h6 collapsible grouped table + separate phase/task filters + script",
           'class="phases"' in html_out and 'tr class="phase"' in html_out
-          and 'tr class="task"' in html_out and "aria-expanded" in html_out
-          and 'id="audit-q"' in html_out and 'id="audit-expand"' in html_out
+          and 'tr class="task"' in html_out and 'tr class="taskfilter"' in html_out
+          and "aria-expanded" in html_out and 'id="audit-q"' in html_out
+          and 'id="audit-phase-status"' in html_out and 'id="audit-expand"' in html_out
           and "<script>" in html_out and "addEventListener" in html_out)
     check("h7 phase + task rows carry data-phase/data-status (grouping + filter)",
           'data-phase="P1"' in html_out and 'data-status="done"' in html_out
