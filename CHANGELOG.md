@@ -21,6 +21,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (browser-tab name). Still one self-contained file, zero network fetches, every
   value escaped, and fully readable with JS off (rows render expanded; JS
   collapses them). Verified in a browser against a synthetic 40×5 report.
+- **Report readability: completion dates + status coloring.** The task table gains
+  a sortable **done** column (completion date; the full started/completed
+  timestamps show on hover; in-progress tasks show their start date). Risk is now
+  a tinted chip (low/med/high = green/amber/red, distinct from the solid status
+  chips), and every task and phase row carries a **status-colored left edge**
+  (green/amber/red/grey) so state reads at a glance. The Markdown twin gains the
+  matching `done` column.
 
 ### Added
 - **Report: PDF, an AI summary, and a Markdown download.** A **Save as PDF**
