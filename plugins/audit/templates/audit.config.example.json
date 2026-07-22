@@ -1,5 +1,5 @@
 {
-  "//": "Copy to <your-repo>/.claude/audit.config.json and edit. EVERY key is optional; omit any to take the default. This is Layer 1 of the plugin's extensibility model — no code editing needed.",
+  "//": "Copy to <your-repo>/.claude/audit.config.json and edit. EVERY key is optional; omit any to take the default. This is Layer 1 of the plugin's extensibility model — no code editing needed. Prefer a UI? Run /audit:panel to edit this file (schema-validated) + wire composition visually.",
 
   "manifestPath": "docs/audit/audit-plan.json",
 

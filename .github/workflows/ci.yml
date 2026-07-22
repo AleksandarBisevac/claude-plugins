@@ -31,7 +31,9 @@ jobs:
                    plugins/audit/hooks/remind-tdd.py \
                    plugins/audit/scripts/validate-manifest.py \
                    plugins/audit/scripts/audit-status.py \
-                   plugins/audit/scripts/render-report.py; do
+                   plugins/audit/scripts/render-report.py \
+                   plugins/audit/scripts/validate-config.py \
+                   plugins/audit/scripts/panel-server.py; do
             echo "== $f"
             python "$f" --selftest
           done

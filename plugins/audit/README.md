@@ -16,7 +16,7 @@ project-specific is supplied by a small per-repo config file.
 ```
 
 Every action is its own `/audit:<verb>` (`status` · `next` · `run` · `phase` · `review` · `resume` ·
-`report` · `init` · `task` · `bug` · `sync`) — there is **no bare `/audit`**. Requirements: Python
+`report` · `panel` · `init` · `task` · `bug` · `sync`) — there is **no bare `/audit`**. Requirements: Python
 (`python3`/`python`/`py`; Windows = Git Bash). Add `--dry-run` to `next`/`run`/`phase` to preview
 without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
 
@@ -31,6 +31,21 @@ tables scroll inside their own frame ([mobile](../../docs/screenshots/mobile.png
 | Overview | Expand a phase | Filter by status | Dark mode |
 |---|---|---|---|
 | [![overview](../../docs/screenshots/overview.png)](../../docs/screenshots/overview.png) | [![expanded](../../docs/screenshots/expanded.png)](../../docs/screenshots/expanded.png) | [![filtered](../../docs/screenshots/filtered.png)](../../docs/screenshots/filtered.png) | [![dark mode](../../docs/screenshots/dark.png)](../../docs/screenshots/dark.png) |
+
+## Control panel
+
+`/audit:panel` launches a local, **on-demand** browser UI (an ephemeral Python-stdlib server —
+Ctrl-C stops it; nothing runs in the background) to manage the plugin without hand-editing JSON:
+tune the guards/paths in `.claude/audit.config.json` (schema-validated), and **wire composition** —
+`meta.reviewSkill`, per-task `skills`/`model`, per-phase review model, `meta.buildCommands` — from
+**pickers populated by the skills & agents actually available** in this repo + `~/.claude/` +
+installed plugins. Same Slate & Teal look, light/dark, responsive. It writes only config +
+composition fields (never structural manifest CRUD, and never while a `/audit` run holds the lock),
+validating before each atomic save.
+
+| Guards & paths | Composition + discovery | Dark |
+|---|---|---|
+| [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
 
 ## What you get
 
@@ -54,6 +69,8 @@ tables scroll inside their own frame ([mobile](../../docs/screenshots/mobile.png
 - **`/audit:report`** — self-contained, **interactive** HTML + Markdown report (collapsible
   phases, text + status filters, **Save as PDF**, optional AI summary) — publishable as a CI
   artifact. See [Reports](#reports).
+- **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
+  composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
 - **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
