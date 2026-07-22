@@ -4,6 +4,22 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.13.1] - 2026-07-22
+
+A UX pass on the `/audit:panel` control panel (all in the served UI; no API change).
+
+### Changed
+- **Info-hint labels** — every field and section label carries an ⓘ hint with a
+  plain-language tooltip, so the raw config keys are self-explanatory.
+- **Custom autocomplete** — replaced the native `<datalist>` with a combobox: the
+  menu opens directly under the input, with a limited height + scroll and clear
+  items (name + source badge + description) and full keyboard + click select. Used
+  by `meta.reviewSkill` and per-task `skills`.
+- **Tabbed registry** — "Available building blocks" is now one table with
+  Skills / Agents / MCP sub-tabs (name · source · description, sticky header),
+  replacing the stacked lists.
+- Fixed `model`/`skills` top-alignment in task rows.
+
 ## [0.13.0] - 2026-07-22
 
 A visual, on-demand way to manage the plugin: `/audit:panel` launches a local
