@@ -633,9 +633,41 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .findings.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
 .findings.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
 .src{font-size:.66rem}.hidden{display:none}
-.reg{display:flex;flex-direction:column;gap:.3rem;max-height:16rem;overflow:auto}
-.reg .it{display:flex;gap:.5rem;align-items:baseline;padding:.3rem .4rem;border-radius:var(--radius)}
-.reg .it:hover{background:var(--surface-2)}
+/* info hints on labels */
+.lbl{display:inline-flex;align-items:center;gap:.35rem}
+.hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
+ border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
+ position:relative;flex:0 0 auto;text-transform:none}
+.hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
+.hint::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + .4rem);z-index:60;width:17rem;max-width:72vw;
+ background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
+ box-shadow:var(--shadow-md);padding:.5rem .6rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
+ white-space:normal;opacity:0;visibility:hidden;transition:opacity var(--dur);pointer-events:none}
+.hint:hover::after,.hint:focus::after{opacity:1;visibility:visible}
+/* custom autocomplete combobox (replaces native datalist) */
+.combo{position:relative;flex:1 1 18rem}
+.combo>input{width:100%}
+.combo-menu{position:absolute;left:0;right:0;top:calc(100% + .25rem);z-index:40;background:var(--surface);
+ border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;overflow:auto;padding:.25rem}
+.combo-it{display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;border-radius:6px;cursor:pointer}
+.combo-it:hover,.combo-it.active{background:var(--surface-2)}
+.combo-n{font-size:.82rem;flex:0 0 auto}
+.combo-d{color:var(--muted);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+.chipwrap{display:flex;flex-direction:column;gap:.4rem;flex:1 1 auto}
+.chips{display:flex;gap:.3rem;flex-wrap:wrap}
+/* discovered building-blocks: subtabs + one table */
+.subtabs{display:flex;gap:.35rem;margin:.5rem 0 .6rem;flex-wrap:wrap}
+.subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:.3rem .75rem;border-radius:var(--pill);
+ border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
+.subtab:hover{border-color:var(--border-strong)}
+.subtab.on{background:var(--surface-2);color:var(--text);border-color:var(--border-strong)}
+.regtblwrap{max-height:22rem;overflow:auto;border:1px solid var(--border);border-radius:var(--radius)}
+table.regtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
+table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);text-align:left;
+ font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:.45rem .65rem;border-bottom:1px solid var(--border)}
+table.regtbl td{padding:.4rem .65rem;border-bottom:1px solid var(--border);vertical-align:top}
+table.regtbl tbody tr:hover td{background:var(--surface-2)}
+table.regtbl td.d{color:var(--muted)}
 </style></head><body>
 <div class=top>
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
@@ -680,6 +712,57 @@ function findingsBox(res){const box=el('div');
  return box;}
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  renderGuards();renderComp();renderOver();}
+// ---------- shared: info hints + autocomplete ----------
+const DESC={
+ manifestPath:"Path to the audit manifest JSON (project-relative). Default docs/audit/audit-plan.json.",
+ gitRoot:"Path of the git repo root, where git + build/gate commands run. Default '.' (this dir).",
+ stateDir:"Where the hooks keep transactional state files. Default .claude/state.",
+ logsDir:"Where the hooks write logs. Default .claude/logs.",
+ bypassKeyword:"Type this in a prompt to arm a one-off plan-first bypass for the next edit. Default #no-plan.",
+ trivialLineThreshold:"First-touch edits at or under this many lines skip the plan-first gate. Default 80.",
+ bashWriteCheck:"Warn when a Bash command creates new source files that weren't planned.",
+ tddReminder:"Non-blocking nudge when you edit source without touching a test.",
+ exemptGlobs:"Globs whose edits skip the plan-first / TDD / bash-write guards (docs, tests, .claude/**, the manifest).",
+ tokenVars:"Identifier names that must never be logged — a console.log/print of any of these is blocked.",
+ secretPatternsExtra:"Extra regexes that mark a file path as a secret; reading a matching file is blocked.",
+ customRules:"Per-path banned patterns: block a regex in new content when the edited path starts with a prefix.",
+ reviewSkill:"Skill the reviewer agent invokes at phase sign-off. Empty = tests are the only signer.",
+ buildCommands:"Named shell commands (typecheck / test / lint …) the pipeline runs as gates.",
+ phaseReviewModel:"Model used for this phase's sign-off review.",
+ taskModel:"Model the executor uses to implement this task.",
+ taskSkills:"Skills the executor loads (via the Skill tool) before writing code for this task."};
+function hint(t){return t?el('span',{class:'hint',tabindex:'0','data-tip':t},'i'):null;}
+function flabel(text,tip){return el('span',{class:'lbl'},text,hint(tip));}
+function h2h(text,tip){return el('h2',{},text,hint(tip));}
+// A custom autocomplete: menu opens directly under the input, limited height,
+// clear items (name + source + description), keyboard + click select.
+function comboWrap(inp,itemsFn,onChoose,onEnterFree){
+ const wrap=el('div',{class:'combo'}),menu=el('div',{class:'combo-menu hidden'});
+ let active=-1,shown=[];
+ const close=()=>{menu.classList.add('hidden');active=-1;};
+ const render=()=>{const q=inp.value.trim().toLowerCase();
+  shown=itemsFn().filter(it=>it.name.toLowerCase().includes(q)).slice(0,60);
+  menu.textContent='';
+  if(!shown.length){close();return;}
+  shown.forEach((it,i)=>menu.append(el('div',{class:'combo-it'+(i===active?' active':''),
+    onmousedown:e=>{e.preventDefault();onChoose(it.name,close);}},
+    el('span',{class:'combo-n mono'},it.name),
+    it.source?el('span',{class:'src badge'},it.source):null,
+    it.description?el('span',{class:'combo-d'},it.description):null)));
+  menu.classList.remove('hidden');
+  const a=menu.querySelector('.combo-it.active');if(a)a.scrollIntoView({block:'nearest'});};
+ inp.setAttribute('autocomplete','off');
+ inp.addEventListener('focus',render);
+ inp.addEventListener('input',()=>{active=-1;render();});
+ inp.addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){e.preventDefault();active=Math.min(active+1,shown.length-1);render();}
+  else if(e.key==='ArrowUp'){e.preventDefault();active=Math.max(active-1,0);render();}
+  else if(e.key==='Enter'){if(active>=0){e.preventDefault();onChoose(shown[active].name,close);}
+   else if(onEnterFree&&inp.value.trim()){e.preventDefault();onEnterFree(inp.value.trim(),close);}}
+  else if(e.key==='Escape'){close();}});
+ inp.addEventListener('blur',()=>setTimeout(close,150));
+ wrap.append(inp,menu);return wrap;}
+
 // ---------- Guards & paths ----------
 function listEditor(getArr,setArr,ph){const wrap=el('div',{class:'pill-in'});
  const draw=()=>{wrap.textContent='';(getArr()||[]).forEach((v,i)=>{
@@ -693,29 +776,29 @@ function renderGuards(){const c=$('#guards');c.textContent='';const cfg=JSON.par
  const paths=el('div',{class:'row'});
  for(const k of['manifestPath','gitRoot','stateDir','logsDir','bypassKeyword']){
   const inp=el('input',{value:cfg[k]??'',placeholder:d[k]});inp.oninput=()=>{if(inp.value==='')delete cfg[k];else cfg[k]=inp.value;};
-  paths.append(el('label',{class:'f'},k,inp));}
+  paths.append(el('label',{class:'f'},flabel(k,DESC[k]),inp));}
  const thr=el('input',{type:'number',min:'1',value:cfg.trivialLineThreshold??'',placeholder:d.trivialLineThreshold});
  thr.oninput=()=>{if(thr.value==='')delete cfg.trivialLineThreshold;else cfg.trivialLineThreshold=parseInt(thr.value,10);};
- paths.append(el('label',{class:'f'},'trivialLineThreshold',thr));
+ paths.append(el('label',{class:'f'},flabel('trivialLineThreshold',DESC.trivialLineThreshold),thr));
  card.append(el('h2',{},'Paths'),paths);
  // toggles
  const bw=cfg.bashWriteCheck?{...cfg.bashWriteCheck}:{};const td=cfg.tddReminder?{...cfg.tddReminder}:{};
  const tog=el('div',{class:'row'});
- const mk=(lbl,val,fn)=>{const cb=el('input',{type:'checkbox'});cb.checked=val;cb.onchange=()=>fn(cb.checked);
-  return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,lbl);};
- tog.append(mk('bashWriteCheck.enabled',bw.enabled!==false,v=>{bw.enabled=v;cfg.bashWriteCheck=bw;}));
- tog.append(mk('tddReminder.enabled',td.enabled!==false,v=>{td.enabled=v;cfg.tddReminder=td;}));
+ const mk=(lbl,tip,val,fn)=>{const cb=el('input',{type:'checkbox'});cb.checked=val;cb.onchange=()=>fn(cb.checked);
+  return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,flabel(lbl,tip));};
+ tog.append(mk('bashWriteCheck.enabled',DESC.bashWriteCheck,bw.enabled!==false,v=>{bw.enabled=v;cfg.bashWriteCheck=bw;}));
+ tog.append(mk('tddReminder.enabled',DESC.tddReminder,td.enabled!==false,v=>{td.enabled=v;cfg.tddReminder=td;}));
  card.append(el('h2',{},'Guards'),tog);
  // lists
- card.append(el('h2',{},'exemptGlobs'),listEditor(()=>cfg.exemptGlobs??d.exemptGlobs,a=>cfg.exemptGlobs=a,'glob…'));
- card.append(el('h2',{},'guardEdits.tokenVars (never logged)'),
+ card.append(h2h('exemptGlobs',DESC.exemptGlobs),listEditor(()=>cfg.exemptGlobs??d.exemptGlobs,a=>cfg.exemptGlobs=a,'glob…'));
+ card.append(h2h('guardEdits.tokenVars (never logged)',DESC.tokenVars),
   listEditor(()=>{cfg.guardEdits=cfg.guardEdits||{};return cfg.guardEdits.tokenVars??d.guardEdits.tokenVars;},
    a=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.tokenVars=a;},'identifier…'));
- card.append(el('h2',{},'secretPatterns.extra (regex)'),
+ card.append(h2h('secretPatterns.extra (regex)',DESC.secretPatternsExtra),
   listEditor(()=>{cfg.secretPatterns=cfg.secretPatterns||{};return cfg.secretPatterns.extra??[];},
    a=>{cfg.secretPatterns=cfg.secretPatterns||{};cfg.secretPatterns.extra=a;},'regex…'));
  // custom rules
- card.append(el('h2',{},'guardEdits.customRules'));
+ card.append(h2h('guardEdits.customRules',DESC.customRules));
  const rulesWrap=el('div');const rules=()=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.customRules=cfg.guardEdits.customRules||[];return cfg.guardEdits.customRules;};
  const drawRules=()=>{rulesWrap.textContent='';rules().forEach((r,i)=>{
    const pp=el('input',{value:r.pathPrefix||'',placeholder:'pathPrefix'});pp.oninput=()=>r.pathPrefix=pp.value;
@@ -732,22 +815,24 @@ function renderGuards(){const c=$('#guards');c.textContent='';const cfg=JSON.par
  c.append(card);}
 // ---------- Composition ----------
 function skillPicker(current,onChange){
- const dl=el('datalist',{id:'skills-dl'});REG.skills.forEach(s=>dl.append(el('option',{value:s.name})));
- const inp=el('input',{list:'skills-dl',value:current??'',placeholder:'skill name (or leave empty)'});
- inp.oninput=()=>onChange(inp.value.trim()||null);return el('span',{},inp,dl);}
+ const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)'});
+ inp.addEventListener('input',()=>onChange(inp.value.trim()||null));
+ return comboWrap(inp,()=>REG.skills,(name,close)=>{inp.value=name;onChange(name);close();});}
 function skillChips(getArr,setArr){
- const box=el('div',{class:'pill-in'});const draw=()=>{box.textContent='';
-  (getArr()||[]).forEach((v,i)=>box.append(el('span',{class:'chip'},v,el('button',{onclick:()=>{const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×'))));
-  const dl=el('datalist',{id:'sk-'+Math.random().toString(36).slice(2)});REG.skills.forEach(s=>dl.append(el('option',{value:s.name})));
-  const inp=el('input',{list:dl.id,placeholder:'add skill…'});inp.addEventListener('keydown',e=>{
-   if(e.key==='Enter'&&inp.value.trim()){const a=(getArr()||[]).slice();a.push(inp.value.trim());setArr(a);draw();}});
-  box.append(inp,dl);};draw();return box;}
+ const box=el('div',{class:'chipwrap'}),chips=el('div',{class:'chips'});
+ const inp=el('input',{placeholder:'search a skill to add…'});
+ const draw=()=>{chips.textContent='';(getArr()||[]).forEach((v,i)=>chips.append(
+   el('span',{class:'chip'},v,el('button',{onmousedown:e=>{e.preventDefault();const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×'))));};
+ const add=(name,close)=>{const n=(name||'').trim();
+   if(n){const a=(getArr()||[]).slice();if(!a.includes(n)){a.push(n);setArr(a);draw();}}
+   inp.value='';if(close)close();};
+ const combo=comboWrap(inp,()=>REG.skills.filter(s=>!(getArr()||[]).includes(s.name)),add,add);
+ draw();box.append(chips,combo);return box;}
 function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.composition;
  const patch={meta:{},phases:{},tasks:{}};
- const meta=el('div',{class:'card'});meta.append(el('h2',{},'Phase sign-off review skill (meta.reviewSkill)'));
- meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,v=>patch.meta.reviewSkill=v),
-   el('span',{class:'mut'},'invoked by the reviewer agent at sign-off; empty = tests are the only signer')));
- meta.append(el('h2',{},'meta.buildCommands (JSON)'));
+ const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',DESC.reviewSkill));
+ meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,v=>patch.meta.reviewSkill=v)));
+ meta.append(h2h('meta.buildCommands (JSON)',DESC.buildCommands));
  const bc=el('textarea',{});bc.value=comp.meta.buildCommands?JSON.stringify(comp.meta.buildCommands,null,2):'';
  bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;bc.style.borderColor='';}
   catch(e){bc.style.borderColor='var(--err)';}};
@@ -757,14 +842,14 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  comp.phases.forEach(ph=>{
   const pr=el('input',{value:ph.reviewModel??'',placeholder:'review model'});pr.oninput=()=>{patch.phases[ph.id]={reviewModel:pr.value.trim()||null};};
   tcard.append(el('div',{class:'row',style:'margin-top:.8rem'},el('strong',{},(ph.id||'')+' · '+(ph.title||'')),
-    el('label',{class:'f',style:'flex:0 0 12rem'},'phase review model',pr)));
+    el('label',{class:'f',style:'flex:0 0 12rem'},flabel('phase review model',DESC.phaseReviewModel),pr)));
   (byPhase[ph.id]||[]).forEach(t=>{
    const tp={};const model=el('input',{value:t.model??'',placeholder:'model'});
    model.oninput=()=>{tp.model=model.value.trim()||null;patch.tasks[t.id]=tp;};
    const chips=skillChips(()=>tp.skills!==undefined?tp.skills:t.skills,a=>{tp.skills=a;patch.tasks[t.id]=tp;});
    tcard.append(el('div',{class:'tsk'},el('div',{class:'h'},el('span',{class:'mono'},t.id),el('span',{},t.title||'')),
-     el('div',{class:'row'},el('label',{class:'f',style:'flex:0 0 10rem'},'model',model),
-       el('label',{class:'f'},'skills',chips))));});});
+     el('div',{class:'row',style:'align-items:flex-start'},el('label',{class:'f',style:'flex:0 0 10rem'},flabel('model',DESC.taskModel),model),
+       el('label',{class:'f'},flabel('skills',DESC.taskSkills),chips))));});});
  const save=el('button',{class:'btn primary',onclick:async()=>{
    const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
    for(const k of Object.keys(patch.meta))clean.meta[k]=patch.meta[k];
@@ -776,16 +861,24 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  if(!STATE.manifestExists)tcard.append(el('div',{class:'findings warn'},'No manifest yet — run /audit:init first.'));
  if(STATE.manifestLocked)tcard.append(el('div',{class:'findings warn'},'Manifest is locked by a running /audit command.'));
  c.append(tcard);
- // building blocks
- const bb=el('div',{class:'card'});bb.append(el('h2',{},'Available building blocks (discovered)'));
- const mkReg=(title,items,extra)=>{const w=el('div');w.append(el('div',{class:'mut',style:'margin:.3rem 0'},title+' ('+items.length+')'));
-   const list=el('div',{class:'reg'});items.forEach(it=>list.append(el('div',{class:'it'},
-     el('span',{class:'mono'},it.name),el('span',{class:'src badge'},it.source),
-     el('span',{class:'mut'},it.description||''))));if(extra&&items.length===0)list.append(el('span',{class:'mut'},'none found'));
-   w.append(list);return w;};
- bb.append(mkReg('skills',REG.skills,true),mkReg('agents',REG.agents,true));
- if(REG.mcp.length)bb.append(el('div',{class:'mut',style:'margin-top:.4rem'},'MCP servers: '+REG.mcp.join(', ')));
- c.append(bb);}
+ // building blocks — one table, sub-tabs switch context (skills / agents / mcp)
+ const bb=el('div',{class:'card'});
+ bb.append(h2h('Available building blocks (discovered)',
+   'Skills & agents found in this project, your ~/.claude, and installed plugins — plus MCP servers in scope. Use these names in the pickers above.'));
+ const datasets={skills:REG.skills,agents:REG.agents,
+   mcp:(REG.mcp||[]).map(n=>({name:n,source:'mcp',description:''}))};
+ const subtabs=el('div',{class:'subtabs'}),host=el('div',{class:'regtblwrap'});let cur='skills';
+ const drawTbl=()=>{const items=datasets[cur]||[];const tb=el('tbody');
+   if(!items.length)tb.append(el('tr',{},el('td',{colspan:'3',class:'mut'},'none found')));
+   items.forEach(it=>tb.append(el('tr',{},el('td',{class:'mono'},it.name),
+     el('td',{},it.source?el('span',{class:'src badge'},it.source):null),
+     el('td',{class:'d'},it.description||''))));
+   host.replaceChildren(el('table',{class:'regtbl'},
+     el('thead',{},el('tr',{},el('th',{},'name'),el('th',{},'source'),el('th',{},'description'))),tb));};
+ ['skills','agents','mcp'].forEach(k=>subtabs.append(el('button',{class:'subtab'+(k===cur?' on':''),
+   onclick:e=>{cur=k;[...subtabs.children].forEach(x=>x.classList.toggle('on',x===e.currentTarget));drawTbl();}},
+   k+' ('+(datasets[k]||[]).length+')')));
+ drawTbl();bb.append(subtabs,host);c.append(bb);}
 // ---------- Overview ----------
 function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;const card=el('div',{class:'card'});
  if(!r){card.append(el('div',{class:'mut'},'No manifest at '+STATE.manifestPath+'. Run /audit:init.'));c.append(card);return;}
@@ -906,6 +999,11 @@ def _selftest():
     check("UI has project placeholder", "__AUDIT_PROJECT__" in UI_HTML)
     check("UI token injected as a quoted JS string",
           'const TOKEN="abc123"' in UI_HTML.replace("__AUDIT_TOKEN__", _js("abc123")))
+    check("UI uses the custom combobox, not a native datalist",
+          "function comboWrap(" in UI_HTML and "combo-menu" in UI_HTML
+          and "<datalist" not in UI_HTML and "list:" not in UI_HTML)
+    check("UI labels carry info hints", "function hint(" in UI_HTML and "data-tip" in UI_HTML)
+    check("UI building blocks are a tabbed table", "regtbl" in UI_HTML and "subtab" in UI_HTML)
 
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
