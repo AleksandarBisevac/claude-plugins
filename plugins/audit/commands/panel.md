@@ -1,45 +1,50 @@
 ---
-description: 'Audit pipeline: launch a local control panel (browser UI) to visually manage .claude/audit.config.json and the manifest''s composition levers (reviewSkill, per-task skills/models, buildCommands), with live validation and discovery of the skills & agents available in this repo + globally. Ephemeral, on-demand server — writes files on your explicit Save; Ctrl-C stops it.'
-argument-hint: '[--port <n>] [--no-open]'
+description: 'Audit pipeline: open / stop / check a local control-panel UI to visually manage .claude/audit.config.json and the manifest''s composition levers (reviewSkill, per-task skills/models, buildCommands) — with live validation and discovery of the skills & agents available in this repo + globally. Ephemeral, on-demand; a per-project pidfile keeps it discoverable and stoppable.'
+argument-hint: '[stop|status] [--port <n>]'
 allowed-tools: Read, Bash
 ---
 
-# /audit:panel — the control panel
+# /audit:panel — the control panel (open · stop · status)
 
-Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first for the config +
-manifest conventions (preflight is read-only here: no git-root check, no lock — the
-panel *itself* takes the lock only when it writes the manifest, and refuses if one is held).
+Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first (read-only preflight
+1–2; no lock — the panel itself takes the manifest lock only when it *writes* the manifest,
+and refuses if one is held). Let `PANEL="${CLAUDE_PLUGIN_ROOT}/scripts/panel-server.py"`.
 
-Launch the panel:
+**Dispatch on `$ARGUMENTS`:**
 
-```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/panel-server.py" --project "$(pwd)"
-```
+- **`stop`** → run `python3 "$PANEL" --project "$(pwd)" --stop` and print the result.
+- **`status`** → run `python3 "$PANEL" --project "$(pwd)" --status` and print the result.
+- **otherwise (open)** →
+  1. Launch it **detached** so it survives this turn, passing `--port <n>` through from
+     `$ARGUMENTS` if given:
+     ```
+     nohup python3 "$PANEL" --project "$(pwd)" >/dev/null 2>&1 &
+     ```
+  2. Wait ~1s, then read the live URL back:
+     ```
+     sleep 1; python3 "$PANEL" --project "$(pwd)" --status
+     ```
+  3. Tell the user, clearly: **the panel is RUNNING at `<the URL from --status>`** (their
+     browser opens automatically), and **stop it anytime with `/audit:panel stop`** (or
+     `/audit:panel status` to check). It's per-project — launching again just points at the
+     already-running one, so it never leaves an untracked process behind.
 
-Pass `--port <n>` and/or `--no-open` through from `$ARGUMENTS` when given (otherwise a
-free port is chosen and the browser opens automatically). Print the printed URL to the
-user and tell them: **open it in a browser, and press Ctrl-C in this terminal to stop
-the server when done.**
+**Prefer a visible terminal window?** (foreground, `Ctrl-C` to stop) — tell the user they can
+run it themselves; in a Node repo `npm run panel` / `npm run panel:stop` is the shortcut,
+otherwise `python3 "$PANEL" --project "$(pwd)"`.
 
-Because the command blocks while the server runs, launch it so its URL is visible and
-the user can stop it (e.g. run it and surface the first lines of output, or advise the
-user to run the command themselves with the `!` prefix). Do not background it silently.
-
-## What the panel does (read-only summary for the user)
+## What the panel does (summary for the user)
 - **Guards & paths** — a form over `.claude/audit.config.json` (paths, `exemptGlobs`,
   `guardEdits.tokenVars` / `customRules`, `secretPatterns.extra`, `tddReminder`,
-  `bashWriteCheck`), validated against `schema/audit-config.schema.json` via
-  `validate-config.py`. Save writes the file atomically; invalid input is refused.
-- **Composition** — set `meta.reviewSkill`, per-task `skills[]` and `model`, per-phase
-  `review.model`, and `meta.buildCommands` — with **pickers populated by discovery** of
+  `bashWriteCheck`); each field has an ⓘ hint. Validated against
+  `schema/audit-config.schema.json`; saves atomically, refuses invalid input.
+- **Composition** — set `meta.reviewSkill`, per-task `skills[]` / `model`, per-phase
+  `review.model`, `meta.buildCommands` — via an autocomplete **populated by discovery** of
   the skills & agents actually available (project `.claude/`, `~/.claude/`, installed
-  plugins). It writes back **only** these fields, validates via `validate-manifest.py`
-  before writing, and **refuses while `<manifestPath>.lock` is held** (a running
-  `/audit` command). It never adds/removes/reshapes phases, tasks, or bugs — use
-  `/audit:task`, `/audit:bug`, `/audit:run` for that.
-- **Overview** — the live rollup (phase progress, task/bug totals, ready count) and
-  validation status.
+  plugins). Writes back **only** these fields, validates via `validate-manifest.py`, and
+  **refuses while `<manifestPath>.lock` is held**. Never touches phases/tasks/bugs
+  structure — use `/audit:task`, `/audit:bug`, `/audit:run` for that.
+- **Overview** — the live rollup + validation status.
 
-Safety: binds `127.0.0.1` only, requires a per-launch token on every API call, and
-refuses any write whose path escapes the project directory. It is a dev-time tool, not
-a running service — nothing persists after Ctrl-C.
+Safety: binds `127.0.0.1` only, requires a per-launch token on every API call, and refuses
+any write whose path escapes the project directory. Ephemeral — it runs until you `stop` it.

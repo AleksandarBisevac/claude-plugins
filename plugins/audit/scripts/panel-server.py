@@ -26,11 +26,13 @@ Usage:
 Exit: Ctrl-C stops the server. --selftest returns 0/1.
 """
 import argparse
+import atexit
 import importlib.util
 import json
 import os
 import re
 import secrets
+import signal
 import socket
 import sys
 import tempfile
@@ -514,14 +516,96 @@ def _free_port():
     return port
 
 
+# --- lifecycle: a pidfile so a running panel is always discoverable + stoppable -
+def _pidfile(project):
+    return os.path.join(project, ".claude", "audit-panel.json")
+
+
+def _read_pidfile(project):
+    try:
+        with open(_pidfile(project), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _write_pidfile(project, info):
+    path = _pidfile(project)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(info, fh, indent=2)
+
+
+def _rm_pidfile(project):
+    try:
+        os.remove(_pidfile(project))
+    except OSError:
+        pass
+
+
+def _pid_alive(pid):
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True          # exists, owned by someone else
+    except OSError:
+        return False          # best-effort (e.g. Windows quirks)
+    return True
+
+
+def status_panel(project):
+    info = _read_pidfile(project)
+    if info and _pid_alive(info.get("pid")):
+        print("panel RUNNING: %s (PID %s)" % (info.get("url"), info.get("pid")))
+        return 0
+    _rm_pidfile(project)   # stale/none
+    print("panel not running (project: %s)" % project)
+    return 0
+
+
+def stop_panel(project):
+    info = _read_pidfile(project)
+    if not info or not _pid_alive(info.get("pid")):
+        _rm_pidfile(project)
+        print("no panel running (project: %s)" % project)
+        return 0
+    pid = info["pid"]
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except Exception as exc:
+        print("could not stop panel (PID %s): %s" % (pid, exc))
+        return 1
+    _rm_pidfile(project)
+    print("stopped panel (PID %s — was %s)" % (pid, info.get("url")))
+    return 0
+
+
 def serve(project, port=0, open_browser=True):
+    # One panel per project: if one is already up, point at it instead of spawning
+    # a second (and never leave an untracked process behind).
+    existing = _read_pidfile(project)
+    if existing and _pid_alive(existing.get("pid")):
+        print("panel already running: %s (PID %s)"
+              % (existing.get("url"), existing.get("pid")))
+        print("stop it with:  --stop   (or /audit:panel stop)")
+        return 0
+    _rm_pidfile(project)  # clear any stale record
+
     token = secrets.token_urlsafe(18)
     port = port or _free_port()
     httpd = ThreadingHTTPServer(("127.0.0.1", port), _make_handler(project, token))
     url = "http://127.0.0.1:%d/?t=%s" % (port, token)
+    _write_pidfile(project, {"pid": os.getpid(), "port": port, "url": url})
+    atexit.register(_rm_pidfile, project)
+    signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))  # --stop → clean exit
     print("audit control panel: %s" % url)
     print("project: %s" % project)
-    print("(open the URL in a browser; press Ctrl-C to stop)")
+    print("(open the URL in a browser; press Ctrl-C — or `--stop` — to stop)")
     if open_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
@@ -530,6 +614,7 @@ def serve(project, port=0, open_browser=True):
         print("\nstopped.")
     finally:
         httpd.server_close()
+        _rm_pidfile(project)
     return 0
 
 
@@ -543,6 +628,8 @@ def main(argv):
     ap.add_argument("--project", default=os.getcwd())
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--stop", action="store_true", help="stop a running panel for --project")
+    ap.add_argument("--status", action="store_true", help="report whether a panel is running")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -551,6 +638,10 @@ def main(argv):
     if not os.path.isdir(project):
         sys.stderr.write("ERROR: --project %s is not a directory\n" % project)
         return 2
+    if args.stop:
+        return stop_panel(project)
+    if args.status:
+        return status_panel(project)
     return serve(project, args.port, not args.no_open)
 
 
@@ -1004,6 +1095,19 @@ def _selftest():
           and "<datalist" not in UI_HTML and "list:" not in UI_HTML)
     check("UI labels carry info hints", "function hint(" in UI_HTML and "data-tip" in UI_HTML)
     check("UI building blocks are a tabbed table", "regtbl" in UI_HTML and "subtab" in UI_HTML)
+
+    # lifecycle: pidfile + stop/status (no socket needed)
+    check("_pid_alive on this process is True", _pid_alive(os.getpid()))
+    check("_pid_alive on a bogus pid is False", not _pid_alive(2147483000))
+    _write_pidfile(proj, {"pid": os.getpid(), "port": 1, "url": "http://x"})
+    check("pidfile round-trips", (_read_pidfile(proj) or {}).get("pid") == os.getpid())
+    _rm_pidfile(proj)
+    check("status with no pidfile -> 0", status_panel(proj) == 0)
+    check("stop with no pidfile -> 0", stop_panel(proj) == 0)
+    # a stale pidfile (dead pid) is cleaned up, not treated as running
+    _write_pidfile(proj, {"pid": 2147483000, "port": 1, "url": "http://x"})
+    check("stop clears a stale pidfile", stop_panel(proj) == 0
+          and _read_pidfile(proj) is None)
 
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
