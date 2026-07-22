@@ -4,7 +4,10 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [0.14.0] - 2026-07-22
+
+The control panel's Composition tab scales — a compact, collapsible, filterable
+table replaces the per-task cards, staying fast and readable at hundreds of tasks.
 
 ### Changed
 - **Control-panel Composition tab is now a compact, collapsible, filterable table.**
