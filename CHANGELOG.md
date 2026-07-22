@@ -4,7 +4,10 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [0.13.2] - 2026-07-22
+
+`/audit:panel` becomes a clean open / stop / status lifecycle — a running panel is
+always discoverable and stoppable (a per-project pidfile), never a stray process.
 
 ### Added
 - **`/audit:panel` is now an open / stop / status trio.** The panel server writes a
