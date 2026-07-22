@@ -49,11 +49,13 @@ hint), and **wires composition** — `meta.reviewSkill`, per-task `skills`/`mode
 model, `meta.buildCommands` — from **an autocomplete populated by the skills & agents actually
 available** in this repo + `~/.claude/` + installed plugins. Same Slate & Teal look, light/dark,
 responsive. It writes only config + composition fields (never structural manifest CRUD, and never
-while a `/audit` run holds the lock), validating before each atomic save.
+while a `/audit` run holds the lock), validating before each atomic save. Composition is a
+**compact, collapsible, filterable table** (search · phase-status · "needs skills" · expand-all)
+that scales to hundreds of tasks — phases are collapsed by default; expand only what you touch.
 
-| Guards & paths | Composition + discovery | Dark |
-|---|---|---|
-| [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
+| Guards & paths | Composition (compact/collapsible) | Composition expanded | Dark |
+|---|---|---|---|
+| [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
 
 ## What you get
 
