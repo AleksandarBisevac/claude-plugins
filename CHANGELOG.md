@@ -4,7 +4,12 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [0.13.0] - 2026-07-22
+
+A visual, on-demand way to manage the plugin: `/audit:panel` launches a local
+control panel to edit the per-repo config (now schema-backed) and wire the manifest's
+composition levers — with discovery of the skills & agents actually available. The
+shareable report is unchanged (still self-contained / zero network fetch).
 
 ### Added
 - **`/audit:panel` — a local control panel for config + composition.** An ephemeral,
