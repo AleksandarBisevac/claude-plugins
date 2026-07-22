@@ -34,14 +34,22 @@ tables scroll inside their own frame ([mobile](../../docs/screenshots/mobile.png
 
 ## Control panel
 
-`/audit:panel` launches a local, **on-demand** browser UI (an ephemeral Python-stdlib server —
-Ctrl-C stops it; nothing runs in the background) to manage the plugin without hand-editing JSON:
-tune the guards/paths in `.claude/audit.config.json` (schema-validated), and **wire composition** —
-`meta.reviewSkill`, per-task `skills`/`model`, per-phase review model, `meta.buildCommands` — from
-**pickers populated by the skills & agents actually available** in this repo + `~/.claude/` +
-installed plugins. Same Slate & Teal look, light/dark, responsive. It writes only config +
-composition fields (never structural manifest CRUD, and never while a `/audit` run holds the lock),
-validating before each atomic save.
+`/audit:panel` opens a local, **on-demand** browser UI (an ephemeral Python-stdlib server) to
+manage the plugin without hand-editing JSON. It's an **open / stop / status** trio backed by a
+per-project pidfile, so a running panel is always discoverable and stoppable — never a stray
+background process:
+
+- **`/audit:panel`** — open it (prints the `http://127.0.0.1:<port>/…` URL and opens your browser)
+- **`/audit:panel stop`** — stop it · **`/audit:panel status`** — check if it's running
+- In a terminal you can also run it in the foreground (`Ctrl-C` to stop); in a Node repo
+  `npm run panel` / `npm run panel:stop` is the shortcut.
+
+It tunes the guards/paths in `.claude/audit.config.json` (schema-validated; every field has an ⓘ
+hint), and **wires composition** — `meta.reviewSkill`, per-task `skills`/`model`, per-phase review
+model, `meta.buildCommands` — from **an autocomplete populated by the skills & agents actually
+available** in this repo + `~/.claude/` + installed plugins. Same Slate & Teal look, light/dark,
+responsive. It writes only config + composition fields (never structural manifest CRUD, and never
+while a `/audit` run holds the lock), validating before each atomic save.
 
 | Guards & paths | Composition + discovery | Dark |
 |---|---|---|

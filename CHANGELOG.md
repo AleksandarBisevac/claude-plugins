@@ -4,6 +4,21 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Added
+- **`/audit:panel` is now an open / stop / status trio.** The panel server writes a
+  per-project pidfile (`.claude/audit-panel.json`) on launch, so a running panel is
+  always discoverable and stoppable — no stray background process:
+  - `/audit:panel` opens it (and reports the live URL); a second open just points at
+    the already-running one instead of spawning a duplicate.
+  - `/audit:panel stop` stops it (`panel-server.py --stop`); `/audit:panel status`
+    reports whether it's running and where.
+  - New `panel-server.py` flags `--stop` / `--status`; clean shutdown on SIGTERM and
+    Ctrl-C removes the pidfile.
+  - For a foreground/visible run, a terminal one-liner still works, and Node repos can
+    use `npm run panel` / `npm run panel:stop`.
+
 ## [0.13.1] - 2026-07-22
 
 A UX pass on the `/audit:panel` control panel (all in the served UI; no API change).
