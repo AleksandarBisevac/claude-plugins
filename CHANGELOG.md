@@ -4,6 +4,28 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Added
+- **`/audit:panel` — a local control panel for config + composition.** An ephemeral,
+  on-demand Python-stdlib server (Ctrl-C to stop; not a running service) serves a
+  themeable browser UI (the report's Slate & Teal system, light/dark, responsive)
+  to visually manage the plugin:
+  - **Guards & paths** — a form over `.claude/audit.config.json`, now backed by a
+    JSON schema (`schema/audit-config.schema.json`) + a `validate-config.py`
+    validator; edits are validated before an atomic write.
+  - **Composition** — set `meta.reviewSkill`, per-task `skills`/`model`, per-phase
+    `review.model`, and `meta.buildCommands`, with pickers **populated by discovery**
+    of the skills & agents actually available (project `.claude/`, `~/.claude/`, and
+    installed plugins) plus the MCP servers in scope. Writes back only these
+    composition fields — never structural CRUD — validated via `validate-manifest.py`.
+  - **Overview** — the live rollup + validation status.
+  Safety: binds `127.0.0.1` only + a per-launch token on every API call, refuses
+  writes that escape the project dir, and refuses manifest writes while
+  `<manifestPath>.lock` is held. New: `commands/panel.md`, `scripts/panel-server.py`,
+  `scripts/validate-config.py`, `schema/audit-config.schema.json`. The shareable
+  report is unchanged (still self-contained / zero network fetch).
+
 ## [0.12.0] - 2026-07-16
 
 A visual/UX overhaul of the HTML report: a modern, themeable, responsive design

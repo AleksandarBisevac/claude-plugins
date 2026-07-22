@@ -1,0 +1,922 @@
+#!/usr/bin/env python3
+"""
+/audit:panel — an ephemeral, on-demand local control panel for the audit plugin.
+
+Launched by the /audit:panel command; NOT a persistent service. It serves a
+self-contained themeable UI on 127.0.0.1 and exposes a tiny JSON API that:
+  - reads/writes .claude/audit.config.json (validated against validate-config.py),
+  - reads the manifest and writes back ONLY the composition levers
+    (meta.reviewSkill / meta.buildCommands, phase.review.model, task.model/skills)
+    — never structural CRUD — validated via validate-manifest.py before write,
+  - discovers the skills & agents actually available (project + user + plugins)
+    so you pick from real building blocks instead of typing names blindly.
+
+Dependency-free (stdlib only). Reuses the plugin's own pure cores by importlib
+(validate-manifest.validate, audit-status.rollup) — no logic is duplicated.
+
+Safety: localhost bind + Host-header check + a random per-launch token required on
+every /api call; writes are refused if the resolved path escapes the project dir;
+manifest writes are refused while <manifestPath>.lock is held; all writes are
+atomic (temp + os.replace).
+
+Usage:
+  python3 panel-server.py --project <dir> [--port N] [--no-open]
+  python3 panel-server.py --selftest
+
+Exit: Ctrl-C stops the server. --selftest returns 0/1.
+"""
+import argparse
+import importlib.util
+import json
+import os
+import re
+import secrets
+import socket
+import sys
+import tempfile
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+CONFIG_REL = ".claude/audit.config.json"
+
+# Fields the composition patch is allowed to touch — the security allow-list.
+_META_KEYS = ("reviewSkill", "buildCommands")
+_PHASE_KEYS = ("reviewModel",)
+_TASK_KEYS = ("model", "skills")
+
+
+# --- lazy import of the plugin's own pure cores (hyphenated filenames) ----------
+def _load(modname, path):
+    spec = importlib.util.spec_from_file_location(modname, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_VM = _VC = _AS = _CFG = None
+
+
+def _cores():
+    """Load (once) validate-manifest, validate-config, audit-status, _config."""
+    global _VM, _VC, _AS, _CFG
+    if _VM is None:
+        _VM = _load("audit_validate_manifest",
+                    os.path.join(_HERE, "validate-manifest.py"))
+        _VC = _load("audit_validate_config",
+                    os.path.join(_HERE, "validate-config.py"))
+        _AS = _load("audit_status", os.path.join(_HERE, "audit-status.py"))
+        _CFG = _load("audit__config",
+                     os.path.join(_HERE, "..", "hooks", "_config.py"))
+    return _VM, _VC, _AS, _CFG
+
+
+def _defaults():
+    return _cores()[3].DEFAULTS
+
+
+# --- path safety ----------------------------------------------------------------
+def _within(project, path):
+    """True iff `path` resolves inside `project` (no ../ escape, no symlink out)."""
+    proj = os.path.realpath(project)
+    tgt = os.path.realpath(path)
+    return tgt == proj or tgt.startswith(proj + os.sep)
+
+
+def _config_path(project):
+    return os.path.join(project, CONFIG_REL)
+
+
+def _manifest_path(project, config):
+    mp = (config or {}).get("manifestPath") or _defaults()["manifestPath"]
+    return os.path.normpath(os.path.join(project, mp))
+
+
+def _atomic_write_json(path, obj):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def _read_json(path):
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+# --- discovery / registry -------------------------------------------------------
+def _front_matter(text):
+    """Parse the leading '--- ... ---' block into a flat {key: value} dict.
+    Stdlib only (no YAML dep); good enough for `name` / `description`."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    fm = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        m = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
+        if m:
+            val = m.group(2).strip().strip("\"'")
+            fm[m.group(1)] = val
+    return fm
+
+
+def _fm_of(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return _front_matter(fh.read(4096))
+    except Exception:
+        return {}
+
+
+def _entry(name, description, source, path):
+    return {"name": name, "description": (description or "")[:280],
+            "source": source, "path": path}
+
+
+def _scan_skills(base, source, out, seen, cap=500):
+    """Add every <base>/*/SKILL.md as a skill entry."""
+    skills_dir = os.path.join(base, "skills")
+    if not os.path.isdir(skills_dir):
+        return
+    for name in sorted(os.listdir(skills_dir)):
+        if len(out) >= cap:
+            return
+        sk = os.path.join(skills_dir, name, "SKILL.md")
+        if os.path.isfile(sk):
+            fm = _fm_of(sk)
+            key = (fm.get("name") or name)
+            if key in seen:  # dedupe by name; project/user scanned before plugins win
+                continue
+            seen.add(key)
+            out.append(_entry(key, fm.get("description"), source, sk))
+
+
+def _scan_agents(base, source, out, seen, cap=500):
+    agents_dir = os.path.join(base, "agents")
+    if not os.path.isdir(agents_dir):
+        return
+    for name in sorted(os.listdir(agents_dir)):
+        if len(out) >= cap:
+            return
+        if not name.endswith(".md"):
+            continue
+        ap = os.path.join(agents_dir, name)
+        fm = _fm_of(ap)
+        key = fm.get("name") or name[:-3]
+        if key in seen:  # dedupe by name; project/user scanned before plugins win
+            continue
+        seen.add(key)
+        out.append(_entry(key, fm.get("description"), source, ap))
+
+
+def _plugin_bases(home, cap=200):
+    """Directories that may hold skills/agents inside the plugins tree."""
+    root = os.path.join(home, ".claude", "plugins")
+    bases = []
+    if not os.path.isdir(root):
+        return bases
+    for dirpath, dirnames, _files in os.walk(root):
+        depth = dirpath[len(root):].count(os.sep)
+        if depth > 5:
+            dirnames[:] = []
+            continue
+        if os.path.basename(dirpath) in ("skills", "agents"):
+            bases.append(os.path.dirname(dirpath))
+        if len(bases) >= cap:
+            break
+    return sorted(set(bases))
+
+
+def discover(project, home=None):
+    """Return {skills, agents, mcp} available to this project (read-only scan)."""
+    home = home or os.path.expanduser("~")
+    skills, agents, s_seen, a_seen = [], [], set(), set()
+    # project-local
+    _scan_skills(os.path.join(project, ".claude"), "project", skills, s_seen)
+    _scan_agents(os.path.join(project, ".claude"), "project", agents, a_seen)
+    # user-global
+    _scan_skills(os.path.join(home, ".claude"), "user", skills, s_seen)
+    _scan_agents(os.path.join(home, ".claude"), "user", agents, a_seen)
+    # installed plugins (parent-dir basename is often a version/cache name — noise,
+    # so use a plain 'plugin' badge)
+    for base in _plugin_bases(home):
+        _scan_skills(base, "plugin", skills, s_seen)
+        _scan_agents(base, "plugin", agents, a_seen)
+    # this repo's own plugins (dev / local checkout — basename is the real name)
+    for base in sorted(_local_plugin_bases(project)):
+        label = "plugin:" + os.path.basename(base)
+        _scan_skills(base, label, skills, s_seen)
+        _scan_agents(base, label, agents, a_seen)
+    # MCP servers (names only — never surface secrets/tokens)
+    mcp = _mcp_names(home, project)
+    return {"skills": skills, "agents": agents, "mcp": mcp}
+
+
+def _local_plugin_bases(project):
+    root = os.path.join(project, "plugins")
+    out = []
+    if os.path.isdir(root):
+        for name in os.listdir(root):
+            d = os.path.join(root, name)
+            if os.path.isdir(os.path.join(d, "skills")) or \
+               os.path.isdir(os.path.join(d, "agents")):
+                out.append(d)
+    return out
+
+
+def _mcp_names(home, project):
+    names = set()
+    for path in (os.path.join(home, ".claude.json"),
+                 os.path.join(project, ".mcp.json")):
+        try:
+            data = _read_json(path)
+        except Exception:
+            continue
+        servers = data.get("mcpServers") if isinstance(data, dict) else None
+        if isinstance(servers, dict):
+            names.update(str(k) for k in servers.keys())
+    return sorted(names)
+
+
+# --- state (read) ---------------------------------------------------------------
+def read_config(project):
+    try:
+        obj = _read_json(_config_path(project))
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
+def _composition_view(manifest):
+    meta = manifest.get("meta") or {}
+    phases_out, tasks_out = [], []
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        review = ph.get("review") if isinstance(ph.get("review"), dict) else {}
+        phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
+                           "reviewModel": review.get("model")})
+        for t in (ph.get("tasks") or []):
+            if not isinstance(t, dict):
+                continue
+            tasks_out.append({
+                "id": t.get("id"), "title": t.get("title"),
+                "phaseId": ph.get("id"), "model": t.get("model"),
+                "skills": t.get("skills") if isinstance(t.get("skills"), list) else [],
+            })
+    return {
+        "meta": {"reviewSkill": meta.get("reviewSkill"),
+                 "buildCommands": meta.get("buildCommands")},
+        "phases": phases_out, "tasks": tasks_out,
+    }
+
+
+def build_state(project):
+    vm, vc, as_, _ = _cores()
+    config = read_config(project)
+    cfg_findings, cfg_warnings = vc.validate_config(config)
+    mpath = _manifest_path(project, config)
+    manifest, exists = None, os.path.isfile(mpath)
+    rollup, m_findings = None, []
+    composition = {"meta": {"reviewSkill": None, "buildCommands": None},
+                   "phases": [], "tasks": []}
+    if exists:
+        try:
+            manifest = _read_json(mpath)
+        except Exception as exc:
+            m_findings = ["cannot parse manifest: %s" % exc]
+        if isinstance(manifest, dict):
+            m_findings, m_warn = vm.validate(manifest)
+            rollup = as_.rollup(manifest, m_findings, m_warn)
+            composition = _composition_view(manifest)
+    return {
+        "project": project,
+        "manifestPath": os.path.relpath(mpath, project),
+        "manifestExists": exists,
+        "manifestLocked": os.path.exists(mpath + ".lock"),
+        "config": config,
+        "defaults": _defaults(),
+        "configFindings": cfg_findings,
+        "configWarnings": cfg_warnings,
+        "manifestFindings": m_findings,
+        "composition": composition,
+        "rollup": rollup,
+    }
+
+
+# --- writes ---------------------------------------------------------------------
+def write_config(project, obj):
+    """Validate then atomically write .claude/audit.config.json. Returns dict."""
+    _, vc, _, _ = _cores()
+    if not isinstance(obj, dict):
+        return {"ok": False, "findings": ["config must be a JSON object"]}
+    findings, warnings = vc.validate_config(obj)
+    if findings:
+        return {"ok": False, "findings": findings, "warnings": warnings}
+    path = _config_path(project)
+    if not _within(project, path):
+        return {"ok": False, "findings": ["refused: path escapes project"]}
+    _atomic_write_json(path, obj)
+    return {"ok": True, "findings": [], "warnings": warnings,
+            "path": os.path.relpath(path, project)}
+
+
+def _reject_unknown(patch):
+    for top in patch:
+        if top not in ("meta", "phases", "tasks"):
+            return "unknown patch section %r" % top
+    for k in (patch.get("meta") or {}):
+        if k not in _META_KEYS:
+            return "meta.%s is not editable here" % k
+    for _pid, pv in (patch.get("phases") or {}).items():
+        for k in (pv or {}):
+            if k not in _PHASE_KEYS:
+                return "phase.%s is not editable here" % k
+    for _tid, tv in (patch.get("tasks") or {}).items():
+        for k in (tv or {}):
+            if k not in _TASK_KEYS:
+                return "task.%s is not editable here" % k
+    return None
+
+
+def apply_composition_patch(manifest, patch):
+    """Apply an allow-listed composition patch to `manifest` in place.
+    Returns None on success or an error string. Never touches structure."""
+    err = _reject_unknown(patch)
+    if err:
+        return err
+    meta = manifest.setdefault("meta", {})
+    for k in _META_KEYS:
+        if k in (patch.get("meta") or {}):
+            meta[k] = patch["meta"][k]
+    by_pid = {p.get("id"): p for p in (manifest.get("phases") or [])
+              if isinstance(p, dict)}
+    for pid, pv in (patch.get("phases") or {}).items():
+        ph = by_pid.get(pid)
+        if ph is None:
+            return "unknown phase %r" % pid
+        if "reviewModel" in (pv or {}):
+            rev = ph.get("review")
+            if not isinstance(rev, dict):
+                rev = ph["review"] = {}
+            rev["model"] = pv["reviewModel"]
+    by_tid = {t.get("id"): t for p in (manifest.get("phases") or [])
+              if isinstance(p, dict)
+              for t in (p.get("tasks") or []) if isinstance(t, dict)}
+    for tid, tv in (patch.get("tasks") or {}).items():
+        t = by_tid.get(tid)
+        if t is None:
+            return "unknown task %r" % tid
+        if "model" in (tv or {}):
+            t["model"] = tv["model"]
+        if "skills" in (tv or {}):
+            sk = tv["skills"]
+            if not (isinstance(sk, list) and all(isinstance(x, str) for x in sk)):
+                return "task %s skills must be an array of strings" % tid
+            t["skills"] = sk
+    return None
+
+
+def apply_composition(project, patch):
+    """Load manifest, apply an allow-listed patch, validate, atomic-write."""
+    vm, _, _, _ = _cores()
+    if not isinstance(patch, dict):
+        return {"ok": False, "findings": ["patch must be a JSON object"]}
+    config = read_config(project)
+    mpath = _manifest_path(project, config)
+    if not _within(project, mpath):
+        return {"ok": False, "findings": ["refused: manifest path escapes project"]}
+    if not os.path.isfile(mpath):
+        return {"ok": False, "findings": ["manifest not found: run /audit:init first"]}
+    if os.path.exists(mpath + ".lock"):
+        return {"ok": False, "locked": True,
+                "findings": ["manifest is locked by a running /audit command; "
+                             "try again once it finishes"]}
+    try:
+        manifest = _read_json(mpath)
+    except Exception as exc:
+        return {"ok": False, "findings": ["cannot parse manifest: %s" % exc]}
+    if not isinstance(manifest, dict):
+        return {"ok": False, "findings": ["manifest root is not an object"]}
+    err = apply_composition_patch(manifest, patch)
+    if err:
+        return {"ok": False, "findings": ["refused: " + err]}
+    findings, warnings = vm.validate(manifest)
+    if findings:
+        return {"ok": False, "findings": findings, "warnings": warnings}
+    _atomic_write_json(mpath, manifest)
+    return {"ok": True, "findings": [], "warnings": warnings,
+            "path": os.path.relpath(mpath, project)}
+
+
+# --- HTTP server ----------------------------------------------------------------
+def _make_handler(project, token):
+    _local = {"127.0.0.1", "localhost", "[::1]"}
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "AuditPanel/1.0"
+
+        def log_message(self, *a):  # keep the console quiet
+            pass
+
+        def _host_ok(self):
+            host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
+            return host in _local or host == ""
+
+        def _tok_ok(self):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            supplied = self.headers.get("X-Audit-Token") or (q.get("t") or [""])[0]
+            return secrets.compare_digest(supplied, token)
+
+        def _send(self, code, body, ctype="application/json"):
+            data = body if isinstance(body, bytes) else body.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", ctype + "; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _json(self, code, obj):
+            self._send(code, json.dumps(obj), "application/json")
+
+        def _body(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(n) if n else b""
+            return json.loads(raw or b"{}")
+
+        def _guard(self):
+            if not self._host_ok():
+                self._json(403, {"error": "bad host"}); return False
+            if not self._tok_ok():
+                self._json(403, {"error": "bad or missing token"}); return False
+            return True
+
+        def do_GET(self):
+            path = self.path.split("?", 1)[0]
+            if path == "/favicon.ico":
+                self._send(204, b"", "image/x-icon"); return
+            if path == "/":
+                if not self._host_ok():
+                    self._send(403, "forbidden", "text/plain"); return
+                html = UI_HTML.replace("__AUDIT_TOKEN__", _js(token)).replace(
+                    "__AUDIT_PROJECT__", _js(project))
+                self._send(200, html, "text/html"); return
+            if not self._guard():
+                return
+            if path == "/api/state":
+                self._json(200, build_state(project)); return
+            if path == "/api/registry":
+                self._json(200, discover(project)); return
+            self._json(404, {"error": "not found"})
+
+        def do_PUT(self):
+            if not self._guard():
+                return
+            path = self.path.split("?", 1)[0]
+            try:
+                body = self._body()
+            except Exception as exc:
+                self._json(400, {"ok": False, "findings": ["bad JSON: %s" % exc]}); return
+            if path == "/api/config":
+                self._json(200, write_config(project, body)); return
+            if path == "/api/composition":
+                self._json(200, apply_composition(project, body)); return
+            self._json(404, {"error": "not found"})
+
+        def do_POST(self):
+            if not self._guard():
+                return
+            if self.path.split("?", 1)[0] == "/api/validate":
+                st = build_state(project)
+                self._json(200, {"config": st["configFindings"],
+                                 "manifest": st["manifestFindings"]}); return
+            self._json(404, {"error": "not found"})
+
+    return Handler
+
+
+def _free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def serve(project, port=0, open_browser=True):
+    token = secrets.token_urlsafe(18)
+    port = port or _free_port()
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), _make_handler(project, token))
+    url = "http://127.0.0.1:%d/?t=%s" % (port, token)
+    print("audit control panel: %s" % url)
+    print("project: %s" % project)
+    print("(open the URL in a browser; press Ctrl-C to stop)")
+    if open_browser:
+        threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped.")
+    finally:
+        httpd.server_close()
+    return 0
+
+
+def _js(s):
+    """JSON-escape a string for safe embedding inside a <script> literal."""
+    return json.dumps(str(s))
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--project", default=os.getcwd())
+    ap.add_argument("--port", type=int, default=0)
+    ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--selftest", action="store_true")
+    args = ap.parse_args(argv)
+    if args.selftest:
+        return _selftest()
+    project = os.path.realpath(args.project)
+    if not os.path.isdir(project):
+        sys.stderr.write("ERROR: --project %s is not a directory\n" % project)
+        return 2
+    return serve(project, args.port, not args.no_open)
+
+
+# --- the UI (self-contained; talks only to its own localhost API) ---------------
+UI_HTML = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>audit · control panel</title>
+<style>
+:root{color-scheme:light dark;
+ --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
+ --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
+ --bg:#f5f7fb;--surface:#fff;--surface-2:#eef2f7;--text:#0f172a;--muted:#64748b;
+ --border:#e2e8f0;--border-strong:#cbd5e1;--accent:#0d9488;--accent-solid:#0d9488;
+ --ring:rgba(13,148,136,.35);--ok:#15803d;--warn:#b45309;--err:#dc2626;
+ --radius:9px;--radius-lg:14px;--pill:999px;--shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
+ --shadow-md:0 10px 30px rgba(15,23,42,.14);--dur:.2s;--ease:cubic-bezier(.4,0,.2,1)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+ --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
+ --border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
+ --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
+ --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}}
+:root[data-theme=dark]{--bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;
+ --muted:#93a4bd;--border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
+ --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
+ --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}
+*{box-sizing:border-box}html{background:var(--bg)}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);margin:0;
+ max-width:64rem;margin:0 auto;padding:1.6rem 1.3rem 4rem;-webkit-font-smoothing:antialiased}
+h1{font-size:1.35rem;font-weight:680;letter-spacing:-.02em;margin:0}
+h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+ font-weight:700;margin:1.6rem 0 .6rem}
+.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:.2rem 0 0;word-break:break-all}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.tabs{display:flex;gap:.4rem;margin:1.3rem 0 .3rem;flex-wrap:wrap}
+.tab{cursor:pointer;font:inherit;font-size:.85rem;padding:.45rem .9rem;border-radius:var(--pill);
+ border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
+.tab:hover{border-color:var(--border-strong)}
+.tab.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+ box-shadow:var(--shadow-sm);padding:1rem 1.15rem;margin:.7rem 0}
+.row{display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;margin:.55rem 0}
+label.f{display:flex;flex-direction:column;gap:.25rem;flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
+input,textarea,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);
+ border-radius:var(--radius);padding:.42rem .65rem;font-size:.9rem}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:vertical}
+.mono{font-family:var(--mono)}
+.btn{cursor:pointer;font:inherit;font-size:.85rem;padding:.45rem .9rem;border-radius:var(--pill);
+ border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
+.btn:hover{border-color:var(--border-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.btn.small{font-size:.75rem;padding:.25rem .6rem}
+.badge{font-size:.68rem;font-weight:700;padding:.1rem .5em;border-radius:var(--pill);
+ background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+.chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.12rem .5em;border-radius:var(--pill);
+ background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
+.chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
+.tag{display:inline-block;font-size:.66rem;padding:.05rem .45em;border-radius:var(--pill);
+ border:1px solid var(--border);color:var(--muted);margin-left:.35rem}
+.listwrap{display:flex;flex-direction:column;gap:.35rem}
+.pill-in{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;border:1px solid var(--border);
+ border-radius:var(--radius);padding:.3rem .4rem;background:var(--bg)}
+.pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:.15rem .2rem}
+.mut{color:var(--muted);font-size:.82rem}
+.bar{height:.5rem;border-radius:var(--pill);background:var(--surface-2);overflow:hidden;flex:1 1 8rem;min-width:6rem}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr;gap:.5rem}
+.tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.6rem .75rem;background:var(--bg)}
+.tsk .h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
+.dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block;background:var(--muted)}
+.rule{display:grid;grid-template-columns:1fr 1fr 1.3fr auto;gap:.4rem;margin:.35rem 0}
+@media(max-width:40rem){.rule{grid-template-columns:1fr}}
+#toast{position:fixed;left:50%;bottom:1.3rem;transform:translateX(-50%);z-index:50;
+ background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);
+ border-radius:var(--pill);padding:.5rem 1rem;font-size:.85rem;opacity:0;transition:opacity var(--dur);pointer-events:none}
+#toast.show{opacity:1}#toast.err{border-color:var(--err);color:var(--err)}#toast.ok{border-color:var(--ok)}
+.findings{margin:.5rem 0 0;padding:.5rem .7rem;border-radius:var(--radius);font-size:.82rem}
+.findings.err{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+.findings.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.findings.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+.src{font-size:.66rem}.hidden{display:none}
+.reg{display:flex;flex-direction:column;gap:.3rem;max-height:16rem;overflow:auto}
+.reg .it{display:flex;gap:.5rem;align-items:baseline;padding:.3rem .4rem;border-radius:var(--radius)}
+.reg .it:hover{background:var(--surface-2)}
+</style></head><body>
+<div class=top>
+ <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
+ <button class="btn small" id=theme title="light/dark">☾</button>
+</div>
+<div class=tabs>
+ <button class="tab on" data-t=guards>Guards &amp; paths</button>
+ <button class="tab" data-t=comp>Composition</button>
+ <button class="tab" data-t=over>Overview</button>
+</div>
+<div id=guards></div>
+<div id=comp class=hidden></div>
+<div id=over class=hidden></div>
+<div id=toast></div>
+<script>
+const TOKEN=__AUDIT_TOKEN__, PROJECT=__AUDIT_PROJECT__;
+const $=(s,r=document)=>r.querySelector(s), el=(t,a={},...k)=>{const e=document.createElement(t);
+ for(const[n,v]of Object.entries(a)){if(n==='class')e.className=v;else if(n==='html')e.innerHTML=v;
+ else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else if(v!=null)e.setAttribute(n,v);}
+ for(const c of k.flat()){if(c!=null)e.append(c.nodeType?c:document.createTextNode(c));}return e;};
+const api=async(m,p,b)=>{const r=await fetch(p,{method:m,headers:{'X-Audit-Token':TOKEN,
+ 'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();};
+let STATE=null, REG={skills:[],agents:[],mcp:[]};
+$('#proj').textContent=PROJECT;
+// theme
+const root=document.documentElement, TK='audit-panel-theme';
+try{const s=localStorage.getItem(TK);if(s)root.setAttribute('data-theme',s);}catch(e){}
+const isDark=()=>{const t=root.getAttribute('data-theme');return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches;};
+const paint=()=>$('#theme').textContent=isDark()?'☀':'☾';paint();
+$('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data-theme',n);
+ try{localStorage.setItem(TK,n);}catch(e){}paint();};
+// tabs
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+ document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+ for(const id of['guards','comp','over'])$('#'+id).classList.toggle('hidden',id!==t.dataset.t);});
+function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'');
+ setTimeout(()=>t.className=t.className.replace('show','').trim(),2600);}
+function findingsBox(res){const box=el('div');
+ if(res.findings&&res.findings.length)box.append(el('div',{class:'findings err'},'✗ '+res.findings.join(' · ')));
+ if(res.warnings&&res.warnings.length)box.append(el('div',{class:'findings warn'},'! '+res.warnings.join(' · ')));
+ if(res.ok&&!(res.warnings&&res.warnings.length))box.append(el('div',{class:'findings ok'},'✓ saved'));
+ return box;}
+async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
+ renderGuards();renderComp();renderOver();}
+// ---------- Guards & paths ----------
+function listEditor(getArr,setArr,ph){const wrap=el('div',{class:'pill-in'});
+ const draw=()=>{wrap.textContent='';(getArr()||[]).forEach((v,i)=>{
+   wrap.append(el('span',{class:'chip'},v,el('button',{onclick:()=>{const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×')));});
+   const inp=el('input',{placeholder:ph||'add…'});inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&inp.value.trim()){const a=(getArr()||[]).slice();a.push(inp.value.trim());setArr(a);draw();}});
+   wrap.append(inp);};draw();return wrap;}
+function renderGuards(){const c=$('#guards');c.textContent='';const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
+ const g=(k)=>cfg[k]!==undefined?cfg[k]:d[k];
+ const card=el('div',{class:'card'});
+ const paths=el('div',{class:'row'});
+ for(const k of['manifestPath','gitRoot','stateDir','logsDir','bypassKeyword']){
+  const inp=el('input',{value:cfg[k]??'',placeholder:d[k]});inp.oninput=()=>{if(inp.value==='')delete cfg[k];else cfg[k]=inp.value;};
+  paths.append(el('label',{class:'f'},k,inp));}
+ const thr=el('input',{type:'number',min:'1',value:cfg.trivialLineThreshold??'',placeholder:d.trivialLineThreshold});
+ thr.oninput=()=>{if(thr.value==='')delete cfg.trivialLineThreshold;else cfg.trivialLineThreshold=parseInt(thr.value,10);};
+ paths.append(el('label',{class:'f'},'trivialLineThreshold',thr));
+ card.append(el('h2',{},'Paths'),paths);
+ // toggles
+ const bw=cfg.bashWriteCheck?{...cfg.bashWriteCheck}:{};const td=cfg.tddReminder?{...cfg.tddReminder}:{};
+ const tog=el('div',{class:'row'});
+ const mk=(lbl,val,fn)=>{const cb=el('input',{type:'checkbox'});cb.checked=val;cb.onchange=()=>fn(cb.checked);
+  return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,lbl);};
+ tog.append(mk('bashWriteCheck.enabled',bw.enabled!==false,v=>{bw.enabled=v;cfg.bashWriteCheck=bw;}));
+ tog.append(mk('tddReminder.enabled',td.enabled!==false,v=>{td.enabled=v;cfg.tddReminder=td;}));
+ card.append(el('h2',{},'Guards'),tog);
+ // lists
+ card.append(el('h2',{},'exemptGlobs'),listEditor(()=>cfg.exemptGlobs??d.exemptGlobs,a=>cfg.exemptGlobs=a,'glob…'));
+ card.append(el('h2',{},'guardEdits.tokenVars (never logged)'),
+  listEditor(()=>{cfg.guardEdits=cfg.guardEdits||{};return cfg.guardEdits.tokenVars??d.guardEdits.tokenVars;},
+   a=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.tokenVars=a;},'identifier…'));
+ card.append(el('h2',{},'secretPatterns.extra (regex)'),
+  listEditor(()=>{cfg.secretPatterns=cfg.secretPatterns||{};return cfg.secretPatterns.extra??[];},
+   a=>{cfg.secretPatterns=cfg.secretPatterns||{};cfg.secretPatterns.extra=a;},'regex…'));
+ // custom rules
+ card.append(el('h2',{},'guardEdits.customRules'));
+ const rulesWrap=el('div');const rules=()=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.customRules=cfg.guardEdits.customRules||[];return cfg.guardEdits.customRules;};
+ const drawRules=()=>{rulesWrap.textContent='';rules().forEach((r,i)=>{
+   const pp=el('input',{value:r.pathPrefix||'',placeholder:'pathPrefix'});pp.oninput=()=>r.pathPrefix=pp.value;
+   const bp=el('input',{value:r.bannedPattern||'',placeholder:'bannedPattern (regex)'});bp.oninput=()=>r.bannedPattern=bp.value;
+   const ms=el('input',{value:r.message||'',placeholder:'message'});ms.oninput=()=>r.message=ms.value;
+   rulesWrap.append(el('div',{class:'rule'},pp,bp,ms,el('button',{class:'btn small',onclick:()=>{rules().splice(i,1);drawRules();}},'×')));});
+   rulesWrap.append(el('button',{class:'btn small',onclick:()=>{rules().push({pathPrefix:'',bannedPattern:'',message:''});drawRules();}},'+ rule'));};
+ drawRules();card.append(rulesWrap);
+ const save=el('button',{class:'btn primary',onclick:async()=>{
+   const res=await api('PUT','/api/config',cfg);const fb=findingsBox(res);
+   c.querySelector('.findings-slot').replaceChildren(fb);
+   toast(res.ok?'config saved':'config rejected',res.ok?'ok':'err');if(res.ok){STATE.config=cfg;}}},'Save config');
+ card.append(el('div',{class:'row',style:'margin-top:.9rem'},save),el('div',{class:'findings-slot'}));
+ c.append(card);}
+// ---------- Composition ----------
+function skillPicker(current,onChange){
+ const dl=el('datalist',{id:'skills-dl'});REG.skills.forEach(s=>dl.append(el('option',{value:s.name})));
+ const inp=el('input',{list:'skills-dl',value:current??'',placeholder:'skill name (or leave empty)'});
+ inp.oninput=()=>onChange(inp.value.trim()||null);return el('span',{},inp,dl);}
+function skillChips(getArr,setArr){
+ const box=el('div',{class:'pill-in'});const draw=()=>{box.textContent='';
+  (getArr()||[]).forEach((v,i)=>box.append(el('span',{class:'chip'},v,el('button',{onclick:()=>{const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×'))));
+  const dl=el('datalist',{id:'sk-'+Math.random().toString(36).slice(2)});REG.skills.forEach(s=>dl.append(el('option',{value:s.name})));
+  const inp=el('input',{list:dl.id,placeholder:'add skill…'});inp.addEventListener('keydown',e=>{
+   if(e.key==='Enter'&&inp.value.trim()){const a=(getArr()||[]).slice();a.push(inp.value.trim());setArr(a);draw();}});
+  box.append(inp,dl);};draw();return box;}
+function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.composition;
+ const patch={meta:{},phases:{},tasks:{}};
+ const meta=el('div',{class:'card'});meta.append(el('h2',{},'Phase sign-off review skill (meta.reviewSkill)'));
+ meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,v=>patch.meta.reviewSkill=v),
+   el('span',{class:'mut'},'invoked by the reviewer agent at sign-off; empty = tests are the only signer')));
+ meta.append(el('h2',{},'meta.buildCommands (JSON)'));
+ const bc=el('textarea',{});bc.value=comp.meta.buildCommands?JSON.stringify(comp.meta.buildCommands,null,2):'';
+ bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;bc.style.borderColor='';}
+  catch(e){bc.style.borderColor='var(--err)';}};
+ meta.append(bc);c.append(meta);
+ const tcard=el('div',{class:'card'});tcard.append(el('h2',{},'Tasks — model & skills'));
+ const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
+ comp.phases.forEach(ph=>{
+  const pr=el('input',{value:ph.reviewModel??'',placeholder:'review model'});pr.oninput=()=>{patch.phases[ph.id]={reviewModel:pr.value.trim()||null};};
+  tcard.append(el('div',{class:'row',style:'margin-top:.8rem'},el('strong',{},(ph.id||'')+' · '+(ph.title||'')),
+    el('label',{class:'f',style:'flex:0 0 12rem'},'phase review model',pr)));
+  (byPhase[ph.id]||[]).forEach(t=>{
+   const tp={};const model=el('input',{value:t.model??'',placeholder:'model'});
+   model.oninput=()=>{tp.model=model.value.trim()||null;patch.tasks[t.id]=tp;};
+   const chips=skillChips(()=>tp.skills!==undefined?tp.skills:t.skills,a=>{tp.skills=a;patch.tasks[t.id]=tp;});
+   tcard.append(el('div',{class:'tsk'},el('div',{class:'h'},el('span',{class:'mono'},t.id),el('span',{},t.title||'')),
+     el('div',{class:'row'},el('label',{class:'f',style:'flex:0 0 10rem'},'model',model),
+       el('label',{class:'f'},'skills',chips))));});});
+ const save=el('button',{class:'btn primary',onclick:async()=>{
+   const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
+   for(const k of Object.keys(patch.meta))clean.meta[k]=patch.meta[k];
+   const res=await api('PUT','/api/composition',clean);
+   c.querySelector('.findings-slot').replaceChildren(findingsBox(res));
+   toast(res.ok?'manifest saved':(res.locked?'manifest locked':'rejected'),res.ok?'ok':'err');
+   if(res.ok){STATE=await api('GET','/api/state');}}},'Save composition');
+ tcard.append(el('div',{class:'row',style:'margin-top:.9rem'},save),el('div',{class:'findings-slot'}));
+ if(!STATE.manifestExists)tcard.append(el('div',{class:'findings warn'},'No manifest yet — run /audit:init first.'));
+ if(STATE.manifestLocked)tcard.append(el('div',{class:'findings warn'},'Manifest is locked by a running /audit command.'));
+ c.append(tcard);
+ // building blocks
+ const bb=el('div',{class:'card'});bb.append(el('h2',{},'Available building blocks (discovered)'));
+ const mkReg=(title,items,extra)=>{const w=el('div');w.append(el('div',{class:'mut',style:'margin:.3rem 0'},title+' ('+items.length+')'));
+   const list=el('div',{class:'reg'});items.forEach(it=>list.append(el('div',{class:'it'},
+     el('span',{class:'mono'},it.name),el('span',{class:'src badge'},it.source),
+     el('span',{class:'mut'},it.description||''))));if(extra&&items.length===0)list.append(el('span',{class:'mut'},'none found'));
+   w.append(list);return w;};
+ bb.append(mkReg('skills',REG.skills,true),mkReg('agents',REG.agents,true));
+ if(REG.mcp.length)bb.append(el('div',{class:'mut',style:'margin-top:.4rem'},'MCP servers: '+REG.mcp.join(', ')));
+ c.append(bb);}
+// ---------- Overview ----------
+function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;const card=el('div',{class:'card'});
+ if(!r){card.append(el('div',{class:'mut'},'No manifest at '+STATE.manifestPath+'. Run /audit:init.'));c.append(card);return;}
+ const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)'):
+   el('div',{class:'findings err'},'✗ '+r.findings+' finding(s): '+(STATE.manifestFindings||[]).join(' · '));
+ card.append(vstate);
+ card.append(el('h2',{},'Phases'));
+ r.phases.forEach(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;
+  card.append(el('div',{class:'row'},el('span',{class:'mono',style:'flex:0 0 3rem'},p.id),
+   el('span',{style:'flex:1 1 10rem'},p.title||''),el('span',{class:'badge'},p.status||''),
+   el('span',{class:'bar'},el('i',{style:'width:'+pct+'%'})),el('span',{class:'mut'},p.done+'/'+p.total)));});
+ const t=r.tasks,b=r.bugs;
+ card.append(el('h2',{},'Totals'),el('div',{class:'row'},
+   el('span',{class:'chip'},'tasks '+t.total),el('span',{class:'chip'},'bugs '+b.total),
+   el('span',{class:'chip'},'open bugs '+b.open),el('span',{class:'chip'},'ready '+ (r.ready||[]).length)));
+ c.append(card);}
+boot().catch(e=>toast('load failed: '+e,'err'));
+</script></body></html>"""
+
+
+# --- selftest -------------------------------------------------------------------
+def _selftest():
+    cases = []
+
+    def check(label, cond):
+        cases.append((label, bool(cond)))
+
+    # front-matter parser
+    fm = _front_matter("---\nname: my-skill\ndescription: \"Does X.\"\n---\nbody")
+    check("front-matter name", fm.get("name") == "my-skill")
+    check("front-matter desc unquoted", fm.get("description") == "Does X.")
+    check("no front-matter -> {}", _front_matter("# just md") == {})
+
+    tmp = tempfile.mkdtemp(prefix="panel-selftest-")
+    proj = os.path.join(tmp, "proj")
+    home = os.path.join(tmp, "home")
+    # a project skill + agent
+    os.makedirs(os.path.join(proj, ".claude", "skills", "proj-skill"))
+    with open(os.path.join(proj, ".claude", "skills", "proj-skill", "SKILL.md"), "w") as fh:
+        fh.write("---\nname: proj-skill\ndescription: Project skill.\n---\n")
+    os.makedirs(os.path.join(proj, ".claude", "agents"))
+    with open(os.path.join(proj, ".claude", "agents", "proj-agent.md"), "w") as fh:
+        fh.write("---\nname: proj-agent\ndescription: Project agent.\n---\n")
+    # a user-global skill
+    os.makedirs(os.path.join(home, ".claude", "skills", "user-skill"))
+    with open(os.path.join(home, ".claude", "skills", "user-skill", "SKILL.md"), "w") as fh:
+        fh.write("---\nname: user-skill\n---\n")
+
+    reg = discover(proj, home=home)
+    names = {s["name"] for s in reg["skills"]}
+    check("discovery finds project skill", "proj-skill" in names)
+    check("discovery finds user skill", "user-skill" in names)
+    check("discovery finds project agent",
+          any(a["name"] == "proj-agent" for a in reg["agents"]))
+    check("discovery labels source",
+          any(s["source"] == "project" for s in reg["skills"]) and
+          any(s["source"] == "user" for s in reg["skills"]))
+
+    # path safety
+    check("within: inside ok", _within(proj, os.path.join(proj, ".claude/x")))
+    check("within: escape refused", not _within(proj, os.path.join(proj, "..", "evil")))
+
+    # config write: valid then invalid
+    res = write_config(proj, {"trivialLineThreshold": 40})
+    check("write valid config ok", res["ok"] and os.path.isfile(_config_path(proj)))
+    check("config on disk matches", read_config(proj).get("trivialLineThreshold") == 40)
+    res = write_config(proj, {"trivialLineThreshold": 0})
+    check("write invalid config rejected (not written)",
+          not res["ok"] and read_config(proj).get("trivialLineThreshold") == 40)
+
+    # manifest + composition patch
+    mpath = _manifest_path(proj, read_config(proj))
+    os.makedirs(os.path.dirname(mpath), exist_ok=True)
+    manifest = {"meta": {"version": 2, "reviewSkill": None},
+                "phases": [{"id": "P1", "title": "P", "status": "pending",
+                            "review": {"model": "sonnet"},
+                            "tasks": [{"id": "P1.1", "title": "T",
+                                       "status": "pending"}]}]}
+    _atomic_write_json(mpath, manifest)
+
+    res = apply_composition(proj, {"meta": {"reviewSkill": "user-skill"},
+                                   "tasks": {"P1.1": {"skills": ["user-skill"], "model": "opus"}}})
+    check("composition patch applied", res["ok"])
+    saved = _read_json(mpath)
+    check("reviewSkill written", saved["meta"]["reviewSkill"] == "user-skill")
+    check("task skills written", saved["phases"][0]["tasks"][0]["skills"] == ["user-skill"])
+    check("task model written", saved["phases"][0]["tasks"][0]["model"] == "opus")
+    check("non-composition data preserved",
+          saved["phases"][0]["title"] == "P" and saved["meta"]["version"] == 2)
+
+    # structural edits refused
+    res = apply_composition(proj, {"phases": {"P1": {"title": "HACKED"}}})
+    check("structural phase edit refused", not res["ok"] and
+          _read_json(mpath)["phases"][0]["title"] == "P")
+    res = apply_composition(proj, {"bugs": []})
+    check("unknown patch section refused", not res["ok"])
+    res = apply_composition(proj, {"tasks": {"P9.9": {"model": "x"}}})
+    check("unknown task id refused", not res["ok"])
+
+    # a patch that would make the manifest invalid is rejected + not written
+    res = apply_composition(proj, {"tasks": {"P1.1": {"skills": "notalist"}}})
+    check("bad skills type refused", not res["ok"])
+
+    # lock respected
+    open(mpath + ".lock", "w").close()
+    res = apply_composition(proj, {"meta": {"reviewSkill": "x"}})
+    check("write refused while locked", not res["ok"] and res.get("locked"))
+    os.remove(mpath + ".lock")
+
+    # build_state shape
+    st = build_state(proj)
+    check("build_state has rollup + composition",
+          st["rollup"] is not None and "reviewSkill" in st["composition"]["meta"])
+    check("build_state reports manifestPath", bool(st["manifestPath"]))
+
+    # UI template integrity (token/project placeholders present, no stray %)
+    check("UI has token placeholder", "__AUDIT_TOKEN__" in UI_HTML)
+    check("UI has project placeholder", "__AUDIT_PROJECT__" in UI_HTML)
+    check("UI token injected as a quoted JS string",
+          'const TOKEN="abc123"' in UI_HTML.replace("__AUDIT_TOKEN__", _js("abc123")))
+
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    passed = sum(1 for _, ok in cases if ok)
+    for label, ok in cases:
+        print("%s %s" % ("PASS" if ok else "FAIL", label))
+    print("\n%s: %d/%d cases passed"
+          % ("ALL PASS" if passed == len(cases) else "FAILURES", passed, len(cases)))
+    return 0 if passed == len(cases) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
