@@ -4,6 +4,19 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Changed
+- **Control-panel Composition tab is now a compact, collapsible, filterable table.**
+  Replaced the big per-task cards (which didn't scale) with the report's proven
+  shape: phases are collapsible group-rows (collapsed by default) over a dense table
+  (`id · title · status · model · skills`), plus a filter toolbar — text search
+  (auto-expands matches), phase-status chips, a **"needs skills"** bulk-assign
+  filter, expand/collapse-all, and a live count. Verified against a 50-phase ×
+  20-task (1000-task) manifest; the panel stays fast and readable. The edit/save
+  contract (`PUT /api/composition`) is unchanged; the state view now also carries
+  each phase/task `status`.
+
 ## [0.13.2] - 2026-07-22
 
 `/audit:panel` becomes a clean open / stop / status lifecycle — a running panel is

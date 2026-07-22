@@ -266,13 +266,14 @@ def _composition_view(manifest):
             continue
         review = ph.get("review") if isinstance(ph.get("review"), dict) else {}
         phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
-                           "reviewModel": review.get("model")})
+                           "status": ph.get("status"), "reviewModel": review.get("model")})
         for t in (ph.get("tasks") or []):
             if not isinstance(t, dict):
                 continue
             tasks_out.append({
                 "id": t.get("id"), "title": t.get("title"),
-                "phaseId": ph.get("id"), "model": t.get("model"),
+                "phaseId": ph.get("id"), "status": t.get("status"),
+                "model": t.get("model"),
                 "skills": t.get("skills") if isinstance(t.get("skills"), list) else [],
             })
     return {
@@ -759,6 +760,50 @@ table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);colo
 table.regtbl td{padding:.4rem .65rem;border-bottom:1px solid var(--border);vertical-align:top}
 table.regtbl tbody tr:hover td{background:var(--surface-2)}
 table.regtbl td.d{color:var(--muted)}
+/* status -> --st (reuses the theme-aware ok/warn/err/muted tokens) */
+[data-status="done"],[data-status="fixed"]{--st:var(--ok)}
+[data-status="in_progress"],[data-status="triaged"]{--st:var(--warn)}
+[data-status="blocked"],[data-status="open"]{--st:var(--err)}
+[data-status="pending"],[data-status="wontfix"]{--st:var(--muted)}
+.st{display:inline-block;font-size:.66rem;font-weight:600;padding:.05rem .5em;border-radius:var(--pill);
+ background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
+ border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}
+/* composition: filter toolbar + one compact collapsible table */
+.comptools{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:.3rem 0 .6rem}
+.comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.35rem .7rem}
+.filtlbl{font-size:.72rem;color:var(--muted)}
+.filt{cursor:pointer;font:inherit;font-size:.75rem;padding:.26rem .68rem;border-radius:var(--pill);
+ border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
+.filt:hover{border-color:var(--border-strong)}
+.filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.count{font-size:.73rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.comptblwrap{border:1px solid var(--border);border-radius:var(--radius);overflow:visible}
+table.comp{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
+table.comp th,table.comp td{padding:.4rem .55rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+table.comp thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);
+ font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}
+table.comp tbody tr:last-child td{border-bottom:none}
+tr.phase{cursor:pointer}
+tr.phase>td{background:var(--surface-2);border-top:1px solid var(--border-strong);
+ border-left:3px solid var(--st,var(--muted))}
+.phtd{display:flex;align-items:center;gap:.5rem}
+tr.phase:hover>td{filter:brightness(1.05)}
+.tri{display:inline-block;width:.9em;color:var(--muted);transition:transform var(--dur) var(--ease)}
+.tri::before{content:"\25B6";font-size:.68em}
+tr.phase.open .tri{transform:rotate(90deg)}
+tr.task>td{background:var(--surface)}
+tr.task:hover>td{background:var(--surface-2)}
+tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding-left:1.5rem;
+ border-left:3px solid var(--st,var(--border))}
+td.ttitle{max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td.tmodel input{width:6.5rem;padding:.22rem .45rem;font-size:.8rem}
+td.tskills{min-width:15rem}
+.comp-review{display:flex;align-items:center;gap:.3rem;margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
+.comp-review input{width:8rem;padding:.2rem .45rem;font-size:.78rem}
+.comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.25rem}
+.comp .chips{gap:.25rem}
+.comp .combo{flex:1 1 8rem;min-width:7rem}
+@media(max-width:48rem){.comptblwrap{overflow-x:auto}html,body{overflow-x:hidden}}
 </style></head><body>
 <div class=top>
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
@@ -928,19 +973,71 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;bc.style.borderColor='';}
   catch(e){bc.style.borderColor='var(--err)';}};
  meta.append(bc);c.append(meta);
- const tcard=el('div',{class:'card'});tcard.append(el('h2',{},'Tasks — model & skills'));
- const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
+ // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
+ const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',DESC.taskSkills));
+ const q=el('input',{type:'search',placeholder:'filter phases & tasks…'});
+ const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
+ const needsBtn=el('button',{class:'filt',type:'button',title:'only tasks with no skills yet'},'needs skills');
+ const expandBtn=el('button',{class:'btn small',type:'button'},'expand all');
+ const count=el('span',{class:'count',style:'margin-left:auto'});
+ tcard.append(el('div',{class:'comptools'},q,el('span',{class:'filtlbl'},'phase:'),statusBar,needsBtn,expandBtn,count));
+ const tbody=el('tbody');
+ tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
+   el('thead',{},el('tr',{},el('th',{},'id'),el('th',{},'title'),el('th',{},'status'),el('th',{},'model'),el('th',{},'skills'))),tbody)));
+
+ const open={};let phaseFilter='',needsOnly=false;
+ const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
  comp.phases.forEach(ph=>{
-  const pr=el('input',{value:ph.reviewModel??'',placeholder:'review model'});pr.oninput=()=>{patch.phases[ph.id]={reviewModel:pr.value.trim()||null};};
-  tcard.append(el('div',{class:'row',style:'margin-top:.8rem'},el('strong',{},(ph.id||'')+' · '+(ph.title||'')),
-    el('label',{class:'f',style:'flex:0 0 12rem'},flabel('phase review model',DESC.phaseReviewModel),pr)));
-  (byPhase[ph.id]||[]).forEach(t=>{
-   const tp={};const model=el('input',{value:t.model??'',placeholder:'model'});
+  const tasks=byPhase[ph.id]||[];
+  const rev=el('input',{value:ph.reviewModel??'',placeholder:'review model'});
+  rev.oninput=()=>{patch.phases[ph.id]={reviewModel:rev.value.trim()||null};};
+  rev.onclick=e=>e.stopPropagation();
+  const pr=el('tr',{class:'phase','data-status':ph.status||''});
+  pr.append(el('td',{colspan:'5'},el('div',{class:'phtd'},
+    el('span',{class:'tri'}),el('span',{class:'mono'},ph.id||''),el('strong',{},ph.title||''),
+    el('span',{class:'st','data-status':ph.status||''},ph.status||'—'),
+    el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
+    el('span',{class:'comp-review'},flabel('review',DESC.phaseReviewModel),rev))));
+  pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
+  tbody.append(pr);
+  const taskEls=[];
+  tasks.forEach(t=>{
+   const tp={};const model=el('input',{value:t.model??'',placeholder:'—'});
    model.oninput=()=>{tp.model=model.value.trim()||null;patch.tasks[t.id]=tp;};
-   const chips=skillChips(()=>tp.skills!==undefined?tp.skills:t.skills,a=>{tp.skills=a;patch.tasks[t.id]=tp;});
-   tcard.append(el('div',{class:'tsk'},el('div',{class:'h'},el('span',{class:'mono'},t.id),el('span',{},t.title||'')),
-     el('div',{class:'row',style:'align-items:flex-start'},el('label',{class:'f',style:'flex:0 0 10rem'},flabel('model',DESC.taskModel),model),
-       el('label',{class:'f'},flabel('skills',DESC.taskSkills),chips))));});});
+   const getSkills=()=>tp.skills!==undefined?tp.skills:(t.skills||[]);
+   const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(needsOnly)refresh();});
+   const tr=el('tr',{class:'task','data-status':t.status||''});
+   tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle',title:t.title||''},t.title||''),
+     el('td',{},el('span',{class:'st','data-status':t.status||''},t.status||'—')),
+     el('td',{class:'tmodel'},model),el('td',{class:'tskills'},chips));
+   tbody.append(tr);
+   taskEls.push({id:t.id||'',title:t.title||'',tr,getSkills});
+  });
+  phaseEls.push({id:ph.id,title:ph.title||'',status:ph.status||'',tr:pr,tasks:taskEls});
+ });
+ [...new Set(comp.phases.map(p=>p.status).filter(Boolean))].sort().forEach(s=>{
+  const b=el('button',{class:'filt',type:'button','data-status':s},s);
+  b.onclick=()=>{phaseFilter=phaseFilter===s?'':s;
+   [...statusBar.children].forEach(x=>x.classList.toggle('on',x.getAttribute('data-status')===phaseFilter));refresh();};
+  statusBar.append(b);});
+ needsBtn.onclick=()=>{needsOnly=!needsOnly;needsBtn.classList.toggle('on',needsOnly);refresh();};
+ expandBtn.onclick=()=>{const anyClosed=phaseEls.some(P=>!open[P.id]);phaseEls.forEach(P=>open[P.id]=anyClosed);refresh();};
+ const hit=(s,term)=>!term||s.toLowerCase().includes(term);
+ function refresh(){
+  const term=q.value.trim().toLowerCase();const forced=(term!=='')||needsOnly;let visP=0,visT=0;
+  phaseEls.forEach(P=>{
+   const pText=hit(P.id+' '+P.title,term);let anyT=false;
+   P.tasks.forEach(T=>{const tHit=pText||hit(T.id+' '+T.title,term);
+    const needHit=!needsOnly||((T.getSkills()||[]).length===0);T._m=tHit&&needHit;if(T._m)anyT=true;});
+   const showP=(!phaseFilter||P.status===phaseFilter)&&(pText||anyT)&&(!needsOnly||anyT);
+   P.tr.style.display=showP?'':'none';if(showP)visP++;
+   const isOpen=showP&&(forced||!!open[P.id]);P.tr.classList.toggle('open',isOpen);
+   P.tasks.forEach(T=>{const showT=showP&&isOpen&&T._m;T.tr.style.display=showT?'':'none';if(showT)visT++;});});
+  count.textContent=(term||phaseFilter||needsOnly)?(visP+' / '+phaseEls.length+' phases · '+visT+' tasks')
+    :(phaseEls.length+' phases · '+comp.tasks.length+' tasks');
+  expandBtn.textContent=phaseEls.some(P=>!open[P.id])?'expand all':'collapse all';}
+ q.addEventListener('input',refresh);refresh();
+
  const save=el('button',{class:'btn primary',onclick:async()=>{
    const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
    for(const k of Object.keys(patch.meta))clean.meta[k]=patch.meta[k];
@@ -1095,6 +1192,9 @@ def _selftest():
           and "<datalist" not in UI_HTML and "list:" not in UI_HTML)
     check("UI labels carry info hints", "function hint(" in UI_HTML and "data-tip" in UI_HTML)
     check("UI building blocks are a tabbed table", "regtbl" in UI_HTML and "subtab" in UI_HTML)
+    check("composition is a compact collapsible filterable table",
+          "comptools" in UI_HTML and "table.comp" in UI_HTML and "needs skills" in UI_HTML
+          and "tr.phase" in UI_HTML and "class:'tsk'" not in UI_HTML)
 
     # lifecycle: pidfile + stop/status (no socket needed)
     check("_pid_alive on this process is True", _pid_alive(os.getpid()))
