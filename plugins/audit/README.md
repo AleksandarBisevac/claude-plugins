@@ -57,6 +57,15 @@ that scales to hundreds of tasks — phases are collapsed by default; expand onl
 |---|---|---|---|
 | [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
 
+The **Overview** tab is a live validation + progress rollup, and the Composition tab lists the
+**building blocks it discovered** (skills · agents · MCP servers, from this repo + `~/.claude/` +
+installed plugins) — the names that feed the autocomplete. Both scale cleanly (the shots below are
+a 50-phase × 1000-task manifest):
+
+| Overview (live rollup) | Discovered building blocks |
+|---|---|
+| [![panel overview](../../docs/screenshots/panel-overview.png)](../../docs/screenshots/panel-overview.png) | [![panel building blocks](../../docs/screenshots/panel-blocks.png)](../../docs/screenshots/panel-blocks.png) |
+
 ## What you get
 
 - **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
@@ -120,6 +129,36 @@ that scales to hundreds of tasks — phases are collapsed by default; expand onl
   commands run after every manifest mutation.
 - **`templates/`** — a config example and a starter manifest.
 
+## Commands
+
+Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--dry-run` to
+`next`/`run`/`phase` to preview without touching anything.
+
+| Command | Arguments | What it does |
+|---|---|---|
+| `/audit:init` | `[scope/goals — you'll be interviewed for the rest]` | Multi-agent codebase audit that **generates** the manifest: interviews you for scope/dimensions/size, fans out parallel read-only explorers, and synthesizes their findings into schema-valid phases/tasks. The entry point every other command consumes. |
+| `/audit:status` | — | Read-only rollup — phases, tasks, bugs, and the ready-now list, with per-phase progress and resumable-phase flags. No locks, no mutations. |
+| `/audit:next` | `[--dry-run]` | Execute the next ready task (by phase order, then task id), then report what's ready next. `--dry-run` previews the choice without mutating. |
+| `/audit:run` | `<taskId> [--dry-run]` | Execute exactly one task by id, with status guards (offers reopen if `done`, attempt-reset if `blocked`, warns if `in_progress`) and unmet-blocker checks. Reopening a bugfix task reopens its linked bug. |
+| `/audit:phase` | `<phaseId> [--dry-run]` | Run a whole phase — execute every ready task (parallel where files are disjoint, sequential otherwise) until none remain, then phase sign-off (review skill + test gate + optional runtime boot + merge). |
+| `/audit:review` | `<phaseId>` | Re-run **just** the phase sign-off for a phase whose tasks are already `done` — the recovery path after applying manual fixes. |
+| `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
+| `/audit:report` | `[--out-dir <dir>]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). Read-only; never mutates or locks the manifest. |
+| `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
+| `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
+| `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
+| `/audit:sync` | `push [bugs\|tasks\|all] \| pull \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
+
+**`/audit:panel` sub-commands** — bare `/audit:panel` opens it (prints the
+`http://127.0.0.1:<port>/…` URL and opens your browser), `/audit:panel stop` stops it,
+`/audit:panel status` reports whether one is running; `--port <n>` pins the port. One panel
+per project, tracked by a `.claude/audit-panel.json` pidfile.
+
+**Headless entry points** (no Claude, run in CI or any terminal): `scripts/audit-status.py
+--json | --gate` turns the manifest into a pipeline gate, `scripts/render-report.py` renders
+the report, and `scripts/validate-manifest.py` runs the referential validator (exit 0 valid /
+1 findings / 2 unreadable).
+
 ## Requirements
 
 - **Claude Code** (plugin support).
@@ -139,7 +178,7 @@ that scales to hundreds of tasks — phases are collapsed by default; expand onl
 ```
 
 Commands appear as `/audit:status`, `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:review`,
-`/audit:resume`, `/audit:report`, `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
+`/audit:resume`, `/audit:report`, `/audit:panel`, `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
 action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up immediately,
 run `/reload-plugins` (or restart the session).
 

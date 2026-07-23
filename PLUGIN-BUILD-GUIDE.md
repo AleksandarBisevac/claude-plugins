@@ -40,6 +40,11 @@ claude-plugins/                           # this repo (personal, public)
   .gitignore
   .github/workflows/ci.yml                # selftests + validators on ubuntu/windows
   docs/audit/audit-plan.json              # DOGFOOD manifest: this repo's roadmap, CI-validated
+  docs/audit/audit-report.html/.md        # rendered dogfood report (regenerated from the manifest)
+  docs/index.html / demo-large.html       # GitHub Pages live demo (rendered reports)
+  docs/screenshots/*.png                  # committed report + panel screenshots (manual capture)
+  docs/examples/azure-pipelines.yml       # CI recipe: validate → gate → publish report artifact
+  examples/                               # worked acme-store example (manifest + rendered report)
   .claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")
   plugins/
@@ -47,6 +52,7 @@ claude-plugins/                           # this repo (personal, public)
       .claude-plugin/plugin.json          # plugin manifest (name/version/author/…)
       commands/                           # execution verbs (each thin; read reference/orchestrator.md)
         status.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
+        panel.md                          # /audit:panel — open/stop/status the control-panel UI
         init.md                           # /audit:init — multi-agent manifest generation
         task.md                           # /audit:task — interactive task creation
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
@@ -68,11 +74,15 @@ claude-plugins/                           # this repo (personal, public)
       reference/
         orchestrator.md                   # shared execution logic (preflight, lock, Execute-the-task, sign-off)
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
-      schema/audit-plan.schema.json       # JSON Schema (draft 2020-12) for the manifest
+      schema/
+        audit-plan.schema.json            # JSON Schema (draft 2020-12) for the manifest
+        audit-config.schema.json          # JSON Schema for .claude/audit.config.json (panel validation)
       scripts/
         validate-manifest.py              # dependency-free referential validator (cycles, links)
+        validate-config.py                # validates .claude/audit.config.json against its schema
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
         render-report.py                  # self-contained HTML+MD report (CI artifact)
+        panel-server.py                   # localhost control-panel web UI (config + composition)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -283,6 +293,30 @@ phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's
 untrusted — and only http(s) URLs render as links (`javascript:` degrades to text).
 `--selftest` (18 cases, incl. XSS cases).
 
+### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel-server.py` (v0.13.0–v0.14.0)
+`/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
+`panel.md` dispatches on its argument — bare = open (launched detached via `nohup … &`), `stop`,
+`status`, `--port <n>` — and `panel-server.py` is a single dependency-free Python-stdlib HTTP
+server (the UI's HTML/CSS/JS is embedded inline as a string; it reuses the plugin's pure cores —
+`validate-manifest.py`, `validate-config.py`, `audit-status.py`, `hooks/_config.py` — via
+importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
+on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
+`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned). Three tabs:
+**Guards & paths** (form over `.claude/audit.config.json`, every field with an ⓘ hint,
+schema-validated), **Composition** (a compact, collapsible, **filterable** table of phases ·
+tasks · per-task skills/model + per-phase review model, scaling to ~50×20, plus a discovered
+"building blocks" sub-section — skills/agents/mcp — feeding the autocomplete), and **Overview**
+(the live rollup + validation banner). Writes **only** config + composition fields — never
+structural manifest CRUD, and never while a `/audit` run holds `<manifestPath>.lock` — validating
+before each atomic save. `--selftest` covers the front-matter parser, discovery, and the server.
+
+### `plugins/audit/scripts/validate-config.py`
+Structural validator for `.claude/audit.config.json`, dependency-free, mirroring `hooks/_config.py`
+DEFAULTS. Complements `schema/audit-config.schema.json` with checks a schema pass doesn't surface
+nicely (regex compilability of custom rules, positive thresholds) and hands the control panel a
+machine-usable findings list. Permissive: unknown keys are WARNINGs, not findings. Exit 0 valid /
+1 findings / 2 usage-or-unreadable. `--selftest`.
+
 ### `plugins/audit/schema/audit-plan.schema.json`
 JSON Schema (draft 2020-12) for the manifest. Back-compatible: only `meta`/`phases` (and per-item
 `id`/`title`/`status`) required; `additionalProperties: true` at object levels so a pre-existing
@@ -299,6 +333,11 @@ meta fields (`signOffChecklist`, `autoMode`, `modelPolicy`, `testPolicy`, `revie
 `skillsPolicy`, `statusLegend`, `phase.signOff`) — legacy manifests still validate
 (`additionalProperties: true`; the structural validator accepts the legacy names silently).
 
+### `plugins/audit/schema/audit-config.schema.json`
+JSON Schema for the per-repo `.claude/audit.config.json`. The control panel validates edits
+against it (alongside `validate-config.py`) before every atomic save, so a malformed config is
+refused in the UI instead of silently dropping custom rules at hook time.
+
 ### `plugins/audit/templates/audit.config.example.json`
 Copy to `<repo>/.claude/audit.config.json`. Every key optional. Contains an **illustrative**
 generic `customRule` (a realtime/subscription `removeAllListeners` footgun) — replace or empty it.
@@ -314,7 +353,7 @@ one-minute manifest overview.
 
 ---
 
-## 3. Finish & publish — DONE (v0.2.0), hardened (v0.3.0), release-quality (v0.4.0)
+## 3. Finish & publish — DONE (v0.2.0), hardened (v0.3.0), release-quality (v0.4.0+)
 
 All of the original TODOs are resolved: `plugin.json` author/homepage/license/repository
 filled, `marketplace.json` owner + description filled (marketplace **name is
@@ -324,13 +363,19 @@ added. Published at `https://github.com/AleksandarBisevac/claude-plugins`.
 Releases follow `CONTRIBUTING.md`: one commit = version bump + CHANGELOG entry +
 annotated `v<version>` tag; push `--follow-tags` only after CI is green.
 
+The surface has grown since — all covered above and in `CHANGELOG.md`: the report renderer +
+Azure DevOps `/audit:sync` (v0.5.0), pinned-tool agents + the PostToolUse shell-write guard
+(v0.6.0), the split thin verb commands over `reference/orchestrator.md` (v0.7.0), and the
+`/audit:panel` control panel — open/stop/status lifecycle (v0.13.x) and the compact,
+collapsible, filterable Composition tab (v0.14.0).
+
 ## 4. Verify
 
 CI (`.github/workflows/ci.yml`) runs 1–2 plus `claude plugin validate` on
 ubuntu + windows for every push/PR. Locally:
 
 ```bash
-# 1. Hooks + scripts pass their own selftests (all ten, stdlib only)
+# 1. Hooks + scripts pass their own selftests (all twelve, stdlib only)
 for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/require-plan.py \
          plugins/audit/hooks/detect-plan-skip.py \
@@ -339,8 +384,10 @@ for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/guard-bash-writes.py \
          plugins/audit/hooks/remind-tdd.py \
          plugins/audit/scripts/validate-manifest.py \
+         plugins/audit/scripts/validate-config.py \
          plugins/audit/scripts/audit-status.py \
-         plugins/audit/scripts/render-report.py; do
+         plugins/audit/scripts/render-report.py \
+         plugins/audit/scripts/panel-server.py; do
   python3 "$f" --selftest || exit 1
 done
 # launcher fails LOUD without an interpreter (permissionDecision "ask" JSON):
