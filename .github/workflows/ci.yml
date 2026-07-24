@@ -29,10 +29,12 @@ jobs:
                    plugins/audit/hooks/guard-secrets-read.py \
                    plugins/audit/hooks/guard-bash-writes.py \
                    plugins/audit/hooks/remind-tdd.py \
+                   plugins/audit/scripts/_manifest_io.py \
                    plugins/audit/scripts/validate-manifest.py \
                    plugins/audit/scripts/audit-status.py \
                    plugins/audit/scripts/render-report.py \
                    plugins/audit/scripts/validate-config.py \
+                   plugins/audit/scripts/migrate-manifest.py \
                    plugins/audit/scripts/panel-server.py; do
             echo "== $f"
             python "$f" --selftest
