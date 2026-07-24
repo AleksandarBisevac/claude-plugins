@@ -1,0 +1,67 @@
+{
+  "id": "P6",
+  "title": "v0.6.2 submodule preflight guard",
+  "status": "done",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "A task at files inside a git submodule is caught up front (the parent repo cannot commit them) instead of failing mid-run \u2014 same preflight philosophy as the gitRoot fix.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "skipped",
+    "findings": []
+  },
+  "summary": "Prompted by the question 'does it work with submodules?'. Empirically tested (parent + real submodule): parent cannot stage submodule-internal files, git status sees only the coarse gitlink. Added a preflight guard; verified it flags a real submodule conflict. 187 selftest cases.",
+  "tasks": [
+    {
+      "id": "P6.1",
+      "title": "Submodule conflict detection + preflight",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/audit-status.py",
+        "plugins/audit/commands/audit.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "docs": [],
+      "description": "parse_gitmodules() + submodule_conflicts() pure functions (path-boundary safe) + --submodules CLI (exit 1 on conflict); audit.md preflight STOPS when a task file is inside a submodule; init.md defers submodule-internal findings; README Troubleshooting documents it.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "8 selftest cases incl. boundary child vs child-other and gitRoot-strip",
+          "CLI flags a real .gitmodules conflict"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "plugin-validate"
+        ]
+      },
+      "outcome": {
+        "technical": "Verified against a real parent+submodule scratch repo: guard exits 1 on the vendored file, 0 on the parent file.",
+        "descriptive": "Submodules can no longer surprise a run at commit time."
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T20:00:00+02:00",
+      "completedAt": "2026-07-07T20:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

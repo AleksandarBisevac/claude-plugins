@@ -1,0 +1,323 @@
+{
+  "id": "P1",
+  "title": "v0.3.0 hardening",
+  "status": "done",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "Every correctness defect confirmed by the v0.2.0 deep review is fixed: resume works, run is guarded, the bypass is transactional, guards fail loud without an interpreter, dead config surface is gone, and the validator catches cycles and broken links.",
+  "testGate": [
+    "selftests",
+    "plugin-validate"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "skipped",
+    "findings": []
+  },
+  "summary": "Shipped as eight direct-to-main commits, tagged v0.3.0. All 129 (now 133) selftest cases green; legacy-manifest fixture proves schema back-compat; claude plugin validate passes. Work predates this dogfood manifest, hence no phase branch.",
+  "tasks": [
+    {
+      "id": "P1.1",
+      "title": "Config integrity: _configError marker + deep-copied defaults",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/detect-plan-skip.py"
+      ],
+      "docs": [],
+      "description": "Malformed audit.config.json silently fell back to defaults, deactivating custom secret patterns/rules with zero signal. Mark present-but-broken configs, surface once per session, deep-copy DEFAULTS, add _config selftest.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "malformed config yields _configError",
+          "loaded cfg never aliases DEFAULTS"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "load() distinguishes absent vs malformed; detect-plan-skip emits one systemMessage per session; 6 selftest cases.",
+        "descriptive": "A broken config now announces itself instead of silently dropping protections."
+      },
+      "commit": "904dbb8",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P1.2",
+      "title": "py-launch.sh interpreter fallback + 10s timeouts + NotebookEdit gating",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/hooks/py-launch.sh",
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/hooks/remind-tdd.py",
+        "plugins/audit/templates/audit.config.example.json"
+      ],
+      "docs": [],
+      "description": "All hooks invoked python3 directly; exit 127 (no such interpreter \u2014 typical Windows) was a non-blocking error, so every guard silently failed OPEN. Launch via POSIX-sh launcher resolving python3->python->py; guards emit permissionDecision ask when nothing resolves; add explicit 10s timeouts; gate NotebookEdit.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "no-interpreter run emits ask JSON",
+          "notebook edits reach the guards"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "Builtins-only sh launcher, exec passes stdin once; ask/open fail modes hardcoded in hooks.json (config needs python \u2014 chicken-and-egg).",
+        "descriptive": "Guards now fail LOUD instead of silently vanishing on machines without python3."
+      },
+      "commit": "22ba287",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P1.3",
+      "title": "Transactional plan-bypass + change-magnitude gate",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/hooks/require-plan.py"
+      ],
+      "docs": [],
+      "description": "PreToolUse consumed the single-use #no-plan bypass and burned the free-file slot even when a sibling hook or the user denied the edit. Split: Pre observes, Post (fires only after a successful edit) consumes/records. Replace added-line count with magnitude = max(lines, chars/200, removed) closing the minified-blob and mass-deletion loopholes.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "Pre leaves bypass armed",
+          "Post consumes + logs",
+          "20k-char one-liner blocks",
+          "deletion-heavy edit blocks"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "decide() gains event param; PostToolUse registration in hooks.json; selftest rewritten (21 cases).",
+        "descriptive": "A denied edit no longer eats your bypass; size tricks no longer pass as trivial."
+      },
+      "commit": "a3b736b",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P1.4",
+      "title": "Secret-guard indirect reads + shell source-write block + self-edit protection",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/guard-edits.py"
+      ],
+      "docs": [],
+      "description": "Close verified bypasses: git show HEAD:.env, source .env, cp/mv of secrets; sed -i / tee / >-redirect writes into source files (plan-first backstop, in_progress-covered files exempt); deny edits of the installed plugin dir (dev checkout exempt) and plan-bypass-* forgery.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "git show HEAD:.env blocks",
+          "sed -i into source blocks",
+          "in_progress-covered sed -i allowed",
+          "installed-plugin edit blocks"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "Read verbs extended; redirect/tee/sed target extraction; source exts derive from tddReminder.sourceGlobs; 48+12 selftest cases.",
+        "descriptive": "The obvious side doors around the secret and plan gates are shut."
+      },
+      "commit": "ef09dcb",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P1.5",
+      "title": "Validator upgrades + schema cleanup",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/validate-manifest.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/templates/audit-plan.starter.json"
+      ],
+      "docs": [],
+      "description": "Add dependency-cycle detection (incl. task-blocked-by-own-phase deadlock), reciprocal bug<->task checks, bidirectional fileIndex, tests-not-object finding, unknown-key warnings with did-you-mean, exit codes 0/1/2. Schema: canonical $id, BUG-id pattern, remove 8 never-read meta fields (legacy manifests keep validating).",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "A<->B dependsOn cycle is a finding",
+          "non-reciprocal bug link is a finding",
+          "legacy fixture stays exit 0"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "Iterative 3-color DFS over the waits-on graph; 29 selftest cases; ajv green on starter and legacy fixture.",
+        "descriptive": "The validator now catches deadlocks and broken links before the orchestrator hits them."
+      },
+      "commit": "d8b3a08",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P1.6",
+      "title": "Orchestrator: resume, run guards, infra-failure, no-ff fallback, preflight, desiredOutcome",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/commands/audit.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/README.md"
+      ],
+      "docs": [],
+      "description": "Resume searched for phase.status == in_progress which nothing ever wrote \u2014 write it at phase entry, add the resume subcommand with a pre-0.3 fallback. Guard run (done/blocked/in_progress). Split test failure from infrastructure failure (no attempts burned). Offer --no-ff when ff-merge fails. Unconditional high-risk confirm. Preflight for config/manifest/usage. Wire desiredOutcome end-to-end.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "Full audit.md revision; AskUserQuestion added to allowed-tools; init generates desiredOutcome per phase.",
+        "descriptive": "The headline promises \u2014 resumable, safe re-runs, team-repo merges \u2014 now hold."
+      },
+      "commit": "eb9bffe",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P1.7",
+      "title": "Quote YAML frontmatter in all four commands",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/commands/audit.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/bug.md"
+      ],
+      "docs": [],
+      "description": "claude plugin validate revealed audit.md's unquoted description (contains ': ') failed YAML parsing \u2014 ALL its frontmatter, allowed-tools included, was silently dropped at runtime since v0.2.0; init.md's argument-hint parsed as a YAML array. Quote every frontmatter value.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "plugin-validate"
+        ]
+      },
+      "outcome": {
+        "technical": "Single-quoted YAML scalars across the four command files; claude plugin validate passes clean.",
+        "descriptive": "Command metadata actually applies at runtime now."
+      },
+      "commit": "27859f9",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": [],
+      "bugId": "BUG-1"
+    },
+    {
+      "id": "P1.8",
+      "title": "Release v0.3.0: bump + annotated tag on one commit",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/.claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json"
+      ],
+      "docs": [],
+      "description": "Bump plugin.json to 0.3.0, add the marketplace description flagged by claude plugin validate, tag v0.3.0 on the same commit so the tagged tree and main agree (unlike v0.2.0).",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "plugin-validate"
+        ]
+      },
+      "outcome": {
+        "technical": "git show v0.3.0 confirms version 0.3.0 + marketplace name quality-gates.",
+        "descriptive": "First release where the tag and the shipped tree tell the same story."
+      },
+      "commit": "708eecc",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T01:00:00+02:00",
+      "completedAt": "2026-07-07T01:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

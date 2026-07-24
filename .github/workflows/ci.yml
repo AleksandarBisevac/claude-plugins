@@ -76,6 +76,19 @@ jobs:
           python plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
           python plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
           python plugins/audit/scripts/validate-manifest.py examples/acme-store/audit-plan.json
+      - name: Sharded layout intact (index stubs + every shard assembles)
+        run: |
+          python - <<'PY'
+          import json, os
+          for idx in ("docs/audit/audit-plan.json", "examples/acme-store/audit-plan.json"):
+              d = json.load(open(idx)); base = os.path.dirname(idx)
+              assert d["meta"]["version"] == 3, idx + " is not sharded (meta.version != 3)"
+              for p in d["phases"]:
+                  assert "shard" in p, "%s: phase %s missing shard ref" % (idx, p.get("id"))
+                  b = json.load(open(os.path.join(base, p["shard"])))
+                  assert b.get("id") == p["id"] and "tasks" in b, "bad shard %s" % p["shard"]
+              print("OK sharded:", idx, "-", len(d["phases"]), "shards")
+          PY
       - name: CI gate + report smoke on the dogfood manifest
         run: |
           python plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate

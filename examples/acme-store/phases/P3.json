@@ -1,0 +1,96 @@
+{
+  "id": "P3",
+  "title": "Performance pass",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [
+    "P2"
+  ],
+  "desiredOutcome": "The catalog and product pages render without the known redundant work and heavy above-the-fold images.",
+  "testGate": [
+    "lint",
+    "test"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P3.1",
+      "title": "Memoize the product-list selector",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/catalog/list.ts"
+      ],
+      "docs": [],
+      "description": "Memoize the derived product-list selector so it does not recompute on every render.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "selector returns a stable reference for equal inputs"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "test"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P3.2",
+      "title": "Lazy-load below-the-fold images",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/ui/image.ts"
+      ],
+      "docs": [],
+      "description": "Add native lazy-loading to below-the-fold catalog images.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "test"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}
