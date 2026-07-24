@@ -24,8 +24,12 @@ The core `validate(manifest)` is pure and never raises on arbitrary JSON input â
 shape surprises become findings, not tracebacks.
 """
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 
 STATUS = ("pending", "in_progress", "blocked", "done")
 TESTS_MODE = ("tdd", "regression", "gate-only")
@@ -399,8 +403,7 @@ def main(argv):
         sys.stderr.write("usage: validate-manifest.py <manifest-path>\n")
         return 2
     try:
-        with open(argv[0], "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        manifest = _mio.load_manifest(argv[0])
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (argv[0], exc))
         return 2

@@ -34,6 +34,9 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+sys.path.insert(0, _HERE)
+import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress")
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
@@ -259,8 +262,7 @@ def main(argv):
         return 2
 
     try:
-        with open(args[0], "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        manifest = _mio.load_manifest(args[0])
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (args[0], exc))
         return 2

@@ -43,6 +43,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_REL = ".claude/audit.config.json"
 
+sys.path.insert(0, _HERE)
+import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+
 # Fields the composition patch is allowed to touch — the security allow-list.
 _META_KEYS = ("reviewSkill", "buildCommands")
 _PHASE_KEYS = ("reviewModel",)
@@ -294,7 +297,7 @@ def build_state(project):
                    "phases": [], "tasks": []}
     if exists:
         try:
-            manifest = _read_json(mpath)
+            manifest = _mio.load_manifest(mpath)   # dual-format: single-file OR index+shards
         except Exception as exc:
             m_findings = ["cannot parse manifest: %s" % exc]
         if isinstance(manifest, dict):
