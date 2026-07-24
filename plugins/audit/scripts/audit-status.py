@@ -161,6 +161,31 @@ def _by_status(items):
     return out
 
 
+def _by_status_values(values):
+    out = {}
+    for s in values:
+        out[str(s)] = out.get(str(s), 0) + 1
+    return out
+
+
+def effective_bug_status(bug, task_by_id):
+    """A bug's status, DERIVING 'fixed' from its linked task.
+
+    The orchestrator never writes bugs[] during a run (that keeps the shared index
+    untouched, so parallel phase branches merge clean). Instead a bug materialized
+    into a task (bug.taskId <-> task.bugId) reads as 'fixed' once that task is done.
+    A human-set 'wontfix' always wins; an un-materialized bug keeps its reported
+    status (open/triaged/in_progress)."""
+    stored = bug.get("status")
+    if stored == "wontfix":
+        return "wontfix"
+    tid = bug.get("taskId")
+    t = task_by_id.get(tid) if tid else None
+    if isinstance(t, dict) and t.get("status") == "done":
+        return "fixed"
+    return stored
+
+
 def rollup(manifest, findings, warnings):
     """The machine-readable summary both --json and render-report consume."""
     if not isinstance(manifest, dict):
@@ -169,7 +194,9 @@ def rollup(manifest, findings, warnings):
     tasks = [t for p in phases for t in (p.get("tasks") or [])
              if isinstance(t, dict)]
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
-    open_bugs = [b for b in bugs if b.get("status") not in CLOSED_BUG]
+    task_by_id = {t["id"]: t for t in tasks if t.get("id")}
+    bug_eff = [effective_bug_status(b, task_by_id) for b in bugs]
+    open_bugs = [b for b, s in zip(bugs, bug_eff) if s not in CLOSED_BUG]
     return {
         "valid": not findings,
         "findings": len(findings),
@@ -184,7 +211,7 @@ def rollup(manifest, findings, warnings):
                          if isinstance(t, dict)),
         } for p in phases],
         "tasks": {"total": len(tasks), "byStatus": _by_status(tasks)},
-        "bugs": {"total": len(bugs), "byStatus": _by_status(bugs),
+        "bugs": {"total": len(bugs), "byStatus": _by_status_values(bug_eff),
                  "open": len(open_bugs),
                  "openHighSeverity": sum(
                      1 for b in open_bugs
@@ -403,6 +430,26 @@ def _selftest():
     check("g3 low-sev open bug passes default but trips open-bugs",
           evaluate_gate(s, DEFAULT_GATE) == []
           and "open-bugs" in evaluate_gate(s, ("open-bugs",)))
+
+    # (d) derived bug status — a bug materialized into a DONE task reads as fixed
+    #     even though bugs[].status is still 'open' (the orchestrator never writes
+    #     bugs[] during a run, so the index stays untouched for parallel phases).
+    dm = {"meta": {"version": 2},
+          "phases": [{"id": "P0", "title": "P", "status": "in_progress", "tasks": [
+              {"id": "P0.1", "title": "fix", "status": "done", "bugId": "BUG-1"}]}],
+          "bugs": [{"id": "BUG-1", "title": "b", "status": "open", "severity": "high",
+                    "taskId": "P0.1"}]}
+    s = summarize(dm)
+    check("d1 bug on a done task derives fixed (index untouched)",
+          s["bugs"]["byStatus"].get("fixed", 0) == 1 and s["bugs"]["open"] == 0
+          and s["bugs"]["openHighSeverity"] == 0
+          and evaluate_gate(s, ("open-high-bugs", "open-bugs")) == [], repr(s["bugs"]))
+    dm2 = copy.deepcopy(dm)
+    dm2["phases"][0]["tasks"][0]["status"] = "in_progress"
+    s2 = summarize(dm2)
+    check("d2 bug on a not-done task stays open",
+          s2["bugs"]["open"] == 1 and s2["bugs"]["byStatus"].get("open", 0) == 1,
+          repr(s2["bugs"]))
     m = copy.deepcopy(_fixture())
     m["phases"][1]["tasks"][0]["status"] = "blocked"
     s = summarize(m)

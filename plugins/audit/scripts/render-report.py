@@ -506,6 +506,24 @@ def _report_basename(meta, cli_value):
     return name or "audit-report"
 
 
+def _tasks_by_id(manifest):
+    return {t["id"]: t for p in (manifest.get("phases") or []) if isinstance(p, dict)
+            for t in (p.get("tasks") or []) if isinstance(t, dict) and t.get("id")}
+
+
+def _bug_view(b, task_by_id):
+    """Derived (status, fixedIn) for a bug — mirrors audit-status.effective_bug_status:
+    a bug materialized into a done task reads as fixed (fixedIn = that task's commit),
+    since the orchestrator never writes bugs[] during a run. Stored fixedIn/wontfix win."""
+    stored = b.get("status")
+    fixed_in = b.get("fixedIn")
+    if stored != "wontfix":
+        t = task_by_id.get(b.get("taskId"))
+        if isinstance(t, dict) and t.get("status") == "done":
+            return "fixed", (fixed_in or t.get("commit") or "—")
+    return stored, (fixed_in or "—")
+
+
 def _chip(status):
     # Colored by the CSS theme token selected via data-status (see _CSS).
     return '<span class="chip" data-status="%s">%s</span>' % (e(status), e(status))
@@ -671,16 +689,18 @@ def render_html(manifest, summary, basename="audit-report"):
 
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
+        task_by_id = _tasks_by_id(manifest)
         out.append("<h2>Bugs</h2>")
         rows = []
         for b in bugs:
+            bstatus, bfixed = _bug_view(b, task_by_id)
             rows.append(
                 '<tr data-status="%s"><td class=mono>%s</td><td>%s</td><td>%s</td><td>%s</td>'
                 "<td class=mono>%s</td><td class=mono>%s</td><td>%s</td></tr>"
-                % (e(b.get("status")), e(b.get("id")), e(b.get("title")),
-                   _chip(b.get("status")),
+                % (e(bstatus), e(b.get("id")), e(b.get("title")),
+                   _chip(bstatus),
                    e(b.get("severity") or "—"), e(b.get("taskId") or "—"),
-                   e((b.get("fixedIn") or "—")[:9]), _ado_cell(b)))
+                   e(bfixed[:9]), _ado_cell(b)))
         out.append('<div class="tablewrap"><table class="data bugs"><thead><tr>'
                    "<th>id</th><th>title</th>"
                    "<th>status</th><th>severity</th><th>task</th><th>fixedIn</th>"
@@ -751,14 +771,16 @@ def render_md(manifest, summary):
         out.append("")
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
+        task_by_id = _tasks_by_id(manifest)
         out += ["## Bugs", "",
                 "| id | title | status | severity | task | fixedIn |",
                 "|---|---|---|---|---|---|"]
         for b in bugs:
+            bstatus, bfixed = _bug_view(b, task_by_id)
             out.append("| %s | %s | %s | %s | %s | %s |" % (
-                cell(b.get("id")), cell(b.get("title")), cell(b.get("status")),
+                cell(b.get("id")), cell(b.get("title")), cell(bstatus),
                 cell(b.get("severity") or "—"), cell(b.get("taskId") or "—"),
-                cell((b.get("fixedIn") or "—")[:9])))
+                cell(bfixed[:9])))
         out.append("")
     if summary["ready"]:
         out += ["## Ready now", "", ", ".join(cell(r) for r in summary["ready"]), ""]
