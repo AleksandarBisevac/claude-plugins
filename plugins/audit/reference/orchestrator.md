@@ -111,24 +111,42 @@ run in parallel (spawn multiple Agents in one message). Tasks sharing a file or 
 
 ## Concurrency lock
 
-Two sessions mutating one manifest/working tree corrupt each other. Every **mutating** command
-holds `<manifestPath>.lock` — the execution verbs (`next`, `run`, `phase`, `review`, `resume`)
-per the protocol here, and the quick-mutation commands (`init`, `task`, `bug`, `sync`) per the
-same protocol restated in `manifest-conventions.md`:
+Locks live in the **shared git directory**, not the working tree — so they coordinate across git
+**worktrees/clones on one machine** AND never appear as a working-tree change (no `git status` /
+hook noise). Resolve the lock directory once, at command start:
+
+```bash
+LOCKDIR="$(git -C <gitRoot> rev-parse --git-common-dir)/audit-locks"   # shared by all worktrees
+mkdir -p "$LOCKDIR"
+```
+(If `git rev-parse` fails — no git repo — fall back to `<manifestPath>.lock` in the working tree;
+that path coordinates within a single clone only. The git-root preflight normally guarantees a repo.)
+
+**Two tiers — take the narrowest lock that covers your writes:**
+
+- **Index lock** `"$LOCKDIR/index.lock"` — held **briefly** for STRUCTURAL writes and id allocation:
+  `init`, `task`, `bug`, `sync`, allocating a new phase/task/bug id, and the phase **status-mirror**
+  write in the index. Acquire → edit the index → release, within that step.
+- **Phase-shard lock** `"$LOCKDIR/phase-<phaseId>.lock"` — held for the DURATION of a phase run by
+  `next`/`run`/`phase`/`review`/`resume` on that phase. Two DIFFERENT phases take two different
+  locks → they run in **parallel** (separate worktrees), each writing only its own shard. A run that
+  must also allocate an id or touch the index takes the index lock too, briefly (nested), then releases it.
+
+**The protocol for EITHER lock file:**
 
 1. **Acquire (at command start).** If the lock file exists, read it (`{hostname, startedAt, note}`):
    - `startedAt` younger than **60 minutes** → REFUSE: print the holder info and stop —
-     another session is (or very recently was) working this manifest.
+     another session holds this lock (this manifest's index, or this specific phase).
    - older → stale (a crashed run): ask the human (AskUserQuestion) to confirm **takeover**,
      then overwrite the lock.
    Otherwise create it via Bash:
-   `printf '{"hostname":"%s","startedAt":"%s","note":"audit orchestrator"}' "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > <manifestPath>.lock`
-2. **Release** — delete the lock at the END of the command, including failure paths you control
+   `printf '{"hostname":"%s","startedAt":"%s","note":"<verb> <scope>"}' "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOCKDIR/<lockfile>"`
+2. **Release** — delete the lock file at the END of the command, including failure paths you control
    (a refusal that never acquired it releases nothing). Human-confirmation pauses (AskUserQuestion)
    keep the lock — that is still your run.
 3. `/audit:status` and `/audit:report` never lock and never wait for one.
-4. Never commit the lock file (do not `git add` it); recommend `.gitignore`-ing `*.lock` under the
-   manifest directory.
+4. The lock directory is inside the git dir — it is NEVER committed or shown by `git status`, so no
+   `.gitignore` entry is needed. (The legacy `<manifestPath>.lock` fallback still wants `*.lock` ignored.)
 
 ## Branch-per-phase
 

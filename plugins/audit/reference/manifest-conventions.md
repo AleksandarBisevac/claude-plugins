@@ -27,25 +27,34 @@ Exit 0 = valid. On findings: fix the manifest and re-run before doing anything e
 
 ## Concurrency lock
 
-Two sessions mutating one manifest corrupt each other, so every command that
-WRITES the manifest takes `<manifestPath>.lock` — the same lock the execution
-commands (`orchestrator.md`) use. Before your **first** manifest write:
+Locks live in the **shared git dir**
+(`LOCKDIR="$(git -C <gitRoot> rev-parse --git-common-dir)/audit-locks"`), not the
+working tree — so they coordinate across worktrees and never show up in
+`git status`. The full protocol and the two tiers (index lock vs per-phase-shard
+lock) are in `orchestrator.md`. The structural commands here — `init`, `task`,
+`bug`, `sync` — take the **index lock** `"$LOCKDIR/index.lock"` (they mutate the
+shared index: phase directory, `bugs[]`, `fileIndex`, id counters). Before your
+**first** index write:
 
-1. If `<manifestPath>.lock` exists, read it (`{hostname, startedAt, note}`):
+1. `mkdir -p "$LOCKDIR"`. If `"$LOCKDIR/index.lock"` exists, read it
+   (`{hostname, startedAt, note}`):
    - `startedAt` younger than **60 minutes** → **REFUSE**: print the holder and
-     stop — another `/audit:*` session is (or just was) on this manifest.
+     stop — another `/audit:*` session is (or just was) mutating this manifest.
    - older → stale (a crashed run) → ask the human (AskUserQuestion) to confirm
      **takeover**, then overwrite it.
    Otherwise create it via Bash:
-   `printf '{"hostname":"%s","startedAt":"%s","note":"<command>"}' "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > <manifestPath>.lock`
+   `printf '{"hostname":"%s","startedAt":"%s","note":"<command>"}' "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOCKDIR/index.lock"`
 2. **Release** it (delete the file) at the END of the command, including failure
    paths you control. AskUserQuestion pauses keep the lock (still your run).
 3. **Read-only subcommands never lock** (`/audit:bug list`, `/audit:sync status`
-   perform no write). Never `git add` the lock; `.gitignore` `*.lock`.
+   perform no write). The lock dir is inside the git dir → never committed; no
+   `.gitignore` needed. (No git repo? fall back to `<manifestPath>.lock` — that
+   coordinates within a single clone only.)
 
 `/audit:init` **regenerate/append** is the most destructive write — it rewrites
-the whole manifest. It MUST hold the lock, refuse while another session's lock
-is fresh (never clobber an in-flight run), and back up before overwriting.
+the whole manifest. It MUST hold the **index lock**, refuse while another
+session's lock is fresh (never clobber an in-flight run), and back up before
+overwriting.
 
 ## ID allocation
 
