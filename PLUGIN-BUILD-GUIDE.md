@@ -53,6 +53,7 @@ claude-plugins/                           # this repo (personal, public)
       commands/                           # execution verbs (each thin; read reference/orchestrator.md)
         status.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
         panel.md                          # /audit:panel — open/stop/status the control-panel UI
+        migrate.md                        # /audit:migrate — single-file -> sharded manifest layout
         init.md                           # /audit:init — multi-agent manifest generation
         task.md                           # /audit:task — interactive task creation
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
@@ -78,10 +79,12 @@ claude-plugins/                           # this repo (personal, public)
         audit-plan.schema.json            # JSON Schema (draft 2020-12) for the manifest
         audit-config.schema.json          # JSON Schema for .claude/audit.config.json (panel validation)
       scripts/
+        _manifest_io.py                   # dual-format loader/writer (single-file OR index+shards)
         validate-manifest.py              # dependency-free referential validator (cycles, links)
         validate-config.py                # validates .claude/audit.config.json against its schema
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
         render-report.py                  # self-contained HTML+MD report (CI artifact)
+        migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
       templates/
         audit.config.example.json         # per-repo hook config template
@@ -286,6 +289,20 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
 (33 cases).
 
+### `plugins/audit/scripts/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
+The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
+`load_manifest` reads BOTH the legacy single file and the v3 index+shards form into the same assembled
+dict (so every script + hook stays format-agnostic — it's wired into all five scripts' `main()` and
+`hooks/_config.in_progress_task_map`); `split_manifest`/`save_sharded` write the sharded form (index of
+`{id,title,shard}` stubs + `phases/<id>.json` bodies) atomically. The index stub carries NO runtime
+mirror, so a phase run writes only its shard → parallel phase branches merge with no manifest conflict.
+`migrate-manifest.py` (driven by `/audit:migrate`) converts single-file → sharded: validate source →
+refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-validate → restore on failure;
+`--renumber` repairs duplicate `BUG-` ids, `--dry-run` previews. Locks moved to the shared git dir
+(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
+linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
+`shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
+
 ### `plugins/audit/scripts/render-report.py` (v0.5.0)
 Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero network fetches):
 phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's rollup
@@ -375,7 +392,7 @@ CI (`.github/workflows/ci.yml`) runs 1–2 plus `claude plugin validate` on
 ubuntu + windows for every push/PR. Locally:
 
 ```bash
-# 1. Hooks + scripts pass their own selftests (all twelve, stdlib only)
+# 1. Hooks + scripts pass their own selftests (all fourteen, stdlib only)
 for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/require-plan.py \
          plugins/audit/hooks/detect-plan-skip.py \
@@ -383,10 +400,12 @@ for f in plugins/audit/hooks/_config.py \
          plugins/audit/hooks/guard-secrets-read.py \
          plugins/audit/hooks/guard-bash-writes.py \
          plugins/audit/hooks/remind-tdd.py \
+         plugins/audit/scripts/_manifest_io.py \
          plugins/audit/scripts/validate-manifest.py \
          plugins/audit/scripts/validate-config.py \
          plugins/audit/scripts/audit-status.py \
          plugins/audit/scripts/render-report.py \
+         plugins/audit/scripts/migrate-manifest.py \
          plugins/audit/scripts/panel-server.py; do
   python3 "$f" --selftest || exit 1
 done

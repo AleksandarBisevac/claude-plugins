@@ -145,6 +145,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
 | `/audit:report` | `[--out-dir <dir>]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
+| `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
 | `/audit:sync` | `push [bugs\|tasks\|all] \| pull \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
@@ -393,14 +394,32 @@ or put explicit `"manual: <checklist>"` entries in `phase.testGate` so sign-off 
 human action items instead of green-lighting nothing. `/audit:init` detects your build
 commands and will tell you when it finds none.
 
-## Concurrency
+## Concurrency & the sharded layout
 
-Mutating subcommands (`next`, `run`, `phase`, `review`, `resume`) hold
-**`<manifestPath>.lock`**: a second session is refused with the holder's info, and a stale
-lock (>60 min — a crashed run) offers a confirmed takeover. `status` and `report` never
-lock. Add `*.lock` in the manifest directory to `.gitignore`. The lock protects the
-manifest — the working tree and branches are still shared, so one Claude session per clone
-remains the recommendation.
+<a id="sharded-layout--parallel-phases"></a>
+Mutating subcommands hold a lock in the **shared git dir**
+(`$(git rev-parse --git-common-dir)/audit-locks/`), **two-tier**: a brief **index lock**
+(structural writes + id allocation) and a per-phase **shard lock** (a phase run). A fresh lock
+refuses a second session with the holder's info; a stale one (>60 min — a crashed run) offers a
+confirmed takeover. `status` and `report` never lock. Because the lock lives inside `.git/`, it
+never shows up in `git status` and needs no `.gitignore` entry. (No git repo → it falls back to
+`<manifestPath>.lock` in the working tree, which coordinates within a single clone only.)
+
+**Sharded layout — parallel phases.** Run **`/audit:migrate`** to split the manifest into an
+*index* (`meta` · `bugs` · `fileIndex`) plus one file per phase (`phases/<phaseId>.json`). Then a
+phase command loads **only its own phase** (fewer tokens at scale), and because two phase branches
+edit different shard files — and a run never writes the shared index (bug status is **derived** from
+the linked task) — **two phases run in parallel from separate git worktrees and merge back with no
+manifest conflict.** Ids are allocated under the index lock, so they never collide. It's opt-in and
+fully reversible; single-file manifests keep working exactly as before (one session per clone). To
+run two phases at once:
+
+```bash
+git worktree add ../audit-P2 -b audit/p2 develop
+git worktree add ../audit-P3 -b audit/p3 develop
+# one Claude session per worktree: /audit:phase P2 in one, /audit:phase P3 in the other,
+# then merge both branches into develop — the shards don't conflict.
+```
 
 ## Extending (three layers, no plugin editing)
 

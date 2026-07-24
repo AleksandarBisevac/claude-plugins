@@ -4,6 +4,56 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.15.0] - Unreleased
+
+Safe **parallel phases** across worktrees/sessions, and **fewer tokens per phase** —
+via an opt-in **sharded manifest layout** (an index + one file per phase). Fully
+backward compatible: single-file manifests keep working, and reading is transparent.
+
+### Added
+- **Sharded manifest layout (`meta.version: 3`).** `manifestPath` becomes an *index*
+  (meta · bugs · fileIndex) whose phases are `{id, title, shard}` stubs pointing at
+  `phases/<phaseId>.json`, where each phase's full body lives. A phase command loads
+  only its own phase (**fewer tokens** at scale), and two phase branches edit different
+  files so they **merge without a manifest conflict**. Whole-tree work (status, report,
+  validate, readiness) is assembled off-context by the dependency-free scripts.
+- **`scripts/_manifest_io.py`** — the dual-format loader/writer: `load_manifest`
+  reads both layouts into the same assembled dict; `save_sharded`/`split_manifest`
+  write the sharded form atomically. Wired into all five scripts and the guard hooks'
+  in-progress read path.
+- **`/audit:migrate`** (+ `scripts/migrate-manifest.py`) — opt-in, reversible
+  conversion to the sharded layout: validates the source, refuses a mid-run migration
+  (unless `--force`), backs up to `<manifest>.bak-<UTC>`, writes index + shards, and
+  restores the backup on any post-migration failure. `--renumber` repairs duplicate
+  `BUG-` ids from a cross-machine collision; `--dry-run` previews.
+- **Optimistic phase `claim`** — a run records `{sessionId, host, branch, at}` in the
+  phase shard, so a same-phase double-claim across machines surfaces as a shard merge
+  conflict. `validate-manifest` gained claim shape + stale-claim checks.
+
+### Changed
+- **Locks moved to the shared git dir** (`$(git rev-parse --git-common-dir)/audit-locks`)
+  and are now **two-tier**: a brief **index lock** (structural writes + id allocation)
+  and a per-phase **shard lock** (a phase run). They coordinate across worktrees on one
+  machine and no longer live in the working tree (so `git status`/hooks never see them).
+  Falls back to the legacy `<manifestPath>.lock` when there is no git repo.
+- **Id allocation is now collision-proof** — done under the index lock (read max, +1,
+  write, release); a rare cross-machine duplicate is caught by the validator and
+  repaired with `/audit:migrate --renumber`.
+- **A phase run writes only its shard.** Bug status is **derived** from the linked task
+  (a bug materialized into a `done` task reads as `fixed`, `fixedIn` = that commit), so
+  a run never writes the shared `bugs[]` — keeping parallel phases merge-clean. The
+  per-task commit stages the shard, not the index.
+- **Schema v3** documents the sharded layout: a phase requires only `id`/`title` (an
+  index stub omits `status`/`tasks`; the referential validator enforces them on the
+  assembled manifest), with `shard`/`claim` and a `claim` `$def` added. v2 manifests
+  validate unchanged.
+
+### Compatibility
+- **Nothing breaks.** Legacy single-file manifests keep working indefinitely (dual-read);
+  migration is opt-in. A mutating command notes once that `/audit:migrate` is available.
+  All script/hook selftests pass on both layouts; CI, `--gate`, report filenames, and
+  ADO sync are unaffected (they go through the scripts).
+
 ## [0.14.0] - 2026-07-22
 
 The control panel's Composition tab scales — a compact, collapsible, filterable
