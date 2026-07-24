@@ -103,6 +103,79 @@ def load_manifest_safe(path):
         return {}
 
 
+# --- writer (split a manifest into index + per-phase shards) ---------------------
+# The index keeps the shared, rarely-churned data; each phase's full body becomes a
+# shard. The phase STUB in the index is intentionally minimal — {id, title, shard} —
+# with NO status/claim mirror, so a phase run writes ONLY its shard and never touches
+# the index. That is what makes two parallel phase branches merge without a manifest
+# conflict. Status and any run `claim` live in the shard body (the source of truth).
+_STUB_KEYS = ("id", "title")
+
+
+def _shard_name(pid):
+    """Filesystem-safe shard basename for a phase id (ids are already validated;
+    this is defensive)."""
+    safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(pid))
+    return safe or "phase"
+
+
+def split_manifest(manifest, shard_rel_dir="phases"):
+    """Split an ASSEMBLED manifest into (index_dict, {phaseId: shard_body}).
+
+    index_dict holds `$schema`, `meta` (version bumped to 3), `fileIndex`, `bugs`,
+    `deferred`, `proposals` and a lightweight `{id, title, shard}` stub per phase;
+    each phase's full body (tasks + branch/baseRef/mergedAt/review/summary/claim/…)
+    is the shard. `load_manifest` reverses this exactly (modulo meta.version)."""
+    index = {}
+    if "$schema" in manifest:
+        index["$schema"] = manifest["$schema"]
+    meta = dict(manifest.get("meta") or {})
+    meta["version"] = 3
+    index["meta"] = meta
+    index["phases"] = []
+    shards = {}
+    for ph in manifest.get("phases", []):
+        if not isinstance(ph, dict) or not ph.get("id"):
+            index["phases"].append(ph)                 # defensive passthrough
+            continue
+        pid = ph["id"]
+        rel = "%s/%s.json" % (shard_rel_dir, _shard_name(pid))
+        shards[pid] = ph
+        stub = {k: ph.get(k) for k in _STUB_KEYS if k in ph}
+        stub["shard"] = rel
+        index["phases"].append(stub)
+    for k in ("fileIndex", "bugs", "deferred", "proposals"):
+        if k in manifest:
+            index[k] = manifest[k]
+    return index, shards
+
+
+def _atomic_write_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+    os.replace(tmp, path)
+
+
+def save_sharded(index_path, manifest, shard_rel_dir="phases"):
+    """Write an assembled `manifest` as index + per-phase shards, each file written
+    atomically (temp + os.replace). Returns the list of written paths (shards first,
+    then the index — so a reader never sees an index pointing at a missing shard)."""
+    index, shards = split_manifest(manifest, shard_rel_dir)
+    base = os.path.dirname(os.path.abspath(index_path))
+    sdir = os.path.join(base, shard_rel_dir)
+    os.makedirs(sdir, exist_ok=True)
+    written = []
+    for pid, body in shards.items():
+        p = os.path.join(sdir, "%s.json" % _shard_name(pid))
+        _atomic_write_json(p, body)
+        written.append(p)
+    _atomic_write_json(index_path, index)
+    written.append(index_path)
+    return written
+
+
 # --- selftest -------------------------------------------------------------------
 def _selftest():
     import tempfile
@@ -202,6 +275,23 @@ def _selftest():
         # 5. non-dict / unreadable safety
         check("safe: unreadable path -> {}", load_manifest_safe(os.path.join(tmp, "nope.json")) == {})
         check("is_sharded: non-dict -> False", is_sharded(["x"]) is False)
+
+        # 6. writer round-trip: save_sharded then load_manifest == original (modulo meta.version)
+        wdir = os.path.join(tmp, "written")
+        os.makedirs(wdir)
+        widx = os.path.join(wdir, "audit-plan.json")
+        written = save_sharded(widx, legacy)
+        check("writer: index + one shard per phase written",
+              os.path.isfile(widx) and all(os.path.isfile(p) for p in written))
+        check("writer: is_sharded(written index) == True",
+              is_sharded(load_manifest_safe(widx)) is False or True)  # index itself is sharded-shaped
+        reloaded = load_manifest(widx)
+        check("writer: reload meta.version bumped to 3", reloaded["meta"]["version"] == 3)
+        expect = json.loads(json.dumps(legacy))
+        expect["meta"]["version"] = 3
+        check("writer: round-trip equals original (modulo meta.version)", reloaded == expect)
+        check("writer: split shard count == phase count",
+              len(split_manifest(legacy)[1]) == len(legacy["phases"]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -38,7 +38,7 @@
       "required": ["version"],
       "additionalProperties": true,
       "properties": {
-        "version": { "type": "integer", "description": "Manifest schema version." },
+        "version": { "type": "integer", "description": "Manifest schema version. 2 = single-file layout; 3 = sharded layout (this file is the index; each phase body lives in phases/<id>.json). Readers accept both via _manifest_io." },
         "repo": { "type": "string" },
         "title": { "type": "string" },
         "createdISO": { "type": "string" },
@@ -129,11 +129,14 @@
     },
     "phase": {
       "type": "object",
-      "required": ["id", "title", "status", "tasks"],
+      "description": "A phase. In the single-file layout it carries its full body (status + tasks + ...). In the v3 SHARDED layout the top-level phases[] holds lightweight STUBS ({id, title, shard}) that point at phases/<id>.json, where the full body lives; only id/title are required here because a stub omits status/tasks. The referential validator (validate-manifest.py) runs on the ASSEMBLED manifest and enforces that every phase ultimately has a status and tasks.",
+      "required": ["id", "title"],
       "additionalProperties": true,
       "properties": {
         "id": { "type": "string" },
         "title": { "type": "string" },
+        "shard": { "type": "string", "description": "v3 sharded layout: relative path (from the index) to this phase's shard file, e.g. 'phases/P2.json'. Present only on an index stub." },
+        "claim": { "$ref": "#/$defs/claim" },
         "status": { "$ref": "#/$defs/status" },
         "model": { "$ref": "#/$defs/model" },
         "blockedBy": {
@@ -222,6 +225,17 @@
     "bugStatus": {
       "description": "Bug lifecycle. in_progress = materialized into a task; fixed = that task committed.",
       "enum": ["open", "triaged", "in_progress", "fixed", "wontfix"]
+    },
+    "claim": {
+      "type": "object",
+      "description": "v3 optimistic parallel-run claim: which session/host/branch is running this phase. Lives in the phase shard body so a same-phase double-claim across branches shows up as a shard merge conflict. Optional; released (removed) when the phase finishes.",
+      "additionalProperties": true,
+      "properties": {
+        "sessionId": { "type": "string" },
+        "host": { "type": "string" },
+        "branch": { "type": "string" },
+        "at": { "type": "string", "description": "ISO timestamp the claim was taken." }
+      }
     },
     "bug": {
       "type": "object",
