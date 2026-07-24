@@ -1,0 +1,98 @@
+{
+  "id": "BF1",
+  "title": "Bugfix batch 1",
+  "status": "in_progress",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "Reported bugs are reproduced red-first and fixed.",
+  "testGate": [
+    "test"
+  ],
+  "baseRef": "c4a11b9",
+  "branch": "audit/bf1-bugfix-batch-1",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "BF1.1",
+      "title": "Fix BUG-3: cart total off-by-one with stacked discounts",
+      "status": "in_progress",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/cart/total.ts"
+      ],
+      "docs": [],
+      "description": "Reproduce the off-by-one when two percentage discounts stack, then correct the rounding order.",
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "cart total is correct with two stacked percentage discounts"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "test"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-03T09:00:00Z",
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": [],
+      "bugId": "BUG-3"
+    },
+    {
+      "id": "BF1.2",
+      "title": "Fix BUG-4: logout leaves the session cookie",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/auth/logout.ts",
+        "src/auth/session.ts"
+      ],
+      "docs": [],
+      "description": "Reproduce that logout does not clear the session cookie, then clear and invalidate it server-side.",
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "logout clears the session cookie and invalidates the server session"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "test"
+        ]
+      },
+      "outcome": {
+        "technical": "Cookie cleared with an expired Set-Cookie and the session revoked server-side; 1 red-first test.",
+        "descriptive": "Logging out now actually ends the session."
+      },
+      "commit": "a1b2c3d",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-03T11:00:00Z",
+      "completedAt": "2026-07-03T12:00:00Z",
+      "risk": "high",
+      "verifiedBy": [
+        "logout clears the session cookie and invalidates the server session"
+      ],
+      "bugId": "BUG-4"
+    }
+  ]
+}

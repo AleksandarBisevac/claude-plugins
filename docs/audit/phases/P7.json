@@ -1,0 +1,107 @@
+{
+  "id": "P7",
+  "title": "v0.7.0 command surface: /audit:<verb> split",
+  "status": "done",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "Every action is its own /audit:<verb> command; no /audit:audit, and the plugin never suggests the non-existent bare /audit. Prompted by a user hitting 'Unknown command: /audit' because docs+recap emitted a command that does not exist.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "skipped",
+    "findings": []
+  },
+  "summary": "Root cause of the recurring 'Unknown command: /audit': plugin commands are namespaced /<plugin>:<cmd>, so the single audit.md was only reachable as /audit:audit and bare /audit never existed \u2014 yet every doc and the recap text emitted /audit. Split into seven verb commands sharing reference/orchestrator.md; fixed all handoff text. 193 selftest cases unchanged (hooks/scripts untouched).",
+  "tasks": [
+    {
+      "id": "P7.1",
+      "title": "Split orchestrator into /audit:<verb> commands",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/commands/report.md"
+      ],
+      "docs": [],
+      "description": "Move shared logic (preflight/lock/Execute-the-task/sign-off/resume) to reference/orchestrator.md; delete audit.md; add thin verb command files. Kills /audit:audit.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "plugin-validate"
+        ]
+      },
+      "outcome": {
+        "technical": "7 verb files + orchestrator.md; claude plugin validate passes with 11 commands.",
+        "descriptive": "No more /audit:audit; each action is /audit:<verb>."
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-08T10:00:00+02:00",
+      "completedAt": "2026-07-08T10:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P7.2",
+      "title": "Fix all /audit references -> /audit:<verb> (handoff text + docs)",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/README.md",
+        "README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/schema/audit-plan.schema.json"
+      ],
+      "docs": [],
+      "description": "The actual root-cause fix: the commands' recap/handoff text and all docs said '/audit run', '/audit phase' \u2014 commands that don't exist. Rewrite every reference to the correct /audit:<verb> so the plugin never suggests a non-working command again.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "plugin-validate"
+        ]
+      },
+      "outcome": {
+        "technical": "grep-swept plugin + root docs; only path-like docs/audit and ./plugins/audit remain (not commands).",
+        "descriptive": "Plugin output and docs now match reality."
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-08T10:00:00+02:00",
+      "completedAt": "2026-07-08T10:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

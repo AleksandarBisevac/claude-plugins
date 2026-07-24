@@ -1,0 +1,139 @@
+{
+  "id": "P5",
+  "title": "v0.6.1 git-root-in-subdir fix",
+  "status": "done",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "The orchestrator works when the git repo lives in a subdirectory of the project dir \u2014 it routes git/gates through meta.gitRoot, and preflights (stops with guidance) instead of failing silently four ways. Found by end-to-end testing against a real Nx monorepo.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "skipped",
+    "findings": []
+  },
+  "summary": "The one structural bug the real-repo test surfaced: project dir != git root. Fixed with meta.gitRoot (+ config gitRoot + workspaceRoot fallback), a preflight that stops cleanly, and gitRoot-aware guard-bash-writes. Verified on the real Nx monorepo: existing 0.2.0 manifest now resolves gitRoot from its workspaceRoot and the preflight passes. 185 selftest cases.",
+  "tasks": [
+    {
+      "id": "P5.1",
+      "title": "meta.gitRoot + preflight + git -C gitRoot routing",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/validate-manifest.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/commands/audit.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/templates/audit.config.example.json"
+      ],
+      "docs": [],
+      "description": "Project dir != git root broke git ops, manifest commit, and guard-bash-writes silently. Add meta.gitRoot (schema+config, default '.'), audit.md preflight (git -C gitRoot rev-parse; STOP with guidance else) + git-root routing + staging strip, init.md git-root detection, workspaceRoot fallback, gitRoot-aware guard-bash-writes.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "validator w5: gitRoot/description/details/notes silent",
+          "guard-bash-writes h1: nested gitRoot fires with project-relative path"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate"
+        ]
+      },
+      "outcome": {
+        "technical": "Verified against the real Nx monorepo (git in test/): fallback resolves gitRoot from workspaceRoot, preflight passes; wrong gitRoot stops; bash-write guard fires. Commit rides the release.",
+        "descriptive": "The one real bug the live test found is fixed and re-tested."
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T18:00:00+02:00",
+      "completedAt": "2026-07-07T18:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P5.2",
+      "title": "Silence 0.2.0-manifest validator warnings",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/validate-manifest.py",
+        "plugins/audit/schema/audit-plan.schema.json"
+      ],
+      "docs": [],
+      "description": "A 0.2.0-generated manifest threw 21 warnings under 0.6.0 (phase.description, task.details, meta.notes/workspaceRoot/baseCommit). Add phase.description as a real schema field; tolerate the rest as known keys.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "0.2.0 test-repo manifest drops to 0 warnings"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "KNOWN_* sets extended; phase.description in schema.",
+        "descriptive": "Existing manifests validate cleanly."
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T18:00:00+02:00",
+      "completedAt": "2026-07-07T18:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P5.3",
+      "title": "README git-subdir + Troubleshooting; CHANGELOG 0.6.1",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/README.md",
+        "CHANGELOG.md"
+      ],
+      "docs": [],
+      "description": "Document gitRoot for monorepos/workspaces-in-subdir, the preflight, and troubleshooting (stale version-pinned permission after /plugin update, interpreter/Git-Bash, state files).",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "plugin-validate"
+        ]
+      },
+      "outcome": {
+        "technical": "New README sections + CHANGELOG 0.6.1.",
+        "descriptive": "The fix and its failure modes are documented."
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T18:00:00+02:00",
+      "completedAt": "2026-07-07T18:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

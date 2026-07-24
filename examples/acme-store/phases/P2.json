@@ -1,0 +1,178 @@
+{
+  "id": "P2",
+  "title": "Input validation",
+  "status": "in_progress",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template.",
+  "testGate": [
+    "lint",
+    "test",
+    "typecheck"
+  ],
+  "baseRef": "b2d7e58",
+  "branch": "audit/p2-input-validation",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P2.1",
+      "title": "Validate the checkout payload",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/checkout/validate.ts"
+      ],
+      "docs": [],
+      "description": "Reject malformed checkout payloads (missing items, negative quantities) at the boundary.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "rejects a negative quantity",
+          "rejects an empty cart"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "test",
+          "typecheck"
+        ]
+      },
+      "outcome": {
+        "technical": "Boundary validator + 2 regression tests.",
+        "descriptive": "Malformed checkouts are turned away early."
+      },
+      "commit": "c4a11b9",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-01T09:00:00Z",
+      "completedAt": "2026-07-01T10:00:00Z",
+      "risk": "med",
+      "verifiedBy": [
+        "rejects a negative quantity",
+        "rejects an empty cart"
+      ]
+    },
+    {
+      "id": "P2.2",
+      "title": "Sanitize the product-search query",
+      "status": "in_progress",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/search/query.ts"
+      ],
+      "docs": [],
+      "description": "Strip and bound the search query before it reaches the query builder (injection + ReDoS surface).",
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "strips control characters from the query",
+          "caps query length"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "lint",
+          "test",
+          "typecheck"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-02T09:00:00Z",
+      "completedAt": null,
+      "risk": "high",
+      "verifiedBy": []
+    },
+    {
+      "id": "P2.3",
+      "title": "Escape server-rendered template output",
+      "status": "blocked",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/render/template.ts:40-58"
+      ],
+      "docs": [],
+      "description": "Ensure user-controlled values are HTML-escaped in the server-rendered templates.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "escapes a <script> payload in a product name"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "test",
+          "typecheck"
+        ]
+      },
+      "outcome": {
+        "technical": "Gates still red after 3 attempts: the legacy engine double-escapes some fields; a shared escaping helper is needed. Escalated to the team.",
+        "descriptive": "Blocked pending a cross-cutting escaping-helper decision."
+      },
+      "commit": null,
+      "attempts": 3,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-02T11:00:00Z",
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P2.4",
+      "title": "Add zod schemas for cart mutations",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P2.1"
+      ],
+      "files": [
+        "src/checkout/schema.ts"
+      ],
+      "docs": [],
+      "description": "Introduce shared zod schemas for add/update/remove cart mutations; wire them into the handlers.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "test",
+          "typecheck"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

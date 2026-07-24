@@ -1,0 +1,178 @@
+{
+  "id": "P3",
+  "title": "v0.5.0 features (ADO-team focus)",
+  "status": "done",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "The pipeline plugs into the team's Azure DevOps workflow: bugs/tasks sync to work items, CI can gate on manifest state, status renders as a shareable report, and two sessions cannot corrupt one manifest.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "gate"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "skipped",
+    "findings": []
+  },
+  "summary": "Shipped as six direct-to-main commits, tagged v0.5.0. All eight selftest suites green (163 cases); the dogfood gate and report smoke run in CI. The single open item is the manual live ADO round-trip on first team use \u2014 surfaced by P3.1's manual gate entry.",
+  "tasks": [
+    {
+      "id": "P3.1",
+      "title": "Azure DevOps work-item sync (/audit:sync push|pull|status)",
+      "status": "done",
+      "model": "opus",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/commands/sync.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/validate-manifest.py",
+        "plugins/audit/README.md"
+      ],
+      "docs": [],
+      "description": "Contract = az boards CLI (headless-capable in ADO Pipelines); MCP wit_* tools documented as an optional fast-path. Config meta.ado {organization, project, areaPath?, types}; bugs<->Bug and tasks<->Task mapping; additive write-back fields bug.ado/task.ado {id,url,lastSyncedAt}; push idempotent (diff before write), one direction per invocation, no background magic.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "ado shape cases in validate-manifest --selftest (a1-a4)"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "manual: live push/pull round-trip against a scratch ADO project on first team use"
+        ]
+      },
+      "outcome": {
+        "technical": "sync.md command (bbf99eb) + ado schema/validator fields (f4aa52a). Structural verification: schema fixtures, validator cases, claude plugin validate. The live ADO round-trip is deliberately a manual gate entry above.",
+        "descriptive": "The manifest tracker now speaks the team's board language."
+      },
+      "commit": "bbf99eb",
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T14:00:00+02:00",
+      "completedAt": "2026-07-07T14:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P3.2",
+      "title": "CI headless gate (scripts/audit-status.py --json|--gate)",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/audit-status.py",
+        "docs/examples/azure-pipelines.yml"
+      ],
+      "docs": [],
+      "description": "Machine-readable phase/task/bug rollup; --gate exits 1 on open high-severity bugs / blocked tasks / invalid manifest (reuses validate-manifest as a library). Ship an azure-pipelines.yml example and wire into this repo's CI against this manifest.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "14 selftest cases incl. exit-code matrix and readiness rule",
+          "CI runs --gate on this manifest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "gate"
+        ]
+      },
+      "outcome": {
+        "technical": "audit-status.py (ef5464d); azure-pipelines.yml example + CI wiring landed in f14f462. Gate conditions: invalid, open-high-bugs, blocked-tasks (+open-bugs, in-progress via --fail-on).",
+        "descriptive": "A pipeline can now block a merge on manifest state without any Claude session."
+      },
+      "commit": "ef5464d",
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T14:00:00+02:00",
+      "completedAt": "2026-07-07T14:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P3.3",
+      "title": "/audit report (scripts/render-report.py)",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/render-report.py",
+        "plugins/audit/commands/audit.md"
+      ],
+      "docs": [],
+      "description": "Manifest -> self-contained HTML + Markdown (phase progress, task table, bug rollup, ADO links from the ado fields); publishable as an ADO pipeline artifact. report subcommand runs it and prints the artifact path.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "13 selftest cases incl. XSS escaping and javascript: URL neutralization",
+          "CI report smoke on this manifest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "report"
+        ]
+      },
+      "outcome": {
+        "technical": "render-report.py (13cb4d4) + report subcommand in audit.md (ebc5d36). Inline CSS, zero network fetches, all manifest strings escaped, http(s)-only links.",
+        "descriptive": "Status is now a shareable artifact, not a terminal scroll."
+      },
+      "commit": "13cb4d4",
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T14:00:00+02:00",
+      "completedAt": "2026-07-07T14:00:00+02:00",
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P3.4",
+      "title": "Concurrency lock (<manifestPath>.lock)",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/commands/audit.md",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/README.md"
+      ],
+      "docs": [],
+      "description": "Acquire {hostname, startedAt} lock around mutating subcommands (next|run|phase|review|resume); refuse with holder info on conflict; stale >60min offers a confirmed takeover; status/report never lock; require-plan exempts the lockfile AND the manifest itself (fixes custom manifestPath outside exempt globs).",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "require-plan selftests a4-a6: custom-path manifest + lock allowed, sibling gated"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ]
+      },
+      "outcome": {
+        "technical": "Lock protocol in audit.md; require-plan manifest/lock exemption (25 selftest cases). Lock protects the manifest; working tree/branches still favor one session per clone.",
+        "descriptive": "Two sessions can no longer silently corrupt one manifest."
+      },
+      "commit": "ebc5d36",
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": "2026-07-07T14:00:00+02:00",
+      "completedAt": "2026-07-07T14:00:00+02:00",
+      "risk": "med",
+      "verifiedBy": []
+    }
+  ]
+}
