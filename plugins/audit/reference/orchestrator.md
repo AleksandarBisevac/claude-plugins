@@ -10,9 +10,10 @@ readiness, the lock, branch-per-phase, Execute-the-task, Phase sign-off, resume 
 - **Verbs:** `status`/`report` are read-only (no lock); `next`/`run`/`phase`/`review`/`resume`
   mutate (full preflight + lock + progress output).
 - **Invariants (never violate):** never `git push`/force-push/`stash`; commit only a task's own
-  `files` + the manifest; git runs via `git -C <gitRoot>`, gates run from the project dir verbatim;
-  `risk:"high"` → human confirm before commit and never on `haiku`; every manifest write is
-  re-validated; the manifest is the single source of truth.
+  `files` + the phase's manifest file (the single file, or its `phases/<id>.json` shard); git runs
+  via `git -C <gitRoot>`, gates run from the project dir verbatim; `risk:"high"` → human confirm
+  before commit and never on `haiku`; every manifest write is re-validated; the manifest is the
+  single source of truth.
 - **A phase run:** preflight → phase branch off `developmentBranch` → Execute each ready task
   (parallel where `files` disjoint) → Phase sign-off (review? → test gate → runtime boot?) → merge
   back (ff, else confirmed `--no-ff`) → release lock.
@@ -21,6 +22,23 @@ readiness, the lock, branch-per-phase, Execute-the-task, Phase sign-off, resume 
 
 **Source of truth:** the audit manifest. Its path comes from `.claude/audit.config.json`
 → `manifestPath` (default `docs/audit/audit-plan.json`). Read it FIRST on every invocation.
+
+**Manifest layout (single-file vs sharded) — where writes go.** The manifest reads the same in
+either layout (the scripts and hooks assemble transparently), but WRITES must target the right file:
+
+- **Sharded layout** (`meta.version: 3` — `manifestPath` is an *index* whose phases are
+  `{id, title, shard}` stubs pointing at `phases/<phaseId>.json`): every per-phase / per-task
+  **runtime** field — phase `status`/`branch`/`baseRef`/`mergedAt`/`review`/`summary`/`claim` and
+  task `status`/`attempts`/`startedAt`/`completedAt`/`outcome`/`commit` — lives in that phase's
+  **shard**. Edit the SHARD, never the index. **Structural** writes (adding a phase/task/bug,
+  `fileIndex`, `bugs[]`) go to the **index** under the index lock. A phase run therefore touches
+  **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
+- **Single-file layout** (`meta.version: 2` or absent): it's all one file, as before.
+- If a legacy single-file manifest is in play, a mutating command should note **once** that
+  `/audit:migrate` converts it to the sharded layout (fewer tokens per phase, parallel-safe) — a
+  non-blocking suggestion; the single-file layout keeps working indefinitely.
+
+Below, "**Edit the phase's manifest file**" means the shard in the sharded layout, the one file otherwise.
 
 ## Preflight
 
@@ -167,10 +185,15 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
 ## Execute the task
 
 1. **Phase entry** (first started task of the phase, or after an interruption):
-   a. Set `phase.status = "in_progress"` if it isn't already (Edit) — resume depends on this write.
+   a. Set `phase.status = "in_progress"` if it isn't already (Edit the phase's manifest file — the
+      shard when sharded) — resume depends on this write.
    b. If `phase.baseRef` is null → `git rev-parse HEAD` (Bash), write it back.
    c. Create or switch to the phase branch per **Branch-per-phase** (including the
       development-branch verification — it applies on the `run` and `next` paths too).
+   d. **Claim the phase** (sharded layout only): write `phase.claim = {sessionId, host, branch, at}`
+      into the shard — optimistic cross-machine coordination, so a same-phase double-claim on another
+      branch surfaces as a shard merge conflict. The FS phase-lock is the same-machine guard; the
+      claim is the durable, pushed record for other machines. It is released at sign-off.
 2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the manifest).
    If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
@@ -210,15 +233,20 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
      b. Set `task.status = "done"`, `task.completedAt = <ISO now>`, fill `task.outcome` and `task.verifiedBy`.
         (The **orchestrator**, not the subagent, writes `outcome`.)
      c. **Commit the task's work** on the phase branch (all git via `git -C <gitRoot>`):
-        - Stage the task's `files` (each stripped of the `<gitRoot>/` prefix). Stage the manifest too
+        - Stage the task's `files` (each stripped of the `<gitRoot>/` prefix). Stage the phase's
+          manifest file too — the shard `phases/<phaseId>.json` when sharded, else the single manifest —
           **only if it lives inside `<gitRoot>`**; if it is outside (e.g. at the project dir while the
           git repo is a subdir), it cannot be committed — proceed without it (the preflight already
-          warned that status history isn't versioned in that layout).
+          warned that status history isn't versioned in that layout). **Do NOT stage the index** — a
+          task commit changes only its own phase's shard.
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
-        - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit again).
-          **If `task.bugId` is set**, in that same Edit also flip the linked bug in the top-level
-          `bugs[]`: `status = "fixed"`, `fixedIn = <that SHA>`.
+        - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit the phase's manifest file again).
+          **Do NOT write `bugs[]`.** A bug materialized into this task (`bug.taskId` ↔ `task.bugId`)
+          reads as **fixed** automatically once the task is `done` — the rollup derives it (with
+          `fixedIn` = this `task.commit`) — so the shared index stays untouched and parallel phases
+          merge clean. (`/audit:bug close` still records a human `wontfix`/`fixed` on the index, under
+          the index lock — a structural decision, not part of a run.)
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
    - **test failure** (gates RAN and are red) → leave `status = "in_progress"` (or `"blocked"` if attempts
      exhausted), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not commit.
@@ -253,7 +281,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
 4. Only if all applicable gates pass:
    a. Set `phase.status = "done"`, `phase.review.status = "passed"` (or `"skipped"`), write `phase.review.outcome`
       and `phase.summary` (short paragraph: what was done + impact; when `phase.desiredOutcome` is set,
-      the summary must state how the phase met — or didn't meet — it).
+      the summary must state how the phase met — or didn't meet — it). **Clear `phase.claim`** if set —
+      the run is finishing, release the claim. (All these are shard writes in the sharded layout.)
    b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor).
    c. **Merge into `meta.developmentBranch`**: `git switch <developmentBranch>`; `git merge --ff-only <branch>`.
       **If ff-merge fails** (the development branch advanced during the phase — the normal case on team
