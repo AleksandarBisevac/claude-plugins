@@ -276,14 +276,38 @@ def strip_line_suffix(entry):
     return s.split(":", 1)[0]
 
 
+def _load_manifest_assembled(path):
+    """Read the manifest as ONE assembled dict, handling BOTH storage layouts —
+    the legacy single file and the index+per-phase-shards form. Prefers
+    scripts/_manifest_io (the single source of truth for assembly); if that module
+    is somehow unavailable it FALLS BACK to a plain single-file read, so this
+    blocking-hook read path never regresses. Returns {} on any error (never raises)."""
+    try:
+        scripts_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import _manifest_io  # noqa: E402  (dependency-free; imports only json+os)
+        return _manifest_io.load_manifest_safe(str(path))
+    except Exception:
+        pass
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def in_progress_task_map(root, manifest_rel):
     """Rel-file -> [{"taskId", "testsMode"}] for tasks whose status == 'in_progress',
-    including fileIndex siblings keyed by the same task ids. Empty dict on any error."""
+    including fileIndex siblings keyed by the same task ids. Empty dict on any error.
+
+    Reads via the dual-format loader so the guard hooks see in-progress coverage on
+    both the single-file and the sharded manifest layout."""
     out = {}
-    try:
-        with open(Path(root) / manifest_rel, "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
-    except Exception:
+    manifest = _load_manifest_assembled(Path(root) / manifest_rel)
+    if not isinstance(manifest, dict):
         return out
 
     modes = {}  # in_progress task id -> tests.mode (or None)

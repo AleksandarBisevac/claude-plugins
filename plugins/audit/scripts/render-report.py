@@ -27,6 +27,9 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+sys.path.insert(0, _HERE)
+import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+
 # Chip and pipeline-rail colors live in the report's CSS theme tokens (see _CSS),
 # keyed off the `data-status` / `data-risk` attributes the markup carries — so a
 # single token set themes every status/risk consistently in both light and dark.
@@ -792,8 +795,7 @@ def main(argv):
 
     manifest_path = args[0]
     try:
-        with open(manifest_path, "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        manifest = _mio.load_manifest(manifest_path)
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (manifest_path, exc))
         return 2
