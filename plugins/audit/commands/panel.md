@@ -42,8 +42,9 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   `review.model`, `meta.buildCommands` — via an autocomplete **populated by discovery** of
   the skills & agents actually available (project `.claude/`, `~/.claude/`, installed
   plugins). Writes back **only** these fields, validates via `validate-manifest.py`, and
-  **refuses while `<manifestPath>.lock` is held**. Never touches phases/tasks/bugs
-  structure — use `/audit:task`, `/audit:bug`, `/audit:run` for that.
+  **refuses while an `/audit` run holds a lock** (the index or any phase — see conventions →
+  Concurrency lock). Never touches phases/tasks/bugs structure — use `/audit:task`,
+  `/audit:bug`, `/audit:run` for that.
 - **Overview** — the live rollup + validation status.
 
 Safety: binds `127.0.0.1` only, requires a per-launch token on every API call, and refuses

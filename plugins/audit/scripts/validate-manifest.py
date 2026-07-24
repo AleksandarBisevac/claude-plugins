@@ -60,8 +60,14 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
 KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "description", "desiredOutcome", "testGate", "baseRef", "branch",
                "mergedAt", "review", "reviewFindings", "summary", "tasks",
+               # v0.15 sharded layout: an index stub points at its shard file and
+               # may carry an optimistic parallel-run claim (both surface on the
+               # assembled phase via _manifest_io):
+               "shard", "claim",
                # legacy (pre-0.3):
                "signOff"}
+# Recommended keys on a parallel-run claim (soft — missing ones are warnings).
+CLAIM_KEYS = ("sessionId", "host", "branch")
 KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               "dependsOn", "files", "docs", "description", "tests", "outcome",
               "commit", "attempts", "maxAttempts", "startedAt", "completedAt",
@@ -71,6 +77,31 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
              "description", "repro", "expected", "actual", "files", "taskId",
              "fixedIn", "notes", "ado"}
+
+
+def _check_claim(phase, pwhere, findings, warnings):
+    """Validate an optional parallel-run `claim` on a phase (v0.15 sharded layout).
+
+    A claim records which session/host/branch is running a phase so concurrent work
+    across machines is coordinated (and a same-phase double-claim shows up as a shard
+    merge conflict). Shape errors are findings; a claim missing recommended keys, or one
+    left on a finished phase (stale — should be released), is a warning."""
+    if "claim" not in phase:
+        return
+    claim = phase.get("claim")
+    if claim is None:
+        return
+    if not isinstance(claim, dict):
+        findings.append("%s: claim must be an object {sessionId, host, branch, at}, got %s"
+                        % (pwhere, type(claim).__name__))
+        return
+    missing = [k for k in CLAIM_KEYS if not claim.get(k)]
+    if missing:
+        warnings.append("%s: claim is missing %s — a claim should identify the "
+                        "session/host/branch holding the phase" % (pwhere, ", ".join(missing)))
+    if phase.get("status") in ("done", "blocked"):
+        warnings.append("%s: has a claim but status is %r — a finished/blocked phase should "
+                        "release its claim (stale claim)" % (pwhere, phase.get("status")))
 
 
 def _strip_line_suffix(entry):
@@ -234,6 +265,7 @@ def validate(manifest):
             phase_ids.append(pid)
         if phase.get("status") not in STATUS:
             f.append("%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS)))
+        _check_claim(phase, pwhere, f, w)
 
         tasks_val = phase.get("tasks")
         if "tasks" not in phase:
@@ -565,6 +597,21 @@ def _selftest():
     check("w4 in_progress task in pending phase warns", None,
           lambda m: m["phases"][0]["tasks"][0].update(status="in_progress"),
           expect_warning="still 'pending'")
+
+    # claim (v0.15 sharded parallel-run coordination)
+    check("cl1 valid claim on an active phase stays clean", None,
+          lambda m: m["phases"][0].update(
+              claim={"sessionId": "s1", "host": "h1", "branch": "audit/p0", "at": "t"}))
+    check("cl2 claim not an object is a finding", "claim must be an object",
+          lambda m: m["phases"][0].update(claim="whoever"))
+    check("cl3 claim missing keys warns", None,
+          lambda m: m["phases"][0].update(claim={"at": "t"}),
+          expect_warning="claim is missing")
+    check("cl4 claim on a done phase warns (stale)", None,
+          lambda m: (m["phases"][0].update(
+              status="done", claim={"sessionId": "s", "host": "h", "branch": "b"}),
+              [t.update(status="done") for t in m["phases"][0]["tasks"]]),
+          expect_warning="stale claim")
 
     # --- robustness: validate() must NEVER raise on hostile shapes, and the
     #     wrong-type diagnostics must be actionable (regression guard for the
