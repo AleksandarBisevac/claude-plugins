@@ -34,6 +34,7 @@ import re
 import secrets
 import signal
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -286,6 +287,48 @@ def _composition_view(manifest):
     }
 
 
+# --- concurrency-lock detection (locks live in the shared git dir, not the tree) --
+_LOCKDIR_CACHE = {}
+
+
+def _audit_lock_dir(project, config):
+    """The shared audit-locks dir: $(git -C <gitRoot> rev-parse --git-common-dir)/audit-locks
+    — where the orchestrator now keeps its index + per-phase locks (out of the working tree,
+    shared across worktrees). None when this isn't a git repo (caller falls back to the legacy
+    working-tree lock). Cached per git-root: build_state runs per request; the git dir never moves."""
+    git_root = os.path.realpath(os.path.join(project, (config or {}).get("gitRoot") or "."))
+    if git_root in _LOCKDIR_CACHE:
+        return _LOCKDIR_CACHE[git_root]
+    lockdir = None
+    try:
+        out = subprocess.run(["git", "-C", git_root, "rev-parse", "--git-common-dir"],
+                             capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip():
+            gd = out.stdout.strip()
+            if not os.path.isabs(gd):
+                gd = os.path.join(git_root, gd)
+            lockdir = os.path.join(os.path.realpath(gd), "audit-locks")
+    except Exception:
+        lockdir = None
+    _LOCKDIR_CACHE[git_root] = lockdir
+    return lockdir
+
+
+def _audit_lock_held(project, config):
+    """True iff any /audit run holds a lock — the index lock OR any per-phase-shard lock.
+    Checks the shared git-dir lock dir, falling back to the legacy working-tree lock, so the
+    panel's 'locked' signal (and its composition-write refusal) keeps working in both layouts."""
+    lockdir = _audit_lock_dir(project, config)
+    if lockdir and os.path.isdir(lockdir):
+        try:
+            for name in os.listdir(lockdir):
+                if name == "index.lock" or (name.startswith("phase-") and name.endswith(".lock")):
+                    return True
+        except Exception:
+            pass
+    return os.path.exists(_manifest_path(project, config) + ".lock")   # legacy fallback
+
+
 def build_state(project):
     vm, vc, as_, _ = _cores()
     config = read_config(project)
@@ -308,7 +351,7 @@ def build_state(project):
         "project": project,
         "manifestPath": os.path.relpath(mpath, project),
         "manifestExists": exists,
-        "manifestLocked": os.path.exists(mpath + ".lock"),
+        "manifestLocked": _audit_lock_held(project, config),
         "config": config,
         "defaults": _defaults(),
         "configFindings": cfg_findings,
@@ -403,7 +446,7 @@ def apply_composition(project, patch):
         return {"ok": False, "findings": ["refused: manifest path escapes project"]}
     if not os.path.isfile(mpath):
         return {"ok": False, "findings": ["manifest not found: run /audit:init first"]}
-    if os.path.exists(mpath + ".lock"):
+    if _audit_lock_held(project, config):
         return {"ok": False, "locked": True,
                 "findings": ["manifest is locked by a running /audit command; "
                              "try again once it finishes"]}
