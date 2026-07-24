@@ -1,0 +1,266 @@
+# Audit pipeline — concurrency & branching failure modes
+
+> **Status:** decision-support report. Catalogues the problems that appear when `/audit:*`
+> work is parallelized across branches / sessions, plus the options on the table.
+> **No decision is made here** — it exists so we can make one with eyes open.
+>
+> Anchored in a real case: **PR #380** (`db-embed-platform`, `docs/audit/cla-plan.json`) —
+> continuing new work while a phase PR is open. Every claim is cited to the plugin's own
+> code (`plugins/audit/reference/*`, `schema/`).
+
+---
+
+## TL;DR
+
+The audit **manifest** (`docs/audit/audit-plan.json`) is a *single JSON file* that plays four
+roles at once:
+
+1. **Source of truth** for phases/tasks/bugs (`manifest-conventions.md:9-11`)
+2. **Concurrency serializer** via a lock file (`orchestrator.md:112-131`)
+3. **Committed artifact** — staged on *every phase branch*, on *every task commit* (`orchestrator.md:12-13`)
+4. **ID allocator** — monotonic "highest + 1" ids, repo-wide (`manifest-conventions.md:50-54`)
+
+The lock guards **one clone**. The moment you parallelize phases across **branches, worktrees, or
+clones**, roles 3 and 4 turn the one shared file into a collision surface. The intuitive worry is
+merge conflicts — but git *shouts* about those. The dangerous one is the failure git stays **silent**
+about: two branches independently allocating the **same id**.
+
+---
+
+## 1 · How it works today
+
+Understanding four mechanics explains every failure mode below.
+
+**Branch-per-phase.** A phase forks a local branch off `meta.developmentBranch`, commits per task,
+and merges back (ff, else confirmed `--no-ff`) (`orchestrator.md:133-147`). Push is forbidden;
+it's local-only.
+
+**Every task commit carries the manifest.** The orchestrator invariant: *"commit only a task's own
+`files` + the manifest"* (`orchestrator.md:12-13`). So each phase branch accumulates commits that
+**all edit `audit-plan.json`** — status flips, the new `commit` SHA, `attempts`, `outcome`.
+
+**One lock, one file.** Mutating commands (`next`/`run`/`phase`/`review`/`resume`, plus
+`init`/`task`/`bug`/`sync`) take `<manifestPath>.lock`: refuse if younger than 60 min, offer
+takeover if older (`orchestrator.md:112-131`, `manifest-conventions.md:28-48`). The lock is a plain
+file next to the manifest — so it only exists, and is only seen, **within that one working copy**.
+
+**IDs are monotonic and global.** `<phaseId>.<n>`, `BUG-<n>`, `BF<n>` are each "highest existing +
+1", repo-wide (`manifest-conventions.md:50-54`). `fileIndex` is append/extend on task add,
+validated bidirectionally (`manifest-conventions.md:80-83`).
+
+```mermaid
+gitGraph
+   commit id: "develop"
+   branch cla/p48
+   checkout cla/p48
+   commit id: "P48.1 +manifest"
+   commit id: "P48.2 +manifest"
+   checkout main
+   branch cla/p50
+   checkout cla/p50
+   commit id: "P50.1 +manifest"
+   checkout main
+   merge cla/p48
+   merge cla/p50 type: REVERSE
+```
+
+*`main` = the trunk (`develop`). Both phase branches edit the same `audit-plan.json`; the second
+merge (marked) is where they meet.*
+
+---
+
+## 2 · What is actually safe
+
+Not everything is fragile — the plugin serializes deliberately, and one form of parallelism is
+built-in and safe:
+
+- **Within-phase task parallelism (one session).** The orchestrator already spawns multiple
+  executor agents at once for tasks whose `files` are **disjoint** and whose `dependsOn` are
+  satisfied (`orchestrator.md:109-110`). This is the supported, safe parallelism.
+- **One session per clone.** With a single working copy, the lock does its job: a second mutating
+  command is refused, so you can't corrupt the manifest by accident.
+
+Everything below is about stepping **outside** those two guarantees — i.e. two mutating sessions,
+which only becomes possible across separate worktrees/clones.
+
+---
+
+## 3 · Failure-mode catalog
+
+Grouped by where the guardrail stands. **The key column is "git's reaction"** — a conflict is
+annoying but self-announcing; a silent clean merge is the trap.
+
+### Class A — same clone (the guardrail works)
+
+| ID | Trigger | What happens | Severity |
+|----|---------|--------------|----------|
+| **A1** | Second mutating `/audit:*` in the same clone | **Refused** — lock younger than 60 min (`orchestrator.md:119-121`). Working as designed. | — (prevention) |
+| **A2** | Two sessions forced onto one working tree | Can't hold two phase branches at once; subagents overwrite each other's files. Prevented by A1 + "one session per clone". | — (prevention) |
+
+### Class B — multi-worktree / multi-clone (the lock is blind)
+
+The lock is a per-file mutex in one working copy, so separate worktrees/clones each hold their
+**own** lock and run **simultaneously, unaware of each other**. That is the root cause of this whole class.
+
+**B1 · Structural append conflict** &nbsp;·&nbsp; *git conflict — trivial* &nbsp;·&nbsp; **sev Low / likelihood High**
+Two branches each append a phase/task → both edit the tail of `phases[]` (and `fileIndex`).
+Git flags a conflict at the array boundary. **This is the PR #380 case.**
+*Repro:* branch A and B both run `/audit:phase` creating a new phase, or `/audit:task add`.
+*Resolve:* keep both blocks + both `fileIndex` entries, re-run `validate-manifest.py`. Annoying, not dangerous.
+
+**B2 · ID collision** &nbsp;·&nbsp; *git SILENT — no conflict* &nbsp;·&nbsp; **sev High / likelihood High** &nbsp;·&nbsp; **headline hazard**
+Allocation is "highest + 1", repo-wide (`manifest-conventions.md:50-54`). Two branches forked from
+the same point both see `BUG-3` as the max and both allocate **`BUG-4`** (or `BF2`, or `P2.5`) — to
+*different* work. Because they touch different lines, **git merges cleanly with no conflict marker**.
+The result is two entities sharing one id. `validate-manifest.py` catches it *if you run it after the
+merge* (unique-id check); if you don't, the reciprocal links, `fileIndex`, and every report silently
+point at the wrong thing.
+
+```mermaid
+sequenceDiagram
+    participant A as Session A · worktree A · cla/p48
+    participant B as Session B · worktree B · cla/p50
+    A->>A: read bugs[] → max = BUG-3
+    B->>B: read bugs[] → max = BUG-3
+    A->>A: allocate BUG-4 (login bug)
+    B->>B: allocate BUG-4 (cart bug)
+    Note over A,B: each commits a DIFFERENT BUG-4 on its own branch
+    A->>A: merge cla/p48 → develop (clean)
+    B->>B: merge cla/p50 → develop (clean — different lines!)
+    Note over A,B: develop now has TWO BUG-4 · git never complained
+```
+
+**B3 · Runtime status/commit flip conflict** &nbsp;·&nbsp; *git conflict* &nbsp;·&nbsp; **sev Med / likelihood High**
+Both active phases rewrite per-task `status`/`commit`/`attempts`/`outcome` in the same file on their
+branches (`orchestrator.md:12-13`). Merging back collides on those JSON regions. Mechanical to
+resolve (union both phases' updates) but it happens on essentially *every* concurrent run.
+
+**B4 · Reciprocal-link divergence** &nbsp;·&nbsp; *conflict or silent* &nbsp;·&nbsp; **sev Med / likelihood Med**
+`/audit:bug fix` materializes a bug into a `BF<n>` phase and writes the reciprocal
+`bug.taskId ↔ task.bugId`. Done independently on two branches, you get duplicate `BF` phases (a B2
+variant) and/or a link that only half-exists after merge — a validator finding.
+
+**B5 · fileIndex drift** &nbsp;·&nbsp; *silent* &nbsp;·&nbsp; **sev Med / likelihood Med**
+`fileIndex` is bidirectional (`manifest-conventions.md:80-83`). A B2-style renumber, or independent
+edits to the same `fileIndex` object, leave it pointing at task ids that changed — a bidirectional
+integrity finding, or a silently wrong file→task map.
+
+### Class C — lock semantics
+
+| ID | Issue | Effect | Severity |
+|----|-------|--------|----------|
+| **C2** | Lock is a per-file, advisory mutex | **No protection across worktrees/clones** — the root cause of all of Class B. | High (structural) |
+| **C1** | 60-min staleness threshold | A legitimate long run (>60 min) looks "crashed"; another session offers a takeover and both then mutate. | Med / likelihood Low |
+| **C3** | Manifest write isn't atomic | A crash mid-write can leave malformed JSON; softened (not removed) by the edit-and-revalidate rule (`manifest-conventions.md:17-26`). | Low |
+
+### The conflict surface
+
+Every failure maps to a region of the one file:
+
+```mermaid
+flowchart TB
+    subgraph M["docs/audit/audit-plan.json — one file, committed on every phase branch"]
+        direction TB
+        phases["phases[] · append tail"]
+        runtime["per-task runtime · status · commit · attempts · outcome"]
+        fidx["fileIndex {} · append / extend"]
+        ids["ids · BUG-n · BF-n · P.n · monotonic, repo-wide"]
+    end
+    phases -->|two branches append| B1["B1 · append conflict — git shouts"]
+    runtime -->|two active phases| B3["B3 · status-flip conflict — git shouts"]
+    fidx -->|renumber / dual edit| B5["B5 · fileIndex drift — quiet"]
+    ids -->|+1 on divergent branches| B2["B2 · ID collision — git SILENT"]
+```
+
+---
+
+## 4 · Severity × likelihood
+
+Position is the risk (bottom-left calm → top-right hot). B2 sits top-right precisely because it is
+*both* likely under real parallel work *and* silent.
+
+| Likelihood ↓ \ Severity → | Low | Medium | High |
+|---|---|---|---|
+| **High** | B1 (append) | B3 (status flip) | **B2 (ID collision)** |
+| **Medium** | — | B4 (links) · B5 (fileIndex) | — |
+| **Low** | C3 (atomicity) | — | C1 (stale takeover) |
+
+*C2 (lock is blind across clones) isn't an event — it's the structural precondition that makes the
+whole B column possible.*
+
+---
+
+## 5 · Options on the table
+
+Presented neutrally with trade-offs — **no recommendation**. The coverage matrix says which failure
+modes each option actually removes vs. merely copes with.
+
+**O1 · Workflow / discipline only** — *zero code change.*
+Branch independent work from `develop` (not from the open phase branch); stack + rebase only when
+work genuinely depends on unmerged code; run `validate-manifest.py` after every merge (catches B2/B4/B5);
+`git rerere` to memoize repetitive resolutions; keep one active *mutating* session at a time. Cheap,
+but relies on humans remembering — nothing is *fixed*, only mitigated.
+
+**O2 · ID namespacing** — *small, targeted.*
+Make allocation collision-proof: per-branch/per-phase id prefixes (or a random suffix) so two
+branches can never mint the same id. Fixes **B2** (and the B4 duplicate-`BF` variant) at the source.
+Touches the allocation rule in `manifest-conventions.md` + the `task`/`bug` commands. Doesn't help
+the merge-conflict modes.
+
+**O3 · Plan/state split** — *medium refactor* (the sketch from the earlier discussion).
+Move volatile runtime fields (`status`/`commit`/`attempts`/`outcome`; phase `branch`/`baseRef`/…)
+into per-phase `state/<phaseId>.json`. Each phase writes only its own state file → **B3 fixed**, B1/B5
+softened. The plan file stops churning. Doesn't fix B2 (still needs O2). Touches ~7 files + migration
++ back-compat.
+
+**O4 · Per-phase manifest sharding** — *structural, larger.*
+One file per phase instead of one array. Structurally removes **B1/B3/B5** (phases never share a
+file). Still needs O2 for **B2** (global id counter). Biggest blast radius: readers, validator,
+panel, reports all change.
+
+**O5 · Cross-worktree lock** — *addresses the root, not the symptom.*
+Make the mutex effective beyond one clone (shared lock location / committed coordination lock).
+Fixes **C2** by *serializing* — i.e. it prevents concurrent runs rather than making them safe, so it
+removes the B class by removing the parallelism. Useful if the goal is "never run two at once,
+reliably," counter-productive if the goal is real parallelism.
+
+### Coverage matrix
+
+| Option | B1 append | B2 id-collision | B3 status | B4 links | B5 fileIndex | C2 cross-clone | Cost |
+|---|---|---|---|---|---|---|---|
+| **O1** discipline | cope | cope (validate) | cope | cope | cope | cope | none |
+| **O2** id namespacing | — | **fix** | — | **fix** | — | — | low |
+| **O3** plan/state split | soften | — | **fix** | partial | soften | — | medium |
+| **O4** phase sharding | **fix** | — | **fix** | partial | **fix** | — | med-high |
+| **O5** cross-worktree lock | prevents¹ | prevents¹ | prevents¹ | prevents¹ | prevents¹ | **fix** | medium |
+
+*¹ O5 removes these by disallowing concurrency, not by making concurrent work safe. Combinations are
+viable — e.g. **O2 + O3** fixes B2 + B3 and softens the rest while keeping parallelism.*
+
+---
+
+## Appendix
+
+### A · The PR #380 prompt (real, verbatim excerpt)
+
+> *"great, quick question. I want to continue to work on other tasks until this one is merged.
+> Should I create a new branch from this branch? or"*
+
+The guidance given — branch from `develop` for independent work, stack only for dependent work — is
+**O1**. The heads-up it included ("every phase appends to the single `cla-plan.json` … two branches
+that both add a phase will likely produce a small merge conflict … trivial to resolve") is exactly
+**B1**. This report's addition is **B2**: the same "+1" mechanic, one step more dangerous, because
+git won't warn you.
+
+### B · Citations
+
+| Claim | Source |
+|---|---|
+| Manifest = single source of truth | `plugins/audit/reference/manifest-conventions.md:9-11` |
+| Lock protocol (60-min, takeover) | `orchestrator.md:112-131` · `manifest-conventions.md:28-48` |
+| Per-task commit stages task files + manifest | `orchestrator.md:12-13` |
+| Branch-per-phase, ff/no-ff merge | `orchestrator.md:133-147` |
+| Safe within-phase parallelism (disjoint files) | `orchestrator.md:109-110` |
+| ID allocation "highest + 1", repo-wide | `manifest-conventions.md:50-54` |
+| fileIndex append/extend, bidirectional | `manifest-conventions.md:80-83` |
+| Runtime vs authored fields | `plugins/audit/schema/audit-plan.schema.json` (`$defs`) |
