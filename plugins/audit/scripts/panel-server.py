@@ -329,6 +329,51 @@ def _audit_lock_held(project, config):
     return os.path.exists(_manifest_path(project, config) + ".lock")   # legacy fallback
 
 
+def _lock_info(lockdir):
+    """Read the shared audit-locks dir into {'index': info|None, 'phases': {pid: info}}.
+    Each info is the lock file's `{hostname, startedAt, note}` (or {} if unreadable)."""
+    out = {"index": None, "phases": {}}
+    if not (lockdir and os.path.isdir(lockdir)):
+        return out
+    try:
+        names = os.listdir(lockdir)
+    except Exception:
+        return out
+    for name in names:
+        if not name.endswith(".lock"):
+            continue
+        try:
+            with open(os.path.join(lockdir, name), "r", encoding="utf-8") as fh:
+                info = json.load(fh)
+        except Exception:
+            info = {}
+        if not isinstance(info, dict):
+            info = {}
+        if name == "index.lock":
+            out["index"] = info
+        elif name.startswith("phase-"):
+            out["phases"][name[len("phase-"):-len(".lock")]] = info
+    return out
+
+
+def _run_status(project, config, manifest):
+    """Per-phase live run status for the panel ('who's running what'): which phase is
+    locked (and by whom) and which carries an optimistic claim. Combines the shared
+    git-dir phase locks with each phase's `claim` from the manifest."""
+    locks = _lock_info(_audit_lock_dir(project, config))
+    phases = {}
+    if isinstance(manifest, dict):
+        for p in manifest.get("phases", []) or []:
+            if isinstance(p, dict) and p.get("id"):
+                claim = p.get("claim")
+                phases[p["id"]] = {
+                    "lock": locks["phases"].get(p["id"]),
+                    "claim": claim if isinstance(claim, dict) else None}
+    for pid, info in locks["phases"].items():          # locks for phases not in the manifest
+        phases.setdefault(pid, {"lock": info, "claim": None})
+    return {"index": locks["index"], "phases": phases}
+
+
 def build_state(project):
     vm, vc, as_, _ = _cores()
     config = read_config(project)
@@ -359,6 +404,7 @@ def build_state(project):
         "manifestFindings": m_findings,
         "composition": composition,
         "rollup": rollup,
+        "runStatus": _run_status(project, config, manifest),
     }
 
 
@@ -744,6 +790,8 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .btn.small{font-size:.75rem;padding:.25rem .6rem}
 .badge{font-size:.68rem;font-weight:700;padding:.1rem .5em;border-radius:var(--pill);
  background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+.badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
+.badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
 .chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.12rem .5em;border-radius:var(--pill);
  background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
 .chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
@@ -1119,10 +1167,20 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
  const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)'):
    el('div',{class:'findings err'},'✗ '+r.findings+' finding(s): '+(STATE.manifestFindings||[]).join(' · '));
  card.append(vstate);
+ const rs=STATE.runStatus||{index:null,phases:{}};
+ if(rs.index){const h=rs.index.hostname||'?';
+  card.append(el('div',{class:'findings warn'},
+   '⚙ index locked (structural op / id allocation)'+(h?' · '+h:'')+(rs.index.startedAt?' · since '+rs.index.startedAt:'')));}
  card.append(el('h2',{},'Phases'));
  r.phases.forEach(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;
+  const st=(rs.phases||{})[p.id]||{};let runBadge=null;
+  if(st.lock){const h=st.lock.hostname||'?';
+   runBadge=el('span',{class:'badge run',title:'phase lock held'+(st.lock.startedAt?' since '+st.lock.startedAt:'')},'● running'+(h?' · '+h:''));}
+  else if(st.claim){const s=(st.claim.sessionId||'').slice(0,8);
+   runBadge=el('span',{class:'badge claim',title:'claimed'+(st.claim.branch?' on '+st.claim.branch:'')},'◷ claimed'+(s?' · '+s:''));}
   card.append(el('div',{class:'row'},el('span',{class:'mono',style:'flex:0 0 3rem'},p.id),
    el('span',{style:'flex:1 1 10rem'},p.title||''),el('span',{class:'badge'},p.status||''),
+   runBadge,
    el('span',{class:'bar'},el('i',{style:'width:'+pct+'%'})),el('span',{class:'mut'},p.done+'/'+p.total)));});
  const t=r.tasks,b=r.bugs;
  card.append(el('h2',{},'Totals'),el('div',{class:'row'},
@@ -1227,6 +1285,26 @@ def _selftest():
     check("build_state has rollup + composition",
           st["rollup"] is not None and "reviewSkill" in st["composition"]["meta"])
     check("build_state reports manifestPath", bool(st["manifestPath"]))
+
+    # D9 — runStatus ("who's running what"): per-phase lock + claim
+    check("build_state has runStatus",
+          isinstance(st.get("runStatus"), dict) and "phases" in st["runStatus"])
+    ld = os.path.join(tmp, "audit-locks")
+    os.makedirs(ld)
+    _atomic_write_json(os.path.join(ld, "index.lock"), {"hostname": "hi", "startedAt": "t"})
+    _atomic_write_json(os.path.join(ld, "phase-P1.lock"), {"hostname": "hp", "startedAt": "t2"})
+    li = _lock_info(ld)
+    check("_lock_info reads the index lock", (li["index"] or {}).get("hostname") == "hi")
+    check("_lock_info reads a phase lock", (li["phases"].get("P1") or {}).get("hostname") == "hp")
+    m2 = _read_json(mpath)
+    m2["phases"][0]["claim"] = {"sessionId": "sess-abcd1234", "host": "h", "branch": "audit/p1"}
+    _atomic_write_json(mpath, m2)
+    st2 = build_state(proj)
+    check("runStatus surfaces a phase claim from the manifest",
+          ((st2["runStatus"]["phases"].get("P1") or {}).get("claim") or {}).get("sessionId")
+          == "sess-abcd1234")
+    check("runStatus phase lock is None when the git-dir lock isn't held (non-git tmp)",
+          (st2["runStatus"]["phases"].get("P1") or {}).get("lock") is None)
 
     # UI template integrity (token/project placeholders present, no stray %)
     check("UI has token placeholder", "__AUDIT_TOKEN__" in UI_HTML)
