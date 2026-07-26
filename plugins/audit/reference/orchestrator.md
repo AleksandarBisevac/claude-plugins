@@ -194,7 +194,7 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
       into the shard — optimistic cross-machine coordination, so a same-phase double-claim on another
       branch surfaces as a shard merge conflict. The FS phase-lock is the same-machine guard; the
       claim is the durable, pushed record for other machines. It is released at sign-off.
-2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the manifest).
+2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the phase's manifest file — the shard when sharded).
    If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
    `subagent_type: "audit:audit-executor"`, `model = task.model`. Pass **only** the model;
@@ -288,7 +288,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       **If ff-merge fails** (the development branch advanced during the phase — the normal case on team
       repos), ask the human (AskUserQuestion) to choose:
       1. **`git merge --no-ff <branch>`** (recommended) — preserves the phase branch history and keeps every
-         `task.commit` / `bug.fixedIn` SHA recorded in the manifest valid.
+         `task.commit` SHA (and the `bug.fixedIn` derived from it) valid.
       2. **Stop** — leave the branch unmerged for manual resolution.
       **Never rebase the phase branch** — rebasing rewrites the SHAs recorded in the manifest.
    d. Write `phase.mergedAt = <ISO now>` (Edit on the now-merged branch).
