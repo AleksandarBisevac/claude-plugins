@@ -146,6 +146,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:report` | `[--out-dir <dir>]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
+| `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
 | `/audit:sync` | `push [bugs\|tasks\|all] \| pull \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
@@ -414,12 +415,15 @@ manifest conflict.** Ids are allocated under the index lock, so they never colli
 fully reversible; single-file manifests keep working exactly as before (one session per clone). To
 run two phases at once:
 
-```bash
-git worktree add ../audit-P2 -b audit/p2 develop
-git worktree add ../audit-P3 -b audit/p3 develop
-# one Claude session per worktree: /audit:phase P2 in one, /audit:phase P3 in the other,
-# then merge both branches into develop — the shards don't conflict.
+Use **`/audit:worktree <phaseId>`** — Claude runs `git worktree add`, derives the phase branch, and
+prints the `cd … && claude` line for you:
+
 ```
+/audit:worktree P2      # → ../<repo>-P2 on branch audit/p2-…; open a session there, run /audit:phase P2
+/audit:worktree P3      # → a second worktree for P3, in parallel
+# …then merge both branches into develop — the shards don't conflict — and /audit:worktree P2 --remove.
+```
+(Or do it by hand: `git worktree add ../audit-P2 -b audit/p2 develop`, one Claude session per worktree.)
 
 ## Extending (three layers, no plugin editing)
 
