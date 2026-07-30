@@ -81,6 +81,8 @@ _CSS = """
 /* amber status chips read best with dark ink (both themes) */
 [data-status="in_progress"] .chip,[data-status="triaged"] .chip,
 .chip[data-status="in_progress"],.chip[data-status="triaged"]{--chip-ink:#78350f}
+.area-tag{display:inline-block;font-size:.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  padding:.05rem .4em;border-radius:.5em;background:var(--surface-2);color:var(--muted);vertical-align:middle}
 
 /* ---- base ---------------------------------------------------------------- */
 *{box-sizing:border-box}
@@ -511,6 +513,15 @@ def _tasks_by_id(manifest):
             for t in (p.get("tasks") or []) if isinstance(t, dict) and t.get("id")}
 
 
+def _areas_of(area):
+    """A phase's `area` (string, list, or absent) -> a list of tag strings."""
+    if isinstance(area, str):
+        return [area] if area else []
+    if isinstance(area, list):
+        return [a for a in area if isinstance(a, str) and a]
+    return []
+
+
 def _bug_view(b, task_by_id):
     """Derived (status, fixedIn) for a bug — mirrors audit-status.effective_bug_status:
     a bug materialized into a done task reads as fixed (fixedIn = that task's commit),
@@ -661,12 +672,14 @@ def render_html(manifest, summary, basename="audit-report"):
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
         pid = psum["id"]
+        areas = psum["area"] if isinstance(psum.get("area"), list) else _areas_of(ph.get("area"))
+        area_tags = "".join(' <span class="area-tag">%s</span>' % e(a) for a in areas)
         out.append(
-            '<tr class="phase" data-phase="%s" data-status="%s" tabindex="0" '
+            '<tr class="phase" data-phase="%s" data-status="%s" data-area="%s" tabindex="0" '
             'aria-expanded="false"><td colspan="9"><span class="tri"></span> '
-            '<span class="mono">%s</span> <strong>%s</strong> %s %s%s</td></tr>'
-            % (e(pid), e(psum["status"]), e(pid), e(psum["title"]),
-               _chip(psum["status"]), _bar(psum["done"], psum["total"]),
+            '<span class="mono">%s</span> <strong>%s</strong>%s %s %s%s</td></tr>'
+            % (e(pid), e(psum["status"]), e(" ".join(areas)), e(pid), e(psum["title"]),
+               area_tags, _chip(psum["status"]), _bar(psum["done"], psum["total"]),
                _phase_meta_div(ph)))
         # per-phase task-status filter (shown only when the phase is expanded);
         # _SCRIPT fills .tf-chips from this phase's own task statuses.

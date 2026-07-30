@@ -158,6 +158,8 @@
         "baseRef": { "type": ["string", "null"], "description": "HEAD SHA at phase start; set by the orchestrator." },
         "branch": { "type": ["string", "null"], "description": "Local phase branch; set at phase start." },
         "mergedAt": { "type": ["string", "null"], "description": "ISO timestamp after ff-merge to the development branch." },
+        "reviewSkill": { "type": ["string", "null"], "description": "Skill invoked at THIS phase's sign-off, overriding meta.reviewSkill (which is the default/fallback). Lets a monorepo review backend vs mobile vs web phases with different reviewers. null/absent => use meta.reviewSkill." },
+        "area": { "type": ["string", "array"], "items": { "type": "string" }, "description": "Free-text app/domain/concern label(s) for grouping & filtering phases in status/report/panel. A single string (a partition, e.g. 'backend') OR a list of tags for cross-cutting concerns (e.g. ['backend', 'security'] — the phase is grouped under EACH). Any vocabulary: backend/mobile/web, devops, security, embedded, data, ml, platform… Informational; the orchestrator does not act on it." },
         "review": { "$ref": "#/$defs/review" },
         "reviewFindings": {
           "type": "object",

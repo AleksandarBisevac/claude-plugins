@@ -95,7 +95,10 @@ A newly created phase MUST be initialized with: `status: "pending"`,
 `review: {tool: null, model: "sonnet", status: "pending", findings: []}`,
 `summary: null`, a one-line `desiredOutcome` (what success looks like — `/audit:status`
 shows it, task subagents receive it, and sign-off must address it), and a
-`testGate` derived from `meta.buildCommands` keys.
+`testGate` derived from `meta.buildCommands` keys. Optionally `reviewSkill` (a phase-specific
+sign-off reviewer, overriding `meta.reviewSkill`) and `area` — a free-text label, or a **list** of
+labels for cross-cutting concerns (`"backend"` or `["backend","security"]`; any vocabulary —
+devops/security/embedded/data/ml/…) — for grouping/filtering in status/report/panel. Both default to absent.
 
 ## fileIndex maintenance
 

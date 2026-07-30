@@ -262,6 +262,15 @@ def read_config(project):
         return {}
 
 
+def _areas_of(area):
+    """A phase's `area` (string, list, or absent) -> a list of tag strings."""
+    if isinstance(area, str):
+        return [area] if area else []
+    if isinstance(area, list):
+        return [a for a in area if isinstance(a, str) and a]
+    return []
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     phases_out, tasks_out = [], []
@@ -270,7 +279,8 @@ def _composition_view(manifest):
             continue
         review = ph.get("review") if isinstance(ph.get("review"), dict) else {}
         phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
-                           "status": ph.get("status"), "reviewModel": review.get("model")})
+                           "status": ph.get("status"), "reviewModel": review.get("model"),
+                           "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill")})
         for t in (ph.get("tasks") or []):
             if not isinstance(t, dict):
                 continue
@@ -792,6 +802,7 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
  background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
 .badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
 .badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
+.badge.area{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent;text-transform:uppercase;letter-spacing:.03em}
 .chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.12rem .5em;border-radius:var(--pill);
  background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
 .chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
@@ -1089,6 +1100,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
   const pr=el('tr',{class:'phase','data-status':ph.status||''});
   pr.append(el('td',{colspan:'5'},el('div',{class:'phtd'},
     el('span',{class:'tri'}),el('span',{class:'mono'},ph.id||''),el('strong',{},ph.title||''),
+    (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
     el('span',{class:'st','data-status':ph.status||''},ph.status||'—'),
     el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
     el('span',{class:'comp-review'},flabel('review',DESC.phaseReviewModel),rev))));
@@ -1107,7 +1119,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    tbody.append(tr);
    taskEls.push({id:t.id||'',title:t.title||'',tr,getSkills});
   });
-  phaseEls.push({id:ph.id,title:ph.title||'',status:ph.status||'',tr:pr,tasks:taskEls});
+  phaseEls.push({id:ph.id,title:ph.title||'',status:ph.status||'',area:(ph.area||[]).join(' '),tr:pr,tasks:taskEls});
  });
  [...new Set(comp.phases.map(p=>p.status).filter(Boolean))].sort().forEach(s=>{
   const b=el('button',{class:'filt',type:'button','data-status':s},s);
@@ -1120,7 +1132,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  function refresh(){
   const term=q.value.trim().toLowerCase();const forced=(term!=='')||needsOnly;let visP=0,visT=0;
   phaseEls.forEach(P=>{
-   const pText=hit(P.id+' '+P.title,term);let anyT=false;
+   const pText=hit(P.id+' '+P.title+' '+P.area,term);let anyT=false;
    P.tasks.forEach(T=>{const tHit=pText||hit(T.id+' '+T.title,term);
     const needHit=!needsOnly||((T.getSkills()||[]).length===0);T._m=tHit&&needHit;if(T._m)anyT=true;});
    const showP=(!phaseFilter||P.status===phaseFilter)&&(pText||anyT)&&(!needsOnly||anyT);
@@ -1178,9 +1190,10 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
    runBadge=el('span',{class:'badge run',title:'phase lock held'+(st.lock.startedAt?' since '+st.lock.startedAt:'')},'● running'+(h?' · '+h:''));}
   else if(st.claim){const s=(st.claim.sessionId||'').slice(0,8);
    runBadge=el('span',{class:'badge claim',title:'claimed'+(st.claim.branch?' on '+st.claim.branch:'')},'◷ claimed'+(s?' · '+s:''));}
+  const areaBadges=(p.area||[]).map(a=>el('span',{class:'badge area',title:'area'},a));
   card.append(el('div',{class:'row'},el('span',{class:'mono',style:'flex:0 0 3rem'},p.id),
    el('span',{style:'flex:1 1 10rem'},p.title||''),el('span',{class:'badge'},p.status||''),
-   runBadge,
+   areaBadges,runBadge,
    el('span',{class:'bar'},el('i',{style:'width:'+pct+'%'})),el('span',{class:'mut'},p.done+'/'+p.total)));});
  const t=r.tasks,b=r.bugs;
  card.append(el('h2',{},'Totals'),el('div',{class:'row'},
@@ -1305,6 +1318,27 @@ def _selftest():
           == "sess-abcd1234")
     check("runStatus phase lock is None when the git-dir lock isn't held (non-git tmp)",
           (st2["runStatus"]["phases"].get("P1") or {}).get("lock") is None)
+
+    # v0.16 — composition view surfaces per-phase area (list) + reviewSkill;
+    # a phase can carry cross-cutting tags (['backend','security'])
+    m3 = _read_json(mpath)
+    m3["phases"][0].update(area=["backend", "security"], reviewSkill="backend-review")
+    _atomic_write_json(mpath, m3)
+    cv = _composition_view(_mio.load_manifest(mpath))
+    check("composition view carries area list + reviewSkill",
+          cv["phases"][0].get("area") == ["backend", "security"]
+          and cv["phases"][0].get("reviewSkill") == "backend-review")
+    st3 = build_state(proj)
+    check("rollup normalizes area to a list + groups under each tag",
+          st3["rollup"]["phases"][0].get("area") == ["backend", "security"]
+          and "backend" in (st3["rollup"].get("areas") or {})
+          and "security" in (st3["rollup"].get("areas") or {}))
+    check("_areas_of normalizes string/list/absent",
+          _areas_of("x") == ["x"] and _areas_of(["a", "b"]) == ["a", "b"]
+          and _areas_of(None) == [])
+    check("UI renders area badges (per tag) + area-searchable composition",
+          ".badge.area" in UI_HTML and "P.area" in UI_HTML
+          and "(p.area||[]).map" in UI_HTML)
 
     # UI template integrity (token/project placeholders present, no stray %)
     check("UI has token placeholder", "__AUDIT_TOKEN__" in UI_HTML)
