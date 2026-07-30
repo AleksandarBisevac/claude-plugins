@@ -4,6 +4,29 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.16.0] - 2026-07-30
+
+Richer **per-phase configuration** and **monorepo/multi-team ergonomics** — all
+additive and backward compatible (single-file and sharded manifests unchanged).
+
+### Added
+- **Per-phase `reviewSkill`** — a phase overrides `meta.reviewSkill` at its own sign-off
+  (resolved `phase.reviewSkill ?? meta.reviewSkill`), so a monorepo reviews backend vs
+  mobile vs web phases with different reviewers.
+- **Phase `area` tag(s)** — a single string partition (`"backend"`) OR a list of tags for
+  cross-cutting concerns (`["backend","security"]`; any vocabulary —
+  devops/security/embedded/data/ml/…). The rollup groups a phase under **each** tag (a
+  `security` area collects security phases across every app); the report and the panel
+  Overview/Composition render a badge per tag and make it searchable.
+- **`/audit:worktree <phaseId>`** — creates (or `--remove`s) a git worktree for a phase and
+  prints the `cd … && claude` line, removing the manual setup for the sharded
+  parallel-phases workflow. Never edits the manifest.
+
+### Compatibility
+- Nothing breaks — a plain-string `area` still validates (schema stays permissive); all 14
+  selftest suites pass on both layouts; `claude plugin validate` covers the new command
+  (13 → 14). Ships as PRs #11–#14 (this being #14).
+
 ## [0.15.0] - 2026-07-30
 
 Safe **parallel phases** across worktrees/sessions, and **fewer tokens per phase** —
