@@ -168,6 +168,17 @@ def _by_status_values(values):
     return out
 
 
+def areas_of(area):
+    """Normalize a phase's `area` (a string partition, a list of cross-cutting tags,
+    or absent) to a list of tag strings — so a phase can belong to several areas
+    (e.g. ['backend', 'security'])."""
+    if isinstance(area, str):
+        return [area] if area else []
+    if isinstance(area, list):
+        return [a for a in area if isinstance(a, str) and a]
+    return []
+
+
 def effective_bug_status(bug, task_by_id):
     """A bug's status, DERIVING 'fixed' from its linked task.
 
@@ -197,19 +208,29 @@ def rollup(manifest, findings, warnings):
     task_by_id = {t["id"]: t for t in tasks if t.get("id")}
     bug_eff = [effective_bug_status(b, task_by_id) for b in bugs]
     open_bugs = [b for b, s in zip(bugs, bug_eff) if s not in CLOSED_BUG]
+    phase_entries = [{
+        "id": p.get("id"), "title": p.get("title"),
+        "status": p.get("status"), "area": areas_of(p.get("area")),
+        "desiredOutcome": p.get("desiredOutcome"),
+        "done": sum(1 for t in (p.get("tasks") or [])
+                    if isinstance(t, dict) and t.get("status") == "done"),
+        "total": sum(1 for t in (p.get("tasks") or []) if isinstance(t, dict)),
+    } for p in phases]
+    # group phases by each of their `area` tags (a phase with several tags counts
+    # under each; untagged phases are simply not grouped)
+    areas = {}
+    for e in phase_entries:
+        for a in e["area"]:
+            g = areas.setdefault(a, {"phases": 0, "done": 0, "total": 0})
+            g["phases"] += 1
+            g["done"] += e["done"]
+            g["total"] += e["total"]
     return {
         "valid": not findings,
         "findings": len(findings),
         "warnings": len(warnings),
-        "phases": [{
-            "id": p.get("id"), "title": p.get("title"),
-            "status": p.get("status"),
-            "desiredOutcome": p.get("desiredOutcome"),
-            "done": sum(1 for t in (p.get("tasks") or [])
-                        if isinstance(t, dict) and t.get("status") == "done"),
-            "total": sum(1 for t in (p.get("tasks") or [])
-                         if isinstance(t, dict)),
-        } for p in phases],
+        "phases": phase_entries,
+        "areas": areas,
         "tasks": {"total": len(tasks), "byStatus": _by_status(tasks)},
         "bugs": {"total": len(bugs), "byStatus": _by_status_values(bug_eff),
                  "open": len(open_bugs),
@@ -412,6 +433,25 @@ def _selftest():
     s = summarize(m)
     check("r2 phase blockedBy gates readiness",
           "P2.1" not in s["ready"] and "P1.1" in s["ready"], repr(s["ready"]))
+
+    # (ar) area tag(s) — normalized to a list, surfaced per phase + grouped in rollup;
+    # a phase may carry several cross-cutting tags (e.g. ['mobile', 'security'])
+    m = copy.deepcopy(_fixture())
+    m["phases"][0]["area"] = "backend"                 # single string
+    m["phases"][1]["area"] = ["mobile", "security"]    # cross-cutting tags
+    s = summarize(m)
+    check("ar1 area normalized to a list per phase",
+          s["phases"][0]["area"] == ["backend"]
+          and s["phases"][1]["area"] == ["mobile", "security"])
+    check("ar2 areas grouping counts phases + tasks",
+          set(s["areas"].keys()) == {"backend", "mobile", "security"}
+          and s["areas"]["backend"]["phases"] == 1
+          and s["areas"]["backend"]["total"] == s["phases"][0]["total"], repr(s["areas"]))
+    check("ar3 a multi-tag phase counts under EACH of its areas",
+          s["areas"]["mobile"]["phases"] == 1 and s["areas"]["security"]["phases"] == 1
+          and s["areas"]["security"]["total"] == s["phases"][1]["total"], repr(s["areas"]))
+    s0 = summarize(_fixture())
+    check("ar4 untagged manifest -> empty areas (back-compat)", s0["areas"] == {})
 
     # (g) gate conditions
     s = summarize(_fixture())

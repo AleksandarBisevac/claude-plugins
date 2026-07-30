@@ -79,7 +79,7 @@ never hardcode branch names, package ids, skills, or build tools here:
   `cd <gitRoot> && …` prefix needed to reach the workspace). Do not add or strip a `cd` of your own.
 - `meta.developmentBranch` — the parent branch audit branches fork from and merge back into (default `main`).
 - `meta.branchPrefix` — prefix for per-phase branches (default `audit`).
-- `meta.reviewSkill` — skill invoked at phase sign-off (default **null** → skip; tests are the signer).
+- `meta.reviewSkill` — DEFAULT skill invoked at phase sign-off (default **null** → skip; tests are the signer). A phase can override it with `phase.reviewSkill` (resolved `phase.reviewSkill ?? meta.reviewSkill`).
 - `meta.runtimeBoot` — object `{appRootPath, launch, verify}` for a runtime smoke gate (default **null** → skip).
 - `meta.nodePreamble` — shell prefix to run before build gates, e.g. `source ~/.nvm/nvm.sh && nvm use`
   (default **null** → run gates directly). Do NOT pipe it — run it as its own statement, then chain the command.
@@ -262,14 +262,16 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
 Run only when **all** tasks in the phase are `done`. All review/test work runs on the phase branch.
 
 1. **`reviewResolved`** — compute the phase's changed files (union of `files` across its tasks, cross-checked with
-   the manifest's top-level `fileIndex`). **If `meta.reviewSkill` is set**, spawn the plugin's reviewer agent
+   the manifest's top-level `fileIndex`). Resolve the review skill as **`phase.reviewSkill ?? meta.reviewSkill`**
+   (a phase may override the default — e.g. a monorepo reviews backend vs mobile phases with different reviewers).
+   **If the resolved review skill is set**, spawn the plugin's reviewer agent
    (`subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`) with the diff scope
-   (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, and the skill name — it invokes the
+   (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, and the resolved skill name — it invokes the
    skill itself and returns structured findings (it has no edit tools by design, and the diff stays out of YOUR
    context). Record results in `phase.review.findings`; for each actionable finding spawn an
    `audit:audit-executor` fix run (`model = phase.review.model`) that may edit implementation AND tests; loop until
    clean or each remaining finding is explicitly triaged with a written justification. Fall back to a
-   general-purpose subagent with the same rules if the agent type is unavailable. **If `meta.reviewSkill` is
+   general-purpose subagent with the same rules if the agent type is unavailable. **If the resolved review skill is
    null**, skip this step — tests are the signer.
 2. **`testGateGreen`** — run the full `phase.testGate` (run `meta.nodePreamble` first, un-piped, if set). All commands
    must pass **after** any review-driven changes. Tests are the final signer. Surface manual items as human action items.

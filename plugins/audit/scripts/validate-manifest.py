@@ -60,6 +60,8 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
 KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "description", "desiredOutcome", "testGate", "baseRef", "branch",
                "mergedAt", "review", "reviewFindings", "summary", "tasks",
+               # v0.16: per-phase review skill override + app/team area tag
+               "reviewSkill", "area",
                # v0.15 sharded layout: an index stub points at its shard file and
                # may carry an optimistic parallel-run claim (both surface on the
                # assembled phase via _manifest_io):
@@ -612,6 +614,16 @@ def _selftest():
               status="done", claim={"sessionId": "s", "host": "h", "branch": "b"}),
               [t.update(status="done") for t in m["phases"][0]["tasks"]]),
           expect_warning="stale claim")
+
+    # v0.16 — per-phase reviewSkill override + area tag are known keys (no noise)
+    m6 = copy.deepcopy(_valid_manifest())
+    m6["phases"][0].update(reviewSkill="backend-review", area="backend")
+    f6, w6 = validate(m6)
+    noise6 = [x for x in w6 if "reviewSkill" in x or "area" in x]
+    ok6 = f6 == [] and noise6 == []
+    results.append(ok6)
+    print("%s pp1 per-phase reviewSkill+area: no finding, no unknown-key warning (%s)"
+          % ("PASS" if ok6 else "FAIL", "clean" if ok6 else (f6 or noise6)))
 
     # --- robustness: validate() must NEVER raise on hostile shapes, and the
     #     wrong-type diagnostics must be actionable (regression guard for the
