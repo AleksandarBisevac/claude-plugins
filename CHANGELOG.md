@@ -4,7 +4,7 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [0.15.0] - Unreleased
+## [0.15.0] - 2026-07-30
 
 Safe **parallel phases** across worktrees/sessions, and **fewer tokens per phase** —
 via an opt-in **sharded manifest layout** (an index + one file per phase). Fully

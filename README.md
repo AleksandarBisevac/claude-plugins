@@ -16,7 +16,7 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 
 | Plugin | What it does |
 |---|---|
-| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
+| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:migrate` shards it into one file per phase for **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges), a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
 
 ## Install
 
@@ -37,6 +37,7 @@ In any git repo you want to audit:
 ```
 /audit:init            # interview → generates a schema-valid audit manifest
 /audit:status          # see phases, tasks, bugs, and what's ready now
+/audit:migrate         # (optional) shard the manifest → parallel-safe phases across worktrees
 /audit:panel           # open the browser control panel to tune config + composition (open/stop/status)
 /audit:phase P0        # run the first phase: branch → tasks (red-first TDD) → gated sign-off
 /audit:report          # render the shareable HTML + Markdown report
