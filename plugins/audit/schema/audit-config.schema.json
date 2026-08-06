@@ -148,10 +148,11 @@
         },
         "inProgressPolicy": {
           "type": "string",
-          "description": "Interplay with in_progress audit tasks. 'skip-gate-only' (default) or 'skip-all'.",
+          "description": "Interplay with in_progress audit tasks. 'skip-gate-only' (default) or 'skip-all'. \"warn-always\" ignores manifest coverage entirely.",
           "enum": [
             "skip-gate-only",
-            "skip-all"
+            "skip-all",
+            "warn-always"
           ]
         }
       }
