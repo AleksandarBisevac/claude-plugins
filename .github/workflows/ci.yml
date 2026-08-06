@@ -140,10 +140,31 @@ jobs:
           fi
           grep -q 'id="usage"' docs/index.html
           echo "OK: the live demo is the committed example, Usage section included"
-          # NOT covered: docs/demo-large.html. Its 40x5 source manifest was never
-          # committed and no generator for it exists in the repo, so it cannot be
-          # regenerated or gated here. Either commit that manifest or drop the demo;
-          # do not read this step's silence as coverage.
+      - name: Scale demo is renderable and valid (docs/demo-large.html)
+        shell: bash
+        run: |
+          set -e
+          # The scale demo used to be unreproducible — its 40x5 manifest was never
+          # committed — and it had been serving a report rendered from an INVALID
+          # manifest, so the hosted page carried a red "INVALID MANIFEST: 10 finding(s)"
+          # banner. gen-demo-manifest.py rebuilds the fixture deterministically, so the
+          # page is now checked the same way the example is.
+          #
+          # Content assertions, not a byte diff: the render stamps a wall-clock time,
+          # so a fresh render always differs by that line. Refresh with
+          #   python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
+          #   python plugins/audit/scripts/gen-demo-usage.py /tmp/dl/audit-plan.json
+          #   CLAUDE_PROJECT_DIR=/tmp/dl python plugins/audit/scripts/render-report.py \
+          #     /tmp/dl/audit-plan.json --out-dir /tmp/dl --format html
+          #   cp /tmp/dl/demo-large.html docs/demo-large.html
+          python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
+          python plugins/audit/scripts/validate-manifest.py /tmp/dl/audit-plan.json
+          if grep -q 'INVALID MANIFEST' docs/demo-large.html; then
+            echo "docs/demo-large.html was rendered from an invalid manifest"; exit 1
+          fi
+          grep -q 'id="usage"' docs/demo-large.html
+          test "$(grep -c 'tr class="phase"' docs/demo-large.html)" = "40"
+          echo "OK: scale demo renders 40 valid phases with a Usage section"
       - uses: actions/setup-node@v5
         with:
           node-version: 20
