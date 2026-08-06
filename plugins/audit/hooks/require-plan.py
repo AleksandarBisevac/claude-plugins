@@ -123,9 +123,49 @@ def _deny_payload(msg: str) -> dict:
     }
 
 
+def _warn_payload(msg: str) -> dict:
+    """Non-blocking advisory, delivered on the PostToolUse pass.
+
+    Deliberately NOT a PreToolUse decision. There is no `permissionDecision:
+    "allow"` path in this hook and there must not be one: emitting `allow` would
+    auto-approve the tool call and skip the user's own permission prompt, so an
+    advisory would silently widen what the agent may do. `additionalContext` on
+    Post is the same channel remind-tdd and guard-bash-writes already use."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": "[require-plan] " + msg,
+        }
+    }
+
+
 def block(msg: str) -> None:
     print(json.dumps(_deny_payload(msg)))
     sys.exit(0)
+
+
+def _record_observed(state_dir: Path, session_id: str, rel: str, reason: str) -> None:
+    """Append to the observe tally for this session.
+
+    Named `plan-gate-observed-<sid>.json` so detect-plan-skip's existing GC sweeps
+    it: `_GC_PREFIXES` already matches `plan-gate-`. Distinct from
+    `plan-gate-<sid>.json`, which is the free-file slot."""
+    try:
+        path = state_dir / ("plan-gate-observed-%s.json" % session_id)
+        seen = {"files": [], "notified": False}
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as fh:
+                loaded = json.load(fh) or {}
+            if isinstance(loaded, dict):
+                seen["files"] = loaded.get("files", []) or []
+                seen["notified"] = bool(loaded.get("notified"))
+        if rel not in seen["files"]:
+            seen["files"].append(rel)
+        _ensure_dir(state_dir)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(seen, fh)
+    except Exception:
+        pass
 
 
 # --- core decision ------------------------------------------------------------
@@ -233,15 +273,39 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
         else "change magnitude %d (> %d)" % (magnitude, threshold)
     )
     keyword = cfg.get("bypassKeyword") or _config.DEFAULTS["bypassKeyword"]
+
+    # 6. This edit is out of policy. HOW LOUDLY to say so depends on how much the
+    #    gate actually knows — see _config.plan_gate_mode. Everything above this
+    #    point is unchanged by grading: an exempt file, a covered file or a first
+    #    small file is allowed on every tier.
+    state = _config.manifest_state(root, manifest_rel)
+    mode = _config.plan_gate_mode(cfg, state)
+
+    if mode == "observe":
+        # Record what would have been blocked, so the next prompt can say so once.
+        # This is the tier where the plugin has no plan to check against, so a deny
+        # would be a decision made on no evidence.
+        if commit_state:
+            _record_observed(sd, session_id, rel, reason)
+        return ("observe", "would have blocked (%s): %s" % (reason, rel))
+
+    if mode == "warn":
+        return (
+            "warn",
+            "%s is not covered by an in_progress task (%s).\n"
+            "The plan gate is advisory until a phase is running: start one with "
+            "/audit:next or /audit:phase, or add a task covering this file to %s."
+            % (rel, reason, manifest_rel),
+        )
+
     return (
         "block",
-        "Non-trivial change without an active plan (%s): %s\n"
-        "Plan-first development is enforced for this repo. To proceed, either:\n"
-        "  1. Add a phase/task covering this file to %s "
-        "(set its status to \"in_progress\") and run /audit, OR\n"
+        "Outside the running plan (%s): %s\n"
+        "A phase is in_progress, so edits are held to it. To proceed, either:\n"
+        "  1. Add a task covering this file to %s (status \"in_progress\"), OR\n"
         "  2. Include %s anywhere in your prompt to opt out for this one "
         "change (single-use, logged).\n"
-        "Exempt without a plan: %s, and the first single small (magnitude <= %d: "
+        "Exempt regardless: %s, and the first single small (magnitude <= %d: "
         "lines added, chars/200, or lines removed — whichever is larger) "
         "non-exempt file per session."
         % (reason, rel, manifest_rel, keyword, ", ".join(exempt), threshold),
@@ -260,18 +324,24 @@ def main() -> None:
     except Exception:
         sys.exit(0)
 
-    # PostToolUse runs only for its state side-effects — the edit already
-    # happened; never block or complain there.
+    # PostToolUse cannot block — the edit already happened. It carries the two
+    # non-blocking channels instead: the observe tally was written inside decide(),
+    # and a warn is surfaced here as context.
     if event == "PostToolUse":
+        if verdict == "warn":
+            print(json.dumps(_warn_payload(msg)))
         sys.exit(0)
 
     if verdict == "block":
         block(msg)
+    # observe and warn never gate on Pre. Printing nothing keeps the user's normal
+    # permission prompt intact.
     sys.exit(0)
 
 
 # --- selftest -----------------------------------------------------------------
 def _selftest() -> int:
+    import shutil
     import tempfile
 
     tmp = Path(tempfile.mkdtemp(prefix="require-plan-selftest-"))
@@ -280,6 +350,28 @@ def _selftest() -> int:
     sd.mkdir(parents=True, exist_ok=True)
     ld.mkdir(parents=True, exist_ok=True)
     cfg = dict(_config.DEFAULTS)  # generic defaults, no project specifics
+
+    # Pin the project dir. `decide` resolves the root via _config.repo_root, which
+    # prefers CLAUDE_PROJECT_DIR over the payload's cwd — so run inside a real
+    # session this suite was reading THIS repository's manifest. That was harmless
+    # while the verdict ignored the manifest; now that its existence selects the
+    # tier, an unpinned run would grade against whatever repo happens to be open.
+    _prev_project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+
+    # Most cases below predate evidence grading and assert the fully-enforced
+    # behaviour, so they run with enforce:true. The tiers themselves are exercised
+    # by group (k), against real manifest fixtures.
+    cfg["enforce"] = True
+
+    def write_manifest(obj):
+        """Write a manifest at the default manifestPath inside the temp project."""
+        d = tmp / "docs" / "audit"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "audit-plan.json").write_text(json.dumps(obj), encoding="utf-8")
+
+    def clear_manifest():
+        shutil.rmtree(tmp / "docs", ignore_errors=True)
 
     session = "selftest-session-1"
     big = "\n".join("line %d" % i for i in range(120))  # 120 lines > 80
@@ -417,6 +509,121 @@ def _selftest() -> int:
           and str(hso.get("permissionDecisionReason", "")).startswith("[require-plan]"))
     results.append(ok)
     print("%s j1 deny payload is canonical PreToolUse JSON" % ("PASS" if ok else "FAIL"))
+
+    # (k) evidence grading. Same out-of-policy edit at each tier; only the amount
+    #     the gate knows changes. cfg_graded drops the enforce override the rest of
+    #     this suite uses.
+    cfg_graded = dict(cfg)
+    cfg_graded["enforce"] = False
+
+    def check_graded(name, expected, data, *, event="PreToolUse"):
+        try:
+            verdict, _ = decide(data, cfg=cfg_graded, state_dir=sd, logs_dir=ld,
+                                event=event)
+        except Exception as exc:  # pragma: no cover
+            verdict = "EXC:%s" % exc
+        ok = verdict == expected
+        results.append(ok)
+        print("%s %s (expected %s, got %s)"
+              % ("PASS" if ok else "FAIL", name, expected, verdict))
+
+    def offending(sid):
+        return payload("Edit", "src/graded/mod.ts", new_string=big, sid=sid)
+
+    clear_manifest()
+    check_graded("k1 no manifest -> observe, never block", "observe",
+                 offending("selftest-k1"))
+
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]})
+    check_graded("k2 manifest present, nothing running -> warn", "warn",
+                 offending("selftest-k2"))
+
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "pending"}]}]})
+    check_graded("k3 manifest + running phase -> block", "block",
+                 offending("selftest-k3"))
+
+    # A covered file is allowed on the strictest tier — grading changes only the
+    # verdict for edits that were already out of policy.
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+            {"id": "P1.1", "title": "t", "status": "in_progress",
+             "files": ["src/graded/covered.ts"]}]}]})
+    check_graded("k4 a covered file is allowed even at the deny tier", "allow",
+                 payload("Edit", "src/graded/covered.ts", new_string=big,
+                         sid="selftest-k4"))
+    check_graded("k5 an exempt glob is allowed at the deny tier", "allow",
+                 payload("Write", "README.md", content=big, sid="selftest-k5"))
+
+    # The free small-file slot survives grading, on every tier.
+    clear_manifest()
+    check_graded("k6 a first small file is still allowed under observe", "allow",
+                 payload("Write", "src/graded/small.ts", content="const a = 1;",
+                         sid="selftest-k6"))
+
+    # Observe records at Post so the next prompt can report it once; Pre does not.
+    clear_manifest()
+    obs_sid = "selftest-k7"
+    obs_file = sd / ("plan-gate-observed-%s.json" % obs_sid)
+    check_graded("k7 observe on Pre writes no tally", "observe",
+                 offending(obs_sid))
+    ok = not obs_file.exists()
+    results.append(ok)
+    print("%s k8 Pre leaves the observe tally unwritten" % ("PASS" if ok else "FAIL"))
+    check_graded("k9 observe on Post still observes", "observe",
+                 offending(obs_sid), event="PostToolUse")
+    try:
+        tally = json.loads(obs_file.read_text(encoding="utf-8"))
+    except Exception:
+        tally = {}
+    ok = tally.get("files") == ["src/graded/mod.ts"]
+    results.append(ok)
+    print("%s k10 Post records the file in the observe tally (%r)"
+          % ("PASS" if ok else "FAIL", tally.get("files")))
+
+    # The tally name has to fall under the existing GC prefixes or it leaks forever.
+    ok = obs_file.name.startswith("plan-gate-")
+    results.append(ok)
+    print("%s k11 the tally filename is swept by detect-plan-skip's GC prefixes"
+          % ("PASS" if ok else "FAIL"))
+    ok = obs_file.name != ("plan-gate-%s.json" % obs_sid)
+    results.append(ok)
+    print("%s k12 the tally does not collide with the free-file slot"
+          % ("PASS" if ok else "FAIL"))
+
+    # enforce:true restores the pre-0.20 behaviour on the weakest evidence.
+    check_graded("k13 enforce:false with no manifest observes", "observe",
+                 offending("selftest-k13"))
+    cfg_enforced = dict(cfg_graded)
+    cfg_enforced["enforce"] = True
+    try:
+        verdict, _ = decide(offending("selftest-k14"), cfg=cfg_enforced,
+                            state_dir=sd, logs_dir=ld)
+    except Exception as exc:  # pragma: no cover
+        verdict = "EXC:%s" % exc
+    ok = verdict == "block"
+    results.append(ok)
+    print("%s k14 enforce:true blocks with no manifest at all (expected block, got %s)"
+          % ("PASS" if ok else "FAIL", verdict))
+
+    # The warn payload must not be a permissionDecision — emitting `allow` would
+    # auto-approve the tool call and bypass the user's own prompt.
+    wp = json.loads(json.dumps(_warn_payload("why")))
+    hso = wp.get("hookSpecificOutput") or {}
+    ok = ("permissionDecision" not in hso
+          and hso.get("hookEventName") == "PostToolUse"
+          and str(hso.get("additionalContext", "")).startswith("[require-plan]"))
+    results.append(ok)
+    print("%s k15 warn is additionalContext on Post, never a permissionDecision"
+          % ("PASS" if ok else "FAIL"))
+
+    if _prev_project_dir is None:
+        os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    else:
+        os.environ["CLAUDE_PROJECT_DIR"] = _prev_project_dir
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

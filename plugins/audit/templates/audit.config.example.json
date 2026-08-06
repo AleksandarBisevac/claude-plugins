@@ -3,6 +3,8 @@
   "manifestPath": "docs/audit/audit-plan.json",
   "//gitRoot": "Path of the git repo root relative to this project dir. Default '.' (project dir IS the git root). Set to e.g. 'test' when git/the workspace lives in a subdirectory; keep in sync with the manifest's meta.gitRoot.",
   "gitRoot": ".",
+  "//enforce": "Force the plan-first gate to DENY even with no manifest. Default false, which grades the gate on evidence: observe (no manifest) -> warn (manifest, nothing running) -> deny (a phase is in_progress). Set true for the pre-0.20 always-on behaviour. The secret guards are never graded.",
+  "enforce": false,
   "exemptGlobs": [
     "docs/audit/**",
     "**/*.md",

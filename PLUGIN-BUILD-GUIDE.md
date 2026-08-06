@@ -66,7 +66,7 @@ claude-plugins/                           # this repo (personal, public)
         hooks.json                        # wires the 6 hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
         _config.py                        # shared config loader + path/manifest helpers
-        require-plan.py                   # plan-first enforcement (Pre observes, Post commits state)
+        require-plan.py                   # plan-first gate, graded on evidence (observe/warn/deny; Pre decides, Post commits state)
         detect-plan-skip.py               # arms the plan-first bypass + config-error warning + state GC
         guard-secrets-read.py             # blocks secret reads (direct+indirect) + shell source writes
         guard-edits.py                    # token-logging ban, custom rules, self-edit/forgery block
@@ -192,12 +192,21 @@ Plan-first gate on Edit/Write/MultiEdit/NotebookEdit, registered under BOTH PreT
 PostToolUse. ALLOW/BLOCK order: unknown tool/no path → allow; exempt glob (config) → allow;
 file covered by an `in_progress` manifest task → allow; single-use bypass armed → allow;
 else first small (change **magnitude** = max(added lines, chars/200, removed lines)
-`<= trivialLineThreshold`) non-exempt file per session → allow, a 2nd distinct file or an
-over-threshold change → **deny** (canonical `permissionDecision` JSON) with guidance.
+`<= trivialLineThreshold`) non-exempt file per session → allow.
+**An out-of-policy edit is then GRADED on evidence** via `_config.plan_gate_mode`, because
+enforcing plan-first requires a plan to enforce against: no manifest → `observe` (tally it,
+report once per session from `detect-plan-skip.py`, never block); manifest but no phase
+`in_progress` → `warn` (PostToolUse `additionalContext`); manifest + a running phase →
+**deny** (canonical `permissionDecision` JSON). `enforce: true` denies at every tier.
+The warn tier deliberately does NOT emit a `permissionDecision` — there is no `allow` path in
+this hook, and adding one would auto-approve the tool call and skip the user's own prompt.
+`_config.manifest_state` reads the ASSEMBLED manifest: sharded index stubs carry no `status`,
+so a raw index read would miss every running phase.
 **Transactional state**: PreToolUse only observes (the edit may still be denied by a sibling
 hook or the user); PostToolUse — which fires only after a successful edit — consumes the
-bypass (logged) and records the free-file slot. All tunables from config (`manifestPath`,
-`exemptGlobs`, `trivialLineThreshold`, `stateDir`, `logsDir`, `bypassKeyword`).
+bypass (logged), records the free-file slot, and appends to the observe tally. All tunables
+from config (`manifestPath`, `exemptGlobs`, `enforce`, `trivialLineThreshold`, `stateDir`,
+`logsDir`, `bypassKeyword`).
 `--selftest` (25 cases).
 
 ### `plugins/audit/hooks/detect-plan-skip.py`

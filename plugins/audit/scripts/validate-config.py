@@ -28,7 +28,7 @@ import sys
 
 # Mirror of hooks/_config.py DEFAULTS key set (source of truth for the hooks).
 KNOWN_ROOT = {
-    "manifestPath", "gitRoot", "exemptGlobs", "trivialLineThreshold",
+    "manifestPath", "gitRoot", "exemptGlobs", "enforce", "trivialLineThreshold",
     "stateDir", "logsDir", "bypassKeyword", "secretPatterns", "guardEdits",
     "bashWriteCheck", "tddReminder", "usage",
 }
@@ -74,6 +74,13 @@ def validate_config(obj):
 
     if "exemptGlobs" in obj and not _is_str_list(obj["exemptGlobs"]):
         findings.append("exemptGlobs must be an array of strings")
+
+    # A truthy string here is the dangerous typo: "false" is truthy in most
+    # languages a reader might be coming from, and the hook ignores a non-bool
+    # rather than trusting it — so silently taking the graded default while the
+    # file says otherwise is exactly the surprise this finding prevents.
+    if "enforce" in obj and not isinstance(obj["enforce"], bool):
+        findings.append("enforce must be true or false (a bool, not a string)")
 
     sp = obj.get("secretPatterns")
     if sp is not None:
@@ -256,7 +263,7 @@ def _selftest():
 
     full = {
         "manifestPath": "docs/audit/audit-plan.json", "gitRoot": ".",
-        "exemptGlobs": ["**/*.md"], "trivialLineThreshold": 80,
+        "exemptGlobs": ["**/*.md"], "enforce": False, "trivialLineThreshold": 80,
         "stateDir": ".claude/state", "logsDir": ".claude/logs",
         "bypassKeyword": "#no-plan",
         "secretPatterns": {"extra": [r"\.secretrc$"]},
@@ -275,6 +282,18 @@ def _selftest():
     }
     f, w = validate_config(full)
     check("fully-populated valid config passes", not f and not w)
+
+    f, w = validate_config({"enforce": True})
+    check("enforce:true is valid", not f and not w)
+    f, w = validate_config({"enforce": False})
+    check("enforce:false is valid", not f and not w)
+    f, w = validate_config({"enforce": "true"})
+    check("enforce as a string is a finding, not a silent truthy",
+          any("enforce" in x for x in f))
+    f, w = validate_config({"enforce": 1})
+    check("enforce as a number is a finding", any("enforce" in x for x in f))
+    f, w = validate_config({"enforce": False})
+    check("enforce is a known root key (no unknown-key warning)", not w)
 
     f, w = validate_config({"usage": {"authorMode": "nope"}})
     check("usage.authorMode enum enforced", any("authorMode" in x for x in f))

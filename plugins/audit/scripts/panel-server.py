@@ -1457,6 +1457,7 @@ const DESC={
  bashWriteCheck:"Warn when a Bash command creates new source files that weren't planned.",
  tddReminder:"Non-blocking nudge when you edit source without touching a test.",
  exemptGlobs:"Globs whose edits skip the plan-first / TDD / bash-write guards (docs, tests, .claude/**, the manifest).",
+ enforce:"Force the plan gate to DENY even with no manifest. Off by default, which grades it on evidence: observe (no manifest) -> warn (manifest, nothing running) -> deny (a phase is in_progress). The secret guards are never graded.",
  tokenVars:"Identifier names that must never be logged — a console.log/print of any of these is blocked.",
  secretPatternsExtra:"Extra regexes that mark a file path as a secret; reading a matching file is blocked.",
  customRules:"Per-path banned patterns: block a regex in new content when the edited path starts with a prefix.",
@@ -1522,6 +1523,7 @@ function renderGuards(){const c=$('#guards');c.textContent='';const cfg=JSON.par
   return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,flabel(lbl,tip));};
  tog.append(mk('bashWriteCheck.enabled',DESC.bashWriteCheck,bw.enabled!==false,v=>{bw.enabled=v;cfg.bashWriteCheck=bw;}));
  tog.append(mk('tddReminder.enabled',DESC.tddReminder,td.enabled!==false,v=>{td.enabled=v;cfg.tddReminder=td;}));
+ tog.append(mk('enforce (always deny)',DESC.enforce,cfg.enforce===true,v=>{if(v)cfg.enforce=true;else delete cfg.enforce;}));
  card.append(el('h2',{},'Guards'),tog);
  // lists
  card.append(h2h('exemptGlobs',DESC.exemptGlobs),listEditor(()=>cfg.exemptGlobs??d.exemptGlobs,a=>cfg.exemptGlobs=a,'glob…'));

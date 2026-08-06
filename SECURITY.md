@@ -33,6 +33,25 @@ hardcoded per hook in `hooks/hooks.json` — it cannot live in
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd | silent | no-op |
 
+### When the plan gate actually blocks (0.20.0)
+
+The plan gate is **conditional**, and anyone reasoning about this plugin's guarantees needs
+the condition. It denies only when there is a plan to enforce against: with no manifest it
+records and reports without blocking, with a manifest but no phase `in_progress` it warns,
+and it denies once a phase is running. `enforce: true` in `.claude/audit.config.json` denies
+at every tier. Both plan gates are graded this way — `require-plan` and the shell-write
+branch of `guard-secrets-read` — so the same file gets the same verdict whether it is edited
+through a tool or through `sed -i`.
+
+**No secret guard is graded.** Secret reads, the token-logging ban and the shell secret
+checks deny by default at every tier, with or without a manifest: reading `.env` is wrong
+regardless of whether a plan exists, so those guards need no evidence to be correct. If you
+are relying on this plugin for secret containment, that behaviour is unchanged.
+
+Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
+verdict on any internal error, in keeping with the fail-open posture above: a crash in the
+evidence check can only relax the gate, never manufacture a denial.
+
 ## What the usage ledger records
 
 `meter-usage` reads the session transcript to recover token counts, which Claude

@@ -29,8 +29,10 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 /plugin install audit@quality-gates
 ```
 
-> **Before you install**, read [installing arms global hooks](plugins/audit/README.md#installing-arms-global-hooks)
-> — the guard hooks activate in **all** your projects, by design.
+> The guard hooks activate in **all** your projects, by design — but the plan gate is
+> **enforced once you have a plan, observing before that**, so installing it does not
+> start denying edits in repos that never opted in. See
+> [installing arms global hooks](plugins/audit/README.md#installing-arms-global-hooks).
 > Requirements: Python 3.8+ reachable as `python3`, `python` or `py` (CI verifies on 3.12)
 > (on Windows: run inside Git Bash).
 
