@@ -66,6 +66,10 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "mergedAt", "review", "reviewFindings", "summary", "tasks",
                # v0.16: per-phase review skill override + app/team area tag
                "reviewSkill", "area",
+               # v0.19: optional spend budget for this phase, in USD. Optional on
+               # purpose — most phases will not carry one, and the surfaces render
+               # an absent budget as "—" rather than as 0% or 100%.
+               "budgetUSD",
                # v0.15 sharded layout: an index stub points at its shard file and
                # may carry an optimistic parallel-run claim (both surface on the
                # assembled phase via _manifest_io):
@@ -272,6 +276,16 @@ def validate(manifest):
         if phase.get("status") not in STATUS:
             f.append("%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS)))
         _check_claim(phase, pwhere, f, w)
+        # A budget of 0 or a negative one is not a budget, and a string is a typo
+        # that would silently render as "no budget". Both are worth saying out loud.
+        if "budgetUSD" in phase:
+            budget = phase.get("budgetUSD")
+            if isinstance(budget, bool) or not isinstance(budget, (int, float)):
+                f.append("%s: budgetUSD must be a number, got %s"
+                         % (pwhere, type(budget).__name__))
+            elif budget <= 0:
+                f.append("%s: budgetUSD must be greater than 0 (got %s) — omit the "
+                         "key entirely for 'no budget'" % (pwhere, budget))
 
         tasks_val = phase.get("tasks")
         if "tasks" not in phase:

@@ -276,9 +276,61 @@ def render(rows, args, manifest, window, show_cost):
     out += group_table("agent", "BY AGENT")
     tasks_agg = ul.aggregate(rows, "task")
     if [k for k in tasks_agg if k != "--"]:
-        out += group_table("task", "TOP TASKS", limit=args.top)
+        # Same derivation the report uses: commands read project values from the
+        # manifest, hooks read .claude/audit.config.json.
+        meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
+        bands = ul.cost_bands(manifest, rows,
+                              meta_usage if isinstance(meta_usage, dict) else {})
+        if bands.get("sufficient"):
+            out += group_table("task", "TOP TASKS", limit=args.top,
+                               extra=("band", lambda k, v:
+                                      (bands["byTask"].get(k) or "-")))
+        else:
+            out += group_table("task", "TOP TASKS", limit=args.top)
+        out.append("")
+        out.append("  " + band_note(bands))
+        out += routing_advice_lines(
+            ul.routing(manifest, rows,
+                       (meta_usage or {}).get("pricing")).get("advice") or [])
     out += render_trend(rows)
     return "\n".join(out)
+
+
+def routing_advice_lines(advice):
+    """The one recommendation the CLI makes. Silent unless the ledger's own
+    evidence clears every gate — which on a well-routed project is normal."""
+    if not advice:
+        return []
+    out = ["", "  WHAT THE EVIDENCE SUPPORTS"]
+    for a in advice:
+        out.append("  %s work is running on %s - %d task(s) at %.1f mean attempts"
+                   % (a["risk"], a["from"], a["tasks"], a["fromMeanAttempts"] or 0))
+        out.append("    those same tokens cost %s at %s rates vs %s  ->  %s less (%.0f%%)"
+                   % (fmt_cost(a["atToRates"]), a["to"],
+                      fmt_cost(a["atFromRates"]), fmt_cost(a["saving"]),
+                      a["savingPct"]))
+        out.append("    %s has already run %d task(s) in this band here, at %.1f "
+                   "mean attempts" % (a["to"], a["evidenceTasks"],
+                                      a["evidenceAttempts"] or 0))
+    out.append("  upper bound, not a forecast: the same tokens re-priced at the "
+               "other model's rates")
+    return out
+
+
+def band_note(bands):
+    """One line saying where the band thresholds came from, or why there are none.
+
+    "This task is an outlier" is a claim, and a claim whose basis is invisible
+    cannot be checked. On a young project this line is the entire content: it says
+    the band is waiting for a sample rather than leaving a blank column."""
+    if not bands.get("sufficient"):
+        return ("band: not calibrated yet - needs %d completed tasks, there are %d "
+                "(or set usage.bands.highUSD / outlierUSD for a fixed budget)"
+                % (bands.get("gate", 5), bands.get("sample", 0)))
+    return ("band: %s - typical <= %s, high <= %s, outlier above"
+            % ("configured thresholds" if bands.get("basis") == "absolute"
+               else "this project's completed tasks (median / p90)",
+               fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
 
 
 def render_trend(rows, width=28):
@@ -537,6 +589,9 @@ def main(argv):
             "byDay": ul.aggregate(rows, "day"),
             "byAttribution": ul.aggregate(rows, "attr"),
             "heatmap": ul.heatmap(rows),
+            "bands": ul.cost_bands(
+                manifest, rows, meta_usage if isinstance(meta_usage, dict) else {}),
+            "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
@@ -554,6 +609,34 @@ def _selftest():
 
     def check(label, ok, detail=""):
         cases.append((label, bool(ok), detail))
+
+    # "This task is an outlier" is a claim; a claim whose basis is invisible
+    # cannot be checked. Both branches must name their basis or their shortfall.
+    check("band note: an active band states basis AND thresholds",
+          "median / p90" in band_note(
+              {"sufficient": True, "basis": "relative", "high": 5.59,
+               "outlier": 35.4})
+          and "$5.59" in band_note(
+              {"sufficient": True, "basis": "relative", "high": 5.59,
+               "outlier": 35.4}))
+    check("band note: an absolute basis does not claim a percentile",
+          "configured thresholds" in band_note(
+              {"sufficient": True, "basis": "absolute", "high": 15, "outlier": 50}))
+    check("band note: below the gate it says what is missing and how to opt out",
+          band_note({"sufficient": False, "gate": 5, "sample": 4})
+          == "band: not calibrated yet - needs 5 completed tasks, there are 4 "
+             "(or set usage.bands.highUSD / outlierUSD for a fixed budget)")
+
+    check("advice: silence when the evidence does not support a move",
+          routing_advice_lines([]) == [])
+    _al = "\n".join(routing_advice_lines([{
+        "risk": "low", "from": "claude-opus-5", "to": "claude-sonnet-5",
+        "tasks": 7, "fromMeanAttempts": 1.0, "atFromRates": 157.75,
+        "atToRates": 94.65, "saving": 63.10, "savingPct": 40.0,
+        "evidenceTasks": 5, "evidenceAttempts": 1.0}]))
+    check("advice: the CLI carries the same numbers and the same caveat",
+          "$63.10 less (40%)" in _al and "already run 5 task(s)" in _al
+          and "upper bound, not a forecast" in _al)
 
     check("fmt: tokens scale", (fmt_tokens(942) == "942"
                                 and fmt_tokens(214_300) == "214.3K"

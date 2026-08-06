@@ -104,6 +104,14 @@ DEFAULTS = {
         "maxScanBytes": 33554432,
         "currency": "USD",
         "pricingAsOf": "2026-08-06",
+        # Cost bands. Empty by default on purpose: with no thresholds set the
+        # analytics calibrate from the project's own completed tasks (median/p90),
+        # which means something on day one and needs no guess. Set both to pin
+        # absolute dollar thresholds instead — `highUSD` must be <= `outlierUSD`,
+        # and a malformed pair falls back to the relative basis rather than
+        # classifying anything wrongly. NOT named "risk": tasks already carry a
+        # `risk` field meaning risk of the change.
+        "bands": {"highUSD": None, "outlierUSD": None},
         # `_default` is Opus-tier on purpose: an unrecognized model is far more
         # likely to be a new frontier release than a cheap one, and over-stating
         # spend is the safer error for a cost display.

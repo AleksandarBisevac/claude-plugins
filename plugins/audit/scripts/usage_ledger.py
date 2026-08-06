@@ -909,6 +909,123 @@ def unit_economics(manifest, rows):
     return out
 
 
+BAND_ORDER = ("typical", "high", "outlier")
+
+
+def cost_bands(manifest, rows, cfg=None):
+    """Sort tasks into `typical` / `high` / `outlier` by what they cost.
+
+    Deliberately NOT called a risk band: manifest tasks already carry `risk`, which
+    is the risk of the CHANGE (and is what `routing` compares within). Two different
+    axes wearing one word would make both impossible to discuss.
+
+    The thresholds are the project's own median and p90 by default, so this means
+    something on day one with no configuration and re-calibrates as the work grows.
+    A team with a real budget can pin absolute numbers in
+    `usage.bands.{highUSD,outlierUSD}` instead; `basis` says which is in force, and
+    the callers print the thresholds, because a band whose definition is invisible
+    is a number nobody can argue with.
+
+    Two guards:
+
+    * Below `MIN_TASKS_FOR_PROJECTION` completed tasks the relative basis returns
+      NOTHING — percentiles off three samples are noise, and a confidently wrong
+      band is worse than no band. The absolute basis has no such gate: a configured
+      threshold is an opinion the user already holds.
+    * Thresholds come from COMPLETED tasks only, because a half-finished task's cost
+      is not comparable. They are then applied to every task including in-flight
+      ones, which is what lets the metering hook warn while there is still time to
+      act.
+    """
+    band_cfg = ((cfg or {}).get("bands") or {}) if isinstance(cfg, dict) else {}
+    tasks = task_index(manifest)
+    cost_by_task = {}
+    for row in rows:
+        tid = row.get("taskId")
+        if tid and tid in tasks:
+            cost_by_task[tid] = cost_by_task.get(tid, 0.0) + _cost(row)
+
+    out = {"basis": None, "high": None, "outlier": None, "byTask": {},
+           "counts": {b: 0 for b in BAND_ORDER}, "sample": 0,
+           "gate": MIN_TASKS_FOR_PROJECTION, "sufficient": False}
+
+    hi, out_ = band_cfg.get("highUSD"), band_cfg.get("outlierUSD")
+    try:
+        hi = float(hi) if hi is not None else None
+        out_ = float(out_) if out_ is not None else None
+    except (TypeError, ValueError):      # a garbled config must not classify
+        hi = out_ = None
+    if hi is not None and out_ is not None and 0 < hi <= out_:
+        out.update(basis="absolute", high=hi, outlier=out_, sufficient=True)
+    else:
+        done = [c for tid, c in cost_by_task.items()
+                if (tasks.get(tid) or {}).get("status") == "done"]
+        out["sample"] = len(done)
+        if len(done) < MIN_TASKS_FOR_PROJECTION:
+            return out
+        out.update(basis="relative", sufficient=True,
+                   high=round(_percentile(done, 50), 4),
+                   outlier=round(_percentile(done, 90), 4))
+
+    for tid, cost in cost_by_task.items():
+        band = ("outlier" if cost > out["outlier"]
+                else "high" if cost > out["high"] else "typical")
+        out["byTask"][tid] = band
+        out["counts"][band] += 1
+    return out
+
+
+def phase_budgets(manifest, rows):
+    """Spend against `phase.budgetUSD`, for the phases that declare one.
+
+    Ties spend to the PLAN rather than to the calendar, which is the comparison a
+    manifest-driven pipeline can make and a date-range dashboard cannot.
+
+    Phases without a budget are returned too, with `budget: None` — the surfaces
+    need to render them as "—". Defaulting an absent budget to zero would paint
+    every unbudgeted phase as infinitely over, and defaulting it to the spend
+    would paint every one as exactly on target; both are lies about a phase whose
+    owner simply never set a number.
+
+    `pct` is uncapped on purpose: a phase at 130% should read 130%, not a bar
+    pinned at full with the overrun hidden."""
+    spent = {}
+    for row in rows:
+        pid = row.get("phaseId") or "--"
+        spent[pid] = spent.get(pid, 0.0) + _cost(row)
+
+    out, budgeted, total_budget, total_spent = [], 0, 0.0, 0.0
+    for ph in ((manifest or {}).get("phases") or []):
+        if not isinstance(ph, dict) or not ph.get("id"):
+            continue
+        pid = ph["id"]
+        raw = ph.get("budgetUSD")
+        budget = (float(raw) if isinstance(raw, (int, float))
+                  and not isinstance(raw, bool) and raw > 0 else None)
+        used = round(spent.get(pid, 0.0), 4)
+        if budget is not None:
+            budgeted += 1
+            total_budget += budget
+            total_spent += used
+        out.append({
+            "id": pid, "title": ph.get("title") or "", "status": ph.get("status"),
+            "budget": budget, "spent": used,
+            "pct": round(100.0 * used / budget, 1) if budget else None,
+            "over": bool(budget and used > budget),
+        })
+    return {"phases": out, "budgeted": budgeted,
+            "totalBudget": round(total_budget, 4) if budgeted else None,
+            "totalSpent": round(total_spent, 4) if budgeted else None,
+            "anyOver": any(p["over"] for p in out)}
+
+
+def band_of(bands, task_id):
+    """The band for one task, or None when banding is suppressed/unknown."""
+    if not bands or not bands.get("sufficient"):
+        return None
+    return (bands.get("byTask") or {}).get(task_id)
+
+
 def retry_cost(manifest, rows):
     """Spend on retried tasks and spend on blocked tasks — reported SEPARATELY.
 
@@ -951,7 +1068,7 @@ def retry_cost(manifest, rows):
 RISK_ORDER = ("high", "med", "low", "unrated")
 
 
-def routing(manifest, rows):
+def routing(manifest, rows, pricing=None):
     """Cost per completed task and mean attempts, per model, WITHIN a risk band.
 
     Deliberately NOT a spend-share / task-share ratio. Tasks are not equal-sized —
@@ -972,10 +1089,16 @@ def routing(manifest, rows):
             continue
         risk = t.get("risk") or "unrated"
         model = row.get("model") or "unknown"
-        cell = acc.setdefault((risk, model), {"cost": 0.0, "tasks": {}})
+        cell = acc.setdefault((risk, model),
+                              {"cost": 0.0, "tasks": {},
+                               "counts": {k: 0 for k in TOKEN_KEYS}})
         cell["cost"] += _cost(row)
         cell["tasks"][tid] = t
-    by_risk = {}
+        # Kept so the counterfactual below can re-price the SAME tokens at another
+        # model's rates. Cost alone cannot do that.
+        for k in TOKEN_KEYS:
+            cell["counts"][k] += int(row.get(k) or 0)
+    by_risk, counts_by = {}, {}
     for (risk, model), cell in acc.items():
         n = len(cell["tasks"])
         attempts = [int(t.get("attempts") or 1) for t in cell["tasks"].values()]
@@ -986,11 +1109,98 @@ def routing(manifest, rows):
             "meanAttempts": round(sum(attempts) / float(len(attempts)), 2)
             if attempts else None,
         }
+        counts_by[(risk, model)] = cell["counts"]
     return {
         "byRisk": by_risk,
         "risks": [r for r in RISK_ORDER if r in by_risk],
         "models": sorted({m for cells in by_risk.values() for m in cells}),
+        "advice": _routing_advice(by_risk, counts_by, pricing),
     }
+
+
+MIN_ROUTING_EVIDENCE = 3    # tasks needed on BOTH models, in that band, in this repo
+ATTEMPT_TOLERANCE = 0.2     # a cheaper model that retries more is not cheaper
+MIN_ADVICE_SAVING_USD = 1.0
+MIN_ADVICE_SAVING_PCT = 10.0
+
+
+def _has_rates(model, pricing=None):
+    """True only when the price table names this model. `rates_for` falls back to
+    `_default` for anything unknown, and recommending a move onto a model whose
+    price is a guess would be worse than saying nothing."""
+    table = pricing if isinstance(pricing, dict) and pricing else DEFAULT_PRICING
+    fallback = table.get("_default") or DEFAULT_PRICING["_default"]
+    return rates_for(model, pricing) is not fallback
+
+
+def _routing_advice(by_risk, counts_by, pricing=None):
+    """Where the ledger's own evidence supports moving work to a cheaper model.
+
+    Every condition here exists to stop this becoming the glib advice the routing
+    table was built to avoid:
+
+    * WITHIN one risk band only. The plugin routes hard work to the strong model
+      on purpose; comparing across bands would flag that working system as a fault.
+    * The cheaper model must already have run `MIN_ROUTING_EVIDENCE` tasks in that
+      band IN THIS REPO. Without that, "sonnet would be cheaper" is a price-list
+      observation, not a finding — of course it is cheaper, it is also different.
+    * Its mean attempts must be no worse than the incumbent's (plus a small
+      tolerance). A cheap model that retries twice is not cheaper, and the retry
+      analytics right above this say exactly that.
+    * Both models must have real rates in the table, never a `_default` guess.
+    * The saving must clear both a percentage and an absolute floor, or the advice
+      is noise dressed as insight.
+
+    Both sides are priced at TODAY's rates on the same token counts, so the two
+    numbers share one rate epoch — comparing a historical cost against a current
+    price list would be a different (and wrong) sum. The result is an upper bound,
+    not a forecast: a different model would not emit the same tokens.
+    """
+    out = []
+    for risk, cells in by_risk.items():
+        ranked = sorted(cells.items(), key=lambda kv: -(kv[1]["cost"]))
+        for model, cell in ranked:
+            if cell["tasks"] < MIN_ROUTING_EVIDENCE or not _has_rates(model, pricing):
+                continue
+            counts = counts_by.get((risk, model)) or {}
+            at_from = price(counts, model, pricing)
+            best = None
+            for other, ocell in cells.items():
+                if other == model:
+                    continue
+                if ocell["tasks"] < MIN_ROUTING_EVIDENCE or not _has_rates(other, pricing):
+                    continue
+                if (ocell["meanAttempts"] or 0) > (cell["meanAttempts"] or 0) \
+                        + ATTEMPT_TOLERANCE:
+                    continue
+                at_other = price(counts, other, pricing)
+                saving = at_from - at_other
+                if saving < MIN_ADVICE_SAVING_USD:
+                    continue
+                if at_from <= 0 or 100.0 * saving / at_from < MIN_ADVICE_SAVING_PCT:
+                    continue
+                if best is None or saving > best[1]:
+                    best = (other, saving, at_other, ocell)
+            if best:
+                other, _saving, at_other, ocell = best
+                # Round FIRST, then derive — so the three figures reconcile on
+                # screen. Rounding each independently let 25.01 - 15.00 print as a
+                # saving of 10.00, which is a cent nobody can account for in a
+                # module whose whole claim is that its numbers can be checked.
+                af, at = round(at_from, 2), round(at_other, 2)
+                out.append({
+                    "risk": risk, "from": model, "to": other,
+                    "tasks": cell["tasks"],
+                    "fromMeanAttempts": cell["meanAttempts"],
+                    "atFromRates": af,
+                    "atToRates": at,
+                    "saving": round(af - at, 2),
+                    "savingPct": round(100.0 * (af - at) / af, 1) if af else 0.0,
+                    "evidenceTasks": ocell["tasks"],
+                    "evidenceAttempts": ocell["meanAttempts"],
+                })
+    out.sort(key=lambda a: -a["saving"])
+    return out
 
 
 def coverage(rows):
@@ -1406,6 +1616,150 @@ def _selftest():
               ue["remaining"] == 2)
         check("unit: most-expensive list carries attempts for context",
               ue["mostExpensive"] and len(ue["mostExpensive"][0]) == 3)
+
+        # routing advice: fires only when THIS repo's own evidence supports it.
+        # Both fixtures above route one model per band, so neither produces advice
+        # — a well-routed project getting silence is the point, not a gap.
+        def band(model, n, attempts, out_tok, risk="low", first=0):
+            man_tasks = [{"id": "R%s%d" % (model[7:10], i), "status": "done",
+                          "risk": risk, "attempts": attempts} for i in range(n)]
+            rws = [mkrow(1 + first, model, "a@x", t["id"], "PR", "task", 0.0,
+                         out_tok=out_tok) for t in man_tasks]
+            return man_tasks, rws
+
+        o_t, o_r = band("claude-opus-5", 5, 1, 200_000)
+        s_t, s_r = band("claude-sonnet-5", 4, 1, 200_000)
+        rman = {"phases": [{"id": "PR", "tasks": o_t + s_t}]}
+        adv = routing(rman, o_r + s_r)["advice"]
+        check("advice: a within-band cheaper model with real evidence is named",
+              len(adv) == 1 and adv[0]["from"] == "claude-opus-5"
+              and adv[0]["to"] == "claude-sonnet-5" and adv[0]["risk"] == "low",
+              adv)
+        # The three figures must reconcile EXACTLY: a reader who subtracts the two
+        # displayed costs has to land on the displayed saving, to the cent.
+        check("advice: both sides priced on the SAME tokens at today's rates, and "
+              "the arithmetic on screen adds up exactly",
+              adv and adv[0]["atFromRates"] > adv[0]["atToRates"] > 0
+              and adv[0]["saving"] == round(
+                  adv[0]["atFromRates"] - adv[0]["atToRates"], 2)
+              and adv[0]["savingPct"] == round(
+                  100.0 * adv[0]["saving"] / adv[0]["atFromRates"], 1),
+              adv)
+        check("advice: it carries the in-repo evidence it rests on",
+              adv and adv[0]["evidenceTasks"] == 4
+              and adv[0]["evidenceAttempts"] == 1.0 and adv[0]["tasks"] == 5)
+
+        # Each gate, alone, must silence it.
+        s2_t, s2_r = band("claude-sonnet-5", 2, 1, 200_000)
+        check("advice: SILENT when the cheaper model has too little in-repo "
+              "evidence (a price list is not a finding)",
+              routing({"phases": [{"id": "PR", "tasks": o_t + s2_t}]},
+                      o_r + s2_r)["advice"] == [])
+        s3_t, s3_r = band("claude-sonnet-5", 4, 2, 200_000)
+        check("advice: SILENT when the cheaper model retries more — a model that "
+              "needs two attempts is not cheaper",
+              routing({"phases": [{"id": "PR", "tasks": o_t + s3_t}]},
+                      o_r + s3_r)["advice"] == [])
+        tiny_o, tiny_or = band("claude-opus-5", 5, 1, 100)
+        tiny_s, tiny_sr = band("claude-sonnet-5", 4, 1, 100)
+        check("advice: SILENT when the saving is below the absolute floor",
+              routing({"phases": [{"id": "PR", "tasks": tiny_o + tiny_s}]},
+                      tiny_or + tiny_sr)["advice"] == [])
+        x_t, x_r = band("claude-mystery-9", 4, 1, 200_000)
+        check("advice: SILENT for a model with no real rates — never recommend a "
+              "move onto a price that is a _default guess",
+              _has_rates("claude-mystery-9") is False
+              and routing({"phases": [{"id": "PR", "tasks": o_t + x_t}]},
+                          o_r + x_r)["advice"] == [])
+        # Cross-band comparison is the thing the whole table exists to refuse.
+        hi_t, hi_r = band("claude-sonnet-5", 4, 1, 200_000, risk="high")
+        check("advice: never compares ACROSS risk bands",
+              all(a["risk"] == "low" for a in routing(
+                  {"phases": [{"id": "PR", "tasks": o_t + hi_t}]},
+                  o_r + hi_r)["advice"]))
+
+        # cost_bands: the same sample gate, and a name that does not collide
+        cb = cost_bands(man, ar)
+        check("bands: 5 completed tasks clears the gate on the relative basis",
+              cb["basis"] == "relative" and cb["sufficient"] is True
+              and cb["sample"] == 5)
+        _ti = task_index(man)
+        _done_cost = {}
+        for _r in ar:
+            _t = _r.get("taskId")
+            if _t and (_ti.get(_t) or {}).get("status") == "done":
+                _done_cost[_t] = _done_cost.get(_t, 0.0) + _r["costUSD"]
+        _dc = list(_done_cost.values())
+        check("bands: thresholds ARE the project's own median and p90 "
+              "(computed from completed tasks only)",
+              cb["high"] == round(_percentile(_dc, 50), 4)
+              and cb["outlier"] == round(_percentile(_dc, 90), 4)
+              and cb["high"] <= cb["outlier"])
+        check("bands: every classified task lands in exactly one band",
+              sum(cb["counts"].values()) == len(cb["byTask"])
+              and set(cb["byTask"].values()) <= set(BAND_ORDER))
+        cb_few = cost_bands({"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1", "status": "done"}]}]},
+            [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 5.0)])
+        check("bands: SUPPRESSED below the gate — no basis, no classification",
+              cb_few["basis"] is None and cb_few["sufficient"] is False
+              and cb_few["byTask"] == {}
+              and cb_few["gate"] == MIN_TASKS_FOR_PROJECTION)
+        check("bands: band_of returns None while suppressed, so callers cannot "
+              "accidentally render a band that was never computed",
+              band_of(cb_few, "P1.1") is None and band_of(None, "P1.1") is None)
+        # A configured threshold is an opinion the user already holds, so it needs
+        # no sample — but a malformed one must never classify anything.
+        cb_abs = cost_bands(cb_few and {"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1", "status": "done"}]}]},
+            [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 40.0)],
+            {"bands": {"highUSD": 5, "outlierUSD": 20}})
+        check("bands: an absolute basis needs no sample and is labelled as such",
+              cb_abs["basis"] == "absolute" and cb_abs["sufficient"] is True
+              and cb_abs["byTask"]["P1.1"] == "outlier")
+        for bad in ({"highUSD": "x", "outlierUSD": 20}, {"highUSD": 50, "outlierUSD": 10},
+                    {"highUSD": 0, "outlierUSD": 10}, {"highUSD": 5}):
+            got = cost_bands(man, ar, {"bands": bad})
+            if got["basis"] != "relative":
+                break
+        else:
+            bad = None
+        check("bands: a garbled or inverted threshold pair falls back to the "
+              "relative basis instead of classifying wrongly", bad is None)
+        check("bands: the word 'risk' is not reused — that axis already exists",
+              "risk" not in cb and set(BAND_ORDER) == {"typical", "high", "outlier"})
+
+        # phase_budgets: an absent budget is "—", never 0% and never 100%.
+        # Explicit rows, so the assertions do not silently depend on what some
+        # other fixture happens to price out to.
+        _brows = [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 10.0),
+                  mkrow(2, "claude-opus-5", "a@x", "P2.1", "P2", "task", 13.0),
+                  mkrow(3, "claude-opus-5", "a@x", None, "P3", "phase", 99.0)]
+        pb = phase_budgets({"phases": [
+            {"id": "P1", "title": "Alpha", "budgetUSD": 40, "tasks": []},
+            {"id": "P2", "title": "Beta", "budgetUSD": 10, "tasks": []},
+            {"id": "P3", "title": "Gamma", "tasks": []}]}, _brows)
+        _byid = {p["id"]: p for p in pb["phases"]}
+        check("budget: a phase without one reports None, not zero",
+              _byid["P3"]["budget"] is None and _byid["P3"]["pct"] is None
+              and _byid["P3"]["over"] is False and _byid["P3"]["spent"] == 99.0)
+        check("budget: spend is summed per phase from the ledger",
+              _byid["P1"]["spent"] == 10.0 and _byid["P1"]["pct"] == 25.0
+              and _byid["P1"]["over"] is False)
+        check("budget: pct is uncapped so an overrun reads as an overrun",
+              _byid["P2"]["pct"] == 130.0 and _byid["P2"]["over"] is True)
+        check("budget: totals cover only the phases that declared a budget "
+              "(P3's 99.0 must not inflate them)",
+              pb["budgeted"] == 2 and pb["totalBudget"] == 50.0
+              and pb["totalSpent"] == 23.0 and pb["anyOver"] is True)
+        check("budget: a zero, negative, boolean or string budget is no budget",
+              all(phase_budgets({"phases": [dict(
+                  {"id": "P1", "tasks": []}, budgetUSD=bad)]},
+                  ar)["phases"][0]["budget"] is None
+                  for bad in (0, -5, True, False, "40", None)))
+        check("budget: no budgets anywhere -> totals are None, not 0",
+              phase_budgets({"phases": [{"id": "P1", "tasks": []}]},
+                            ar)["totalBudget"] is None)
 
         # retry_cost: retried and blocked reported apart, never summed
         rc = retry_cost(man, ar)

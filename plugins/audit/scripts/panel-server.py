@@ -27,7 +27,9 @@ Exit: Ctrl-C stops the server. --selftest returns 0/1.
 """
 import argparse
 import atexit
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -461,7 +463,8 @@ def usage_state(project):
              # Every key the populated branch returns must appear here too: the
              # client reads this shape on a repo with no ledger yet, and a missing
              # key there is an `undefined` that only shows up on a fresh install.
-             "phaseTitles": {}, "taskMeta": {},
+             "phaseTitles": {}, "taskMeta": {}, "phaseBudgets": {},
+             "routingAdvice": [], "bands": ucfg.get("bands") or {},
              "counts": {"phases": 0, "tasks": 0, "models": 0, "authors": 0,
                         "sessions": 0, "days": 0, "from": None, "to": None},
              "rolled": False, "totalRows": 0}
@@ -509,7 +512,7 @@ def usage_state(project):
     # attempts — so EVERY panel recomputes client-side under the current filter. The
     # alternative (server-computed metrics) would leave half the tab silently
     # ignoring the filter bar, which is worse than a slightly larger payload.
-    titles, task_meta = {}, {}
+    titles, task_meta, budgets = {}, {}, {}
     mpath = _manifest_path(project, config)
     try:
         for ph in (_mio.load_manifest_safe(mpath).get("phases") or []):
@@ -517,6 +520,11 @@ def usage_state(project):
                 continue
             if ph.get("id"):
                 titles[ph["id"]] = ph.get("title") or ""
+                # Same rule the validator enforces: 0, negative, boolean and
+                # non-numeric all mean "no budget", never a budget of zero.
+                b = ph.get("budgetUSD")
+                if isinstance(b, (int, float)) and not isinstance(b, bool) and b > 0:
+                    budgets[ph["id"]] = float(b)
             for t in (ph.get("tasks") or []):
                 if isinstance(t, dict) and t.get("id"):
                     task_meta[t["id"]] = {
@@ -524,7 +532,15 @@ def usage_state(project):
                         "attempts": t.get("attempts") or 1,
                         "title": t.get("title") or ""}
     except Exception:
-        titles, task_meta = {}, {}
+        titles, task_meta, budgets = {}, {}, {}
+
+    # Needs the assembled manifest and the per-tier counts, so it cannot be done
+    # on the client. Fail-soft: no advice is the normal outcome anyway.
+    try:
+        advice = ul.routing(_mio.load_manifest_safe(mpath), rows,
+                            ucfg.get("pricing")).get("advice") or []
+    except Exception:
+        advice = []
 
     return {
         "enabled": bool(ucfg.get("enabled", True)),
@@ -537,10 +553,74 @@ def usage_state(project):
                   for k, v in sorted(facts.items())],
         "phaseTitles": titles,
         "taskMeta": task_meta,
+        "phaseBudgets": budgets,
+        # Server-computed, unlike every other metric here: the counterfactual
+        # re-prices the per-tier token counts, and `facts` are already aggregated
+        # to [tokens, cost, msgs]. Shipping the breakdown to do it client-side
+        # would multiply the payload to serve one paragraph. So this is a
+        # statement about the PROJECT, and the panel labels it as such.
+        "routingAdvice": advice,
+        "bands": ucfg.get("bands") or {},
         "counts": counts,
         "rolled": rolled,
         "totalRows": seen,
     }
+
+
+def report_paths(project):
+    """(manifest, out_dir, html_path) for this project's report, or None.
+
+    The output location is DERIVED, never taken from the request: there is no path
+    parameter to traverse with. Both ends are re-checked against the project root
+    anyway, because a manifestPath in config could point outside it."""
+    config = read_config(project)
+    mpath = _manifest_path(project, config)
+    if not (os.path.isfile(mpath) and _within(project, mpath)):
+        return None
+    out_dir = os.path.dirname(os.path.abspath(mpath))
+    if not _within(project, out_dir):
+        return None
+    try:
+        rr = _load("audit_render_report", os.path.join(_HERE, "render-report.py"))
+        manifest = _mio.load_manifest_safe(mpath)
+        base = rr._report_basename(manifest, None)
+    except Exception:
+        base = "audit-report"
+    return mpath, out_dir, os.path.join(out_dir, base + ".html")
+
+
+def render_report(project):
+    """Write the standalone HTML report (and its Markdown twin) for this project.
+
+    Calls render-report.py's own `main` rather than shelling out: same code path
+    the CLI takes, no interpreter discovery, and it works the same on Windows."""
+    paths = report_paths(project)
+    if not paths:
+        return {"ok": False,
+                "findings": ["no manifest to report on (or its path escapes the "
+                             "project) — run /audit:init first"]}
+    mpath, out_dir, html_path = paths
+    try:
+        rr = _load("audit_render_report", os.path.join(_HERE, "render-report.py"))
+    except Exception as exc:
+        return {"ok": False, "findings": ["cannot load the renderer: %s" % exc]}
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            code = rr.main([mpath, "--out-dir", out_dir, "--format", "both"])
+    except Exception as exc:
+        return {"ok": False, "findings": ["render failed: %s" % exc]}
+    if code != 0:
+        return {"ok": False,
+                "findings": ["renderer exited %s — run /audit:report for detail"
+                             % code]}
+    written = [ln[len("wrote "):] for ln in buf.getvalue().splitlines()
+               if ln.startswith("wrote ")]
+    return {"ok": True, "files": written,
+            # Served back through this origin: a browser will not follow a file://
+            # link from an http:// page, so handing over a filesystem path would
+            # produce a button that silently does nothing.
+            "href": "/report", "exists": os.path.isfile(html_path)}
 
 
 def build_state(project):
@@ -744,6 +824,22 @@ def _make_handler(project, token):
                 self._json(200, discover(project)); return
             if path == "/api/usage":
                 self._json(200, usage_state(project)); return
+            if path == "/report":
+                # No path parameter: the location is derived from the project's
+                # own config, so there is nothing here to traverse with.
+                paths = report_paths(project)
+                if not paths or not os.path.isfile(paths[2]):
+                    self._send(404, "<h1>No report yet</h1><p>Use "
+                               "<b>Export report</b> in the panel, or run "
+                               "<code>/audit:report</code>.</p>", "text/html")
+                    return
+                try:
+                    with open(paths[2], "rb") as fh:
+                        self._send(200, fh.read(), "text/html")
+                except Exception:
+                    self._send(500, "<h1>Could not read the report</h1>",
+                               "text/html")
+                return
             self._json(404, {"error": "not found"})
 
         def do_PUT(self):
@@ -763,10 +859,13 @@ def _make_handler(project, token):
         def do_POST(self):
             if not self._guard():
                 return
-            if self.path.split("?", 1)[0] == "/api/validate":
+            path = self.path.split("?", 1)[0]
+            if path == "/api/validate":
                 st = build_state(project)
                 self._json(200, {"config": st["configFindings"],
                                  "manifest": st["manifestFindings"]}); return
+            if path == "/api/report":
+                self._json(200, render_report(project)); return
             self._json(404, {"error": "not found"})
 
     return Handler
@@ -1074,6 +1173,27 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
  padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
 .utbl td{padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
 .utbl tr:last-child td{border-bottom:0}
+/* The one recommendation in the tab — marked so it reads as advice, not as
+   another measurement. */
+.advice{border-left:3px solid var(--warn);background:var(--surface-2);
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);margin:var(--sp-1) 0;
+ font-size:.82rem}
+.advice code{font-size:.95em}
+/* Budget burn-down. Shares the ranked-row grid so the two read as one family. */
+.bud{display:grid;grid-template-columns:minmax(8rem,20rem) minmax(4rem,1fr) 3rem auto;
+ align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0;font-size:.8rem}
+.bud .bar{height:.5rem;background:var(--surface-2);border-radius:var(--pill);
+ overflow:hidden}
+.bud .bar i{display:block;height:100%;border-radius:var(--pill);background:var(--ok)}
+.bud.over .bar i{background:var(--err)}
+.bud .bpct{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.bud.over .bpct{color:var(--err);font-weight:640}
+.bud.total{border-top:1px solid var(--border);padding-top:var(--sp-1);
+ margin-top:var(--sp-1)}
+/* The total has no bar; an empty track would paint a grey rail that reads as a
+   phase sitting at zero, which is the one thing this block must never imply. */
+.bud.total .bar{background:none}
+@media (max-width:34rem){.bud{grid-template-columns:1fr auto}.bud .bar{display:none}}
 /* Controls under each ranked list. Expanding costs one click; collapsing must too. */
 .uctl{display:flex;align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0 var(--sp-2);
  font-size:.76rem}
@@ -1109,6 +1229,26 @@ table.btbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--bord
 table.btbl td.t{max-width:20rem;overflow:hidden;text-overflow:ellipsis;
  white-space:nowrap}
 table.btbl .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Model mix: a stack the eye reads for proportion, and the dominant model in text
+   so identity never rests on colour alone. */
+.mcell{display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap}
+.mstack{display:inline-flex;width:3.4rem;height:.5rem;border-radius:var(--pill);
+ overflow:hidden;flex:0 0 auto;background:var(--surface-2)}
+.mstack i{display:block;height:100%}
+.mstack i+i{box-shadow:-1px 0 0 var(--surface)}
+.mdom{color:var(--muted);font-size:.92em}
+/* Cost band. Status colours are reserved and never travel alone, so the pill
+   carries the word — and the task's own status sits in the next column wearing
+   the same palette, which makes the label load-bearing rather than decorative. */
+.bandpill{display:inline-block;padding:.05rem .45rem;border-radius:var(--pill);
+ font-size:.72rem;font-weight:600;white-space:nowrap;border:1px solid transparent}
+.b-typical{color:var(--ok);background:color-mix(in srgb,var(--ok) 13%,transparent)}
+.b-high{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.b-outlier{color:var(--err);background:color-mix(in srgb,var(--err) 14%,transparent)}
+table.btbl tbody tr.pick{cursor:pointer}
+table.btbl tbody tr.pick:hover td{background:var(--surface-2)}
+table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,transparent)}
+.bfoot{padding-top:var(--sp-1);padding-bottom:var(--sp-2)}
 @media (max-width:34rem){
  dialog.browse{width:calc(100vw - 1rem)}
  .btblwrap{overflow-x:auto}
@@ -1237,12 +1377,14 @@ td.tskills{min-width:15rem}
 .comp-review input{width:8rem;padding:.25rem .5rem;font-size:.78rem}
 .comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.25rem}
 .comp .chips{gap:.25rem}
+.topbtns{display:flex;gap:var(--sp-1);align-items:center;flex-shrink:0}
 .comp .combo{flex:1 1 8rem;min-width:7rem}
 @media(max-width:48rem){.comptblwrap{overflow-x:auto}html,body{overflow-x:hidden}}
 </style></head><body>
 <div class=top>
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
  <div class=topbtns>
+  <button class="btn small" id=report title="render the standalone HTML report (it carries Save-as-PDF)">Export report</button>
   <button class="btn small" id=theme title="light/dark">☾</button>
  </div>
 </div>
@@ -1265,6 +1407,9 @@ const $=(s,r=document)=>r.querySelector(s), el=(t,a={},...k)=>{const e=document.
  for(const c of k.flat()){if(c!=null)e.append(c.nodeType?c:document.createTextNode(c));}return e;};
 const api=async(m,p,b)=>{const r=await fetch(p,{method:m,headers:{'X-Audit-Token':TOKEN,
  'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();};
+// For navigations rather than fetches: window.open cannot set a header, so the
+// token has to ride in the query string (the guard accepts either).
+const url=p=>p+'?t='+encodeURIComponent(TOKEN);
 let STATE=null, REG={skills:[],agents:[],mcp:[]};
 $('#proj').textContent=PROJECT;
 // theme
@@ -1274,6 +1419,19 @@ const isDark=()=>{const t=root.getAttribute('data-theme');return t?t==='dark':ma
 const paint=()=>$('#theme').textContent=isDark()?'☀':'☾';paint();
 $('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data-theme',n);
  try{localStorage.setItem(TK,n);}catch(e){}paint();};
+// Render the standalone report and open it. Opened through THIS origin (/report):
+// a browser will not follow a file:// link from an http:// page, so handing over a
+// filesystem path would give you a button that silently does nothing. The report
+// itself already carries Save-as-PDF and a Markdown twin, so there is no PDF
+// machinery here.
+$('#report').onclick=async e=>{const b=e.currentTarget;
+ const was=b.textContent;b.disabled=true;b.textContent='Rendering…';
+ try{const r=await api('POST','/api/report',{});
+  if(!r.ok){toast((r.findings||['render failed'])[0],'err');return;}
+  toast('wrote '+(r.files||[]).length+' file(s)','ok');
+  window.open(url('/report'),'_blank','noopener');
+ }catch(err){toast('render failed: '+err,'err');}
+ finally{b.disabled=false;b.textContent=was;}};
 // tabs
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
@@ -1286,7 +1444,7 @@ function findingsBox(res){const box=el('div');
  if(res.ok&&!(res.warnings&&res.warnings.length))box.append(el('div',{class:'findings ok'},'✓ saved'));
  return box;}
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
- USAGE=await api('GET','/api/usage').catch(()=>null);
+ USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;
  renderGuards();renderComp();renderOver();renderUsage();}
 // ---------- shared: info hints + autocomplete ----------
 const DESC={
@@ -1920,6 +2078,81 @@ function uBars(facts,dim,title){
   out.push(bar);}
  return out;}
 
+// --- phase budgets ---------------------------------------------------------------
+// Spend against the PLAN rather than the calendar. Rendered only when some phase
+// declares a budgetUSD, so it costs nothing in the common case where nobody has.
+//
+// Unlike the bands, this DOES follow the filter: "what has P1 cost me" is a
+// question about the rows you are looking at, and a budget row that ignored an
+// author filter while the bar above it obeyed one would be two truths on one
+// screen. The caption says which rows it counted.
+function uBudgets(facts){
+ const B=USAGE.phaseBudgets||{};
+ const ids=Object.keys(B);
+ if(!ids.length)return [];
+ const spent={};
+ for(const f of facts){const p=f[F.phase]||'--';
+  spent[p]=(spent[p]||0)+f[F.cost];}
+ const rows=ids.map(id=>{const used=spent[id]||0,budget=B[id];
+   return {id,budget,used,pct:100*used/budget,over:used>budget};})
+  .sort((a,b)=>b.pct-a.pct);
+ const out=[el('h2',{},'Budget')];
+ if(UORDER.length)out.push(el('div',{class:'ucrumb mut'},
+   'Counting only the rows the filters above leave in view.'));
+ for(const r of rows){
+  const nm=(r.id+' '+(USAGE.phaseTitles[r.id]||'')).trim();
+  out.push(el('div',{class:'bud'+(r.over?' over':'')},
+   el('span',{class:'unm'},nm),
+   // The fill stops at the track; the number beside it does not, so an overrun
+   // is legible instead of being a bar that looks merely full.
+   el('span',{class:'bar'},el('i',{style:'width:'+Math.min(100,r.pct).toFixed(1)+'%'})),
+   el('span',{class:'bpct'},r.pct.toFixed(0)+'%'),
+   el('span',{class:'uamt'},uCost(r.used)+' of '+uCost(r.budget)
+     +(r.over?' · over':''))));}
+ const tb=rows.reduce((a,r)=>a+r.budget,0),ts=rows.reduce((a,r)=>a+r.used,0);
+ out.push(el('div',{class:'bud total'},
+   el('span',{class:'unm mut'},'All budgeted phases'),
+   el('span',{class:'bar'}),el('span',{class:'bpct'}),
+   el('span',{class:'uamt'},uCost(ts)+' of '+uCost(tb))));
+ const missing=Object.keys(USAGE.phaseTitles||{}).filter(p=>!(p in B)).length;
+ if(missing)out.push(el('div',{class:'mut small'},
+   missing+' phase(s) have no budgetUSD set and are not listed - they are not '
+   +'phases at zero.'));
+ return out;}
+
+// --- cost bands ------------------------------------------------------------------
+// Mirrors cost_bands() in usage_ledger.py; the two must agree or the panel and the
+// report will put the same task in different bands. Same gate, same thresholds,
+// same fallback when the configured pair is malformed.
+//
+// Computed from the WHOLE ledger, never from the filtered view: a task is an
+// outlier relative to the project, not relative to whatever slice you are looking
+// at. Recalibrating per filter would make one of any three tasks an "outlier".
+const BAND_GATE=5, BAND_ORDER=['typical','high','outlier'];
+let BANDS=null;
+function uBandInfo(){
+ if(BANDS)return BANDS;
+ const cfg=USAGE.bands||{},M=USAGE.taskMeta||{},cost={};
+ for(const f of USAGE.facts){const t=f[F.task];
+  if(t&&t!=='--'&&M[t])cost[t]=(cost[t]||0)+f[F.cost];}
+ let hi=Number(cfg.highUSD),ou=Number(cfg.outlierUSD),basis='absolute',sample=0;
+ if(!(isFinite(hi)&&isFinite(ou)&&hi>0&&hi<=ou)){
+  const done=Object.keys(cost).filter(t=>(M[t]||{}).status==='done')
+    .map(t=>cost[t]).sort((a,b)=>a-b);
+  sample=done.length;
+  if(done.length<BAND_GATE)
+   return (BANDS={basis:null,sufficient:false,byTask:{},sample,gate:BAND_GATE});
+  const pct=p=>done[Math.max(0,Math.min(done.length-1,
+    Math.round(p/100*(done.length-1))))];
+  hi=pct(50);ou=pct(90);basis='relative';}
+ const byTask={},counts={typical:0,high:0,outlier:0};
+ for(const t in cost){const b=cost[t]>ou?'outlier':cost[t]>hi?'high':'typical';
+  byTask[t]=b;counts[b]++;}
+ return (BANDS={basis,sufficient:true,high:hi,outlier:ou,byTask,counts,sample,
+   gate:BAND_GATE});}
+function bandOf(id){const b=uBandInfo();
+ return b.sufficient?(b.byTask[id]||null):null;}
+
 // --- browse dialog ---------------------------------------------------------------
 // The ranked list is a summary: the top 8 by spend. Paging it eight at a time to
 // reach P219 among 241 is 27 clicks and still gives you no way to re-rank by cost.
@@ -1927,25 +2160,56 @@ function uBars(facts,dim,title){
 // from the SAME filtered facts the bars do, so it can never disagree with the page
 // behind it. A native <dialog> brings the focus trap, the backdrop and Esc for free.
 let BROWSE=null;
+// `models` is omitted for the model dimension, where it would restate the row.
 const BCOL={
- phase:[['id','id'],['title','title'],['tokens','tokens'],['share','share'],
-        ['cost','cost'],['messages','msgs']],
+ phase:[['id','id'],['title','title'],['models','models'],['tokens','tokens'],
+        ['share','share'],['cost','cost'],['messages','msgs']],
+ // `cost` band only on tasks: the band is defined per task, and calling a phase
+ // an outlier would be a different claim from the one that was computed.
  task:[['id','id'],['title','title'],['status','status'],['risk','risk'],
-       ['tokens','tokens'],['share','share'],['cost','cost'],['messages','msgs']],
+       ['models','models'],['cost band','band'],['tokens','tokens'],
+       ['share','share'],['cost','cost'],['messages','msgs']],
  model:[['model','id'],['tokens','tokens'],['share','share'],['cost','cost'],
         ['messages','msgs']],
- author:[['author','id'],['tokens','tokens'],['share','share'],['cost','cost'],
-         ['messages','msgs']]};
+ author:[['author','id'],['models','models'],['tokens','tokens'],['share','share'],
+         ['cost','cost'],['messages','msgs']]};
 const BNUM={tokens:1,share:1,cost:1,msgs:1};
 
 function browseRows(dim,facts){
  const g=uAgg(facts,dim),grand=g.reduce((a,x)=>a+x[1][0],0)||1;
- return g.map(([k,v])=>{const m=(USAGE.taskMeta||{})[k]||{};
+ // Which models did this phase/task/person actually use? The aggregate throws
+ // that away, and it is the question the ranked bar cannot answer: two phases
+ // costing the same can be one opus run and one long haiku grind.
+ const mix={};
+ for(const f of facts){const k=f[F[dim]]||'--',m=f[F.model]||'unknown';
+  (mix[k]=mix[k]||{})[m]=(mix[k][m]||0)+f[F.tokens];}
+ return g.map(([k,v])=>{const meta=(USAGE.taskMeta||{})[k]||{};
+  // Slot order, not token order: the palette was validated on THAT adjacency, so
+  // drawing segments in any other sequence puts unvalidated pairs side by side.
+  const per=mix[k]||{};
+  const models=Object.keys(per).sort((a,b)=>(MSLOTS[a]||99)-(MSLOTS[b]||99))
+    .map(m=>({model:m,tokens:per[m],pct:100*per[m]/(v[0]||1)}));
+  const top=[...models].sort((a,b)=>b.tokens-a.tokens)[0];
   return {id:k,
     title:dim==='phase'?(k==='--'?'unattributed':(USAGE.phaseTitles[k]||''))
-      :dim==='task'?(k==='--'?'unattributed':(m.title||'')):'',
-    status:m.status||'',risk:m.risk||'',
+      :dim==='task'?(k==='--'?'unattributed':(meta.title||'')):'',
+    status:meta.status||'',risk:meta.risk||'',
+    band:(dim==='task'?bandOf(k):null)||'',
+    models:models,dominant:top?top.model:'',
     tokens:v[0],share:100*v[0]/grand,cost:v[1],msgs:v[2]};});}
+
+// A mini stack plus the dominant model NAMED. Identity is never colour alone, and
+// at this size the segments are far too small to carry inline labels.
+function modelCell(r){
+ if(!r.models.length)return el('span',{class:'mut'},'—');
+ const bar=el('span',{class:'mstack'});
+ r.models.forEach(m=>bar.append(el('i',{style:'flex:'+Math.max(1,m.tokens)+' 0 0;'
+   +'background:'+uMCol(m.model)})));
+ const cell=el('span',{class:'mcell'},bar,
+   el('span',{class:'mdom'},r.dominant.replace(/^claude-/,'')));
+ cell.title=r.models.map(m=>m.model+'  '+m.pct.toFixed(0)+'%  '+uTok(m.tokens,2))
+   .join('\n');
+ return cell;}
 
 function openBrowse(dim,title,facts){
  if(!BROWSE){BROWSE=el('dialog',{class:'browse'});
@@ -1965,6 +2229,18 @@ function openBrowse(dim,title,facts){
    ? el('div',{class:'mut small'},'within: '+UORDER.map(d=>d+' '+
        (d==='day'?UF.day.replace('..',' to '):UF[d])).join(' · '))
    : null;
+ // State the thresholds, or state why there are none. Either way the reader can
+ // check the classification rather than take it on faith.
+ const bi=dim==='task'?uBandInfo():null;
+ const bandNote=!bi?null:el('div',{class:'mut small'},bi.sufficient
+   ? 'cost band: '+(bi.basis==='absolute'
+       ? 'configured thresholds'
+       : 'this project’s own completed tasks, median/p90')
+     +' — typical ≤ '+uCost(bi.high)+' · high ≤ '+uCost(bi.outlier)
+     +' · outlier above'
+   : 'cost band: not shown — needs '+bi.gate+' completed tasks to calibrate, '
+     +'there are '+bi.sample+'. Set usage.bands.highUSD/outlierUSD to band by an '
+     +'absolute budget instead.');
  const search=el('input',{type:'search',placeholder:'search '+dim+'…'});
  // An <input type=search> eats the FIRST Escape to clear itself, so the dialog
  // only closed on the second press - which reads as the key being broken. One
@@ -1979,7 +2255,9 @@ function openBrowse(dim,title,facts){
   const needle=q.trim().toLowerCase();
   const shown=rows.filter(r=>!needle
     ||(r.id+' '+r.title).toLowerCase().includes(needle));
-  shown.sort((a,b)=>{const A=a[sort],B=b[sort];
+  // A mix has no natural order, so the models column sorts by its dominant model.
+  shown.sort((a,b)=>{const k=sort==='models'?'dominant':sort;
+    const A=a[k],B=b[k];
     const c=BNUM[sort]?A-B:String(A).localeCompare(String(B));
     return desc?-c:c;});
   count.textContent=shown.length+' of '+rows.length;
@@ -1995,7 +2273,11 @@ function openBrowse(dim,title,facts){
     ...cols.map(([,key])=>el('td',
       {class:BNUM[key]?'n':(key==='title'?'t':''),
        title:key==='title'?String(r.title||''):null},
-      key==='tokens'?uTok(r.tokens,2)
+      key==='models'?modelCell(r)
+      // A dot alone would be status-colour-as-meaning; the word carries it.
+      :key==='band'?(r.band?el('span',{class:'bandpill b-'+r.band},r.band)
+                           :el('span',{class:'mut'},'—'))
+      :key==='tokens'?uTok(r.tokens,2)
       // NOT uPct here: across 241 phases every share is under 1%, and a column
       // where every cell reads "<1%" sorts fine and tells you nothing. This is
       // the precision surface, so it gets the digits.
@@ -2012,7 +2294,7 @@ function openBrowse(dim,title,facts){
  // replaceChildren is the native DOM API, not el(): it STRINGIFIES anything that
  // is not a Node, so passing the null `within` painted the literal text "null"
  // above the dialog. Filter before handing it over.
- BROWSE.replaceChildren(...[head,within,
+ BROWSE.replaceChildren(...[head,within,bandNote,
    el('div',{class:'comptools'},search,count),
    el('div',{class:'btblwrap'},el('table',{class:'btbl'},thead,tb)),
    el('div',{class:'mut small bfoot'},
@@ -2113,6 +2395,7 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
     el('i',{style:'background:'+uCol(e.key)}),e.key))));
 
  card.append(...uBars(facts,'phase','By phase'));
+ card.append(...uBudgets(facts));
  card.append(...uBars(facts,'model','By model'));
  card.append(...uBars(facts,'author','By author'));
  card.append(...uBars(facts,'task','By task'));
@@ -2145,6 +2428,29 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
     el('td',{class:'mono'},r.model),el('td',{},String(r.tasks)),
     el('td',{},uCost(r.perTask)),el('td',{},r.att.toFixed(1))));last=r.risk;});
   tbl.append(tb);card.append(tbl);}
+
+ // The one recommendation in the tab. Computed server-side over the whole ledger
+ // (see routingAdvice in usage_state), so it is a statement about the project and
+ // says so whenever a filter is narrowing everything else on screen.
+ const adv=USAGE.routingAdvice||[];
+ if(adv.length){
+  card.append(el('h2',{},'What the evidence supports'));
+  if(UORDER.length)card.append(el('div',{class:'ucrumb mut'},
+    'Across the whole ledger - this one does not follow the filters above.'));
+  adv.forEach(a=>card.append(el('div',{class:'advice'},
+    el('div',{},el('b',{},a.risk),' work is running on ',
+      el('code',{},a.from),' - '+a.tasks+' task(s) at '
+      +(a.fromMeanAttempts||0).toFixed(1)+' mean attempts. Those same tokens cost '
+      +uCost(a.atToRates)+' at ',el('code',{},a.to),' rates versus '
+      +uCost(a.atFromRates)+', ',el('b',{},uCost(a.saving)+' less ('
+      +a.savingPct.toFixed(0)+'%)'),'.'),
+    el('div',{class:'mut small'},a.to+' has already run '+a.evidenceTasks
+      +' task(s) in this band here, at '+(a.evidenceAttempts||0).toFixed(1)
+      +' mean attempts.'))));
+  card.append(el('div',{class:'mut small'},
+    'An upper bound, not a forecast: this re-prices the tokens that were actually '
+    +'spent at the other model’s rates, and a different model would not emit '
+    +'the same tokens. Both sides use today’s price table.'));}
 
  c.append(card);}
 
@@ -2415,7 +2721,170 @@ def _selftest():
     check("columns follow the dimension: only tasks carry status and risk",
           "task:[['id','id'],['title','title'],['status','status'],['risk','risk']"
           in UI_HTML and "author:[['author','id']" in UI_HTML)
+    # Two phases costing the same can be one opus run and one long haiku grind —
+    # the aggregate cannot say which, so the mix is carried alongside it.
+    check("phase/task/author rows carry a model mix; the model dimension does not",
+          "['models','models']" in UI_HTML
+          and UI_HTML.count("['models','models']") == 3
+          and "model:[['model','id'],['tokens','tokens']" in UI_HTML)
+    check("mix segments are emitted in slot order (validated adjacency), and the "
+          "dominant model is named rather than left to colour",
+          "(MSLOTS[a]||99)-(MSLOTS[b]||99)" in UI_HTML
+          and "el('span',{class:'mdom'},r.dominant" in UI_HTML
+          and "cell.title=r.models.map(" in UI_HTML)
+    check("a mix has no natural order, so that column sorts by dominant model",
+          "const k=sort==='models'?'dominant':sort;" in UI_HTML)
 
+    # --- phase budgets ------------------------------------------------------------
+    # The client has no manifest, so budgets come off usage_state(); assert the
+    # server side by exercising it rather than by grepping this file's own source.
+    import shutil as _sh
+    _bproj = tempfile.mkdtemp(prefix="panel-budget-")
+    try:
+        os.makedirs(os.path.join(_bproj, "docs", "audit"), exist_ok=True)
+        with open(os.path.join(_bproj, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "A", "status": "done", "budgetUSD": 40,
+                 "tasks": []},
+                {"id": "P2", "title": "B", "status": "done", "budgetUSD": 0,
+                 "tasks": []},
+                {"id": "P3", "title": "C", "status": "done", "budgetUSD": True,
+                 "tasks": []},
+                {"id": "P4", "title": "D", "status": "done", "budgetUSD": "40",
+                 "tasks": []},
+                {"id": "P5", "title": "E", "status": "done", "tasks": []}]}, fh)
+        # Seed a ledger so this exercises the POPULATED branch, not the stub.
+        _bled = os.path.join(_bproj, ".claude", "usage")
+        os.makedirs(_bled, exist_ok=True)
+        with open(os.path.join(_bled, "2026-08.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "ts": "2026-08-01T10", "sessionId": "s", "phaseId": "P1",
+                "taskId": None, "attr": "phase", "model": "claude-opus-5",
+                "author": "a@x", "msgs": 1, "in": 1, "out": 1, "cacheW5m": 0,
+                "cacheW1h": 0, "cacheR": 0, "costUSD": 1.0}) + "\n")
+        _bs = usage_state(_bproj)
+        check("budgets ship from the server, and 0 / boolean / string / missing "
+              "all mean NO budget — exactly as the validator treats them: %s"
+              % repr(_bs.get("phaseBudgets")),
+              _bs["phaseBudgets"] == {"P1": 40.0})
+    finally:
+        _sh.rmtree(_bproj, ignore_errors=True)
+    # The no-ledger stub must carry every key the populated branch does, or a
+    # fresh install hands the client `undefined` for half the tab.
+    _eproj = tempfile.mkdtemp(prefix="panel-empty-")
+    try:
+        _es = usage_state(_eproj)
+        check("the no-ledger stub has the same shape as a populated state",
+              {"phaseBudgets", "bands", "taskMeta", "phaseTitles", "counts"}
+              <= set(_es))
+    finally:
+        _sh.rmtree(_eproj, ignore_errors=True)
+    check("no budget anywhere renders nothing at all",
+          "if(!ids.length)return [];" in UI_HTML)
+    check("the burn-down follows the filter, and says which rows it counted",
+          "for(const f of facts){const p=f[F.phase]" in UI_HTML
+          and "Counting only the rows the filters above leave in view." in UI_HTML)
+    check("the fill caps at the track while the number does not",
+          "Math.min(100,r.pct).toFixed(1)" in UI_HTML
+          and "r.pct.toFixed(0)+'%'" in UI_HTML)
+    check("unbudgeted phases are counted, never drawn as a phase at zero",
+          "are not listed - they are not " in UI_HTML
+          and "phases at zero." in UI_HTML)
+
+    # This module's own source, for the handful of checks that must assert a
+    # server-side construct rather than a rendered string.
+    with open(__file__, encoding="utf-8") as _fh:
+        _src = _fh.read()
+
+    # --- report export ------------------------------------------------------------
+    # There is deliberately no path parameter on /report: the location is derived
+    # from the project's own config, so there is nothing to traverse with.
+    _rp = tempfile.mkdtemp(prefix="panel-report-")
+    try:
+        os.makedirs(os.path.join(_rp, "docs", "audit"), exist_ok=True)
+        with open(os.path.join(_rp, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2, "repo": "x"}, "phases": [
+                {"id": "P1", "title": "A", "status": "done", "tasks": [
+                    {"id": "P1.1", "title": "t", "status": "done"}]}]}, fh)
+        check("no report exists before it is rendered",
+              os.path.isfile(report_paths(_rp)[2]) is False)
+        _res = render_report(_rp)
+        check("export writes the html and its markdown twin, and reports both",
+              _res["ok"] and len(_res["files"]) == 2
+              and any(f.endswith(".html") for f in _res["files"])
+              and any(f.endswith(".md") for f in _res["files"]))
+        check("everything it writes stays inside the project",
+              all(_within(_rp, f) for f in _res["files"]))
+        check("it hands back an in-origin href, not a filesystem path — a browser "
+              "will not follow file:// from an http:// page",
+              _res["href"] == "/report" and _res["exists"] is True)
+    finally:
+        _sh.rmtree(_rp, ignore_errors=True)
+    _np = tempfile.mkdtemp(prefix="panel-noreport-")
+    try:
+        check("a project with no manifest refuses instead of raising",
+              report_paths(_np) is None
+              and render_report(_np)["ok"] is False)
+    finally:
+        _sh.rmtree(_np, ignore_errors=True)
+    check("the export route derives its path and takes no parameter",
+          'if path == "/api/report"' in _src and 'if path == "/report"' in _src
+          and "paths = report_paths(project)" in _src)
+    check("the button opens through this origin with the token in the query "
+          "string (window.open cannot set a header)",
+          "const url=p=>p+'?t='+encodeURIComponent(TOKEN)" in UI_HTML
+          and "window.open(url('/report')" in UI_HTML)
+
+    # --- routing advice -----------------------------------------------------------
+    # The only server-computed metric in the tab: the counterfactual re-prices the
+    # per-tier token counts, which `facts` no longer carry.
+    check("routing advice is shipped from the server and fails soft",
+          '"routingAdvice": advice' in _src
+          and "ul.routing(_mio.load_manifest_safe(mpath), rows," in _src
+          and "advice = []" in _src)
+    check("advice says it does NOT follow the filters, unlike everything else",
+          "does not follow the filters above." in UI_HTML
+          and "const adv=USAGE.routingAdvice||[];" in UI_HTML)
+    check("the caveat travels with the number, not just in the docs",
+          "An upper bound, not a forecast" in UI_HTML
+          and "would not emit " in UI_HTML)
+    check("no advice renders nothing at all",
+          "if(adv.length){" in UI_HTML)
+
+    # --- cost bands ---------------------------------------------------------------
+    # The JS reimplements cost_bands(); the two agreeing is a standing obligation,
+    # so the source says which Python function it shadows and pins the same gate.
+    _ulmod = _load("audit_usage_ledger_check",
+                   os.path.join(_HERE, "usage_ledger.py"))
+    check("bands mirror the Python implementation and pin the SAME gate "
+          "(a drift here puts one task in two different bands)",
+          "const BAND_GATE=5" in UI_HTML
+          and "Mirrors cost_bands() in usage_ledger.py" in UI_HTML
+          and "const BAND_GATE=%d" % _ulmod.MIN_TASKS_FOR_PROJECTION in UI_HTML
+          and list(_ulmod.BAND_ORDER) == ["typical", "high", "outlier"])
+    # A task is an outlier relative to the PROJECT. Recalibrating per filter would
+    # make one of any three tasks an outlier the moment you scoped to three.
+    check("bands are computed from the whole ledger, never the filtered view",
+          "for(const f of USAGE.facts){const t=f[F.task];" in UI_HTML
+          and "uBandInfo()" in UI_HTML and "BANDS=null;" in UI_HTML)
+    check("a malformed threshold pair falls back to the relative basis",
+          "if(!(isFinite(hi)&&isFinite(ou)&&hi>0&&hi<=ou))" in UI_HTML)
+    check("below the gate nothing is banded, and the dialog says what is missing",
+          "return (BANDS={basis:null,sufficient:false,byTask:{},sample,gate:BAND_GATE})"
+          in UI_HTML
+          and "needs '+bi.gate+' completed tasks to calibrate" in UI_HTML)
+    check("the thresholds themselves are printed, so the reader can check them",
+          "typical ≤ '+uCost(bi.high)" in UI_HTML
+          and "high ≤ '+uCost(bi.outlier)" in UI_HTML)
+    check("the band is a labelled pill, never a bare status colour",
+          "el('span',{class:'bandpill b-'+r.band},r.band)" in UI_HTML
+          and ".bandpill{" in UI_HTML)
+    check("only tasks carry a band — a phase is not the thing that was measured",
+          "['cost band','band']" in UI_HTML
+          and UI_HTML.count("['cost band','band']") == 1
+          and "band:(dim==='task'?bandOf(k):null)" in UI_HTML)
     # A malformed 300-phase manifest emits a finding per phase, per task and per
     # indexed file — 1009 of them, previously joined into one paragraph that
     # filled the screen. They were four mistakes repeated, so the banner groups.

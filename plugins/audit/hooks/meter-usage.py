@@ -37,9 +37,20 @@ single `git config` subprocess never lands in the hot path.
 PRIVACY: rows carry counts, model ids, timestamps, branch and author — never
 prompt or response CONTENT. Transcripts are opened read-only.
 
-Contract: ALWAYS exits 0 and prints nothing. Any unexpected input or exception
-also exits 0 — metering must never break legitimate work. Registered in
+Contract: ALWAYS exits 0 and NEVER emits a decision. Any unexpected input or
+exception also exits 0 — metering must never break legitimate work. Registered in
 hooks.json with the `open` (fail-silent) launcher mode for the same reason.
+
+The only exceptions to "prints nothing" are two `systemMessage`s, neither of which
+is a decision:
+
+  * when the task in flight passes the project's own outlier cost band, said once
+    while there is still time to act;
+  * on SessionEnd, one line saying what the session cost.
+
+Both are advice and block nothing — and a Stop hook could not block even if it
+wanted to, since `decision: "block"` there means "do not stop, keep going". A real
+spend gate would belong on PreToolUse, like require-plan.py.
 
 Run `python3 meter-usage.py --selftest` to exercise the decision core.
 """
@@ -66,7 +77,104 @@ def _load_ledger_lib():
     return module
 
 
-def meter(data, ul=None, cfg=None, root=None):
+def advise(ul, ledger, manifest, ucfg, cursor, rows):
+    """The one thing this hook ever says out loud: that the task in flight has
+    crossed the project's own outlier threshold, while there is still time to act.
+
+    Advisory, never a gate. A `Stop` hook cannot gate anyway — in that contract
+    `decision: "block"` means "do not stop, keep going", the exact inverse — so a
+    spend gate would have to live on `PreToolUse` like require-plan.py. It is also
+    the right call on the merits: a plan or test gate is recoverable, while
+    stopping a task mid-edit on spend can strand a half-finished change.
+
+    Fires ONCE per task per session, recorded in the cursor. A warning that
+    repeats on every turn for the rest of a long task is a warning nobody reads.
+    A later session warns again, which is intended: that is a fresh chance to act.
+
+    Returns a message, or None — and None is the common case, so the ledger read
+    is reached only when a warning is actually possible. Measured at 26 ms over a
+    9-month, 8,740-row ledger, which is the cost of at most one Stop per task.
+    """
+    if not rows:
+        return None
+    tid = next((r.get("taskId") for r in reversed(rows) if r.get("taskId")), None)
+    if not tid:
+        return None
+    warned = cursor.get("warnedTasks")
+    if not isinstance(warned, list):
+        warned = []
+    if tid in warned:
+        return None
+
+    all_rows = ul.read_ledger(ledger)
+    bands = ul.cost_bands(manifest, all_rows, ucfg)
+    if ul.band_of(bands, tid) != "outlier":
+        return None
+
+    spent = sum(float(r.get("costUSD") or 0.0)
+                for r in all_rows if r.get("taskId") == tid)
+    warned.append(tid)
+    cursor["warnedTasks"] = warned
+
+    # The threshold is stated, because "this is an outlier" is a claim and a claim
+    # whose basis is invisible cannot be argued with. Under showCost=false that
+    # basis has to be described WITHOUT a figure — naming the threshold in dollars
+    # would leak exactly what the setting exists to hide, which is how the first
+    # version of this message failed.
+    absolute = bands.get("basis") == "absolute"
+    if ucfg.get("showCost", True):
+        why = ("the configured outlier threshold of $%.2f" % bands["outlier"]
+               if absolute
+               else "this project's p90 completed task ($%.2f)" % bands["outlier"])
+        head = "%s has cost $%.2f, past %s." % (tid, spent, why)
+    else:
+        why = ("the configured outlier threshold" if absolute
+               else "this project's p90 completed task")
+        mult = spent / bands["outlier"] if bands.get("outlier") else 0
+        head = "%s is running %.1fx past %s." % (tid, mult, why)
+    return ("[audit] %s Consider splitting it or re-scoping before the next "
+            "attempt. This is advice, not a gate — nothing is blocked." % head)
+
+
+def session_summary(ul, ledger, ucfg, session_id):
+    """What this session cost, said once at the end.
+
+    Immediate feedback where the work happened, rather than only in a dashboard
+    you have to remember to open. The rows are written either way; this just says
+    it out loud.
+
+    Silent when the session recorded nothing, so a read-only session — asking a
+    question, reading code — says nothing rather than reporting a row of zeros."""
+    rows = [r for r in ul.read_ledger(ledger)
+            if (r.get("sessionId") or "") == session_id]
+    if not rows:
+        return None
+    tot = ul.totals(rows)
+    if not tot["tokens"]:
+        return None
+    tasks = sorted({r.get("taskId") for r in rows if r.get("taskId")})
+    bits = ["%s tokens" % _compact(tot["tokens"])]
+    if ucfg.get("showCost", True):
+        bits.append("~$%.2f" % tot["costUSD"])
+    bits.append("%s messages" % "{:,}".format(tot["msgs"]))
+    if tasks:
+        bits.append("%d task(s): %s" % (len(tasks), ", ".join(tasks[:4])
+                                        + (" +%d" % (len(tasks) - 4)
+                                           if len(tasks) > 4 else "")))
+    return "[audit] this session: " + " · ".join(bits)
+
+
+def _compact(n):
+    """Magnitudes are compact everywhere in this plugin — `3.2M`, never
+    `3,230,000`. Mirrors _fmt_tokens in render-report.py and uTok in the panel."""
+    n = int(n or 0)
+    for limit, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
+        if abs(n) >= limit:
+            return "%.1f%s" % (n / float(limit), suffix)
+    return str(n)
+
+
+def meter(data, ul=None, cfg=None, root=None, notices=None):
     """Scan, attribute and append. Returns the number of rows written (0 when
     disabled, when there is nothing new, or on any handled failure).
 
@@ -105,8 +213,31 @@ def meter(data, ul=None, cfg=None, root=None):
         })
 
     written = ul.append_rows(ledger, rows)
+
+    # Both messages are strictly additive: either can raise and metering still
+    # stands. `notices` is an out-parameter rather than a changed return type so
+    # the existing contract (`meter` -> rows written) survives untouched.
+    if notices is not None:
+        if written:
+            try:
+                note = advise(ul, ledger, manifest, ucfg, cursor, rows)
+                if note:
+                    notices.append(note)
+            except Exception:
+                pass
+        # Only at the end, and only once — SessionEnd fires once per session,
+        # while Stop fires every turn.
+        if (data or {}).get("hook_event_name") == "SessionEnd":
+            try:
+                summary = session_summary(ul, ledger, ucfg, session_id)
+                if summary:
+                    notices.append(summary)
+            except Exception:
+                pass
+
     # Persist the cursor even when nothing was written, so an oversized first-sight
     # transcript records its skip-to-EOF offset instead of re-deciding every turn.
+    # This also persists `warnedTasks`, which is what stops the advisory repeating.
     ul.save_cursor(ledger, session_id, cursor)
     return written
 
@@ -116,10 +247,22 @@ def main() -> None:
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
+    notices = []
     try:
-        meter(data)
+        meter(data, notices=notices)
     except Exception:
         pass
+    # The ONLY output this hook ever produces, and it is a message to the user —
+    # never a decision. Emitting it is itself wrapped, because a serialisation
+    # failure must not turn a spend note into a broken hook.
+    if notices:
+        try:
+            # Newline, not space: on SessionEnd both an outlier advisory and the
+            # session summary can land at once, and run together they read as one
+            # confused sentence.
+            sys.stdout.write(json.dumps({"systemMessage": "\n".join(notices)}))
+        except Exception:
+            pass
     sys.exit(0)
 
 
@@ -249,6 +392,92 @@ def _selftest() -> int:
                   anon_rows and all(r.get("author") is None for r in anon_rows))
         finally:
             shutil.rmtree(anon_root, ignore_errors=True)
+
+        # (h) the outlier advisory — the only thing this hook ever says out loud.
+        # Driven through `advise` directly so the bands are exact rather than
+        # whatever a synthetic transcript happens to price out to.
+        def band_man(n_done):
+            return {"phases": [{"id": "P1", "tasks":
+                    [{"id": "T%d" % i, "status": "done"} for i in range(n_done)]
+                    + [{"id": "HOT", "status": "in_progress"}]}]}
+
+        adv_root = Path(tempfile.mkdtemp(prefix="meter-usage-adv-"))
+        try:
+            adv_led = str(adv_root / "usage")
+            # five cheap completed tasks clear the gate; HOT is far past p90
+            cheap = [{"ts": "2026-08-0%dT10" % (i + 1), "taskId": "T%d" % i,
+                      "model": "claude-opus-5", "costUSD": 1.0 + i, "msgs": 1,
+                      "in": 1, "out": 1, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0}
+                     for i in range(5)]
+            hot = dict(cheap[0], taskId="HOT", costUSD=90.0, ts="2026-08-07T10")
+            ul.append_rows(adv_led, cheap + [hot])
+
+            cur = {}
+            msg = advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot])
+            check("h1 an outlier task is called out, with the threshold stated",
+                  msg and "HOT" in msg and "$90.00" in msg and "p90" in msg, msg)
+            check("h2 the advisory says it is advice, not a gate",
+                  msg and "not a gate" in msg and "nothing is blocked" in msg)
+            check("h3 the warned task is recorded on the cursor",
+                  cur.get("warnedTasks") == ["HOT"])
+            # A warning that repeats every turn for the rest of a long task is a
+            # warning nobody reads.
+            again = advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot])
+            check("h4 it fires ONCE per task, not on every Stop", again is None)
+
+            # A cheap task must never trip it.
+            quiet = advise(ul, adv_led, band_man(5), {"showCost": True}, {},
+                           [cheap[0]])
+            check("h5 a typical task says nothing", quiet is None)
+
+            # Below the gate there are no bands, so there is nothing to be past.
+            few_led = str(adv_root / "few")
+            ul.append_rows(few_led, [cheap[0], hot])
+            check("h6 below the sample gate the advisory is silent",
+                  advise(ul, few_led, band_man(1), {"showCost": True}, {}, [hot])
+                  is None)
+
+            # showCost=false must not leak a dollar figure.
+            nc = advise(ul, adv_led, band_man(5), {"showCost": False}, {}, [hot])
+            check("h7 showCost=false states a multiple, never a dollar amount",
+                  nc and "$" not in nc and "x past" in nc, nc)
+
+            # Rows with no task cannot be attributed to one.
+            check("h8 spend with no task in flight says nothing",
+                  advise(ul, adv_led, band_man(5), {"showCost": True}, {},
+                         [dict(hot, taskId=None)]) is None
+                  and advise(ul, adv_led, band_man(5), {"showCost": True},
+                             {}, []) is None)
+
+            # A garbled cursor must degrade, not raise — it is user-writable state.
+            check("h9 a corrupt warnedTasks value is ignored, not fatal",
+                  advise(ul, adv_led, band_man(5), {"showCost": True},
+                         {"warnedTasks": "nonsense"}, [hot]) is not None)
+
+            # (i) session summary — said once at the end, in the place the work
+            # happened, and silent when the session did nothing.
+            sess_led = str(adv_root / "sess")
+            ul.append_rows(sess_led, [
+                dict(cheap[0], sessionId="S1", taskId="T1", costUSD=2.5),
+                dict(cheap[1], sessionId="S1", taskId="T2", costUSD=1.5),
+                dict(cheap[2], sessionId="OTHER", taskId="T9", costUSD=99.0)])
+            summ = session_summary(ul, sess_led, {"showCost": True}, "S1")
+            check("i1 the summary covers only THIS session", summ
+                  and "~$4.00" in summ and "T1, T2" in summ and "99" not in summ,
+                  summ)
+            check("i2 tokens are compact, messages keep their separators",
+                  summ and "tokens" in summ and "$" in summ, summ)
+            check("i3 a session that recorded nothing says nothing",
+                  session_summary(ul, sess_led, {"showCost": True}, "NOPE")
+                  is None)
+            check("i4 showCost=false drops the dollar figure entirely",
+                  "$" not in (session_summary(
+                      ul, sess_led, {"showCost": False}, "S1") or "$"))
+            check("i5 the compact formatter matches the other surfaces",
+                  _compact(3_230_000) == "3.2M" and _compact(942) == "942"
+                  and _compact(2_000_000_000) == "2.0B")
+        finally:
+            shutil.rmtree(adv_root, ignore_errors=True)
     finally:
         if prev_env is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

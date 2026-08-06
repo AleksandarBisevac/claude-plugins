@@ -327,10 +327,30 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   letter-spacing:0}
 .dl.up{color:var(--st-done);background:color-mix(in srgb,var(--st-done) 14%,transparent)}
 .dl.down{color:var(--muted);background:var(--surface-2)}
+/* Cost band. Status colours are reserved and never travel alone, so the pill
+   carries the word — the row's own status wears the same palette right beside it. */
+.bandpill{display:inline-block;padding:.05rem .45rem;border-radius:var(--pill);
+  font-size:.72rem;font-weight:600;white-space:nowrap}
+.b-typical{color:var(--st-done);
+  background:color-mix(in srgb,var(--st-done) 13%,transparent)}
+.b-high{color:var(--st-prog);
+  background:color-mix(in srgb,var(--st-prog) 16%,transparent)}
+.b-outlier{color:var(--st-blocked);
+  background:color-mix(in srgb,var(--st-blocked) 14%,transparent)}
 h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
   margin:var(--sp-4) 0 var(--sp-1);border:0;text-transform:none;color:var(--text)}
 .small{font-size:.75rem}
 .fact{font-size:var(--t-3);margin:var(--sp-1) 0}
+/* The one recommendation in the section — flagged so it reads as advice rather
+   than as another measurement. */
+.advice{margin:var(--sp-1) 0;padding-left:0;list-style:none;font-size:var(--t-3)}
+.advice li{border-left:3px solid var(--st-prog);padding:var(--sp-1) var(--sp-2);
+  background:var(--surface);border-radius:var(--radius);margin:var(--sp-1) 0}
+/* The one dominant chart. The bars stretch to fill the width, which is the intent;
+   the type does NOT live in that stretched space (see _usage_trend) — it is HTML
+   positioned over the same percentages, so a digit is the same shape at 390px and
+   at 1400px. */
+.colswrap{position:relative;height:210px;margin-bottom:var(--sp-1)}
 .cols{width:100%;height:210px;display:block;overflow:visible}
 .cols .grid{stroke:var(--border);stroke-width:1;fill:none}
 .cols .col{fill:var(--viz-1)}
@@ -369,6 +389,34 @@ h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rtip span i{font-style:normal;font-weight:600}
 @media print{.rtip{display:none!important}}
+/* Budget burn-down. Only rendered when a phase declares one, so it costs nothing
+   in the common case and is prominent in the case that matters. */
+.buds{margin-top:var(--sp-1)}
+/* Name capped, bar takes the slack — otherwise a 1fr name column pushes the bar
+   to the far right and the row stops reading as one thing. */
+.buds{max-width:58rem}
+.bud{display:grid;grid-template-columns:minmax(9rem,20rem) minmax(5rem,1fr) 3rem auto;
+  align-items:center;gap:var(--sp-2);margin:var(--sp-1) 0;font-size:.8rem}
+.bud .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bud .track{height:.55rem;background:var(--surface-2);border-radius:var(--pill);
+  overflow:hidden}
+.bud .track i{display:block;height:100%;border-radius:var(--pill);
+  background:var(--st-done)}
+.bud.over .track i{background:var(--st-blocked)}
+.bud .pct{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.bud.over .pct{color:var(--st-blocked);font-weight:640}
+.bud .amt{font-size:.72rem;color:var(--muted);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.bud.total{border-top:1px solid var(--border);padding-top:var(--sp-1);
+  margin-top:var(--sp-1)}
+.bud.total .nm{color:var(--muted)}
+/* The total has no bar; an empty track would paint a grey rail that reads as a
+   phase sitting at zero, which is the one thing this block must never imply. */
+.bud.total .track{background:none}
+@media (max-width:34rem){
+  .bud{grid-template-columns:1fr auto;gap:.15rem}
+  .bud .track{display:none}
+}
 .legend{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-3);
   margin:var(--sp-1) 0 var(--sp-2);font-size:.78rem;color:var(--muted)}
 .legend b{display:inline-flex;align-items:center;gap:var(--sp-1);
@@ -1047,8 +1095,10 @@ def load_usage(manifest, manifest_path, project_dir=None):
             "compareWindow": {"since": since, "until": until},
             "cache": ul.cache_profile(rows),
             "unit": ul.unit_economics(manifest, rows),
+            "bands": ul.cost_bands(manifest, rows, meta_usage),
+            "budgets": ul.phase_budgets(manifest, rows),
             "retry": ul.retry_cost(manifest, rows),
-            "routing": ul.routing(manifest, rows),
+            "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
             "coverage": ul.coverage(rows),
             "seriesAuthorModel": {
                 a: ul.series([r for r in rows if (r.get("author") or "unknown") == a],
@@ -1294,6 +1344,51 @@ def _usage_trend(u):
                yaxis, "".join(labels)))
 
 
+def _budget_block(u):
+    """Spend against each phase's declared budget.
+
+    Ties spend to the PLAN rather than the calendar — the comparison a
+    manifest-driven pipeline can make that a date-range dashboard cannot.
+
+    Renders NOTHING when no phase declares a budget, which is the common case: an
+    empty frame reading "0 of 0" would be worse than silence. When a budget does
+    exist it sits on first paint rather than behind the disclosure, because "P2 is
+    at 130%" is the kind of fact that should not need looking for.
+
+    Phases with no budget are counted and named as a footnote, never rendered as a
+    0% bar — an unbudgeted phase is not a phase at zero."""
+    pb = u.get("budgets") or {}
+    rows_in = [p for p in (pb.get("phases") or []) if p.get("budget")]
+    if not rows_in:
+        return ""
+    rows = []
+    for p in sorted(rows_in, key=lambda x: -x["pct"]):
+        pct = p["pct"]
+        # The fill caps at 100% because a bar cannot draw past its track; the
+        # number beside it does not, so the overrun stays visible.
+        fill = min(100.0, pct)
+        rows.append(
+            '<div class="bud%s"><span class="nm"><span class="mono">%s</span> %s</span>'
+            '<span class="track"><i style="width:%.1f%%"></i></span>'
+            '<span class="pct">%.0f%%</span>'
+            '<span class="amt">%s of %s%s</span></div>'
+            % (" over" if p["over"] else "", e(p["id"]), e(p["title"]), fill, pct,
+               e(_fmt_cost(p["spent"])), e(_fmt_cost(p["budget"])),
+               " &middot; over" if p["over"] else ""))
+    nobudget = len(pb.get("phases") or []) - len(rows_in)
+    foot = ('<p class="muted small">%d phase(s) have no <code>budgetUSD</code> set '
+            "and are not shown here — they are not phases at zero.</p>"
+            % nobudget) if nobudget else ""
+    total = ""
+    if pb.get("totalBudget"):
+        total = ('<div class="bud total"><span class="nm">All budgeted phases</span>'
+                 '<span class="track"></span><span class="pct"></span>'
+                 '<span class="amt">%s of %s</span></div>'
+                 % (e(_fmt_cost(pb["totalSpent"])), e(_fmt_cost(pb["totalBudget"]))))
+    return ('<h3 class="sub">Budget</h3><div class="buds">%s%s</div>%s'
+            % ("".join(rows), total, foot))
+
+
 def _ranked(u, key, title, slots=None, models=None):
     """One ranked bar list. Top 8 then a folded `other` row — past 8 entities a
     categorical palette cannot keep adjacent pairs distinguishable, so folding is a
@@ -1495,7 +1590,41 @@ def _routing_table(u):
             "comparison across bands would flag that working system as a fault.</p>"
             '<div class="tablewrap"><table class="data"><thead><tr><th>risk</th>'
             "<th>model</th><th>tasks</th><th>cost/task</th><th>mean attempts</th>"
-            "</tr></thead><tbody>%s</tbody></table></div>" % "".join(rows))
+            "</tr></thead><tbody>%s</tbody></table></div>%s"
+            % ("".join(rows), _routing_advice_block(rt)))
+
+
+def _routing_advice_block(rt):
+    """The one place this section makes a recommendation rather than a report.
+
+    Renders nothing unless the ledger's own evidence clears every gate in
+    `_routing_advice` — and on a well-routed project that is the normal outcome,
+    not a gap. The caveat is not boilerplate: the figure is the same tokens
+    re-priced, and a different model would not emit the same tokens."""
+    advice = (rt or {}).get("advice") or []
+    if not advice:
+        return ""
+    items = []
+    for a in advice:
+        items.append(
+            "<li><strong>%s</strong> work is running on <code>%s</code> — "
+            "%d task(s) at %.1f mean attempts. Those same tokens cost %s at "
+            "<code>%s</code> rates versus %s, <strong>%s less (%.0f%%)</strong>. "
+            "<code>%s</code> has already run %d task(s) in this band here, at "
+            "%.1f mean attempts.</li>"
+            % (e(a["risk"]), e(a["from"]), a["tasks"], a["fromMeanAttempts"] or 0,
+               e(_fmt_cost(a["atToRates"])), e(a["to"]),
+               e(_fmt_cost(a["atFromRates"])), e(_fmt_cost(a["saving"])),
+               a["savingPct"], e(a["to"]), a["evidenceTasks"],
+               a["evidenceAttempts"] or 0))
+    return ('<h4 class="sub">What the evidence supports</h4>'
+            '<ul class="advice">%s</ul>'
+            '<p class="muted small">An upper bound, not a forecast: this re-prices '
+            "the tokens that were actually spent at the other model's rates, and a "
+            "different model would not emit the same tokens. Both sides use "
+            "today's price table, so the two figures share one rate epoch. Stated "
+            "only where that model has already done comparable work in this repo "
+            "at no worse an attempt rate.</p>" % "".join(items))
 
 
 def _economics_block(u):
@@ -1533,17 +1662,48 @@ def _economics_block(u):
             % (" (the same task is in both figures here)"
                if retry.get("overlaps") else ""))
     if unit.get("mostExpensive"):
+        bands = u.get("bands") or {}
+        by_task = (bands.get("byTask") or {}) if bands.get("sufficient") else {}
         rows = "".join(
-            "<tr><td class=mono>%s</td><td>%s</td><td class=mono>%s</td>"
-            "<td>%s</td></tr>"
+            "<tr><td class=mono>%s</td><td>%s</td><td>%s</td>"
+            "<td class=mono>%s</td><td>%s</td></tr>"
             % (e(tid), e(u.get("taskTitles", {}).get(tid, "")),
+               ('<span class="bandpill b-%s">%s</span>' % (b, b)) if b
+               else "&mdash;",
                e(_fmt_cost(cost)), e(str(att)) if att else "&mdash;")
-            for tid, cost, att in unit["mostExpensive"])
+            for tid, cost, att in unit["mostExpensive"]
+            for b in (by_task.get(tid),))
         out.append('<h4 class="sub">Most expensive tasks</h4>'
+                   "%s"
                    '<div class="tablewrap"><table class="data"><thead><tr>'
-                   "<th>id</th><th>title</th><th>cost</th><th>attempts</th>"
-                   "</tr></thead><tbody>%s</tbody></table></div>" % rows)
+                   "<th>id</th><th>title</th><th>cost band</th><th>cost</th>"
+                   "<th>attempts</th>"
+                   "</tr></thead><tbody>%s</tbody></table></div>"
+                   % (_band_note(bands), rows))
     return "".join(out)
+
+
+def _band_note(bands):
+    """Say where the thresholds came from — or why there are none.
+
+    A band whose definition is invisible is a number nobody can argue with, and
+    "this task is an outlier" is exactly the kind of claim that has to be
+    checkable. On a young project this note is the whole content: it explains that
+    the feature is waiting for a sample rather than silently showing nothing."""
+    if not bands:
+        return ""
+    if not bands.get("sufficient"):
+        return ('<p class="muted small">No cost band yet — it calibrates from this '
+                "project's own completed tasks and needs %d, of which there are "
+                "%d. Set <code>usage.bands.highUSD</code> and "
+                "<code>usage.bands.outlierUSD</code> to band against a fixed "
+                "budget instead.</p>"
+                % (bands.get("gate", 5), bands.get("sample", 0)))
+    return ('<p class="muted small">Cost band from %s: typical &le; %s · high &le; '
+            "%s · outlier above.</p>"
+            % ("configured thresholds" if bands.get("basis") == "absolute"
+               else "this project's own completed tasks (median / p90)",
+               e(_fmt_cost(bands.get("high"))), e(_fmt_cost(bands.get("outlier")))))
 
 
 def _phase_stacks(u, slots, models):
@@ -1645,6 +1805,7 @@ def _usage_section(u):
         _ranked(u, "byPhase", "By phase"),
         _ranked(u, "byModel", "By model", slots, models),
         _ranked(u, "byAuthor", "By author")))
+    out.append(_budget_block(u))
 
     detail = "".join([
         _small_multiples(u, slots),
@@ -2322,6 +2483,82 @@ def _selftest():
           "neither can hang outside the plot",
           "left:0;transform:none" in _trend
           and "right:0;left:auto;transform:none" in _trend)
+    # --- cost bands ---------------------------------------------------------------
+    # The young-project case is the one that matters here: acme has 4 completed
+    # tasks, so the report must SAY the band is waiting for a sample rather than
+    # print nothing and leave the column unexplained.
+    _sup = _band_note({"sufficient": False, "gate": 5, "sample": 3})
+    check("u30 below the gate the report explains the absence and names the "
+          "config escape hatch",
+          "needs 5" in _sup and "there are 3" in _sup
+          and "usage.bands.highUSD" in _sup)
+    _rel = _band_note({"sufficient": True, "basis": "relative",
+                       "high": 5.5936, "outlier": 35.4031})
+    check("u31 an active band states its basis AND its thresholds",
+          "median / p90" in _rel and "$5.59" in _rel and "$35.40" in _rel)
+    check("u32 an absolute basis says so instead of claiming a percentile",
+          "configured thresholds" in _band_note(
+              {"sufficient": True, "basis": "absolute", "high": 15, "outlier": 50}))
+    _bh2 = render_html(manifest, _sum, "audit-report", dict(
+        _u, unit={"mostExpensive": [("P1.1", 40.0, 2)], "completed": 6,
+                  "remaining": 1, "gate": 5, "sufficient": True},
+        taskTitles={"P1.1": "Hash passwords"},
+        bands={"sufficient": True, "basis": "relative", "high": 5.0,
+               "outlier": 20.0, "byTask": {"P1.1": "outlier"}}))
+    check("u33 the band renders as a labelled pill, never colour alone",
+          '<span class="bandpill b-outlier">outlier</span>' in _bh2
+          and "<th>cost band</th>" in _bh2)
+    # --- phase budgets ------------------------------------------------------------
+    # The common case is that nobody set a budget; an empty "0 of 0" frame would be
+    # worse than silence.
+    check("u34 no budget anywhere renders nothing at all",
+          _budget_block(dict(_u, budgets={"phases": [
+              {"id": "P1", "title": "A", "budget": None, "spent": 5.0,
+               "pct": None, "over": False}], "budgeted": 0,
+              "totalBudget": None, "totalSpent": None, "anyOver": False})) == "")
+    _bud = _budget_block(dict(_u, budgets={
+        "phases": [
+            {"id": "P1", "title": "Alpha", "budget": 40.0, "spent": 28.22,
+             "pct": 70.6, "over": False},
+            {"id": "P2", "title": "Beta", "budget": 25.0, "spent": 32.53,
+             "pct": 130.1, "over": True},
+            {"id": "P3", "title": "Gamma", "budget": None, "spent": 9.0,
+             "pct": None, "over": False}],
+        "budgeted": 2, "totalBudget": 65.0, "totalSpent": 60.75, "anyOver": True}))
+    check("u35 an overrun sorts first, reads past 100% and is labelled 'over'",
+          _bud.index("Beta") < _bud.index("Alpha")
+          and "130%" in _bud and "&middot; over" in _bud
+          and 'class="bud over"' in _bud)
+    check("u36 the bar caps at the track while the number does not, so the "
+          "overrun stays visible",
+          'style="width:100.0%"' in _bud and 'style="width:70.6%"' in _bud)
+    check("u37 unbudgeted phases are counted in a footnote, never drawn at 0%",
+          "1 phase(s) have no" in _bud and "not phases at zero" in _bud
+          # exactly 2 phase rows + the total; the `buds` container must not count
+          and len(re.findall(r'class="bud(?: over| total)?"', _bud)) == 3,
+          re.findall(r'class="bud[^"]*"', _bud))
+    check("u38 the total covers only budgeted phases",
+          "$60.75 of $65.00" in _bud)
+    # --- routing advice -----------------------------------------------------------
+    check("u39 no advice renders nothing — silence is the normal outcome on a "
+          "well-routed project, not a gap",
+          _routing_advice_block({"advice": []}) == ""
+          and _routing_advice_block({}) == "")
+    _adv = _routing_advice_block({"advice": [{
+        "risk": "low", "from": "claude-opus-5", "to": "claude-sonnet-5",
+        "tasks": 9, "fromMeanAttempts": 1.0, "atFromRates": 148.30,
+        "atToRates": 89.00, "saving": 59.30, "savingPct": 40.0,
+        "evidenceTasks": 4, "evidenceAttempts": 1.0}]})
+    check("u40 the advice names the band, both models, the saving and the "
+          "in-repo evidence it rests on",
+          all(s in _adv for s in ("low", "claude-opus-5", "claude-sonnet-5",
+                                  "$59.30", "40%", "already run 4 task(s)")),
+          _adv)
+    check("u41 the caveat is present and specific — upper bound, one rate epoch, "
+          "and the in-repo condition",
+          "upper bound, not a forecast" in _adv
+          and "would not emit the same tokens" in _adv
+          and "one rate epoch" in _adv)
     check("u28 the md twin uses the same compact tokens as the HTML labels",
           "**Total:** 1.5M tokens" in um and "| P1 | 1.0M |" in um,
           [l for l in um.splitlines() if "1.0M" in l or "Total:" in l][:3])

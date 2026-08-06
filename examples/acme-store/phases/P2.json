@@ -3,6 +3,7 @@
   "title": "Input validation",
   "status": "in_progress",
   "model": "opus",
+  "budgetUSD": 25,
   "blockedBy": [],
   "desiredOutcome": "Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template.",
   "testGate": [

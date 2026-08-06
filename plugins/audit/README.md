@@ -369,6 +369,94 @@ over-reports spend by roughly 2.4x. The ledger dedups by message id, and a selft
 A repo that has not run a phase since installing will show everything as `unattributed`. That is
 the design, not a failure: off-pipeline work is exactly what you would otherwise never see.
 
+**Cost bands.** Tasks are sorted into `typical` / `high` / `outlier` by what they cost, and the
+threshold is the project's **own** median and p90 — so it means something on day one with no
+configuration and re-calibrates as the work grows. Pin absolute numbers instead with
+`usage.bands.highUSD` / `usage.bands.outlierUSD` when you have a real budget; a malformed or
+inverted pair falls back to the relative basis rather than banding anything wrongly. Below five
+completed tasks nothing is banded at all — percentiles off three samples are noise, and a
+confidently wrong band is worse than none. Every surface prints the thresholds it used, because
+"this task is an outlier" is a claim and a claim whose basis is invisible cannot be checked.
+
+Not to be confused with a task's `risk`, which is the risk of the *change* and is what model
+routing compares within.
+
+**One recommendation, heavily gated.** Where the ledger's own evidence supports moving work to a
+cheaper model, all three surfaces say so:
+
+```
+WHAT THE EVIDENCE SUPPORTS
+low work is running on claude-opus-5 - 7 task(s) at 1.0 mean attempts
+  those same tokens cost $94.65 at claude-sonnet-5 rates vs $157.75  ->  $63.10 less (40%)
+  claude-sonnet-5 has already run 5 task(s) in this band here, at 1.0 mean attempts
+upper bound, not a forecast: the same tokens re-priced at the other model's rates
+```
+
+Every condition exists to stop this becoming the glib advice the routing table was built to
+avoid. It compares **within one risk band** only, because hard work is routed to the strong model
+on purpose. The cheaper model must already have run **at least three tasks in that band in this
+repo** — otherwise "sonnet would be cheaper" is a price-list observation, not a finding. Its mean
+attempts must be no worse, because a model that retries twice is not cheaper. Both models need
+real rates in the table, never a `_default` guess. And the saving must clear both a percentage
+and an absolute floor. On a well-routed project the output is silence, which is the correct
+answer rather than a gap.
+
+The figure is a **re-priced counterfactual, not a forecast**: the same token counts at the other
+model's rates, both sides at today's prices so they share one rate epoch. A different model would
+not emit the same tokens, so it is an upper bound.
+
+**Per-phase budgets.** Put `budgetUSD` on a phase and the report and panel show spend against it:
+
+```json
+{ "id": "P1", "title": "Auth hardening", "budgetUSD": 40, "tasks": [ … ] }
+```
+
+```
+Budget
+P2 Input validation   ██████████  130%   $32.53 of $25.00 · over
+P1 Auth hardening     ███████░░░   70%   $28.22 of $40.00
+All budgeted phases                      $60.74 of $65.00
+2 phase(s) have no budgetUSD set and are not listed — they are not phases at zero.
+```
+
+This ties spend to the **plan** rather than to the calendar, which is the comparison a
+manifest-driven pipeline can make and a date-range dashboard cannot. It is optional and the block
+renders only when at least one phase declares a budget. Phases without one are counted in a
+footnote rather than drawn as a bar at 0% — an unbudgeted phase is not a phase at zero. The bar
+caps at the track but the percentage does not, so an overrun reads as 130% rather than as a bar
+that merely looks full. `budgetUSD` must be a positive number; `0`, a negative, a boolean or a
+string is a validation finding, not a silent "no budget".
+
+**One advisory, once.** When the task in flight passes `outlier`, the metering hook says so — in
+the session, while there is still time to split or re-scope it:
+
+```
+[audit] P1.9 has cost $225.00, past this project's p90 completed task ($5.00).
+        Consider splitting it or re-scoping before the next attempt.
+        This is advice, not a gate — nothing is blocked.
+```
+
+It fires once per task per session (a warning that repeats every turn is a warning nobody reads)
+and blocks nothing. A `Stop` hook could not block even if it wanted to — in that contract
+`decision: "block"` means "do not stop, keep going" — and stopping a task mid-edit on spend would
+strand a half-finished change, unlike a plan or test gate, which are recoverable.
+
+**And one line at the end.** On `SessionEnd` the same hook says what the session cost, where the
+work happened rather than only in a dashboard you have to remember to open:
+
+```
+[audit] this session: 250.2K tokens · ~$6.01 · 2 messages · 1 task(s): P1.9
+```
+
+A session that recorded nothing says nothing — reading code and asking questions should not
+produce a row of zeros.
+
+**Export from the panel.** `/audit:panel` has an **Export report** button that renders the
+standalone HTML report and its Markdown twin, then opens it. The report already carries
+Save-as-PDF via its print stylesheet, so there is no PDF machinery involved. It is served back
+through the panel's own origin: a browser will not follow a `file://` link from an `http://`
+page, so handing over a filesystem path would be a button that silently does nothing.
+
 **Cost is labelled `equiv`.** It is computed from a price table in
 `.claude/audit.config.json` (`usage.pricing`, USD per million tokens), not from a bill —
 subscription plans carry no per-token charge. Keeping the table in config means a rate change is

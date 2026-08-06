@@ -3,6 +3,7 @@
   "title": "Auth hardening",
   "status": "done",
   "model": "opus",
+  "budgetUSD": 40,
   "blockedBy": [],
   "desiredOutcome": "Credentials are stored and checked safely: modern password hashing and a rate-limited login path.",
   "testGate": [

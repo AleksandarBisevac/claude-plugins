@@ -4,6 +4,54 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.19.0] - 2026-08-06
+
+**Spend becomes a signal.** 0.18.0 made token spend readable. This makes it
+*actionable*: tasks are banded by what they cost, phases can carry a budget, the
+metering hook speaks up while there is still time to act, and the ledger's own
+evidence — never a price list — is what backs a routing recommendation.
+
+### Added
+- **Cost bands** — every task is `typical` / `high` / `outlier`, calibrated from
+  **this project's own** completed tasks (median / p90), so it means something on
+  day one with no configuration. Pin absolute thresholds with
+  `usage.bands.highUSD` / `outlierUSD` when you have a real budget; a malformed or
+  inverted pair falls back to the relative basis rather than banding wrongly.
+  Suppressed below 5 completed tasks. Every surface prints the thresholds it used.
+  Deliberately **not** called risk — tasks already carry `risk`, meaning risk of
+  the *change*.
+- **One advisory, once.** When the task in flight passes `outlier`, `meter-usage`
+  emits a `systemMessage` naming the task, its cost and the threshold. Fires once
+  per task per session and blocks nothing — a `Stop` hook could not block anyway
+  (`decision: "block"` there means "do not stop"), and stopping mid-edit on spend
+  would strand a half-finished change.
+- **Session cost summary** on `SessionEnd` — one line, where the work happened.
+  Silent when the session recorded nothing.
+- **Per-phase budgets** — optional `budgetUSD` on a phase, with a burn-down in the
+  report and panel. The bar caps at the track but the number does not, so an
+  overrun reads as 130%. Phases without a budget are counted in a footnote, never
+  drawn at 0% — an unbudgeted phase is not a phase at zero.
+- **Model-routing recommendation**, gated hard enough to be worth trusting: within
+  one risk band only; the cheaper model must already have run ≥3 tasks in that
+  band **in this repo** at no worse an attempt rate; both models need real rates,
+  never a `_default` guess; and the saving must clear a percentage *and* an
+  absolute floor. On a well-routed project the output is silence. The figure is a
+  re-priced counterfactual — the same tokens at the other model's rates, both
+  sides at today's prices — and says so.
+- **Model mix** in the browse tables for phase, task and author rows: a stack in
+  slot order with the dominant model named, exact split on hover.
+- **Export report** from the panel — renders the standalone HTML and its Markdown
+  twin and opens it through the panel's own origin (a browser will not follow a
+  `file://` link from an `http://` page). No PDF library: the report's print
+  stylesheet already does Save-as-PDF.
+
+### Fixed
+- `usage_state`'s no-ledger stub was missing keys the populated branch returns,
+  handing a fresh install `undefined` for part of the Usage tab.
+- A second `findingsBox()` would have hoisted over the save-result one and broken
+  every config save.
+- `/audit:panel` pidfile (live pid, port and session token) is now gitignored.
+
 ## [0.18.0] - 2026-08-06
 
 **The usage dashboard.** 0.17.0 answered "what did that cost?" with numbers.

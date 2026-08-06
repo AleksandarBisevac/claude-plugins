@@ -53,6 +53,17 @@ straight answer:
   decides otherwise.
 - Set `usage.enabled: false` in `.claude/audit.config.json` to turn the whole thing
   off; the hooks then return immediately.
+- The meter's **only** outputs are two `systemMessage`s, never a decision: one when
+  the task in flight passes the project's outlier cost band (at most once per task
+  per session), and one on `SessionEnd` summarising what the session cost. Both
+  carry counts, task ids and a dollar figure — never anything read out of the
+  transcript — and block nothing. Under `usage.showCost: false` the first states a
+  multiple and the second omits the figure, so the setting is not defeated by
+  either message.
+- `/audit:panel`'s **Export report** button writes only to the report location
+  derived from the project's own `manifestPath`, re-checked against the project
+  root; there is no path parameter on the route to traverse with. The rendered
+  file is served back through the panel's token-guarded origin.
 
 Blocking uses the canonical PreToolUse JSON protocol
 (`permissionDecision: "deny"` + reason, exit 0). Internal errors fail **open**
