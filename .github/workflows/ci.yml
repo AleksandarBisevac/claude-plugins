@@ -38,6 +38,7 @@ jobs:
                    plugins/audit/scripts/render-report.py \
                    plugins/audit/scripts/validate-config.py \
                    plugins/audit/scripts/migrate-manifest.py \
+                   plugins/audit/scripts/gen-demo-manifest.py \
                    plugins/audit/scripts/panel-server.py; do
             echo "== $f"
             python "$f" --selftest
@@ -146,6 +147,23 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
+      - name: Screenshot preconditions (the report actually paints what it claims)
+        shell: bash
+        run: |
+          set -e
+          # Gates the artifact, not the stylesheet. Every committed README screenshot
+          # showed an empty progress bar — including a phase at 2/2 — because the fill
+          # is a <span> with no `display`, and an inline box ignores width. A Python
+          # selftest can assert the CSS says `display:block`; only a browser can prove
+          # the bar paints. --check writes no PNGs.
+          #
+          # Pixels are deliberately NOT compared against the committed files: font
+          # rasterisation differs between macOS and CI Linux, so a byte diff would
+          # fail for reasons unrelated to the product. Refresh the images locally with
+          #   node tools/capture-screenshots.mjs
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.0
+          npx playwright install --with-deps chromium
+          node tools/capture-screenshots.mjs --check
       - name: JSON Schema validation (ajv, draft 2020-12)
         run: |
           npx --yes ajv-cli validate --spec=draft2020 \
