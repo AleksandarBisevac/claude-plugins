@@ -530,6 +530,20 @@ def append_rows(ledger_dir, rows):
     return written
 
 
+def _native(path):
+    """A path in this platform's own separator, whatever separator it arrived in.
+
+    `ledgerDir` is authored by a human in JSON — the shipped default is the literal
+    `".claude/usage"` — so on Windows `os.path.join` hands back
+    `C:\\proj\\.claude/usage`. That opens directories fine, which is exactly why it
+    survives: it is wrong only where paths are COMPARED or PRINTED, and both happen.
+    `audit-status.py` puts this string in the `ledgerDir` field of the JSON the panel
+    reads, and the report prints it. `panel-server.py` already normalises the manifest
+    path for the same reason; this is that rule, applied where it was missing.
+    """
+    return os.path.normpath(path) if path else path
+
+
 def find_ledger_dir(manifest_path, rel=None, project_dir=None):
     """Locate the ledger for a manifest, or None when there isn't one.
 
@@ -546,9 +560,10 @@ def find_ledger_dir(manifest_path, rel=None, project_dir=None):
     """
     rel = rel or os.path.join(".claude", "usage")
     if project_dir:                       # an explicit CLAUDE_PROJECT_DIR always wins
-        return rel if os.path.isabs(rel) else os.path.join(project_dir, rel)
+        return _native(rel if os.path.isabs(rel)
+                       else os.path.join(project_dir, rel))
     if os.path.isabs(rel):
-        return rel if os.path.isdir(rel) else None
+        return _native(rel) if os.path.isdir(rel) else None
     try:
         here = os.path.dirname(os.path.abspath(manifest_path))
     except Exception:
@@ -558,7 +573,7 @@ def find_ledger_dir(manifest_path, rel=None, project_dir=None):
         seen.add(here)
         candidate = os.path.join(here, rel)
         if os.path.isdir(candidate):
-            return candidate
+            return _native(candidate)
         here = os.path.dirname(here)
     return None
 
@@ -1506,6 +1521,21 @@ def _selftest():
               find_ledger_dir(os.path.join(flat, "m.json"), ".claude/usage",
                               os.path.join(tmp, "proj"))
               == os.path.join(tmp, "proj", ".claude", "usage"))
+        # The three cases above pass `.claude/usage` — the shipped default, written
+        # with a forward slash because it is authored in JSON — and compare against
+        # os.path.join. That is not incidental: it is the assertion. On Windows the
+        # unnormalised join returns `C:\proj\.claude/usage`, which opens fine and so
+        # goes unnoticed until the string is compared or printed, and audit-status.py
+        # puts it straight into the JSON the panel reads. These two state the rule
+        # outright so it cannot be optimised away as redundant.
+        for label, got in (
+                ("upward search",
+                 find_ledger_dir(os.path.join(deep, "m.json"), ".claude/usage")),
+                ("explicit project dir",
+                 find_ledger_dir(os.path.join(flat, "m.json"), ".claude/usage",
+                                 os.path.join(tmp, "proj")))):
+            check("discover: %s returns a path in this platform's own separator"
+                  % label, got == os.path.normpath(got))
 
         check("cursor: lives outside stateDir, next to the ledger",
               os.path.isfile(os.path.join(ledger, ".cursors", "sess-1.json")))

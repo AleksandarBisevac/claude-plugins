@@ -59,7 +59,7 @@ The hosted demo omits the flagship feature set. `examples/acme-store/acme-store-
 |---|---|
 | Tracked lines | 24,491 — 14,138 Python · 3,889 Markdown · 3,886 JSON · 2,126 HTML |
 | Surface | 15 commands · 3 agents · 8 hooks · 2 JSON Schemas · 2 templates |
-| Tests | **919** runtime cases across 20 `--selftest` suites in CI, globbed rather than enumerated (675 across 17 before this work) |
+| Tests | **921** runtime cases across 20 `--selftest` suites in CI, globbed rather than enumerated (675 across 17 before this work) |
 | CI | 3 jobs · ubuntu + windows matrix · ajv draft-2020-12 · `claude plugin validate` |
 | Runtime dependencies | 0 (stdlib-only, enforced as a hard rule in `CONTRIBUTING.md`) |
 | Releases | 24, from v0.1.0 to v0.19.0, between 2026-07-06 and 2026-08-06 |
@@ -301,7 +301,7 @@ is the same move the CHANGELOG makes on every other feature.
   market where most "enforcement" is a strongly-worded skill.
 - **Zero runtime dependencies**, stdlib-only, with a Windows CI leg proving the interpreter
   fallback. Installs where npm-based competitors do not.
-- **919 runtime test cases across 20 suites in CI** (a static `check(` grep reads 686; the runtime count is the verifiable one), plus ajv schema validation, plus `claude plugin validate`, plus a
+- **921 runtime test cases across 20 suites in CI** (a static `check(` grep reads 686; the runtime count is the verifiable one), plus ajv schema validation, plus `claude plugin validate`, plus a
   determinism check that regenerates the demo ledger and diffs it against the committed copy.
 - **Spend attributed to plan units** — not replicable by native OTel, as argued in §3.
 - **The prose is publishable-grade.** "A claim whose basis is invisible cannot be checked."

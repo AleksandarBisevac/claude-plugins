@@ -107,6 +107,14 @@ true — turned on the two places where it was making claims it could not act on
   against a `PATH` holding python and nothing else, which surfaced a fourth: the finding
   names `meta.gitRoot` when the directory is not a repo, but names the missing binary
   when git is absent. 44/44 with git absent, 47/47 with it present.
+- **Ledger discovery returned a mixed-separator path on Windows.** `ledgerDir` is
+  authored in JSON and ships as the literal `".claude/usage"`, so `os.path.join` built
+  `C:\proj\.claude/usage`. That opens directories fine, which is why it survived — it is
+  wrong only where the path is compared or printed, and `audit-status.py` puts it in the
+  `ledgerDir` field of the JSON the panel reads. `find_ledger_dir` normalises every path
+  it returns now, which is the rule `panel-server.py` already applied to the manifest
+  path. Three selftests had been asserting exactly this and could only fail on Windows;
+  the fix is in the function, not in them.
 - **`encoding="utf-8"` pinned on the last three unguarded fixture writes**
   (`migrate-manifest.py`). Harmless today — `json.dump` defaults to `ensure_ascii` — but
   the Windows default is cp1252, so the first fixture to gain an em dash would fail on
@@ -116,7 +124,7 @@ true — turned on the two places where it was making claims it could not act on
   produced `Fix BUG-3: cart total off-by-one with st`, which reads as corruption.
 
 ### Validation
-- **919 cases across 20 suites** (from 864). Including: a repo with no budgets and a
+- **921 cases across 20 suites** (from 864). Including: a repo with no budgets and a
   repo with no metering both trip nothing — a budget gate that fires where no budget
   exists would be the worst possible version of this; a satisfied gate reports nothing
   rather than an empty warning; and cost is withheld when `showCost` is false.
