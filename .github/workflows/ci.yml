@@ -39,6 +39,7 @@ jobs:
                    plugins/audit/scripts/validate-config.py \
                    plugins/audit/scripts/migrate-manifest.py \
                    plugins/audit/scripts/gen-demo-manifest.py \
+                   plugins/audit/scripts/audit-doctor.py \
                    plugins/audit/scripts/panel-server.py; do
             echo "== $f"
             python "$f" --selftest
@@ -130,6 +131,21 @@ jobs:
                   assert b.get("id") == p["id"] and "tasks" in b, "bad shard %s" % p["shard"]
               print("OK sharded:", idx, "-", len(d["phases"]), "shards")
           PY
+      - name: Doctor reports this repo and the example as healthy
+        shell: bash
+        run: |
+          set -e
+          # An integration check the selftests cannot make: the doctor's value is
+          # entirely in what it says about a REAL setup, and its first real run here
+          # produced a false FINDING by reporting the shell keyword `for` as a
+          # missing binary (this repo's own selftests gate is a `for` loop). Exit 0
+          # means no findings; warnings are expected and fine.
+          python plugins/audit/scripts/audit-doctor.py --project .
+          python plugins/audit/scripts/audit-doctor.py --project examples/acme-store
+          # --json stays parseable, since that is the form other tools would consume
+          python plugins/audit/scripts/audit-doctor.py --project . --json \
+            | python -c 'import json,sys; d=json.load(sys.stdin); assert d["checks"]; \
+              assert d["counts"]["FINDING"] == 0, d["counts"]; print("OK: doctor json clean")'
       - name: CI gate + report smoke on the dogfood manifest
         run: |
           python plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate
