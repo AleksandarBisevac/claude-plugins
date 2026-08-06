@@ -70,7 +70,7 @@ _CSS = """
   --radius:9px;--radius-lg:14px;--pill:999px;
   --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
   --shadow-md:0 10px 30px rgba(15,23,42,.14);
-  --dur:.22s;--ease:cubic-bezier(.4,0,.2,1)
+  --dur:.22s;--ease:cubic-bezier(.4,0,.2,1);
   /* 8pt spacing scale + 3 text levels. Introduced so spacing stops being
      ad-hoc: every margin/padding/gap below snaps to one of these steps, which is
      what makes the vertical rhythm read as deliberate rather than accidental.
@@ -155,9 +155,19 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 /* ---- progress bar (animated fill) ---------------------------------------- */
 .bar{position:relative;display:inline-block;vertical-align:middle;width:13rem;max-width:38vw;
   height:.62rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--pill);overflow:hidden}
-.fill{height:100%;border-radius:inherit;background:var(--accent);box-shadow:0 0 10px -2px var(--accent);
+/* `display:block` is load-bearing, not tidiness: the fill is a <span>, and an inline
+   box ignores width and height outright. Without it every progress bar in the report
+   rendered as an empty track — including a phase at 2/2 — which is why the committed
+   README screenshots showed 4/10 against a blank bar. The two bars that always worked
+   (`.rank .track i`, `.bud .track i`) both declare it; this one was the omission. */
+.fill{display:block;height:100%;border-radius:inherit;background:var(--accent);
+  box-shadow:0 0 10px -2px var(--accent);
   width:var(--w,0);animation:fillIn .9s var(--ease) both}
-@keyframes fillIn{from{width:0}}
+/* Both endpoints are explicit. A single `from` keyframe leaves the end state to be
+   synthesised from the underlying value, and combined with `fill-mode:both` that is
+   how `fadeUp` pinned two blocks at opacity 0 the moment its easing token started
+   resolving. An animation that reveals something states what "revealed" means. */
+@keyframes fillIn{from{width:0}to{width:var(--w,0)}}
 
 /* ---- toolbar ------------------------------------------------------------- */
 .toolbar{position:sticky;top:.5rem;z-index:10;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;
@@ -245,7 +255,7 @@ tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 2rem;borde
 .tf-chips{display:inline-flex;gap:.25rem;flex-wrap:wrap}
 
 /* ---- load reveal (ends visible -> readable with JS off) ------------------ */
-@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
 .meta{animation-delay:.04s}.overall{animation-delay:.09s}.summary{animation-delay:.14s}
 
@@ -951,6 +961,43 @@ def _undeclared_css_vars(css):
     # this reason.
     used = set(re.findall(r"var\(\s*(--[A-Za-z0-9_-]+)\s*\)", css))
     return sorted(used - declared)
+
+
+def _unterminated_css_decls(css):
+    """Custom-property declarations that run past their line without a `;`.
+
+    A custom property's value is almost anything up to the next `;` or the block's
+    closing `}` — comments and later declarations included. So a missing semicolon
+    does not raise; it silently ANNEXES whatever follows. One missing `;` after
+    `--ease` swallowed a five-line comment plus the `--sp-0` declaration, which cost
+    two things at once: `--ease` became a garbage multi-line value, making every
+    `animation`/`transition` shorthand that referenced it invalid at computed-value
+    time (so the report's progress-bar fill, card and button transitions and the
+    heading fade were all dead), and `--sp-0` was never declared at all.
+
+    `_undeclared_css_vars` cannot see this: the annexed text still reads as
+    `--sp-0:` to a regex looking for declarations, so the token appears declared.
+    That is why this is a separate check rather than a stricter one.
+
+    Omitting the `;` on the LAST declaration in a block is legal and common, so a
+    line only counts when more content follows before the block closes."""
+    bad, lines = [], css.split("\n")
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if not re.search(r"--[A-Za-z0-9_-]+\s*:", line):
+            continue
+        if line.endswith((";", "{", "}")):
+            continue
+        # Unterminated. Harmless only if the block ends before any further content.
+        for nxt in lines[i + 1:]:
+            nxt = nxt.strip()
+            if not nxt:
+                continue
+            if nxt.startswith("}"):
+                break                      # last declaration in its block — legal
+            bad.append("line %d: %s" % (i + 1, line[:72]))
+            break
+    return bad
 
 
 def _theme_asymmetric_vars(css):
@@ -2342,6 +2389,32 @@ def _selftest():
     _asym = _theme_asymmetric_vars(_CSS)
     check("u14c no colour token exists in only one theme (either direction)",
           _asym == [], repr(_asym))
+    # A missing `;` after a custom property annexes the comment and declarations
+    # that follow it. Silent, and it killed every animation in this stylesheet once.
+    _unterm = _unterminated_css_decls(_CSS)
+    check("u14d no custom-property declaration runs past its line without a ';' "
+          "(it would annex whatever follows)", _unterm == [], repr(_unterm))
+    check("u14e the annexing case is detected",
+          _unterminated_css_decls(
+              ":root{\n  --ease:linear\n  /* c */\n  --sp-0:.25rem;\n}") != [])
+    check("u14f the last declaration in a block may legally omit its ';'",
+          _unterminated_css_decls(":root{\n  --a:1px;\n  --b:2px\n}") == [])
+    check("u14g --ease resolves to a single value (its shorthand users depend on it)",
+          re.search(r"--ease:\s*cubic-bezier\([^)]*\);", _CSS) is not None)
+    check("u14h --sp-0 survives as its own declaration",
+          re.search(r"--sp-0:\s*\.25rem", _CSS) is not None)
+    # The progress fill is a <span>. Inline boxes ignore width and height, so without
+    # an explicit display the bar paints as an empty track at every percentage —
+    # which is what shipped from the redesign until it was caught by a capture.
+    check("u14i the progress fill declares a non-inline display "
+          "(a <span> would otherwise ignore its width)",
+          re.search(r"\.fill\{[^}]*display:\s*block", _CSS) is not None)
+    # A reveal animation with only a `from` keyframe leaves its end state to be
+    # synthesised, and `fill-mode:both` can then hold the element at the from-state.
+    for _kf in ("fillIn", "fadeUp"):
+        _body = re.search(r"@keyframes %s\{([^}]*\}[^}]*)\}" % _kf, _CSS)
+        check("u14k %s declares both endpoints (from AND to)" % _kf,
+              _body is not None and "to{" in _body.group(1), _kf)
 
     # At scale every categorical list must fold and SAY it folded. Silent truncation
     # reads as "that is all of it", which is the worst possible failure for a
