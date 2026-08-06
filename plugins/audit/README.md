@@ -14,6 +14,8 @@ project-specific is supplied by a small per-repo config file.
 ```
 /plugin marketplace add AleksandarBisevac/claude-plugins
 /plugin install audit@quality-gates          # then /reload-plugins
+/audit:usage --backfill                        # free: your past spend, from transcripts already on disk
+/audit:doctor                                  # is the setup healthy?
 /audit:init                                    # audit the codebase → writes the manifest
 /audit:status                                  # see phases/tasks/bugs + what's ready
 /audit:phase P0                                # run a whole phase (or /audit:run <id> for one task)
@@ -238,7 +240,32 @@ Scope or turn it off:
 
 ## Quick start
 
-Generate the manifest (recommended):
+### First, the part that costs nothing
+
+```
+/audit:usage --backfill
+```
+
+No manifest, no agents, no tokens spent. It scans the Claude Code transcripts already
+sitting in `~/.claude/projects/` and prints what this repo has cost you — totals, cache
+economics, and a breakdown by model, author and **agent** (orchestrator vs. subagents),
+with a daily trend. Nothing is generated and nothing is called; the data was already on
+your disk, unread.
+
+Every row will say **`unattributed`**, and that is the useful part. Native tooling can
+tell you what a *session* or a *model* cost. Tying spend to a **phase and a task** needs
+a plan to tie it to — which is what everything below builds, and the comparison a
+date-range dashboard structurally cannot make.
+
+Then check the setup is sound before committing to a run:
+
+```
+/audit:doctor          # interpreter the hooks will use, git root, config, manifest, gates
+```
+
+### Then the manifest
+
+Generate it (recommended):
 
 ```
 /audit:init            # interviews you, audits the codebase in parallel, writes the manifest
@@ -360,12 +387,23 @@ artifact (see `docs/examples/azure-pipelines.yml`).
 
 The most common question testers ask is "what did that cost?" — so the plugin meters it.
 
+**You can answer it before installing anything else.** `--backfill` reads the Claude Code
+transcripts already in `~/.claude/projects/`, so it works in a repo with no manifest, no
+config and no prior runs — nothing is generated and no agent is called:
+
+```bash
+/audit:usage --backfill               # free: past spend, from transcripts already on disk
+```
+
+Expect every row to read `unattributed`. Native tooling can price a *session* or a
+*model*; attributing spend to a **phase and a task** requires a plan to attribute it to,
+which is what the manifest is for. Once phases run:
+
 ```bash
 /audit:usage                          # the dashboard
 /audit:usage --by task --since 7d     # one focused table, last week
 /audit:usage --author sara@acme.io    # who spent what
 /audit:usage --json                   # for CI
-/audit:usage --backfill               # read transcripts already on disk
 ```
 
 ```
