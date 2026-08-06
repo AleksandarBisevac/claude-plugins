@@ -38,15 +38,29 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 
 ## Quickstart
 
-In any git repo you want to audit:
+**Start here — it costs nothing and needs no setup:**
 
 ```
+/audit:usage --backfill    # reads transcripts already on disk → your own past spend
+```
+
+No manifest, no agents, no tokens spent: it scans the Claude Code transcripts already
+in `~/.claude/projects/` and prints what this repo has cost you so far, broken down by
+model, author and agent. Everything will read as **`unattributed`** — that is the
+point. Attributing spend to *phases and tasks* is what the rest of this does, and it
+is the comparison a plan-driven pipeline can make that a date-range dashboard cannot.
+
+Then, in any git repo you want to audit:
+
+```
+/audit:doctor          # is the setup healthy? interpreter, git root, config, gates
 /audit:init            # interview → generates a schema-valid audit manifest
 /audit:status          # see phases, tasks, bugs, and what's ready now
 /audit:migrate         # (optional) shard the manifest → parallel-safe phases across worktrees
 /audit:panel           # open the browser control panel to tune config + composition (open/stop/status)
 /audit:phase P0        # run the first phase: branch → tasks (red-first TDD) → gated sign-off
 /audit:report          # render the shareable HTML + Markdown report
+/audit:usage           # the same spend view — now attributed to phases and tasks
 ```
 
 `/audit:init` interviews you (scope, dimensions, size) and writes the manifest;
