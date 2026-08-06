@@ -1,5 +1,9 @@
 # audit — a Claude Code plugin
 
+[![ci](https://github.com/AleksandarBisevac/claude-plugins/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AleksandarBisevac/claude-plugins/actions/workflows/ci.yml)
+[![license MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-blue)](../../CONTRIBUTING.md#hard-rules)
+
 A **manifest-driven, model-aware, test-driven** audit/fix pipeline for any repo — with
 task + bug tracking, multi-agent manifest generation, and guard hooks (plan-first,
 secret-safety, token-logging, TDD nudge). The pipeline logic is generic; everything
