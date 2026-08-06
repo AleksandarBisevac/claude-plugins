@@ -34,12 +34,22 @@ jobs:
           total=0
           for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
             echo "== $f"
-            out=$(python "$f" --selftest)
-            echo "$out" | tail -1
+            # Capture, but PRINT IN FULL on failure. The first version stored stdout
+            # in a variable and echoed only the last line — so when the Windows leg
+            # went red the log showed the filename, then "exit code 1", and nothing
+            # else. A step that hides its output in exactly the case you need it is
+            # worse than one that prints everything.
+            if ! out=$(python "$f" --selftest 2>&1); then
+              echo "$out"
+              echo "FAIL: $f --selftest exited non-zero"
+              exit 1
+            fi
             echo "$out" | grep -qE '[0-9]+/[0-9]+ cases passed' || {
+              echo "$out"
               echo "FAIL: $f has no --selftest (every hook/script must carry one)"
               exit 1
             }
+            echo "$out" | tail -1
             n=$(echo "$out" | tail -1 | grep -oE '[0-9]+/[0-9]+' | cut -d/ -f1)
             total=$((total + n))
           done

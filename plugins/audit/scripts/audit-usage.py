@@ -665,8 +665,17 @@ def _selftest():
           resolve_since("2026-07-01") == "2026-07-01")
     check("since: None passes through", resolve_since(None) is None)
 
+    # Built for the running platform, and matched as a SUBSTRING. `abspath` on
+    # Windows prepends the current drive, so the strict slug is `D:-Users-x-repo`
+    # — and `x in [list]` is exact membership, not containment, so the original
+    # assertion could only ever pass on POSIX. The function was right; the test
+    # was the thing tied to one operating system.
+    _slug_path = os.path.abspath(os.path.join(os.sep, "Users", "x", "repo"))
+    _slugs = project_slug_candidates(_slug_path)
     check("slug: strict candidate replaces separators",
-          "-Users-x-repo" in project_slug_candidates("/Users/x/repo"))
+          "-Users-x-repo" in _slugs[0], repr(_slugs))
+    check("slug: no path separator survives in any candidate",
+          all(os.sep not in s and "/" not in s for s in _slugs), repr(_slugs))
 
     tmp = tempfile.mkdtemp(prefix="audit-usage-selftest-")
     try:
