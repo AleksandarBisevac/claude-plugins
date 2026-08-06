@@ -107,6 +107,35 @@ spawned by the commands via `subagent_type` — nothing about the invocation
 surface changed, so the original rationale holds unchanged. Next trigger:
 `commands/` deprecation only.
 
+**Amended at v0.22.0: the trigger was watching the wrong thing, and both
+layouts now ship.** Every revisit above asked "is `commands/` going away yet" —
+a risk that may never arrive. The actual cost was already being paid: skills
+**auto-trigger on what someone types**, and commands do not. Someone who says
+"audit this codebase" gets nothing unless they already know to type
+`/audit:init`. That is not a deprecation risk, it is a discoverability loss,
+present in every version since v0.4.0, and a trigger set to "deprecation only"
+cannot fire on it. Watching for the wrong signal is not the same as concluding
+there is no signal — the NO-GO was defensible each time and still missed this,
+because it only ever answered the question it was asked.
+
+So the answer is neither NO-GO nor migrate: **keep every command and add thin
+skills beside them.** `skills/audit-codebase` and `skills/audit-spend` carry a
+triggering description and a routing table, and nothing else. They restate no
+procedure — they name the command file to read — because two copies of a
+procedure is one copy and one lie. The muscle memory keeps working, the natural
+phrasing now lands somewhere, and the migration this ADR twice declined is still
+declined.
+
+The risk this introduces is over-triggering: a skill that fires on "review this
+code" would make the plugin worse than silence, which is why `audit-codebase`
+carries an explicit **do not use this for** section pointing one-shot diff review
+back at `/review`. That is the same rule the routing advisory and the cost
+projection already follow — say nothing rather than something unfounded.
+
+**Next trigger:** evidence about the descriptions themselves — a skill firing on
+work it should not touch, or the natural phrasing still not reaching it. Both are
+observable in a transcript, which is what makes this trigger able to fire at all.
+
 ### Plugin evals (evaluated 2026-07, v0.6.0): deferred — feature is early access
 
 `claude plugin eval` (evals/**/case.yaml + graders) is the right tool for

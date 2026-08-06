@@ -140,6 +140,12 @@ a 50-phase × 1000-task manifest):
   bidirectional fileIndex, typo warnings; exit 0 valid / 1 findings / 2 unreadable) the
   commands run after every manifest mutation.
 - **`templates/`** — a config example and a starter manifest.
+- **`skills/`** — two **thin** skills, `audit-codebase` and `audit-spend`. They exist so that
+  "audit this codebase" and "what did that cost" reach the plugin at all: skills auto-trigger
+  on what someone types, commands do not. They carry a routing table and name the command file
+  to read — no procedure of their own, because two copies of a procedure is one copy and one
+  lie. `audit-codebase` also says when **not** to use it: a one-shot look at the working diff
+  belongs to `/review`, not to a manifest. See the decision record in `CONTRIBUTING.md`.
 
 ## Commands
 
