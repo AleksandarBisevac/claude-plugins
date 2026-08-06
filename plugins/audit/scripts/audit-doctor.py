@@ -566,9 +566,20 @@ def _selftest():
     tmp = tempfile.mkdtemp(prefix="audit-doctor-selftest-")
     try:
         # A non-git directory is legitimately a FINDING (every mutating command
-        # stops there), so the "fresh setup" case has to be a fresh REPO.
-        subprocess.run(["git", "init", "-q", tmp], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=30)
+        # stops there), so the "fresh setup" case has to be a fresh REPO. If git is
+        # not installed the repo cannot be made, and asserting "git root resolves"
+        # would then fail for a reason that has nothing to do with this script —
+        # so the git-dependent cases are skipped rather than reported as defects.
+        have_git = bool(sh.which("git"))
+        if have_git:
+            try:
+                subprocess.run(["git", "init", "-q", tmp],
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=30, check=True)
+            except Exception:
+                have_git = False
+        if not have_git:
+            print("SKIP git-dependent cases (git is not on PATH)")
         rep = diagnose(tmp)
         check("fresh repo: interpreter resolves", levels(rep, "interpreter") == ["OK"])
         check("fresh repo: absent config is OK, not a finding",
@@ -583,13 +594,16 @@ def _selftest():
               levels(rep, "hooks") == ["WARNING"], repr(levels(rep, "hooks")))
         check("the hooks warning names the likely cause (not enabled)",
               "enabled" in hooks_fix, hooks_fix)
-        check("fresh repo: a fresh setup yields no findings",
-              rep.counts()["FINDING"] == 0,
-              repr([r for r in rep.rows if r["level"] == "FINDING"]))
-        check("fresh repo: exit code 0", rep.exit_code() == 0)
+        if have_git:
+            check("fresh repo: a fresh setup yields no findings",
+                  rep.counts()["FINDING"] == 0,
+                  repr([r for r in rep.rows if r["level"] == "FINDING"]))
+        if have_git:
+            check("fresh repo: exit code 0", rep.exit_code() == 0)
 
-        check("fresh repo: git root resolves", levels(rep, "git") == ["OK"],
-              detail(rep, "git"))
+        if have_git:
+            check("fresh repo: git root resolves", levels(rep, "git") == ["OK"],
+                  detail(rep, "git"))
 
         # a non-repo IS a finding, and it names the fix
         nogit = tempfile.mkdtemp(prefix="audit-doctor-nogit-")
@@ -597,9 +611,16 @@ def _selftest():
             rep_ng = diagnose(nogit)
             check("a non-repo directory is a git FINDING",
                   levels(rep_ng, "git") == ["FINDING"], repr(levels(rep_ng, "git")))
-            check("the git finding names meta.gitRoot as the fix",
-                  "gitRoot" in " ".join(r["fix"] or "" for r in rep_ng.rows
-                                        if r["check"] == "git"))
+            # Two different git findings with two different fixes: "not a repo"
+            # points at meta.gitRoot, "git is not on PATH" points at installing it.
+            # Asserting the first unconditionally made this case depend on the
+            # machine rather than on the code.
+            _gfix = " ".join(r["fix"] or "" for r in rep_ng.rows
+                             if r["check"] == "git")
+            _gdet = detail(rep_ng, "git")
+            check("the git finding is actionable for the actual cause",
+                  ("gitRoot" in _gfix) if have_git else ("not on PATH" in _gdet),
+                  "%s | %s" % (_gdet, _gfix))
             check("a non-repo exits 1", rep_ng.exit_code() == 1)
         finally:
             sh.rmtree(nogit, ignore_errors=True)
