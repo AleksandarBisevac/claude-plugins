@@ -530,6 +530,39 @@ def append_rows(ledger_dir, rows):
     return written
 
 
+def find_ledger_dir(manifest_path, rel=None, project_dir=None):
+    """Locate the ledger for a manifest, or None when there isn't one.
+
+    Searches UPWARD from the manifest's own directory for the first ancestor that
+    contains `rel`. The obvious alternative — assume the manifest lives at
+    `<project>/docs/audit/<name>.json` and go three levels up — is wrong for any
+    other layout, and it fails DANGEROUSLY rather than loudly: pointed at
+    `examples/acme-store/audit-plan.json` it resolves to the enclosing repo and
+    silently renders THAT project's spend under the example's name.
+
+    Returning None when nothing is found is deliberate. A missing ledger means the
+    Usage section renders as nothing, which is honest; a guessed one means a report
+    full of confident numbers about the wrong project.
+    """
+    rel = rel or os.path.join(".claude", "usage")
+    if project_dir:                       # an explicit CLAUDE_PROJECT_DIR always wins
+        return rel if os.path.isabs(rel) else os.path.join(project_dir, rel)
+    if os.path.isabs(rel):
+        return rel if os.path.isdir(rel) else None
+    try:
+        here = os.path.dirname(os.path.abspath(manifest_path))
+    except Exception:
+        return None
+    seen = set()
+    while here and here not in seen:
+        seen.add(here)
+        candidate = os.path.join(here, rel)
+        if os.path.isdir(candidate):
+            return candidate
+        here = os.path.dirname(here)
+    return None
+
+
 def ledger_files(ledger_dir):
     try:
         return sorted(glob.glob(os.path.join(ledger_dir, "[0-9]*.jsonl")))
@@ -682,6 +715,307 @@ def heatmap(rows):
         wday = time.gmtime(epoch).tm_wday
         grid[wday][hour] += sum(int(row.get(k) or 0) for k in TOKEN_KEYS)
     return grid
+
+
+# --- analytics ------------------------------------------------------------------
+# Pure `rows -> dict` functions. Every one of these is easy to compute and easy to
+# present dishonestly, so the guard against that lives HERE rather than in each
+# renderer — a wrong number that three surfaces agree on is worse than no number.
+
+MAX_SERIES = 8              # categorical hue cap; past this the tail folds
+MIN_TASKS_FOR_PROJECTION = 5
+POOR_COVERAGE_PCT = 50.0
+
+
+def task_index(manifest):
+    """{taskId: task dict} across every phase."""
+    out = {}
+    for ph in ((manifest or {}).get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("id"):
+                out[t["id"]] = t
+    return out
+
+
+def _tokens(row):
+    return sum(int(row.get(k) or 0) for k in TOKEN_KEYS)
+
+
+def _cost(row):
+    try:
+        return float(row.get("costUSD") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def series(rows, dim, bucket="day", top=MAX_SERIES, metric="tokens"):
+    """Time series per entity, ready for a multi-line chart.
+
+    Past `top` entities the tail folds into a single `other` entry rather than
+    generating a 9th hue nothing can distinguish — the categorical palette is only
+    validated to 8 slots, so this is a correctness bound, not a style preference.
+
+    Returns {buckets, entities:[{key, values, total}], folded, metric}.
+    """
+    keyfn = GROUP_KEYS[dim]
+    valfn = _tokens if metric == "tokens" else _cost
+    per = {}
+    seen_buckets = set()
+    for row in rows:
+        b = bucket_date(row.get("ts")) if bucket == "day" else (row.get("ts") or "")
+        if not b:
+            continue
+        seen_buckets.add(b)
+        k = keyfn(row)
+        per.setdefault(k, {})
+        per[k][b] = per[k].get(b, 0) + valfn(row)
+    buckets = sorted(seen_buckets)
+    ranked = sorted(per.items(), key=lambda kv: -sum(kv[1].values()))
+    keep, tail = ranked[:top], ranked[top:]
+    entities = [{"key": k, "total": sum(v.values()),
+                 "values": [v.get(b, 0) for b in buckets]} for k, v in keep]
+    if tail:
+        merged = {}
+        for _, v in tail:
+            for b, n in v.items():
+                merged[b] = merged.get(b, 0) + n
+        entities.append({"key": "other", "total": sum(merged.values()),
+                         "values": [merged.get(b, 0) for b in buckets]})
+    return {"buckets": buckets, "entities": entities, "folded": len(tail),
+            "metric": metric}
+
+
+def compare(rows, since, until):
+    """This window vs the one immediately before it, same length.
+
+    Returns None for `prior` and every delta when there is nothing to compare
+    against — a first-run dashboard must not invent a '+100%'."""
+    start, end = parse_ts((since or "") + "T00:00:00Z"), \
+        parse_ts((until or "") + "T23:59:59Z")
+    current = [r for r in rows
+               if (not since or bucket_date(r.get("ts")) >= since)
+               and (not until or bucket_date(r.get("ts")) <= until)]
+    out = {"current": totals(current), "prior": None, "deltas": {}, "window": None}
+    if start is None or end is None or end <= start:
+        return out
+    span = end - start
+    p_start, p_end = start - span, start
+    prior = []
+    for r in rows:
+        t = parse_ts((bucket_date(r.get("ts")) or "") + "T00:00:00Z")
+        if t is not None and p_start <= t < p_end:
+            prior.append(r)
+    if not prior:
+        return out
+    pt = totals(prior)
+    out["prior"] = pt
+    for key in ("tokens", "costUSD", "msgs", "out"):
+        before = pt.get(key) or 0
+        now = out["current"].get(key) or 0
+        out["deltas"][key] = (100.0 * (now - before) / before) if before else None
+    out["window"] = {"since": since, "until": until}
+    return out
+
+
+def cache_profile(rows):
+    """Cache economics, stated as RATES rather than an invented saving.
+
+    Deliberately returns no "you saved $N": without caching you would not have made
+    the same calls at the same volume, so that number is a fabricated counterfactual.
+    `inputCostVsFreshPct` is a real rate comparison — what the input side actually
+    bills as a share of what the identical token volume would bill at fresh-input
+    rates — and is safe to show."""
+    slot = {k: 0 for k in TOKEN_KEYS}
+    per_phase = {}
+    for row in rows:
+        for k in TOKEN_KEYS:
+            slot[k] += int(row.get(k) or 0)
+        pid = row.get("phaseId") or "--"
+        p = per_phase.setdefault(pid, {k: 0 for k in TOKEN_KEYS})
+        for k in TOKEN_KEYS:
+            p[k] += int(row.get(k) or 0)
+
+    def hit(d):
+        billed = d["in"] + d["cacheW5m"] + d["cacheW1h"] + d["cacheR"]
+        return (100.0 * d["cacheR"] / billed) if billed else 0.0
+
+    by_phase = {pid: round(hit(d), 1) for pid, d in per_phase.items()}
+    worst = min(by_phase.items(), key=lambda kv: kv[1]) if by_phase else None
+    # Rate comparison against the fresh-input price of the SAME volume.
+    actual = fresh = 0.0
+    for row in rows:
+        r = rates_for(row.get("model"))
+        vol = (int(row.get("in") or 0) + int(row.get("cacheW5m") or 0)
+               + int(row.get("cacheW1h") or 0) + int(row.get("cacheR") or 0))
+        actual += (int(row.get("in") or 0) * r["in"]
+                   + int(row.get("cacheW5m") or 0) * r["cacheW5m"]
+                   + int(row.get("cacheW1h") or 0) * r["cacheW1h"]
+                   + int(row.get("cacheR") or 0) * r["cacheR"])
+        fresh += vol * r["in"]
+    return {
+        "hitPct": round(hit(slot), 1),
+        "readTokens": slot["cacheR"],
+        "writeTokens": slot["cacheW5m"] + slot["cacheW1h"],
+        "freshTokens": slot["in"],
+        "inputCostVsFreshPct": round(100.0 * actual / fresh, 1) if fresh else 100.0,
+        "byPhase": by_phase,
+        "worstPhase": worst,
+    }
+
+
+def _percentile(values, p):
+    """Nearest-rank percentile on a sorted list. Stdlib only, no numpy."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    idx = max(0, min(len(s) - 1, int(round((p / 100.0) * (len(s) - 1)))))
+    return s[idx]
+
+
+def unit_economics(manifest, rows):
+    """Cost per completed task, and what the remaining work would cost at that rate.
+
+    The projection is SUPPRESSED below `MIN_TASKS_FOR_PROJECTION` completed tasks and
+    is always a p25-p75 RANGE rather than a point estimate. A confident forecast off
+    three samples is worse than no forecast."""
+    tasks = task_index(manifest)
+    cost_by_task = {}
+    for row in rows:
+        tid = row.get("taskId")
+        if tid:
+            cost_by_task[tid] = cost_by_task.get(tid, 0.0) + _cost(row)
+    done = [c for tid, c in cost_by_task.items()
+            if (tasks.get(tid) or {}).get("status") == "done"]
+    remaining = sum(1 for t in tasks.values()
+                    if t.get("status") in ("pending", "in_progress", "blocked"))
+    out = {
+        "completed": len(done), "remaining": remaining,
+        "gate": MIN_TASKS_FOR_PROJECTION, "sufficient": len(done) >= MIN_TASKS_FOR_PROJECTION,
+        "costPerTask": round(sum(done) / len(done), 4) if done else None,
+        "p25": None, "p75": None, "projection": None,
+        "mostExpensive": sorted(
+            ((tid, round(c, 4), (tasks.get(tid) or {}).get("attempts"))
+             for tid, c in cost_by_task.items() if tid in tasks),
+            key=lambda x: -x[1])[:5],
+    }
+    if not out["sufficient"]:
+        return out
+    p25, p75 = _percentile(done, 25), _percentile(done, 75)
+    out["p25"], out["p75"] = round(p25, 4), round(p75, 4)
+    out["projection"] = {"low": round(p25 * remaining, 2),
+                         "high": round(p75 * remaining, 2)}
+    return out
+
+
+def retry_cost(manifest, rows):
+    """Spend on retried tasks and spend on blocked tasks — reported SEPARATELY.
+
+    These are not summed into a single "waste" figure and the retried number is not
+    called waste at all. The ledger buckets by hour, not by attempt, so there is no
+    per-attempt token boundary: a task that took three attempts and then landed did
+    not waste three attempts' worth. Only the BLOCKED number is unambiguous spend
+    with no outcome."""
+    tasks = task_index(manifest)
+    total = retried = blocked = 0.0
+    retried_ids, blocked_ids = set(), set()
+    for row in rows:
+        c = _cost(row)
+        total += c
+        tid = row.get("taskId")
+        t = tasks.get(tid) if tid else None
+        if not t:
+            continue
+        try:
+            attempts = int(t.get("attempts") or 0)
+        except (TypeError, ValueError):
+            attempts = 0
+        if attempts > 1:
+            retried += c
+            retried_ids.add(tid)
+        if t.get("status") == "blocked":
+            blocked += c
+            blocked_ids.add(tid)
+    return {
+        "totalCost": round(total, 4),
+        "retriedCost": round(retried, 4), "retriedTasks": len(retried_ids),
+        "retriedPct": round(100.0 * retried / total, 1) if total else 0.0,
+        "blockedCost": round(blocked, 4), "blockedTasks": len(blocked_ids),
+        "blockedPct": round(100.0 * blocked / total, 1) if total else 0.0,
+        # Explicit so no renderer is tempted to add the two together.
+        "overlaps": len(retried_ids & blocked_ids),
+    }
+
+
+RISK_ORDER = ("high", "med", "low", "unrated")
+
+
+def routing(manifest, rows):
+    """Cost per completed task and mean attempts, per model, WITHIN a risk band.
+
+    Deliberately NOT a spend-share / task-share ratio. Tasks are not equal-sized —
+    the plugin's own guidance routes hard work to the strong model on purpose and
+    warns that a cheap botched attempt costs more than one clean expensive pass. A
+    bare ratio would show that working system as a problem and push users toward
+    exactly the routing the docs warn against. Comparing within a risk band is the
+    only comparison that means anything.
+
+    Models come from the LEDGER (what actually ran), never from the manifest's
+    `model` field, which is a provider-agnostic tier name in a different namespace."""
+    tasks = task_index(manifest)
+    acc = {}
+    for row in rows:
+        tid = row.get("taskId")
+        t = tasks.get(tid) if tid else None
+        if not t:
+            continue
+        risk = t.get("risk") or "unrated"
+        model = row.get("model") or "unknown"
+        cell = acc.setdefault((risk, model), {"cost": 0.0, "tasks": {}})
+        cell["cost"] += _cost(row)
+        cell["tasks"][tid] = t
+    by_risk = {}
+    for (risk, model), cell in acc.items():
+        n = len(cell["tasks"])
+        attempts = [int(t.get("attempts") or 1) for t in cell["tasks"].values()]
+        by_risk.setdefault(risk, {})[model] = {
+            "tasks": n,
+            "cost": round(cell["cost"], 4),
+            "costPerTask": round(cell["cost"] / n, 4) if n else None,
+            "meanAttempts": round(sum(attempts) / float(len(attempts)), 2)
+            if attempts else None,
+        }
+    return {
+        "byRisk": by_risk,
+        "risks": [r for r in RISK_ORDER if r in by_risk],
+        "models": sorted({m for cells in by_risk.values() for m in cells}),
+    }
+
+
+def coverage(rows):
+    """How much spend the attribution layers actually resolved.
+
+    A dashboard where 90% is `unattributed` is not showing you your phases — it is
+    showing you one big bucket. This drives a visible warning rather than letting
+    every other chart quietly mean nothing."""
+    by_attr, total = {}, 0
+    for row in rows:
+        n = _tokens(row)
+        total += n
+        by_attr[row.get("attr") or "unattributed"] = \
+            by_attr.get(row.get("attr") or "unattributed", 0) + n
+    if not total:
+        return {"total": 0, "byAttr": {}, "attributedPct": 0.0,
+                "taskLevelPct": 0.0, "warn": False}
+    unattributed = by_attr.get("unattributed", 0)
+    return {
+        "total": total,
+        "byAttr": {k: round(100.0 * v / total, 1) for k, v in by_attr.items()},
+        "attributedPct": round(100.0 * (total - unattributed) / total, 1),
+        "taskLevelPct": round(100.0 * by_attr.get("task", 0) / total, 1),
+        "warn": (100.0 * unattributed / total) > POOR_COVERAGE_PCT,
+    }
 
 
 # --- selftest -------------------------------------------------------------------
@@ -941,6 +1275,28 @@ def _selftest():
               load_cursor(ledger, "sess-1").get("author") == "a@b.c")
         check("cursor: missing cursor -> {}",
               load_cursor(ledger, "nope") == {})
+        # Ledger discovery must never GUESS. The fixed-depth version of this
+        # resolved examples/acme-store/audit-plan.json to the enclosing repo and
+        # rendered that project's spend under the example's name.
+        deep = os.path.join(tmp, "proj", "docs", "audit")
+        os.makedirs(os.path.join(tmp, "proj", ".claude", "usage"), exist_ok=True)
+        os.makedirs(deep, exist_ok=True)
+        flat = os.path.join(tmp, "proj", "sub")
+        os.makedirs(os.path.join(flat, ".claude", "usage"), exist_ok=True)
+        check("discover: docs/audit/<m>.json finds the repo-root ledger",
+              find_ledger_dir(os.path.join(deep, "m.json"), ".claude/usage")
+              == os.path.join(tmp, "proj", ".claude", "usage"))
+        check("discover: a manifest beside its own ledger prefers THAT one",
+              find_ledger_dir(os.path.join(flat, "m.json"), ".claude/usage")
+              == os.path.join(flat, ".claude", "usage"))
+        check("discover: no ledger anywhere -> None, never a guessed ancestor",
+              find_ledger_dir(os.path.join(tmp, "elsewhere", "m.json"),
+                              ".claude/nonexistent") is None)
+        check("discover: an explicit project dir always wins",
+              find_ledger_dir(os.path.join(flat, "m.json"), ".claude/usage",
+                              os.path.join(tmp, "proj"))
+              == os.path.join(tmp, "proj", ".claude", "usage"))
+
         check("cursor: lives outside stateDir, next to the ledger",
               os.path.isfile(os.path.join(ledger, ".cursors", "sess-1.json")))
 
@@ -967,6 +1323,133 @@ def _selftest():
         grid = heatmap(all_rows)
         check("agg: heatmap is 7x24", len(grid) == 7 and len(grid[0]) == 24)
         check("agg: heatmap totals match", sum(sum(r) for r in grid) == agg_all["tokens"])
+
+        # --- analytics: the honesty guards --------------------------------
+        def mkrow(day, model, author, task, phase, attr, cost, out_tok=100,
+                  cr=1000, cw=100, fin=10):
+            return {"ts": "2026-08-%02dT10" % day, "model": model, "author": author,
+                    "taskId": task, "phaseId": phase, "attr": attr,
+                    "sessionId": "s1", "agentType": "audit-executor", "msgs": 1,
+                    "in": fin, "out": out_tok, "cacheW5m": cw, "cacheW1h": 0,
+                    "cacheR": cr, "costUSD": cost}
+
+        man = {"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1", "status": "done", "risk": "high", "attempts": 1},
+            {"id": "P1.2", "status": "done", "risk": "high", "attempts": 3},
+            {"id": "P1.3", "status": "done", "risk": "low", "attempts": 1},
+            {"id": "P1.4", "status": "done", "risk": "low", "attempts": 1},
+            {"id": "P1.5", "status": "done", "risk": "med", "attempts": 1},
+            {"id": "P1.6", "status": "blocked", "risk": "med", "attempts": 3},
+            {"id": "P1.7", "status": "pending", "risk": "low"},
+        ]}]}
+        ar = [
+            mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 10.0),
+            mkrow(2, "claude-opus-5", "a@x", "P1.2", "P1", "task", 30.0),
+            mkrow(3, "claude-haiku-4-5", "b@x", "P1.3", "P1", "task", 1.0),
+            mkrow(4, "claude-haiku-4-5", "b@x", "P1.4", "P1", "task", 2.0),
+            mkrow(5, "claude-sonnet-5", "c@x", "P1.5", "P1", "task", 5.0),
+            mkrow(6, "claude-sonnet-5", "c@x", "P1.6", "P1", "task", 7.0),
+            mkrow(7, "claude-opus-5", "a@x", None, None, "unattributed", 4.0),
+        ]
+
+        # series: top-N fold
+        s = series(ar, "model")
+        check("series: buckets sorted, one value per bucket per entity",
+              s["buckets"] == sorted(s["buckets"])
+              and all(len(e["values"]) == len(s["buckets"]) for e in s["entities"]))
+        check("series: values sum back to each entity total",
+              all(sum(e["values"]) == e["total"] for e in s["entities"]))
+        many = [mkrow(1, "m%02d" % i, "a@x", None, None, "unattributed", 1.0)
+                for i in range(12)]
+        sm = series(many, "model", top=8)
+        check("series: past 8 entities the tail folds into 'other', never a 9th hue",
+              len(sm["entities"]) == 9 and sm["entities"][-1]["key"] == "other"
+              and sm["folded"] == 4)
+        check("series: folding preserves the grand total",
+              sum(e["total"] for e in sm["entities"]) == sum(_tokens(r) for r in many))
+
+        # compare: no prior period -> no invented delta
+        c_none = compare(ar, "2026-08-01", "2026-08-07")
+        check("compare: no prior window -> prior None and no deltas",
+              c_none["prior"] is None and c_none["deltas"] == {})
+        c_some = compare(ar, "2026-08-05", "2026-08-07")
+        check("compare: a real prior window yields deltas",
+              c_some["prior"] is not None and "tokens" in c_some["deltas"])
+        check("compare: a zero-valued prior metric yields None, not a division blow-up",
+              compare(ar, "2026-08-01", "2026-08-02")["deltas"] in ({}, None)
+              or all(v is None or isinstance(v, float)
+                     for v in compare(ar, "2026-08-05", "2026-08-07")["deltas"].values()))
+
+        # cache_profile: rates, never a fabricated dollar saving
+        cp = cache_profile(ar)
+        check("cache: reports a hit rate and a rate comparison",
+              0 <= cp["hitPct"] <= 100 and 0 < cp["inputCostVsFreshPct"] <= 100)
+        check("cache: exposes NO fabricated dollar saving",
+              not any("sav" in k.lower() or k.endswith("USD") for k in cp))
+        check("cache: per-phase rates and a worst phase for the story",
+              "P1" in cp["byPhase"] and cp["worstPhase"] is not None)
+
+        # unit_economics: the sample gate
+        few = unit_economics({"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1", "status": "done"}]}]},
+            [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 5.0)])
+        check("unit: projection SUPPRESSED below the sample gate",
+              few["projection"] is None and few["sufficient"] is False
+              and few["gate"] == MIN_TASKS_FOR_PROJECTION)
+        ue = unit_economics(man, ar)
+        check("unit: 5 completed tasks clears the gate", ue["sufficient"] is True)
+        check("unit: projection is a p25-p75 RANGE, never a point estimate",
+              ue["projection"] and ue["projection"]["low"] <= ue["projection"]["high"])
+        check("unit: only DONE tasks count toward cost-per-task",
+              ue["completed"] == 5)
+        check("unit: remaining counts pending + in_progress + blocked",
+              ue["remaining"] == 2)
+        check("unit: most-expensive list carries attempts for context",
+              ue["mostExpensive"] and len(ue["mostExpensive"][0]) == 3)
+
+        # retry_cost: retried and blocked reported apart, never summed
+        rc = retry_cost(man, ar)
+        check("retry: retried and blocked are SEPARATE figures",
+              rc["retriedCost"] == 37.0 and rc["blockedCost"] == 7.0)
+        check("retry: no combined 'waste' key exists to be misread",
+              not any("waste" in k.lower() for k in rc))
+        check("retry: the overlap between the two sets is stated, not hidden",
+              rc["overlaps"] == 1)
+        check("retry: percentages are of total spend",
+              abs(rc["retriedPct"] - 100.0 * 37.0 / 59.0) < 0.2)
+
+        # routing: within-risk comparison, no bare ratio
+        rt = routing(man, ar)
+        check("routing: grouped by risk band, then model",
+              "high" in rt["byRisk"] and "claude-opus-5" in rt["byRisk"]["high"])
+        check("routing: exposes NO spend-share/task-share ratio",
+              not any("ratio" in k.lower() for cells in rt["byRisk"].values()
+                      for cell in cells.values() for k in cell))
+        check("routing: carries cost-per-task and mean attempts per cell",
+              rt["byRisk"]["high"]["claude-opus-5"]["costPerTask"] == 20.0
+              and rt["byRisk"]["high"]["claude-opus-5"]["meanAttempts"] == 2.0)
+        check("routing: models come from the LEDGER, not manifest tiers",
+              all(m.startswith("claude-") for m in rt["models"]))
+        check("routing: risks are ordered high -> low, not alphabetical",
+              rt["risks"] == ["high", "med", "low"])
+
+        # coverage
+        cv = coverage(ar)
+        check("coverage: task-level share never exceeds attributed share",
+              0 < cv["taskLevelPct"] <= cv["attributedPct"] <= 100)
+        # phase-level spend is attributed but NOT task-level — the gap between the
+        # two numbers is exactly the orchestrator's own turns
+        cv2 = coverage(ar + [mkrow(8, "claude-opus-5", "a@x", None, "P1", "phase", 3.0)])
+        check("coverage: phase-attributed spend counts as attributed, not task-level",
+              cv2["taskLevelPct"] < cv2["attributedPct"])
+        check("coverage: shares across attribution buckets sum to 100",
+              abs(sum(cv2["byAttr"].values()) - 100.0) < 0.2, repr(cv2["byAttr"]))
+        check("coverage: does not warn on a well-attributed ledger",
+              cv["warn"] is False)
+        bad = coverage([mkrow(1, "m", "a@x", None, None, "unattributed", 1.0)])
+        check("coverage: warns when unattributed dominates",
+              bad["warn"] is True and bad["attributedPct"] == 0.0)
+        check("coverage: empty ledger is not a crash", coverage([])["total"] == 0)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

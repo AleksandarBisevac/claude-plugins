@@ -1,0 +1,20 @@
+{
+  "//": "Per-repo config for the audit plugin. This example keeps its manifest at the root of the example directory rather than the usual docs/audit/, so manifestPath has to say so — without it /audit:panel finds no manifest and silently renders without phase titles, task metadata, unit economics or model routing.",
+  "manifestPath": "audit-plan.json",
+
+  "//usage": "Rates are USD per MILLION tokens. Kept in sync with meta.usage in the manifest: commands read the manifest, hooks read this file. Both default to .claude/usage, so they only need to agree when a project moves the ledger.",
+  "usage": {
+    "enabled": true,
+    "ledgerDir": ".claude/usage",
+    "authorMode": "email",
+    "showCost": true,
+    "pricingAsOf": "2026-08-06",
+    "pricing": {
+      "_default": {"in": 5.0, "out": 25.0, "cacheW5m": 6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+      "claude-opus-5": {"in": 5.0, "out": 25.0, "cacheW5m": 6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+      "claude-sonnet-5": {"in": 3.0, "out": 15.0, "cacheW5m": 3.75, "cacheW1h": 6.0, "cacheR": 0.3},
+      "claude-haiku-4-5": {"in": 1.0, "out": 5.0, "cacheW5m": 1.25, "cacheW1h": 2.0, "cacheR": 0.1},
+      "claude-fable-5": {"in": 10.0, "out": 50.0, "cacheW5m": 12.5, "cacheW1h": 20.0, "cacheR": 1.0}
+    }
+  }
+}

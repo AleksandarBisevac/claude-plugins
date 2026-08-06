@@ -387,6 +387,60 @@ def _run_status(project, config, manifest):
 _MAX_FACTS = 20000
 
 
+def _undeclared_css_vars(css):
+    """Custom properties referenced by var() but never declared anywhere.
+
+    This check exists because the failure mode is SILENT and total: an undeclared
+    `var(--x)` makes the whole declaration invalid at computed-value time, so the
+    property falls back to its INITIAL value rather than to the stylesheet rule
+    underneath it. An undeclared colour token therefore paints transparent — a bar
+    chart with no bars — and logs nothing. That is exactly how `--bar-neutral`
+    shipped invisible in light mode once."""
+    declared = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", css))
+    # Only FALLBACK-LESS references are dangerous. `var(--x, something)` degrades
+    # gracefully by design, and tokens set inline per element from Python (--w on a
+    # progress fill, --sc on a sparkline) are always written that way for exactly
+    # this reason.
+    used = set(re.findall(r"var\(\s*(--[A-Za-z0-9_-]+)\s*\)", css))
+    return sorted(used - declared)
+
+
+def _theme_asymmetric_vars(css):
+    """Colour tokens that exist in one theme but not the other - in EITHER direction.
+
+    The light `:root` is the base token set; the dark blocks are overrides. There are
+    two distinct silent failures here, and the first version of this check only
+    caught one of them:
+
+      * declared in light, missing from dark -> the token vanishes in dark mode
+      * declared ONLY in a dark block        -> it vanishes in LIGHT mode, which is
+        exactly how `--bar-neutral` shipped as invisible bars
+
+    Both render transparent with nothing in the console, so both are checked."""
+    light = re.search(r":root\s*\{([^}]*)\}", css)
+    if not light:
+        return []
+    light_vars = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", light.group(1)))
+    dark_vars = set()
+    for block in re.findall(
+            r"(?:prefers-color-scheme\s*:\s*dark|data-theme=.?dark)[^{]*\{(.*?)\}\}?",
+            css, re.S):
+        dark_vars |= set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", block))
+    if not dark_vars:
+        return []
+    # spacing / type / motion / font tokens are theme-independent by design and are
+    # deliberately declared once, in the base only.
+    neutral = ("--sp-", "--t-", "--dur", "--ease", "--radius", "--pill",
+               "--sans", "--mono", "--shadow")
+
+    def colourish(names):
+        return {v for v in names if not any(v.startswith(n) for n in neutral)}
+
+    return sorted("%s (light only)" % v
+                  for v in colourish(light_vars) - dark_vars) + \
+        sorted("%s (dark only)" % v for v in colourish(dark_vars) - light_vars)
+
+
 def usage_state(project):
     """Payload for the Usage tab.
 
@@ -404,7 +458,13 @@ def usage_state(project):
     empty = {"enabled": bool(ucfg.get("enabled", True)), "ledgerDir": ledger_dir,
              "showCost": bool(ucfg.get("showCost", True)),
              "pricingAsOf": ucfg.get("pricingAsOf"), "facts": [], "fields": [],
-             "phaseTitles": {}, "rolled": False, "totalRows": 0}
+             # Every key the populated branch returns must appear here too: the
+             # client reads this shape on a repo with no ledger yet, and a missing
+             # key there is an `undefined` that only shows up on a fresh install.
+             "phaseTitles": {}, "taskMeta": {},
+             "counts": {"phases": 0, "tasks": 0, "models": 0, "authors": 0,
+                        "sessions": 0, "days": 0, "from": None, "to": None},
+             "rolled": False, "totalRows": 0}
     try:
         ul = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
         rows = ul.read_ledger(ledger_dir)
@@ -412,6 +472,22 @@ def usage_state(project):
         return empty
     if not rows:
         return empty
+
+    # Orientation counts for the context line. Computed over the WHOLE ledger on
+    # purpose — they describe the shape of the data you are looking at, not the
+    # current filter — and `sessionId` deliberately never enters `facts`, where it
+    # would multiply row cardinality for a number shown once.
+    days = sorted({(r.get("ts") or "")[:10] for r in rows} - {""})
+    counts = {
+        "phases": len({r.get("phaseId") for r in rows if r.get("phaseId")}),
+        "tasks": len({r.get("taskId") for r in rows if r.get("taskId")}),
+        "models": len({r.get("model") for r in rows if r.get("model")}),
+        "authors": len({r.get("author") for r in rows if r.get("author")}),
+        "sessions": len({r.get("sessionId") for r in rows if r.get("sessionId")}),
+        "days": len(days),
+        "from": days[0] if days else None,
+        "to": days[-1] if days else None,
+    }
 
     rolled = len(rows) > _MAX_FACTS
     facts, seen = {}, 0
@@ -429,14 +505,26 @@ def usage_state(project):
         slot[1] += float(r.get("costUSD") or 0.0)
         slot[2] += int(r.get("msgs") or 0)
 
-    titles = {}
+    # Ship the small slice of manifest the analytics need — task status, risk and
+    # attempts — so EVERY panel recomputes client-side under the current filter. The
+    # alternative (server-computed metrics) would leave half the tab silently
+    # ignoring the filter bar, which is worse than a slightly larger payload.
+    titles, task_meta = {}, {}
     mpath = _manifest_path(project, config)
     try:
         for ph in (_mio.load_manifest_safe(mpath).get("phases") or []):
-            if isinstance(ph, dict) and ph.get("id"):
+            if not isinstance(ph, dict):
+                continue
+            if ph.get("id"):
                 titles[ph["id"]] = ph.get("title") or ""
+            for t in (ph.get("tasks") or []):
+                if isinstance(t, dict) and t.get("id"):
+                    task_meta[t["id"]] = {
+                        "status": t.get("status"), "risk": t.get("risk") or "unrated",
+                        "attempts": t.get("attempts") or 1,
+                        "title": t.get("title") or ""}
     except Exception:
-        titles = {}
+        titles, task_meta = {}, {}
 
     return {
         "enabled": bool(ucfg.get("enabled", True)),
@@ -448,6 +536,8 @@ def usage_state(project):
         "facts": [list(k) + [v[0], round(v[1], 6), v[2]]
                   for k, v in sorted(facts.items())],
         "phaseTitles": titles,
+        "taskMeta": task_meta,
+        "counts": counts,
         "rolled": rolled,
         "totalRows": seen,
     }
@@ -830,116 +920,255 @@ UI_HTML = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
  --bg:#f5f7fb;--surface:#fff;--surface-2:#eef2f7;--text:#0f172a;--muted:#64748b;
  --border:#e2e8f0;--border-strong:#cbd5e1;--accent:#0d9488;--accent-solid:#0d9488;
  --ring:rgba(13,148,136,.35);--ok:#15803d;--warn:#b45309;--err:#dc2626;
+ --bar-neutral:#5c636d;
  /* Usage viz. Same validated categorical palette as the report, so a model
     keeps one identity across both surfaces. Slots are assigned by model NAME,
     never by rank, so filtering cannot repaint the survivors. */
  --viz-1:#2a78d6;--viz-2:#eb6834;--viz-3:#1baf7a;--viz-4:#eda100;
  --viz-5:#e87ba4;--viz-6:#008300;--viz-7:#4a3aa7;--viz-8:#e34948;
  --radius:9px;--radius-lg:14px;--pill:999px;--shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
- --shadow-md:0 10px 30px rgba(15,23,42,.14);--dur:.2s;--ease:cubic-bezier(.4,0,.2,1)}
+ --shadow-md:0 10px 30px rgba(15,23,42,.14);--dur:.2s;--ease:cubic-bezier(.4,0,.2,1);
+ /* 8pt spacing scale + 3 text levels, matching the report so both surfaces
+    share one rhythm. Spacing and type are theme-independent, so unlike the
+    colour tokens these are declared ONCE, not repeated in the dark blocks. */
+ --sp-0:.25rem;--sp-1:.5rem;--sp-2:.75rem;--sp-3:1rem;
+ --sp-4:1.5rem;--sp-5:2rem;--sp-6:3rem;--sp-7:4rem;
+ --t-1:1.7rem;--t-2:1.0625rem;--t-3:.875rem;--t-label:.68rem}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
  --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
  --border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
  --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
  --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
  --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
+ --bar-neutral:#a6adb8;
  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}}
 :root[data-theme=dark]{--bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;
  --muted:#93a4bd;--border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
  --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
  --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
  --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
+ --bar-neutral:#a6adb8;
  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}
 *{box-sizing:border-box}html{background:var(--bg)}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);margin:0;
- max-width:64rem;margin:0 auto;padding:1.6rem 1.3rem 4rem;-webkit-font-smoothing:antialiased}
+ max-width:64rem;margin:0 auto;padding:1.5rem 1.5rem 4rem;-webkit-font-smoothing:antialiased}
 h1{font-size:1.35rem;font-weight:680;letter-spacing:-.02em;margin:0}
 h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
- font-weight:700;margin:1.6rem 0 .6rem}
-.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:.2rem 0 0;word-break:break-all}
+ font-weight:700;margin:1.5rem 0 .5rem}
+.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:.25rem 0 0;word-break:break-all}
 .top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-.tabs{display:flex;gap:.4rem;margin:1.3rem 0 .3rem;flex-wrap:wrap}
-.tab{cursor:pointer;font:inherit;font-size:.85rem;padding:.45rem .9rem;border-radius:var(--pill);
+.tabs{display:flex;gap:.5rem;margin:1.5rem 0 .25rem;flex-wrap:wrap}
+.tab{cursor:pointer;font:inherit;font-size:.85rem;padding:.5rem 1rem;border-radius:var(--pill);
  border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
 .tab:hover{border-color:var(--border-strong)}
 .tab.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
- box-shadow:var(--shadow-sm);padding:1rem 1.15rem;margin:.7rem 0}
-.row{display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;margin:.55rem 0}
+ box-shadow:var(--shadow-sm);padding:1rem 1rem;margin:.75rem 0}
+.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
 label.f{display:flex;flex-direction:column;gap:.25rem;flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
 input,textarea,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);
- border-radius:var(--radius);padding:.42rem .65rem;font-size:.9rem}
+ border-radius:var(--radius);padding:.5rem .75rem;font-size:.9rem}
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:vertical}
 .mono{font-family:var(--mono)}
-.btn{cursor:pointer;font:inherit;font-size:.85rem;padding:.45rem .9rem;border-radius:var(--pill);
+.btn{cursor:pointer;font:inherit;font-size:.85rem;padding:.5rem 1rem;border-radius:var(--pill);
  border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
 .btn:hover{border-color:var(--border-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
-.btn.small{font-size:.75rem;padding:.25rem .6rem}
-.badge{font-size:.68rem;font-weight:700;padding:.1rem .5em;border-radius:var(--pill);
+.btn.small{font-size:.75rem;padding:.25rem .5rem}
+.badge{font-size:.68rem;font-weight:700;padding:.25rem .5em;border-radius:var(--pill);
  background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
 .badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
 .badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
 .badge.area{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent;text-transform:uppercase;letter-spacing:.03em}
-.chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.12rem .5em;border-radius:var(--pill);
+.chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.25rem .5em;border-radius:var(--pill);
  background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
 .chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
-.tag{display:inline-block;font-size:.66rem;padding:.05rem .45em;border-radius:var(--pill);
- border:1px solid var(--border);color:var(--muted);margin-left:.35rem}
-.listwrap{display:flex;flex-direction:column;gap:.35rem}
-.pill-in{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;border:1px solid var(--border);
- border-radius:var(--radius);padding:.3rem .4rem;background:var(--bg)}
-.pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:.15rem .2rem}
+.tag{display:inline-block;font-size:.66rem;padding:.25rem .45em;border-radius:var(--pill);
+ border:1px solid var(--border);color:var(--muted);margin-left:.25rem}
+.listwrap{display:flex;flex-direction:column;gap:.25rem}
+.pill-in{display:flex;gap:.25rem;flex-wrap:wrap;align-items:center;border:1px solid var(--border);
+ border-radius:var(--radius);padding:.25rem .5rem;background:var(--bg)}
+.pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:.25rem .25rem}
 .mut{color:var(--muted);font-size:.82rem}
 .bar{height:.5rem;border-radius:var(--pill);background:var(--surface-2);overflow:hidden;flex:1 1 8rem;min-width:6rem}
 .bar>i{display:block;height:100%;background:var(--accent)}
 .grid{display:grid;grid-template-columns:1fr;gap:.5rem}
 /* usage tab */
-.utiles{display:flex;flex-wrap:wrap;gap:.6rem;margin:.2rem 0 .9rem}
-.utile{flex:1 1 7.5rem;border:1px solid var(--border);border-radius:var(--radius);
- padding:.5rem .7rem;background:var(--bg)}
-.utile .k{font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mut,var(--muted))}
-.utile .v{font-size:1.25rem;font-weight:660;letter-spacing:-.02em;margin-top:.1rem}
-.ufil{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.1rem 0 .8rem}
-.ufil select{font:inherit;font-size:.78rem;padding:.28rem .5rem;border-radius:var(--radius);
- border:1px solid var(--border);background:var(--surface);color:var(--text)}
-.ulegend{display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.75rem;margin:.1rem 0 .7rem}
-.ulegend b{display:inline-flex;align-items:center;gap:.3rem;font-weight:500}
-.ulegend i,.useg{display:inline-block}
-.ulegend i{width:.6rem;height:.6rem;border-radius:3px}
-.urow{display:grid;grid-template-columns:minmax(5rem,11rem) 1fr auto;gap:.4rem .7rem;
- align-items:center;margin:.28rem 0;font-size:.8rem}
-.ustack{display:flex;gap:2px;height:12px}
-.useg{min-width:2px;border-radius:1px}
-.useg:last-child{border-radius:1px 4px 4px 1px}
-.uamt{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;font-size:.75rem}
-.uspark{display:flex;align-items:flex-end;gap:1px;height:44px;margin:.3rem 0}
-.uspark i{flex:1 1 0;min-width:2px;background:var(--viz-1);border-radius:2px 2px 0 0}
-.tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.6rem .75rem;background:var(--bg)}
+.uctx{font-size:.74rem;color:var(--muted);margin:0 0 var(--sp-2)}
+.ufil{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;gap:var(--sp-1);
+ align-items:center;margin:0 0 var(--sp-1);padding:var(--sp-1) 0;
+ background:var(--surface);border-bottom:1px solid var(--border)}
+.ufil .combo{flex:1 1 11rem;min-width:9rem}
+.ufil input,.ufil select{font:inherit;font-size:.78rem;width:100%;
+ padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
+ border:1px solid var(--border);background:var(--bg);color:var(--text)}
+.ufil select{flex:0 0 auto;width:auto}
+.ufil input:focus-visible,.ufil select:focus-visible{outline:2px solid var(--ring);
+ outline-offset:1px}
+/* active filters: what is scoping the view, and a way out of each */
+.uchips{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;
+ margin:0 0 var(--sp-2)}
+.uchip{display:inline-flex;align-items:center;gap:var(--sp-0);font:inherit;
+ font-size:.72rem;padding:var(--sp-0) var(--sp-1);border-radius:var(--pill);
+ border:1px solid var(--border-strong);background:var(--surface-2);
+ color:var(--text);cursor:pointer}
+.uchip:hover{border-color:var(--accent)}
+.uchip .ck{color:var(--muted)}
+.uchip .cx{color:var(--muted);font-weight:600}
+.utiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));
+ gap:var(--sp-1);margin:0 0 var(--sp-3)}
+.utile{border:1px solid var(--border);border-radius:var(--radius);
+ padding:var(--sp-1) var(--sp-2);background:var(--bg)}
+.utile .k{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.07em;
+ color:var(--muted)}
+.utile .v{font-size:1.25rem;font-weight:660;letter-spacing:-.02em;
+ margin-top:var(--sp-0);display:flex;align-items:baseline;gap:var(--sp-0)}
+.dl{font-size:.68rem;font-weight:600;padding:0 .3rem;border-radius:var(--pill);
+ letter-spacing:0}
+.dl.up{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.dl.down{color:var(--muted);background:var(--surface-2)}
+.ucrumb{font-size:.74rem;margin:0 0 var(--sp-1)}
+.lnk{background:none;border:0;color:var(--accent);font:inherit;font-size:.76rem;
+ cursor:pointer;padding:0}
+.lnk:hover{text-decoration:underline}
+/* The slot reserves the chart's height so the card does not jump between the first
+   paint and the measured redraw one frame later. */
+.chartslot{display:block;width:100%;height:190px;margin:var(--sp-0) 0 var(--sp-1)}
+.uchart{width:100%;height:190px;display:block}
+.uchart.pick{cursor:crosshair}
+.uchart .g{stroke:var(--border);stroke-width:1;fill:none}
+/* 10px, not 8px: the viewBox is now 1:1 with device pixels, so this is the real
+   rendered size. The old 8px only looked bigger because it was being stretched. */
+.uchart .ax{fill:var(--muted);font-size:10px;font-family:var(--sans)}
+.uchart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;
+ pointer-events:none}
+.uchart .lnhit{fill:none;stroke:transparent;stroke-width:12;
+ stroke-linejoin:round;stroke-linecap:round;cursor:pointer}
+.uchart .dot{stroke:var(--surface);stroke-width:2}
+.uchart .cross{stroke:var(--border-strong);stroke-width:1;stroke-dasharray:none}
+.uchart .cross.hidden{display:none}
+.ulegend{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-3);font-size:.75rem;
+ margin:0 0 var(--sp-2)}
+.ulegend b{display:inline-flex;align-items:center;gap:var(--sp-0);font-weight:500}
+.ulegend b.pick{cursor:pointer}
+.ulegend b.pick:hover{text-decoration:underline}
+.ulegend i{width:.6rem;height:.6rem;border-radius:3px;display:inline-block}
+.urow{display:grid;grid-template-columns:minmax(8rem,20rem) minmax(4rem,1fr) auto;
+ gap:var(--sp-2);align-items:center;margin:var(--sp-0) 0;font-size:.8rem;
+ padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
+ border:1px solid transparent}
+.urow.pick{cursor:pointer}
+.urow.pick:hover{background:var(--surface-2)}
+.urow.on{border-color:var(--accent);background:var(--surface-2)}
+.urow.tail .unm{font-style:italic}
+.unm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uamt{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;
+ font-size:.75rem}
+.ufact{font-size:.82rem;margin:var(--sp-0) 0}
+.small{font-size:.75rem}
+.utbl{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:var(--sp-1)}
+.utbl th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:500;
+ padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
+.utbl td{padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
+.utbl tr:last-child td{border-bottom:0}
+/* Controls under each ranked list. Expanding costs one click; collapsing must too. */
+.uctl{display:flex;align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0 var(--sp-2);
+ font-size:.76rem}
+/* Browse dialog. Native <dialog>, so the focus trap, the backdrop and Esc are the
+   platform's rather than ours. */
+dialog.browse{width:min(56rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
+ padding:0;border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden}
+dialog.browse::backdrop{background:rgb(0 0 0 / .45)}
+dialog.browse>*{padding:0 var(--sp-3)}
+.bhead{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);
+ padding-top:var(--sp-2)}
+.bhead h2,.bhead h3{margin:0;font-size:1rem;font-weight:640}
+.bx{border:none;background:none;color:var(--muted);cursor:pointer;font-size:1rem;
+ line-height:1;padding:var(--sp-0)}
+.bx:hover{color:var(--text)}
+.btblwrap{max-height:min(60vh,28rem);overflow:auto;border-top:1px solid var(--border);
+ padding:0}
+table.btbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.btbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.btbl th.pick{cursor:pointer;user-select:none}
+table.btbl th.pick:hover{color:var(--text)}
+table.btbl th.on{color:var(--text)}
+.sarrow{margin-left:.25em}
+table.btbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);
+ vertical-align:middle}
+/* A wrapping title turns a scannable table into a wall: one long task name pushes
+   every other row four lines tall. Truncate, and keep the full text on hover. */
+table.btbl td.t{max-width:20rem;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+table.btbl .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+@media (max-width:34rem){
+ dialog.browse{width:calc(100vw - 1rem)}
+ .btblwrap{overflow-x:auto}
+}
+/* one shared tooltip element, moved on hover */
+.utip{position:fixed;z-index:60;pointer-events:none;background:var(--surface);
+ border:1px solid var(--border-strong);border-radius:var(--radius);
+ box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-2);font-size:.74rem;
+ max-width:18rem;color:var(--text)}
+.utip.hidden{display:none}
+.utip-h{font-weight:600;margin-bottom:var(--sp-0);word-break:break-word}
+.utip-r{display:flex;align-items:center;gap:var(--sp-0);
+ font-variant-numeric:tabular-nums;line-height:1.5}
+.utip-r i{width:.55rem;height:.55rem;border-radius:2px;flex:0 0 auto}
+.utip-k{color:var(--muted);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+.utip-v{font-weight:600}
+.utip-f{color:var(--muted);font-size:.68rem;margin-top:var(--sp-0);
+ border-top:1px solid var(--border);padding-top:var(--sp-0)}
+@media (max-width:34rem){
+ .urow{grid-template-columns:1fr;gap:0}
+ .urow .bar{display:none}
+ .ufil .combo{flex:1 1 100%}
+}
+}
+.tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .75rem;background:var(--bg)}
 .tsk .h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
 .dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block;background:var(--muted)}
-.rule{display:grid;grid-template-columns:1fr 1fr 1.3fr auto;gap:.4rem;margin:.35rem 0}
+.rule{display:grid;grid-template-columns:1fr 1fr 1.3fr auto;gap:.5rem;margin:.25rem 0}
 @media(max-width:40rem){.rule{grid-template-columns:1fr}}
 #toast{position:fixed;left:50%;bottom:1.3rem;transform:translateX(-50%);z-index:50;
  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);
  border-radius:var(--pill);padding:.5rem 1rem;font-size:.85rem;opacity:0;transition:opacity var(--dur);pointer-events:none}
 #toast.show{opacity:1}#toast.err{border-color:var(--err);color:var(--err)}#toast.ok{border-color:var(--ok)}
-.findings{margin:.5rem 0 0;padding:.5rem .7rem;border-radius:var(--radius);font-size:.82rem}
+.findings{margin:.5rem 0 0;padding:.5rem .75rem;border-radius:var(--radius);font-size:.82rem}
 .findings.err{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
 .findings.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
 .findings.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+/* Grouped findings. One manifest mistake repeated across 300 phases is ONE thing
+   to fix, so it reads as one row with a count — not 300 rows of the same
+   sentence. The raw list stays one click away. */
+.fgrp{margin:var(--sp-1) 0 0;padding:0;list-style:none;display:grid;gap:var(--sp-0)}
+.fgrp li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-1);
+ align-items:baseline}
+.fgrp .fn{font-variant-numeric:tabular-nums;font-weight:700;opacity:.85}
+.fgrp .feg{opacity:.72;font-size:.94em;overflow-wrap:anywhere}
+.fall{margin-top:var(--sp-1)}
+.fall>summary{cursor:pointer;opacity:.8}
+.fall ol{margin:var(--sp-1) 0 0;padding-left:1.4rem;max-height:16rem;overflow:auto;
+ display:grid;gap:2px}
 .src{font-size:.66rem}.hidden{display:none}
 /* info hints on labels */
-.lbl{display:inline-flex;align-items:center;gap:.35rem}
+.lbl{display:inline-flex;align-items:center;gap:.25rem}
 .hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
  border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}
 .hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
 .hint::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + .4rem);z-index:60;width:17rem;max-width:72vw;
  background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
- box-shadow:var(--shadow-md);padding:.5rem .6rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
+ box-shadow:var(--shadow-md);padding:.5rem .5rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
  white-space:normal;opacity:0;visibility:hidden;transition:opacity var(--dur);pointer-events:none}
 .hint:hover::after,.hint:focus::after{opacity:1;visibility:visible}
 /* custom autocomplete combobox (replaces native datalist) */
@@ -947,23 +1176,23 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .combo>input{width:100%}
 .combo-menu{position:absolute;left:0;right:0;top:calc(100% + .25rem);z-index:40;background:var(--surface);
  border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;overflow:auto;padding:.25rem}
-.combo-it{display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;border-radius:6px;cursor:pointer}
+.combo-it{display:flex;align-items:center;gap:.5rem;padding:.5rem .5rem;border-radius:6px;cursor:pointer}
 .combo-it:hover,.combo-it.active{background:var(--surface-2)}
 .combo-n{font-size:.82rem;flex:0 0 auto}
 .combo-d{color:var(--muted);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
-.chipwrap{display:flex;flex-direction:column;gap:.4rem;flex:1 1 auto}
-.chips{display:flex;gap:.3rem;flex-wrap:wrap}
+.chipwrap{display:flex;flex-direction:column;gap:.5rem;flex:1 1 auto}
+.chips{display:flex;gap:.25rem;flex-wrap:wrap}
 /* discovered building-blocks: subtabs + one table */
-.subtabs{display:flex;gap:.35rem;margin:.5rem 0 .6rem;flex-wrap:wrap}
-.subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:.3rem .75rem;border-radius:var(--pill);
+.subtabs{display:flex;gap:.25rem;margin:.5rem 0 .5rem;flex-wrap:wrap}
+.subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:.25rem .75rem;border-radius:var(--pill);
  border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
 .subtab:hover{border-color:var(--border-strong)}
 .subtab.on{background:var(--surface-2);color:var(--text);border-color:var(--border-strong)}
 .regtblwrap{max-height:22rem;overflow:auto;border:1px solid var(--border);border-radius:var(--radius)}
 table.regtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
 table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);text-align:left;
- font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:.45rem .65rem;border-bottom:1px solid var(--border)}
-table.regtbl td{padding:.4rem .65rem;border-bottom:1px solid var(--border);vertical-align:top}
+ font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:.5rem .75rem;border-bottom:1px solid var(--border)}
+table.regtbl td{padding:.5rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
 table.regtbl tbody tr:hover td{background:var(--surface-2)}
 table.regtbl td.d{color:var(--muted)}
 /* status -> --st (reuses the theme-aware ok/warn/err/muted tokens) */
@@ -971,21 +1200,21 @@ table.regtbl td.d{color:var(--muted)}
 [data-status="in_progress"],[data-status="triaged"]{--st:var(--warn)}
 [data-status="blocked"],[data-status="open"]{--st:var(--err)}
 [data-status="pending"],[data-status="wontfix"]{--st:var(--muted)}
-.st{display:inline-block;font-size:.66rem;font-weight:600;padding:.05rem .5em;border-radius:var(--pill);
+.st{display:inline-block;font-size:.66rem;font-weight:600;padding:.25rem .5em;border-radius:var(--pill);
  background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
  border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}
 /* composition: filter toolbar + one compact collapsible table */
-.comptools{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:.3rem 0 .6rem}
-.comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.35rem .7rem}
+.comptools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.25rem 0 .5rem}
+.comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.25rem .75rem}
 .filtlbl{font-size:.72rem;color:var(--muted)}
-.filt{cursor:pointer;font:inherit;font-size:.75rem;padding:.26rem .68rem;border-radius:var(--pill);
+.filt{cursor:pointer;font:inherit;font-size:.75rem;padding:.25rem .75rem;border-radius:var(--pill);
  border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
 .filt:hover{border-color:var(--border-strong)}
 .filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 .count{font-size:.73rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .comptblwrap{border:1px solid var(--border);border-radius:var(--radius);overflow:visible}
 table.comp{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
-table.comp th,table.comp td{padding:.4rem .55rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+table.comp th,table.comp td{padding:.5rem .5rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
 table.comp thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);
  font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}
 table.comp tbody tr:last-child td{border-bottom:none}
@@ -1002,10 +1231,10 @@ tr.task:hover>td{background:var(--surface-2)}
 tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding-left:1.5rem;
  border-left:3px solid var(--st,var(--border))}
 td.ttitle{max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-td.tmodel input{width:6.5rem;padding:.22rem .45rem;font-size:.8rem}
+td.tmodel input{width:6.5rem;padding:.25rem .5rem;font-size:.8rem}
 td.tskills{min-width:15rem}
-.comp-review{display:flex;align-items:center;gap:.3rem;margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
-.comp-review input{width:8rem;padding:.2rem .45rem;font-size:.78rem}
+.comp-review{display:flex;align-items:center;gap:.25rem;margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
+.comp-review input{width:8rem;padding:.25rem .5rem;font-size:.78rem}
 .comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.25rem}
 .comp .chips{gap:.25rem}
 .comp .combo{flex:1 1 8rem;min-width:7rem}
@@ -1013,7 +1242,9 @@ td.tskills{min-width:15rem}
 </style></head><body>
 <div class=top>
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
- <button class="btn small" id=theme title="light/dark">☾</button>
+ <div class=topbtns>
+  <button class="btn small" id=theme title="light/dark">☾</button>
+ </div>
 </div>
 <div class=tabs>
  <button class="tab on" data-t=guards>Guards &amp; paths</button>
@@ -1277,11 +1508,48 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    onclick:e=>{cur=k;[...subtabs.children].forEach(x=>x.classList.toggle('on',x===e.currentTarget));drawTbl();}},
    k+' ('+(datasets[k]||[]).length+')')));
  drawTbl();bb.append(subtabs,host);c.append(bb);}
+// One malformed manifest can emit a finding PER phase, per task and per indexed
+// file: a 300-phase repo produced 1009 of them, joined into a single paragraph
+// that filled the screen and told the reader nothing. But 1009 findings are not
+// 1009 problems — they were four mistakes repeated. So group by shape, count each,
+// show one real example, and keep the raw list one click away.
+const FGROUP_MIN=6, FSHOW=6, FRAW=200;
+function findingKind(s){
+ const i=s.indexOf(': ');
+ return (i>0?s.slice(i+2):s)
+  .replace(/'[^']*'/g,"'*'").replace(/\[[^\]]*\]/g,'[*]').replace(/\d+/g,'#');}
+// Named for the manifest specifically: findingsBox() already exists above for
+// save-result feedback, and a second function of the same name would hoist over it
+// and break every config save.
+function manifestFindingsBox(n,list){
+ const box=el('div',{class:'findings err'},
+   el('b',{},'✗ '+n+' finding(s)'));
+ if(list.length<FGROUP_MIN){
+  box.append(' '+list.join(' · '));return box;}
+ const by=new Map();
+ for(const f of list){const k=findingKind(f);
+  const g=by.get(k)||{n:0,eg:f};g.n++;by.set(k,g);}
+ const groups=[...by.entries()].sort((a,b)=>b[1].n-a[1].n);
+ const ul=el('ul',{class:'fgrp'});
+ groups.slice(0,FSHOW).forEach(([k,g])=>ul.append(el('li',{},
+   el('span',{class:'fn'},g.n+'×'),
+   el('span',{},k,el('div',{class:'feg'},g.n>1?'e.g. '+g.eg:g.eg)))));
+ box.append(el('div',{},groups.length===1?'one problem, repeated:'
+   :groups.length+' distinct problems'
+    +(groups.length>FSHOW?' ('+FSHOW+' most common shown)':'')+':'),ul);
+ const ol=el('ol',{});
+ list.slice(0,FRAW).forEach(f=>ol.append(el('li',{},f)));
+ if(list.length>FRAW)ol.append(el('li',{},'… and '+(list.length-FRAW)+
+   ' more — run /audit:validate for the complete list'));
+ box.append(el('details',{class:'fall'},
+   el('summary',{},'every finding, unfolded'),ol));
+ return box;}
+
 // ---------- Overview ----------
 function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;const card=el('div',{class:'card'});
  if(!r){card.append(el('div',{class:'mut'},'No manifest at '+STATE.manifestPath+'. Run /audit:init.'));c.append(card);return;}
- const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)'):
-   el('div',{class:'findings err'},'✗ '+r.findings+' finding(s): '+(STATE.manifestFindings||[]).join(' · '));
+ const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)')
+   :manifestFindingsBox(r.findings,STATE.manifestFindings||[]);
  card.append(vstate);
  const rs=STATE.runStatus||{index:null,phases:{}};
  if(rs.index){const h=rs.index.hostname||'?';
@@ -1305,22 +1573,91 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
    el('span',{class:'chip'},'open bugs '+b.open),el('span',{class:'chip'},'ready '+ (r.ready||[]).length)));
  c.append(card);}
 // ---------- usage ----------
-// The server ships FACTS; every filter change re-aggregates here, so switching
-// model/author/phase/range is instant and never round-trips.
-let USAGE=null; const UF={model:'',author:'',phase:'',range:'all'};
+// ONE filter state. The chart's dimension is DERIVED from it, never stored
+// separately -- an earlier version kept a parallel drill-down object and filtered
+// author in two places, which let you select one author, click another's line, and
+// land in a permanently empty view whose controls said nothing was filtered. With a
+// single author slot that state cannot be represented at all.
+let USAGE=null;
+const UF={model:'',author:'',phase:'',task:'',day:'',range:'all'};
+const DIMS=['model','author','phase','task','day'];
+let UORDER=[];                 // dimensions in the order they were set (Esc pops)
+const SHOWN={phase:8,model:8,author:8,task:8};   // ranked-list depth; 'other' pages
 const F={ts:0,phase:1,task:2,model:3,author:4,agent:5,attr:6,tokens:7,cost:8,msgs:9};
-const uTok=n=>{n=n||0;for(const[l,s]of[[1e9,'B'],[1e6,'M'],[1e3,'K']])if(Math.abs(n)>=l)
- return (n/l).toFixed(1)+s;return String(n);};
+const RISKS=['high','med','low','unrated'];
+const TOP=8;
+// Token counts are a MAGNITUDE and are always compact - '3.2M', never '3,230,000'.
+// dp=2 is for hover: pointing at a bar buys '3.23M', more precision than the label
+// without dumping the raw integer. Countables (messages, sessions) are not
+// magnitudes and keep their separators - '47,625' is a number you can act on.
+// Mirrors _fmt_tokens in render-report.py; the two must agree or one surface will
+// quietly disagree with the other about the same number.
+const uTok=(n,dp=1)=>{n=n||0;for(const[l,s]of[[1e9,'B'],[1e6,'M'],[1e3,'K']])
+ if(Math.abs(n)>=l)return (n/l).toFixed(dp)+s;return String(Math.round(n));};
 const uCost=x=>!x?'$0.00':(Math.abs(x)<0.01?'<$0.01':'$'+x.toFixed(2));
-// Colour follows the entity: slot by sorted model NAME, so filtering a model out
-// never repaints the others. Draw order is slot order, which is the adjacency the
-// palette was validated on.
-function uSlots(facts){const m=[...new Set(facts.map(f=>f[F.model]))].sort();
- const o={};m.forEach((x,i)=>o[x]=Math.min(i+1,8));return o;}
+const uPct=x=>x<1&&x>0?'<1%':x.toFixed(0)+'%';
+
+// Colour follows the entity, never its rank in the current view: a slot comes from
+// the entity's spend rank across the WHOLE ledger, so filtering cannot repaint a
+// series that already had a colour. Model colours live in their own map so a model
+// keeps one identity whether the chart is showing authors or models.
+//
+// Past the 8 validated hues there is no stable map left to preserve — forty people
+// cannot each keep a distinct colour. The earlier rule (sorted name, capped at 8)
+// preserved the invariant by handing SEVEN of eight plotted authors the same red,
+// which is the one failure a categorical palette cannot survive. So: whoever is in
+// the global top 8 keeps their hue under every filter, and anyone else who reaches
+// the chart takes a slot the current view leaves free. Survivors never repaint;
+// newcomers gain a colour they did not have before.
+//
+// Models order by NAME, which is the rule render-report.py's _model_slots uses, so
+// a model wears the same hue in the report and the panel. Authors order by spend,
+// because there is no report chart to agree with and rank is the useful priority
+// when only 8 of 40 can be coloured.
+let USLOTS={}, MSLOTS={};
+function uRanks(field,by){
+ if(by==='name'){const o={};
+  [...new Set(USAGE.facts.map(f=>f[field]))].sort().forEach((k,i)=>o[k]=i);
+  return o;}
+ const t={};
+ for(const f of USAGE.facts)t[f[field]]=(t[f[field]]||0)+f[F.tokens];
+ const o={};Object.keys(t).sort((a,b)=>t[b]-t[a]||(a<b?-1:1))
+  .forEach((k,i)=>o[k]=i);return o;}
+function uSlots(field,present,by){
+ const rank=uRanks(field,by),used=new Set(),out={};
+ const keys=[...new Set(present)].filter(k=>k&&k!=='other')
+  .sort((a,b)=>(rank[a]==null?1e9:rank[a])-(rank[b]==null?1e9:rank[b]));
+ for(const k of keys){const r=rank[k];
+  if(r!=null&&r<8&&!used.has(r+1)){out[k]=r+1;used.add(r+1);}}
+ let free=1;
+ for(const k of keys){if(out[k])continue;
+  while(free<=8&&used.has(free))free++;
+  if(free<=8){out[k]=free;used.add(free);}}
+ return out;}
+function uCol(k){return USLOTS[k]?'var(--viz-'+USLOTS[k]+')':'var(--bar-neutral)';}
+function uMCol(k){return MSLOTS[k]?'var(--viz-'+MSLOTS[k]+')':'var(--bar-neutral)';}
+
+function setF(dim,val){
+ UF[dim]=val||'';
+ UORDER=UORDER.filter(d=>d!==dim);
+ if(UF[dim])UORDER.push(dim);
+ if(dim!=='day')SHOWN[dim]=TOP;      // a new scope starts from the top again
+ renderUsage();}
+function clearAll(){DIMS.forEach(d=>UF[d]='');UF.range='all';UORDER=[];
+ DIMS.forEach(d=>{if(d in SHOWN)SHOWN[d]=TOP;});renderUsage();}
+
+// Chart dimension is DERIVED: scoping to one author makes the interesting split
+// their models. Nothing stores "which level am I on".
+function chartDim(){return UF.author?'model':'author';}
+
 function uFiltered(){if(!USAGE)return[];let out=USAGE.facts;
  if(UF.model)out=out.filter(f=>f[F.model]===UF.model);
  if(UF.author)out=out.filter(f=>f[F.author]===UF.author);
  if(UF.phase)out=out.filter(f=>f[F.phase]===UF.phase);
+ if(UF.task)out=out.filter(f=>f[F.task]===UF.task);
+ if(UF.day){const[a,b]=UF.day.split('..');
+  out=b?out.filter(f=>{const d=f[F.ts].slice(0,10);return d>=a&&d<=b;})
+       :out.filter(f=>f[F.ts].slice(0,10)===a);}
  if(UF.range!=='all'){const d=new Date(Date.now()-parseInt(UF.range,10)*864e5)
    .toISOString().slice(0,10);out=out.filter(f=>f[F.ts].slice(0,10)>=d);}
  return out;}
@@ -1328,63 +1665,499 @@ function uAgg(facts,key){const m=new Map();
  for(const f of facts){const k=f[F[key]]||'--';const s=m.get(k)||[0,0,0];
   s[0]+=f[F.tokens];s[1]+=f[F.cost];s[2]+=f[F.msgs];m.set(k,s);}
  return [...m.entries()].sort((a,b)=>b[1][0]-a[1][0]);}
-function uBars(facts,dim,slots,models,label){
- const groups=uAgg(facts,dim);if(!groups.length)return[];
- const peak=Math.max(...groups.map(g=>g[1][0]))||1;const out=[el('h2',{},label)];
- for(const[k,v]of groups){const per=new Map();
-  for(const f of facts)if((f[F[dim]]||'--')===k)per.set(f[F.model],(per.get(f[F.model])||0)+f[F.tokens]);
-  const segs=models.filter(m=>per.get(m)).map(m=>el('i',{class:'useg',
-    title:k+' · '+m+' · '+per.get(m).toLocaleString()+' tokens',
-    style:'flex:'+per.get(m)+' 0 0;background:var(--viz-'+slots[m]+')'}));
-  const name=dim==='phase'?(k+(USAGE.phaseTitles[k]?' '+USAGE.phaseTitles[k]:(k==='--'?' unattributed':''))):k;
-  out.push(el('div',{class:'urow'},el('span',{style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'},name),
-   el('span',{class:'ustack',style:'width:'+(100*v[0]/peak).toFixed(1)+'%'},segs),
-   el('span',{class:'uamt'},uTok(v[0])+(USAGE.showCost?' · '+uCost(v[1]):''))));}
+
+// --- shared tooltip -------------------------------------------------------------
+// One element, moved on hover. Compact by design: enough to stop you estimating
+// against an axis, short enough to read without moving your eyes.
+let TIP=null;
+function tipEl(){if(!TIP){TIP=el('div',{class:'utip hidden'});document.body.append(TIP);}return TIP;}
+function tipShow(ev,nodes){const t=tipEl();t.textContent='';
+ (Array.isArray(nodes)?nodes:[nodes]).forEach(n=>t.append(n));
+ t.classList.remove('hidden');tipMove(ev);}
+function tipMove(ev){const t=tipEl(),pad=14,r=t.getBoundingClientRect();
+ let x=ev.clientX+pad,y=ev.clientY+pad;
+ if(x+r.width>innerWidth-8)x=ev.clientX-r.width-pad;
+ if(y+r.height>innerHeight-8)y=ev.clientY-r.height-pad;
+ t.style.left=Math.max(4,x)+'px';t.style.top=Math.max(4,y)+'px';}
+function tipHide(){if(TIP)TIP.classList.add('hidden');}
+function tipRow(colour,label,value){return el('div',{class:'utip-r'},
+ colour?el('i',{style:'background:'+colour}):null,
+ el('span',{class:'utip-k'},label),el('span',{class:'utip-v'},value));}
+function bindTip(node,build){
+ node.addEventListener('mouseenter',e=>tipShow(e,build()));
+ node.addEventListener('mousemove',tipMove);
+ node.addEventListener('mouseleave',tipHide);
+ return node;}
+
+// --- multi-line chart with crosshair --------------------------------------------
+// Eight series over nine months of daily points is spaghetti: 250 marks across
+// 680px is 2.7px per day, so what the eye gets is noise with a trend hidden in it.
+// Past MAXPTS the days roll up into natural bins - week, four weeks, quarter -
+// chosen as the smallest that fits, and the chart SAYS which one it used. Binning
+// silently would be worse than the spaghetti: the reader would take a weekly total
+// for a daily one.
+const MAXPTS=60, LADDER=[1,7,28,91,364];
+const BINNAME={1:'day',7:'week',28:'4 weeks',91:'quarter',364:'year'};
+const dnum=d=>Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))/864e5;
+function uBin(days){
+ if(days.length<2)return{size:1,bins:days.map(d=>[d,d])};
+ const span=dnum(days[days.length-1])-dnum(days[0])+1;
+ const size=LADDER.find(s=>Math.ceil(span/s)<=MAXPTS)||LADDER[LADDER.length-1];
+ if(size===1)return{size:1,bins:days.map(d=>[d,d])};
+ const start=dnum(days[0]),iso=n=>new Date(n*864e5).toISOString().slice(0,10);
+ const bins=[];
+ for(let a=0;a<span;a+=size)
+  bins.push([iso(start+a),iso(start+Math.min(a+size,span)-1)]);
+ return{size,bins};}
+
+function uSeries(facts,dim){const per=new Map(),days=new Set();
+ for(const f of facts){const d=f[F.ts].slice(0,10),k=f[F[dim]]||'--';
+  days.add(d);const m=per.get(k)||new Map();
+  m.set(d,(m.get(d)||0)+f[F.tokens]);per.set(k,m);}
+ const ds=[...days].sort(),{size,bins}=uBin(ds);
+ const at=d=>{const n=dnum(d);let lo=0,hi=bins.length-1;
+  while(lo<hi){const mid=(lo+hi+1)>>1;dnum(bins[mid][0])<=n?lo=mid:hi=mid-1;}
+  return lo;};
+ const idx=new Map(ds.map(d=>[d,at(d)]));
+ const roll=m=>{const v=new Array(bins.length).fill(0);
+  for(const[d,n]of m)v[idx.get(d)]+=n;return v;};
+ let ent=[...per.entries()].map(([k,m])=>({key:k,
+   total:[...m.values()].reduce((a,b)=>a+b,0),values:roll(m)}))
+  .sort((a,b)=>b.total-a.total);
+ if(ent.length>TOP){const tail=ent.slice(TOP);ent=ent.slice(0,TOP);
+  ent.push({key:'other',total:tail.reduce((a,e)=>a+e.total,0),
+    values:bins.map((_,i)=>tail.reduce((a,e)=>a+e.values[i],0))});}
+ return {buckets:bins.map(b=>b[0]),bins:bins,binSize:size,entities:ent};}
+// A bin is one filter value: an exact day, or "from..to" for a rolled-up range.
+const binKey=b=>b[0]===b[1]?b[0]:b[0]+'..'+b[1];
+const binLabel=b=>b[0]===b[1]?b[0]:b[0]+' to '+b[1];
+const NS='http://www.w3.org/2000/svg';
+const svgEl=(t,a)=>{const e=document.createElementNS(NS,t);
+ for(const k in a)e.setAttribute(k,a[k]);return e;};
+// W comes from measuring the container, and the viewBox is built at that exact
+// pixel size, so the scale is 1:1 in both axes. It used to be a fixed 680 stretched
+// to fit with preserveAspectRatio="none" - which scales the coordinate system
+// non-uniformly and therefore scales the GLYPHS: at 942px the axis labels rendered
+// 38% too wide, the 2px lines drew 2.8px on vertical runs and 2px on horizontal
+// ones, and the end-of-series circles were ellipses. Rendering 1:1 fixes all four
+// at once, which no amount of tuning inside a stretched space can.
+function uChart(sr,dim,W){
+ const H=190,PL=44,PB=20,PT=10;
+ if(!sr.buckets.length)return el('div',{class:'mut'},'No data in this window.');
+ const peak=Math.max(1,...sr.entities.flatMap(e=>e.values));
+ const n=sr.buckets.length, iw=W-PL-6, ih=H-PB-PT;
+ const X=i=>PL+(n<2?iw/2:iw*i/(n-1)), Y=v=>PT+ih-ih*v/peak;
+ const svg=svgEl('svg',{class:'uchart',viewBox:'0 0 '+W+' '+H,role:'img',
+   'aria-label':'Tokens per '+(sr.binSize===1?'day':BINNAME[sr.binSize])
+     +', peak '+uTok(peak)+'. Click to filter to one.'});
+ [0,0.5,1].forEach(fr=>{const y=PT+ih*fr;
+  svg.appendChild(svgEl('line',{class:'g',x1:PL,y1:y,x2:W,y2:y}));
+  const t=svgEl('text',{class:'ax',x:0,y:y+3});t.textContent=uTok(peak*(1-fr));
+  svg.appendChild(t);});
+ const cross=svgEl('line',{class:'cross hidden',y1:PT,y2:PT+ih});
+ svg.appendChild(cross);
+ sr.entities.forEach(e=>{
+  const d=e.values.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join('');
+  svg.appendChild(svgEl('path',{class:'ln',d:d,stroke:uCol(e.key)}));
+  // A 2px line is a poor click target, and clicking a LINE (that series) has to stay
+  // distinct from clicking the plot (that day). A wider transparent companion path
+  // gives the series a comfortable hit area; the click stops there so it never also
+  // registers as a day selection.
+  if(e.key!=='other'){
+   const hit=svgEl('path',{class:'lnhit',d:d});
+   hit.addEventListener('click',ev=>{ev.stopPropagation();
+     setF(dim,UF[dim]===e.key?'':e.key);});
+   const ttl=svgEl('title',{});ttl.textContent='Click to scope to '+e.key;
+   hit.appendChild(ttl);
+   svg.appendChild(hit);}
+  const li=e.values.length-1;
+  svg.appendChild(svgEl('circle',{class:'dot',cx:X(li),cy:Y(e.values[li]),r:3.5,
+    fill:uCol(e.key)}));});
+ [0,n-1].forEach(i=>{if(n<2&&i)return;const t=svgEl('text',{class:'ax',x:X(i),y:H-4,
+   'text-anchor':i?'end':'start'});t.textContent=sr.buckets[i].slice(5);
+  svg.appendChild(t);});
+ // Crosshair: nearest bucket to the cursor, one tooltip row per series.
+ const idxAt=ev=>{const r=svg.getBoundingClientRect();
+  const rel=(ev.clientX-r.left)/r.width*W;
+  return Math.max(0,Math.min(n-1,Math.round((rel-PL)/(n<2?1:iw/(n-1)))));};
+ svg.addEventListener('mousemove',ev=>{const i=idxAt(ev);
+  cross.setAttribute('x1',X(i));cross.setAttribute('x2',X(i));
+  cross.classList.remove('hidden');
+  const rows=[el('div',{class:'utip-h'},binLabel(sr.bins[i]))];
+  sr.entities.filter(e=>e.values[i]).sort((a,b)=>b.values[i]-a.values[i])
+   .forEach(e=>rows.push(tipRow(uCol(e.key),e.key,uTok(e.values[i]))));
+  if(rows.length===1)rows.push(el('div',{class:'utip-r mut'},'no usage'));
+  rows.push(el('div',{class:'utip-f'},'click to filter to this '
+    +(sr.binSize===1?'day':BINNAME[sr.binSize])));
+  tipShow(ev,rows);});
+ svg.addEventListener('mouseleave',()=>{cross.classList.add('hidden');tipHide();});
+ svg.addEventListener('click',ev=>setF('day',binKey(sr.bins[idxAt(ev)])));
+ svg.classList.add('pick');
+ return svg;}
+
+// The chart is built at the container's true pixel width, and the container is not
+// in the DOM while renderUsage() is assembling the card - so the first measurement
+// can be 0. Draw once, measure again on the next frame, and re-draw on resize. The
+// width guard makes every one of those a no-op unless the width actually moved.
+function mountChart(sr,dim){
+ const host=el('div',{class:'chartslot'});
+ const draw=()=>{const w=Math.round(host.clientWidth);
+  if(!w||w===host.__w)return;
+  host.__w=w;host.replaceChildren(uChart(sr,dim,w));};
+ requestAnimationFrame(()=>{draw();
+  if(window.ResizeObserver&&!host.__ro){
+   host.__ro=new ResizeObserver(()=>draw());host.__ro.observe(host);}});
+ return host;}
+
+// --- metrics, all recomputed under the current filter --------------------------
+function uCoverage(facts){const by={},tot=facts.reduce((a,f)=>a+f[F.tokens],0)||1;
+ for(const f of facts)by[f[F.attr]]=(by[f[F.attr]]||0)+f[F.tokens];
+ const un=by['unattributed']||0;
+ return {attributed:100*(tot-un)/tot,task:100*(by['task']||0)/tot,by,tot};}
+function uUnit(facts){const M=USAGE.taskMeta||{},cost={};
+ for(const f of facts){const t=f[F.task];if(t&&t!=='--')cost[t]=(cost[t]||0)+f[F.cost];}
+ const done=Object.keys(cost).filter(t=>(M[t]||{}).status==='done').map(t=>cost[t]);
+ const remaining=Object.keys(M).filter(t=>['pending','in_progress','blocked']
+   .includes((M[t]||{}).status)).length;
+ const out={completed:done.length,remaining,gate:5,perTask:null,proj:null};
+ if(done.length)out.perTask=done.reduce((a,b)=>a+b,0)/done.length;
+ // Same gate as the report: a forecast off fewer than 5 samples is noise, so it is
+ // suppressed rather than shown with false confidence.
+ if(done.length>=5){const s=[...done].sort((a,b)=>a-b),q=p=>s[Math.max(0,
+   Math.min(s.length-1,Math.round(p*(s.length-1))))];
+  out.proj={low:q(.25)*remaining,high:q(.75)*remaining};}
  return out;}
-function renderUsage(){const c=$('#usage');c.textContent='';
+function uRetry(facts){const M=USAGE.taskMeta||{};let tot=0,re=0,bl=0;
+ const rs=new Set(),bs=new Set();
+ for(const f of facts){tot+=f[F.cost];const t=M[f[F.task]];if(!t)continue;
+  if((t.attempts||1)>1){re+=f[F.cost];rs.add(f[F.task]);}
+  if(t.status==='blocked'){bl+=f[F.cost];bs.add(f[F.task]);}}
+ return {tot,re,bl,rn:rs.size,bn:bs.size,
+   overlap:[...rs].filter(x=>bs.has(x)).length};}
+function uRouting(facts){const M=USAGE.taskMeta||{},acc={};
+ for(const f of facts){const t=M[f[F.task]];if(!t)continue;
+  const risk=t.risk||'unrated',model=f[F.model];
+  acc[risk]=acc[risk]||{};
+  const c=acc[risk][model]=acc[risk][model]||{cost:0,tasks:new Set(),att:[]};
+  c.cost+=f[F.cost];
+  if(!c.tasks.has(f[F.task])){c.tasks.add(f[F.task]);c.att.push(t.attempts||1);}}
+ const rows=[];
+ for(const risk in acc)for(const model in acc[risk]){const c=acc[risk][model];
+  rows.push({risk,model,tasks:c.tasks.size,perTask:c.cost/c.tasks.size,
+    att:c.att.reduce((a,b)=>a+b,0)/c.att.length});}
+ rows.sort((a,b)=>RISKS.indexOf(a.risk)-RISKS.indexOf(b.risk)||
+   a.model.localeCompare(b.model));
+ return rows;}
+// vs the window immediately before this one, same length. Null when there is no
+// prior period -- a first-run dashboard must not invent a trend.
+function uDelta(facts,days){
+ if(UF.range==='all'||!days.length)return null;
+ const span=parseInt(UF.range,10);
+ const cut=new Date(Date.now()-span*864e5).toISOString().slice(0,10);
+ const prevCut=new Date(Date.now()-2*span*864e5).toISOString().slice(0,10);
+ const base=USAGE.facts.filter(f=>{const d=f[F.ts].slice(0,10);
+  return d>=prevCut&&d<cut
+   &&(!UF.model||f[F.model]===UF.model)&&(!UF.author||f[F.author]===UF.author)
+   &&(!UF.phase||f[F.phase]===UF.phase)&&(!UF.task||f[F.task]===UF.task);});
+ if(!base.length)return null;
+ const sum=a=>a.reduce((x,f)=>[x[0]+f[F.tokens],x[1]+f[F.cost]],[0,0]);
+ const now=sum(facts),was=sum(base);
+ return {tokens:was[0]?100*(now[0]-was[0])/was[0]:null,
+         cost:was[1]?100*(now[1]-was[1])/was[1]:null};}
+
+// --- render --------------------------------------------------------------------
+function uBars(facts,dim,title){
+ const g=uAgg(facts,dim);if(!g.length)return[];
+ const grand=g.reduce((a,x)=>a+x[1][0],0)||1;
+ const limit=SHOWN[dim]||TOP;
+ const head=g.slice(0,limit),tail=g.slice(limit);
+ const peak=Math.max(...head.map(x=>x[1][0]))||1;
+ const out=[el('h2',{},title)];
+ for(const[k,v]of head){
+  const meta=USAGE.taskMeta[k]||{};
+  const nm=dim==='phase'
+    ?(k==='--'?'-- unattributed':(k+' '+(USAGE.phaseTitles[k]||'')).trim())
+    :(dim==='task'&&meta.title?(k+' '+meta.title):k);
+  const active=UF[dim]===k;
+  const row=el('div',{class:'urow pick'+(active?' on':''),
+    onclick:()=>setF(dim,active?'':k)},
+   el('span',{class:'unm'},nm),
+   // Floor the width: a row that spent 0.08% of the peak rounds to 0.0% and
+   // paints an empty track, which reads as "no data" rather than "a little".
+   el('span',{class:'bar'},el('i',{style:'width:'+
+     Math.max(v[0]?0.8:0,100*v[0]/peak).toFixed(1)+'%;'+
+     'background:'+(dim==='model'?uMCol(k):'var(--bar-neutral)')})),
+   el('span',{class:'uamt'},uTok(v[0])+(USAGE.showCost?' - '+uCost(v[1]):'')));
+  bindTip(row,()=>[el('div',{class:'utip-h'},nm),
+    tipRow(dim==='model'?uMCol(k):null,'tokens',uTok(v[0],2)),
+    tipRow(null,'share',uPct(100*v[0]/grand)),
+    USAGE.showCost?tipRow(null,'cost',uCost(v[1])):null,
+    tipRow(null,'messages',v[2].toLocaleString()),
+    el('div',{class:'utip-f'},active?'click to clear this filter':'click to filter')
+   ].filter(Boolean));
+  out.push(row);}
+ if(tail.length){
+  const more=tail.reduce((a,x)=>[a[0]+x[1][0],a[1]+x[1][1]],[0,0]);
+  out.push(el('div',{class:'urow pick tail',
+    onclick:()=>{SHOWN[dim]=limit+TOP;renderUsage();}},
+   el('span',{class:'unm mut'},'other ('+tail.length+') - show '+
+     Math.min(TOP,tail.length)+' more'),
+   el('span',{class:'bar'},el('i',{style:'width:'+(100*more[0]/peak).toFixed(1)+
+     '%;background:var(--bar-neutral);opacity:.45'})),
+   el('span',{class:'uamt'},uTok(more[0])+(USAGE.showCost?' - '+uCost(more[1]):''))));}
+ // Expanding costs one click, so collapsing must too. This used to be an `else if`
+ // on the tail being empty, which meant the way back only appeared after paging
+ // through the whole list - thirty clicks at 233 rows. And paging is the wrong tool
+ // for finding one row among hundreds, which is what `browse all` is for.
+ const ctl=[];
+ if(limit>TOP)ctl.push(el('button',{class:'lnk',
+   onclick:()=>{SHOWN[dim]=TOP;renderUsage();}},'show top '+TOP+' only'));
+ if(g.length>TOP)ctl.push(el('button',{class:'lnk',
+   onclick:()=>openBrowse(dim,title,facts)},'browse all '+g.length+' →'));
+ if(ctl.length){
+  const bar=el('div',{class:'uctl'});
+  ctl.forEach((b,i)=>{if(i)bar.append(el('span',{class:'mut'},'·'));bar.append(b);});
+  out.push(bar);}
+ return out;}
+
+// --- browse dialog ---------------------------------------------------------------
+// The ranked list is a summary: the top 8 by spend. Paging it eight at a time to
+// reach P219 among 241 is 27 clicks and still gives you no way to re-rank by cost.
+// This is the other half - search and sort over the whole dimension - and it reads
+// from the SAME filtered facts the bars do, so it can never disagree with the page
+// behind it. A native <dialog> brings the focus trap, the backdrop and Esc for free.
+let BROWSE=null;
+const BCOL={
+ phase:[['id','id'],['title','title'],['tokens','tokens'],['share','share'],
+        ['cost','cost'],['messages','msgs']],
+ task:[['id','id'],['title','title'],['status','status'],['risk','risk'],
+       ['tokens','tokens'],['share','share'],['cost','cost'],['messages','msgs']],
+ model:[['model','id'],['tokens','tokens'],['share','share'],['cost','cost'],
+        ['messages','msgs']],
+ author:[['author','id'],['tokens','tokens'],['share','share'],['cost','cost'],
+         ['messages','msgs']]};
+const BNUM={tokens:1,share:1,cost:1,msgs:1};
+
+function browseRows(dim,facts){
+ const g=uAgg(facts,dim),grand=g.reduce((a,x)=>a+x[1][0],0)||1;
+ return g.map(([k,v])=>{const m=(USAGE.taskMeta||{})[k]||{};
+  return {id:k,
+    title:dim==='phase'?(k==='--'?'unattributed':(USAGE.phaseTitles[k]||''))
+      :dim==='task'?(k==='--'?'unattributed':(m.title||'')):'',
+    status:m.status||'',risk:m.risk||'',
+    tokens:v[0],share:100*v[0]/grand,cost:v[1],msgs:v[2]};});}
+
+function openBrowse(dim,title,facts){
+ if(!BROWSE){BROWSE=el('dialog',{class:'browse'});
+  // Clicking the backdrop is the same intent as Esc. The dialog element itself
+  // fills the viewport, so a click whose target IS the dialog landed outside the
+  // panel it contains.
+  BROWSE.addEventListener('click',ev=>{if(ev.target===BROWSE)BROWSE.close();});
+  document.body.append(BROWSE);}
+ const rows=browseRows(dim,facts),cols=BCOL[dim]||BCOL.model;
+ let sort='tokens',desc=true,q='';
+ const head=el('div',{class:'bhead'},
+   el('h3',{},title+' — '+rows.length),
+   el('button',{class:'bx',title:'close','aria-label':'close',
+     onclick:()=>BROWSE.close()},'✕'));
+ // "All phases" would be a lie while the page is scoped to one author.
+ const within=UORDER.length
+   ? el('div',{class:'mut small'},'within: '+UORDER.map(d=>d+' '+
+       (d==='day'?UF.day.replace('..',' to '):UF[d])).join(' · '))
+   : null;
+ const search=el('input',{type:'search',placeholder:'search '+dim+'…'});
+ // An <input type=search> eats the FIRST Escape to clear itself, so the dialog
+ // only closed on the second press - which reads as the key being broken. One
+ // Escape, one effect: close.
+ search.addEventListener('keydown',ev=>{
+   if(ev.key==='Escape'){ev.preventDefault();BROWSE.close();}});
+ const count=el('span',{class:'count'});
+ const tb=el('tbody');
+ const thead=el('thead');
+
+ const draw=()=>{
+  const needle=q.trim().toLowerCase();
+  const shown=rows.filter(r=>!needle
+    ||(r.id+' '+r.title).toLowerCase().includes(needle));
+  shown.sort((a,b)=>{const A=a[sort],B=b[sort];
+    const c=BNUM[sort]?A-B:String(A).localeCompare(String(B));
+    return desc?-c:c;});
+  count.textContent=shown.length+' of '+rows.length;
+  thead.replaceChildren(el('tr',{},...cols.map(([lbl,key])=>
+    el('th',{class:(BNUM[key]?'n ':'')+'pick'+(sort===key?' on':''),
+      onclick:()=>{if(sort===key)desc=!desc;else{sort=key;desc=!!BNUM[key];}draw();}},
+     lbl,sort===key?el('span',{class:'sarrow'},desc?'▼':'▲'):null))));
+  tb.replaceChildren(...shown.map(r=>{
+   const active=UF[dim]===r.id;
+   return el('tr',{class:'pick'+(active?' on':''),
+     title:active?'click to clear this filter':'click to filter to this '+dim,
+     onclick:()=>{setF(dim,active?'':r.id);BROWSE.close();}},
+    ...cols.map(([,key])=>el('td',
+      {class:BNUM[key]?'n':(key==='title'?'t':''),
+       title:key==='title'?String(r.title||''):null},
+      key==='tokens'?uTok(r.tokens,2)
+      // NOT uPct here: across 241 phases every share is under 1%, and a column
+      // where every cell reads "<1%" sorts fine and tells you nothing. This is
+      // the precision surface, so it gets the digits.
+      :key==='share'?(r.share<1?r.share.toFixed(2):r.share.toFixed(1))+'%'
+      :key==='cost'?uCost(r.cost)
+      :key==='msgs'?r.msgs.toLocaleString()
+      :String(r[key]||'—'))));}));
+  if(!shown.length)tb.replaceChildren(el('tr',{},
+    el('td',{colspan:String(cols.length),class:'mut'},
+      'Nothing matches "'+q.trim()+'".')));};
+
+ search.addEventListener('input',()=>{q=search.value;draw();});
+ draw();
+ // replaceChildren is the native DOM API, not el(): it STRINGIFIES anything that
+ // is not a Node, so passing the null `within` painted the literal text "null"
+ // above the dialog. Filter before handing it over.
+ BROWSE.replaceChildren(...[head,within,
+   el('div',{class:'comptools'},search,count),
+   el('div',{class:'btblwrap'},el('table',{class:'btbl'},thead,tb)),
+   el('div',{class:'mut small bfoot'},
+     'click a header to sort · click a row to filter')].filter(Boolean));
+ BROWSE.showModal();
+ search.focus();}
+
+function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
  const card=el('div',{class:'card'});
  if(!USAGE||!USAGE.facts.length){
   card.append(el('div',{class:'mut'},USAGE&&!USAGE.enabled
    ?'Token metering is off (usage.enabled=false in .claude/audit.config.json).'
-   :'No usage recorded yet. Metering runs on Stop/SubagentStop hooks; '
-    +'`/audit:usage --backfill` reads transcripts already on disk.'),
-   el('div',{class:'mut',style:'margin-top:.3rem'},'ledger: '+((USAGE||{}).ledgerDir||'-')));
+   :'No usage recorded yet. Metering runs on the Stop/SubagentStop hooks; '
+    +'"/audit:usage --backfill" reads transcripts already on disk.'),
+   el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
+     'ledger: '+((USAGE||{}).ledgerDir||'-')));
   c.append(card);return;}
+
+ // context line: the shape of the ledger, at zero card weight
+ const K=USAGE.counts||{};
+ const bits=[K.phases+' phases',K.authors+' people',K.models+' models',
+   K.sessions+' sessions'];
+ if(K.from)bits.push(K.from+' to '+K.to);
+ // What the FACTS are bucketed at, which is not what the chart draws at — the
+ // chart names its own period in its heading, so this says "ledger" out loud
+ // rather than leaving two different resolutions on screen unlabelled.
+ bits.push(USAGE.rolled?'daily ledger (rolled up)':'hourly ledger');
+ card.append(el('div',{class:'uctx'},bits.join(' - ')));
+
+ // filters: typeahead for the high-cardinality dimensions, select for range
+ const uniq=dim=>[...new Set(USAGE.facts.map(f=>f[F[dim]]).filter(Boolean))].sort();
+ const totalsFor=dim=>{const m=new Map();
+  for(const f of USAGE.facts)m.set(f[F[dim]],(m.get(f[F[dim]])||0)+f[F.tokens]);
+  return m;};
+ const filt=el('div',{class:'ufil'});
+ ['model','author','phase'].forEach(dim=>{
+  const all=uniq(dim),tot=totalsFor(dim);
+  const inp=el('input',{type:'search',value:UF[dim],
+    placeholder:'all '+dim+'s ('+all.length+')','aria-label':'filter by '+dim,
+    onchange:e=>setF(dim,all.includes(e.target.value)?e.target.value:'')});
+  filt.append(comboWrap(inp,()=>all.map(v=>({name:v,
+    description:uTok(tot.get(v)||0)})),(name,close)=>{close();setF(dim,name);}));});
+ filt.append(el('select',{'aria-label':'time range',
+   onchange:e=>{UF.range=e.target.value;renderUsage();}},
+  [['all','all time'],['7','last 7 days'],['30','last 30 days'],['90','last 90 days']]
+   .map(([v,l])=>el('option',Object.assign({value:v},v===UF.range?{selected:'selected'}:{}),l))));
+ card.append(filt);
+
+ // active-filter chips: what is scoping the view, and a way out of each
+ if(UORDER.length||UF.range!=='all'){
+  const chips=el('div',{class:'uchips'});
+  UORDER.forEach(d=>chips.append(el('button',{class:'uchip',title:'remove this filter',
+    onclick:()=>setF(d,'')},el('span',{class:'ck'},d),
+    d==='day'?UF.day.replace('..',' to '):UF[d],el('span',{class:'cx'},'x'))));
+  chips.append(el('button',{class:'lnk',onclick:clearAll},'clear all'));
+  card.append(chips);}
+
  const facts=uFiltered();
+ const days=[...new Set(facts.map(f=>f[F.ts].slice(0,10)))].sort();
  const tot=facts.reduce((a,f)=>[a[0]+f[F.tokens],a[1]+f[F.cost],a[2]+f[F.msgs]],[0,0,0]);
- const opts=(dim,cur)=>[el('option',{value:''},'all '+dim+'s')].concat(
-   [...new Set(USAGE.facts.map(f=>f[F[dim]]))].sort().map(v=>
-     el('option',Object.assign({value:v},v===cur?{selected:'selected'}:{}),v)));
- const sel=(dim)=>el('select',{onchange:e=>{UF[dim]=e.target.value;renderUsage();}},opts(dim,UF[dim]));
- card.append(el('div',{class:'ufil'},
-  sel('model'),sel('author'),sel('phase'),
-  el('select',{onchange:e=>{UF.range=e.target.value;renderUsage();}},
-   [['all','all time'],['7','last 7 days'],['30','last 30 days'],['90','last 90 days']]
-    .map(([v,l])=>el('option',Object.assign({value:v},v===UF.range?{selected:'selected'}:{}),l)))));
- const tiles=[['tokens',uTok(tot[0])],['messages',tot[2].toLocaleString()]];
- if(USAGE.showCost)tiles.splice(1,0,['equivalent cost',uCost(tot[1])]);
- tiles.push(['rows',facts.length+(USAGE.rolled?' (daily)':'')]);
- card.append(el('div',{class:'utiles'},tiles.map(([k,v])=>
-   el('div',{class:'utile'},el('div',{class:'k'},k),el('div',{class:'v'},v)))));
- const slots=uSlots(USAGE.facts);
- const models=[...new Set(facts.map(f=>f[F.model]))].sort((a,b)=>slots[a]-slots[b]);
- if(models.length>1)card.append(el('div',{class:'ulegend'},models.map(m=>
-   el('b',{},el('i',{style:'background:var(--viz-'+slots[m]+')'}),m))));
- if(!facts.length){card.append(el('div',{class:'mut'},'No rows match these filters.'));
+ const cov=uCoverage(facts),unit=uUnit(facts),rt=uRetry(facts);
+ const dl=uDelta(facts,days);
+ const tile=(k,v,d)=>el('div',{class:'utile'},el('div',{class:'k'},k),
+   el('div',{class:'v'},v,d==null?null:el('span',
+     {class:'dl '+(d>=0?'up':'down')},(d>=0?'+':'')+d.toFixed(0)+'%')));
+ const tiles=[tile('tokens',uTok(tot[0]),dl&&dl.tokens)];
+ if(USAGE.showCost)tiles.push(tile('equivalent cost',uCost(tot[1]),dl&&dl.cost));
+ tiles.push(tile('messages',tot[2].toLocaleString()));
+ if(unit.perTask!=null)tiles.push(tile('cost per task',uCost(unit.perTask)));
+ tiles.push(tile('attributed',cov.attributed.toFixed(0)+'%'));
+ card.append(el('div',{class:'utiles'},tiles));
+
+ if(!facts.length){
+  card.append(el('div',{class:'mut'},'No rows match these filters.'),
+   el('button',{class:'btn small',style:'margin-top:var(--sp-1)',onclick:clearAll},
+     'Clear filters'));
   c.append(card);return;}
- card.append(...uBars(facts,'phase',slots,models,'By phase'));
- card.append(...uBars(facts,'author',slots,models,'By author'));
- card.append(...uBars(facts,'agent',slots,models,'By agent'));
- const days=new Map();for(const f of facts){const d=f[F.ts].slice(0,10);
-  days.set(d,(days.get(d)||0)+f[F.tokens]);}
- const ds=[...days.keys()].sort();
- if(ds.length>1){const pk=Math.max(...days.values())||1;
-  card.append(el('h2',{},'Daily tokens'),el('div',{class:'uspark'},ds.map(d=>
-    el('i',{title:d+' · '+days.get(d).toLocaleString()+' tokens',
-      style:'height:'+Math.max(2,100*days.get(d)/pk)+'%'}))),
-   el('div',{class:'mut',style:'font-size:.72rem'},ds[0]+' → '+ds[ds.length-1]
-     +' · peak '+uTok(pk)+(USAGE.pricingAsOf?' · rates as of '+USAGE.pricingAsOf:'')));}
+
+ const dim=chartDim();
+ // Slots are handed out to the entities actually drawn, so a hue is never shared.
+ const sr=uSeries(facts,dim);
+ const plotted=sr.entities.map(e=>e.key);
+ MSLOTS=uSlots(F.model,dim==='model'?plotted
+   :uAgg(facts,'model').slice(0,TOP).map(r=>r[0]),'name');
+ USLOTS=dim==='model'?MSLOTS:uSlots(F.author,plotted,'spend');
+ const per=sr.binSize===1?'day':BINNAME[sr.binSize];
+ card.append(el('h2',{},'Tokens per '+per+' by '+dim));
+ card.append(el('div',{class:'ucrumb mut'},(UF.author
+   ?'Scoped to '+UF.author+' - lines are their models. Click a line to scope to one, or clear the author filter to compare people again.'
+   :'Click a line to scope to that person, or anywhere else to scope to that '+per+'.')
+   +(sr.binSize===1?'':' Days are rolled up into '+per+
+     ' totals - '+sr.buckets.length+' points instead of '+
+     'one per day, which at this span would draw noise.')));
+ card.append(mountChart(sr,dim));
+ card.append(el('div',{class:'ulegend'},sr.entities.map(e=>
+   el('b',{class:e.key==='other'?'':'pick',
+     onclick:()=>{if(e.key!=='other')setF(dim,UF[dim]===e.key?'':e.key);}},
+    el('i',{style:'background:'+uCol(e.key)}),e.key))));
+
+ card.append(...uBars(facts,'phase','By phase'));
+ card.append(...uBars(facts,'model','By model'));
+ card.append(...uBars(facts,'author','By author'));
+ card.append(...uBars(facts,'task','By task'));
+
+ // economics - the same honesty caveats the report carries
+ card.append(el('h2',{},'Unit economics'));
+ if(unit.proj)card.append(el('div',{class:'ufact'},'Remaining '+unit.remaining+
+   ' task(s) project to '+uCost(unit.proj.low)+' to '+uCost(unit.proj.high)+
+   ' at the p25-p75 per-task rate.'));
+ else card.append(el('div',{class:'mut small'},'Projection needs '+unit.gate+
+   ' completed tasks to mean anything; there are '+unit.completed+
+   '. A forecast off a smaller sample would be noise.'));
+ if(rt.tot)card.append(el('div',{class:'ufact'},uCost(rt.re)+' on tasks that needed '+
+   'more than one attempt ('+rt.rn+' task(s)) - '+uCost(rt.bl)+
+   ' on tasks that ended blocked ('+rt.bn+' task(s)).'),
+  el('div',{class:'mut small'},'Retried spend is not wasted spend: the ledger '+
+   'buckets by hour, not by attempt, so a task that retried and then landed did not '+
+   'burn every attempt for nothing. Only the blocked figure is spend with no '+
+   'outcome'+(rt.overlap?' (the same task is in both figures here)':'')+'.'));
+
+ const rows=uRouting(facts);
+ if(rows.length){card.append(el('h2',{},'Model cost within each risk band'),
+  el('div',{class:'mut small'},'Compared inside a band on purpose: hard work is '+
+   'routed to the stronger model deliberately, so a raw spend-per-task comparison '+
+   'across bands would flag that working system as a fault.'));
+  const tbl=el('table',{class:'utbl'},el('thead',{},el('tr',{},
+    ['risk','model','tasks','cost/task','mean attempts'].map(h=>el('th',{},h)))));
+  const tb=el('tbody',{});let last='';
+  rows.forEach(r=>{tb.append(el('tr',{},el('td',{},r.risk===last?'':r.risk),
+    el('td',{class:'mono'},r.model),el('td',{},String(r.tasks)),
+    el('td',{},uCost(r.perTask)),el('td',{},r.att.toFixed(1))));last=r.risk;});
+  tbl.append(tb);card.append(tbl);}
+
  c.append(card);}
+
+// Esc pops the most recently applied filter -- the fastest way back out of a scope
+// you clicked into by accident.
+document.addEventListener('keydown',e=>{
+ if(e.key!=='Escape'||$('#usage').classList.contains('hidden'))return;
+ if(document.querySelector('.combo-menu:not(.hidden)'))return;
+ // A dialog closes itself on Esc. Without this guard that same keypress would
+ // ALSO drop a filter - one key, two effects, one of them invisible.
+ if(document.querySelector('dialog[open]'))return;
+ if(UORDER.length){setF(UORDER[UORDER.length-1],'');}
+ else if(UF.range!=='all'){UF.range='all';renderUsage();}});
 boot().catch(e=>toast('load failed: '+e,'err'));
 </script></body></html>"""
 
@@ -1543,12 +2316,141 @@ def _selftest():
     check("usage tab is registered and has a view container",
           "data-t=usage" in UI_HTML and "<div id=usage" in UI_HTML
           and "'usage'" in UI_HTML)
+    # UI_HTML carries the stylesheet AND the JS that writes inline styles, which
+    # is where an undeclared token actually hides.
+    _css = UI_HTML[UI_HTML.index("<style>"):UI_HTML.index("</style>")]
+    _missing = _undeclared_css_vars(UI_HTML)
+    check("every var(--token) in the panel CSS is declared "
+          "(an undeclared one paints transparent and logs nothing): %r" % _missing,
+          _missing == [])
+    _asym = _theme_asymmetric_vars(_css)
+    check("no colour token exists in only one theme (either direction): %r"
+          % _asym, _asym == [])
     check("usage colours come from the same validated palette as the report",
           "--viz-1:#2a78d6" in UI_HTML and "--viz-1:#3987e5" in UI_HTML)
-    check("usage slots are assigned by sorted model name, never by rank",
-          "function uSlots" in UI_HTML and ".sort()" in UI_HTML)
+    # Two series in the same hue is the one failure a categorical palette cannot
+    # survive, and it only appears past 8 entities — which is exactly where nobody
+    # looks. `Math.min(i+1,8)` gave 40 authors ONE red between 33 of them. The
+    # invariant (every drawn series a distinct slot) is asserted in-browser against
+    # a 40-author fixture; these pin the construct that guarantees it.
+    check("hues are never shared: slots go to the entities actually drawn, and "
+          "the capped-index rule that collided is gone",
+          "Math.min(i+1,8)" not in UI_HTML
+          and "function uRanks" in UI_HTML
+          and "while(free<=8&&used.has(free))free++;" in UI_HTML
+          and "uSlots(F.author,plotted,'spend')" in UI_HTML)
+    check("slot order is global spend rank, so a filter never repaints a survivor",
+          "for(const f of USAGE.facts)t[f[field]]" in UI_HTML
+          and "sort((a,b)=>t[b]-t[a]" in UI_HTML)
+    # A model must wear one hue across BOTH surfaces, so the panel orders models by
+    # the same key render-report.py's _model_slots does. Authors have no report
+    # chart to agree with, so they order by spend — the useful priority when only
+    # 8 of 40 can be coloured.
+    check("models slot by name (matching the report), authors by spend",
+          "uSlots(F.model,dim==='model'?plotted" in UI_HTML
+          and "'name')" in UI_HTML
+          and "uSlots(F.author,plotted,'spend')" in UI_HTML
+          and "if(by==='name')" in UI_HTML)
+    check("a tiny non-zero bar still paints (0.0% reads as no data)",
+          "Math.max(v[0]?0.8:0,100*v[0]/peak)" in UI_HTML)
+    # One number format, and it is easy to break one call site at a time: the label
+    # reads 3.2M while the tooltip opening over it reads 3,230,000. Every raw
+    # thousands-separated number in the panel must be a COUNTABLE — in the fact
+    # tuple that is index 2 (msgs) — never a token magnitude at index 0.
+    # The fact tuple is [ts,phase,task,model,author,agent,attr,tokens,cost,msgs],
+    # and the aggregate tuple is [tokens,cost,msgs] — so a countable receiver ends
+    # in `[2]` or names msgs outright. Anything else is a magnitude and must be
+    # compact.
+    _loc = re.findall(r"([\w.\[\]]+)\.toLocaleString\(\)", UI_HTML)
+    _badloc = [x for x in _loc if not (x.endswith("[2]") or x.endswith("msgs"))]
+    check("no token value is rendered with thousand separators "
+          "(counts may be; magnitudes may not): %r"
+          % (_badloc or "ok, %d countables" % len(_loc)),
+          _badloc == [] and bool(_loc))
+    check("tokens are compact at one decimal, two on hover, matching the report",
+          "const uTok=(n,dp=1)=>" in UI_HTML and "(n/l).toFixed(dp)+s" in UI_HTML
+          and "uTok(v[0],2)" in UI_HTML)
+
+    # --- reversible tail + browse dialog -----------------------------------------
+    # The collapse used to hang off `else if(limit>TOP)` — it only appeared once
+    # you had paged to the end of the tail, which at 233 rows is thirty clicks
+    # before the way back exists.
+    check("the collapse is unconditional, not gated on the tail being exhausted",
+          "else if(limit>TOP)" not in UI_HTML
+          and "if(limit>TOP)ctl.push(" in UI_HTML
+          and "'show top '+TOP+' only'" in UI_HTML)
+    check("browse-all appears whenever the list folds, and states the full count",
+          "if(g.length>TOP)ctl.push(" in UI_HTML
+          and "'browse all '+g.length" in UI_HTML)
+    check("the dialog is the platform's, so focus trap/backdrop/Esc are not ours",
+          "el('dialog',{class:'browse'})" in UI_HTML
+          and "BROWSE.showModal()" in UI_HTML
+          and "dialog.browse::backdrop" in UI_HTML
+          and "ev.target===BROWSE" in UI_HTML)
+    check("Esc closes the dialog without also dropping a filter",
+          "if(document.querySelector('dialog[open]'))return;" in UI_HTML)
+    check("the dialog reads the same filtered facts as the bars, and says so "
+          "when the page is scoped",
+          "openBrowse(dim,title,facts)" in UI_HTML
+          and "'within: '+UORDER.map(" in UI_HTML)
+    check("search reports what it hid; sort toggles direction on re-click",
+          "shown.length+' of '+rows.length" in UI_HTML
+          and "if(sort===key)desc=!desc;else{sort=key;desc=!!BNUM[key];}" in UI_HTML
+          and "desc?'▼':'▲'" in UI_HTML)
+    check("a dialog row applies the filter and closes; an active row clears it",
+          "setF(dim,active?'':r.id);BROWSE.close();" in UI_HTML)
+    # <input type=search> consumes the first Escape to clear itself, so the dialog
+    # only closed on the second press and the key read as broken.
+    check("one Escape closes the dialog even from inside the search field",
+          "if(ev.key==='Escape'){ev.preventDefault();BROWSE.close();}" in UI_HTML)
+    # Across 241 phases every share is below 1%, and uPct floors those to "<1%" —
+    # a column of identical cells that sorts correctly and says nothing.
+    check("the share column keeps digits instead of flooring to <1%",
+          "r.share<1?r.share.toFixed(2):r.share.toFixed(1)" in UI_HTML)
+    # replaceChildren() stringifies non-Nodes, so an absent optional child painted
+    # the literal word "null" into the dialog. el() tolerates nulls; this does not.
+    check("optional dialog children are filtered, never stringified",
+          "].filter(Boolean));" in UI_HTML
+          and "BROWSE.replaceChildren(...[head,within," in UI_HTML)
+    check("columns follow the dimension: only tasks carry status and risk",
+          "task:[['id','id'],['title','title'],['status','status'],['risk','risk']"
+          in UI_HTML and "author:[['author','id']" in UI_HTML)
+
+    # A malformed 300-phase manifest emits a finding per phase, per task and per
+    # indexed file — 1009 of them, previously joined into one paragraph that
+    # filled the screen. They were four mistakes repeated, so the banner groups.
+    check("findings group by shape with counts instead of one endless join",
+          "function manifestFindingsBox" in UI_HTML
+          and "function findingKind" in UI_HTML
+          # a second findingsBox() would hoist over the save-result one
+          and UI_HTML.count("function findingsBox") == 1
+          and "el('span',{class:'fn'},g.n+'\\u00d7')" not in UI_HTML
+          and "g.n+'×'" in UI_HTML
+          and "'✗ '+r.findings+' finding(s): '" not in UI_HTML)
+    check("a short finding list is still listed plainly, not force-grouped",
+          "if(list.length<FGROUP_MIN)" in UI_HTML and "FGROUP_MIN=6" in UI_HTML)
+    check("the raw list stays reachable and its own cap is stated",
+          "every finding, unfolded" in UI_HTML
+          and "' more — run /audit:validate for the complete list'" in UI_HTML)
     check("usage filtering is client-side (no round-trip per change)",
           "function uFiltered" in UI_HTML and "renderUsage()" in UI_HTML)
+    # 250 daily points across 680px is 2.7px per mark: eight series of that is
+    # noise. Rolling up is only honest if the chart says it rolled up, so the
+    # heading, the crumb, the tooltip footer and the aria-label all name the bin.
+    check("a long span rolls up into natural bins instead of drawing spaghetti",
+          "const MAXPTS=60, LADDER=[1,7,28,91,364]" in UI_HTML
+          and "function uBin" in UI_HTML
+          and "LADDER.find(s=>Math.ceil(span/s)<=MAXPTS)" in UI_HTML)
+    check("the roll-up is stated everywhere the period is named, never silent",
+          "'Tokens per '+per+' by '+dim" in UI_HTML
+          and "Days are rolled up into " in UI_HTML
+          and "'click to filter to this '" in UI_HTML
+          and "BINNAME[sr.binSize]" in UI_HTML)
+    check("a rolled-up bin is still one clickable filter (from..to), and the "
+          "chip spells the range out",
+          "const binKey=b=>b[0]===b[1]?b[0]:b[0]+'..'+b[1]" in UI_HTML
+          and "const[a,b]=UF.day.split('..')" in UI_HTML
+          and "UF.day.replace('..',' to ')" in UI_HTML)
 
     u = usage_state(proj)
     check("usage_state on a project with no ledger is empty, not an error",

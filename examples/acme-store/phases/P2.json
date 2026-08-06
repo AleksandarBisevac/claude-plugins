@@ -2,7 +2,7 @@
   "id": "P2",
   "title": "Input validation",
   "status": "in_progress",
-  "model": "sonnet",
+  "model": "opus",
   "blockedBy": [],
   "desiredOutcome": "Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template.",
   "testGate": [
@@ -15,7 +15,7 @@
   "mergedAt": null,
   "review": {
     "tool": null,
-    "model": "sonnet",
+    "model": "opus",
     "status": "pending",
     "findings": []
   },
@@ -54,8 +54,8 @@
       "commit": "c4a11b9",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-07-01T09:00:00Z",
-      "completedAt": "2026-07-01T10:00:00Z",
+      "startedAt": "2026-06-22T09:30:00Z",
+      "completedAt": "2026-06-23T16:10:00Z",
       "risk": "med",
       "verifiedBy": [
         "rejects a negative quantity",
@@ -66,7 +66,7 @@
       "id": "P2.2",
       "title": "Sanitize the product-search query",
       "status": "in_progress",
-      "model": "sonnet",
+      "model": "opus",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [],
@@ -95,7 +95,7 @@
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-07-02T09:00:00Z",
+      "startedAt": "2026-07-06T09:00:00Z",
       "completedAt": null,
       "risk": "high",
       "verifiedBy": []
@@ -132,7 +132,7 @@
       "commit": null,
       "attempts": 3,
       "maxAttempts": 3,
-      "startedAt": "2026-07-02T11:00:00Z",
+      "startedAt": "2026-07-13T09:15:00Z",
       "completedAt": null,
       "risk": "med",
       "verifiedBy": []
@@ -141,7 +141,7 @@
       "id": "P2.4",
       "title": "Add zod schemas for cart mutations",
       "status": "pending",
-      "model": "sonnet",
+      "model": "haiku",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [

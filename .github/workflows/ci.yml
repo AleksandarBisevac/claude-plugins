@@ -98,6 +98,26 @@ jobs:
           python plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report
           test -s /tmp/audit-report/audit-report.html
           test -s /tmp/audit-report/audit-report.md
+      - name: Example renders its Usage section (asserts content, not just a file)
+        shell: bash
+        run: |
+          set -e
+          CLAUDE_PROJECT_DIR=examples/acme-store \
+            python plugins/audit/scripts/render-report.py \
+              examples/acme-store/audit-plan.json --out-dir /tmp/acme
+          grep -q 'id="usage"' /tmp/acme/acme-store-audit.html
+          grep -q '## Usage' /tmp/acme/acme-store-audit.md
+          echo "OK: example renders a Usage section from its committed ledger"
+      - name: Committed example ledger is reproducible from the generator
+        shell: bash
+        run: |
+          set -e
+          python plugins/audit/scripts/gen-demo-usage.py \
+            examples/acme-store/audit-plan.json --out-dir /tmp/regen
+          for f in examples/acme-store/.claude/usage/*.jsonl; do
+            diff -q "$f" "/tmp/regen/$(basename "$f")"
+          done
+          echo "OK: committed ledger matches a fresh deterministic run"
       - uses: actions/setup-node@v5
         with:
           node-version: 20

@@ -2,7 +2,7 @@
   "id": "P1",
   "title": "Auth hardening",
   "status": "done",
-  "model": "sonnet",
+  "model": "opus",
   "blockedBy": [],
   "desiredOutcome": "Credentials are stored and checked safely: modern password hashing and a rate-limited login path.",
   "testGate": [
@@ -11,10 +11,10 @@
   ],
   "baseRef": "0f3a9d1",
   "branch": "audit/p1-auth-hardening",
-  "mergedAt": "2026-06-30T14:20:00Z",
+  "mergedAt": "2026-06-10T11:05:00Z",
   "review": {
     "tool": null,
-    "model": "sonnet",
+    "model": "opus",
     "status": "passed",
     "findings": []
   },
@@ -24,7 +24,7 @@
       "id": "P1.1",
       "title": "Hash passwords with Argon2id",
       "status": "done",
-      "model": "sonnet",
+      "model": "opus",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [],
@@ -53,8 +53,8 @@
       "commit": "9a1f0c2",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-06-28T10:00:00Z",
-      "completedAt": "2026-06-28T11:30:00Z",
+      "startedAt": "2026-06-02T09:10:00Z",
+      "completedAt": "2026-06-02T15:40:00Z",
       "risk": "high",
       "verifiedBy": [
         "hashes new passwords with argon2id",
@@ -99,8 +99,8 @@
       "commit": "b2d7e58",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-06-29T09:00:00Z",
-      "completedAt": "2026-06-29T10:15:00Z",
+      "startedAt": "2026-06-08T10:00:00Z",
+      "completedAt": "2026-06-09T12:20:00Z",
       "risk": "med",
       "verifiedBy": [
         "returns 429 after N failed attempts within the window"

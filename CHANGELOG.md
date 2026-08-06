@@ -4,6 +4,58 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.18.0] - 2026-08-06
+
+**The usage dashboard.** 0.17.0 answered "what did that cost?" with numbers.
+This makes those numbers *readable*: a seeded demo ledger so the example
+actually shows the feature, an analytics layer that refuses to overstate what it
+knows, and a report and panel rebuilt around one interaction model.
+
+### Added
+- **Analytics with honesty guards** in `usage_ledger.py` — `series` (top-N with a
+  stated remainder), `compare` (vs the previous window; `null` on a first run
+  rather than an invented trend), `cache_profile` (a rate comparison, never a
+  fabricated dollar saving), `unit_economics` (a p25–p75 range, suppressed below
+  5 completed tasks), `retry_cost` (retried and blocked reported *apart*, never
+  summed into "waste"), `routing` (compared **within** a risk band, because the
+  pipeline routes hard work to the strong model on purpose) and `coverage`.
+- **`scripts/gen-demo-usage.py`** — a seeded, deterministic ledger generator, and
+  a committed 166-row ledger for `examples/acme-store` (93.1M tokens, 4 models,
+  3 authors). CI asserts the committed ledger reproduces byte-identically.
+- **Drill-down panel** — one filter state with a *derived* chart dimension, so
+  clicking a line and using the dropdowns can no longer disagree. Clickable rows,
+  columns and lines; active-filter chips with `Esc` to pop the last one; a
+  browse dialog with search and sortable columns for lists past the fold.
+- **Compact tooltips** on both surfaces. In the report the hover text lives in the
+  mark's own `title`, so the file still explains itself from `file://` with
+  JavaScript off.
+- A **context line** (phases · people · models · sessions · span · resolution) —
+  orientation without spending a metric tile on a count nobody acts on.
+
+### Fixed
+- **Colliding hues past 8 entities.** Slots were assigned by alphabetical index
+  capped at 8, so 40 authors shared one red between 33 of them. Slots now go to
+  the entities actually drawn, ordered by global spend, so a filter never
+  repaints a survivor and two series never share a colour.
+- **Charts stretched their own type.** `preserveAspectRatio="none"` scales the
+  coordinate system non-uniformly — measured at +49% glyph width in the report
+  and +38% in the panel. The panel now renders 1:1 against a measured viewBox;
+  the report moves its axis labels out of the stretched space into HTML.
+- **250 daily points of spaghetti.** Long spans roll up into natural bins (week /
+  4 weeks / quarter) and every surface *names* the bin it used.
+- **Small multiples did not share an x axis** — each author spanned only their own
+  active days at the same pixel width, so the same x meant a different date per
+  panel.
+- **Sub-0.05% bars painted nothing**, reading as "no data" rather than "a little".
+- **1009 validation findings joined into one unbounded paragraph.** They were four
+  mistakes repeated; the panel now groups by shape with counts and keeps the raw
+  list one click away.
+- One number format everywhere: token magnitudes are compact (`3.2M`, two
+  decimals on hover), countables keep their separators. A selftest guard fails if
+  any token value regresses to `3,230,000`.
+- `meta.usage` is a known manifest key — the shipped example no longer warns
+  against the plugin's own validator.
+
 ## [0.17.0] - 2026-08-06
 
 **Token usage, attributed.** The most common tester question — "what did that

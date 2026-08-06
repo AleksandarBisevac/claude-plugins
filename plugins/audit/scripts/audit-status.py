@@ -217,12 +217,12 @@ def usage_summary(manifest, manifest_path, project_dir=None):
     rel = (meta_usage.get("ledgerDir")
            if isinstance(meta_usage, dict) else None) or os.path.join(
                ".claude", "usage")
-    if project_dir is None:
-        # The manifest conventionally lives at docs/audit/<name>.json, so the repo
-        # root is two levels up. CLAUDE_PROJECT_DIR wins when it is set.
-        project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(manifest_path))))
-    ledger_dir = rel if os.path.isabs(rel) else os.path.join(project_dir, rel)
+    # Search upward from the manifest rather than assuming a fixed depth — see
+    # usage_ledger.find_ledger_dir for why the fixed-depth version was dangerous.
+    ledger_dir = ul.find_ledger_dir(
+        manifest_path, rel, project_dir or os.environ.get("CLAUDE_PROJECT_DIR"))
+    if not ledger_dir:
+        return None
 
     try:
         rows = ul.read_ledger(ledger_dir)

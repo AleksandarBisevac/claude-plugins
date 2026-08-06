@@ -145,6 +145,13 @@ def resolve_ledger(args, project, manifest):
             rel = meta_usage["ledgerDir"]
     except Exception:
         pass
+    # When a manifest was named, search upward from IT — pointing at another
+    # project's manifest from this cwd must not silently read this project's spend.
+    if args.manifest and not args.project_dir \
+            and not os.environ.get("CLAUDE_PROJECT_DIR"):
+        found = ul.find_ledger_dir(args.manifest, rel)
+        if found:
+            return found
     return os.path.join(project, rel)
 
 
@@ -304,15 +311,17 @@ def render_trend(rows, width=28):
         bits.append("quietest %02d:00" % quietest)
     delta = _trend_delta(daily, days)
     if delta is not None:
-        bits.append("last 7d %+.0f%% vs prior 7d" % delta)
+        bits.append("last 7 active days %+.0f%% vs prior 7" % delta)
     if bits:
         out.append("  " + " - ".join(bits))
     return out
 
 
 def _trend_delta(daily, days):
-    """Percent change, last 7 days vs the 7 before. None when there is no prior
-    period to compare against (a fabricated 'up 100%' helps nobody)."""
+    """Percent change over the last 7 days THAT HAVE DATA vs the 7 before them.
+    Deliberately not calendar days: on a sparse ledger those differ, and calling
+    it "last 7d" would overclaim. None when there is no prior period to compare
+    against (a fabricated 'up 100%' helps nobody)."""
     last = days[-7:]
     prior = days[-14:-7]
     if not prior:

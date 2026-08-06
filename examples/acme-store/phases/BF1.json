@@ -2,7 +2,7 @@
   "id": "BF1",
   "title": "Bugfix batch 1",
   "status": "in_progress",
-  "model": "sonnet",
+  "model": "opus",
   "blockedBy": [],
   "desiredOutcome": "Reported bugs are reproduced red-first and fixed.",
   "testGate": [
@@ -13,7 +13,7 @@
   "mergedAt": null,
   "review": {
     "tool": null,
-    "model": "sonnet",
+    "model": "opus",
     "status": "pending",
     "findings": []
   },
@@ -49,7 +49,7 @@
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-07-03T09:00:00Z",
+      "startedAt": "2026-07-20T11:00:00Z",
       "completedAt": null,
       "risk": "med",
       "verifiedBy": [],
@@ -59,7 +59,7 @@
       "id": "BF1.2",
       "title": "Fix BUG-4: logout leaves the session cookie",
       "status": "done",
-      "model": "sonnet",
+      "model": "opus",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [],
@@ -86,8 +86,8 @@
       "commit": "a1b2c3d",
       "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": "2026-07-03T11:00:00Z",
-      "completedAt": "2026-07-03T12:00:00Z",
+      "startedAt": "2026-07-21T09:40:00Z",
+      "completedAt": "2026-07-21T18:05:00Z",
       "risk": "high",
       "verifiedBy": [
         "logout clears the session cookie and invalidates the server session"

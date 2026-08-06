@@ -49,6 +49,10 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # report rendering (render-report.py): narrative summary box +
               # custom output-file basename. Neither affects orchestration.
               "reportSummary", "reportBasename",
+              # token metering, read by the COMMANDS (the hooks read their own
+              # copy from .claude/audit.config.json — the plugin's standing split):
+              # ledgerDir, showCost, pricingAsOf, pricing.
+              "usage",
               # tolerated (older /audit:init wrote these; informational):
               "notes", "baseCommit",
               # workspaceRoot: 0.2.0-era name for gitRoot; audit.md reads it as

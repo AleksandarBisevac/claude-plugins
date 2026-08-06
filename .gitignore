@@ -11,6 +11,8 @@ node_modules/
 docs/audit/*.lock
 docs/audit/audit-report.html
 docs/audit/audit-report.md
+# /audit:panel pidfile — holds a live pid, port and session token. Never history.
+**/.claude/audit-panel.json
 
 # Token-usage ledger. Local by default: it records counts, model ids, timestamps,
 # branch and author - never prompt content - but it is per-developer telemetry and
