@@ -17,6 +17,12 @@ the per-task display detail. Then print:
 
 1. An **overall** line first: `N/M tasks done · P/Q phases signed off · B open bugs · R ready now`
    (from the `--json` rollup).
+   Immediately under it, when — and only when — the rollup carries a `usage` key, one more line:
+   `usage: <tokens> tok · ~$<cost> equiv · this phase <tokens>` (drop the `this phase` clause when
+   no phase is `in_progress`, and the `~$…` clause when `usage.showCost` is false). The numbers come
+   from `usage.totals` and `usage.byPhase` in the SAME rollup you already fetched — do not run a
+   second command for them. Absent key means metering is off or nothing has been recorded; say
+   nothing at all in that case. For the full breakdown, point at `/audit:usage`.
 2. Per-phase line: `id — title — status (done/total tasks) — branch (if set) — desiredOutcome (if set)`.
 3. Per-task rows grouped by phase: `id | title | status | model | unmet blockers | commit (short SHA or —)`.
    Prefix each task with a scannable marker: `[x]` done · `[~]` in_progress · `[!]` blocked · `[ ]` pending.
@@ -27,4 +33,4 @@ the per-task display detail. Then print:
    materialized task (`taskId`) is ready now.
 
 Do not modify anything. Related: `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:report`,
-`/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync`.
+`/audit:usage`, `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync`.

@@ -29,7 +29,10 @@ jobs:
                    plugins/audit/hooks/guard-secrets-read.py \
                    plugins/audit/hooks/guard-bash-writes.py \
                    plugins/audit/hooks/remind-tdd.py \
+                   plugins/audit/hooks/meter-usage.py \
                    plugins/audit/scripts/_manifest_io.py \
+                   plugins/audit/scripts/usage_ledger.py \
+                   plugins/audit/scripts/audit-usage.py \
                    plugins/audit/scripts/validate-manifest.py \
                    plugins/audit/scripts/audit-status.py \
                    plugins/audit/scripts/render-report.py \

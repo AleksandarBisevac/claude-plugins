@@ -384,6 +384,75 @@ def _run_status(project, config, manifest):
     return {"index": locks["index"], "phases": phases}
 
 
+_MAX_FACTS = 20000
+
+
+def usage_state(project):
+    """Payload for the Usage tab.
+
+    Ships FACTS rather than finished tables — compact positional arrays the browser
+    re-aggregates on every filter change, so switching model/author/phase/range is
+    instant and never round-trips. Beyond _MAX_FACTS hourly rows the facts are rolled
+    up to daily first, which keeps the payload bounded on a long-lived ledger; the
+    response says so via `rolled` rather than silently truncating.
+
+    Read-only: no lock, no writes, nothing that can collide with a running phase."""
+    _, _, _, cfg_mod = _cores()
+    config = read_config(project)
+    ucfg = cfg_mod.usage_cfg(config)
+    ledger_dir = str(cfg_mod.ledger_dir(project, config))
+    empty = {"enabled": bool(ucfg.get("enabled", True)), "ledgerDir": ledger_dir,
+             "showCost": bool(ucfg.get("showCost", True)),
+             "pricingAsOf": ucfg.get("pricingAsOf"), "facts": [], "fields": [],
+             "phaseTitles": {}, "rolled": False, "totalRows": 0}
+    try:
+        ul = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
+        rows = ul.read_ledger(ledger_dir)
+    except Exception:
+        return empty
+    if not rows:
+        return empty
+
+    rolled = len(rows) > _MAX_FACTS
+    facts, seen = {}, 0
+    for r in rows:
+        seen += 1
+        ts = r.get("ts") or ""
+        key = (ts[:10] if rolled else ts, r.get("phaseId") or "--",
+               r.get("taskId") or "--", r.get("model") or "unknown",
+               r.get("author") or "unknown", r.get("agentType") or "orchestrator",
+               r.get("attr") or "unattributed")
+        slot = facts.get(key)
+        if slot is None:
+            slot = facts[key] = [0, 0.0, 0]
+        slot[0] += sum(int(r.get(k) or 0) for k in ul.TOKEN_KEYS)
+        slot[1] += float(r.get("costUSD") or 0.0)
+        slot[2] += int(r.get("msgs") or 0)
+
+    titles = {}
+    mpath = _manifest_path(project, config)
+    try:
+        for ph in (_mio.load_manifest_safe(mpath).get("phases") or []):
+            if isinstance(ph, dict) and ph.get("id"):
+                titles[ph["id"]] = ph.get("title") or ""
+    except Exception:
+        titles = {}
+
+    return {
+        "enabled": bool(ucfg.get("enabled", True)),
+        "ledgerDir": ledger_dir,
+        "showCost": bool(ucfg.get("showCost", True)),
+        "pricingAsOf": ucfg.get("pricingAsOf"),
+        "fields": ["ts", "phase", "task", "model", "author", "agent", "attr",
+                   "tokens", "cost", "msgs"],
+        "facts": [list(k) + [v[0], round(v[1], 6), v[2]]
+                  for k, v in sorted(facts.items())],
+        "phaseTitles": titles,
+        "rolled": rolled,
+        "totalRows": seen,
+    }
+
+
 def build_state(project):
     vm, vc, as_, _ = _cores()
     config = read_config(project)
@@ -583,6 +652,8 @@ def _make_handler(project, token):
                 self._json(200, build_state(project)); return
             if path == "/api/registry":
                 self._json(200, discover(project)); return
+            if path == "/api/usage":
+                self._json(200, usage_state(project)); return
             self._json(404, {"error": "not found"})
 
         def do_PUT(self):
@@ -759,16 +830,25 @@ UI_HTML = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
  --bg:#f5f7fb;--surface:#fff;--surface-2:#eef2f7;--text:#0f172a;--muted:#64748b;
  --border:#e2e8f0;--border-strong:#cbd5e1;--accent:#0d9488;--accent-solid:#0d9488;
  --ring:rgba(13,148,136,.35);--ok:#15803d;--warn:#b45309;--err:#dc2626;
+ /* Usage viz. Same validated categorical palette as the report, so a model
+    keeps one identity across both surfaces. Slots are assigned by model NAME,
+    never by rank, so filtering cannot repaint the survivors. */
+ --viz-1:#2a78d6;--viz-2:#eb6834;--viz-3:#1baf7a;--viz-4:#eda100;
+ --viz-5:#e87ba4;--viz-6:#008300;--viz-7:#4a3aa7;--viz-8:#e34948;
  --radius:9px;--radius-lg:14px;--pill:999px;--shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
  --shadow-md:0 10px 30px rgba(15,23,42,.14);--dur:.2s;--ease:cubic-bezier(.4,0,.2,1)}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
  --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
  --border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
  --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
+ --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
+ --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}}
 :root[data-theme=dark]{--bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;
  --muted:#93a4bd;--border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
  --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
+ --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
+ --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}
 *{box-sizing:border-box}html{background:var(--bg)}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);margin:0;
@@ -816,6 +896,27 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .bar{height:.5rem;border-radius:var(--pill);background:var(--surface-2);overflow:hidden;flex:1 1 8rem;min-width:6rem}
 .bar>i{display:block;height:100%;background:var(--accent)}
 .grid{display:grid;grid-template-columns:1fr;gap:.5rem}
+/* usage tab */
+.utiles{display:flex;flex-wrap:wrap;gap:.6rem;margin:.2rem 0 .9rem}
+.utile{flex:1 1 7.5rem;border:1px solid var(--border);border-radius:var(--radius);
+ padding:.5rem .7rem;background:var(--bg)}
+.utile .k{font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mut,var(--muted))}
+.utile .v{font-size:1.25rem;font-weight:660;letter-spacing:-.02em;margin-top:.1rem}
+.ufil{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.1rem 0 .8rem}
+.ufil select{font:inherit;font-size:.78rem;padding:.28rem .5rem;border-radius:var(--radius);
+ border:1px solid var(--border);background:var(--surface);color:var(--text)}
+.ulegend{display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.75rem;margin:.1rem 0 .7rem}
+.ulegend b{display:inline-flex;align-items:center;gap:.3rem;font-weight:500}
+.ulegend i,.useg{display:inline-block}
+.ulegend i{width:.6rem;height:.6rem;border-radius:3px}
+.urow{display:grid;grid-template-columns:minmax(5rem,11rem) 1fr auto;gap:.4rem .7rem;
+ align-items:center;margin:.28rem 0;font-size:.8rem}
+.ustack{display:flex;gap:2px;height:12px}
+.useg{min-width:2px;border-radius:1px}
+.useg:last-child{border-radius:1px 4px 4px 1px}
+.uamt{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;font-size:.75rem}
+.uspark{display:flex;align-items:flex-end;gap:1px;height:44px;margin:.3rem 0}
+.uspark i{flex:1 1 0;min-width:2px;background:var(--viz-1);border-radius:2px 2px 0 0}
 .tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.6rem .75rem;background:var(--bg)}
 .tsk .h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
 .dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block;background:var(--muted)}
@@ -918,10 +1019,12 @@ td.tskills{min-width:15rem}
  <button class="tab on" data-t=guards>Guards &amp; paths</button>
  <button class="tab" data-t=comp>Composition</button>
  <button class="tab" data-t=over>Overview</button>
+ <button class="tab" data-t=usage>Usage</button>
 </div>
 <div id=guards></div>
 <div id=comp class=hidden></div>
 <div id=over class=hidden></div>
+<div id=usage class=hidden></div>
 <div id=toast></div>
 <script>
 const TOKEN=__AUDIT_TOKEN__, PROJECT=__AUDIT_PROJECT__;
@@ -943,7 +1046,7 @@ $('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data
 // tabs
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
- for(const id of['guards','comp','over'])$('#'+id).classList.toggle('hidden',id!==t.dataset.t);});
+ for(const id of['guards','comp','over','usage'])$('#'+id).classList.toggle('hidden',id!==t.dataset.t);});
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'');
  setTimeout(()=>t.className=t.className.replace('show','').trim(),2600);}
 function findingsBox(res){const box=el('div');
@@ -952,7 +1055,8 @@ function findingsBox(res){const box=el('div');
  if(res.ok&&!(res.warnings&&res.warnings.length))box.append(el('div',{class:'findings ok'},'✓ saved'));
  return box;}
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
- renderGuards();renderComp();renderOver();}
+ USAGE=await api('GET','/api/usage').catch(()=>null);
+ renderGuards();renderComp();renderOver();renderUsage();}
 // ---------- shared: info hints + autocomplete ----------
 const DESC={
  manifestPath:"Path to the audit manifest JSON (project-relative). Default docs/audit/audit-plan.json.",
@@ -1200,6 +1304,87 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
    el('span',{class:'chip'},'tasks '+t.total),el('span',{class:'chip'},'bugs '+b.total),
    el('span',{class:'chip'},'open bugs '+b.open),el('span',{class:'chip'},'ready '+ (r.ready||[]).length)));
  c.append(card);}
+// ---------- usage ----------
+// The server ships FACTS; every filter change re-aggregates here, so switching
+// model/author/phase/range is instant and never round-trips.
+let USAGE=null; const UF={model:'',author:'',phase:'',range:'all'};
+const F={ts:0,phase:1,task:2,model:3,author:4,agent:5,attr:6,tokens:7,cost:8,msgs:9};
+const uTok=n=>{n=n||0;for(const[l,s]of[[1e9,'B'],[1e6,'M'],[1e3,'K']])if(Math.abs(n)>=l)
+ return (n/l).toFixed(1)+s;return String(n);};
+const uCost=x=>!x?'$0.00':(Math.abs(x)<0.01?'<$0.01':'$'+x.toFixed(2));
+// Colour follows the entity: slot by sorted model NAME, so filtering a model out
+// never repaints the others. Draw order is slot order, which is the adjacency the
+// palette was validated on.
+function uSlots(facts){const m=[...new Set(facts.map(f=>f[F.model]))].sort();
+ const o={};m.forEach((x,i)=>o[x]=Math.min(i+1,8));return o;}
+function uFiltered(){if(!USAGE)return[];let out=USAGE.facts;
+ if(UF.model)out=out.filter(f=>f[F.model]===UF.model);
+ if(UF.author)out=out.filter(f=>f[F.author]===UF.author);
+ if(UF.phase)out=out.filter(f=>f[F.phase]===UF.phase);
+ if(UF.range!=='all'){const d=new Date(Date.now()-parseInt(UF.range,10)*864e5)
+   .toISOString().slice(0,10);out=out.filter(f=>f[F.ts].slice(0,10)>=d);}
+ return out;}
+function uAgg(facts,key){const m=new Map();
+ for(const f of facts){const k=f[F[key]]||'--';const s=m.get(k)||[0,0,0];
+  s[0]+=f[F.tokens];s[1]+=f[F.cost];s[2]+=f[F.msgs];m.set(k,s);}
+ return [...m.entries()].sort((a,b)=>b[1][0]-a[1][0]);}
+function uBars(facts,dim,slots,models,label){
+ const groups=uAgg(facts,dim);if(!groups.length)return[];
+ const peak=Math.max(...groups.map(g=>g[1][0]))||1;const out=[el('h2',{},label)];
+ for(const[k,v]of groups){const per=new Map();
+  for(const f of facts)if((f[F[dim]]||'--')===k)per.set(f[F.model],(per.get(f[F.model])||0)+f[F.tokens]);
+  const segs=models.filter(m=>per.get(m)).map(m=>el('i',{class:'useg',
+    title:k+' · '+m+' · '+per.get(m).toLocaleString()+' tokens',
+    style:'flex:'+per.get(m)+' 0 0;background:var(--viz-'+slots[m]+')'}));
+  const name=dim==='phase'?(k+(USAGE.phaseTitles[k]?' '+USAGE.phaseTitles[k]:(k==='--'?' unattributed':''))):k;
+  out.push(el('div',{class:'urow'},el('span',{style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'},name),
+   el('span',{class:'ustack',style:'width:'+(100*v[0]/peak).toFixed(1)+'%'},segs),
+   el('span',{class:'uamt'},uTok(v[0])+(USAGE.showCost?' · '+uCost(v[1]):''))));}
+ return out;}
+function renderUsage(){const c=$('#usage');c.textContent='';
+ const card=el('div',{class:'card'});
+ if(!USAGE||!USAGE.facts.length){
+  card.append(el('div',{class:'mut'},USAGE&&!USAGE.enabled
+   ?'Token metering is off (usage.enabled=false in .claude/audit.config.json).'
+   :'No usage recorded yet. Metering runs on Stop/SubagentStop hooks; '
+    +'`/audit:usage --backfill` reads transcripts already on disk.'),
+   el('div',{class:'mut',style:'margin-top:.3rem'},'ledger: '+((USAGE||{}).ledgerDir||'-')));
+  c.append(card);return;}
+ const facts=uFiltered();
+ const tot=facts.reduce((a,f)=>[a[0]+f[F.tokens],a[1]+f[F.cost],a[2]+f[F.msgs]],[0,0,0]);
+ const opts=(dim,cur)=>[el('option',{value:''},'all '+dim+'s')].concat(
+   [...new Set(USAGE.facts.map(f=>f[F[dim]]))].sort().map(v=>
+     el('option',Object.assign({value:v},v===cur?{selected:'selected'}:{}),v)));
+ const sel=(dim)=>el('select',{onchange:e=>{UF[dim]=e.target.value;renderUsage();}},opts(dim,UF[dim]));
+ card.append(el('div',{class:'ufil'},
+  sel('model'),sel('author'),sel('phase'),
+  el('select',{onchange:e=>{UF.range=e.target.value;renderUsage();}},
+   [['all','all time'],['7','last 7 days'],['30','last 30 days'],['90','last 90 days']]
+    .map(([v,l])=>el('option',Object.assign({value:v},v===UF.range?{selected:'selected'}:{}),l)))));
+ const tiles=[['tokens',uTok(tot[0])],['messages',tot[2].toLocaleString()]];
+ if(USAGE.showCost)tiles.splice(1,0,['equivalent cost',uCost(tot[1])]);
+ tiles.push(['rows',facts.length+(USAGE.rolled?' (daily)':'')]);
+ card.append(el('div',{class:'utiles'},tiles.map(([k,v])=>
+   el('div',{class:'utile'},el('div',{class:'k'},k),el('div',{class:'v'},v)))));
+ const slots=uSlots(USAGE.facts);
+ const models=[...new Set(facts.map(f=>f[F.model]))].sort((a,b)=>slots[a]-slots[b]);
+ if(models.length>1)card.append(el('div',{class:'ulegend'},models.map(m=>
+   el('b',{},el('i',{style:'background:var(--viz-'+slots[m]+')'}),m))));
+ if(!facts.length){card.append(el('div',{class:'mut'},'No rows match these filters.'));
+  c.append(card);return;}
+ card.append(...uBars(facts,'phase',slots,models,'By phase'));
+ card.append(...uBars(facts,'author',slots,models,'By author'));
+ card.append(...uBars(facts,'agent',slots,models,'By agent'));
+ const days=new Map();for(const f of facts){const d=f[F.ts].slice(0,10);
+  days.set(d,(days.get(d)||0)+f[F.tokens]);}
+ const ds=[...days.keys()].sort();
+ if(ds.length>1){const pk=Math.max(...days.values())||1;
+  card.append(el('h2',{},'Daily tokens'),el('div',{class:'uspark'},ds.map(d=>
+    el('i',{title:d+' · '+days.get(d).toLocaleString()+' tokens',
+      style:'height:'+Math.max(2,100*days.get(d)/pk)+'%'}))),
+   el('div',{class:'mut',style:'font-size:.72rem'},ds[0]+' → '+ds[ds.length-1]
+     +' · peak '+uTok(pk)+(USAGE.pricingAsOf?' · rates as of '+USAGE.pricingAsOf:'')));}
+ c.append(card);}
 boot().catch(e=>toast('load failed: '+e,'err'));
 </script></body></html>"""
 
@@ -1353,6 +1538,66 @@ def _selftest():
     check("composition is a compact collapsible filterable table",
           "comptools" in UI_HTML and "table.comp" in UI_HTML and "needs skills" in UI_HTML
           and "tr.phase" in UI_HTML and "class:'tsk'" not in UI_HTML)
+
+    # --- usage tab ---------------------------------------------------------
+    check("usage tab is registered and has a view container",
+          "data-t=usage" in UI_HTML and "<div id=usage" in UI_HTML
+          and "'usage'" in UI_HTML)
+    check("usage colours come from the same validated palette as the report",
+          "--viz-1:#2a78d6" in UI_HTML and "--viz-1:#3987e5" in UI_HTML)
+    check("usage slots are assigned by sorted model name, never by rank",
+          "function uSlots" in UI_HTML and ".sort()" in UI_HTML)
+    check("usage filtering is client-side (no round-trip per change)",
+          "function uFiltered" in UI_HTML and "renderUsage()" in UI_HTML)
+
+    u = usage_state(proj)
+    check("usage_state on a project with no ledger is empty, not an error",
+          u["facts"] == [] and u["totalRows"] == 0 and "ledgerDir" in u)
+    led = os.path.join(proj, ".claude", "usage")
+    os.makedirs(led, exist_ok=True)
+    with open(os.path.join(led, "2026-08.jsonl"), "w", encoding="utf-8") as fh:
+        for i, (model, author) in enumerate(
+                (("claude-opus-5", "a@x.io"), ("claude-haiku-4-5", "b@x.io"))):
+            fh.write(json.dumps({
+                "ts": "2026-08-0%dT1%d" % (i + 1, i), "sessionId": "s%d" % i,
+                "phaseId": "P1", "taskId": "P1.%d" % (i + 1), "attr": "task",
+                "model": model, "author": author, "agentType": "audit-executor",
+                "msgs": 2, "in": 5, "out": 100, "cacheW5m": 0, "cacheW1h": 0,
+                "cacheR": 50, "costUSD": 0.25}) + "\n")
+        fh.write("{ torn line\n")
+    u = usage_state(proj)
+    check("usage_state reads the ledger into positional facts",
+          len(u["facts"]) == 2 and u["fields"][0] == "ts"
+          and len(u["facts"][0]) == len(u["fields"]))
+    check("usage_state tolerates a torn ledger line", u["totalRows"] == 2)
+    check("usage_state carries phase titles for labelling",
+          isinstance(u["phaseTitles"], dict))
+    check("usage_state does not roll up a small ledger", u["rolled"] is False)
+    check("usage facts carry no prompt content — only dimensions and counts",
+          all(len(f) == 10 for f in u["facts"]))
+    _saved = globals()["_MAX_FACTS"]
+    try:
+        globals()["_MAX_FACTS"] = 1
+        ru = usage_state(proj)
+        check("oversized ledger rolls hourly facts up to daily, and says so",
+              ru["rolled"] is True and all(len(f[0]) == 10 for f in ru["facts"]))
+    finally:
+        globals()["_MAX_FACTS"] = _saved
+    _cfg_path = os.path.join(proj, ".claude", "audit.config.json")
+    _prev_cfg = (open(_cfg_path, encoding="utf-8").read()
+                 if os.path.isfile(_cfg_path) else None)
+    try:
+        with open(_cfg_path, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"enabled": False, "showCost": False}}, fh)
+        du = usage_state(proj)
+        check("usage_state reports metering off so the tab can explain itself",
+              du["enabled"] is False and du["showCost"] is False)
+    finally:
+        if _prev_cfg is None:
+            os.remove(_cfg_path)
+        else:
+            with open(_cfg_path, "w", encoding="utf-8") as fh:
+                fh.write(_prev_cfg)
 
     # lifecycle: pidfile + stop/status (no socket needed)
     check("_pid_alive on this process is True", _pid_alive(os.getpid()))

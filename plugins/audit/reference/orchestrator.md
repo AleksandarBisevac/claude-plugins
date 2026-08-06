@@ -197,7 +197,12 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
 2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the phase's manifest file — the shard when sharded).
    If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
-   `subagent_type: "audit:audit-executor"`, `model = task.model`. Pass **only** the model;
+   `subagent_type: "audit:audit-executor"`, `model = task.model`, and **`description` starting with
+   the task id** (e.g. `"P3.2 shard writer"`). The id prefix is what makes token metering exact:
+   every subagent gets its own transcript, and `meter-usage.py` reads the id back out of the
+   spawn record — so three tasks running in parallel still get three separate token totals
+   instead of collapsing to a phase average. It costs nothing and nothing breaks without it
+   (spend just falls back to phase-level), so never let it block a run. Pass **only** the model;
    do **not** set reasoning effort — effort is pinned in each audit agent's own definition
    (`effort:` in its frontmatter), deliberately **decoupled from the calling session** so an
    audit's cost/latency is reproducible no matter what effort the invoking session runs at.

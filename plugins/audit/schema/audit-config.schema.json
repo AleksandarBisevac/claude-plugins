@@ -19,7 +19,10 @@
     "exemptGlobs": {
       "type": "array",
       "description": "Globs whose edits skip the plan-first / TDD / bash-write guards (docs, tests, .claude/**, the manifest).",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "trivialLineThreshold": {
       "type": "integer",
@@ -49,7 +52,9 @@
         "extra": {
           "type": "array",
           "description": "Extra regexes matched against a path to treat it as a secret file.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -61,7 +66,10 @@
         "tokenVars": {
           "type": "array",
           "description": "Identifier names that must never be logged (console.log/print of these is blocked).",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "customRules": {
           "type": "array",
@@ -69,11 +77,25 @@
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["pathPrefix", "bannedPattern"],
+            "required": [
+              "pathPrefix",
+              "bannedPattern"
+            ],
             "properties": {
-              "pathPrefix": { "type": "string", "description": "Path prefix (project-dir-relative) the rule applies under.", "minLength": 1 },
-              "bannedPattern": { "type": "string", "description": "Regex that, if present in the new content, blocks the edit.", "minLength": 1 },
-              "message": { "type": "string", "description": "Explanation shown when the rule fires." }
+              "pathPrefix": {
+                "type": "string",
+                "description": "Path prefix (project-dir-relative) the rule applies under.",
+                "minLength": 1
+              },
+              "bannedPattern": {
+                "type": "string",
+                "description": "Regex that, if present in the new content, blocks the edit.",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "description": "Explanation shown when the rule fires."
+              }
             }
           }
         }
@@ -84,7 +106,10 @@
       "description": "Post-Bash unplanned-source-write detector.",
       "additionalProperties": true,
       "properties": {
-        "enabled": { "type": "boolean", "description": "Enable the git-status diff after Bash. Default true." }
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable the git-status diff after Bash. Default true."
+        }
       }
     },
     "tddReminder": {
@@ -92,14 +117,123 @@
       "description": "Non-blocking TDD nudge tuning.",
       "additionalProperties": true,
       "properties": {
-        "enabled": { "type": "boolean", "description": "Enable the reminder. Default true." },
-        "sourceGlobs": { "type": "array", "description": "Globs that count as source (warn candidates).", "items": { "type": "string", "minLength": 1 } },
-        "testGlobs": { "type": "array", "description": "Globs that count as tests (touching one silences the nudge).", "items": { "type": "string", "minLength": 1 } },
-        "throttleMinutes": { "type": "number", "description": "Per-session minimum gap between warnings. Default 10.", "minimum": 0 },
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable the reminder. Default true."
+        },
+        "sourceGlobs": {
+          "type": "array",
+          "description": "Globs that count as source (warn candidates).",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "testGlobs": {
+          "type": "array",
+          "description": "Globs that count as tests (touching one silences the nudge).",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "throttleMinutes": {
+          "type": "number",
+          "description": "Per-session minimum gap between warnings. Default 10.",
+          "minimum": 0
+        },
         "inProgressPolicy": {
           "type": "string",
           "description": "Interplay with in_progress audit tasks. 'skip-gate-only' (default) or 'skip-all'.",
-          "enum": ["skip-gate-only", "skip-all"]
+          "enum": [
+            "skip-gate-only",
+            "skip-all"
+          ]
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "description": "Token metering (meter-usage.py, /audit:usage). The ledger records counts, model ids, timestamps, branch and author - never prompt content.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Meter token usage. Default true."
+        },
+        "ledgerDir": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative directory holding the monthly NDJSON ledger and its scan cursors. Default '.claude/usage'. Deliberately outside stateDir, which is GC'd after 7 days."
+        },
+        "authorMode": {
+          "type": "string",
+          "enum": [
+            "email",
+            "name",
+            "hash",
+            "none"
+          ],
+          "description": "How the spender is recorded: git user.email (default), git user.name, a short salt-free sha256 ('hash', pseudonymous but still groupable), or no author at all."
+        },
+        "showCost": {
+          "type": "boolean",
+          "description": "Show equivalent API cost alongside tokens. Default true. Labelled 'equiv' because subscription plans carry no per-token bill."
+        },
+        "backfillOnFirstRun": {
+          "type": "boolean",
+          "description": "On first sight of a transcript, scan it from the start (bounded by maxScanBytes) instead of metering only from now on. Default true."
+        },
+        "maxScanBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "First-sight backfill ceiling in bytes; above it the scan seeks to EOF so the 10s hook timeout stays safe. Default 33554432 (32 MiB). '/audit:usage --backfill' has no ceiling."
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Currency label for the pricing table. Default 'USD'."
+        },
+        "pricingAsOf": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Date the shipped pricing table was accurate, surfaced in the report so a stale rate is visible."
+        },
+        "pricing": {
+          "type": "object",
+          "description": "Model id -> rate row. Lookup is exact match, then longest matching prefix (so a dated id resolves to its family), then the '_default' row.",
+          "additionalProperties": {
+            "type": "object",
+            "description": "USD per MILLION tokens for one model. Cache rates follow the published multipliers off base input: write 1.25x at the 5-minute TTL, 2x at the 1-hour TTL, read 0.1x.",
+            "additionalProperties": true,
+            "properties": {
+              "in": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Base input tokens."
+              },
+              "out": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Output tokens."
+              },
+              "cacheW5m": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Cache write, 5-minute TTL."
+              },
+              "cacheW1h": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Cache write, 1-hour TTL."
+              },
+              "cacheR": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Cache read."
+              }
+            }
+          }
         }
       }
     }

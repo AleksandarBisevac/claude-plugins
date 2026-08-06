@@ -31,6 +31,28 @@ hardcoded per hook in `hooks/hooks.json` — it cannot live in
 | `guard-bash-writes` | PostToolUse Bash + edits | silent | no-op |
 | `remind-tdd` | PostToolUse edits | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
+| `meter-usage` | Stop / SubagentStop / SessionEnd | silent | no-op |
+
+## What the usage ledger records
+
+`meter-usage` reads the session transcript to recover token counts, which Claude
+Code does not pass to hooks directly. It is worth being precise about what that
+does and does not capture, because "the plugin reads your transcript" deserves a
+straight answer:
+
+- **Recorded**, to `.claude/usage/<YYYY-MM>.jsonl`: token counts per tier, the
+  model id, an hour-resolution timestamp, the git branch, the repo directory name,
+  the session/subagent ids, the resolved phase/task, and the author.
+- **Never recorded**: prompt text, response text, thinking, tool inputs, tool
+  results, file contents, or file paths. The ledger is counts and dimensions only.
+- Transcripts are opened **read-only**; nothing is ever written back to them.
+- The author defaults to `git config user.email`. Set `usage.authorMode` to
+  `"hash"` for a pseudonymous but still groupable id, or `"none"` to drop author
+  attribution entirely.
+- The ledger is **gitignored by default** — it is local telemetry until a project
+  decides otherwise.
+- Set `usage.enabled: false` in `.claude/audit.config.json` to turn the whole thing
+  off; the hooks then return immediately.
 
 Blocking uses the canonical PreToolUse JSON protocol
 (`permissionDecision: "deny"` + reason, exit 0). Internal errors fail **open**

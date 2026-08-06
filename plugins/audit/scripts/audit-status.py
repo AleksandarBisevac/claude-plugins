@@ -197,8 +197,67 @@ def effective_bug_status(bug, task_by_id):
     return stored
 
 
-def rollup(manifest, findings, warnings):
-    """The machine-readable summary both --json and render-report consume."""
+def usage_summary(manifest, manifest_path, project_dir=None):
+    """Compact token-usage block for the rollup, or None when there is no ledger.
+
+    Kept OUT of `rollup` so that function stays a pure dict -> dict transform; the
+    ledger is I/O and belongs to the caller. Never raises: a missing, empty or
+    unreadable ledger simply means no usage key, and every consumer treats that as
+    "metering not in use" rather than an error."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "usage_ledger", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         "usage_ledger.py"))
+        ul = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ul)
+    except Exception:
+        return None
+
+    meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
+    rel = (meta_usage.get("ledgerDir")
+           if isinstance(meta_usage, dict) else None) or os.path.join(
+               ".claude", "usage")
+    if project_dir is None:
+        # The manifest conventionally lives at docs/audit/<name>.json, so the repo
+        # root is two levels up. CLAUDE_PROJECT_DIR wins when it is set.
+        project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(manifest_path))))
+    ledger_dir = rel if os.path.isabs(rel) else os.path.join(project_dir, rel)
+
+    try:
+        rows = ul.read_ledger(ledger_dir)
+    except Exception:
+        return None
+    if not rows:
+        return None
+    try:
+        total = ul.totals(rows)
+        by_phase = ul.aggregate(rows, "phase")
+        return {
+            "ledgerDir": ledger_dir,
+            "pricingAsOf": meta_usage.get("pricingAsOf")
+            if isinstance(meta_usage, dict) else None,
+            "showCost": bool(meta_usage.get("showCost", True))
+            if isinstance(meta_usage, dict) else True,
+            "totals": total,
+            "byPhase": {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
+                            "msgs": v["msgs"]} for k, v in by_phase.items()},
+            "byModel": {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
+                            "msgs": v["msgs"]}
+                        for k, v in ul.aggregate(rows, "model").items()},
+            "byAuthor": {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
+                             "msgs": v["msgs"]}
+                         for k, v in ul.aggregate(rows, "author").items()},
+        }
+    except Exception:
+        return None
+
+
+def rollup(manifest, findings, warnings, usage=None):
+    """The machine-readable summary --json, render-report and the panel consume.
+
+    `usage` is the optional block from `usage_summary()`; it is passed in rather
+    than read here so this stays a pure dict -> dict transform."""
     if not isinstance(manifest, dict):
         manifest = {}  # non-object root -> empty rollup, never an AttributeError
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
@@ -225,7 +284,7 @@ def rollup(manifest, findings, warnings):
             g["phases"] += 1
             g["done"] += e["done"]
             g["total"] += e["total"]
-    return {
+    out = {
         "valid": not findings,
         "findings": len(findings),
         "warnings": len(warnings),
@@ -239,6 +298,11 @@ def rollup(manifest, findings, warnings):
                      if _is_high_severity(b.get("severity")))},
         "ready": ready_tasks(manifest),
     }
+    # Only present when a ledger exists, so consumers can treat "no key" as
+    # "metering not in use" without a second probe.
+    if usage:
+        out["usage"] = usage
+    return out
 
 
 def evaluate_gate(summary, conditions):
@@ -351,7 +415,8 @@ def main(argv):
     except Exception as exc:  # defensive
         findings, warnings = ["internal validator error: %s" % exc], []
 
-    summary = rollup(manifest, findings, warnings)
+    summary = rollup(manifest, findings, warnings,
+                     usage=usage_summary(manifest, args[0]))
 
     if want_gate:
         failed = evaluate_gate(summary, conditions)
@@ -452,6 +517,51 @@ def _selftest():
           and s["areas"]["security"]["total"] == s["phases"][1]["total"], repr(s["areas"]))
     s0 = summarize(_fixture())
     check("ar4 untagged manifest -> empty areas (back-compat)", s0["areas"] == {})
+
+    # (u) usage block — absent unless a ledger exists, so every existing consumer
+    # keeps working untouched
+    check("u1 no ledger -> no usage key (back-compat)",
+          "usage" not in summarize(_fixture()))
+    check("u2 rollup(usage=None) omits the key",
+          "usage" not in rollup(_fixture(), [], [], usage=None))
+    fake_usage = {"ledgerDir": "/tmp/x", "totals": {"tokens": 10, "costUSD": 1.0}}
+    su = rollup(_fixture(), [], [], usage=fake_usage)
+    check("u3 rollup passes a supplied usage block straight through",
+          su["usage"] == fake_usage)
+    check("u4 usage never perturbs the rest of the rollup",
+          {k: v for k, v in su.items() if k != "usage"} == summarize(_fixture()))
+    import tempfile as _tf
+    _empty = _tf.mkdtemp(prefix="audit-status-usage-")
+    try:
+        check("u5 usage_summary tolerates a missing ledger dir",
+              usage_summary({}, os.path.join(_empty, "a", "b", "m.json")) is None)
+        os.makedirs(os.path.join(_empty, ".claude", "usage"), exist_ok=True)
+        check("u6 usage_summary tolerates an empty ledger dir",
+              usage_summary({}, os.path.join(_empty, "docs", "audit", "m.json"),
+                            project_dir=_empty) is None)
+        with open(os.path.join(_empty, ".claude", "usage", "2026-08.jsonl"),
+                  "w", encoding="utf-8") as _fh:
+            _fh.write(json.dumps({
+                "ts": "2026-08-06T07", "sessionId": "s1", "phaseId": "P1",
+                "taskId": "P1.1", "attr": "task", "model": "claude-opus-5",
+                "author": "a@b.c", "msgs": 1, "in": 10, "out": 20,
+                "cacheW5m": 0, "cacheW1h": 0, "cacheR": 5, "costUSD": 0.5}) + "\n")
+        u = usage_summary({}, os.path.join(_empty, "docs", "audit", "m.json"),
+                          project_dir=_empty)
+        check("u7 usage_summary reads a real ledger",
+              u and u["totals"]["tokens"] == 35 and u["totals"]["msgs"] == 1)
+        check("u8 usage_summary groups by phase, model and author",
+              "P1" in u["byPhase"] and "claude-opus-5" in u["byModel"]
+              and "a@b.c" in u["byAuthor"])
+        with open(os.path.join(_empty, ".claude", "usage", "2026-08.jsonl"),
+                  "a", encoding="utf-8") as _fh:
+            _fh.write("{ torn\n")
+        check("u9 usage_summary survives a torn ledger line",
+              usage_summary({}, os.path.join(_empty, "docs", "audit", "m.json"),
+                            project_dir=_empty)["totals"]["tokens"] == 35)
+    finally:
+        import shutil as _sh
+        _sh.rmtree(_empty, ignore_errors=True)
 
     # (g) gate conditions
     s = summarize(_fixture())

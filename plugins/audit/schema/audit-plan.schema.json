@@ -4,29 +4,60 @@
   "title": "Audit Plan Manifest",
   "description": "Schema for the audit orchestrator manifest (default docs/audit/audit-plan.json). All fields new in the plugin version are OPTIONAL so a pre-existing manifest validates unchanged after adding \"$schema\". additionalProperties is permissive at object levels to stay back-compatible; enums are enforced on the orchestrator-controlled fields (task/phase status, tests.mode, task.risk) to catch typos, while human-authored review fields (review.status, finding.severity) stay free-text.",
   "type": "object",
-  "required": ["meta", "phases"],
+  "required": [
+    "meta",
+    "phases"
+  ],
   "additionalProperties": true,
   "properties": {
-    "$schema": { "type": "string" },
-    "meta": { "$ref": "#/$defs/meta" },
-    "phases": { "type": "array", "items": { "$ref": "#/$defs/phase" } },
+    "$schema": {
+      "type": "string"
+    },
+    "meta": {
+      "$ref": "#/$defs/meta"
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/phase"
+      }
+    },
     "fileIndex": {
       "type": "object",
       "description": "Map of repo-relative file path -> array of task ids that touch it. Used for phase review scope and parallelization hints.",
-      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
     },
-    "deferred": { "$ref": "#/$defs/deferred" },
-    "proposals": { "type": "array", "items": { "$ref": "#/$defs/proposal" } },
+    "deferred": {
+      "$ref": "#/$defs/deferred"
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/proposal"
+      }
+    },
     "bugs": {
       "type": "array",
       "description": "Optional bug tracker. Bugs live outside phases (a reported bug is not yet a plan); /audit:bug fix materializes a bug into a tdd task in a bugfix phase, linked via bug.taskId <-> task.bugId.",
-      "items": { "$ref": "#/$defs/bug" }
+      "items": {
+        "$ref": "#/$defs/bug"
+      }
     }
   },
   "$defs": {
     "status": {
       "description": "Lifecycle state for a phase or task.",
-      "enum": ["pending", "in_progress", "blocked", "done"]
+      "enum": [
+        "pending",
+        "in_progress",
+        "blocked",
+        "done"
+      ]
     },
     "model": {
       "description": "Model tier the orchestrator spawns. Names are illustrative; adapt to your provider.",
@@ -35,14 +66,28 @@
     "meta": {
       "type": "object",
       "description": "Global configuration. version is the only strictly required field.",
-      "required": ["version"],
+      "required": [
+        "version"
+      ],
       "additionalProperties": true,
       "properties": {
-        "version": { "type": "integer", "description": "Manifest schema version. 2 = single-file layout; 3 = sharded layout (this file is the index; each phase body lives in phases/<id>.json). Readers accept both via _manifest_io." },
-        "repo": { "type": "string" },
-        "title": { "type": "string" },
-        "createdISO": { "type": "string" },
-        "node": { "type": "string", "description": "Node version hint (informational)." },
+        "version": {
+          "type": "integer",
+          "description": "Manifest schema version. 2 = single-file layout; 3 = sharded layout (this file is the index; each phase body lives in phases/<id>.json). Readers accept both via _manifest_io."
+        },
+        "repo": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "createdISO": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string",
+          "description": "Node version hint (informational)."
+        },
         "developmentBranch": {
           "type": "string",
           "description": "Parent branch audit branches fork from and ff-merge back into. Default 'main' when omitted."
@@ -53,32 +98,56 @@
         },
         "gitRoot": {
           "type": "string",
-          "description": "Path (relative to the project directory) of the git repository root, where all git operations and build/gate commands run. Default '.' (the project directory IS the git root — the normal case). Set to e.g. 'test' when the git repo / workspace lives in a subdirectory; the orchestrator then runs `git -C <gitRoot>` and strips the prefix when staging. Keep it in sync with the hooks' `gitRoot` in .claude/audit.config.json."
+          "description": "Path (relative to the project directory) of the git repository root, where all git operations and build/gate commands run. Default '.' (the project directory IS the git root \u2014 the normal case). Set to e.g. 'test' when the git repo / workspace lives in a subdirectory; the orchestrator then runs `git -C <gitRoot>` and strips the prefix when staging. Keep it in sync with the hooks' `gitRoot` in .claude/audit.config.json."
         },
         "reviewSkill": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Skill invoked at phase sign-off. null (default) => skip review; tests are the signer."
         },
         "reportSummary": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Optional plain-language narrative shown in a Summary box atop the rendered report (render-report.py). /audit:report usually supplies this via --summary-file (read-only) rather than storing it here."
         },
         "reportBasename": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Optional basename for the generated report files, e.g. 'q3-audit' => q3-audit.html/.md (default 'audit-report'). Sanitized to [A-Za-z0-9-_]; overridable per-run with render-report.py --basename."
         },
         "runtimeBoot": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "Optional runtime smoke gate. null (default) => skipped.",
           "additionalProperties": true,
           "properties": {
-            "appRootPath": { "type": "string", "description": "Source root; boot gate applies when a phase touches it." },
-            "launch": { "type": "string", "description": "How to launch (free text / command)." },
-            "verify": { "type": "string", "description": "What to verify after launch." }
+            "appRootPath": {
+              "type": "string",
+              "description": "Source root; boot gate applies when a phase touches it."
+            },
+            "launch": {
+              "type": "string",
+              "description": "How to launch (free text / command)."
+            },
+            "verify": {
+              "type": "string",
+              "description": "What to verify after launch."
+            }
           }
         },
         "nodePreamble": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Shell prefix run (un-piped) before build gates, e.g. 'source ~/.nvm/nvm.sh && nvm use'. null => run gates directly."
         },
         "commit": {
@@ -86,66 +155,166 @@
           "description": "Commit message conventions.",
           "additionalProperties": true,
           "properties": {
-            "type": { "type": "string", "description": "Default conventional-commit type, e.g. 'chore'." },
-            "coauthor": { "type": ["string", "null"], "description": "Trailer appended to commit messages, or null." }
+            "type": {
+              "type": "string",
+              "description": "Default conventional-commit type, e.g. 'chore'."
+            },
+            "coauthor": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Trailer appended to commit messages, or null."
+            }
           }
         },
         "buildCommands": {
           "type": "object",
           "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...).",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "ado": {
-          "type": ["object", "null"],
-          "description": "Azure DevOps sync configuration for /audit:sync. null/absent => sync refuses with setup guidance. Never store credentials here — auth belongs to `az login` / AZURE_DEVOPS_EXT_PAT.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Azure DevOps sync configuration for /audit:sync. null/absent => sync refuses with setup guidance. Never store credentials here \u2014 auth belongs to `az login` / AZURE_DEVOPS_EXT_PAT.",
           "additionalProperties": true,
           "properties": {
-            "organization": { "type": "string", "description": "Organization name or https://dev.azure.com/<org> URL." },
-            "project": { "type": "string" },
-            "areaPath": { "type": ["string", "null"] },
-            "iterationPath": { "type": ["string", "null"] },
+            "organization": {
+              "type": "string",
+              "description": "Organization name or https://dev.azure.com/<org> URL."
+            },
+            "project": {
+              "type": "string"
+            },
+            "areaPath": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "iterationPath": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "types": {
               "type": "object",
               "description": "Work-item type mapping. Defaults: bug -> 'Bug', task -> 'Task'.",
-              "additionalProperties": { "type": "string" },
+              "additionalProperties": {
+                "type": "string"
+              },
               "properties": {
-                "bug": { "type": "string" },
-                "task": { "type": "string" }
+                "bug": {
+                  "type": "string"
+                },
+                "task": {
+                  "type": "string"
+                }
               }
+            }
+          }
+        },
+        "usage": {
+          "type": "object",
+          "description": "Where the report/panel/status commands read token-usage data from. The hooks read their own copy from .claude/audit.config.json - that split (commands from manifest meta, hooks from the config file) is the plugin's standing convention. Both default to '.claude/usage', so the two only need to agree when a project moves the ledger.",
+          "additionalProperties": true,
+          "properties": {
+            "ledgerDir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Repo-relative directory holding the monthly NDJSON usage ledger. Default '.claude/usage'. Must match usage.ledgerDir in .claude/audit.config.json when either is customized."
+            },
+            "showCost": {
+              "type": "boolean",
+              "description": "Render equivalent API cost alongside token counts. Default true."
+            },
+            "pricingAsOf": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Date the pricing table behind the stored costs was accurate, surfaced in the report so a stale rate is visible rather than silent."
             }
           }
         }
       }
     },
     "adoLink": {
-      "type": ["object", "null"],
-      "description": "Azure DevOps work-item link, written by /audit:sync after a successful push (never by hand). Additive — absent until the first sync.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Azure DevOps work-item link, written by /audit:sync after a successful push (never by hand). Additive \u2014 absent until the first sync.",
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "integer", "description": "Work-item id in the configured project." },
-        "url": { "type": ["string", "null"], "description": "Web link to the work item." },
-        "lastSyncedAt": { "type": ["string", "null"], "description": "ISO timestamp of the last successful sync of this item." }
+        "id": {
+          "type": "integer",
+          "description": "Work-item id in the configured project."
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Web link to the work item."
+        },
+        "lastSyncedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp of the last successful sync of this item."
+        }
       }
     },
     "phase": {
       "type": "object",
       "description": "A phase. In the single-file layout it carries its full body (status + tasks + ...). In the v3 SHARDED layout the top-level phases[] holds lightweight STUBS ({id, title, shard}) that point at phases/<id>.json, where the full body lives; only id/title are required here because a stub omits status/tasks. The referential validator (validate-manifest.py) runs on the ASSEMBLED manifest and enforces that every phase ultimately has a status and tasks.",
-      "required": ["id", "title"],
+      "required": [
+        "id",
+        "title"
+      ],
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "shard": { "type": "string", "description": "v3 sharded layout: relative path (from the index) to this phase's shard file, e.g. 'phases/P2.json'. Present only on an index stub." },
-        "claim": { "$ref": "#/$defs/claim" },
-        "status": { "$ref": "#/$defs/status" },
-        "model": { "$ref": "#/$defs/model" },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "shard": {
+          "type": "string",
+          "description": "v3 sharded layout: relative path (from the index) to this phase's shard file, e.g. 'phases/P2.json'. Present only on an index stub."
+        },
+        "claim": {
+          "$ref": "#/$defs/claim"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
         "blockedBy": {
           "type": "array",
           "description": "Phase ids that must be done before this phase's tasks are ready.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "docs": { "type": "array", "items": { "type": "string" } },
-        "description": { "type": "string", "description": "Optional prose description of the phase (free text; informational)." },
+        "docs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional prose description of the phase (free text; informational)."
+        },
         "desiredOutcome": {
           "type": "string",
           "description": "One-line statement of what success looks like for the phase. Shown by /audit:status, given to every task subagent, and phase.summary must address it at sign-off."
@@ -153,146 +322,342 @@
         "testGate": {
           "type": "array",
           "description": "Commands (or 'key:project' entries resolved via meta.buildCommands) that must all pass at sign-off.",
-          "items": { "type": "string" }
-        },
-        "baseRef": { "type": ["string", "null"], "description": "HEAD SHA at phase start; set by the orchestrator." },
-        "branch": { "type": ["string", "null"], "description": "Local phase branch; set at phase start." },
-        "mergedAt": { "type": ["string", "null"], "description": "ISO timestamp after ff-merge to the development branch." },
-        "reviewSkill": { "type": ["string", "null"], "description": "Skill invoked at THIS phase's sign-off, overriding meta.reviewSkill (which is the default/fallback). Lets a monorepo review backend vs mobile vs web phases with different reviewers. null/absent => use meta.reviewSkill." },
-        "area": { "type": ["string", "array"], "items": { "type": "string" }, "description": "Free-text app/domain/concern label(s) for grouping & filtering phases in status/report/panel. A single string (a partition, e.g. 'backend') OR a list of tags for cross-cutting concerns (e.g. ['backend', 'security'] — the phase is grouped under EACH). Any vocabulary: backend/mobile/web, devops, security, embedded, data, ml, platform… Informational; the orchestrator does not act on it." },
-        "review": { "$ref": "#/$defs/review" },
-        "reviewFindings": {
-          "type": "object",
-          "description": "Legacy (pre-plugin manifests) running tally of sign-off findings — informational only; the orchestrator does not read it.",
-          "additionalProperties": true,
-          "properties": {
-            "found": { "type": "integer" },
-            "resolved": { "type": "integer" }
+          "items": {
+            "type": "string"
           }
         },
-        "summary": { "type": ["string", "null"] },
-        "tasks": { "type": "array", "items": { "$ref": "#/$defs/task" } }
+        "baseRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "HEAD SHA at phase start; set by the orchestrator."
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Local phase branch; set at phase start."
+        },
+        "mergedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp after ff-merge to the development branch."
+        },
+        "reviewSkill": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Skill invoked at THIS phase's sign-off, overriding meta.reviewSkill (which is the default/fallback). Lets a monorepo review backend vs mobile vs web phases with different reviewers. null/absent => use meta.reviewSkill."
+        },
+        "area": {
+          "type": [
+            "string",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Free-text app/domain/concern label(s) for grouping & filtering phases in status/report/panel. A single string (a partition, e.g. 'backend') OR a list of tags for cross-cutting concerns (e.g. ['backend', 'security'] \u2014 the phase is grouped under EACH). Any vocabulary: backend/mobile/web, devops, security, embedded, data, ml, platform\u2026 Informational; the orchestrator does not act on it."
+        },
+        "review": {
+          "$ref": "#/$defs/review"
+        },
+        "reviewFindings": {
+          "type": "object",
+          "description": "Legacy (pre-plugin manifests) running tally of sign-off findings \u2014 informational only; the orchestrator does not read it.",
+          "additionalProperties": true,
+          "properties": {
+            "found": {
+              "type": "integer"
+            },
+            "resolved": {
+              "type": "integer"
+            }
+          }
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/task"
+          }
+        }
       }
     },
     "task": {
       "type": "object",
-      "required": ["id", "title", "status"],
+      "required": [
+        "id",
+        "title",
+        "status"
+      ],
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "status": { "$ref": "#/$defs/status" },
-        "model": { "$ref": "#/$defs/model" },
-        "skills": { "type": "array", "items": { "type": "string" } },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "blockedBy": {
           "type": "array",
           "description": "HARD GATE (cross-phase or cross-task): task/phase ids that must be done before this task is READY. Use for phase boundaries and prerequisites.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "dependsOn": {
           "type": "array",
           "description": "INTRA-PHASE ORDERING & PARALLELIZATION: task ids that must be done first. Tasks with disjoint `files` AND satisfied `dependsOn` may run in parallel. (blockedBy = when a task may START; dependsOn = ordering among startable siblings.)",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "files": {
           "type": "array",
           "description": "Repo-relative files this task touches (optional :line-range suffix). Union across a phase = its review scope.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "docs": { "type": "array", "items": { "type": "string" } },
-        "description": { "type": "string" },
-        "tests": { "$ref": "#/$defs/tests" },
-        "outcome": { "$ref": "#/$defs/outcome" },
-        "commit": { "type": ["string", "null"], "description": "SHA of the per-task commit; null until committed." },
-        "attempts": { "type": "integer", "description": "Times this task has been spawned; incremented per execution." },
-        "maxAttempts": { "type": "integer", "description": "Stop retrying and mark 'blocked' once attempts reaches this (default 3)." },
-        "startedAt": { "type": ["string", "null"] },
-        "completedAt": { "type": ["string", "null"] },
+        "docs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string"
+        },
+        "tests": {
+          "$ref": "#/$defs/tests"
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SHA of the per-task commit; null until committed."
+        },
+        "attempts": {
+          "type": "integer",
+          "description": "Times this task has been spawned; incremented per execution."
+        },
+        "maxAttempts": {
+          "type": "integer",
+          "description": "Stop retrying and mark 'blocked' once attempts reaches this (default 3)."
+        },
+        "startedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "risk": {
           "description": "low = mechanical; med = behavior change; high = irreversible/auth/migration (never haiku, human-confirm before commit). null for historical tasks.",
-          "enum": ["low", "med", "high", null]
+          "enum": [
+            "low",
+            "med",
+            "high",
+            null
+          ]
         },
         "verifiedBy": {
           "type": "array",
           "description": "Test names/ids this task added, linking code to its guard.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "bugId": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Link to bugs[].id when this task was materialized via /audit:bug fix. The orchestrator flips that bug to 'fixed' (+fixedIn) when the task commits."
         },
-        "ado": { "$ref": "#/$defs/adoLink" }
+        "ado": {
+          "$ref": "#/$defs/adoLink"
+        }
       }
     },
     "bugStatus": {
       "description": "Bug lifecycle. in_progress = materialized into a task; fixed = that task committed.",
-      "enum": ["open", "triaged", "in_progress", "fixed", "wontfix"]
+      "enum": [
+        "open",
+        "triaged",
+        "in_progress",
+        "fixed",
+        "wontfix"
+      ]
     },
     "claim": {
       "type": "object",
       "description": "v3 optimistic parallel-run claim: which session/host/branch is running this phase. Lives in the phase shard body so a same-phase double-claim across branches shows up as a shard merge conflict. Optional; released (removed) when the phase finishes.",
       "additionalProperties": true,
       "properties": {
-        "sessionId": { "type": "string" },
-        "host": { "type": "string" },
-        "branch": { "type": "string" },
-        "at": { "type": "string", "description": "ISO timestamp the claim was taken." }
+        "sessionId": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "description": "ISO timestamp the claim was taken."
+        }
       }
     },
     "bug": {
       "type": "object",
-      "required": ["id", "title", "status"],
+      "required": [
+        "id",
+        "title",
+        "status"
+      ],
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "string", "pattern": "^BUG-\\d+$", "description": "BUG-<n>, allocated repo-wide." },
-        "title": { "type": "string" },
-        "status": { "$ref": "#/$defs/bugStatus" },
+        "id": {
+          "type": "string",
+          "pattern": "^BUG-\\d+$",
+          "description": "BUG-<n>, allocated repo-wide."
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/bugStatus"
+        },
         "severity": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Free-text (low/med/high/...), consistent with finding.severity."
         },
-        "reportedAt": { "type": ["string", "null"], "description": "ISO timestamp." },
-        "reportedBy": { "type": ["string", "null"] },
-        "description": { "type": "string" },
+        "reportedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp."
+        },
+        "reportedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
         "repro": {
           "description": "Reproduction steps: a string or array of step strings.",
           "oneOf": [
-            { "type": "string" },
-            { "type": "array", "items": { "type": "string" } }
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           ]
         },
-        "expected": { "type": "string" },
-        "actual": { "type": "string" },
+        "expected": {
+          "type": "string"
+        },
+        "actual": {
+          "type": "string"
+        },
         "files": {
           "type": "array",
           "description": "Suspected repo-relative files (optional :line-range suffix).",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "taskId": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Task materialized for this bug via /audit:bug fix; null until then."
         },
         "fixedIn": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Commit SHA of the fixing task; written by the audit orchestrator."
         },
-        "notes": { "type": ["string", "null"] },
-        "ado": { "$ref": "#/$defs/adoLink" }
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ado": {
+          "$ref": "#/$defs/adoLink"
+        }
       }
     },
     "tests": {
       "type": "object",
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "additionalProperties": true,
       "properties": {
         "mode": {
           "description": "tdd = write a failing test first (proves the bug), then fix. regression = fix, then add a locking test. gate-only = no new test; keep existing gates green.",
-          "enum": ["tdd", "regression", "gate-only"]
+          "enum": [
+            "tdd",
+            "regression",
+            "gate-only"
+          ]
         },
         "add": {
           "type": "array",
-          "description": "Assertions/tests to author. For mode 'tdd' these describe tests that MUST FAIL on current code (discover-then-fix). For mode 'regression' they describe the guard(s) added AFTER the fix. The meaning is mode-dependent — see `expectRedFirst`.",
-          "items": { "type": "string" }
+          "description": "Assertions/tests to author. For mode 'tdd' these describe tests that MUST FAIL on current code (discover-then-fix). For mode 'regression' they describe the guard(s) added AFTER the fix. The meaning is mode-dependent \u2014 see `expectRedFirst`.",
+          "items": {
+            "type": "string"
+          }
         },
         "expectRedFirst": {
           "type": "boolean",
@@ -301,53 +666,111 @@
         "gate": {
           "type": "array",
           "description": "Commands (or 'key:project' entries resolved via meta.buildCommands) that must pass.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
     "outcome": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "description": "Written by the ORCHESTRATOR (not the subagent) on completion. Overwritten on re-run.",
       "additionalProperties": true,
       "properties": {
-        "technical": { "type": ["string", "null"], "description": "What was actually done (changes, commands, test counts)." },
-        "descriptive": { "type": ["string", "null"], "description": "One-line impact summary." }
+        "technical": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What was actually done (changes, commands, test counts)."
+        },
+        "descriptive": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "One-line impact summary."
+        }
       }
     },
     "review": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": true,
       "properties": {
-        "tool": { "type": ["string", "null"] },
-        "model": { "$ref": "#/$defs/model" },
+        "tool": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
         "status": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Free-text in practice (e.g. 'pending', 'passed', 'skipped', or a descriptive note). Not enum-constrained for back-compat."
         },
         "findings": {
           "type": "array",
           "description": "Each finding is a structured object (preferred) or a plain string (legacy).",
-          "items": { "$ref": "#/$defs/finding" }
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
         },
-        "outcome": { "type": ["string", "null"] },
-        "preExistingNotCharged": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+        "outcome": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preExistingNotCharged": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        }
       }
     },
     "finding": {
       "oneOf": [
-        { "type": "string" },
+        {
+          "type": "string"
+        },
         {
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "id": { "type": ["string", "integer"] },
+            "id": {
+              "type": [
+                "string",
+                "integer"
+              ]
+            },
             "severity": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "description": "Free-text in practice (low/med/high/medium/LOW/info/...). Not enum-constrained for back-compat."
             },
-            "file": { "type": "string" },
-            "issue": { "type": "string" },
-            "resolution": { "type": "string" }
+            "file": {
+              "type": "string"
+            },
+            "issue": {
+              "type": "string"
+            },
+            "resolution": {
+              "type": "string"
+            }
           }
         }
       ]
@@ -356,21 +779,39 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "note": { "type": "string" },
-        "target": { "type": ["string", "null"] },
+        "note": {
+          "type": "string"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "items": {
           "type": "array",
           "description": "Each item is a structured object (preferred) or a plain string (legacy).",
           "items": {
             "oneOf": [
-              { "type": "string" },
+              {
+                "type": "string"
+              },
               {
                 "type": "object",
                 "additionalProperties": true,
                 "properties": {
-                  "title": { "type": "string" },
-                  "reason": { "type": "string" },
-                  "target": { "type": ["string", "null"] }
+                  "title": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
                 }
               }
             ]
@@ -382,14 +823,33 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "status": { "type": "string" },
-        "origin": { "type": "string" },
-        "scope": { "type": "string" },
-        "benefit": { "type": "string" },
-        "technicalNote": { "type": "string" },
-        "openQuestions": { "type": "array", "items": { "type": "string" } }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "benefit": {
+          "type": "string"
+        },
+        "technicalNote": {
+          "type": "string"
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     }
   }

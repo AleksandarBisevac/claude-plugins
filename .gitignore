@@ -4,7 +4,18 @@ __pycache__/
 node_modules/
 *.log
 
+# Playwright MCP scratch (visual verification of the report + panel)
+.playwright-mcp/
+
 # audit plugin runtime artifacts (this repo dogfoods its own manifest)
 docs/audit/*.lock
 docs/audit/audit-report.html
 docs/audit/audit-report.md
+
+# Token-usage ledger. Local by default: it records counts, model ids, timestamps,
+# branch and author - never prompt content - but it is per-developer telemetry and
+# most repos will not want it in history. To share it across a team instead, delete
+# this line and add `*.jsonl merge=union` to .gitattributes: the ledger is
+# append-only NDJSON, so a union merge resolves concurrent appends cleanly, and the
+# `author` on every row is what makes cross-developer analytics work.
+.claude/usage/

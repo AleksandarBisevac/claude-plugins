@@ -1,7 +1,7 @@
 {
   "name": "audit",
-  "version": "0.16.0",
-  "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline. Ships /audit:status|next|run|phase|review|resume|report (execution), /audit:init (multi-agent manifest generation), /audit:task (task creation), /audit:bug (bug tracking with red-first TDD fixes), /audit:sync (Azure DevOps work-item sync), /audit:panel (local config + composition control panel with skill/agent discovery), /audit:migrate (convert to the sharded manifest layout for fewer tokens + parallel-safe phases), /audit:worktree (set up a git worktree for a phase to run it in a parallel session), plus plan-first + secret-safety + token-logging + TDD-reminder guard hooks. Parameterized per-repo via .claude/audit.config.json — no company/project coupling.",
+  "version": "0.17.0",
+  "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline. Ships /audit:status|next|run|phase|review|resume|report (execution), /audit:init (multi-agent manifest generation), /audit:task (task creation), /audit:bug (bug tracking with red-first TDD fixes), /audit:sync (Azure DevOps work-item sync), /audit:usage (token spend attributed by phase/task/model/author, with cache economics and trend), /audit:panel (local config + composition + usage control panel with skill/agent discovery), /audit:migrate (convert to the sharded manifest layout for fewer tokens + parallel-safe phases), /audit:worktree (set up a git worktree for a phase to run it in a parallel session), plus plan-first + secret-safety + token-logging + TDD-reminder guard hooks. Parameterized per-repo via .claude/audit.config.json \u2014 no company/project coupling.",
   "author": {
     "name": "Aleksandar Bisevac",
     "email": "alek.bisevac@gmail.com"
@@ -18,6 +18,9 @@
     "manifest",
     "bugs",
     "tasks",
-    "multi-agent"
+    "multi-agent",
+    "token-usage",
+    "cost-tracking",
+    "analytics"
   ]
 }

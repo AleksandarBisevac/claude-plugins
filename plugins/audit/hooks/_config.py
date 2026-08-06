@@ -38,6 +38,10 @@ Config keys (all optional; defaults in DEFAULTS below):
   tddReminder             obj   — non-blocking TDD nudge (remind-tdd.py):
         enabled (bool), sourceGlobs [str], testGlobs [str], throttleMinutes (int),
         inProgressPolicy ("skip-gate-only" | "skip-all" | "warn-always")
+  usage                   obj   — token metering (meter-usage.py, /audit:usage):
+        enabled (bool), ledgerDir (str), authorMode ("email"|"name"|"hash"|"none"),
+        showCost (bool), backfillOnFirstRun (bool), maxScanBytes (int),
+        currency (str), pricingAsOf (str), pricing (obj: model -> USD per MTok)
 
 This module also hosts the path/manifest helpers shared by require-plan.py and
 remind-tdd.py (rel_path, matches_exempt, strip_line_suffix, in_progress_*).
@@ -84,6 +88,39 @@ DEFAULTS = {
         ],
         "throttleMinutes": 10,
         "inProgressPolicy": "skip-gate-only",
+    },
+    # Token metering. `pricing` is USD per MILLION tokens and lives in config on
+    # purpose: model rates change, and a stale rate should be a one-line fix in the
+    # consuming repo rather than a plugin release. Cache rates follow the published
+    # multipliers off base input — write 1.25x at the 5-minute TTL, 2x at the
+    # 1-hour TTL, read 0.1x. Keep in sync with scripts/usage_ledger.py
+    # DEFAULT_PRICING, which mirrors this so the module works standalone.
+    "usage": {
+        "enabled": True,
+        "ledgerDir": ".claude/usage",
+        "authorMode": "email",
+        "showCost": True,
+        "backfillOnFirstRun": True,
+        "maxScanBytes": 33554432,
+        "currency": "USD",
+        "pricingAsOf": "2026-08-06",
+        # `_default` is Opus-tier on purpose: an unrecognized model is far more
+        # likely to be a new frontier release than a cheap one, and over-stating
+        # spend is the safer error for a cost display.
+        "pricing": {
+            "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+            "claude-fable-5":    {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+            "claude-mythos-5":   {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+            "claude-opus-5":     {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+            "claude-opus-4-8":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+            "claude-opus-4-7":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+            "claude-opus-4-6":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+            "claude-opus-4-5":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+            "claude-sonnet-5":   {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+            "claude-sonnet-4-6": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+            "claude-sonnet-4-5": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+            "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
+        },
     },
 }
 
@@ -166,6 +203,39 @@ def state_dir(root, cfg):
 
 def logs_dir(root, cfg):
     return root / (cfg.get("logsDir") or DEFAULTS["logsDir"])
+
+
+def usage_cfg(cfg):
+    """The merged `usage` block, defaults filled in. Never raises."""
+    try:
+        merged = copy.deepcopy(DEFAULTS["usage"])
+        block = (cfg or {}).get("usage")
+        if isinstance(block, dict):
+            for k, v in block.items():
+                if k == "pricing" and isinstance(v, dict):
+                    merged["pricing"].update(copy.deepcopy(v))
+                else:
+                    merged[k] = copy.deepcopy(v)
+        return merged
+    except Exception:
+        return copy.deepcopy(DEFAULTS["usage"])
+
+
+def usage_enabled(cfg):
+    try:
+        return bool(usage_cfg(cfg).get("enabled", True))
+    except Exception:
+        return True
+
+
+def ledger_dir(root, cfg):
+    """Absolute path of the usage ledger directory (repo-relative in config).
+
+    Deliberately NOT under `stateDir`: that tree is garbage-collected after 7 days
+    by detect-plan-skip.py, and the ledger's scan cursors must outlive it or a lost
+    cursor would re-scan from offset 0 and double-count."""
+    return Path(root) / (usage_cfg(cfg).get("ledgerDir")
+                         or DEFAULTS["usage"]["ledgerDir"])
 
 
 def token_vars(cfg):
@@ -382,6 +452,24 @@ def _selftest() -> int:
           and cfg["guardEdits"]["customRules"] == []
           and "_configError" not in cfg)
 
+    # (b2) the usage block merges per-key, and a partial `pricing` override keeps
+    # the shipped rows for every model it doesn't mention
+    (cdir / "audit.config.json").write_text(
+        json.dumps({"usage": {"showCost": False,
+                              "pricing": {"claude-opus-5": {"in": 9.0, "out": 9.0}}}}),
+        encoding="utf-8")
+    cfg = load(tmp)
+    u = usage_cfg(cfg)
+    check("b2 usage merges without dropping siblings",
+          u["showCost"] is False and u["enabled"] is True
+          and u["pricing"]["claude-opus-5"]["in"] == 9.0
+          and u["pricing"]["claude-haiku-4-5"]["in"] == 1.0)
+    check("b3 ledger_dir is repo-relative and outside stateDir",
+          str(ledger_dir(tmp, cfg)).endswith(".claude/usage".replace("/", os.sep)))
+    check("b4 usage_enabled defaults true", usage_enabled({}) is True)
+    check("b5 usage_enabled honours an explicit false",
+          usage_enabled({"usage": {"enabled": False}}) is False)
+
     # (c) malformed JSON → defaults + _configError (NOT silent)
     (cdir / "audit.config.json").write_text("{not json", encoding="utf-8")
     cfg = load(tmp)
@@ -399,6 +487,10 @@ def _selftest() -> int:
     cfg["exemptGlobs"].append("MUTATED")
     cfg["guardEdits"]["tokenVars"].append("MUTATED")
     cfg["tddReminder"]["sourceGlobs"].append("MUTATED")
+    cfg["usage"]["pricing"]["_default"]["in"] = 999.0
+    check("e0 usage_cfg() does not alias DEFAULTS",
+          DEFAULTS["usage"]["pricing"]["_default"]["in"] == 5.0
+          and usage_cfg({})["pricing"]["_default"]["in"] == 5.0)
     check("e1 loaded cfg does not alias DEFAULTS",
           "MUTATED" not in DEFAULTS["exemptGlobs"]
           and "MUTATED" not in DEFAULTS["guardEdits"]["tokenVars"]

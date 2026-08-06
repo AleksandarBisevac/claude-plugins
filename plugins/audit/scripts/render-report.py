@@ -49,6 +49,17 @@ _CSS = """
   --chip-ink:#ffffff;
   --rk-low-bg:#dcfce7;--rk-low-fg:#166534;--rk-med-bg:#fef9c3;--rk-med-fg:#854d0e;
   --rk-high-bg:#fee2e2;--rk-high-fg:#b91c1c;
+  /* Usage viz. Categorical slots carry MODEL identity (assigned by name, never by
+     rank, so a filter can't repaint the survivors). Palette validated for CVD and
+     contrast against this report's own surfaces with the dataviz validator:
+     light worst-adjacent CVD dE 9.1 / normal-vision 19.6 - dark 8.4 / 19.3. Three
+     light slots sit under 3:1, which the per-phase token/cost table relieves. */
+  --viz-1:#2a78d6;--viz-2:#eb6834;--viz-3:#1baf7a;--viz-4:#eda100;
+  --viz-5:#e87ba4;--viz-6:#008300;--viz-7:#4a3aa7;--viz-8:#e34948;
+  /* Sequential single-hue ramp for the day x hour heatmap: light -> dark, zero
+     recedes into the surface. Never a rainbow. */
+  --hm-0:#eef2f7;--hm-1:#cde2fb;--hm-2:#9ec5f4;--hm-3:#6da7ec;
+  --hm-4:#3987e5;--hm-5:#256abf;--hm-6:#0d366b;--hm-ink:#ffffff;
   --radius:9px;--radius-lg:14px;--pill:999px;
   --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
   --shadow-md:0 10px 30px rgba(15,23,42,.14);
@@ -62,6 +73,12 @@ _CSS = """
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
+  --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
+  --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
+  /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
+     zero still recedes into the surface, so the ramp runs dark -> light. */
+  --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
+  --hm-4:#2a78d6;--hm-5:#5598e7;--hm-6:#9ec5f4;--hm-ink:#07130f;
   --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)
 }}
 :root[data-theme="dark"]{
@@ -71,6 +88,12 @@ _CSS = """
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
+  --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
+  --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
+  /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
+     zero still recedes into the surface, so the ramp runs dark -> light. */
+  --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
+  --hm-4:#2a78d6;--hm-5:#5598e7;--hm-6:#9ec5f4;--hm-ink:#07130f;
   --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)
 }
 /* one status token drives both the pipeline rail and the status chip */
@@ -251,6 +274,66 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   thead th{position:static!important}
   table.phases,table.data{box-shadow:none}
   a[href]{color:inherit;text-decoration:none}
+  .tiles,.uphase,.hm,.cols{break-inside:avoid}
+  .seg,.hm i,.cols rect{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}
+
+/* ---- usage section ---------------------------------------------------------
+   Every mark here is hand-rolled CSS/SVG: the report ships as one self-contained
+   file with zero network fetches (selftest x5 pins that), so a chart library is
+   not an option. Marks follow the house spec - thin, 4px rounded data-end square
+   at the baseline, 2px surface gaps doing the separating, hairline recessive
+   grid, and text in text tokens rather than the series color. */
+.tiles{display:flex;flex-wrap:wrap;gap:.7rem;margin:.9rem 0 1.3rem}
+.tile{flex:1 1 8.5rem;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:.7rem .9rem;box-shadow:var(--shadow-sm)}
+.tile .k{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--muted)}
+/* Proportional figures on purpose: tabular-nums makes a big standalone value
+   look loose. Columns of numbers below keep tabular alignment. */
+.tile .v{font-size:1.55rem;font-weight:680;letter-spacing:-.02em;line-height:1.15;
+  margin-top:.15rem}
+.tile .s{font-size:.72rem;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.2rem 0 .9rem;
+  font-size:.78rem;color:var(--muted)}
+.legend b{display:inline-flex;align-items:center;gap:.35rem;font-weight:500;
+  color:var(--text)}
+.legend i{width:.62rem;height:.62rem;border-radius:3px;display:inline-block}
+.uphase{display:grid;grid-template-columns:minmax(6rem,13rem) 1fr auto;
+  gap:.5rem .8rem;align-items:center;margin:.34rem 0}
+.uphase .nm{font-size:.83rem;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.uphase .amt{font-size:.78rem;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Stacked bar: the 2px flex gap IS the separator - no strokes around segments. */
+.stack{display:flex;gap:2px;height:14px;align-items:stretch}
+.seg{min-width:2px;border-radius:1px}
+.seg:last-child{border-radius:1px 4px 4px 1px}
+.cols{width:100%;height:120px;display:block;overflow:visible}
+.cols .grid{stroke:var(--border);stroke-width:1;fill:none}
+.cols .col{fill:var(--viz-1)}
+.cols text{fill:var(--muted);font-size:9px;font-family:var(--sans)}
+.hmwrap{overflow-x:auto}
+.hm{border-collapse:separate;border-spacing:2px;font-size:.62rem;
+  color:var(--muted)}
+/* The report's global `thead th` is sticky for the long phases table; a 7-row
+   heatmap must opt out or its hour ruler detaches and floats over the grid. */
+.hm thead th{position:static;background:none;border:0;padding:0 .2rem}
+.hm th{font-weight:500;color:var(--muted);padding:0 .2rem;text-align:right;
+  white-space:nowrap}
+.hm td{padding:0}
+.hm i{display:block;width:20px;height:15px;border-radius:2px;
+  background:var(--hm-0)}
+.hm i[data-l="1"]{background:var(--hm-1)}.hm i[data-l="2"]{background:var(--hm-2)}
+.hm i[data-l="3"]{background:var(--hm-3)}.hm i[data-l="4"]{background:var(--hm-4)}
+.hm i[data-l="5"]{background:var(--hm-5)}.hm i[data-l="6"]{background:var(--hm-6)}
+.hmkey{display:flex;align-items:center;gap:.3rem;font-size:.7rem;
+  color:var(--muted);margin-top:.4rem}
+.hmkey i{width:20px;height:15px;border-radius:2px;display:inline-block}
+.stale{color:var(--st-blocked)}
+@media (max-width:40rem){
+  .uphase{grid-template-columns:1fr;gap:.15rem}
+  .uphase .amt{text-align:left}
 }
 """
 
@@ -609,7 +692,256 @@ def _bar(done, total):
             '<span class="muted">%d/%d</span>' % (pct, done, total))
 
 
-def render_html(manifest, summary, basename="audit-report"):
+def load_usage(manifest, manifest_path, project_dir=None):
+    """Everything the Usage section plots, read straight from the ledger.
+
+    Deliberately NOT taken from `audit-status.rollup`: the rollup is printed into a
+    model's context by /audit:status, so the bulky series (day x hour heatmap,
+    daily trend, phase x model cross-tab) are computed here in Python instead of
+    being carried through a JSON payload nobody reads. Returns None when there is
+    no ledger — the section then renders as nothing at all."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
+        ul = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ul)
+    except Exception:
+        return None
+
+    meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
+    if not isinstance(meta_usage, dict):
+        meta_usage = {}
+    rel = meta_usage.get("ledgerDir") or os.path.join(".claude", "usage")
+    if project_dir is None:
+        project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(manifest_path))))
+    ledger_dir = rel if os.path.isabs(rel) else os.path.join(project_dir, rel)
+
+    try:
+        rows = ul.read_ledger(ledger_dir)
+        if not rows:
+            return None
+
+        def slim(by):
+            return {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
+                        "msgs": v["msgs"]}
+                    for k, v in ul.aggregate(rows, by).items()}
+
+        phase_model = {}
+        for r in rows:
+            pid = r.get("phaseId") or "--"
+            model = r.get("model") or "unknown"
+            n = sum(int(r.get(k) or 0) for k in ul.TOKEN_KEYS)
+            phase_model.setdefault(pid, {})
+            phase_model[pid][model] = phase_model[pid].get(model, 0) + n
+
+        titles = {}
+        for ph in ((manifest or {}).get("phases") or []):
+            if isinstance(ph, dict) and ph.get("id"):
+                titles[ph["id"]] = ph.get("title") or ""
+
+        return {
+            "totals": ul.totals(rows),
+            "byPhase": slim("phase"),
+            "byModel": slim("model"),
+            "byAuthor": slim("author"),
+            "byAgent": slim("agent"),
+            "phaseModel": phase_model,
+            "phaseTitles": titles,
+            "daily": {k: v["tokens"] for k, v in ul.aggregate(rows, "day").items()
+                      if k != "unknown"},
+            "heatmap": ul.heatmap(rows),
+            "showCost": bool(meta_usage.get("showCost", True)),
+            "pricingAsOf": meta_usage.get("pricingAsOf"),
+        }
+    except Exception:
+        return None
+
+
+VIZ_SLOTS = 8
+
+
+def _fmt_tokens(n):
+    n = int(n or 0)
+    for limit, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
+        if abs(n) >= limit:
+            return "%.1f%s" % (n / float(limit), suffix)
+    return str(n)
+
+
+def _fmt_cost(x):
+    x = float(x or 0.0)
+    if x and abs(x) < 0.01:
+        return "<$0.01"
+    return "$%.2f" % x
+
+
+def _model_slots(models):
+    """model -> categorical slot, assigned by NAME (sorted), never by rank.
+
+    Colour follows the entity: filtering or re-sorting the chart must not repaint
+    the survivors. Past 8 models the tail folds into one 'other' slot rather than
+    generating a 9th hue nothing can distinguish."""
+    ordered = sorted(models)
+    slots = {}
+    for i, m in enumerate(ordered):
+        slots[m] = (i + 1) if i < VIZ_SLOTS else VIZ_SLOTS
+    return slots
+
+
+def _usage_tiles(u):
+    t = u["totals"]
+    tiles = [("total tokens", _fmt_tokens(t["tokens"]),
+              "%s msgs across %d session(s)" % ("{:,}".format(t["msgs"]),
+                                                t["sessions"]))]
+    if u.get("showCost", True):
+        asof = u.get("pricingAsOf")
+        tiles.append(("equivalent cost", _fmt_cost(t["costUSD"]),
+                      "at %s rates" % e(asof) if asof else "no per-token bill on a subscription"))
+    tiles.append(("cache hit", "%.0f%%" % t["cacheHitPct"],
+                  "%s read vs %s written" % (_fmt_tokens(t["cacheR"]),
+                                             _fmt_tokens(t["cacheW5m"] + t["cacheW1h"]))))
+    tiles.append(("output tokens", _fmt_tokens(t["out"]),
+                  "%s in, uncached" % _fmt_tokens(t["in"])))
+    if t["authors"] > 1:
+        tiles.append(("authors", str(t["authors"]), "%d task(s) attributed" % t["tasks"]))
+    return ('<div class="tiles">%s</div>' % "".join(
+        '<div class="tile"><div class="k">%s</div><div class="v">%s</div>'
+        '<div class="s">%s</div></div>' % (e(k), e(v), s if s.startswith("at ") else e(s))
+        for k, v, s in tiles))
+
+
+def _usage_section(u):
+    """The Usage block: stat tiles, a per-phase stacked bar by model, a daily
+    column chart and a day x hour heatmap. Returns '' when there is no ledger."""
+    if not u or not u.get("totals", {}).get("tokens"):
+        return ""
+    out = ['<h2 id="usage">Usage</h2>']
+    out.append(_usage_tiles(u))
+
+    slots = _model_slots(u["byModel"].keys())
+    # Draw order is SLOT order, not magnitude order. The palette's CVD separation is
+    # only validated for ADJACENT slot pairs (1-2, 2-3, 3-4, ...); sorting segments
+    # by size would put arbitrary pairs side by side — orange beside yellow, say,
+    # which the palette notes as failing the separation floor. Slot order keeps the
+    # rendered adjacency identical to the validated adjacency, and has the bonus
+    # that a model holds its position across every bar.
+    models = sorted(u["byModel"], key=lambda m: slots[m])
+    # A legend is the dependable identity channel whenever more than one series is
+    # on screen; with one model the heading already says what is plotted.
+    if len(models) > 1:
+        out.append('<div class="legend">%s</div>' % "".join(
+            '<b><i style="background:var(--viz-%d)"></i>%s</b>' % (slots[m], e(m))
+            for m in models))
+
+    phases = sorted(u["phaseModel"].items(),
+                    key=lambda kv: -sum(kv[1].values()))
+    if phases:
+        peak = max(sum(v.values()) for _, v in phases) or 1
+        out.append('<h3 class="sub">Tokens by phase</h3>')
+        for pid, per_model in phases:
+            total = sum(per_model.values())
+            label = u["phaseTitles"].get(pid) or (
+                "unattributed" if pid == "--" else "")
+            segs = []
+            for m in models:
+                n = per_model.get(m, 0)
+                if not n:
+                    continue
+                segs.append(
+                    '<i class="seg" style="flex:%d 0 0;background:var(--viz-%d)" '
+                    'title="%s - %s - %s tokens"></i>'
+                    % (n, slots[m], e(pid), e(m), "{:,}".format(n)))
+            cost = (" &middot; %s" % e(_fmt_cost(u["byPhase"][pid]["costUSD"]))
+                    if u.get("showCost", True) and pid in u["byPhase"] else "")
+            out.append(
+                '<div class="uphase"><span class="nm"><span class="mono">%s</span> %s</span>'
+                '<span class="stack" style="width:%.1f%%" role="img" '
+                'aria-label="%s: %s tokens">%s</span>'
+                '<span class="amt">%s%s</span></div>'
+                % (e(pid), e(label), 100.0 * total / peak, e(pid),
+                   "{:,}".format(total), "".join(segs),
+                   e(_fmt_tokens(total)), cost))
+
+    out.append(_usage_trend(u))
+    out.append(_usage_heatmap(u))
+    return "".join(out)
+
+
+def _usage_trend(u):
+    """Daily column chart. Columns cap at 24px thick, 4px rounded cap, square at
+    the baseline; one hairline gridline at the peak carries the scale."""
+    daily = u.get("daily") or {}
+    days = sorted(daily)
+    if len(days) < 2:
+        return ""
+    w, h, pad_b, pad_t = 720.0, 120.0, 18.0, 10.0
+    peak = max(daily[d] for d in days) or 1
+    slot = w / len(days)
+    bw = min(24.0, max(2.0, slot - 2.0))
+    plot = h - pad_b - pad_t
+    bars, labels = [], []
+    every = max(1, len(days) // 12)
+    for i, d in enumerate(days):
+        n = daily[d]
+        bh = max(1.0, plot * n / peak)
+        x = i * slot + (slot - bw) / 2.0
+        y = pad_t + plot - bh
+        r = min(4.0, bw / 2.0, bh)
+        bars.append(
+            '<path class="col" d="M%.1f %.1fL%.1f %.1fQ%.1f %.1f %.1f %.1f'
+            'L%.1f %.1fQ%.1f %.1f %.1f %.1fL%.1f %.1fZ">'
+            '<title>%s - %s tokens</title></path>'
+            % (x, y + bh, x, y + r, x, y, x + r, y,
+               x + bw - r, y, x + bw, y, x + bw, y + r, x + bw, y + bh,
+               e(d), "{:,}".format(n)))
+        if i % every == 0 or i == len(days) - 1:
+            labels.append('<text x="%.1f" y="%.1f" text-anchor="middle">%s</text>'
+                          % (x + bw / 2.0, h - 5, e(d[5:])))
+    return ('<h3 class="sub">Daily tokens</h3>'
+            '<svg class="cols" viewBox="0 0 %d %d" preserveAspectRatio="none" '
+            'role="img" aria-label="Daily token usage, peak %s tokens">'
+            '<line class="grid" x1="0" y1="%.1f" x2="%d" y2="%.1f"></line>'
+            '%s%s</svg>'
+            '<p class="muted" style="font-size:.75rem;margin:.1rem 0 0">'
+            'peak %s tokens on %s</p>'
+            % (int(w), int(h), "{:,}".format(peak), pad_t, int(w), pad_t,
+               "".join(bars), "".join(labels), e(_fmt_tokens(peak)),
+               e(max(days, key=lambda d: daily[d]))))
+
+
+_WDAY = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _usage_heatmap(u):
+    """Day-of-week x hour grid on a single-hue sequential ramp (never a rainbow).
+    Zero recedes into the surface; a scale key makes the encoding readable."""
+    grid = u.get("heatmap") or []
+    if len(grid) != 7:
+        return ""
+    peak = max((max(row) for row in grid), default=0)
+    if not peak:
+        return ""
+    rows = []
+    for d in range(7):
+        cells = []
+        for hh in range(24):
+            n = grid[d][hh]
+            level = 0 if not n else min(6, 1 + int(5.0 * n / peak))
+            cells.append('<td><i data-l="%d" title="%s %02d:00 - %s tokens">'
+                         "</i></td>" % (level, _WDAY[d], hh, "{:,}".format(n)))
+        rows.append("<tr><th>%s</th>%s</tr>" % (_WDAY[d], "".join(cells)))
+    ticks = "".join('<th>%s</th>' % (str(h).zfill(2) if h % 6 == 0 else "")
+                    for h in range(24))
+    key = "".join('<i style="background:var(--hm-%d)"></i>' % i for i in range(7))
+    return ('<h3 class="sub">When the tokens are spent (UTC)</h3>'
+            '<div class="hmwrap"><table class="hm"><thead><tr><th></th>%s</tr>'
+            "</thead><tbody>%s</tbody></table></div>"
+            '<p class="hmkey">0 %s %s tokens/hour</p>'
+            % (ticks, "".join(rows), key, e(_fmt_tokens(peak))))
+
+
+def render_html(manifest, summary, basename="audit-report", usage=None):
     meta = manifest.get("meta") or {}
     now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
     # doctype + charset so the file renders standalone (not quirks mode) and its
@@ -700,6 +1032,8 @@ def render_html(manifest, summary, basename="audit-report"):
                    _timing_cell(t), _ado_cell(t), e(_outcome_text(t))))
     out.append("</tbody></table></div>")
 
+    out.append(_usage_section(usage))
+
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
         task_by_id = _tasks_by_id(manifest)
@@ -727,7 +1061,7 @@ def render_html(manifest, summary, basename="audit-report"):
     # standalone file. base64 (not raw text) keeps any manifest HTML/`</script>`
     # out of the page and preserves UTF-8 exactly.
     md_b64 = base64.b64encode(
-        render_md(manifest, summary).encode("utf-8")).decode("ascii")
+        render_md(manifest, summary, usage).encode("utf-8")).decode("ascii")
     # basename is sanitized to [A-Za-z0-9-_], so it is safe in a JS string literal.
     out.append('<script>window.AUDIT_MD_B64="%s";window.AUDIT_MD_NAME="%s.md";</script>'
                % (md_b64, basename))
@@ -735,7 +1069,52 @@ def render_html(manifest, summary, basename="audit-report"):
     return "\n".join(out) + "\n"
 
 
-def render_md(manifest, summary):
+def _md(v):
+    """Markdown cell escaper — same contract as render_md's local `cell`: only the
+    metacharacters that would break a pipe table."""
+    return str(v if v is not None else "—").replace("|", "\\|").replace("\n", " ")
+
+
+def _usage_md(u):
+    """The table view of the Usage section. This is not decoration: three light-mode
+    categorical slots sit under 3:1 contrast, and the documented relief for that is
+    a table carrying the same numbers. It also keeps the Markdown twin honest."""
+    if not u or not u.get("totals", {}).get("tokens"):
+        return ""
+    t = u["totals"]
+    show_cost = u.get("showCost", True)
+    lines = ["", "## Usage", ""]
+    head = "**Total:** %s tokens" % _fmt_tokens(t["tokens"])
+    if show_cost:
+        head += " · ~%s equiv" % _fmt_cost(t["costUSD"])
+    head += " · %s msgs · %d session(s) · cache hit %.0f%%" % (
+        "{:,}".format(t["msgs"]), t["sessions"], t["cacheHitPct"])
+    if u.get("pricingAsOf"):
+        head += " · rates as of %s" % u["pricingAsOf"]
+    lines += [head, ""]
+
+    def block(title, data, key_label):
+        if not data:
+            return []
+        cols = "| %s | tokens | %smsgs |" % (key_label, "cost | " if show_cost else "")
+        sep = "|---|---:|%s---:|" % ("---:|" if show_cost else "")
+        rows = []
+        for k, v in sorted(data.items(), key=lambda kv: -kv[1]["tokens"]):
+            cells = [k, "{:,}".format(v["tokens"])]
+            if show_cost:
+                cells.append(_fmt_cost(v["costUSD"]))
+            cells.append("{:,}".format(v["msgs"]))
+            rows.append("| %s |" % " | ".join(_md(c) for c in cells))
+        return ["### %s" % title, "", cols, sep] + rows + [""]
+
+    lines += block("By phase", u["byPhase"], "phase")
+    lines += block("By model", u["byModel"], "model")
+    if len(u.get("byAuthor") or {}) > 1:
+        lines += block("By author", u["byAuthor"], "author")
+    return "\n".join(lines)
+
+
+def render_md(manifest, summary, usage=None):
     """Markdown twin of render_html. Only Markdown metacharacters (pipes,
     newlines) are escaped here — raw HTML inside manifest strings is passed
     through and relies on the Markdown renderer (e.g. GitHub) to sanitise it.
@@ -797,6 +1176,9 @@ def render_md(manifest, summary):
         out.append("")
     if summary["ready"]:
         out += ["## Ready now", "", ", ".join(cell(r) for r in summary["ready"]), ""]
+    usage_md = _usage_md(usage)
+    if usage_md:
+        out.append(usage_md)
     return "\n".join(out)
 
 
@@ -862,6 +1244,7 @@ def main(argv):
     except Exception as exc:  # defensive
         findings, warnings = ["internal validator error: %s" % exc], []
     summary = lib.rollup(manifest, findings, warnings)
+    usage = load_usage(manifest, manifest_path)
 
     basename = _report_basename(manifest.get("meta"), cli_basename)
     out_dir = out_dir or (os.path.dirname(os.path.abspath(manifest_path)) or ".")
@@ -870,12 +1253,12 @@ def main(argv):
     if fmt in ("html", "both"):
         p = os.path.join(out_dir, basename + ".html")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_html(manifest, summary, basename))
+            fh.write(render_html(manifest, summary, basename, usage))
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_md(manifest, summary))
+            fh.write(render_md(manifest, summary, usage))
         written.append(p)
     for p in written:
         print("wrote %s" % p)
@@ -949,6 +1332,71 @@ def _selftest():
     _s = _s.replace('href="https://dev.azure.com/o/p/_workitems/edit/42"', "")
     check("x5 zero external fetches (ado link + embedded md blob excluded)",
           "http" not in _s)
+    # --- usage section ---------------------------------------------------------
+    check("u1 no ledger -> no Usage section at all (back-compat)",
+          'id="usage"' not in html_out and "## Usage" not in md_out)
+    _u = {
+        "totals": {"tokens": 1_500_000, "in": 1000, "out": 200_000,
+                   "cacheW5m": 100_000, "cacheW1h": 0, "cacheR": 1_199_000,
+                   "msgs": 42, "costUSD": 12.3456, "sessions": 3, "authors": 2,
+                   "models": 2, "tasks": 4, "phases": 2, "cacheHitPct": 79.9},
+        "byPhase": {"P1": {"tokens": 1_000_000, "costUSD": 8.0, "msgs": 30},
+                    "--": {"tokens": 500_000, "costUSD": 4.3456, "msgs": 12}},
+        "byModel": {"claude-opus-5": {"tokens": 900_000, "costUSD": 9.0, "msgs": 20},
+                    "claude-haiku-4-5": {"tokens": 600_000, "costUSD": 3.3, "msgs": 22}},
+        "byAuthor": {"a@x.io": {"tokens": 1_000_000, "costUSD": 8.0, "msgs": 30},
+                     "b@x.io": {"tokens": 500_000, "costUSD": 4.3, "msgs": 12}},
+        "byAgent": {}, "phaseTitles": {"P1": "Alpha"},
+        "phaseModel": {"P1": {"claude-opus-5": 900_000, "claude-haiku-4-5": 100_000},
+                       "--": {"claude-haiku-4-5": 500_000}},
+        "daily": {"2026-08-01": 900_000, "2026-08-02": 600_000},
+        "heatmap": [[0] * 24 for _ in range(7)],
+        "showCost": True, "pricingAsOf": "2026-08-06",
+    }
+    _u["heatmap"][2][14] = 900_000
+    _u["heatmap"][4][9] = 600_000
+    _lib = _load_status_lib()
+    _sum = _lib.rollup(manifest, [], [])
+    uh = render_html(manifest, _sum, "audit-report", _u)
+    um = render_md(manifest, _sum, _u)
+    check("u2 Usage section renders when a ledger exists", 'id="usage"' in uh)
+    check("u3 stat tiles carry compacted totals and equivalent cost",
+          "1.5M" in uh and "$12.35" in uh and "equivalent cost" in uh)
+    check("u4 pricingAsOf surfaced so a stale rate is visible",
+          "2026-08-06" in uh)
+    check("u5 legend present for two models",
+          'class="legend"' in uh and "claude-opus-5" in uh)
+    check("u6 model colour follows the entity (slot by NAME, not by rank)",
+          _model_slots(["claude-opus-5", "claude-haiku-4-5"])["claude-haiku-4-5"] == 1
+          and _model_slots(["claude-opus-5", "claude-haiku-4-5"])["claude-opus-5"] == 2)
+    check("u7 a 9th model folds into the last slot, never a generated hue",
+          max(_model_slots(["m%d" % i for i in range(12)]).values()) == VIZ_SLOTS)
+    check("u8 stacked segments are emitted in slot order (validated adjacency)",
+          uh.index("var(--viz-1)") < uh.index("var(--viz-2)"))
+    check("u9 daily column chart and heatmap render",
+          'class="cols"' in uh and 'class="hm"' in uh)
+    check("u10 heatmap opts out of the sticky thead used by the phases table",
+          ".hm thead th{position:static" in uh)
+    check("u11 every chart mark carries a title for hover/AT",
+          uh.count("<title>") >= 2 and 'role="img"' in uh)
+    check("u12 md twin carries the usage table (the contrast relief)",
+          "## Usage" in um and "### By phase" in um and "### By model" in um)
+    check("u13 md twin lists authors only when there is more than one",
+          "### By author" in um)
+    # The whole-page fetch count is pinned by x5; this narrows it to the section,
+    # since the fixture manifest legitimately carries an https ADO link.
+    check("u14 the usage section itself adds no external fetch",
+          "http" not in _usage_section(_u))
+    check("u15 zero-token ledger renders nothing rather than an empty frame",
+          'id="usage"' not in render_html(
+              manifest, _sum, "audit-report",
+              dict(_u, totals=dict(_u["totals"], tokens=0))))
+    check("u16 model names are HTML-escaped",
+          "&lt;script&gt;" in render_html(
+              manifest, _sum, "audit-report",
+              dict(_u, byModel={"<script>": {"tokens": 5, "costUSD": 0.0, "msgs": 1}},
+                   phaseModel={"P1": {"<script>": 5}})))
+
     check("m1 md contains phase heading and escaped pipe",
           "## P1" in md_out and "a\\|bug" in md_out)
     check("m2 md table row for the done task",

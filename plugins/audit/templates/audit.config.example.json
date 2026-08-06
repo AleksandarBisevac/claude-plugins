@@ -1,11 +1,8 @@
 {
-  "//": "Copy to <your-repo>/.claude/audit.config.json and edit. EVERY key is optional; omit any to take the default. This is Layer 1 of the plugin's extensibility model — no code editing needed. Prefer a UI? Run /audit:panel to edit this file (schema-validated) + wire composition visually.",
-
+  "//": "Copy to <your-repo>/.claude/audit.config.json and edit. EVERY key is optional; omit any to take the default. This is Layer 1 of the plugin's extensibility model \u2014 no code editing needed. Prefer a UI? Run /audit:panel to edit this file (schema-validated) + wire composition visually.",
   "manifestPath": "docs/audit/audit-plan.json",
-
   "//gitRoot": "Path of the git repo root relative to this project dir. Default '.' (project dir IS the git root). Set to e.g. 'test' when git/the workspace lives in a subdirectory; keep in sync with the manifest's meta.gitRoot.",
   "gitRoot": ".",
-
   "exemptGlobs": [
     "docs/audit/**",
     "**/*.md",
@@ -13,14 +10,10 @@
     "**/*.spec.*",
     "**/*.test.*"
   ],
-
   "trivialLineThreshold": 80,
-
   "stateDir": ".claude/state",
   "logsDir": ".claude/logs",
-
   "bypassKeyword": "#no-plan",
-
   "secretPatterns": {
     "//": "Extra regexes (added to the built-in env/credentials/key/cert set) matched against target paths/commands.",
     "extra": [
@@ -28,10 +21,13 @@
       "(^|/)vault\\.(?:json|ya?ml)$"
     ]
   },
-
   "guardEdits": {
     "//": "tokenVars: identifier names treated as auth tokens for the logging ban. customRules: project-specific banned patterns, each fires only when the edited path starts with pathPrefix.",
-    "tokenVars": ["accessToken", "refreshToken", "idToken"],
+    "tokenVars": [
+      "accessToken",
+      "refreshToken",
+      "idToken"
+    ],
     "customRules": [
       {
         "//": "ILLUSTRATIVE example: forbid removeAllListeners() in a realtime/subscription layer (a common footgun that nukes sibling listeners). Replace path + pattern with your own, or leave customRules empty ([]).",
@@ -41,25 +37,76 @@
       }
     ]
   },
-
   "bashWriteCheck": {
-    "//": "PostToolUse git-status diff check (guard-bash-writes.py): warns — non-blocking — when a shell command modifies a source file no in_progress task covers. Needs a git repo; silent otherwise.",
+    "//": "PostToolUse git-status diff check (guard-bash-writes.py): warns \u2014 non-blocking \u2014 when a shell command modifies a source file no in_progress task covers. Needs a git repo; silent otherwise.",
     "enabled": true
   },
-
   "tddReminder": {
-    "//": "Non-blocking TDD nudge (remind-tdd.py): warns Claude when a source file changes and no test file was touched this session. Never blocks. Set enabled:false to turn off. inProgressPolicy: skip-gate-only (default) | skip-all | warn-always — controls whether files covered by an in_progress manifest task are exempt.",
+    "//": "Non-blocking TDD nudge (remind-tdd.py): warns Claude when a source file changes and no test file was touched this session. Never blocks. Set enabled:false to turn off. inProgressPolicy: skip-gate-only (default) | skip-all | warn-always \u2014 controls whether files covered by an in_progress manifest task are exempt.",
     "enabled": true,
     "sourceGlobs": [
-      "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.py", "**/*.go",
-      "**/*.rb", "**/*.java", "**/*.cs", "**/*.kt", "**/*.swift", "**/*.rs",
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.py",
+      "**/*.go",
+      "**/*.rb",
+      "**/*.java",
+      "**/*.cs",
+      "**/*.kt",
+      "**/*.swift",
+      "**/*.rs",
       "**/*.ipynb"
     ],
     "testGlobs": [
-      "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.*",
-      "**/__tests__/**", "**/tests/**"
+      "**/*.test.*",
+      "**/*.spec.*",
+      "**/test_*.py",
+      "**/*_test.*",
+      "**/__tests__/**",
+      "**/tests/**"
     ],
     "throttleMinutes": 10,
     "inProgressPolicy": "skip-gate-only"
+  },
+  "//usage": "Token metering (meter-usage.py + /audit:usage). Rates are USD per MILLION tokens and live here on purpose: a price change is a one-line edit in your repo, not a plugin release. Cost is priced and stored when a row is written, so editing this table never rewrites history. Only list the models you actually run - anything unlisted resolves by longest name prefix, then '_default'. authorMode: email|name|hash|none. The ledger records counts, model ids, timestamps, branch and author - never prompt content.",
+  "usage": {
+    "enabled": true,
+    "ledgerDir": ".claude/usage",
+    "authorMode": "email",
+    "showCost": true,
+    "backfillOnFirstRun": true,
+    "pricingAsOf": "2026-08-06",
+    "pricing": {
+      "_default": {
+        "in": 5.0,
+        "out": 25.0,
+        "cacheW5m": 6.25,
+        "cacheW1h": 10.0,
+        "cacheR": 0.5
+      },
+      "claude-opus-5": {
+        "in": 5.0,
+        "out": 25.0,
+        "cacheW5m": 6.25,
+        "cacheW1h": 10.0,
+        "cacheR": 0.5
+      },
+      "claude-sonnet-5": {
+        "in": 3.0,
+        "out": 15.0,
+        "cacheW5m": 3.75,
+        "cacheW1h": 6.0,
+        "cacheR": 0.3
+      },
+      "claude-haiku-4-5": {
+        "in": 1.0,
+        "out": 5.0,
+        "cacheW5m": 1.25,
+        "cacheW1h": 2.0,
+        "cacheR": 0.1
+      }
+    }
   }
 }

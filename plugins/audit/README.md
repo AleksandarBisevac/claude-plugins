@@ -145,6 +145,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
 | `/audit:report` | `[--out-dir <dir>]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
+| `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day] [--phase <id>] [--author <who>] [--since 7d] [--json] [--backfill]` | **Token spend, attributed** — per phase, task, model, author and time window, with cache economics, cost-per-task and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
@@ -324,6 +325,66 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath> \
 See the [live demo](https://aleksandarbisevac.github.io/claude-plugins/) and the
 [worked example](../../examples/). The same script runs headless in CI to publish the report as an
 artifact (see `docs/examples/azure-pipelines.yml`).
+
+## Token usage
+
+The most common question testers ask is "what did that cost?" — so the plugin meters it.
+
+```bash
+/audit:usage                          # the dashboard
+/audit:usage --by task --since 7d     # one focused table, last week
+/audit:usage --author sara@acme.io    # who spent what
+/audit:usage --json                   # for CI
+/audit:usage --backfill               # read transcripts already on disk
+```
+
+```
+USAGE  repo acme-store   window last 30d (2026-07-07 -> 2026-08-06)
+
+  Total   122.2M tokens   ~$119.29 equiv   928 msgs   8 sessions   3 authors
+          in 58.3K - out 1.2M - cache write 6.2M - cache read 114.7M   (cache hit 95%)
+
+  BY PHASE                    tokens     cost   msgs  share
+  P4   Report accessibility   29.8M    $27.87    198  [##########........]  24%
+  P1   Manifest sharding      26.2M    $25.03    176  [#########.........]  21%
+  --   unattributed          921.6K     $5.70     31  [..................]  <1%
+```
+
+**How the numbers are obtained.** Claude Code does not hand token counts to hooks, but it does
+hand them a `transcript_path`, and the transcript records `usage` per assistant message. A
+`Stop` / `SubagentStop` / `SessionEnd` hook tails that file from a saved byte offset and appends
+to `.claude/usage/<YYYY-MM>.jsonl`. One trap is worth naming: a single `usage` block is repeated
+across every transcript entry sharing its `message.id`, so anything that sums entries naively
+over-reports spend by roughly 2.4x. The ledger dedups by message id, and a selftest pins it.
+
+**Attribution**, most precise first — nothing is ever dropped:
+
+| Level | How | Precision |
+|---|---|---|
+| task | each subagent has its own transcript, labelled with the task id | exact, even for parallel tasks |
+| phase | the session that claimed the phase (`phase.claim.sessionId`) | orchestrator spend |
+| window | exactly one task's `startedAt`/`completedAt` window contains the message | best-effort |
+| unattributed | everything else — ad-hoc edits, `#no-plan`, pre-install sessions | still counted |
+
+A repo that has not run a phase since installing will show everything as `unattributed`. That is
+the design, not a failure: off-pipeline work is exactly what you would otherwise never see.
+
+**Cost is labelled `equiv`.** It is computed from a price table in
+`.claude/audit.config.json` (`usage.pricing`, USD per million tokens), not from a bill —
+subscription plans carry no per-token charge. Keeping the table in config means a rate change is
+a one-line edit in your repo, not a plugin release. Cost is priced and stored when a row is
+written, so changing the table never rewrites history.
+
+**Privacy.** Rows carry counts, model ids, timestamps, branch and author — never prompt content.
+Transcripts are read-only. `usage.authorMode` accepts `email` (default), `name`, `hash`
+(pseudonymous but still groupable) or `none`; `usage.enabled: false` turns the whole thing off.
+The ledger is gitignored by default — to share it across a team, un-ignore it and add
+`*.jsonl merge=union` to `.gitattributes` (append-only NDJSON merges cleanly, and the per-row
+author is what makes cross-developer analytics work).
+
+The same data drives a **Usage section in `/audit:report`** (stat tiles, per-phase stacked bars by
+model, a daily trend and a day x hour heatmap) and a **Usage tab in `/audit:panel`** with live
+filtering by model, author, phase and date range.
 
 ## Azure DevOps (optional)
 

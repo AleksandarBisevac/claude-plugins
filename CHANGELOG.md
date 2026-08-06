@@ -4,6 +4,79 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.17.0] - 2026-08-06
+
+**Token usage, attributed.** The most common tester question — "what did that
+cost?" — now has an answer at every surface: a CLI, the report and the panel.
+Spend is broken down by phase, task, model, **author** and time window, and work
+that happens outside the pipeline entirely (ad-hoc edits, `#no-plan`) is still
+counted rather than quietly dropped.
+
+### Added
+- **`/audit:usage`** — token spend with cache economics, cost-per-task, a daily
+  trend and peak/quiet hours. Filters: `--by phase|task|model|author|agent|day|
+  hour|session|branch|attr`, `--phase/--task/--model/--author/--attr`,
+  `--since 7d|2w|3m|<date>`, `--until`, `--top`, `--no-cost`, `--json`.
+  `--backfill` rebuilds the ledger from transcripts already on disk (idempotent).
+  The script renders its own ASCII output and the command prints it **verbatim** —
+  a usage tool that spends a pile of tokens formatting its own tables would defeat
+  its purpose.
+- **`meter-usage.py`** on `Stop` / `SubagentStop` / `SessionEnd` — tails the
+  session transcript (and each subagent's) from a saved byte offset and appends to
+  `.claude/usage/<YYYY-MM>.jsonl`. Advisory and fail-silent, like every other
+  non-guard hook.
+- **`scripts/usage_ledger.py`** — the shared metering core (scan, dedup, attribute,
+  price, aggregate), used by both the hook and `--backfill` so there is one
+  implementation and no drift.
+- **Usage section in `/audit:report`** — stat tiles, per-phase stacked bars
+  segmented by model, a daily column chart and a day × hour heatmap. Hand-rolled
+  inline CSS/SVG: the report stays one self-contained file with zero network
+  fetches. The categorical palette is validated for colour-vision deficiency and
+  contrast against the report's own light and dark surfaces, and segments are
+  drawn in slot order so the rendered adjacency matches the validated adjacency.
+- **Usage tab in `/audit:panel`** — the same data with live filtering by model,
+  author, phase and date range. The server ships facts; the browser re-aggregates,
+  so a filter change never round-trips. Read-only; takes no lock.
+- **`usage` config block** (`.claude/audit.config.json`) — `enabled`, `ledgerDir`,
+  `authorMode` (`email`/`name`/`hash`/`none`), `showCost`, `backfillOnFirstRun`,
+  `maxScanBytes`, `currency`, `pricingAsOf` and a `pricing` table in USD per
+  million tokens. Rates live in config so a price change is a one-line edit in your
+  repo, not a plugin release; cost is priced and stored at write time, so editing
+  the table never rewrites history.
+- **`meta.usage`** in the manifest (`ledgerDir`, `showCost`, `pricingAsOf`) — the
+  commands' half of the plugin's standing split (commands read project values from
+  manifest `meta`, hooks from `audit.config.json`). Both default to
+  `.claude/usage`.
+- **Optional `usage` key on the `audit-status.py` rollup**, and a one-line spend
+  summary in `/audit:status` — read from the rollup already fetched, not a second
+  command.
+
+### Changed
+- `reference/orchestrator.md` now asks the orchestrator to prefix the executor
+  Agent's `description` with the task id. That one word is what makes per-task
+  attribution exact when a phase runs tasks in parallel; without it spend simply
+  falls back to phase level, so it never blocks a run.
+- `.gitignore` covers `.claude/usage/`, with a note on the `*.jsonl merge=union`
+  route for teams that want a shared ledger.
+
+### Fixed
+- Cache-write spend could be over-counted. Real transcripts contain entries whose
+  `cache_creation_input_tokens` total is `0` while the TTL breakdown still reports
+  a non-zero 1-hour figure; the breakdown is now clamped to the authoritative
+  total. Found by reconciling against this repo's own transcripts, where it
+  inflated one session by 2,494 tokens.
+
+### Compatibility
+- Nothing breaks. The `usage` rollup key is present **only** when a ledger exists,
+  so every existing consumer of `audit-status.py --json` is untouched; the report's
+  Usage section renders as nothing at all without one. Schema changes are purely
+  additive (`meta.usage`, `usage`), and both existing manifest layouts validate
+  unchanged. `render_html`/`render_md` gained an optional trailing argument and
+  keep their old call shape. Metering is on by default and disabled with
+  `usage.enabled: false`; the ledger records counts, model ids, timestamps, branch
+  and author — never prompt content (see SECURITY.md). Selftest suites 14 → 16;
+  `claude plugin validate` covers the new command (14 → 15).
+
 ## [0.16.0] - 2026-07-30
 
 Richer **per-phase configuration** and **monorepo/multi-team ergonomics** — all

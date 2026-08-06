@@ -30,7 +30,7 @@ import sys
 KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "trivialLineThreshold",
     "stateDir", "logsDir", "bypassKeyword", "secretPatterns", "guardEdits",
-    "bashWriteCheck", "tddReminder",
+    "bashWriteCheck", "tddReminder", "usage",
 }
 KNOWN_SECRET = {"extra"}
 KNOWN_GUARD = {"tokenVars", "customRules"}
@@ -38,7 +38,12 @@ KNOWN_RULE = {"pathPrefix", "bannedPattern", "message"}
 KNOWN_BASHW = {"enabled"}
 KNOWN_TDD = {"enabled", "sourceGlobs", "testGlobs", "throttleMinutes",
              "inProgressPolicy"}
+KNOWN_USAGE = {"enabled", "ledgerDir", "authorMode", "showCost",
+               "backfillOnFirstRun", "maxScanBytes", "currency", "pricingAsOf",
+               "pricing"}
+KNOWN_RATE = {"in", "out", "cacheW5m", "cacheW1h", "cacheR"}
 IN_PROGRESS_POLICY = ("skip-gate-only", "skip-all")
+AUTHOR_MODES = ("email", "name", "hash", "none")
 
 _STR_PATHS = ("manifestPath", "gitRoot", "stateDir", "logsDir", "bypassKeyword")
 
@@ -140,7 +145,53 @@ def validate_config(obj):
                 findings.append("tddReminder.inProgressPolicy must be one of %s"
                                 % (IN_PROGRESS_POLICY,))
 
+    us = obj.get("usage")
+    if us is not None:
+        if not isinstance(us, dict):
+            findings.append("usage must be an object")
+        else:
+            for k in us:
+                if k not in KNOWN_USAGE:
+                    warnings.append("unknown usage key %r" % k)
+            for b in ("enabled", "showCost", "backfillOnFirstRun"):
+                if b in us and not isinstance(us[b], bool):
+                    findings.append("usage.%s must be a boolean" % b)
+            for s in ("ledgerDir", "currency", "pricingAsOf"):
+                if s in us and (not isinstance(us[s], str) or not us[s].strip()):
+                    findings.append("usage.%s must be a non-empty string" % s)
+            if "authorMode" in us and us["authorMode"] not in AUTHOR_MODES:
+                findings.append("usage.authorMode must be one of %s" % (AUTHOR_MODES,))
+            if "maxScanBytes" in us:
+                v = us["maxScanBytes"]
+                if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+                    findings.append("usage.maxScanBytes must be a non-negative integer")
+            _check_pricing(us.get("pricing"), findings, warnings)
+
     return findings, warnings
+
+
+def _check_pricing(pricing, findings, warnings):
+    """Rates are USD per MILLION tokens. A malformed row would silently price spend
+    at zero, so the shape is a finding rather than a warning."""
+    if pricing is None:
+        return
+    if not isinstance(pricing, dict):
+        findings.append("usage.pricing must be an object")
+        return
+    for model, row in pricing.items():
+        if not isinstance(row, dict):
+            findings.append("usage.pricing[%r] must be an object" % model)
+            continue
+        for k in row:
+            if k not in KNOWN_RATE:
+                warnings.append("unknown usage.pricing[%r] key %r" % (model, k))
+        for k in KNOWN_RATE:
+            if k not in row:
+                continue
+            v = row[k]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+                findings.append("usage.pricing[%r].%s must be a non-negative number"
+                                % (model, k))
 
 
 def _check_rule(i, rule, findings, warnings):
@@ -215,9 +266,31 @@ def _selftest():
         "tddReminder": {"enabled": True, "sourceGlobs": ["**/*.ts"],
                         "testGlobs": ["**/*.test.*"], "throttleMinutes": 10,
                         "inProgressPolicy": "skip-all"},
+        "usage": {"enabled": True, "ledgerDir": ".claude/usage",
+                  "authorMode": "hash", "showCost": True,
+                  "backfillOnFirstRun": False, "maxScanBytes": 1024,
+                  "currency": "USD", "pricingAsOf": "2026-08-06",
+                  "pricing": {"_default": {"in": 5.0, "out": 25.0, "cacheW5m": 6.25,
+                                           "cacheW1h": 10.0, "cacheR": 0.5}}},
     }
     f, w = validate_config(full)
     check("fully-populated valid config passes", not f and not w)
+
+    f, w = validate_config({"usage": {"authorMode": "nope"}})
+    check("usage.authorMode enum enforced", any("authorMode" in x for x in f))
+    f, w = validate_config({"usage": {"maxScanBytes": -1}})
+    check("negative usage.maxScanBytes -> finding",
+          any("maxScanBytes" in x for x in f))
+    f, w = validate_config({"usage": {"enabled": "yes"}})
+    check("non-bool usage.enabled -> finding", any("usage.enabled" in x for x in f))
+    f, w = validate_config({"usage": {"pricing": {"m": {"in": -1}}}})
+    check("negative rate -> finding", any("pricing" in x for x in f))
+    f, w = validate_config({"usage": {"pricing": {"m": "cheap"}}})
+    check("non-object rate row -> finding", any("pricing" in x for x in f))
+    f, w = validate_config({"usage": {"pricing": {"m": {"inn": 1}}}})
+    check("unknown rate key -> warning only", not f and any("pricing" in x for x in w))
+    f, w = validate_config({"usage": {"bogusKey": 1}})
+    check("unknown usage key -> warning only", not f and len(w) == 1)
 
     f, w = validate_config([])
     check("non-object root -> finding", len(f) == 1 and not w)
