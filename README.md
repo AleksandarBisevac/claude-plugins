@@ -78,6 +78,9 @@ and a fileIndex.
 
 ## Docs
 
+- [**Enforcement over persuasion**](docs/essays/enforcement-over-persuasion.md) — why the
+  guards are hooks and pinned tool lists rather than firmer wording, the two ways this repo
+  got that wrong, and what enforcement cannot do
 - [Plugin README](plugins/audit/README.md) — install, quick start, configuration, extending
 - [CHANGELOG](CHANGELOG.md) · [SECURITY](SECURITY.md) — threat model & what the guards do NOT guarantee · [CONTRIBUTING](CONTRIBUTING.md)
 - [PLUGIN-BUILD-GUIDE](PLUGIN-BUILD-GUIDE.md) — how this plugin is put together, file by file

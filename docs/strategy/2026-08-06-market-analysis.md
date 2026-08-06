@@ -21,9 +21,9 @@ since shipped:
 | **T0 — complete** (PR #15) | v0.17.0–v0.19.0 pushed with tags · live demo refreshed and gated · scale demo regenerated from a valid manifest · screenshots automated with assertions · topics, homepage and badges set |
 | Found during T0, not predicted here | The report's progress bars had **never** painted (§8) · a missing semicolon had killed every animation in the stylesheet · the scale demo had been serving an "INVALID MANIFEST" banner |
 | Corrected here | The empty-bar root cause (§8), and the test-case count (675 → 721 across 18 suites; the 686 figure was a static grep, not a runtime count) |
-| Shipped since | **T1 complete** in 0.20.0 (evidence-graded plan gate · `/audit:doctor` · free-first quickstart · the eight §8 defects) · **T2.9 + T2.10** in 0.21.0 (deterministic `/audit:status` render · budget as a gate) · **T2.11 + T3.16** on main (report published to a link · thin skills, ADR amended) |
+| Shipped since | **T1 complete** in 0.20.0 (evidence-graded plan gate · `/audit:doctor` · free-first quickstart · the eight §8 defects) · **T2.9 + T2.10** in 0.21.0 (deterministic `/audit:status` render · budget as a gate) · **T2.11 + T3.16 + T3.13** on main (report published to a link · thin skills, ADR amended · the enforcement essay) |
 | Corrected by events | The §6 threat "the ADR watches for the wrong signal" was the accurate half of that entry; the fix was neither NO-GO nor migration but shipping both layouts — see the v0.22.0 amendment in `CONTRIBUTING.md` |
-| Still open | T2.12 (directory submission) · T3.13 (the essay) · T3.15 (report visual identity). #14 deferred pending re-assessment — observe-by-default largely removes its rationale |
+| Still open | T2.12 (directory submission) · T3.15 (report visual identity). #14 deferred pending re-assessment — observe-by-default largely removes its rationale |
 
 ---
 
