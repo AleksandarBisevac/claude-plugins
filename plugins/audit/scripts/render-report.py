@@ -218,7 +218,13 @@ table.phases,table.data{border-collapse:separate;border-spacing:0;width:100%;fon
   box-shadow:var(--shadow-sm);margin:0}
 thead th{position:sticky;top:3.5rem;z-index:2;background:var(--surface-2);color:var(--muted);font-weight:700;
   font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;text-align:left;
-  padding:.5rem .75rem;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+  padding:.5rem .75rem;border-bottom:1px solid var(--border)}
+/* Only headers that actually sort look and behave like controls. `role="button"` is
+   set by wireSort() on exactly the tables it wires, so the cursor and the focus ring
+   cannot disagree with the behaviour — three tables (the two usage breakdowns and
+   the heatmap) previously showed a pointer on headers that did nothing. */
+thead th[role="button"]{cursor:pointer;user-select:none}
+thead th[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 thead th:first-child{border-top-left-radius:var(--radius-lg)}
 thead th:last-child{border-top-right-radius:var(--radius-lg)}
 th.sorted::after{content:"\\25B2";font-size:.75em;margin-left:.35em;color:var(--accent)}
@@ -565,7 +571,12 @@ _SCRIPT = r"""<script>
       var open = showP && ((term !== '' || tf !== '') || !!expanded[pid]);
       setOpen(pr, open);
       var tfRow = tfOf(pid);
-      if (tfRow) tfRow.style.display = open ? '' : 'none';
+      // 'table-row', NOT '': clearing the inline style hands the row back to the
+      // stylesheet, where `tr.taskfilter{display:none}` wins — so the per-phase
+      // status filter was emitted into every report, populated by JS, and could
+      // never be seen. `tr.task` survives the same pattern only because it has no
+      // default display rule to fall back to.
+      if (tfRow) tfRow.style.display = open ? 'table-row' : 'none';
       tasks.forEach(function (t) { t.style.display = (open && taskShown(t)) ? '' : 'none'; });
     });
     bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
@@ -597,10 +608,22 @@ _SCRIPT = r"""<script>
     if (!table) return;
     var ths = table.querySelectorAll('thead th');
     [].forEach.call(ths, function (th, idx) {
-      th.addEventListener('click', function () {
+      // A column header that sorts on click is a control, so it has to be one:
+      // reachable by Tab, operable by Enter/Space, and announcing its own state.
+      // Without aria-sort the current order is conveyed by a CSS ::after arrow
+      // alone, which a screen reader never sees.
+      th.setAttribute('role', 'button');
+      th.setAttribute('tabindex', '0');
+      th.setAttribute('aria-sort', 'none');
+      var doSort = function () {
         var asc = th.getAttribute('data-sort') !== 'asc';
-        [].forEach.call(ths, function (h) { h.removeAttribute('data-sort'); h.classList.remove('sorted'); });
+        [].forEach.call(ths, function (h) {
+          h.removeAttribute('data-sort');
+          h.classList.remove('sorted');
+          h.setAttribute('aria-sort', 'none');
+        });
         th.setAttribute('data-sort', asc ? 'asc' : 'desc');
+        th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
         th.classList.add('sorted');
         var cmp = function (r1, r2) { return asc ? natCmp(cell(r1, idx), cell(r2, idx)) : natCmp(cell(r2, idx), cell(r1, idx)); };
         if (withinPhase) {
@@ -615,6 +638,13 @@ _SCRIPT = r"""<script>
           [].slice.call(body.querySelectorAll('tr')).sort(cmp).forEach(function (r) { body.appendChild(r); });
         }
         refresh();
+      };
+      th.addEventListener('click', doSort);
+      th.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+          ev.preventDefault();   // Space would otherwise scroll the page
+          doSort();
+        }
       });
     });
   }
@@ -624,6 +654,9 @@ _SCRIPT = r"""<script>
     Object.keys(statuses).sort().forEach(function (s) {
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'fchip';
+      // Which filter is on was conveyed by the `on` class alone — i.e. by colour.
+      // aria-pressed is what makes a toggle button's state readable.
+      b.setAttribute('aria-pressed', 'false');
       b.setAttribute(dataAttr, s); b.textContent = s;
       host.appendChild(b);
     });
@@ -635,7 +668,9 @@ _SCRIPT = r"""<script>
   }
   function highlight(host, dataAttr, active) {
     [].forEach.call(host.children, function (x) {
-      x.className = (x.getAttribute(dataAttr) === active ? x.className.split(' ')[0] + ' on' : x.className.split(' ')[0]);
+      var on = x.getAttribute(dataAttr) === active;
+      x.className = (on ? x.className.split(' ')[0] + ' on' : x.className.split(' ')[0]);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
 
@@ -1874,6 +1909,10 @@ def render_html(manifest, summary, basename="audit-report", usage=None):
     # doctype + charset so the file renders standalone (not quirks mode) and its
     # UTF-8 punctuation (·, —, …) decodes correctly when opened from disk.
     out = ['<!doctype html>',
+           # `lang` is why this element is emitted at all: without it a screen
+           # reader guesses the language and can read the whole report in the wrong
+           # voice. The control panel has always declared one; the report did not.
+           '<html lang="en">',
            '<meta charset="utf-8">',
            '<meta name="viewport" content="width=device-width, initial-scale=1">',
            '<title>%s</title>' % e(meta.get("title") or "Audit report"),
@@ -1993,6 +2032,7 @@ def render_html(manifest, summary, basename="audit-report", usage=None):
     out.append('<script>window.AUDIT_MD_B64="%s";window.AUDIT_MD_NAME="%s.md";</script>'
                % (md_b64, basename))
     out.append(_SCRIPT)
+    out.append("</html>")
     return "\n".join(out) + "\n"
 
 
@@ -2415,6 +2455,37 @@ def _selftest():
         _body = re.search(r"@keyframes %s\{([^}]*\}[^}]*)\}" % _kf, _CSS)
         check("u14k %s declares both endpoints (from AND to)" % _kf,
               _body is not None and "to{" in _body.group(1), _kf)
+
+    # --- accessibility of the interactive layer --------------------------------
+    # Each of these shipped broken: the report is the product's most public artifact
+    # and its controls were mouse-and-sighted-only.
+    check("a1 the document declares a language "
+          "(without it a screen reader guesses, and may read the whole report "
+          "in the wrong voice)",
+          '<html lang="en">' in html_out)
+    check("a2 the document element is closed", html_out.rstrip().endswith("</html>"))
+    check("a3 sortable headers are focusable and announce their state",
+          "aria-sort" in _SCRIPT and "'tabindex', '0'" in _SCRIPT
+          and "'role', 'button'" in _SCRIPT)
+    check("a4 sorting is operable from the keyboard, not click-only",
+          "keydown" in _SCRIPT and "'Enter'" in _SCRIPT)
+    check("a5 aria-sort is reset on the other columns, not left stale",
+          _SCRIPT.count("aria-sort") >= 3)
+    check("a6 filter chips expose their pressed state rather than colour alone",
+          "aria-pressed" in _SCRIPT)
+    check("a7 the per-phase task filter is revealed with an explicit display "
+          "(clearing it would hand the row back to `tr.taskfilter{display:none}`)",
+          "'table-row'" in _SCRIPT)
+    check("a8 the rule that made it invisible is still the one being overridden",
+          "tr.taskfilter{display:none}" in _CSS)
+    check("a9 only headers that sort are styled as controls "
+          "(three tables showed a pointer on headers that did nothing)",
+          'thead th[role="button"]{cursor:pointer' in _CSS
+          and "border-bottom:1px solid var(--border)}" in _CSS)
+    check("a10 a bare thead th no longer claims to be clickable",
+          not re.search(r"thead th\{[^}]*cursor:pointer", _CSS))
+    check("a11 keyboard focus on a sortable header is visible",
+          'thead th[role="button"]:focus-visible' in _CSS)
 
     # At scale every categorical list must fold and SAY it folded. Silent truncation
     # reads as "that is all of it", which is the worst possible failure for a

@@ -893,6 +893,25 @@ def _read_pidfile(project):
         return None
 
 
+def _redact_token(url):
+    """Same URL with the `t=` value replaced, for anything that gets kept.
+
+    The token is a live credential for a localhost server, and this plugin already
+    treats it as one: the pidfile holding it is gitignored with the note "Never
+    history". Printing it to a terminal that Claude Code transcribes was the same
+    leak by a different route.
+
+    Matches `t=` at the start of the string as well as after `?`/`&`. A redactor that
+    passes its input through unchanged when the shape is unexpected is worse than no
+    redactor at all, so the pattern is deliberately looser than the one URL this is
+    called with today."""
+    try:
+        import re as _re
+        return _re.sub(r"((?:^|[?&])t=)[^&\s]*", r"\1<hidden>", str(url))
+    except Exception:
+        return "http://127.0.0.1/?t=<hidden>"
+
+
 def _write_pidfile(project, info):
     path = _pidfile(project)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -924,7 +943,11 @@ def _pid_alive(pid):
 def status_panel(project):
     info = _read_pidfile(project)
     if info and _pid_alive(info.get("pid")):
-        print("panel RUNNING: %s (PID %s)" % (info.get("url"), info.get("pid")))
+        # --status answers "is it running", which needs the port but not the token.
+        print("panel RUNNING: %s (PID %s)"
+              % (_redact_token(info.get("url")), info.get("pid")))
+        print("the full URL (with its session token) is in "
+              ".claude/audit-panel.json — it is gitignored; keep it that way")
         return 0
     _rm_pidfile(project)   # stale/none
     print("panel not running (project: %s)" % project)
@@ -953,24 +976,62 @@ def serve(project, port=0, open_browser=True):
     # a second (and never leave an untracked process behind).
     existing = _read_pidfile(project)
     if existing and _pid_alive(existing.get("pid")):
-        print("panel already running: %s (PID %s)"
-              % (existing.get("url"), existing.get("pid")))
+        # The caller asked to OPEN the panel, so honour that against the one that is
+        # already up rather than printing a URL and stopping. Refusing with a link
+        # made the common case ("I want the panel") a two-step manual dance.
+        print("panel already running: %s  (token hidden)"
+              % _redact_token(existing.get("url")))
+        if open_browser and existing.get("url"):
+            print("opening the running one in your browser")
+            try:
+                webbrowser.open(existing["url"])
+            except Exception:
+                print("could not open a browser; the full URL is in "
+                      ".claude/audit-panel.json")
         print("stop it with:  --stop   (or /audit:panel stop)")
         return 0
     _rm_pidfile(project)  # clear any stale record
 
     token = secrets.token_urlsafe(18)
     port = port or _free_port()
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), _make_handler(project, token))
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", port),
+                                    _make_handler(project, token))
+    except OSError as exc:
+        # A taken port is the ordinary case, not an exceptional one: --port was
+        # given explicitly, or _free_port lost the race between probing and
+        # binding. Either way a Python traceback is the wrong answer.
+        sys.stderr.write(
+            "ERROR: cannot listen on 127.0.0.1:%d — %s\n" % (port, exc))
+        sys.stderr.write(
+            "  another panel or process may already hold that port. Try:\n"
+            "    python3 %s --project %s --status    # is a panel already running?\n"
+            "    python3 %s --project %s --stop      # stop the one that is\n"
+            "  or omit --port to let the OS pick a free one.\n"
+            % (os.path.basename(__file__), project,
+               os.path.basename(__file__), project))
+        return 2
     url = "http://127.0.0.1:%d/?t=%s" % (port, token)
     _write_pidfile(project, {"pid": os.getpid(), "port": port, "url": url})
     atexit.register(_rm_pidfile, project)
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))  # --stop → clean exit
-    print("audit control panel: %s" % url)
-    print("project: %s" % project)
-    print("(open the URL in a browser; press Ctrl-C — or `--stop` — to stop)")
+    # The URL carries a live session token. Printing it put that token in terminal
+    # scrollback and in the Claude transcript — the same value whose pidfile is
+    # gitignored with the note "Never history". So it is printed only when the
+    # caller has to open the URL by hand (--no-open); in the default flow the
+    # browser is handed the URL directly and the terminal shows a redacted form.
     if open_browser:
+        print("audit control panel: %s  (token hidden)" % _redact_token(url))
+        print("project: %s" % project)
+        print("(opening your browser; press Ctrl-C — or `--stop` — to stop)")
+        print("need the URL? run with --status, or read .claude/audit-panel.json")
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    else:
+        print("audit control panel: %s" % url)
+        print("project: %s" % project)
+        print("(open the URL in a browser; press Ctrl-C — or `--stop` — to stop)")
+        print("NOTE: that URL contains a live session token — avoid pasting it "
+              "anywhere it will be kept.")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -1272,7 +1333,6 @@ table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,t
  .urow{grid-template-columns:1fr;gap:0}
  .urow .bar{display:none}
  .ufil .combo{flex:1 1 100%}
-}
 }
 .tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .75rem;background:var(--bg)}
 .tsk .h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
@@ -2476,6 +2536,37 @@ def _selftest():
 
     def check(label, cond):
         cases.append((label, bool(cond)))
+
+    # --- stylesheet integrity ---------------------------------------------------
+    # The existing CSS checks look at custom properties; nothing checked structure,
+    # and an unbalanced brace had been shipping. A stray `}` at top level is merely
+    # discarded, but the same slip one nesting level deeper silently terminates a
+    # block and drops every rule after it, with nothing in the console.
+    _css = re.search(r"<style>([\s\S]*?)</style>", UI_HTML)
+    check("panel stylesheet is present", _css is not None)
+    if _css:
+        _sheet = _css.group(1)
+        _depth, _stray = 0, []
+        for _i, _line in enumerate(_sheet.split("\n"), 1):
+            for _ch in _line:
+                if _ch == "{":
+                    _depth += 1
+                elif _ch == "}":
+                    _depth -= 1
+                    if _depth < 0:
+                        _stray.append(_i)
+                        _depth = 0
+        check("panel stylesheet has no stray '}' (%r)" % (_stray[:3],), not _stray)
+        check("panel stylesheet closes every block (depth %d)" % _depth, _depth == 0)
+
+    # the session token must never reach a terminal by accident
+    check("token is redacted for anything that gets kept",
+          _redact_token("http://127.0.0.1:8791/?t=SECRETVALUE")
+          == "http://127.0.0.1:8791/?t=<hidden>")
+    check("redaction survives extra query params",
+          "SECRET" not in _redact_token("http://127.0.0.1:1/?t=SECRET&x=1"))
+    check("redaction of a malformed url still hides a token",
+          "SECRET" not in _redact_token(None) + _redact_token("t=SECRET"))
 
     # front-matter parser
     fm = _front_matter("---\nname: my-skill\ndescription: \"Does X.\"\n---\nbody")

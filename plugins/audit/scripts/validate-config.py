@@ -42,7 +42,10 @@ KNOWN_USAGE = {"enabled", "ledgerDir", "authorMode", "showCost",
                "backfillOnFirstRun", "maxScanBytes", "currency", "pricingAsOf",
                "pricing"}
 KNOWN_RATE = {"in", "out", "cacheW5m", "cacheW1h", "cacheR"}
-IN_PROGRESS_POLICY = ("skip-gate-only", "skip-all")
+# All three are implemented by remind-tdd.py and covered by its selftests;
+# "warn-always" was documented in four places and rejected here, so setting the
+# documented value made the config invalid and the panel refuse to save it.
+IN_PROGRESS_POLICY = ("skip-gate-only", "skip-all", "warn-always")
 AUTHOR_MODES = ("email", "name", "hash", "none")
 
 _STR_PATHS = ("manifestPath", "gitRoot", "stateDir", "logsDir", "bypassKeyword")
@@ -314,6 +317,17 @@ def _selftest():
     # about it made the template fail its own validator nine times over.
     f, w = validate_config({"//": "a note", "//gitRoot": "why", "gitRoot": "."})
     check("`//` comment keys are not warned about", not f and not w)
+
+    # Every policy the hook implements must validate. `warn-always` was documented
+    # in four places, implemented in remind-tdd.py, covered by its selftests — and
+    # rejected here, so following the documentation produced an invalid config.
+    for _pol in ("skip-gate-only", "skip-all", "warn-always"):
+        f, w = validate_config({"tddReminder": {"inProgressPolicy": _pol}})
+        check("inProgressPolicy %r validates (the hook implements it)" % _pol,
+              not f and not w)
+    f, w = validate_config({"tddReminder": {"inProgressPolicy": "nonsense"}})
+    check("an unimplemented inProgressPolicy is still a finding",
+          any("inProgressPolicy" in x for x in f))
     import os as _os
     _tmpl = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..",
                           "templates", "audit.config.example.json")
