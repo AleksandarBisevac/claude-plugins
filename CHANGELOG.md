@@ -4,6 +4,130 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.21.0] - 2026-08-07
+
+**The instrument stops improvising.** Two surfaces here had a number and did nothing
+with it. `/audit:status` had a rollup and asked the model to lay it out — differently
+every run, at a token cost, in the one command whose sibling `commands/usage.md`
+already refuses that in bold. `budgetUSD` had a ceiling and enforced it nowhere: a
+figure that appears in a report after the money is spent is a receipt, not a budget.
+
+Both are the same omission. A value that only ever describes is not an instrument, and
+this release is the plugin's own rule — every claim carries the basis that makes it
+true — turned on the two places where it was making claims it could not act on.
+
+> **On 0.20.0.** It was cut but never tagged: CI came back from an outage long enough
+> to run on that commit and found two real failures, and this repo does not push a tag
+> the build has not verified. The 0.20.0 section below describes work that first ships
+> here. There is no v0.20.0 tag and never was one.
+
+### Added
+- **A phase budget now gates the work.** Three surfaces act on `budgetUSD`, and all
+  three read the block `ul.phase_budgets()` already computes rather than deriving a
+  percentage of their own — so they cannot disagree about what counts as over, and the
+  rule that 0, negative, boolean and non-numeric all mean "no budget" stays in one
+  place instead of becoming a fourth copy.
+  - **Headless**, no Claude session involved: `audit-status.py --fail-on over-budget`
+    (or `budget-80`) exits 1 and names the phase with both numbers — `P2 at 130%
+    ($32.53 of $25.00)` — because "2 phases over budget" sends the reader hunting.
+  - **In `/audit:status`**, a line per budgeted phase, WARN at 80% and OVER at 100%,
+    with the overrun uncapped so 130% reads as 130%.
+  - **During a run**, as preflight step 6 after the lock so an ask keeps it: silent
+    under 80%, one line per phase per session at 80–99%, and at 100% an
+    `AskUserQuestion` before spawning the next executor — continue, stop and resume, or
+    raise `budgetUSD` to a number the human gives. It never raises the budget itself.
+- **`budgetUSD` is in the manifest schema**, with `exclusiveMinimum: 0`. It had been
+  validating only through `additionalProperties: true` — tolerable while it was
+  decoration, not while it gates. Verified against ajv: 0, negative and `"40"` rejected;
+  40 and 0.5 accepted, which is what `validate-manifest.py` already enforced. The two
+  agreeing is the point.
+- **`waiting on`, per task.** `unmet_refs()` reports which `blockedBy`/`dependsOn`
+  targets are not done yet, and a task inherits its phase's gate as `P2 (phase)`. "Not
+  ready" now says why.
+- **`audit-status.py --phase <id>`** — a deterministic entry view for `/audit:phase`
+  and `/audit:next`. Scoping changes only which phases are listed; totals stay
+  whole-plan and the output says so, because a phase view that quietly rescoped them
+  would misreport the project.
+- **`workflow_dispatch` on the CI workflow.** A push was the only thing that created a
+  run, so a commit whose run was never created had no way to get one — during the
+  2026-08-06 Actions outage six commits landed on `main` with zero runs between them,
+  and the only ways to verify the tip were an empty commit (which changes the sha you
+  would tag) or a throwaway PR (whose run is on a merge ref, not on `main`). Neither
+  verifies the thing being released. `gh workflow run ci.yml --ref main` now does.
+
+### Changed
+- **`/audit:status` renders in Python, not in prose.** `render_status()` produces the
+  whole report; `--json` is byte-identical to before, verified by diffing both
+  revisions against a 1000-task manifest, so nothing consuming the rollup breaks. It
+  reuses `audit-usage.py`'s `bar`/`table`/`fmt_tokens`/`fmt_cost` rather than
+  reimplementing them, because those carry rules this output must not contradict —
+  chiefly that real spend never renders as `$0.00`.
+  - **One table, not one per phase.** Column widths are computed across every task and
+    the header printed once. Per-phase tables re-derived their own widths, so a
+    fifty-phase manifest would have produced fifty header rows and fifty alignments —
+    the columns would have stopped being columns.
+  - **The ready list folds at 12** and states the true count and the remainder. A
+    wide-open plan had 464 ready tasks; a silent cap reads as "that is all of them",
+    which is the worst failure a to-do list can have.
+  - The rollup itself is **untouched**. Adding per-task `model`/blockers/commit would
+    have grown the payload the panel fetches on every state read from 22KB to roughly
+    ten times that, for consumers that never asked for it. What mattered was that the
+    *model* stop reading the manifest, and the renderer runs in the process that
+    already loaded it.
+- **The doctor reports a missing runner as WARNING, not FINDING.** It exited 1 on
+  `runner not on PATH: plugin-validate (claude)` in a job that deliberately does not
+  install the Claude CLI. The observation was correct; the severity was not. Every
+  other FINDING is a defect in the **repo** — an invalid manifest, a malformed config,
+  broken shards. A runner that is not installed is a gap in **this machine**, and
+  failing a build over an accurate statement is how a doctor teaches people to ignore
+  it.
+- Neither budget condition is in the default gate, deliberately. Spend is a signal, not
+  a defect, and failing someone's merge over a phase at 105% they never agreed to gate
+  on is how a gate becomes something people switch off. The interactive check gates
+  *starting* work, never finishing it — a task mid-edit is not interrupted for spend,
+  since stopping there strands a half-finished change.
+- Every budget surface stays silent when `usage.showCost` is false. A budget is a claim
+  about money; naming dollars there would leak exactly what that setting exists to hide.
+
+### Fixed
+- **The Windows selftest leg, which had never run this code.** `audit-usage.py`'s slug
+  case asserted `"-Users-x-repo" in project_slug_candidates("/Users/x/repo")`. `abspath`
+  on Windows prepends the drive, so the strict slug is `D:-Users-x-repo` — and `x in
+  [list]` is exact membership, not containment, so that assertion could only ever pass
+  on POSIX. The function was right; the test was the thing tied to one operating
+  system. `audit-usage.py` was added in 0.17.0 and the last CI run before 2026-08-06
+  was on v0.16.0, so the Windows leg had never once executed the file.
+- **The selftest step that hid the failure.** It captured stdout into a variable and
+  echoed only the last line, so under `set -e` a failing suite aborted before printing
+  anything — the Windows log showed a filename, then `exit code 1`, and nothing else. It
+  prints the full output on failure now. A step that withholds its diagnostics in
+  exactly the case you need them is worse than one that prints everything.
+- **Three doctor cases depended on git being installed.** The suite ran `git init`
+  without checking it worked, then asserted a git root resolves. Proven by running
+  against a `PATH` holding python and nothing else, which surfaced a fourth: the finding
+  names `meta.gitRoot` when the directory is not a repo, but names the missing binary
+  when git is absent. 44/44 with git absent, 47/47 with it present.
+- **`encoding="utf-8"` pinned on the last three unguarded fixture writes**
+  (`migrate-manifest.py`). Harmless today — `json.dump` defaults to `ensure_ascii` — but
+  the Windows default is cp1252, so the first fixture to gain an em dash would fail on
+  one platform only. Found while auditing for the rest of the class the Windows leg
+  exposed; that audit came back otherwise clean.
+- Truncation marks elision with `...` and backs up to a word boundary. A bare slice
+  produced `Fix BUG-3: cart total off-by-one with st`, which reads as corruption.
+
+### Validation
+- **919 cases across 20 suites** (from 864). Including: a repo with no budgets and a
+  repo with no metering both trip nothing — a budget gate that fires where no budget
+  exists would be the worst possible version of this; a satisfied gate reports nothing
+  rather than an empty warning; and cost is withheld when `showCost` is false.
+
+### Compatibility
+The manifest schema gains `budgetUSD` as a described, constrained property — it was
+already accepted and already rendered, so no existing manifest becomes invalid unless
+it declared a `budgetUSD` of 0 or below, which never meant anything. `--json` output is
+byte-identical. No command changes its name, flags or exit codes except the two new
+`--fail-on` values and `--phase`, both additive.
+
 ## [0.20.0] - 2026-08-06
 
 **The gate learns what it knows.** Every release before this one could say "nothing
