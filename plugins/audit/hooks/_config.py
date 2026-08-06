@@ -25,6 +25,14 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   Default '.' (project dir IS the git root).
                                   Keep in sync with the manifest's meta.gitRoot.
   exemptGlobs             [str] — globs exempt from plan-first enforcement
+  enforce                 bool  — force the plan gate to DENY regardless of evidence.
+                                  Default false, which grades the gate: observe with
+                                  no manifest, warn with a manifest but nothing
+                                  running, deny once a phase is in_progress. Set true
+                                  to get always-on deny (the pre-0.20 behaviour).
+                                  Only the PLAN gate is graded — the secret guards
+                                  deny by default either way, because reading .env is
+                                  wrong whether or not a plan exists.
   trivialLineThreshold    int   — max added lines for the 1st free code file/session
   stateDir                str   — where per-session state files live
   logsDir                 str   — where the bypass log lives
@@ -65,6 +73,8 @@ DEFAULTS = {
         "**/*.spec.*",
         "**/*.test.*",
     ],
+    # false grades the plan gate by evidence; true restores always-on deny.
+    "enforce": False,
     "trivialLineThreshold": 80,
     "stateDir": ".claude/state",
     "logsDir": ".claude/logs",
@@ -427,6 +437,90 @@ def in_progress_files(root, manifest_rel):
         return set()
 
 
+def manifest_state(root, manifest_rel):
+    """How much the plan gate actually knows: {"exists": bool, "phaseRunning": bool}.
+
+    The gate's verdict is graded on this, so the two questions have to be answered
+    separately. "No manifest" and "a manifest with nothing running" look identical to
+    `in_progress_files` — both yield an empty set — yet they mean very different
+    things: the first is a repo that never opted in, the second is a repo mid-plan.
+
+    `phaseRunning` reads the ASSEMBLED manifest, which is load-bearing. Under the
+    sharded layout the index carries `{id, title, shard}` stubs with no `status` at
+    all (`_manifest_io._STUB_KEYS`), so a raw index read reports every phase as
+    None and a live phase would be missed.
+
+    A task `in_progress` under a phase that is not counts too. The runtime writes
+    `phase.status` on entry, but a manifest hand-edited to start one task is still a
+    repo executing its plan, and refusing to notice would deny the gate exactly when
+    it is most warranted.
+
+    Never raises. On any error it reports the LEAST aggressive state, so a crash in
+    here can only relax the gate, never invent a denial."""
+    state = {"exists": False, "phaseRunning": False}
+    try:
+        path = Path(root) / manifest_rel
+        if not path.exists():
+            return state
+        state["exists"] = True
+        manifest = _load_manifest_assembled(path)
+        if not isinstance(manifest, dict):
+            return state
+        for phase in manifest.get("phases", []) or []:
+            if not isinstance(phase, dict):
+                continue
+            if phase.get("status") == "in_progress":
+                state["phaseRunning"] = True
+                return state
+            for task in phase.get("tasks", []) or []:
+                if isinstance(task, dict) and task.get("status") == "in_progress":
+                    state["phaseRunning"] = True
+                    return state
+    except Exception:
+        pass
+    return state
+
+
+def plan_gate_mode(cfg, state):
+    """Resolve evidence into "observe" | "warn" | "deny".
+
+    The product is plan-first development, mechanically enforced. In a repo with no
+    manifest there is no plan, so there is nothing to enforce — what a deny does
+    there is rate-limit edits, which is a different and worse product sharing a code
+    path. It is also the strongest claim this plugin makes on the weakest evidence it
+    has, which is the one thing every other surface here refuses to do: the routing
+    advisory stays silent until it has three comparable tasks, and the cost report
+    prints the thresholds behind every number.
+
+    So the gate is graded the same way:
+
+        no manifest                  -> observe   (record, never block)
+        manifest, nothing running    -> warn      (advisory)
+        manifest + a phase running   -> deny      (full enforcement)
+
+    `enforce: true` restores always-on deny for anyone who wants it — as a decision
+    someone made, rather than a default that surprises a stranger."""
+    try:
+        if enforce_always(cfg):
+            return "deny"
+        if not (state or {}).get("exists"):
+            return "observe"
+        return "deny" if (state or {}).get("phaseRunning") else "warn"
+    except Exception:
+        return "observe"
+
+
+def enforce_always(cfg):
+    """`enforce: true` -> the plan gate denies regardless of evidence."""
+    try:
+        val = (cfg or {}).get("enforce")
+        if isinstance(val, bool):
+            return val
+    except Exception:
+        pass
+    return bool(DEFAULTS.get("enforce", False))
+
+
 # --- selftest -----------------------------------------------------------------
 def _selftest() -> int:
     import tempfile
@@ -507,6 +601,89 @@ def _selftest() -> int:
     tr["testGlobs"].append("MUTATED")
     check("e2 tdd_reminder() does not alias DEFAULTS",
           "MUTATED" not in DEFAULTS["tddReminder"]["testGlobs"])
+
+    # (f) manifest_state + plan_gate_mode — the evidence the plan gate grades on.
+    import shutil
+    import tempfile
+    tmp_f = Path(tempfile.mkdtemp(prefix="config-selftest-state-"))
+    try:
+        rel = "docs/audit/audit-plan.json"
+
+        def write_manifest(obj, sharded=False):
+            d = tmp_f / "docs" / "audit"
+            if d.exists():
+                shutil.rmtree(d)
+            d.mkdir(parents=True, exist_ok=True)
+            if not sharded:
+                (d / "audit-plan.json").write_text(json.dumps(obj), encoding="utf-8")
+                return
+            # index carries stubs with NO status; the shard bodies hold the truth
+            idx = {"meta": {"version": 3}, "phases": []}
+            (d / "phases").mkdir(exist_ok=True)
+            for ph in obj["phases"]:
+                idx["phases"].append({"id": ph["id"], "title": ph.get("title", ""),
+                                      "shard": "phases/%s.json" % ph["id"]})
+                (d / "phases" / ("%s.json" % ph["id"])).write_text(
+                    json.dumps(ph), encoding="utf-8")
+            (d / "audit-plan.json").write_text(json.dumps(idx), encoding="utf-8")
+
+        st = manifest_state(tmp_f, rel)
+        check("f1 no manifest -> exists False, phaseRunning False",
+              st == {"exists": False, "phaseRunning": False}, repr(st))
+        check("f2 no manifest -> observe", plan_gate_mode({}, st) == "observe")
+
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "done", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]}]})
+        st = manifest_state(tmp_f, rel)
+        check("f3 manifest with nothing running -> exists, not running",
+              st == {"exists": True, "phaseRunning": False}, repr(st))
+        check("f4 manifest, nothing running -> warn", plan_gate_mode({}, st) == "warn")
+
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "pending"}]}]})
+        st = manifest_state(tmp_f, rel)
+        check("f5 in_progress phase -> phaseRunning", st["phaseRunning"] is True)
+        check("f6 manifest + running phase -> deny", plan_gate_mode({}, st) == "deny")
+
+        # A task running under a phase that is not still counts as executing a plan.
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "pending", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress"}]}]})
+        check("f7 in_progress TASK under a pending phase counts as running",
+              manifest_state(tmp_f, rel)["phaseRunning"] is True)
+
+        # The sharded trap: the index stub has no status, so a raw read sees None.
+        write_manifest({"phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress"}]}]}, sharded=True)
+        idx_raw = json.loads((tmp_f / "docs" / "audit" / "audit-plan.json")
+                             .read_text(encoding="utf-8"))
+        check("f8 the sharded index really does hide status (guards the next case)",
+              idx_raw["phases"][0].get("status") is None)
+        check("f9 sharded layout: a running phase is still detected "
+              "(assembled read, not the index)",
+              manifest_state(tmp_f, rel)["phaseRunning"] is True)
+
+        # enforce overrides every tier, including the one with no evidence at all.
+        shutil.rmtree(tmp_f / "docs")
+        st = manifest_state(tmp_f, rel)
+        check("f10 enforce:true denies even with no manifest",
+              plan_gate_mode({"enforce": True}, st) == "deny")
+        check("f11 enforce:false is the graded default",
+              plan_gate_mode({"enforce": False}, st) == "observe")
+        check("f12 a non-bool enforce is ignored rather than trusted",
+              plan_gate_mode({"enforce": "yes"}, st) == "observe")
+        check("f13 enforce defaults to false", DEFAULTS["enforce"] is False)
+
+        # Never raises, and degrades to the least aggressive verdict.
+        check("f14 manifest_state on garbage input still returns the safe shape",
+              manifest_state(None, None) == {"exists": False, "phaseRunning": False})
+        check("f15 plan_gate_mode on garbage input degrades to observe",
+              plan_gate_mode(None, None) == "observe")
+    finally:
+        shutil.rmtree(tmp_f, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

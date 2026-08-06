@@ -57,15 +57,52 @@ jobs:
           out=$(env PATH=/nonexistent "$(command -v sh)" plugins/audit/hooks/py-launch.sh guard-edits.py ask < /dev/null)
           echo "$out"
           echo "$out" | grep -q '"permissionDecision":"ask"'
-      - name: Blocked edit emits canonical deny JSON
+      - name: Plan gate grades on evidence, end to end through the launcher
         shell: bash
         run: |
           set -e
-          # literal backslash-n sequences: JSON-escaped newlines, printf-safe
+          # Exercises all three tiers through py-launch.sh, because the selftests
+          # call decide() directly and cannot prove the wiring: the launcher, the
+          # stdin contract and the emitted JSON shape.
+          #
+          # The gate is graded, so the project dir must carry the right evidence for
+          # each tier. Before 0.20.0 this step piped cwd=/tmp with no manifest and
+          # asserted a deny; that combination is now deliberately an observe.
           big=$(python -c 'print("x\\n" * 120, end="")')
-          out=$(printf '{"tool_name":"Edit","tool_input":{"file_path":"src/x.ts","new_string":"%s"},"session_id":"ci","cwd":"/tmp","hook_event_name":"PreToolUse"}' "$big" \
-            | sh plugins/audit/hooks/py-launch.sh require-plan.py ask)
-          echo "$out" | grep -q '"permissionDecision": *"deny"'
+          proj=$(mktemp -d)
+          mkdir -p "$proj/docs/audit"
+
+          fire() {
+            printf '{"tool_name":"Edit","tool_input":{"file_path":"src/x.ts","new_string":"%s"},"session_id":"ci-%s","cwd":"%s","hook_event_name":"PreToolUse"}' \
+              "$big" "$1" "$proj" \
+              | env CLAUDE_PROJECT_DIR="$proj" sh plugins/audit/hooks/py-launch.sh require-plan.py ask
+          }
+
+          # 1. no manifest -> observe: nothing is printed, so nothing is denied.
+          out=$(fire observe)
+          if [ -n "$out" ]; then
+            echo "expected silence with no manifest, got: $out"; exit 1
+          fi
+
+          # 2. manifest, no phase running -> warn, still never a deny on Pre.
+          printf '{"meta":{"version":2},"phases":[{"id":"P1","title":"p","status":"done","tasks":[{"id":"P1.1","title":"t","status":"done"}]}]}' \
+            > "$proj/docs/audit/audit-plan.json"
+          out=$(fire warn)
+          if echo "$out" | grep -q 'permissionDecision'; then
+            echo "warn tier must not emit a permissionDecision, got: $out"; exit 1
+          fi
+
+          # 3. manifest + a running phase -> the canonical deny JSON.
+          printf '{"meta":{"version":2},"phases":[{"id":"P1","title":"p","status":"in_progress","tasks":[{"id":"P1.1","title":"t","status":"pending"}]}]}' \
+            > "$proj/docs/audit/audit-plan.json"
+          fire deny | grep -q '"permissionDecision": *"deny"'
+
+          # 4. enforce:true restores always-on deny with no manifest at all.
+          rm -rf "$proj/docs"
+          mkdir -p "$proj/.claude"
+          printf '{"enforce":true}' > "$proj/.claude/audit.config.json"
+          fire enforced | grep -q '"permissionDecision": *"deny"'
+          echo "OK: observe / warn / deny / enforce all behave through the launcher"
 
   manifests:
     name: manifest validation

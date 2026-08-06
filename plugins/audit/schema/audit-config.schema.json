@@ -24,6 +24,10 @@
         "minLength": 1
       }
     },
+    "enforce": {
+      "type": "boolean",
+      "description": "Force the plan-first gate to DENY regardless of evidence. Default false, which grades the gate: observe with no manifest, warn with a manifest but no phase in_progress, deny once a phase is running. Only the plan gate is graded — the secret guards deny by default either way."
+    },
     "trivialLineThreshold": {
       "type": "integer",
       "description": "First-touch file edits at or below this many lines are allowed without a plan. Default 80.",

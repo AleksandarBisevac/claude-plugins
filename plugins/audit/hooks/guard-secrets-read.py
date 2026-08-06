@@ -308,12 +308,26 @@ def decide(data: dict, *, cfg=None):
                     "coverage needs a PostToolUse diff check.")
         hit = _source_write_hit(cmd, root, cfg)
         if hit:
-            return ("block",
-                    "Shell write into a source file bypasses the plan-first gate: %s\n"
-                    "Use the Edit/Write tools (guard-edits + require-plan review the "
-                    "change), or cover the file with an in_progress task in the audit "
-                    "manifest. Exempt paths (docs, tests, .claude/**) are unaffected."
-                    % hit)
+            # This is a PLAN gate, so it is graded on the same evidence
+            # require-plan uses. Otherwise `Edit src/x.ts` would be merely observed
+            # while `sed -i src/x.ts` still denied — same file, same rule, opposite
+            # verdict, decided by which tool the agent happened to reach for.
+            #
+            # Only this branch is graded. Every secret-detection branch above stays
+            # deny-by-default: reading .env is wrong whether or not a plan exists,
+            # so those guards need no evidence to be right.
+            manifest_rel = (cfg.get("manifestPath")
+                            or _config.DEFAULTS["manifestPath"])
+            mode = _config.plan_gate_mode(
+                cfg, _config.manifest_state(root, manifest_rel))
+            if mode == "deny":
+                return ("block",
+                        "Shell write into a source file bypasses the plan-first gate: "
+                        "%s\nA phase is in_progress, so edits are held to it. Use the "
+                        "Edit/Write tools (guard-edits + require-plan review the "
+                        "change), or cover the file with an in_progress task. Exempt "
+                        "paths (docs, tests, .claude/**) are unaffected." % hit)
+            return ("allow", "bash: source write, plan gate %s: %s" % (mode, hit))
         return ("allow", "bash: no secret read")
 
     return ("allow", "unhandled tool")
@@ -344,6 +358,16 @@ def _selftest() -> int:
     results = []
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(tempfile.mkdtemp(prefix="guard-secrets-selftest-"))
+
+    # Pin the project dir: repo_root prefers CLAUDE_PROJECT_DIR over the payload's
+    # cwd, so unpinned this suite graded the shell plan gate against whatever
+    # repository happened to be open.
+    _prev_project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+
+    # The shell-write branch is a PLAN gate and is graded like require-plan's. The
+    # cases that assert full enforcement say so explicitly.
+    cfg_enforced = _config._deep_merge(cfg, {"enforce": True})
 
     def check(name, expected, data, *, use_cfg=None):
         try:
@@ -451,15 +475,61 @@ def _selftest() -> int:
 
     # --- shell writes into source files (plan-first backstop) ---
     check("s1 echo > source file blocked", "block",
-          bash("echo 'x' > src/foo/a.ts"))
+          bash("echo 'x' > src/foo/a.ts"), use_cfg=cfg_enforced)
     check("s2 sed -i on source file blocked", "block",
-          bash("sed -i 's/a/b/' src/app.ts"))
+          bash("sed -i 's/a/b/' src/app.ts"), use_cfg=cfg_enforced)
     check("s3 tee into source file blocked", "block",
-          bash("cat patch.txt | tee src/app.py"))
+          bash("cat patch.txt | tee src/app.py"), use_cfg=cfg_enforced)
     check("s4 heredoc redirect into source blocked", "block",
-          bash("cat > src/gen.ts <<'EOF'\nexport {}\nEOF"))
+          bash("cat > src/gen.ts <<'EOF'\nexport {}\nEOF"), use_cfg=cfg_enforced)
     check("s5 append redirect into source blocked", "block",
-          bash("echo '// x' >> src/app.go"))
+          bash("echo '// x' >> src/app.go"), use_cfg=cfg_enforced)
+
+    # (s-graded) the shell plan gate follows the same evidence tiers as
+    # require-plan, so a file is treated the same whether the agent reaches for
+    # `Edit` or for `sed -i`.
+    _mdir = tmp / "docs" / "audit"
+    _mdir.mkdir(parents=True, exist_ok=True)
+    _mfile = _mdir / "audit-plan.json"
+
+    check("s5a no manifest -> shell write observed, not blocked", "allow",
+          bash("sed -i 's/a/b/' src/graded.ts"))
+
+    _mfile.write_text(json.dumps({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]}),
+        encoding="utf-8")
+    check("s5b manifest, nothing running -> shell write not blocked", "allow",
+          bash("sed -i 's/a/b/' src/graded.ts"))
+
+    _mfile.write_text(json.dumps({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "pending"}]}]}),
+        encoding="utf-8")
+    check("s5c manifest + running phase -> shell write blocked", "block",
+          bash("sed -i 's/a/b/' src/graded.ts"))
+
+    # Same running phase, but the file IS covered by its in_progress task: the gate
+    # has nothing to object to, on any tier.
+    _mfile.write_text(json.dumps({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+            {"id": "P1.1", "title": "t", "status": "in_progress",
+             "files": ["src/covered.ts"]}]}]}), encoding="utf-8")
+    check("s5d a covered file is allowed at the deny tier", "allow",
+          bash("sed -i 's/a/b/' src/covered.ts"))
+    check("s5d2 an uncovered sibling is still blocked there", "block",
+          bash("sed -i 's/a/b/' src/uncovered.ts"))
+
+    # Secret detection is NOT graded — it needs no plan to be right, so it denies at
+    # every tier including the one with no manifest at all.
+    check("s5e reading .env is denied while the plan gate is at deny", "block",
+          read(".env"))
+    import shutil as _shutil
+    _shutil.rmtree(tmp / "docs", ignore_errors=True)
+    check("s5f .env is still denied with no manifest present", "block", read(".env"))
+    check("s5g so is a credentials file", "block", read("config/credentials.json"))
+    check("s5h and an ssh key", "block", read(".ssh/id_ed25519"))
+
     check("s6 redirect to log file allowed", "allow",
           bash("npm test > out.log 2>&1"))
     check("s7 redirect of grep output to /tmp allowed", "allow",
@@ -510,6 +580,11 @@ def _selftest() -> int:
               "[guard-secrets-read]"))
     results.append(ok)
     print("%s j1 deny payload is canonical PreToolUse JSON" % ("PASS" if ok else "FAIL"))
+
+    if _prev_project_dir is None:
+        os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    else:
+        os.environ["CLAUDE_PROJECT_DIR"] = _prev_project_dir
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

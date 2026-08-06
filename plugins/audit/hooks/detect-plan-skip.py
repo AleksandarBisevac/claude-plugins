@@ -73,6 +73,42 @@ def _prompt_text(data: dict) -> str:
     return ""
 
 
+def _observed_message(state_dir: Path, session_id: str) -> list:
+    """One line naming what the plan gate would have blocked, then never again.
+
+    The tally is written by require-plan.py's observe tier. It is reported once and
+    marked notified rather than deleted, so the count keeps accumulating while the
+    message does not repeat — a warning that reappears on every turn is a warning
+    nobody reads, which is the same reasoning meter-usage applies to its per-task
+    advisory. Returns [] on anything unexpected; this is an advisory path."""
+    try:
+        path = state_dir / ("plan-gate-observed-%s.json" % session_id)
+        if not path.exists():
+            return []
+        with open(path, "r", encoding="utf-8") as fh:
+            tally = json.load(fh) or {}
+        if not isinstance(tally, dict) or tally.get("notified"):
+            return []
+        files = [f for f in (tally.get("files") or []) if f]
+        if not files:
+            return []
+        tally["notified"] = True
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(tally, fh)
+        except Exception:
+            pass
+        shown = ", ".join(files[:3])
+        more = "" if len(files) <= 3 else " (+%d more)" % (len(files) - 3)
+        return ["[audit] The plan gate would have held %d edit(s) this session: "
+                "%s%s. It is observing, not enforcing, because this repo has no "
+                "audit manifest — run /audit:init to turn enforcement on, or set "
+                "\"enforce\": true in .claude/audit.config.json to enforce without "
+                "one." % (len(files), shown, more)]
+    except Exception:
+        return []
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -130,6 +166,13 @@ def main() -> None:
                 "[audit] Plan-first bypass ARMED (%s): the next non-trivial "
                 "edit in this session proceeds without a manifest task "
                 "(single-use, logged)." % keyword)
+
+        # --- 3. report what the plan gate observed, once per session ----------
+        # In a repo with no manifest the gate records rather than denies. Saying so
+        # once is what makes that tier useful: it demonstrates the guard working on
+        # the user's own edits instead of asserting authority over them. Silence
+        # here would make observe indistinguishable from the plugin being off.
+        messages.extend(_observed_message(state_dir, session_id))
     except Exception:
         sys.exit(0)
 
@@ -175,6 +218,41 @@ def _selftest() -> int:
     check("g2 fresh state file kept", fresh.exists())
     check("g3 foreign json untouched", foreign.exists())
     check("g4 missing dir is a no-op", _gc_state(tmp / "nope") == 0)
+
+    # (h) the observe tally is reported once and then stays quiet.
+    sid = "obs-session"
+    tally = tmp / ("plan-gate-observed-%s.json" % sid)
+    check("h1 no tally -> no message", _observed_message(tmp, sid) == [])
+
+    tally.write_text(json.dumps({"files": ["src/a.ts", "src/b.ts"]}),
+                     encoding="utf-8")
+    first = _observed_message(tmp, sid)
+    check("h2 a tally produces exactly one message", len(first) == 1)
+    check("h3 the message names the count and the files",
+          first and "2 edit(s)" in first[0]
+          and "src/a.ts" in first[0] and "src/b.ts" in first[0], repr(first))
+    check("h4 the message points at both exits (/audit:init and enforce)",
+          first and "/audit:init" in first[0] and "enforce" in first[0])
+    check("h5 the same session is not told twice", _observed_message(tmp, sid) == [])
+    check("h6 the tally survives so the count keeps accumulating", tally.exists())
+
+    many = tmp / ("plan-gate-observed-%s.json" % "obs-many")
+    many.write_text(json.dumps({"files": ["a", "b", "c", "d", "e"]}),
+                    encoding="utf-8")
+    msg = _observed_message(tmp, "obs-many")
+    check("h7 long lists fold rather than dumping every path",
+          msg and "(+2 more)" in msg[0], repr(msg))
+
+    empty = tmp / ("plan-gate-observed-%s.json" % "obs-empty")
+    empty.write_text(json.dumps({"files": []}), encoding="utf-8")
+    check("h8 an empty tally says nothing",
+          _observed_message(tmp, "obs-empty") == [])
+    bad = tmp / ("plan-gate-observed-%s.json" % "obs-bad")
+    bad.write_text("not json", encoding="utf-8")
+    check("h9 a corrupt tally is ignored, never raised",
+          _observed_message(tmp, "obs-bad") == [])
+    check("h10 the tally prefix is one the GC already sweeps",
+          tally.name.startswith(_GC_PREFIXES))
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

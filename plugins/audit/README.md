@@ -106,7 +106,12 @@ a 50-phase × 1000-task manifest):
   the blocking guards fail **loud** — a manual-approval prompt — if no interpreter exists;
   every hook has a 10 s timeout):
   - `require-plan.py` (PreToolUse + PostToolUse: Edit/Write/MultiEdit/NotebookEdit) —
-    non-trivial edits must be planned in the manifest or opted out via a single-use keyword.
+    non-trivial edits must be planned in the manifest or opted out via a single-use keyword,
+    **once there is a plan to check against**: with no manifest it observes and reports once
+    per session, with a manifest but nothing running it warns, and it denies only while a
+    phase is `in_progress` (`enforce: true` denies at every tier). The shell-write plan gate
+    in `guard-secrets-read.py` grades identically, so `sed -i` and `Edit` agree on the same
+    file; the secret checks themselves are never graded.
     "Non-trivial" = change magnitude (added lines, chars/200, or removed lines) over the
     threshold, or a second distinct file in a session. The bypass is **transactional**:
     observed before the edit, consumed only after it actually happens.
@@ -191,13 +196,31 @@ run `/reload-plugins` (or restart the session).
 
 ## Installing arms global hooks
 
-> **Read this before installing.** The six guard hooks activate in **every** project and
-> session — before any manifest exists. That is the point (the guards are always-on), but
-> it surprises people: in a repo with no audit manifest, the plan-first gate still allows
-> only **one** small non-manifest-covered source file per session, then blocks the second
-> with guidance (bypass: include `#no-plan` in your prompt — single-use, logged).
-> Docs (`**/*.md`), tests (`**/*.spec.*`, `**/*.test.*`), `docs/audit/**` and `.claude/**`
-> are always exempt.
+The guard hooks activate in **every** project and session. That is the point — a guard you
+have to remember to switch on is not a guard. But the plan gate is **enforced, once you
+have a plan; observing before that**, so installing it does not start denying edits in
+repos that never opted in.
+
+**The plan gate grades itself on what it actually knows:**
+
+| Your repo | Plan gate | What you see |
+|---|---|---|
+| No audit manifest | **observes** | One line per session naming what it *would* have held. Nothing is blocked. |
+| A manifest, no phase `in_progress` | **warns** | An advisory noting the file is not covered by a running task. |
+| A manifest + a phase `in_progress` | **denies** | Edits are held to the running plan (bypass: include `#no-plan` in your prompt — single-use, logged). |
+
+The reasoning is the same one the cost report applies to itself: a claim needs the evidence
+that makes it true. With no manifest there is no plan to check an edit against, so denying
+there would be this plugin's strongest claim made on its weakest evidence. Grading it is
+the thesis applied consistently, not a softening of it.
+
+`enforce: true` in `.claude/audit.config.json` restores always-on deny at any tier — as a
+decision you made, rather than a default that surprises a stranger.
+
+**Only the plan gate is graded.** The secret-read guard, the token-logging ban and the
+shell-write secret checks deny by default at every tier: reading `.env` is wrong whether or
+not a plan exists, so those guards need no evidence to be right. Docs (`**/*.md`), tests
+(`**/*.spec.*`, `**/*.test.*`), `docs/audit/**` and `.claude/**` are always exempt.
 
 Scope or turn it off:
 
@@ -207,7 +230,7 @@ Scope or turn it off:
   set `tddReminder.enabled: false` in that repo's `.claude/audit.config.json` (see
   Configuration below).
 - **Uninstall completely:** `/plugin uninstall audit@quality-gates`.
-- What each guard does with **no** config and **no** manifest: plan-first (as above),
+- What each guard does with **no** config and **no** manifest: plan-first **observes**,
   secret-read guard (active — you want this one), token-logging ban (active),
   TDD reminder (active, non-blocking, throttled).
 
@@ -271,6 +294,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `manifestPath` | Path to the manifest | `docs/audit/audit-plan.json` |
 | `gitRoot` | Git repo root relative to the project dir (set when git/the workspace is in a subdir; keep in sync with manifest `meta.gitRoot`) | `.` |
 | `exemptGlobs` | Globs exempt from plan-first | `docs/audit/**`, `**/*.md`, `.claude/**`, `**/*.spec.*`, `**/*.test.*` |
+| `enforce` | Force the plan gate to DENY regardless of evidence. `false` grades it: observe → warn → deny (see above) | `false` |
 | `trivialLineThreshold` | Max change magnitude for the 1st free code file/session | `80` |
 | `stateDir` / `logsDir` | Where state + bypass log live (add both to `.gitignore`) | `.claude/state` / `.claude/logs` |
 | `bypassKeyword` | Single-use plan-first opt-out keyword | `#no-plan` |
