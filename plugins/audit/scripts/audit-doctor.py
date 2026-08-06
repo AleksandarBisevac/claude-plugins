@@ -323,10 +323,18 @@ def check_build_commands(rep, project, manifest):
         elif not shutil.which(exe):
             missing.append("%s (%s)" % (name, exe))
     if missing:
-        rep.finding("buildCommands",
-                    "runner not on PATH for: %s" % ", ".join(missing),
-                    "install the runner, or correct meta.buildCommands - a gate that "
-                    "cannot run is reported as infrastructure failure, not a red test")
+        # WARNING, not FINDING. Every other finding here is a defect in the REPO —
+        # an invalid manifest, a malformed config, broken shards, a gitRoot that is
+        # not a repo. A runner that is not installed is a gap in THIS MACHINE, and
+        # the two are not the same claim: CI's manifest job deliberately does not
+        # install the Claude CLI, and calling that repo-broken failed the build over
+        # a correct observation. Same lesson as the `for`-loop false positive, which
+        # this under-applied.
+        rep.warn("buildCommands",
+                 "runner not on PATH here: %s - that gate cannot run on this "
+                 "machine" % ", ".join(missing),
+                 "install the runner if you intend to run gates here; a gate that "
+                 "cannot run is reported as infrastructure failure, not a red test")
     else:
         checked = len(cmds) - len(unresolvable)
         rep.ok("buildCommands", "all %d resolvable runner(s) found on PATH" % checked)
@@ -665,10 +673,13 @@ def _selftest():
               levels(rep, "manifest") == ["OK"], detail(rep, "manifest"))
         check("a running phase is reported as the deny tier",
               "deny" in detail(rep, "plan gate"), detail(rep, "plan gate"))
-        check("a missing buildCommands runner is a FINDING",
-              levels(rep, "buildCommands") == ["FINDING"],
-              detail(rep, "buildCommands"))
-        check("the buildCommands finding names the runner",
+        check("a missing buildCommands runner is a WARNING, not a FINDING "
+              "(the machine lacks a tool; the repo is not broken)",
+              levels(rep, "buildCommands") == ["WARNING"],
+              repr(levels(rep, "buildCommands")))
+        check("a missing runner does not fail the exit code",
+              rep.exit_code() == 0, repr(rep.counts()))
+        check("the buildCommands warning names the runner",
               "definitely-not-a-real-runner" in detail(rep, "buildCommands"))
 
         # an invalid manifest
