@@ -22,28 +22,28 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in plugins/audit/hooks/_config.py \
-                   plugins/audit/hooks/require-plan.py \
-                   plugins/audit/hooks/detect-plan-skip.py \
-                   plugins/audit/hooks/guard-edits.py \
-                   plugins/audit/hooks/guard-secrets-read.py \
-                   plugins/audit/hooks/guard-bash-writes.py \
-                   plugins/audit/hooks/remind-tdd.py \
-                   plugins/audit/hooks/meter-usage.py \
-                   plugins/audit/scripts/_manifest_io.py \
-                   plugins/audit/scripts/usage_ledger.py \
-                   plugins/audit/scripts/audit-usage.py \
-                   plugins/audit/scripts/validate-manifest.py \
-                   plugins/audit/scripts/audit-status.py \
-                   plugins/audit/scripts/render-report.py \
-                   plugins/audit/scripts/validate-config.py \
-                   plugins/audit/scripts/migrate-manifest.py \
-                   plugins/audit/scripts/gen-demo-manifest.py \
-                   plugins/audit/scripts/audit-doctor.py \
-                   plugins/audit/scripts/panel-server.py; do
+          # Globbed, not enumerated. The hand-maintained list had drifted three ways
+          # — 19 files here, 10 in CONTRIBUTING.md, 14 in PLUGIN-BUILD-GUIDE.md — and
+          # the drift was not only cosmetic: gen-demo-usage.py's 19 cases were never
+          # run by CI at all, because adding a file and adding a line here are two
+          # separate acts and only one of them is enforced.
+          #
+          # Every .py under hooks/ and scripts/ MUST carry a --selftest. A new file
+          # without one now fails this step rather than being silently skipped, which
+          # is the failure mode a list can never catch.
+          total=0
+          for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
             echo "== $f"
-            python "$f" --selftest
+            out=$(python "$f" --selftest)
+            echo "$out" | tail -1
+            echo "$out" | grep -qE '[0-9]+/[0-9]+ cases passed' || {
+              echo "FAIL: $f has no --selftest (every hook/script must carry one)"
+              exit 1
+            }
+            n=$(echo "$out" | tail -1 | grep -oE '[0-9]+/[0-9]+' | cut -d/ -f1)
+            total=$((total + n))
           done
+          echo "== $total cases across $(ls plugins/audit/hooks/*.py plugins/audit/scripts/*.py | wc -l | tr -d ' ') suites"
       - name: Launcher resolves an interpreter (python3 -> python -> py)
         shell: bash
         run: |

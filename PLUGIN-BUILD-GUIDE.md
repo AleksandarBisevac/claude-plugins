@@ -37,19 +37,19 @@ claude-plugins/                           # this repo (personal, public)
   PLUGIN-BUILD-GUIDE.md                   # ← you are here
   CHANGELOG.md / SECURITY.md / CONTRIBUTING.md
   LICENSE                                 # MIT
-  .gitignore
-  .github/workflows/ci.yml                # selftests + validators on ubuntu/windows
+.gitignore
+.github/workflows/ci.yml                # selftests + validators on ubuntu/windows
   docs/audit/audit-plan.json              # DOGFOOD manifest: this repo's roadmap, CI-validated
   docs/audit/audit-report.html/.md        # rendered dogfood report (regenerated from the manifest)
   docs/index.html / demo-large.html       # GitHub Pages live demo (rendered reports)
   docs/screenshots/*.png                  # committed report + panel screenshots (manual capture)
   docs/examples/azure-pipelines.yml       # CI recipe: validate → gate → publish report artifact
   examples/                               # worked acme-store example (manifest + rendered report)
-  .claude-plugin/
+.claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")
   plugins/
     audit/
-      .claude-plugin/plugin.json          # plugin manifest (name/version/author/…)
+.claude-plugin/plugin.json          # plugin manifest (name/version/author/…)
       commands/                           # execution verbs (each thin; read reference/orchestrator.md)
         status.md doctor.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
         panel.md                          # /audit:panel — open/stop/status the control-panel UI
@@ -185,7 +185,7 @@ rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 `extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
 (`rel_path`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
-Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selftest` (6 cases).
+Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selftest`.
 
 ### `plugins/audit/hooks/require-plan.py`
 Plan-first gate on Edit/Write/MultiEdit/NotebookEdit, registered under BOTH PreToolUse and
@@ -207,7 +207,7 @@ hook or the user); PostToolUse — which fires only after a successful edit — 
 bypass (logged), records the free-file slot, and appends to the observe tally. All tunables
 from config (`manifestPath`, `exemptGlobs`, `enforce`, `trivialLineThreshold`, `stateDir`,
 `logsDir`, `bypassKeyword`).
-`--selftest` (25 cases).
+`--selftest`.
 
 ### `plugins/audit/hooks/detect-plan-skip.py`
 UserPromptSubmit logger. If the prompt contains `bypassKeyword` (config; default `#no-plan`),
@@ -216,7 +216,7 @@ the user (systemMessage) the bypass is live. Also surfaces `_configError` (malfo
 once per session, and opportunistically garbage-collects session state files older than 7
 days (incl. forgotten armed bypasses). Never blocks. `require-plan.py`'s PostToolUse pass
 consumes (deletes) the bypass file after the next non-trivial edit actually happens —
-single-use. `--selftest` (4 cases).
+single-use. `--selftest`.
 
 ### `plugins/audit/hooks/guard-bash-writes.py` (v0.6.0)
 PostToolUse watcher — the "complete control" for shell writes the PreToolUse text
@@ -250,7 +250,7 @@ token-like vars. Plan-first backstop for Bash writes: inline-eval writes AND the
 shell write forms (`sed -i`, `tee`, `>`/`>>`/`1>`/`>|` redirects — heredoc redirects included) into
 non-exempt source files not covered by an `in_progress` task (source extensions derive from
 `tddReminder.sourceGlobs`). Listing NAMES stays allowed. `secretPatterns.extra` (config) adds
-patterns. `--selftest` (58 cases) uses fictional paths only.
+patterns. `--selftest` uses fictional paths only.
 
 ### `plugins/audit/hooks/guard-edits.py`
 Edit/Write/MultiEdit/NotebookEdit content guard. (1) Path-based protection first: denies edits
@@ -261,7 +261,7 @@ one-library listener rule that used to be hardcoded is now just an example in th
 template). (3) Token-logging ban built dynamically from `guardEdits.tokenVars` — blocks
 `console.*`/`Sentry.*`/`remoteLog(… token …)` and `Bearer ${token}`, allowing `.slice` prefix
 debug. `--selftest` builds its token test-input at runtime (`"access"+"Token"`) so this source
-file itself never trips a token-logging guard (16 cases).
+file itself never trips a token-logging guard .
 
 ### `plugins/audit/hooks/remind-tdd.py`
 PostToolUse (Edit|Write|MultiEdit|NotebookEdit) **non-blocking** TDD nudge: when a SOURCE file changes and
@@ -271,7 +271,7 @@ channel). Records test-file touches BEFORE any warn logic (the hook watches its 
 stream — that ordering is the whole mechanism). Throttled (once per file + global
 `throttleMinutes` gap) and manifest-aware: silent when the file is covered by an
 `in_progress` `gate-only` task (`inProgressPolicy`: skip-gate-only | skip-all | warn-always).
-All tunables under config `tddReminder`. `--selftest` (13 cases).
+All tunables under config `tddReminder`. `--selftest`.
 
 ### `plugins/audit/reference/manifest-conventions.md`
 Shared conventions every command reads first (lives OUTSIDE `commands/` so it can't register
@@ -286,7 +286,7 @@ dependency **cycles** (incl. task-blocked-by-own-phase deadlocks), **bidirection
 `fileIndex ↔ task.files` integrity, `bugs[]` shape + **reciprocal**
 `bug.taskId ↔ task.bugId` cross-links, enums, plus non-fatal WARNINGs for unknown/typo'd
 keys (did-you-mean) and pre-0.3 status combinations.
-Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest` (41 cases).
+Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest`.
 
 ### `plugins/audit/scripts/audit-status.py` (v0.5.0)
 Headless rollup + CI gate, stdlib-only; imports validate-manifest.py as a library via
@@ -296,7 +296,7 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 (also `open-bugs`, `in-progress` for release freezes). `--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
-(33 cases).
+.
 
 ### `plugins/audit/scripts/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
@@ -317,7 +317,7 @@ Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero networ
 phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's rollup
 (single source of truth). Every manifest string is HTML-escaped — manifest content is
 untrusted — and only http(s) URLs render as links (`javascript:` degrades to text).
-`--selftest` (18 cases, incl. XSS cases).
+`--selftest` (includes XSS cases).
 
 ### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel-server.py` (v0.13.0–v0.14.0)
 `/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
@@ -402,20 +402,7 @@ ubuntu + windows for every push/PR. Locally:
 
 ```bash
 # 1. Hooks + scripts pass their own selftests (all fourteen, stdlib only)
-for f in plugins/audit/hooks/_config.py \
-         plugins/audit/hooks/require-plan.py \
-         plugins/audit/hooks/detect-plan-skip.py \
-         plugins/audit/hooks/guard-edits.py \
-         plugins/audit/hooks/guard-secrets-read.py \
-         plugins/audit/hooks/guard-bash-writes.py \
-         plugins/audit/hooks/remind-tdd.py \
-         plugins/audit/scripts/_manifest_io.py \
-         plugins/audit/scripts/validate-manifest.py \
-         plugins/audit/scripts/validate-config.py \
-         plugins/audit/scripts/audit-status.py \
-         plugins/audit/scripts/render-report.py \
-         plugins/audit/scripts/migrate-manifest.py \
-         plugins/audit/scripts/panel-server.py; do
+for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
   python3 "$f" --selftest || exit 1
 done
 # launcher fails LOUD without an interpreter (permissionDecision "ask" JSON):

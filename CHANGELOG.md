@@ -4,6 +4,115 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.20.0] - 2026-08-06
+
+**The gate learns what it knows.** Every release before this one could say "nothing
+breaks." This one cannot, and saying so plainly is the point: the plan-first gate
+denied on its weakest evidence, and fixing that changes a default.
+
+In a repo with no manifest there is no plan to check an edit against, so the gate fell
+back to a heuristic — one small file per session, then deny. That is not enforcement
+of a discipline; it is a default-deny on an empty policy, and it was the one surface
+here exempt from the rule every other one follows. The routing advisory stays silent
+until it has three comparable tasks. The cost report prints the thresholds behind
+every number. The gate issued its strongest claim where it knew the least.
+
+So it is graded on the evidence it actually has: **observe** with no manifest,
+**warn** with a manifest but no phase running, **deny** once a phase is `in_progress`.
+`enforce: true` restores always-on deny. Not a softening — the thesis applied to the
+surface that was skipping it.
+
+### Changed — behavior, read this before upgrading
+- **The plan gate no longer denies in a repo without an audit manifest.** It records
+  what it would have held and says so once per session. A repo that relied on
+  always-on deny needs `"enforce": true` in `.claude/audit.config.json`.
+- **The shell-write plan gate in `guard-secrets-read` is graded identically**, so
+  `Edit src/x.ts` and `sed -i src/x.ts` now agree on the same file. Leaving one
+  graded and the other not would have made the verdict depend on which tool the agent
+  happened to reach for.
+- **No secret guard is graded.** Secret reads, the token-logging ban and the shell
+  secret checks deny at every tier, with or without a manifest — reading `.env` is
+  wrong whether or not a plan exists. If you rely on this plugin for secret
+  containment, nothing changed.
+- The deny message is rewritten. It says "outside the running plan" and names a cheap
+  exit, rather than asking someone who has never run `/audit:init` to hand-author a
+  schema-validated manifest. A guard whose cheapest exit is a bypass keyword teaches
+  people to reach for the bypass keyword.
+
+### Added
+- **`/audit:doctor`** — answers "is this working?" before you find out the hard way:
+  the interpreter the *hooks* will resolve (not the one running the script), whether
+  `gitRoot` is a repo, config and manifest validity, shard integrity, which plan-gate
+  tier is active, submodule conflicts that would fail at commit time, whether the
+  `buildCommands` runners exist, whether a hook has ever fired in this project, and
+  the usage ledger. Read-only: no writes, no lock, and it never executes a
+  `buildCommands` entry. Exits 1 on findings, so CI can run it too.
+- **`enforce`** config key — force the plan gate to deny regardless of evidence.
+- **`gen-demo-manifest.py`** — a deterministic large-manifest fixture. The panel
+  screenshots and the scale demo both needed one and neither had it, which is why
+  neither could be refreshed.
+- **`tools/capture-screenshots.mjs`** — screenshot capture that asserts its own
+  preconditions (the panel must expose a Usage tab; expanding the composition table
+  must change the visible row count; progress bars must paint a real width) and waits
+  for animations to settle before every shot.
+- CI now drives all four gate tiers through `py-launch.sh`, runs the doctor against
+  this repo and the example, and gates the live demo and the scale demo.
+
+### Fixed
+- **The report's progress bars had never painted, for anyone.** The fill is a
+  `<span>` whose rule declared no `display`, and an inline box ignores width — so
+  every bar was 0px at every percentage since the 0.12.0 redesign, including phases
+  at 100%. This is why every committed screenshot showed an empty bar.
+- **A missing semicolon after `--ease` annexed the comment block and the `--sp-0`
+  declaration that followed it**, making every `animation`/`transition` shorthand
+  that referenced it invalid at computed-value time. All report animations and
+  transitions were dead and `--sp-0` resolved to nothing. `_undeclared_css_vars`
+  could not see it: the annexed text still reads as a declaration.
+- `fillIn` and `fadeUp` declared only a `from` keyframe while asking for
+  `fill-mode: both`. Latent while the easing token was broken; repairing it made them
+  run and pinned the summary card at opacity 0.
+- **The per-phase task-status filter could never be seen.** The row, its label and
+  its chips were emitted into every report and populated from JS, while the
+  stylesheet said `display:none` and the script cleared the inline style instead of
+  setting one.
+- The report declared no language — there was no `<html>` element to carry `lang`.
+- Sortable column headers were mouse-only, with no role, tab stop or `aria-sort`;
+  the sort order was conveyed by a CSS arrow alone. Filter chips conveyed their
+  state by colour alone.
+- Three tables showed a pointer cursor on headers that do nothing; the cursor is now
+  scoped to the attribute `wireSort()` itself sets.
+- A port collision printed a Python traceback — the bind had no error handling while
+  the existing guard wrapped only the serve loop.
+- **The panel printed its session token to stdout**, putting a live credential in
+  terminal scrollback and in the Claude transcript — the same value whose pidfile is
+  gitignored with the note "Never history". It is printed only when the caller must
+  open the URL by hand.
+- `/audit:panel` on an already-running panel refused with a link instead of opening
+  the panel that was asked for.
+- An unbalanced brace had been shipping in the panel stylesheet. Harmless at top
+  level; the same slip one level deeper drops every rule after it.
+- **`tddReminder.inProgressPolicy: "warn-always"` was rejected by both validators**
+  while being documented in four places, implemented, and covered by a passing
+  selftest — so following the documentation produced an invalid config.
+- **The shipped config template produced nine warnings from this plugin's own
+  validator**: `"//"` and `"//<key>"` are the annotated-comment convention the
+  template itself ships, because JSON has no comments.
+- `docs/index.html` — the live demo and the README's "See it" target — had been a
+  month stale with no Usage section at all. `docs/demo-large.html` had been serving a
+  report rendered from an *invalid* manifest, banner included.
+
+### Validation
+- Selftests are **globbed, not enumerated**. The hand-maintained list had drifted
+  three ways, and `gen-demo-usage.py`'s cases were never run by CI at all. Every
+  `.py` under `hooks/` and `scripts/` must now carry a `--selftest`; a file without
+  one fails the step rather than being silently skipped.
+- 864 cases across 20 suites (from 675 across 17).
+- Per-file case counts are gone from `PLUGIN-BUILD-GUIDE.md`. All ten were stale.
+
+### Compatibility
+The manifest schema is unchanged and every existing manifest keeps working. The only
+behavioral change is the plan gate's default, above.
+
 ## [0.19.0] - 2026-08-06
 
 **Spend becomes a signal.** 0.18.0 made token spend readable. This makes it
