@@ -118,6 +118,31 @@ jobs:
             diff -q "$f" "/tmp/regen/$(basename "$f")"
           done
           echo "OK: committed ledger matches a fresh deterministic run"
+      - name: Live demo is the committed example (docs/index.html has not drifted)
+        shell: bash
+        run: |
+          set -e
+          # docs/index.html is the GitHub Pages demo and the target of the README's
+          # "See it" link. It is a byte copy of the committed example report, so the
+          # check is a plain cmp: no timestamp normalizing, no re-render. The step
+          # above already proves the example itself renders correctly from its
+          # manifest, so the two together mean the published demo is current.
+          #
+          # It drifted for two releases (a month stale, no Usage section at all)
+          # because a release could re-render the example and forget the copy. Now it
+          # cannot: refresh with
+          #   cp examples/acme-store/acme-store-audit.html docs/index.html
+          if ! cmp -s docs/index.html examples/acme-store/acme-store-audit.html; then
+            echo "docs/index.html has drifted from examples/acme-store/acme-store-audit.html"
+            echo "fix: cp examples/acme-store/acme-store-audit.html docs/index.html"
+            exit 1
+          fi
+          grep -q 'id="usage"' docs/index.html
+          echo "OK: the live demo is the committed example, Usage section included"
+          # NOT covered: docs/demo-large.html. Its 40x5 source manifest was never
+          # committed and no generator for it exists in the repo, so it cannot be
+          # regenerated or gated here. Either commit that manifest or drop the demo;
+          # do not read this step's silence as coverage.
       - uses: actions/setup-node@v5
         with:
           node-version: 20
