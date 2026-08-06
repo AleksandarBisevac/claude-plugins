@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A push is the only thing that used to create a run, which means a commit whose
+  # run was never created had no way to ever get one. During the 2026-08-06 Actions
+  # outage six commits landed on main with zero runs between them; the only ways to
+  # verify the tip were an empty commit (which changes the sha you would tag) or a
+  # throwaway PR (whose run is on a merge ref, not on main). Neither verifies the
+  # thing being released. This makes the run addressable by ref:
+  #     gh workflow run ci.yml --ref main
+  workflow_dispatch:
 
 jobs:
   selftests:

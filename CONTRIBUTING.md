@@ -69,9 +69,21 @@ One release = **one commit** that:
 3. carries the annotated tag `v<version>` on that same commit.
 
 Push with `git push origin main --follow-tags` **only after CI is green** on the
-commit. Tags are never moved or deleted (the `v0.2.0` tag/main mismatch is
-documented in the changelog and fixed forward, not rewritten). For a
-multi-plugin future, `claude plugin tag` (official `{name}--v{version}`
+commit. Verify that commit specifically — `gh workflow run ci.yml --ref main`
+addresses a run by ref, so a commit whose push never produced one can still be
+checked without an empty commit (which changes the sha you would tag).
+
+**A tag that has been pushed is never moved or deleted** — the `v0.2.0` tag/main
+mismatch is documented in the changelog and fixed forward, not rewritten. The
+rule is about what other people may already have fetched, so it starts at the
+push, not at `git tag`. A local tag on a commit CI then failed is not a release
+that went wrong; it is a release that never happened, and deleting it is the
+honest record. That is what became of `v0.20.0`: tagged locally, red on CI,
+deleted unpushed, and the work re-cut as v0.21.0 once it also carried two
+features the patch number would have concealed. There is no v0.20.0 tag and
+never was one.
+
+For a multi-plugin future, `claude plugin tag` (official `{name}--v{version}`
 convention, cross-checks plugin.json ↔ marketplace entry) is the migration path.
 
 ## Decision record
