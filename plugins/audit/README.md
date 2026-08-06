@@ -93,7 +93,7 @@ a 50-phase × 1000-task manifest):
   optional fast-path.
 - **`/audit:report`** — self-contained, **interactive** HTML + Markdown report (collapsible
   phases, text + status filters, **Save as PDF**, optional AI summary) — publishable as a CI
-  artifact. See [Reports](#reports).
+  artifact, or to a link with `--share`. See [Reports](#reports).
 - **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
   composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
 - **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, and the usage ledger. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
@@ -155,7 +155,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:phase` | `<phaseId> [--dry-run]` | Run a whole phase — execute every ready task (parallel where files are disjoint, sequential otherwise) until none remain, then phase sign-off (review skill + test gate + optional runtime boot + merge). |
 | `/audit:review` | `<phaseId>` | Re-run **just** the phase sign-off for a phase whose tasks are already `done` — the recovery path after applying manual fixes. |
 | `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
-| `/audit:report` | `[--out-dir <dir>]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). Read-only; never mutates or locks the manifest. |
+| `/audit:report` | `[--out-dir <dir>] [--share]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). `--share` publishes it as a Claude Code Artifact — a link a reviewer can open without installing anything — and asks before anything leaves the machine. Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
 | `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day] [--phase <id>] [--author <who>] [--since 7d] [--json] [--backfill]` | **Token spend, attributed** — per phase, task, model, author and time window, with cache economics, cost-per-task and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
@@ -367,7 +367,7 @@ network fetches, read-only** (it never mutates the manifest). Under the hood it 
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath> \
-  [--out-dir DIR] [--format html|md|both] [--summary-file PATH] [--basename NAME]
+  [--out-dir DIR] [--format html|md|both|artifact] [--summary-file PATH] [--basename NAME]
 ```
 
 - **HTML** — collapsible phase rows (a 40-phase audit opens as ~40 lines, not one endless scroll),
@@ -378,6 +378,27 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath> \
 - **Summary box** — pass `--summary-file` (a 2–4 sentence narrative) or set `meta.reportSummary`;
   `/audit:report` composes one for you. The quantitative "Overall" line is always present.
 - **Filenames** — default `audit-report.html/.md`; override with `--basename` or `meta.reportBasename`.
+
+### Sharing it as a link — `/audit:report --share`
+
+A file on disk is shareable only by sending the file, and `file://` links do not travel. `--share`
+publishes the same report as a **Claude Code Artifact**: a URL a reviewer opens in a browser,
+having installed nothing.
+
+It asks first, every time, and names what is in the page before publishing — phase and task
+titles, `desiredOutcome` prose, the file paths under audit, commit hashes, open bugs, and the
+spend when `usage.showCost` is on. A `--share` in the arguments is a request, not consent. The page
+is private until you share it from its own menu.
+
+Mechanically it is `--format artifact`, which writes `<basename>.artifact.html` beside the normal
+outputs and never overwrites them. That file is the report without a document wrapper, because the
+host supplies its own `<!doctype>`, `<head>` and `<body>` — publishing the standalone file would
+nest a second document inside the first. It also withholds the report's own theme toggle, since
+the host owns the theme there and stamps the same `data-theme` attribute; the report's stylesheet
+already answers to it in both directions, so the viewer's choice wins.
+
+Re-rendering an audit and publishing it to the **same** URL is the intended loop. A stale audit
+link that still resolves is worse than no link at all.
 
 See the [live demo](https://aleksandarbisevac.github.io/claude-plugins/) and the
 [worked example](../../examples/). The same script runs headless in CI to publish the report as an

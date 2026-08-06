@@ -59,7 +59,7 @@ Then, in any git repo you want to audit:
 /audit:migrate         # (optional) shard the manifest → parallel-safe phases across worktrees
 /audit:panel           # open the browser control panel to tune config + composition (open/stop/status)
 /audit:phase P0        # run the first phase: branch → tasks (red-first TDD) → gated sign-off
-/audit:report          # render the shareable HTML + Markdown report
+/audit:report          # render the HTML + Markdown report (--share publishes it to a link)
 /audit:usage           # the same spend view — now attributed to phases and tasks
 ```
 

@@ -8,8 +8,11 @@ manifest is escaped (manifest content is untrusted input), and ado/link URLs
 render as links only when they are http(s).
 
 Usage:
-  render-report.py <manifest> [--out-dir DIR] [--format html|md|both]
+  render-report.py <manifest> [--out-dir DIR] [--format html|md|both|artifact]
                               [--summary-file PATH] [--basename NAME]
+
+  --format artifact writes <basename>.artifact.html: the same report with no
+  document wrapper, for a host that supplies its own (a Claude Code Artifact).
   render-report.py --selftest
 
 Writes <basename>.html / <basename>.md into --out-dir (default: the manifest's
@@ -515,7 +518,13 @@ _SCRIPT = r"""<script>
   function prefersDark() { return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches; }
   function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : prefersDark(); }
   function paintTheme() { if (themeBtn) themeBtn.textContent = isDark() ? '☀' : '☾'; }
-  try { var savedTheme = localStorage.getItem(THEME_KEY); if (savedTheme) root.setAttribute('data-theme', savedTheme); } catch (e) {}
+  // Restore only when this report owns the toggle. Embedded (no button), the host
+  // sets data-theme and must win; restoring a value saved on some earlier visit
+  // would silently override the theme the viewer is actually looking at. A page
+  // that does not offer the control has no business reinstating its state.
+  if (themeBtn) {
+    try { var savedTheme = localStorage.getItem(THEME_KEY); if (savedTheme) root.setAttribute('data-theme', savedTheme); } catch (e) {}
+  }
   paintTheme();
   if (themeBtn) themeBtn.addEventListener('click', function () {
     var next = isDark() ? 'light' : 'dark';
@@ -1903,20 +1912,37 @@ def _usage_section(u):
     return "".join(out)
 
 
-def render_html(manifest, summary, basename="audit-report", usage=None):
+def render_html(manifest, summary, basename="audit-report", usage=None,
+                fragment=False):
+    """The HTML report. `fragment=True` emits it for an embedding host.
+
+    A Claude Code Artifact wraps what it is given in its own
+    `<!doctype>…<head>…</head><body>`, so a standalone document published as one
+    nests a second `<html>` inside the first. The fragment carries no document
+    wrapper — but it keeps `<title>` (the host reads it to name the page) and the
+    whole `<style>`, which already does what an embedded page needs: it declares
+    `color-scheme:light dark`, honours both `prefers-color-scheme` and an explicit
+    `:root[data-theme]`, and scrolls its wide tables inside `.tablewrap` instead of
+    the page.
+
+    Nothing here is fetched from a network, in either mode. That was true before
+    this flag existed — it is why the report can be embedded at all under a CSP
+    that blocks every external host.
+    """
     meta = manifest.get("meta") or {}
     now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
     # doctype + charset so the file renders standalone (not quirks mode) and its
     # UTF-8 punctuation (·, —, …) decodes correctly when opened from disk.
-    out = ['<!doctype html>',
-           # `lang` is why this element is emitted at all: without it a screen
-           # reader guesses the language and can read the whole report in the wrong
-           # voice. The control panel has always declared one; the report did not.
-           '<html lang="en">',
-           '<meta charset="utf-8">',
-           '<meta name="viewport" content="width=device-width, initial-scale=1">',
-           '<title>%s</title>' % e(meta.get("title") or "Audit report"),
-           "<style>%s</style>" % _CSS]
+    out = [] if fragment else [
+        '<!doctype html>',
+        # `lang` is why this element is emitted at all: without it a screen
+        # reader guesses the language and can read the whole report in the wrong
+        # voice. The control panel has always declared one; the report did not.
+        '<html lang="en">',
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">']
+    out += ['<title>%s</title>' % e(meta.get("title") or "Audit report"),
+            "<style>%s</style>" % _CSS]
     out.append("<h1>%s</h1>" % e(meta.get("title") or "Audit report"))
     out.append('<p class="meta">repo: %s · generated %s · %d phases · %d tasks'
                " · %d bugs</p>"
@@ -1956,9 +1982,17 @@ def render_html(manifest, summary, basename="audit-report", usage=None):
         '<button type="button" id="audit-print" class="btn btn-primary" '
         'title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button>'
         '<button type="button" id="audit-dl-md" class="btn">Download .md</button>'
-        '<button type="button" id="audit-theme" class="btn btn-icon" '
-        'aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button>'
-        '<span id="audit-count" class="muted"></span></div>')
+        # Withheld in a fragment: the host owns the theme there and stamps
+        # `data-theme` on the same root element this button writes. Two controls
+        # over one attribute is not a redundancy, it is a race — and the report
+        # would lose it, since it restores its own persisted value on load and
+        # would flip a viewer who had picked dark back to a light report saved on
+        # some earlier visit. One toggle, owned by whoever owns the page.
+        + ('' if fragment else
+           '<button type="button" id="audit-theme" class="btn btn-icon" '
+           'aria-label="Toggle light/dark theme" title="Toggle light/dark theme">'
+           '☾</button>')
+        + '<span id="audit-count" class="muted"></span></div>')
 
     # One collapsible table: each phase is a group-row (click to expand its task
     # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
@@ -2032,7 +2066,8 @@ def render_html(manifest, summary, basename="audit-report", usage=None):
     out.append('<script>window.AUDIT_MD_B64="%s";window.AUDIT_MD_NAME="%s.md";</script>'
                % (md_b64, basename))
     out.append(_SCRIPT)
-    out.append("</html>")
+    if not fragment:
+        out.append("</html>")
     return "\n".join(out) + "\n"
 
 
@@ -2229,9 +2264,9 @@ def main(argv):
             else:
                 cli_basename = val
             del args[i:i + 2]
-    if fmt not in ("html", "md", "both") or len(args) != 1:
+    if fmt not in ("html", "md", "both", "artifact") or len(args) != 1:
         sys.stderr.write("usage: render-report.py <manifest> [--out-dir DIR] "
-                         "[--format html|md|both] [--summary-file PATH] "
+                         "[--format html|md|both|artifact] [--summary-file PATH] "
                          "[--basename NAME]\n")
         return 2
 
@@ -2279,6 +2314,15 @@ def main(argv):
         p = os.path.join(out_dir, basename + ".html")
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_html(manifest, summary, basename, usage))
+        written.append(p)
+    if fmt == "artifact":
+        # A separate name, never the .html one. The standalone file is what people
+        # open from disk and what CI diffs the live demo against; overwriting it
+        # with a fragment would leave both looking fine and one of them broken.
+        p = os.path.join(out_dir, basename + ".artifact.html")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(render_html(manifest, summary, basename, usage,
+                                 fragment=True))
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")
@@ -2464,6 +2508,52 @@ def _selftest():
           "in the wrong voice)",
           '<html lang="en">' in html_out)
     check("a2 the document element is closed", html_out.rstrip().endswith("</html>"))
+
+    # --- fragment mode (publishable as a Claude Code Artifact) --------------
+    # The host wraps what it is given in its own doctype/head/body, so every one
+    # of these tags would nest a second document inside the first.
+    _frc = main([mp, "--out-dir", tmp, "--format", "artifact"])
+    _fp = os.path.join(tmp, "audit-report.artifact.html")
+    check("artifact: --format artifact exits 0 and writes its own file",
+          _frc == 0 and os.path.getsize(_fp) > 0)
+    check("artifact: it never overwrites the standalone .html "
+          "(that file is what CI diffs the live demo against)",
+          os.path.getsize(hp) > 0 and open(hp, encoding="utf-8").read() == html_out)
+    frag = open(_fp, encoding="utf-8").read()
+    for tag in ("<!doctype", "<html", "</html>", "<meta charset",
+                "<meta name=\"viewport\""):
+        check("artifact: fragment carries no %s" % tag, tag not in frag.lower())
+    check("artifact: fragment keeps the title (the host reads it to name the page)",
+          "<title>" in frag)
+    check("artifact: fragment keeps the whole stylesheet inline "
+          "(a CSP blocks every external host, so a linked one would not load)",
+          "<style>" in frag and ":root{" in frag)
+    # Tags, not the substring " src=": this fixture's desiredOutcome deliberately
+    # contains `<img src=x onerror=...>`, which the report ESCAPES. A naive
+    # substring test fails on the very input that proves the escaping works.
+    check("artifact: fragment loads nothing over the network "
+          "(a CSP blocks every external host, so a resource tag is a blank space)",
+          not any(t in frag.lower() for t in
+                  ("<script src", "<img ", "<link ", "<iframe", "url(http")))
+    check("artifact: and the hostile fixture is still escaped, not stripped",
+          "&lt;img src=x" in frag)
+    check("artifact: fragment drops the theme toggle, since the host owns the "
+          "theme and stamps the same data-theme attribute",
+          'id="audit-theme"' not in frag)
+    check("artifact: the standalone report KEEPS its toggle "
+          "(the fragment is the exception, not a rewrite)",
+          'id="audit-theme"' in html_out)
+    check("artifact: the persisted theme is reinstated only where the toggle "
+          "exists, so an embedded report cannot override its host",
+          "if (themeBtn) {" in _SCRIPT)
+    check("artifact: the report body itself is unchanged - same phases table, "
+          "same usage section, same markdown twin",
+          '<table class="phases"' in frag
+          and ("AUDIT_MD_B64" in frag) == ("AUDIT_MD_B64" in html_out))
+    check("artifact: wide tables scroll inside their own box, not the page",
+          ".tablewrap{" in frag and "overflow-x:auto" in frag)
+    check("artifact: the fragment answers to the host's theme in BOTH directions",
+          'data-theme="dark"' in frag and 'data-theme="light"' in frag)
     check("a3 sortable headers are focusable and announce their state",
           "aria-sort" in _SCRIPT and "'tabindex', '0'" in _SCRIPT
           and "'role', 'button'" in _SCRIPT)

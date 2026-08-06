@@ -11,6 +11,10 @@ node_modules/
 docs/audit/*.lock
 docs/audit/audit-report.html
 docs/audit/audit-report.md
+# Written by /audit:report --share before publishing. Same reason as the two above,
+# and a sharper one: this form exists only to be handed to a host, so a copy left in
+# the tree is a stale duplicate of something whose live version is a URL.
+docs/audit/audit-report.artifact.html
 # /audit:panel pidfile — holds a live pid, port and session token. Never history.
 **/.claude/audit-panel.json
 
