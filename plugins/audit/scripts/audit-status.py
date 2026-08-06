@@ -7,11 +7,13 @@ pass/fail signal — so a pipeline can block a merge on manifest state without
 any Claude session involved.
 
 Usage:
-  audit-status.py <manifest> [--json] [--gate] [--fail-on <c1,c2,...>]
+  audit-status.py <manifest> [--json] [--gate] [--phase <id>]
+                             [--fail-on <c1,c2,...>]
   audit-status.py --selftest
 
-Modes (combinable; --json is the default when neither flag is given):
+Modes: a bare invocation renders a human report; --json is for machines.
   --json    print the rollup as JSON
+  --phase   scope the human render to one phase (totals stay whole-plan)
   --gate    evaluate fail conditions; exit 1 when any trips (prints a summary)
 
 Conditions for --fail-on (comma list; the --gate default is
@@ -22,6 +24,11 @@ Conditions for --fail-on (comma list; the --gate default is
   open-bugs        ANY bug not yet fixed/wontfix
   blocked-tasks    any task with status "blocked"
   in-progress      any phase or task "in_progress" (for release-freeze gates)
+  over-budget      a phase at or past 100% of its `budgetUSD`
+  budget-80        a phase at or past 80% of its `budgetUSD`
+
+Neither budget condition is in the --gate default: spend is a signal, not a defect,
+and a phase at 105% may be entirely justified. Opt in when a budget is a commitment.
 
 Exit codes: 0 pass · 1 gate failed · 2 usage error / unreadable manifest
 (matching validate-manifest.py's convention).
@@ -38,8 +45,15 @@ sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
-              "in-progress")
+              "in-progress", "over-budget", "budget-80")
+# Neither budget condition is in the default gate. Spend is a signal, not a defect:
+# a phase at 105% may be entirely justified, and failing someone's merge over it
+# without them asking would make the whole gate something to switch off. Opt in with
+# --fail-on when a budget is a commitment rather than an estimate.
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
+# Warn threshold for the interactive path and the `budget-80` condition. 80% is far
+# enough in to be real and early enough to act on.
+BUDGET_WARN_PCT = 80.0
 CLOSED_BUG = ("fixed", "wontfix")
 
 # How many ready tasks /audit:status lists before folding. A wide-open plan can
@@ -253,6 +267,12 @@ def usage_summary(manifest, manifest_path, project_dir=None):
             "byAuthor": {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
                              "msgs": v["msgs"]}
                          for k, v in ul.aggregate(rows, "author").items()},
+            # `phase_budgets` is reused verbatim, not re-derived: it already returns
+            # spent/budget/pct/over per phase and encodes the rule that 0, negative,
+            # boolean and non-numeric all mean "no budget" rather than a budget of
+            # zero. Re-implementing that here is how the three existing copies of it
+            # would become four.
+            "budgets": ul.phase_budgets(manifest, rows),
         }
     except Exception:
         return None
@@ -394,6 +414,7 @@ def render_status(manifest, summary, width=18, only_phase=None):
     usage = summary.get("usage")
     if usage:
         lines.append("  " + _usage_line(au, summary, usage))
+        lines += _budget_lines(au, summary, usage)
 
     unmet = unmet_refs(manifest)
     ready = set(summary["ready"])
@@ -533,6 +554,38 @@ def _usage_line(au, summary, usage):
     return " - ".join(parts)
 
 
+def _budget_lines(au, summary, usage):
+    """Budget lines, and only for phases that actually declare one.
+
+    Renders nothing when no phase carries a `budgetUSD`, which is the common case —
+    an empty "0 of 0" frame would be worse than silence, the same call
+    `_budget_block` makes in the HTML report. Phases without a budget are counted in
+    a footnote rather than drawn at 0%: an unbudgeted phase is not a phase at zero."""
+    if not usage.get("showCost"):
+        return []                       # a budget is a money claim; honour the setting
+    budgets = usage.get("budgets") or {}
+    rows = [p for p in (budgets.get("phases") or []) if p.get("budget")]
+    if not rows:
+        return []
+    out = []
+    for p in sorted(rows, key=lambda x: -(x.get("pct") or 0)):
+        pct = p.get("pct") or 0.0
+        flag = ""
+        if pct >= 100.0:
+            flag = "  OVER"
+        elif pct >= BUDGET_WARN_PCT:
+            flag = "  WARN"
+        out.append("  budget %-5s %s %3.0f%%  %s of %s%s"
+                   % (p.get("id") or "?", au.bar(pct / 100.0, 12), pct,
+                      au.fmt_cost(p.get("spent")), au.fmt_cost(p.get("budget")),
+                      flag))
+    unbudgeted = len(budgets.get("phases") or []) - len(rows)
+    if unbudgeted:
+        out.append("  budget       %d phase(s) declare none - not shown, and not "
+                   "phases at zero" % unbudgeted)
+    return out
+
+
 def _bug_lines(manifest, summary):
     bugs = [b for b in ((manifest or {}).get("bugs") or []) if isinstance(b, dict)]
     if not bugs:
@@ -604,7 +657,44 @@ def evaluate_gate(summary, conditions):
                 or any(p.get("status") == "in_progress"
                        for p in summary["phases"])):
             failed.append(c)
+        elif c in ("over-budget", "budget-80") and budget_breaches(
+                summary, BUDGET_WARN_PCT if c == "budget-80" else 100.0):
+            failed.append(c)
     return failed
+
+
+def _budget_detail(summary, threshold_pct):
+    """Name the phases and their numbers, never just the count.
+
+    "2 phase(s) over budget" sends the reader hunting; the whole point of tying spend
+    to the plan is that it can say WHICH phase and by how much."""
+    au = _load_usage_fmt()
+    rows = budget_breaches(summary, threshold_pct)
+    if not rows:
+        return "no phase past %.0f%%" % threshold_pct
+    parts = ["%s at %.0f%% (%s of %s)"
+             % (p.get("id"), p.get("pct") or 0,
+                au.fmt_cost(p.get("spent")), au.fmt_cost(p.get("budget")))
+             for p in sorted(rows, key=lambda x: -(x.get("pct") or 0))[:3]]
+    more = "" if len(rows) <= 3 else ", +%d more" % (len(rows) - 3)
+    return "; ".join(parts) + more
+
+
+def budget_breaches(summary, threshold_pct):
+    """Phases at or past `threshold_pct` of their declared budget.
+
+    Returns [] when nothing is metered or no phase declares a budget — a repo with
+    no budgets must never trip a budget gate, and an unbudgeted phase is not a phase
+    at zero. Reads the block `phase_budgets` already computed rather than recomputing
+    a percentage from spend and budget, so the "what counts as a budget" rule lives
+    in exactly one place."""
+    budgets = ((summary or {}).get("usage") or {}).get("budgets") or {}
+    out = []
+    for p in budgets.get("phases") or []:
+        pct = p.get("pct")
+        if p.get("budget") and pct is not None and pct >= threshold_pct:
+            out.append(p)
+    return out
 
 
 def _extract_opt(args, flag):
@@ -743,6 +833,8 @@ def main(argv):
                     "blocked-tasks": "%d blocked task(s)"
                                      % summary["tasks"]["byStatus"].get("blocked", 0),
                     "in-progress": "work in progress",
+                    "over-budget": _budget_detail(summary, 100.0),
+                    "budget-80": _budget_detail(summary, BUDGET_WARN_PCT),
                 }.get(c, "")
                 print("GATE FAILED: %s (%s)" % (c, detail))
             return 1
@@ -949,6 +1041,72 @@ def _selftest():
     check("s31 a short list is not annotated as folded",
           "more" not in render_status(_few, rollup(_few, [], []))
           .split("READY NOW")[1].split("BUGS")[0])
+
+    # --- (b) budget as a gate --------------------------------------------------
+    def _with_budgets(*phase_rows):
+        """A summary carrying only the budget block the gate reads."""
+        return {"valid": True, "findings": 0, "warnings": 0, "phases": [],
+                "tasks": {"total": 0, "byStatus": {}},
+                "bugs": {"total": 0, "byStatus": {}, "open": 0,
+                         "openHighSeverity": 0},
+                "ready": [],
+                "usage": {"showCost": True, "totals": {"tokens": 1, "costUSD": 1.0},
+                          "budgets": {"phases": list(phase_rows)}}}
+
+    _over = {"id": "P2", "title": "t", "budget": 25.0, "spent": 32.5,
+             "pct": 130.0, "over": True}
+    _warn = {"id": "P1", "title": "t", "budget": 40.0, "spent": 34.0,
+             "pct": 85.0, "over": False}
+    _fine = {"id": "P3", "title": "t", "budget": 40.0, "spent": 4.0,
+             "pct": 10.0, "over": False}
+    _none = {"id": "P4", "title": "t", "budget": None, "spent": 9.0,
+             "pct": None, "over": False}
+
+    check("b1 over-budget trips at 100%+",
+          evaluate_gate(_with_budgets(_over), ["over-budget"]) == ["over-budget"])
+    check("b2 over-budget does NOT trip at 85%",
+          evaluate_gate(_with_budgets(_warn), ["over-budget"]) == [])
+    check("b3 budget-80 trips at 85%",
+          evaluate_gate(_with_budgets(_warn), ["budget-80"]) == ["budget-80"])
+    check("b4 budget-80 does not trip at 10%",
+          evaluate_gate(_with_budgets(_fine), ["budget-80"]) == [])
+    check("b5 a phase with no budget never trips either condition",
+          evaluate_gate(_with_budgets(_none), ["over-budget", "budget-80"]) == [])
+    check("b6 no usage block at all trips nothing (a repo without metering)",
+          evaluate_gate(rollup(_fixture(), [], []),
+                        ["over-budget", "budget-80"]) == [])
+    check("b7 neither budget condition is in the default gate "
+          "(spend is a signal, not a defect someone else's merge fails on)",
+          "over-budget" not in DEFAULT_GATE and "budget-80" not in DEFAULT_GATE)
+    check("b8 both are accepted by --fail-on",
+          "over-budget" in CONDITIONS and "budget-80" in CONDITIONS)
+
+    check("b9 the gate detail names the phase and both numbers, not just a count",
+          "P2" in _budget_detail(_with_budgets(_over), 100.0)
+          and "130%" in _budget_detail(_with_budgets(_over), 100.0)
+          and "$25.00" in _budget_detail(_with_budgets(_over), 100.0))
+    check("b10 the detail folds beyond three phases",
+          "+1 more" in _budget_detail(
+              _with_budgets(dict(_over, id="A"), dict(_over, id="B"),
+                            dict(_over, id="C"), dict(_over, id="D")), 100.0))
+    check("b11 breaches are ordered worst-first",
+          _budget_detail(_with_budgets(_warn, _over), 80.0).startswith("P2"))
+
+    # the rendered budget lines
+    _bl = render_status({"meta": {}, "phases": []}, _with_budgets(_over, _warn, _none))
+    check("b12 an over-budget phase is flagged OVER", "OVER" in _bl)
+    check("b13 a phase past the warn threshold is flagged WARN", "WARN" in _bl)
+    check("b14 an unbudgeted phase is footnoted, not drawn at 0%",
+          "declare none" in _bl and "not phases at zero" in _bl)
+    check("b15 the overrun percentage is shown uncapped",
+          "130%" in _bl)
+    _bl_nb = render_status({"meta": {}, "phases": []}, _with_budgets(_none))
+    check("b16 nothing is rendered when no phase declares a budget",
+          "budget" not in _bl_nb)
+    _sum_nc = _with_budgets(_over)
+    _sum_nc["usage"]["showCost"] = False
+    check("b17 budget lines are withheld when showCost is false",
+          "budget" not in render_status({"meta": {}, "phases": []}, _sum_nc))
 
     check("u2 rollup(usage=None) omits the key",
           "usage" not in rollup(_fixture(), [], [], usage=None))

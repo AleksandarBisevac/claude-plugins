@@ -495,6 +495,27 @@ caps at the track but the percentage does not, so an overrun reads as 130% rathe
 that merely looks full. `budgetUSD` must be a positive number; `0`, a negative, a boolean or a
 string is a validation finding, not a silent "no budget".
 
+**A budget can gate, not just report.** Three surfaces read the same computed block, so they can
+never disagree about what counts as over:
+
+- **`/audit:status`** prints a line per budgeted phase, flagged `WARN` at 80% and `OVER` at 100%.
+- **The pipeline**, with no Claude session involved:
+  `audit-status.py <manifest> --gate --fail-on over-budget` (or `budget-80`) exits 1 and names the
+  phase and both numbers — `P2 at 130% ($32.53 of $25.00)` — because "2 phases over budget" sends
+  the reader hunting for which.
+- **A run**, interactively: at 80% the orchestrator says so once per phase per session; at 100% it
+  **asks before starting the next task** — continue, stop and resume later, or raise `budgetUSD` to
+  a number you give it. It never raises the budget for you.
+
+Neither budget condition is in the `--gate` default. Spend is a signal, not a defect: a phase at
+105% may be entirely justified, and failing someone's merge over it unasked is how a gate becomes
+something people switch off. Opt in when a budget is a commitment rather than an estimate.
+
+The interactive gate is on **starting** work, never on finishing it — a task already mid-edit is
+not interrupted for spend, because stopping there strands a half-finished change. And no budget
+surface says anything when `usage.showCost` is false: naming dollars would leak exactly what that
+setting exists to hide.
+
 **One advisory, once.** When the task in flight passes `outlier`, the metering hook says so — in
 the session, while there is still time to split or re-scope it:
 
