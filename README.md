@@ -1,5 +1,9 @@
 # quality-gates
 
+[![ci](https://github.com/AleksandarBisevac/claude-plugins/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AleksandarBisevac/claude-plugins/actions/workflows/ci.yml)
+[![license MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-blue)](CONTRIBUTING.md#hard-rules)
+
 A [Claude Code](https://code.claude.com) plugin marketplace with one theme:
 **enforced** engineering discipline — plan gates, test gates, sign-off gates,
 secret guards. Deterministic hooks, not prompt suggestions.
