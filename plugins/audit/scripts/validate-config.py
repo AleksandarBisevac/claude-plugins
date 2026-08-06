@@ -48,6 +48,21 @@ AUTHOR_MODES = ("email", "name", "hash", "none")
 _STR_PATHS = ("manifestPath", "gitRoot", "stateDir", "logsDir", "bypassKeyword")
 
 
+def _real_keys(obj):
+    """Keys that are actual configuration, skipping `//` annotations.
+
+    JSON has no comments, so this plugin's own template documents every field with a
+    sibling `"//<key>"` string — at the top level and inside the nested objects.
+    Treating those as unknown keys meant the shipped template produced nine warnings
+    from this very validator, and so did every config copied from it: the documented
+    pattern was punished by the tool that documents it. One predicate rather than a
+    check per nesting level, so the rule cannot drift between them."""
+    try:
+        return [k for k in obj if not str(k).startswith("//")]
+    except Exception:
+        return []
+
+
 def _is_str_list(v):
     return isinstance(v, list) and all(isinstance(x, str) for x in v)
 
@@ -59,7 +74,7 @@ def validate_config(obj):
         return (["config root must be a JSON object, got %s"
                  % type(obj).__name__], warnings)
 
-    for k in obj:
+    for k in _real_keys(obj):
         if k not in KNOWN_ROOT:
             warnings.append("unknown top-level key %r (ignored by the hooks)" % k)
 
@@ -87,7 +102,7 @@ def validate_config(obj):
         if not isinstance(sp, dict):
             findings.append("secretPatterns must be an object")
         else:
-            for k in sp:
+            for k in _real_keys(sp):
                 if k not in KNOWN_SECRET:
                     warnings.append("unknown secretPatterns key %r" % k)
             if "extra" in sp:
@@ -106,7 +121,7 @@ def validate_config(obj):
         if not isinstance(ge, dict):
             findings.append("guardEdits must be an object")
         else:
-            for k in ge:
+            for k in _real_keys(ge):
                 if k not in KNOWN_GUARD:
                     warnings.append("unknown guardEdits key %r" % k)
             if "tokenVars" in ge and not _is_str_list(ge["tokenVars"]):
@@ -124,7 +139,7 @@ def validate_config(obj):
         if not isinstance(bw, dict):
             findings.append("bashWriteCheck must be an object")
         else:
-            for k in bw:
+            for k in _real_keys(bw):
                 if k not in KNOWN_BASHW:
                     warnings.append("unknown bashWriteCheck key %r" % k)
             if "enabled" in bw and not isinstance(bw["enabled"], bool):
@@ -135,7 +150,7 @@ def validate_config(obj):
         if not isinstance(tr, dict):
             findings.append("tddReminder must be an object")
         else:
-            for k in tr:
+            for k in _real_keys(tr):
                 if k not in KNOWN_TDD:
                     warnings.append("unknown tddReminder key %r" % k)
             if "enabled" in tr and not isinstance(tr["enabled"], bool):
@@ -157,7 +172,7 @@ def validate_config(obj):
         if not isinstance(us, dict):
             findings.append("usage must be an object")
         else:
-            for k in us:
+            for k in _real_keys(us):
                 if k not in KNOWN_USAGE:
                     warnings.append("unknown usage key %r" % k)
             for b in ("enabled", "showCost", "backfillOnFirstRun"):
@@ -189,7 +204,7 @@ def _check_pricing(pricing, findings, warnings):
         if not isinstance(row, dict):
             findings.append("usage.pricing[%r] must be an object" % model)
             continue
-        for k in row:
+        for k in _real_keys(row):
             if k not in KNOWN_RATE:
                 warnings.append("unknown usage.pricing[%r] key %r" % (model, k))
         for k in KNOWN_RATE:
@@ -205,7 +220,7 @@ def _check_rule(i, rule, findings, warnings):
     if not isinstance(rule, dict):
         findings.append("guardEdits.customRules[%d] must be an object" % i)
         return
-    for k in rule:
+    for k in _real_keys(rule):
         if k not in KNOWN_RULE:
             warnings.append("unknown guardEdits.customRules[%d] key %r" % (i, k))
     for req in ("pathPrefix", "bannedPattern"):
@@ -294,6 +309,18 @@ def _selftest():
     check("enforce as a number is a finding", any("enforce" in x for x in f))
     f, w = validate_config({"enforce": False})
     check("enforce is a known root key (no unknown-key warning)", not w)
+
+    # The `//comment` convention is what this plugin's own template ships; warning
+    # about it made the template fail its own validator nine times over.
+    f, w = validate_config({"//": "a note", "//gitRoot": "why", "gitRoot": "."})
+    check("`//` comment keys are not warned about", not f and not w)
+    import os as _os
+    _tmpl = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..",
+                          "templates", "audit.config.example.json")
+    with open(_tmpl, encoding="utf-8") as _fh:
+        f, w = validate_config(json.load(_fh))
+    check("the shipped template passes its own validator cleanly",
+          not f and not w)
 
     f, w = validate_config({"usage": {"authorMode": "nope"}})
     check("usage.authorMode enum enforced", any("authorMode" in x for x in f))

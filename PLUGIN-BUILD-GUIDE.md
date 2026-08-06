@@ -51,7 +51,7 @@ claude-plugins/                           # this repo (personal, public)
     audit/
       .claude-plugin/plugin.json          # plugin manifest (name/version/author/…)
       commands/                           # execution verbs (each thin; read reference/orchestrator.md)
-        status.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
+        status.md doctor.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
         panel.md                          # /audit:panel — open/stop/status the control-panel UI
         migrate.md                        # /audit:migrate — single-file -> sharded manifest layout
         init.md                           # /audit:init — multi-agent manifest generation

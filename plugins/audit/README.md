@@ -19,7 +19,7 @@ project-specific is supplied by a small per-repo config file.
 /audit:phase P0                                # run a whole phase (or /audit:run <id> for one task)
 ```
 
-Every action is its own `/audit:<verb>` (`status` · `next` · `run` · `phase` · `review` · `resume` ·
+Every action is its own `/audit:<verb>` (`status` · `doctor` · `next` · `run` · `phase` · `review` · `resume` ·
 `report` · `panel` · `init` · `task` · `bug` · `sync`) — there is **no bare `/audit`**. Requirements: Python
 (`python3`/`python`/`py`; Windows = Git Bash). Add `--dry-run` to `next`/`run`/`phase` to preview
 without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
@@ -94,6 +94,7 @@ a 50-phase × 1000-task manifest):
   artifact. See [Reports](#reports).
 - **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
   composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
+- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, and the usage ledger. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
 - **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
@@ -156,6 +157,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
 | `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day] [--phase <id>] [--author <who>] [--since 7d] [--json] [--backfill]` | **Token spend, attributed** — per phase, task, model, author and time window, with cache economics, cost-per-task and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
+| `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, and the usage ledger. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
@@ -189,7 +191,7 @@ the report, and `scripts/validate-manifest.py` runs the referential validator (e
 /plugin install audit@quality-gates
 ```
 
-Commands appear as `/audit:status`, `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:review`,
+Commands appear as `/audit:status`, `/audit:doctor`, `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:review`,
 `/audit:resume`, `/audit:report`, `/audit:panel`, `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
 action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up immediately,
 run `/reload-plugins` (or restart the session).
