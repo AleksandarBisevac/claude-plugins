@@ -333,6 +333,13 @@ step happens** so a long run stays legible (not one dump at the end):
 
 Use simple ASCII markers (`>` `[OK]` `[FAIL]` `-`) so it reads in any terminal. Keep each line to one sentence.
 
+**What NOT to lay out by hand.** The *entry view* is already rendered: run
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> [--phase <id>]`
+and print it verbatim. It carries the phase table, per-task status, what each pending task is
+waiting on, the ready list and the bug counts — so re-tabulating any of that costs tokens for a
+worse-aligned copy. The lines above are the ones a script genuinely cannot produce, because they
+report events as they happen; those stay yours.
+
 ## Dry-run / preview
 
 `next`, `run`, and `phase` accept a **`--dry-run`** token in their arguments. In dry-run:

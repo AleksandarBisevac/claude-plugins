@@ -42,6 +42,11 @@ CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 CLOSED_BUG = ("fixed", "wontfix")
 
+# How many ready tasks /audit:status lists before folding. A wide-open plan can
+# have hundreds; the count is always stated so the fold is never mistaken for the
+# whole set.
+READY_LIST_MAX = 12
+
 # "open-high-bugs" must catch high-severity-or-worse, not only the literal word
 # "high" — a bug filed as critical/blocker/sev1/p0 is the LAST thing a merge
 # gate should wave through. Severity is free-text, so normalise (lowercase,
@@ -305,6 +310,282 @@ def rollup(manifest, findings, warnings, usage=None):
     return out
 
 
+def unmet_refs(manifest):
+    """Task/phase id -> the refs it waits on that are not `done` yet.
+
+    Same 'satisfied' notion as `ready_tasks`, exposed per task so the renderer can
+    say WHY something is not ready instead of only that it is not."""
+    if not isinstance(manifest, dict):
+        return {}
+    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
+    status = {}
+    for ph in phases:
+        if ph.get("id"):
+            status[ph["id"]] = ph.get("status")
+        for t in ph.get("tasks") or []:
+            if isinstance(t, dict) and t.get("id"):
+                status[t["id"]] = t.get("status")
+    out = {}
+    for ph in phases:
+        pending = [r for r in (ph.get("blockedBy") or [])
+                   if status.get(r) != "done"]
+        if ph.get("id") and pending:
+            out[ph["id"]] = pending
+        for t in ph.get("tasks") or []:
+            if not isinstance(t, dict) or not t.get("id"):
+                continue
+            waits = [r for r in list(t.get("blockedBy") or [])
+                     + list(t.get("dependsOn") or [])
+                     if status.get(r) != "done"]
+            # A task inherits its phase's gate: it cannot start while the phase
+            # is blocked, and saying so is more useful than an empty column.
+            waits += ["%s (phase)" % r for r in pending]
+            if waits:
+                out[t["id"]] = waits
+    return out
+
+
+# --- human rendering ------------------------------------------------------------
+# `_marker` and the layout below are the vocabulary commands/status.md used to hand
+# to the model as prose. Moving it here is the same move commands/usage.md already
+# made for itself: a status command that spends tokens re-tabulating a rollup it was
+# just handed is paying twice for one answer, and the layout comes out different
+# every run. The model reads nothing here — this renders from the manifest that is
+# already loaded in this process, so nothing is re-read either.
+_MARKERS = {"done": "[x]", "in_progress": "[~]", "blocked": "[!]",
+            "pending": "[ ]"}
+
+
+def _marker(status):
+    return _MARKERS.get(status, "[?]")
+
+
+def _short(sha):
+    s = str(sha or "")
+    return s[:7] if s else "-"
+
+
+def render_status(manifest, summary, width=18, only_phase=None):
+    """Plain-ASCII status report. Printed verbatim by /audit:status.
+
+    Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
+    selftest enforces on its own output, so this reads in any terminal."""
+    au = _load_usage_fmt()
+    meta = (manifest or {}).get("meta") or {}
+    lines = []
+    title = meta.get("title") or "audit"
+    repo = meta.get("repo") or "-"
+    lines.append("AUDIT  %s   repo %s" % (title, repo))
+    lines.append("")
+
+    t_total = summary["tasks"]["total"]
+    t_done = summary["tasks"]["byStatus"].get("done", 0)
+    ph_done = sum(1 for p in summary["phases"] if p.get("status") == "done")
+    bugs = summary["bugs"]
+    frac = (float(t_done) / t_total) if t_total else 0.0
+    lines.append("  %s  %d/%d tasks done - %d/%d phases signed off - "
+                 "%d open bug(s) - %d ready now"
+                 % (au.bar(frac, width), t_done, t_total, ph_done,
+                    len(summary["phases"]), bugs["open"], len(summary["ready"])))
+    if not summary["valid"]:
+        lines.append("  INVALID MANIFEST: %d validator finding(s) - fix before "
+                     "running a phase" % summary["findings"])
+
+    usage = summary.get("usage")
+    if usage:
+        lines.append("  " + _usage_line(au, summary, usage))
+
+    unmet = unmet_refs(manifest)
+    ready = set(summary["ready"])
+    by_id = {p.get("id"): p for p in (manifest.get("phases") or [])
+             if isinstance(p, dict)}
+    # Scoping affects only which phases are LISTED. The overall line, the usage
+    # line and the bug counts stay whole-plan on purpose: a phase view that
+    # silently rescoped the totals would misreport the project.
+    shown_phases = [p for p in summary["phases"]
+                    if not only_phase or p.get("id") == only_phase]
+    if only_phase:
+        lines.append("  scoped to phase %s - totals above are whole-plan"
+                     % only_phase)
+
+    # Column widths are computed across EVERY task, then the header is printed once.
+    # Per-phase tables re-printed their own header and re-derived their own widths,
+    # so a fifty-phase manifest produced fifty header rows and fifty different
+    # alignments — the columns stopped being columns.
+    all_rows = {}
+    for pe in shown_phases:
+        ph = by_id.get(pe.get("id")) or {}
+        rows = []
+        for t in (ph.get("tasks") or []):
+            if not isinstance(t, dict):
+                continue
+            tid = t.get("id") or "?"
+            rows.append([
+                "%s %s" % (_marker(t.get("status")), tid),
+                _clip(_one_line(t.get("title")), 44),
+                t.get("status") or "?",
+                t.get("model") or "-",
+                _clip(", ".join(unmet.get(tid, [])) or "-", 26),
+                _short(t.get("commit")),
+                "READY" if tid in ready else "",
+            ])
+        all_rows[pe.get("id")] = rows
+
+    cols = ("task", "title", "status", "model", "waiting on", "commit", "")
+    widths = [len(c) for c in cols]
+    for rows in all_rows.values():
+        for r in rows:
+            for i, cell in enumerate(r):
+                widths[i] = max(widths[i], len(cell))
+
+    def fmt_row(cells):
+        return "     " + "  ".join("%-*s" % (widths[i], cells[i])
+                                   for i in range(len(cols))).rstrip()
+
+    lines.append("")
+    lines.append(fmt_row(list(cols)))
+
+    for pe in shown_phases:
+        lines.append("")
+        pdone, ptotal = pe.get("done", 0), pe.get("total", 0)
+        pfrac = (float(pdone) / ptotal) if ptotal else 0.0
+        ph = by_id.get(pe.get("id")) or {}
+        head = "  %-4s %-26s %-11s %s %d/%d" % (
+            pe.get("id") or "?", _clip(pe.get("title") or "", 26),
+            pe.get("status") or "?", au.bar(pfrac, 12), pdone, ptotal)
+        if ph.get("branch"):
+            head += "  %s" % ph["branch"]
+        lines.append(head)
+        if pe.get("desiredOutcome"):
+            lines.append("       desired: %s"
+                         % _clip(_one_line(pe["desiredOutcome"]), 88))
+        if pe.get("id") in unmet and ph.get("status") != "done":
+            lines.append("       blocked by: %s"
+                         % _clip(", ".join(unmet[pe["id"]]), 70))
+        for r in all_rows.get(pe.get("id")) or []:
+            lines.append(fmt_row(r))
+
+    lines.append("")
+    if summary["ready"]:
+        ready_list = summary["ready"]
+        # A wide-open plan can have hundreds of ready tasks, and a 464-line list is
+        # a list nobody reads. Fold it, and SAY the count — a silent cap would read
+        # as "that is all of them", which is the worse failure.
+        shown = ready_list[:READY_LIST_MAX]
+        lines.append("  READY NOW  %d task(s)%s"
+                     % (len(ready_list),
+                        "" if len(shown) == len(ready_list)
+                        else ", first %d shown" % len(shown)))
+        task_by_id = {t.get("id"): t for p in (manifest.get("phases") or [])
+                      if isinstance(p, dict)
+                      for t in (p.get("tasks") or []) if isinstance(t, dict)}
+        for tid in shown:
+            t = task_by_id.get(tid) or {}
+            lines.append("    %-9s %-44s %-7s run: /audit:run %s"
+                         % (tid, _clip(_one_line(t.get("title")), 44),
+                            t.get("model") or "-", tid))
+        if len(shown) < len(ready_list):
+            lines.append("    ... and %d more - /audit:next runs the first in order"
+                         % (len(ready_list) - len(shown)))
+    else:
+        lines.append("  READY NOW  nothing - every pending task is waiting on "
+                     "something, or the plan is complete")
+
+    lines += _bug_lines(manifest, summary)
+    lines += _resumable_lines(manifest, summary)
+    return "\n".join(lines)
+
+
+def _one_line(text):
+    return " ".join(str(text or "").split())
+
+
+def _clip(text, limit):
+    """Truncate with a visible marker, and never mid-word if a word boundary is
+    close. A bare slice produced rows like 'Fix BUG-3: cart total off-by-one with st',
+    which reads as corruption rather than as elision."""
+    s = str(text or "")
+    if len(s) <= limit:
+        return s
+    cut = s[:limit - 3]
+    space = cut.rfind(" ")
+    if space >= limit - 14:          # only back up to a word break if it is near
+        cut = cut[:space]
+    return cut.rstrip(" ,;:") + "..."
+
+
+def _usage_line(au, summary, usage):
+    """`usage: <tokens> tok - ~$<cost> equiv - this phase <tokens>`.
+
+    The cost clause is dropped when `showCost` is false, because naming dollars
+    would leak exactly what that setting exists to hide. The phase clause is
+    dropped when nothing is running, because there is no phase to attribute to."""
+    totals = usage.get("totals") or {}
+    parts = ["usage: %s tok" % au.fmt_tokens(totals.get("tokens"))]
+    if usage.get("showCost"):
+        parts.append("~%s equiv" % au.fmt_cost(totals.get("costUSD")))
+    running = [p.get("id") for p in summary["phases"]
+               if p.get("status") == "in_progress"]
+    if running:
+        per = (usage.get("byPhase") or {}).get(running[0]) or {}
+        if per:
+            parts.append("this phase %s" % au.fmt_tokens(per.get("tokens")))
+    return " - ".join(parts)
+
+
+def _bug_lines(manifest, summary):
+    bugs = [b for b in ((manifest or {}).get("bugs") or []) if isinstance(b, dict)]
+    if not bugs:
+        return []
+    tasks = {t.get("id"): t for p in (manifest.get("phases") or [])
+             if isinstance(p, dict)
+             for t in (p.get("tasks") or []) if isinstance(t, dict)}
+    ready = set(summary["ready"])
+    out = ["", "  BUGS  %d total - %d open (%d high severity)"
+           % (summary["bugs"]["total"], summary["bugs"]["open"],
+              summary["bugs"]["openHighSeverity"])]
+    for b in bugs:
+        eff = effective_bug_status(b, tasks)
+        if eff in CLOSED_BUG:
+            continue
+        flag = ""
+        if b.get("taskId") in ready:
+            flag = "   its fix is READY: /audit:run %s" % b["taskId"]
+        out.append("    %-8s %-11s %-5s %s%s"
+                   % (b.get("id") or "?", eff, b.get("severity") or "-",
+                      _one_line(b.get("title"))[:44], flag))
+    return out
+
+
+def _resumable_lines(manifest, summary):
+    """Flag an interrupted run, which is the one state a reader must not miss."""
+    for p in ((manifest or {}).get("phases") or []):
+        if not isinstance(p, dict):
+            continue
+        running_tasks = [t for t in (p.get("tasks") or [])
+                         if isinstance(t, dict) and t.get("status") == "in_progress"]
+        if p.get("status") == "in_progress" or running_tasks:
+            where = " on %s" % p["branch"] if p.get("branch") else ""
+            return ["", "  RESUMABLE  phase %s is in_progress%s - interrupted? "
+                    "run /audit:resume" % (p.get("id") or "?", where)]
+    return []
+
+
+def _load_usage_fmt():
+    """audit-usage.py's formatting primitives — bar/table/fmt_tokens/fmt_cost.
+
+    Imported rather than reimplemented: they carry rules this output must not
+    contradict, chiefly that real spend never renders as `$0.00`. Its `render()` is
+    deliberately NOT reused — that one reads flags off an argparse Namespace."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "audit-usage.py")
+    spec = importlib.util.spec_from_file_location("audit_usage_fmt", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def evaluate_gate(summary, conditions):
     """Return the list of FAILED condition names."""
     failed = []
@@ -350,6 +631,14 @@ def main(argv):
     # exits 1 when a task file lives inside a submodule. Standalone mode.
     gitmodules = _extract_opt(args, "--submodules")
     git_root_prefix = _extract_opt(args, "--git-root") or ""
+    # --phase <id>: scope the HUMAN render to one phase. /audit:phase and
+    # /audit:next need a deterministic entry view; their per-task progress lines are
+    # emitted as the work happens and cannot be pre-rendered, so this covers the
+    # half that can be, rather than pretending to cover both.
+    only_phase = _extract_opt(args, "--phase")
+    if only_phase == "__MISSING__":
+        sys.stderr.write("usage: --phase <phaseId>\n")
+        return 2
     if git_root_prefix == "__MISSING__":
         sys.stderr.write("usage: --git-root <prefix>\n")
         return 2
@@ -369,7 +658,7 @@ def main(argv):
         del args[i:i + 2]
     if len(args) != 1:
         sys.stderr.write(
-            "usage: audit-status.py <manifest> [--json] [--gate] "
+            "usage: audit-status.py <manifest> [--json] [--gate] [--phase <id>] "
             "[--fail-on <c1,c2,...>] [--submodules <.gitmodules> [--git-root <prefix>]]\n")
         return 2
 
@@ -426,8 +715,21 @@ def main(argv):
             "passed": [c for c in conditions if c not in failed],
         }
 
-    if want_json or not want_gate:
+    if want_json:
         print(json.dumps(summary, indent=2))
+    elif not want_gate:
+        # A bare invocation now renders for a human. It used to print raw JSON and
+        # leave commands/status.md telling the model how to lay it out, which cost
+        # tokens on every call and produced a different layout each time — the exact
+        # thing commands/usage.md refuses to do. `--json` is unchanged for machines.
+        if only_phase:
+            known = [p.get("id") for p in summary["phases"]]
+            if only_phase not in known:
+                sys.stderr.write("ERROR: no phase %r in %s (have: %s)\n"
+                                 % (only_phase, args[0], ", ".join(
+                                     str(k) for k in known)))
+                return 2
+        print(render_status(manifest, summary, only_phase=only_phase))
 
     if want_gate:
         failed = summary["gate"]["failed"]
@@ -522,6 +824,132 @@ def _selftest():
     # keeps working untouched
     check("u1 no ledger -> no usage key (back-compat)",
           "usage" not in summarize(_fixture()))
+    # --- (s) the human status renderer -------------------------------------------------
+    _fx = _fixture()
+    _sum = rollup(_fx, [], [])
+    _txt = render_status(_fx, _sum)
+
+    check("s1 render is pure ASCII (the fixture carries no non-ascii data)",
+          all(ord(c) < 128 for c in _txt))
+    check("s2 render carries no ANSI escapes", "\033" not in _txt)
+    check("s3 render has no box-drawing or emoji",
+          not any(0x2500 <= ord(c) <= 0x27BF or ord(c) > 0x1F000 for c in _txt))
+    check("s4 the overall line names tasks, phases, bugs and ready",
+          "tasks done" in _txt and "phases signed off" in _txt
+          and "open bug(s)" in _txt and "ready now" in _txt)
+    check("s5 every status marker is used for the statuses present",
+          "[x] P1.1" in _txt and "[ ] P2.1" in _txt)
+    check("s6 the column header appears exactly once, not per phase",
+          _txt.count("waiting on") == 1, str(_txt.count("waiting on")))
+    # The base fixture's P1 is `done`, so P2's gate is SATISFIED and there is
+    # nothing to report — asserting otherwise tested the wrong premise. A genuinely
+    # unmet gate needs an unfinished P1.
+    _fx_gate = copy.deepcopy(_fx)
+    _fx_gate["phases"][0]["status"] = "in_progress"
+    _fx_gate["phases"][0]["tasks"][0]["status"] = "in_progress"
+    _txt_g = render_status(_fx_gate, rollup(_fx_gate, [], []))
+    check("s7 a blocked phase says what it waits on",
+          "blocked by: P1" in _txt_g, _txt_g)
+    check("s8 a task inherits its phase's gate in 'waiting on'",
+          "P1 (phase)" in _txt_g)
+    check("s8b a satisfied gate reports nothing rather than an empty warning",
+          "blocked by:" not in _txt)
+    check("s9 a task waiting on a sibling names it", "P2.1" in _txt)
+    check("s10 the ready list carries a copy-pasteable run command",
+          "/audit:run P2.1" in _txt)
+    check("s11 no usage line when metering is absent", "usage:" not in _txt)
+
+    # usage line: present, and honest about showCost
+    _u = {"ledgerDir": "/tmp/x", "showCost": True,
+          "totals": {"tokens": 1234567, "costUSD": 4.5},
+          "byPhase": {"P2": {"tokens": 500, "costUSD": 1.0}}}
+    _txt_u = render_status(_fx, rollup(_fx, [], [], usage=_u))
+    check("s12 usage line appears when a ledger exists", "usage: 1.2M tok" in _txt_u)
+    check("s13 usage line shows cost when showCost is true", "equiv" in _txt_u)
+    _u2 = dict(_u, showCost=False)
+    _txt_u2 = render_status(_fx, rollup(_fx, [], [], usage=_u2))
+    check("s14 cost is withheld when showCost is false "
+          "(naming dollars would leak what the setting hides)",
+          "equiv" not in _txt_u2 and "usage:" in _txt_u2)
+    check("s15 no 'this phase' clause when nothing is running",
+          "this phase" not in _txt_u)
+
+    # a running phase gets the phase clause and the RESUMABLE line
+    _fx_run = copy.deepcopy(_fx)
+    _fx_run["phases"][1]["status"] = "in_progress"
+    _fx_run["phases"][1]["branch"] = "audit/p2-next"
+    _txt_r = render_status(_fx_run, rollup(_fx_run, [], [], usage=_u))
+    check("s16 a running phase adds the 'this phase' clause",
+          "this phase 500" in _txt_r)
+    check("s17 an interrupted phase is flagged as resumable",
+          "RESUMABLE" in _txt_r and "/audit:resume" in _txt_r)
+    check("s18 the phase branch is shown", "audit/p2-next" in _txt_r)
+
+    # invalid manifest must be stated, not implied
+    _txt_bad = render_status(_fx, rollup(_fx, ["boom"], []))
+    check("s19 an invalid manifest is stated in the render",
+          "INVALID MANIFEST" in _txt_bad)
+
+    # open bugs, and the ready-fix cross-link
+    check("s20 a closed bug is not listed as open",
+          "BUG-1" not in _txt.split("BUGS")[-1] if "BUGS" in _txt else True)
+    _fx_bug = copy.deepcopy(_fx)
+    _fx_bug["bugs"] = [{"id": "BUG-9", "title": "live one", "status": "open",
+                        "severity": "high", "taskId": "P2.1"}]
+    _txt_b = render_status(_fx_bug, rollup(_fx_bug, [], []))
+    check("s21 an open bug is listed", "BUG-9" in _txt_b)
+    check("s22 a bug whose fix is ready says so",
+          "its fix is READY: /audit:run P2.1" in _txt_b)
+
+    # truncation must not read as corruption
+    check("s23 clipping marks elision rather than cutting mid-word",
+          _clip("Fix BUG-3: cart total off-by-one with stacked discounts", 44)
+          .endswith("...")
+          and not _clip("Fix BUG-3: cart total off-by-one with stacked", 44)
+          .endswith(" ..."))
+    check("s24 short text is never clipped", _clip("short", 44) == "short")
+
+    # an empty plan must not crash or lie
+    _empty = {"meta": {"version": 2}, "phases": []}
+    _txt_e = render_status(_empty, rollup(_empty, [], []))
+    check("s25 an empty manifest renders without raising", "AUDIT" in _txt_e)
+    check("s26 an empty manifest says nothing is ready rather than showing a list",
+          "nothing" in _txt_e)
+
+    # A wide-open plan folds the ready list and states the count. Silent truncation
+    # would read as "that is all of them" — the worst failure for a to-do list.
+    _many = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "wide", "status": "pending", "tasks": [
+            {"id": "P1.%d" % i, "title": "t%d" % i, "status": "pending"}
+            for i in range(1, 40)]}]}
+    _txt_m = render_status(_many, rollup(_many, [], []))
+    check("s27 the ready list states the true total, not the shown count",
+          "READY NOW  39 task(s)" in _txt_m, _txt_m.split("READY NOW")[1][:60])
+    check("s28 the fold is announced with the remainder",
+          "and %d more" % (39 - READY_LIST_MAX) in _txt_m)
+    check("s29 the fold points at the command that runs the next one",
+          "/audit:next" in _txt_m)
+    _shown = [ln for ln in _txt_m.split("\n") if "run: /audit:run" in ln]
+    check("s30 exactly READY_LIST_MAX rows are listed",
+          len(_shown) == READY_LIST_MAX, str(len(_shown)))
+    _few = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "narrow", "status": "pending", "tasks": [
+            {"id": "P1.1", "title": "t", "status": "pending"}]}]}
+    # --phase scopes the listing without rescoping the totals.
+    _p1 = render_status(_fx, _sum, only_phase="P1")
+    check("s32 --phase lists only that phase",
+          "P1.1" in _p1 and "P2.1" not in _p1.split("READY NOW")[0])
+    check("s33 --phase says the totals stay whole-plan",
+          "totals above are whole-plan" in _p1)
+    check("s34 --phase keeps the whole-plan overall line",
+          "1/2 tasks done" in _p1 or "tasks done" in _p1)
+    check("s35 no scope note when unscoped",
+          "scoped to phase" not in _txt)
+
+    check("s31 a short list is not annotated as folded",
+          "more" not in render_status(_few, rollup(_few, [], []))
+          .split("READY NOW")[1].split("BUGS")[0])
+
     check("u2 rollup(usage=None) omits the key",
           "usage" not in rollup(_fixture(), [], [], usage=None))
     fake_usage = {"ledgerDir": "/tmp/x", "totals": {"tokens": 10, "costUSD": 1.0}}
