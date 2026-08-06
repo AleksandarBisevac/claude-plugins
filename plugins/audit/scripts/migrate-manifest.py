@@ -200,7 +200,7 @@ def _selftest():
         # 1. lossless in-place migration + backup + result validates
         p = os.path.join(tmp, "c1", "audit-plan.json")
         os.makedirs(os.path.dirname(p))
-        with open(p, "w") as fh:
+        with open(p, "w", encoding="utf-8") as fh:
             json.dump(legacy(), fh)
         code, msg = migrate(p)
         check("migrate exit 0", code == 0)
@@ -224,7 +224,7 @@ def _selftest():
         m3 = legacy()
         m3["phases"][1]["status"] = "in_progress"
         m3["phases"][1]["tasks"][0]["status"] = "in_progress"
-        with open(p3, "w") as fh:
+        with open(p3, "w", encoding="utf-8") as fh:
             json.dump(m3, fh)
         code3, msg3 = migrate(p3)
         check("in_progress -> refused (exit 1)", code3 == 1 and "in_progress" in msg3)
@@ -234,7 +234,7 @@ def _selftest():
         # 4. dry-run writes nothing
         p4 = os.path.join(tmp, "c4", "audit-plan.json")
         os.makedirs(os.path.dirname(p4))
-        with open(p4, "w") as fh:
+        with open(p4, "w", encoding="utf-8") as fh:
             json.dump(legacy(), fh)
         code4, msg4 = migrate(p4, dry_run=True)
         check("dry-run exit 0 + no phases dir", code4 == 0
