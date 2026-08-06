@@ -22,17 +22,9 @@ its own hooks.
 ## Tests (run before every PR)
 
 ```bash
-# all ten selftest suites (hooks + scripts) — stdlib only, no deps
-for f in plugins/audit/hooks/_config.py \
-         plugins/audit/hooks/require-plan.py \
-         plugins/audit/hooks/detect-plan-skip.py \
-         plugins/audit/hooks/guard-edits.py \
-         plugins/audit/hooks/guard-secrets-read.py \
-         plugins/audit/hooks/guard-bash-writes.py \
-         plugins/audit/hooks/remind-tdd.py \
-         plugins/audit/scripts/validate-manifest.py \
-         plugins/audit/scripts/audit-status.py \
-         plugins/audit/scripts/render-report.py; do
+# every selftest suite — stdlib only, no deps. Globbed, never enumerated: a list
+# drifted three ways once and CI silently stopped running one suite entirely.
+for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
   python3 "$f" --selftest || exit 1
 done
 
@@ -59,7 +51,11 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   existing manifest must keep validating across versions; prove it with a
   legacy-fields fixture when in doubt.
 - **New behavior ⇒ new selftest cases.** Selftests are the plugin's test suite;
-  every decision-core change lands with cases that pin it.
+  every decision-core change lands with cases that pin it. **Every `.py` under
+  `hooks/` and `scripts/` must carry a `--selftest`** — CI globs the directories
+  rather than listing them, and fails a file that has none. Adding a file and
+  remembering to register it were once two separate acts, and one suite went
+  unrun for two releases as a result.
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
 - Every command that mutates the manifest must revalidate
