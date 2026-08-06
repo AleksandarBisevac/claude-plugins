@@ -42,8 +42,8 @@ Below, "**Edit the phase's manifest file**" means the shard in the sharded layou
 
 ## Preflight
 
-Run the checks relevant to the command. **Read-only commands (`status`, `report`) run only 1–2;
-mutating commands (`next`, `run`, `phase`, `review`, `resume`) run all of 1–5 before acting.**
+Run the checks relevant to the command. **Read-only commands (`status`, `report`, `doctor`) run only 1–2;
+mutating commands (`next`, `run`, `phase`, `review`, `resume`) run all of 1–6 before acting.**
 
 1. If `.claude/audit.config.json` exists but is NOT valid JSON: **STOP** and report the parse
    error. A malformed config silently disables the project's custom guard rules (the hooks fall
@@ -66,6 +66,26 @@ mutating commands (`next`, `run`, `phase`, `review`, `resume`) run all of 1–5 
    (to audit it directly), or remove those files from the task(s). Do not start a run that will fail
    at commit time.
 5. **Acquire the lock** (mutating commands) — see **Concurrency lock**.
+6. **Budget check** (`next`, `run`, `phase` — after the lock, so an ask keeps it). Only when
+   the target phase declares `budgetUSD` AND metering has recorded something; otherwise skip
+   silently. Read it, never recompute it:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> --json` carries
+   `usage.budgets.phases[]` with `spent`, `budget`, `pct` and `over` already resolved.
+   - **`pct` under 80** — say nothing. A phase inside its budget is not news.
+   - **`pct` 80–99** — one line, once per phase per session:
+     `[BUDGET] <id> at <pct>% (<spent> of <budget>) — <n> task(s) still to run.` Then continue.
+     Do NOT repeat it on every task: a warning that reappears each turn is a warning nobody
+     reads (the same reason `meter-usage.py` de-dups its advisory per task).
+   - **`pct` at or over 100** — **AskUserQuestion before spawning the next executor**, with the
+     phase, the overrun and the remaining task count stated: (a) **continue** — the budget was an
+     estimate; (b) **stop here** — leave the phase `in_progress` and resume later; (c) **raise
+     `budgetUSD`** to a number the human gives, then continue. Never pick for them, and never
+     raise it yourself.
+
+   This is a gate on *starting* work, not on finishing it. A task already mid-edit is never
+   interrupted for spend — stopping there strands a half-finished change, which is the same
+   reasoning that keeps `meter-usage.py` advisory. And it never fires when `usage.showCost` is
+   false: naming dollars would leak exactly what that setting exists to hide.
 
 **Config resolution.** Everything project-specific comes from the manifest's `meta` block (with safe defaults);
 never hardcode branch names, package ids, skills, or build tools here:

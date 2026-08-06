@@ -98,7 +98,7 @@
         },
         "gitRoot": {
           "type": "string",
-          "description": "Path (relative to the project directory) of the git repository root, where all git operations and build/gate commands run. Default '.' (the project directory IS the git root \u2014 the normal case). Set to e.g. 'test' when the git repo / workspace lives in a subdirectory; the orchestrator then runs `git -C <gitRoot>` and strips the prefix when staging. Keep it in sync with the hooks' `gitRoot` in .claude/audit.config.json."
+          "description": "Path (relative to the project directory) of the git repository root, where all git operations and build/gate commands run. Default '.' (the project directory IS the git root — the normal case). Set to e.g. 'test' when the git repo / workspace lives in a subdirectory; the orchestrator then runs `git -C <gitRoot>` and strips the prefix when staging. Keep it in sync with the hooks' `gitRoot` in .claude/audit.config.json."
         },
         "reviewSkill": {
           "type": [
@@ -180,7 +180,7 @@
             "object",
             "null"
           ],
-          "description": "Azure DevOps sync configuration for /audit:sync. null/absent => sync refuses with setup guidance. Never store credentials here \u2014 auth belongs to `az login` / AZURE_DEVOPS_EXT_PAT.",
+          "description": "Azure DevOps sync configuration for /audit:sync. null/absent => sync refuses with setup guidance. Never store credentials here — auth belongs to `az login` / AZURE_DEVOPS_EXT_PAT.",
           "additionalProperties": true,
           "properties": {
             "organization": {
@@ -247,7 +247,7 @@
         "object",
         "null"
       ],
-      "description": "Azure DevOps work-item link, written by /audit:sync after a successful push (never by hand). Additive \u2014 absent until the first sync.",
+      "description": "Azure DevOps work-item link, written by /audit:sync after a successful push (never by hand). Additive — absent until the first sync.",
       "additionalProperties": true,
       "properties": {
         "id": {
@@ -297,6 +297,11 @@
         },
         "model": {
           "$ref": "#/$defs/model"
+        },
+        "budgetUSD": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Spend ceiling for this phase in USD. Compared against the token ledger by /audit:usage, /audit:status and the report, and gateable via `audit-status.py --fail-on over-budget|budget-80`. A value of 0 or below is not a budget of zero — it is rejected, because an unbudgeted phase must render as 'no budget' rather than as infinitely over."
         },
         "blockedBy": {
           "type": "array",
@@ -362,14 +367,14 @@
           "items": {
             "type": "string"
           },
-          "description": "Free-text app/domain/concern label(s) for grouping & filtering phases in status/report/panel. A single string (a partition, e.g. 'backend') OR a list of tags for cross-cutting concerns (e.g. ['backend', 'security'] \u2014 the phase is grouped under EACH). Any vocabulary: backend/mobile/web, devops, security, embedded, data, ml, platform\u2026 Informational; the orchestrator does not act on it."
+          "description": "Free-text app/domain/concern label(s) for grouping & filtering phases in status/report/panel. A single string (a partition, e.g. 'backend') OR a list of tags for cross-cutting concerns (e.g. ['backend', 'security'] — the phase is grouped under EACH). Any vocabulary: backend/mobile/web, devops, security, embedded, data, ml, platform… Informational; the orchestrator does not act on it."
         },
         "review": {
           "$ref": "#/$defs/review"
         },
         "reviewFindings": {
           "type": "object",
-          "description": "Legacy (pre-plugin manifests) running tally of sign-off findings \u2014 informational only; the orchestrator does not read it.",
+          "description": "Legacy (pre-plugin manifests) running tally of sign-off findings — informational only; the orchestrator does not read it.",
           "additionalProperties": true,
           "properties": {
             "found": {
@@ -654,7 +659,7 @@
         },
         "add": {
           "type": "array",
-          "description": "Assertions/tests to author. For mode 'tdd' these describe tests that MUST FAIL on current code (discover-then-fix). For mode 'regression' they describe the guard(s) added AFTER the fix. The meaning is mode-dependent \u2014 see `expectRedFirst`.",
+          "description": "Assertions/tests to author. For mode 'tdd' these describe tests that MUST FAIL on current code (discover-then-fix). For mode 'regression' they describe the guard(s) added AFTER the fix. The meaning is mode-dependent — see `expectRedFirst`.",
           "items": {
             "type": "string"
           }
