@@ -161,6 +161,37 @@ projection already follow — say nothing rather than something unfounded.
 work it should not touch, or the natural phrasing still not reaching it. Both are
 observable in a transcript, which is what makes this trigger able to fire at all.
 
+### Plugin name (evaluated 2026-08-07, before directory submission): keep `audit`
+
+Asked deliberately at the last cheap moment — the community catalog pins an approved
+plugin to a commit SHA, so after listing the name is a public install id and renaming
+costs every user a reinstall. Right now it costs nothing but the edit.
+
+Measured rather than assumed: the catalog holds **2287 plugins**, `audit` is **not
+taken**, and 19 names contain "audit" (`audit-project` and `audit-suite` are the
+alphabetical neighbours). `displayName` exists in the entry schema but **2 of 2287**
+use it and neither differs from `name` — so the listing name IS the install name, and
+there is no separate display lever. `category` is used by 152 entries and `tags` by
+**one**, which means discovery there is name plus description, not taxonomy.
+
+Kept anyway, in order of weight:
+
+1. **The prefix is typed daily; the name is read once.** `/audit:run P2.1` against
+   `/audit-gates:run P2.1` — every candidate that is more distinctive is also longer,
+   and it charges that length on every invocation forever.
+2. **The two-level naming is already right.** The marketplace is `quality-gates` — the
+   thesis. The plugin is `audit` — the job. A gate-flavoured prefix would be wrong for
+   half the surface: `/gate:usage`, `/gate:report` and `/gate:init` are not gates.
+3. **`audit` is accurate**, and the names that would cut through 2287 entries buy
+   memorability with precision. This repo derives names from what a thing does.
+
+The discoverability problem is real and the answer to it is the **description**, which
+is where a reader actually decides. Not the name.
+
+**Revisit trigger:** someone reports they could not find the plugin while searching for
+what it does, or a name collision appears in the catalog. Both are observable; "the name
+feels generic" is not, and is not a reason to spend a rename.
+
 ### Plugin evals (evaluated 2026-07, v0.6.0): deferred — feature is early access
 
 `claude plugin eval` (evals/**/case.yaml + graders) is the right tool for
