@@ -599,8 +599,12 @@ def _selftest():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    check("m1 an unknown command is a usage error",
-          main(["frobnicate"], out=lambda *_: None) == E_USAGE)
+    # argparse writes its usage text to stderr on an invalid choice; swallow it so
+    # a passing suite prints only its own lines.
+    import contextlib
+    with open(os.devnull, "w") as _null, contextlib.redirect_stderr(_null):
+        _rc = main(["frobnicate"], out=lambda *_: None)
+    check("m1 an unknown command is a usage error", _rc == E_USAGE)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
