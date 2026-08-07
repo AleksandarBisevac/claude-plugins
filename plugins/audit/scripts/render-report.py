@@ -1309,6 +1309,17 @@ def _usage_context(u):
     if c.get("from") and c.get("to"):
         bits.append(c["from"] if c["from"] == c["to"]
                     else "%s to %s" % (c["from"], c["to"]))
+    # The date behind every cost figure below. It used to appear in HTML only via
+    # _usage_notices, i.e. only once the table was more than 90 days stale — so the
+    # ordinary case showed dollars with no way to see what priced them, while the
+    # Markdown twin printed "rates as of" every time. Same report, two different
+    # answers to "on what basis". A cost is a claim; this is its basis, and the
+    # threshold for stating it is not "when it has already gone bad".
+    # Withheld when showCost is off, in both renderers: with no dollars on screen
+    # this dates a table nothing visible was derived from. A basis without its
+    # claim is noise, which is the same rule read backwards.
+    if u.get("pricingAsOf") and u.get("showCost", True):
+        bits.append("rates as of %s" % u["pricingAsOf"])
     if not bits:
         return ""
     return '<p class="uctx">%s</p>' % e(" · ".join(bits))
@@ -2091,7 +2102,7 @@ def _usage_md(u):
         head += " · ~%s equiv" % _fmt_cost(t["costUSD"])
     head += " · %s msgs · %d session(s) · cache hit %.0f%%" % (
         "{:,}".format(t["msgs"]), t["sessions"], t["cacheHitPct"])
-    if u.get("pricingAsOf"):
+    if u.get("pricingAsOf") and show_cost:
         head += " · rates as of %s" % u["pricingAsOf"]
     lines += [head, ""]
 
@@ -2433,8 +2444,25 @@ def _selftest():
     check("u2 Usage section renders when a ledger exists", 'id="usage"' in uh)
     check("u3 stat tiles carry compacted totals and equivalent cost",
           "1.5M" in uh and "$12.35" in uh and "equivalent cost" in uh)
-    check("u4 pricingAsOf surfaced so a stale rate is visible",
-          "2026-08-06" in uh)
+    # This case read `"2026-08-06" in uh` for four releases and asserted nothing:
+    # render_html stamps `generated <today>`, so on the day it was written the
+    # report's own timestamp satisfied it. It failed for the first time when the
+    # clock rolled to the 7th — and what it uncovered was real. HTML surfaced
+    # pricingAsOf ONLY through the >90-day stale notice, so the ordinary report
+    # showed dollars with no way to see what priced them, while the Markdown twin
+    # printed it every time. Assert the PHRASE, which no timestamp can produce.
+    check("u4 pricingAsOf surfaced in HTML, not only once the table has gone stale",
+          "rates as of 2026-08-06" in uh)
+    check("u4b the Markdown twin says the same thing",
+          "rates as of 2026-08-06" in um)
+    check("u4c and the date is not merely today's generation stamp "
+          "(the trap this case sat in)",
+          "rates as of %s" % time.strftime("%Y-%m-%d", time.gmtime()) not in uh)
+    _uq = dict(_u, showCost=False)
+    check("u4d withheld when showCost is off, in both renderers - with no dollars "
+          "on screen it dates a table nothing visible came from",
+          "rates as of" not in render_html(manifest, _sum, "audit-report", _uq)
+          and "rates as of" not in render_md(manifest, _sum, _uq))
     check("u5 model identity is never colour-alone: legend on the unlabelled "
           "stacks, direct labels on the ranked list",
           'class="legend"' in uh and uh.count("claude-opus-5") >= 2)
