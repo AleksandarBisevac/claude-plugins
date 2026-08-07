@@ -4,6 +4,87 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.26.0] - 2026-08-07
+
+**Three rules that were right for the repo that wrote them.** A test-file exemption that knew
+only the JavaScript spelling. A manifest exemption that matched one exact path while the
+sharded layout writes several. And a lock that judged its holder by a clock because nothing
+could ask the holder directly. Each was correct on this repository and wrong on a consumer's,
+which is the failure mode dogfooding cannot see — you have to run the thing somewhere else.
+
+### Fixed
+- **The plan gate denied the orchestrator its own phase shards.** `require-plan.py` exempted
+  the manifest by exact equality with `manifestPath`, but the sharded layout writes
+  `<manifest dir>/phases/<phaseId>.json` on every bookkeeping step — task status, attempts,
+  the commit SHA, the outcome. At the default path it worked by accident: `docs/audit/**` is
+  an exempt glob and swallows the shards. At a custom path there is no such glob, and the
+  ordering makes it worse than a nuisance — phase entry writes the shard while the gate is
+  still at *warn*, then sets `status: in_progress`, which is exactly what flips the gate to
+  *deny*. The run died one step into itself, on the layout `/audit:migrate` produces, and the
+  refusal named the orchestrator's own manifest as an unplanned edit. Scoped to
+  `<dir>/phases/*.json`, deliberately not to the manifest's directory: a manifest at the repo
+  root would make that directory `.` and hand every file in the repo a permanent bypass.
+- **The test-file exemption knew only the JavaScript spelling.** `exemptGlobs` listed
+  `**/*.spec.*` and `**/*.test.*` and nothing else, so `test_cart.py` — what unittest and
+  pytest discover by default — and `cart_test.go`, which the Go toolchain requires, were
+  denied by the plan gate. On those stacks the exemption did the opposite of its purpose:
+  red-first TDD begins by writing a failing test, and a gate that blocks that blocks the
+  discipline. The same `_config.py` already listed those patterns under
+  `tddReminder.testGlobs` — two lists in one file disagreeing about what a test file is. Now
+  covers `**/*_test.*`, `**/*_spec.*` and `**/test_*.*` as well. This is a **wider** bypass
+  by design; pin `exemptGlobs` in `.claude/audit.config.json` for the narrow set.
+- **The concurrency lock decides by whether the holder is alive, not by how old the lock is.**
+  See below.
+
+### Added
+- **`scripts/audit-lock.py`** — the concurrency lock as code. It was previously taken, judged
+  and released entirely by the orchestrator's prose; no script acquired it, and all three code
+  references only read it. A convention nobody can execute is not a lock. Now `acquire` /
+  `release` / `status`, with exit codes as the protocol: **0** acquired, **3** held by a live
+  run (stop), **4** the holder is gone (confirm, then `--takeover`).
+
+  The 60-minute staleness rule was a proxy for "is the holder still alive", and it was wrong in
+  both directions. A healthy 90-minute phase run read as crashed — and the protocol *itself*
+  says human-confirmation pauses keep the lock, of which a phase run has at least three. A run
+  that crashed after ten minutes held its lock for the remaining fifty. Measured what a
+  takeover actually does: the winner overwrites the loser's claim with no error and no
+  conflict, the loser's next write is accepted, and the loser then **deletes the winner's
+  lock** on its way out. Neither ever learns.
+
+  The verdict is now the holder's pid on this host, at any age; the age rule remains only where
+  liveness is unknowable (no pid recorded, or a lock from another machine). Same-host is the
+  right jurisdiction rather than a compromise — this lock lives in the shared git dir, so it
+  only ever coordinated worktrees and clones of one machine, and `phase.claim` plus the shard
+  merge conflict cover the rest. Every uncertainty resolves to *live*: a false "dead" is two
+  writers and a corrupted shard; a false "alive" is a refusal cleared by deleting one file.
+
+  Also: acquire is `O_CREAT|O_EXCL`, closing the window in the prose's check-then-write; and
+  **release refuses when the lock is no longer yours**, which is how a taken-over session finds
+  out. Liveness is probed through kernel32 on Windows — CPython implements `os.kill` there as
+  OpenProcess + TerminateProcess, so `os.kill(pid, 0)` would silently kill the process it was
+  asked about, and CI runs `windows-latest`.
+
+### Changed
+- **`/audit:doctor` stops calling healthy runs stale.** It had its own copy of the 60-minute
+  rule, so it told the human a working 90-minute phase run had crashed — the diagnostic
+  manufacturing the very takeover that loses work. It now reports the lock script's verdict,
+  and prints the basis for it.
+- **The panel distinguishes a live run from an abandoned lock.** `● running · <host>` was
+  shown for any lock file, which is a claim about a process the panel had never checked. An
+  abandoned lock now reads `○ lock, no live run` in the warning colour, with the basis in the
+  tooltip.
+- **The usage backfill lock records its pid.** A backfill that crashed used to keep the next
+  one out for the rest of the hour, and the lock file named nobody — so "delete it if that is
+  stale" was advice the human had no way to act on.
+
+### Documentation
+- **`docs/design/audit-concurrency-report.md`** closes C1 and re-rates it. The report had the
+  false-stale direction at likelihood *Low* and did not have the false-fresh direction at all;
+  both are now recorded with the measurement behind them. The report's own B2 retraction from
+  v0.25.0 stands. What remains open is stated plainly: the write path still does not verify
+  that the writer holds the lock, so a session that ignores an exit 3 is stopped by nothing —
+  a separate decision, since it would be the plugin's first denial based on session identity.
+
 ## [0.25.0] - 2026-08-07
 
 **Three things that were half-true.** A feature the TODO said was missing and was in fact
