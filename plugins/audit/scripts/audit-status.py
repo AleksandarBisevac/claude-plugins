@@ -551,6 +551,16 @@ def _usage_line(au, summary, usage):
         per = (usage.get("byPhase") or {}).get(running[0]) or {}
         if per:
             parts.append("this phase %s" % au.fmt_tokens(per.get("tokens")))
+    # The rate table behind this cost AND behind the budget lines under it, which
+    # is why it belongs here rather than only in the report: those percentages are
+    # what the preflight budget check acts on, and a number that can stop a phase
+    # should say what priced it. No fallback to the default table's date — see
+    # render-report._usage_context; manufacturing a basis is worse than stating
+    # that the manifest declared none.
+    if usage.get("showCost") and (totals.get("tokens") or 0):
+        parts.append("rates as of %s" % usage["pricingAsOf"]
+                     if usage.get("pricingAsOf")
+                     else "rates undated (set usage.pricingAsOf)")
     return " - ".join(parts)
 
 
@@ -965,6 +975,23 @@ def _selftest():
           "equiv" not in _txt_u2 and "usage:" in _txt_u2)
     check("s15 no 'this phase' clause when nothing is running",
           "this phase" not in _txt_u)
+    # The rate basis. It belongs on THIS surface in particular: the budget lines
+    # printed under it are what the preflight check acts on, and a number that can
+    # stop a phase should say what priced it.
+    check("s15a the rate basis is stated when the manifest declares one",
+          "rates as of 2026-08-06" in render_status(
+              _fx, rollup(_fx, [], [], usage=dict(_u, pricingAsOf="2026-08-06"))))
+    check("s15b and says so when it does not, rather than printing dollars that "
+          "look pinned to a table nobody named",
+          "rates undated" in _txt_u and "usage.pricingAsOf" in _txt_u)
+    check("s15c it never falls back to the default table's date - that would "
+          "manufacture a basis instead of stating one",
+          "rates as of" not in _txt_u)
+    check("s15d withheld with the dollars when showCost is false",
+          "rates" not in _txt_u2)
+    check("s15e and silent when there is no spend to price at all",
+          "rates" not in render_status(
+              _fx, rollup(_fx, [], [], usage=dict(_u, totals={"tokens": 0}))))
 
     # a running phase gets the phase clause and the RESUMABLE line
     _fx_run = copy.deepcopy(_fx)
