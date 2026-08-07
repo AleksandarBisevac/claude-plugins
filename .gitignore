@@ -18,6 +18,14 @@ docs/audit/audit-report.artifact.html
 # /audit:panel pidfile — holds a live pid, port and session token. Never history.
 **/.claude/audit-panel.json
 
+# Per-session hook state and the bypass log. SECURITY.md tells consumers to
+# gitignore these; this repo dogfoods the plugin, so it needs the same line — a
+# `bash-writes-<session>.json` reached a commit before anyone noticed. No secrets
+# in them (session ids, seen-dirty paths, consumed bypasses), but they are local
+# scratch that the plugin garbage-collects after 7 days, not history.
+.claude/state/
+.claude/logs/
+
 # Token-usage ledger. Local by default: it records counts, model ids, timestamps,
 # branch and author - never prompt content - but it is per-developer telemetry and
 # most repos will not want it in history. To share it across a team instead, delete

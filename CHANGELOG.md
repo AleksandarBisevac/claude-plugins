@@ -4,6 +4,62 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.27.0] - 2026-08-08
+
+**The lock stops being advice.** v0.26.0 made it *correct* — it can tell a live holder from an
+abandoned one instead of guessing from a clock. This makes it *binding*: a session that ignores
+a refusal no longer gets to write anyway.
+
+### Added
+- **The plan gate refuses a manifest write held by another live session.** `require-plan.py`
+  now checks the concurrency lock before allowing a write to `manifestPath` or a phase shard.
+  This is the plugin's **first denial keyed on session identity**, so the scope is narrow and
+  every uncertainty resolves to *allow*:
+
+  | Situation | Verdict |
+  |---|---|
+  | No lock file for that path | allow — taking a lock is honoured, not required |
+  | Lock has no `sessionId` | allow — an unattributable lock must never be able to deny |
+  | The lock is this session's | allow |
+  | Another session, pid **alive** on this host | **deny** |
+  | Another session, pid **gone** | allow, with a PostToolUse notice |
+  | No git, unreadable lock, module missing | allow |
+
+  The hazard it closes is specific: two live sessions writing one shard **in one working tree**
+  produce no git conflict, because git never sees two versions. The loser's bookkeeping silently
+  overwrites the winner's, and neither ever learns. An *abandoned* lock deliberately does not
+  deny — nobody is writing against you, so blocking would add friction after a crash and protect
+  nothing.
+
+  The refusal names the holder, what they are doing, the basis for calling them alive, and the
+  one command that resolves it. Ordinary source files are untouched by this and remain entirely
+  the plan gate's business.
+
+### Changed
+- **`guard-bash-writes` reports a shell write onto a locked manifest.** A `sed -i` on a shard
+  cannot be caught before it lands, so the deny above does not apply — and it was invisible
+  twice over, since `manifestPath` was skipped outright and `.json` is not a source extension.
+  It is now surfaced after the fact, worded as what already happened, which is all a PostToolUse
+  hook can honestly say. Keeps this inside the already-documented bypass class 1 rather than
+  opening a new one.
+
+### Fixed
+- **A selftest that only passed on a day someone edited the file.** `audit-lock.py`'s j6 used
+  `__file__` as a stand-in for "a file with a recent mtime", so it asserted the source file had
+  been touched in the last hour. It went red the first time the full suite ran against an
+  unmodified checkout. Replaced with a temp file whose mtime is set explicitly, plus the case
+  that actually matters and is clock-independent: a lock whose file is *gone* reads live, never
+  seizable.
+
+### Documentation
+- **`SECURITY.md`** gains a section for the one denial that is not about the plan, with the
+  full situation/verdict table — anyone reasoning about this plugin's guarantees now has the
+  condition rather than the headline.
+- **`docs/design/audit-concurrency-report.md`** closes the enforcement gap it recorded in
+  v0.26.0, with the measured cost (0.14 ms on an ordinary edit, since the check does not fire;
+  19 ms on a manifest write, 11 ms of it `git rev-parse`) and the reason it was not optimised.
+  What remains open is stated: that you take a lock at all is still not enforced.
+
 ## [0.26.0] - 2026-08-07
 
 **Three rules that were right for the repo that wrote them.** A test-file exemption that knew

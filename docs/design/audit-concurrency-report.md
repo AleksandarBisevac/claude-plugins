@@ -116,9 +116,33 @@ which is how a taken-over session finds out, instead of silently deleting the wi
 The doctor, the panel badge and the usage backfill lock now share that one verdict rather than
 keeping three copies of the threshold. 79 new selftest cases.
 
-**Still not enforced:** the write path does not verify that the writer holds the lock. A
-session that ignores an exit 3 is stopped by nothing. That is a separate decision — it would
-be the plugin's first denial based on session identity — and it is not made here.
+**The write path enforces it, from v0.27.0.** `require-plan.py` refuses a write to the
+manifest or a phase shard while another **live** session holds the governing lock, so ignoring
+an exit 3 no longer buys you a write. It is the plugin's first denial keyed on session
+identity, and the scope is deliberately narrow — everything unattributable allows:
+
+| Situation | Verdict |
+|---|---|
+| No lock, or a lock with no `sessionId` | allow — an unattributable lock must never deny |
+| The lock is this session's | allow |
+| Another session, pid alive on this host | **deny**, naming the holder and the basis |
+| Another session, pid gone | allow, with a notice that the lock is still there |
+| No git, unreadable lock, module missing | allow |
+
+An abandoned lock does not deny on purpose: nobody is writing against you, so blocking would
+add friction after a crash and protect nothing. `guard-bash-writes` reports the same conflict
+for a `sed -i`, after the fact, since a shell write cannot be caught before it lands — which
+keeps this inside the already-documented bypass class 1 rather than opening a new one.
+
+Cost, measured: **0.14 ms** on an ordinary source edit (the check does not fire — nothing but
+manifest paths has a governing lock) and **19 ms** on a manifest write, of which 11 ms is
+`git rev-parse --git-common-dir`. Not optimised: a hand-rolled git-dir resolver would be a
+second implementation of something git already answers, and this session was spent removing
+exactly that kind of duplication.
+
+**What is still not enforced:** that you take a lock at all. A session that simply never
+acquires one writes freely, because denying an unlocked manifest write would break `/audit:init`,
+hand edits, and every read-only-turned-write path. The lock is honoured, not required.
 
 ### What is still open
 

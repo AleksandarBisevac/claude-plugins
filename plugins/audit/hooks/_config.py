@@ -406,6 +406,93 @@ def _load_manifest_assembled(path):
         return {}
 
 
+def _load_lock_lib():
+    """Load scripts/audit-lock.py by path — same pattern as _load_manifest_assembled
+    and meter-usage's ledger load. None if it cannot be loaded; every caller treats
+    that as "no verdict" and allows."""
+    try:
+        import importlib.util
+        scripts_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+        spec = importlib.util.spec_from_file_location(
+            "audit_lock", os.path.join(scripts_dir, "audit-lock.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+def governing_lock(manifest_rel, rel):
+    """Which lock covers a write to `rel`: 'index', 'phase-<id>', or None.
+
+    Mirrors the orchestrator's two tiers. Only manifest paths have a governing
+    lock — everything else in the repo is the plan gate's business, not the
+    lock's."""
+    if not rel or not manifest_rel:
+        return None
+    if rel == manifest_rel:
+        return "index"
+    mdir = os.path.dirname(manifest_rel)
+    shards = (mdir + "/" if mdir else "") + "phases/"
+    if rel.startswith(shards) and rel.endswith(".json"):
+        phase_id = rel[len(shards):-len(".json")]
+        if phase_id and "/" not in phase_id:
+            return "phase-" + phase_id
+    return None
+
+
+def manifest_lock_conflict(root, cfg, manifest_rel, rel, session_id):
+    """Is another session's lock in the way of this manifest write?
+
+    Returns None when the write is clear, else
+    {"lock", "holder", "live", "basis", "note"}.
+
+    This is the enforcement half of the concurrency lock. audit-lock.py made the
+    lock correct — it can now tell a live holder from an abandoned one — but a
+    correct lock that nothing consults is still advice. The orchestrator takes the
+    lock in prose, so a session that ignores an exit 3 was stopped by nothing, and
+    the loser's writes landed on top of the winner's with no error anywhere. This
+    is the check that makes the exit code binding, at the only moment that
+    matters: the write itself.
+
+    FAIL OPEN at every uncertainty, in keeping with the rest of this file:
+      * no lock file          -> None. Taking a lock is not enforced, only honoured.
+      * lock has no sessionId -> None. Written by hand or by an older orchestrator;
+                                 unattributable, and an unattributable lock must
+                                 never be able to deny.
+      * the lock is ours      -> None.
+      * no git / unreadable / audit-lock.py missing -> None.
+
+    A conflict with a NOT-live holder is returned too, with live=False. That is not
+    a denial case — nobody is writing against you, so blocking would only add
+    friction after a crash — but it is worth saying out loud, because the lock is
+    still there and the takeover was never performed.
+    """
+    try:
+        name = governing_lock(manifest_rel, rel)
+        if not name:
+            return None
+        lock = _load_lock_lib()
+        if lock is None:
+            return None
+        ld = lock.lock_dir(str(git_root_dir(root, cfg)))
+        if not ld:
+            return None
+        path = os.path.join(ld, name + ".lock")
+        if not os.path.exists(path):
+            return None
+        info = lock.read_lock(path)
+        holder = info.get("sessionId")
+        if not holder or not session_id or holder == session_id:
+            return None
+        live, basis = lock.judge(info, path)
+        return {"lock": name, "holder": holder, "live": bool(live),
+                "basis": basis, "note": info.get("note") or name}
+    except Exception:
+        return None
+
+
 def in_progress_task_map(root, manifest_rel):
     """Rel-file -> [{"taskId", "testsMode"}] for tasks whose status == 'in_progress',
     including fileIndex siblings keyed by the same task ids. Empty dict on any error.
@@ -542,6 +629,8 @@ def enforce_always(cfg):
 
 # --- selftest -----------------------------------------------------------------
 def _selftest() -> int:
+    import platform
+    import subprocess
     import tempfile
 
     results = []
@@ -724,6 +813,76 @@ def _selftest() -> int:
               plan_gate_mode(None, None) == "observe")
     finally:
         shutil.rmtree(tmp_f, ignore_errors=True)
+
+    # (g) governing_lock — which of the two tiers covers a given write. This is the
+    # map the enforcement rests on, so a path that should be governed and isn't
+    # would silently un-enforce, and one that shouldn't be and is would deny work
+    # that has nothing to do with the manifest.
+    M = "audit/plan.json"
+    check("g1 the index is the index tier", governing_lock(M, M) == "index")
+    check("g2 a shard is its own phase's tier",
+          governing_lock(M, "audit/phases/P1.json") == "phase-P1")
+    check("g3 bugfix shards too",
+          governing_lock(M, "audit/phases/BF12.json") == "phase-BF12")
+    check("g4 a non-JSON file in phases/ is not a shard",
+          governing_lock(M, "audit/phases/notes.txt") is None)
+    check("g5 a nested path under phases/ is not a shard (no id with a slash)",
+          governing_lock(M, "audit/phases/sub/P1.json") is None)
+    check("g6 a sibling of the manifest is not governed",
+          governing_lock(M, "audit/other.json") is None)
+    check("g7 ordinary source is not governed",
+          governing_lock(M, "src/app.py") is None)
+    check("g8 the lockfile itself is not a governed WRITE",
+          governing_lock(M, M + ".lock") is None)
+    # A manifest at the repo root makes dirname('') — `phases/` must still work and
+    # must not swallow the repo.
+    check("g9 root manifest: its shards still resolve",
+          governing_lock("plan.json", "phases/P1.json") == "phase-P1")
+    check("g10 root manifest: nothing else does",
+          governing_lock("plan.json", "src/app.py") is None
+          and governing_lock("plan.json", "anything.json") is None)
+    check("g11 garbage in, None out", governing_lock(None, None) is None
+          and governing_lock("", "") is None)
+
+    # (h) manifest_lock_conflict fail-open. Every one of these must return None:
+    # an unattributable lock that could deny would brick legitimate work in a
+    # plugin whose whole posture is to fail open.
+    tmp_h = Path(tempfile.mkdtemp(prefix="config-lock-"))
+    try:
+        cfg_h = dict(DEFAULTS)
+        check("h1 a path with no governing lock is never a conflict",
+              manifest_lock_conflict(tmp_h, cfg_h, M, "src/app.py", "s") is None)
+        check("h2 not a git repo -> no verdict",
+              manifest_lock_conflict(tmp_h, cfg_h, M, M, "s") is None)
+        if not shutil.which("git"):
+            print("SKIP h3-h7 (git is not on PATH)")
+        else:
+            subprocess.run(["git", "init", "-q", str(tmp_h)], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            check("h3 a git repo with no lock -> no verdict",
+                  manifest_lock_conflict(tmp_h, cfg_h, M, M, "s") is None)
+            lockmod = _load_lock_lib()
+            ld_h = Path(lockmod.lock_dir(str(tmp_h)))
+            ld_h.mkdir(parents=True, exist_ok=True)
+
+            def write_lock(**fields):
+                with open(ld_h / "index.lock", "w", encoding="utf-8") as fh:
+                    json.dump(fields, fh)
+
+            write_lock(hostname=platform.node(), pid=os.getpid())
+            check("h4 a lock with no sessionId -> no verdict",
+                  manifest_lock_conflict(tmp_h, cfg_h, M, M, "s") is None)
+            write_lock(hostname=platform.node(), pid=os.getpid(), sessionId="s")
+            check("h5 our own lock -> no verdict",
+                  manifest_lock_conflict(tmp_h, cfg_h, M, M, "s") is None)
+            check("h6 a caller with no session id of its own -> no verdict",
+                  manifest_lock_conflict(tmp_h, cfg_h, M, M, "") is None)
+            got = manifest_lock_conflict(tmp_h, cfg_h, M, M, "other")
+            check("h7 another live session -> a conflict, with its basis",
+                  isinstance(got, dict) and got["live"] is True
+                  and got["holder"] == "s" and bool(got["basis"]))
+    finally:
+        shutil.rmtree(tmp_h, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

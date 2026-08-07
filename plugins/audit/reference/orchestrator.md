@@ -179,6 +179,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py" acquire <name> \
 | **4** | holder is **not alive** | Print the output, ask the human (AskUserQuestion) to confirm, then rerun with `--takeover`. |
 | **1** | not a git repo / cannot write | Stop and report. Fall back to `<manifestPath>.lock` only if you have no git repo at all — that path coordinates within a single clone only. |
 
+**Exit 3 is enforced, not just advised (0.27.0).** `require-plan.py` refuses a write to the
+manifest or a phase shard while another LIVE session holds the governing lock, so ignoring a
+refusal here does not get you a write — it gets you a denial naming the holder. Take the lock,
+or wait. (An abandoned lock does not deny: nobody is writing against you. You are told, and the
+takeover is still the right move.)
+
 The script decides live-vs-abandoned by probing the holder's **pid on this host**, not by age.
 The old "older than 60 minutes is a crashed run" rule was wrong in both directions — it called a
 healthy 90-minute phase run crashed (and a phase run pauses on human confirmation more than once),

@@ -112,6 +112,32 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
 
 
+# The only denial in this plugin that is not about the plan. It is about who is
+# holding the pen: another session has this manifest's lock and is alive, so this
+# write would land on top of theirs. Says the holder, what they are doing, the
+# basis for calling them alive, and the one command that resolves it.
+_LOCK_DENY = (
+    "%s is under the %s lock, held by another LIVE session (%s).\n"
+    "  doing: %s\n"
+    "  basis: %s\n"
+    "Writing it now would overwrite their work with no conflict and no warning —\n"
+    "one working tree, so git never sees two versions.\n"
+    "Wait for that run, or check it with:\n"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py\" status\n"
+    "If you believe that session is gone, do NOT edit around this — take the lock\n"
+    "over properly so the record says who holds it:\n"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py\" acquire %s --takeover"
+)
+
+_LOCK_WARN = (
+    "%s is under the %s lock, held by %s — a session that is no longer running\n"
+    "(%s). Nothing is writing against you, so this edit is allowed. But the lock is\n"
+    "still there and the takeover was never performed, so the next session will be\n"
+    "told this phase is held by someone who has not been here for a while. Clear it:\n"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py\" acquire %s --takeover"
+)
+
+
 def _deny_payload(msg: str) -> dict:
     """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
     return {
@@ -218,11 +244,35 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
     #     Scoped to `<dir>/phases/*.json` rather than the manifest's directory:
     #     a manifest at the repo root (`"manifestPath": "plan.json"`) would make
     #     that directory `.` and hand every file in the repo a permanent bypass.
-    if rel == manifest_rel or rel == manifest_rel + ".lock":
-        return ("allow", "manifest/lock path: %s" % rel)
-    _mdir = os.path.dirname(manifest_rel)
-    _shards = (_mdir + "/" if _mdir else "") + "phases/"
-    if rel.startswith(_shards) and rel.endswith(".json"):
+    #
+    #     Exempt from the PLAN gate is not the same as unconditionally writable.
+    #     A manifest write is checked against the concurrency lock instead — see
+    #     step 2a-ii.
+    if rel == manifest_rel or rel == manifest_rel + ".lock" or (
+            _config.governing_lock(manifest_rel, rel)):
+        # 2a-ii. The lock, enforced. audit-lock.py can tell a live holder from an
+        #     abandoned one, but a verdict nothing consults is advice — the
+        #     orchestrator takes the lock in prose, so a session that ignored an
+        #     exit 3 was stopped by nothing and its writes landed on top of the
+        #     winner's. This is where the exit code becomes binding.
+        #
+        #     Only a LIVE holder denies. An abandoned lock means nobody is writing
+        #     against you, so blocking would add friction after a crash and protect
+        #     nothing — it is surfaced on the Post pass instead. Everything
+        #     unattributable (no lock, no sessionId in it, no git, no lock module)
+        #     allows: an unattributable lock must never be able to deny.
+        conflict = _config.manifest_lock_conflict(
+            root, cfg, manifest_rel, rel, str(data.get("session_id", "") or ""))
+        if conflict and conflict["live"]:
+            return ("block", _LOCK_DENY % (
+                rel, conflict["lock"], conflict["holder"], conflict["note"],
+                conflict["basis"], conflict["lock"]))
+        if conflict:
+            return ("warn", _LOCK_WARN % (
+                rel, conflict["lock"], conflict["holder"], conflict["basis"],
+                conflict["lock"]))
+        if rel == manifest_rel or rel == manifest_rel + ".lock":
+            return ("allow", "manifest/lock path: %s" % rel)
         return ("allow", "phase shard of the manifest: %s" % rel)
 
     # 2b. exempt globs
@@ -361,6 +411,7 @@ def main() -> None:
 
 # --- selftest -----------------------------------------------------------------
 def _selftest() -> int:
+    import platform
     import shutil
     import tempfile
 
@@ -481,6 +532,122 @@ def _selftest() -> int:
     check_custom("a6 sibling file still gated", "block",
                  payload("Write", "planning/other.json", content=big,
                          sid="selftest-session-a6"))
+
+    # (lk) The concurrency lock, ENFORCED. Everything above decides whether an edit
+    # is in the plan; this decides whether this session is the one holding the pen.
+    # It is the only denial here that is not about the plan, so it gets pinned in
+    # both directions and on every fail-open path — an unattributable lock that
+    # could deny would brick legitimate work in a plugin that fails open by design.
+    import subprocess as _sp
+    _git = shutil.which("git")
+    if not _git:
+        print("SKIP lk* (git is not on PATH)")
+    else:
+        lkroot = Path(tempfile.mkdtemp(prefix="require-plan-lock-"))
+        _sp.run([_git, "init", "-q", str(lkroot)], check=True,
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        (lkroot / "audit" / "phases").mkdir(parents=True, exist_ok=True)
+        # From DEFAULTS, not from `cfg` — earlier cases mutate that dict (enforce),
+        # and the lock check must be pinned independently of whichever plan tier
+        # happens to be in force when this block runs.
+        lkcfg = dict(_config.DEFAULTS)
+        lkcfg["manifestPath"] = "audit/plan.json"
+        lockdir = Path(_config._load_lock_lib().lock_dir(str(lkroot)))
+        lockdir.mkdir(parents=True, exist_ok=True)
+
+        def put_lock(name, **fields):
+            info = {"hostname": platform.node(), "startedAt": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "note": "phase run"}
+            info.update(fields)
+            with open(lockdir / (name + ".lock"), "w", encoding="utf-8") as fh:
+                json.dump(info, fh)
+
+        def lkok(name, cond):
+            # This suite's `check` runs a payload; these are plain assertions
+            # about the text of a refusal, which is the part a human acts on.
+            results.append(bool(cond))
+            print("%s %s" % ("PASS" if cond else "FAIL", name))
+
+        def lk(name, expected, rel, sid, event="PreToolUse"):
+            data = payload("Edit", str(lkroot / rel), new_string=big, sid=sid)
+            data["cwd"] = str(lkroot)
+            data["hook_event_name"] = event
+            got, msg = decide(data, cfg=lkcfg, state_dir=sd, logs_dir=ld, event=event)
+            ok = got == expected
+            results.append(ok)
+            print("%s %s (expected %s, got %s)"
+                  % ("PASS" if ok else "FAIL", name, expected, got))
+            return msg
+
+        _prev_lk = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = str(lkroot)
+        try:
+            lk("lk0 no lock at all -> the shard is writable", "allow",
+               "audit/phases/P1.json", "sess-B")
+
+            # A live holder. os.getpid() is a pid that is certainly running.
+            put_lock("phase-P1", sessionId="sess-A", pid=os.getpid())
+            msg = lk("lk1 another LIVE session's phase lock denies the shard", "block",
+                     "audit/phases/P1.json", "sess-B")
+            lkok("lk1b the denial names the holder", "sess-A" in msg)
+            lkok("lk1c and the basis for calling it live", "is running on this host" in msg)
+            lkok("lk1d and the one command that resolves it",
+                  "audit-lock.py\" acquire phase-P1 --takeover" in msg)
+            lk("lk2 the holder itself still writes freely", "allow",
+               "audit/phases/P1.json", "sess-A")
+            lk("lk3 a lock on P1 says nothing about P2", "allow",
+               "audit/phases/P2.json", "sess-B")
+            lk("lk4 nor about the index", "allow", "audit/plan.json", "sess-B")
+
+            # An abandoned holder is not a denial case: nobody is writing against
+            # you, so blocking would add friction after a crash and protect nothing.
+            dead = _sp.Popen([sys.executable, "-c", "pass"]); dead.wait()
+            put_lock("phase-P1", sessionId="sess-A", pid=dead.pid)
+            msg = lk("lk5 an ABANDONED holder warns instead of denying", "warn",
+                     "audit/phases/P1.json", "sess-B")
+            lkok("lk5b the warning still says the lock is there",
+                  "no longer running" in msg and "--takeover" in msg)
+
+            # Fail-open paths. Each of these must allow, and each is a different
+            # reason the lock cannot be attributed to anyone.
+            put_lock("phase-P1", pid=os.getpid())
+            lk("lk6 a lock with no sessionId can never deny", "allow",
+               "audit/phases/P1.json", "sess-B")
+            put_lock("phase-P1", sessionId="sess-A", pid=os.getpid())
+            lk("lk7 nor can it deny a session with no id of its own", "allow",
+               "audit/phases/P1.json", "")
+            with open(lockdir / "phase-P1.lock", "w", encoding="utf-8") as fh:
+                fh.write("{not json")
+            lk("lk8 an unreadable lock allows", "allow",
+               "audit/phases/P1.json", "sess-B")
+
+            # The index tier, and the boundary: a lock governs manifest paths only.
+            os.unlink(lockdir / "phase-P1.lock")
+            put_lock("index", sessionId="sess-A", pid=os.getpid())
+            msg = lk("lk9 a live index lock denies an index write", "block",
+                     "audit/plan.json", "sess-B")
+            lkok("lk9b and names the index tier", "index lock" in msg)
+            lk("lk10 but not a shard write", "allow", "audit/phases/P1.json", "sess-B")
+            msg = lk("lk11 an ordinary source file is untouched by the lock",
+                     "observe", "src/other.py", "sess-B")
+            # Not `"lock" not in msg`: "blocked" contains "lock". Assert on the
+            # phrases the lock verdict actually uses.
+            lkok("lk11b and its verdict talks about the plan, never the lock",
+                 "would have blocked" in msg
+                 and "under the" not in msg and "audit-lock.py" not in msg)
+
+            # Post cannot deny; main() is what enforces that, so pin it there.
+            put_lock("phase-P1", sessionId="sess-A", pid=os.getpid())
+            lk("lk12 the verdict is the same on the Post pass", "block",
+               "audit/phases/P1.json", "sess-B", event="PostToolUse")
+            lkok("lk12b but main() prints no deny payload on Post",
+                  "PostToolUse" in _warn_payload("x")["hookSpecificOutput"]["hookEventName"])
+        finally:
+            if _prev_lk is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _prev_lk
+            shutil.rmtree(lkroot, ignore_errors=True)
 
     # (b) transactional slot: Pre allows but does NOT record; the matching Post
     #     records; only then does a second distinct file block.

@@ -55,6 +55,30 @@ checks deny by default at every tier, with or without a manifest: reading `.env`
 regardless of whether a plan exists, so those guards need no evidence to be correct. If you
 are relying on this plugin for secret containment, that behaviour is unchanged.
 
+### The one denial that is not about the plan (0.27.0)
+
+`require-plan` also refuses a write to the **manifest or a phase shard** when the
+concurrency lock for that path is held by a **different, live session**. It is the plugin's
+only decision keyed on session identity, so it is worth being exact about when it fires:
+
+| Situation | Verdict |
+|---|---|
+| No lock file for that path | **allow** — taking a lock is honoured, not required |
+| Lock has no `sessionId` (hand-written, or an older orchestrator) | **allow** — an unattributable lock must never be able to deny |
+| The lock is this session's | **allow** |
+| Another session, and its pid is **alive on this host** | **deny** |
+| Another session, but its pid is **gone** | **allow**, with a PostToolUse notice that the lock is still there |
+| No git repo, unreadable lock, `audit-lock.py` missing | **allow** |
+
+It is scoped to `manifestPath` and `<manifest dir>/phases/*.json` and touches nothing else —
+ordinary source files remain entirely the plan gate's business. The point is narrow: two live
+sessions writing one shard in one working tree produce **no git conflict**, because git never
+sees two versions, so the loser's bookkeeping silently overwrites the winner's. Everything
+uncertain resolves to *allow*, in keeping with the fail-open posture above.
+
+Through `sed -i` and friends the same write cannot be caught before it lands
+(bypass class 1 below); `guard-bash-writes` reports it afterwards instead.
+
 Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the
 evidence check can only relax the gate, never manufacture a denial.
@@ -111,7 +135,10 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    0.6.0** the residual is covered by `guard-bash-writes` — a PostToolUse
    `git status` diff check that detects ANY shell write into an unplanned
    source file after the fact and tells the model in-band. It is advisory by
-   nature (PostToolUse cannot undo the write) and needs a git repo.
+   nature (PostToolUse cannot undo the write) and needs a git repo. **Since
+   0.27.0** it also reports a shell write into a manifest or phase shard held
+   by another live session — previously invisible twice over, since
+   `manifestPath` was skipped outright and `.json` is not a source extension.
 2. **Subagents do not inherit parent hooks** in all versions
    (anthropics/claude-code#43772). Mitigations: the `/audit` orchestrator —
    not its subagents — performs all manifest writes and commits; since 0.6.0

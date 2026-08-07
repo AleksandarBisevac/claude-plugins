@@ -43,6 +43,20 @@ WARN_TEMPLATE = (
     "notice; the change itself was NOT reverted."
 )
 
+# Same fact as require-plan's lock denial, delivered late because a shell write
+# cannot be intercepted before it lands. Worded as what already happened, not as
+# what to avoid — there is no avoiding it by the time this runs.
+LOCKED_TEMPLATE = (
+    "[bash-write-guard] That shell command wrote to manifest file(s) held by "
+    "ANOTHER LIVE SESSION: %s. Through Edit/Write the plan gate would have "
+    "refused this; a shell write cannot be caught before it lands, so it has "
+    "already happened and was NOT reverted. The other session is still running "
+    "and holds no knowledge of this change — it will write its own version over "
+    "yours, or yours over its, with no conflict, because one working tree means "
+    "git never sees two versions. Stop, tell the human, and reconcile by hand: "
+    "`audit-lock.py status` shows who holds what."
+)
+
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 
@@ -140,10 +154,22 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
     exts = _config.source_exts(cfg)
     in_prog = None
     suspicious = []
+    locked = []
     for rel in new:
         if rel in state["toolEdited"] or rel in state["warned"]:
             continue
-        if rel == manifest_rel or rel == manifest_rel + ".lock":
+        # A shell write to a manifest path is out of the PLAN gate's scope (.json
+        # is not a source extension) but squarely inside the LOCK's. require-plan
+        # denies that write when it arrives through Edit; through `sed -i` it
+        # arrives here, after the fact, where the only honest thing left is to say
+        # so. This hook exists precisely to cover the residual of bypass class 1.
+        if rel == manifest_rel or _config.governing_lock(manifest_rel, rel):
+            conflict = _config.manifest_lock_conflict(
+                root, cfg, manifest_rel, rel, session_id)
+            if conflict and conflict["live"]:
+                locked.append((rel, conflict))
+            continue
+        if rel == manifest_rel + ".lock":
             continue
         if _config.matches_exempt(rel, exempt):
             continue
@@ -155,6 +181,13 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
                 rel.startswith(f) for f in in_prog if f.endswith("/")):
             continue
         suspicious.append(rel)
+
+    if locked:
+        state["warned"].extend(r for r, _ in locked)
+        _save_state(sd, session_id, state)
+        return ("warn", LOCKED_TEMPLATE % "; ".join(
+            "%s (%s lock, held by %s — %s)" % (r, c["lock"], c["holder"], c["basis"])
+            for r, c in locked))
 
     if suspicious:
         state["warned"].extend(suspicious)
@@ -292,6 +325,62 @@ def _selftest() -> int:
         os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
     results.append(ok)
     print("%s f1 real git status detects the shell write" % ("PASS" if ok else "FAIL"))
+
+    # (fl) A shell write to a manifest path held by another LIVE session. Through
+    # Edit this is denied by require-plan; through `sed -i` it lands, and the only
+    # honest thing left is to say who it landed on top of. Previously invisible
+    # twice over: manifest_rel was skipped outright, and .json is not a source ext.
+    import platform as _pf
+    import time as _time
+    lockrepo = tmp / "lockrepo"
+    (lockrepo / "audit" / "phases").mkdir(parents=True, exist_ok=True)
+    os.environ["CLAUDE_PROJECT_DIR"] = str(lockrepo)
+    cfg_lock = _config._deep_merge(_config.DEFAULTS,
+                                   {"manifestPath": "audit/plan.json"})
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=str(lockrepo), check=True,
+                       capture_output=True, timeout=10)
+        lockdir = _config._load_lock_lib().lock_dir(str(lockrepo))
+        os.makedirs(lockdir, exist_ok=True)
+        with open(os.path.join(lockdir, "phase-P1.lock"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"hostname": _pf.node(), "pid": os.getpid(),
+                       "sessionId": "sess-A", "note": "phase P1",
+                       "startedAt": _time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                   _time.gmtime())}, fh)
+        (lockrepo / "audit" / "phases" / "P1.json").write_text(
+            '{"id":"P1"}\n', encoding="utf-8")
+        data = {"tool_name": "Bash", "tool_input": {"command": "sed -i ..."},
+                "session_id": "sess-B", "cwd": str(lockrepo)}
+        verdict, detail = decide(data, cfg=cfg_lock, state_dir=sd)
+        ok_l = (verdict == "warn" and "audit/phases/P1.json" in detail
+                and "sess-A" in detail and "ANOTHER LIVE SESSION" in detail)
+        # And the same write by the HOLDER is not a warning.
+        with open(os.path.join(lockdir, "phase-P1.lock"), "r+",
+                  encoding="utf-8") as fh:
+            info = json.load(fh)
+            info["sessionId"] = "sess-B"
+            fh.seek(0), fh.truncate()
+            json.dump(info, fh)
+        data2 = {"tool_name": "Bash", "tool_input": {"command": "sed -i ..."},
+                 "session_id": "sess-B2", "cwd": str(lockrepo)}
+        v2, _ = decide(data2, cfg=cfg_lock, state_dir=sd)
+        ok_own = v2 == "warn"          # sess-B2 is not the holder either
+        data3 = {"tool_name": "Bash", "tool_input": {"command": "sed -i ..."},
+                 "session_id": "sess-B", "cwd": str(lockrepo)}
+        v3, _ = decide(data3, cfg=cfg_lock, state_dir=sd)
+        ok_own = ok_own and v3 == "silent"
+    except Exception as exc:  # pragma: no cover
+        ok_l = ok_own = False
+        print("   (lock integration error: %s)" % exc)
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    results.append(ok_l)
+    print("%s fl1 a shell write onto another live session's shard is surfaced"
+          % ("PASS" if ok_l else "FAIL"))
+    results.append(ok_own)
+    print("%s fl2 and the lock's own holder is not warned about its own write"
+          % ("PASS" if ok_own else "FAIL"))
 
     # (g) non-git directory → silent
     check("g1 non-git dir silent", "silent",

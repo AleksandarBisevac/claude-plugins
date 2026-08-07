@@ -450,8 +450,20 @@ def _selftest():
     live, _ = judge({"hostname": "somewhere-else", "pid": os.getpid(),
                      "startedAt": old}, "")
     check("j5b another host falls back to age", live is False)
-    check("j6 an unreadable lock is not a licence to seize it",
-          judge({}, __file__)[0] is True)
+    # j6 used `__file__` as "a file with a recent mtime", so it only passed on a day
+    # someone edited audit-lock.py — it went red the first time the full suite ran
+    # against an unmodified checkout. A test whose verdict depends on the clock
+    # relative to a source file's mtime asserts nothing you can rely on.
+    _fd, _mt = tempfile.mkstemp(prefix="audit-lock-mtime-")
+    os.close(_fd)
+    check("j6 an unreadable lock with a fresh file is not a licence to seize it",
+          judge({}, _mt)[0] is True)
+    os.utime(_mt, (time.time() - 95 * 60, time.time() - 95 * 60))
+    check("j6b an unreadable lock falls back to the file's own age",
+          judge({}, _mt)[0] is False)
+    os.unlink(_mt)
+    check("j6c and a lock whose file is gone reads live, never seizable",
+          judge({}, os.path.join(tempfile.gettempdir(), "no-such.lock"))[0] is True)
 
     # (a) age math -- the number the whole threshold rests on. Pinned in a
     # non-UTC, DST-observing zone too: CI runners are UTC, so a local-time bug
