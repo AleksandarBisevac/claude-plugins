@@ -11,6 +11,7 @@ it renders **without installing anything**.
 | [`audit-plan.json`](acme-store/audit-plan.json) | The manifest — the single source of truth the plugin reads and writes. |
 | [`acme-store-audit.html`](acme-store/acme-store-audit.html) | The rendered report (interactive; open it in a browser). |
 | [`acme-store-audit.md`](acme-store/acme-store-audit.md) | The Markdown twin (renders inline on GitHub). |
+| [`.claude/audit.config.json`](acme-store/.claude/audit.config.json) | The per-repo config — what `/audit:panel` edits, and what makes the example a *project* rather than a loose JSON file. |
 
 **▶ Live demo:** https://aleksandarbisevac.github.io/claude-plugins/ — the same
 report, hosted. Try the search, the phase-status chips, expand a phase, and
@@ -29,19 +30,64 @@ report, hosted. Try the search, the phase-status chips, expand a phase, and
 | A **narrative summary** in the report | `meta.reportSummary` → the blue Summary box |
 | **Custom report filenames** | `meta.reportBasename: "acme-store-audit"` → `acme-store-audit.html/.md` |
 
-## Regenerate the report
+## Run it — two scripts, no install, no Claude session
 
-From the repo root (Python 3.8+, no dependencies):
+The two surfaces the plugin renders — the **control panel** and the **report** —
+are plain Python scripts underneath, and the example is a project they accept.
+So you can drive both without installing the plugin or opening a session
+(Python 3.8+, no dependencies, run from any directory):
 
 ```bash
-python3 plugins/audit/scripts/render-report.py examples/acme-store/audit-plan.json
+examples/panel.sh          # open the control panel on the example  (Ctrl-C stops it)
+examples/report.sh --open  # re-render the report and open it in a browser
 ```
 
-It reads `meta.reportBasename`, so it writes `acme-store-audit.html` + `.md` next
-to the manifest. Validate the manifest the same way the commands do:
+Both take `--help`, and both pass unrecognized flags straight through to the
+script underneath.
+
+### `panel.sh` — the control panel
+
+| Command | What it does |
+|---|---|
+| `examples/panel.sh` | Foreground; opens your browser. `Ctrl-C` stops it. |
+| `examples/panel.sh --detach` | Background; prints the URL. Survives the shell. |
+| `examples/panel.sh status` | Is one running for this example, and where. |
+| `examples/panel.sh stop` | Stop it. |
+
+This is what [`/audit:panel`](../plugins/audit/commands/panel.md) runs, aimed at
+`acme-store/`: edit guards and paths, and set `reviewSkill` / per-task models
+from the autocomplete built by discovering the skills and agents on *your*
+machine. Saving writes to the example's `.claude/audit.config.json` and manifest —
+that's the point, and `git checkout examples/acme-store` undoes it.
+
+It binds `127.0.0.1` only and requires a per-launch token. The pidfile holding
+that token (`acme-store/.claude/audit-panel.json`) is gitignored, so running the
+panel never dirties the tree.
+
+### `report.sh` — the report
+
+Validates the manifest, then renders `acme-store-audit.html` + `.md` next to it
+(the filenames come from `meta.reportBasename`), under the same
+`CLAUDE_PROJECT_DIR` CI uses so the **Usage** section reads the example's
+committed ledger.
+
+It also refreshes **`docs/index.html`**, which CI requires to be a byte copy of
+the committed example report — re-rendering and forgetting that copy is how the
+live demo once went a month stale. `--out-dir <dir>` renders to scratch instead
+and touches nothing committed.
+
+> Every render stamps a fresh `generated <UTC>` line, so an in-place run leaves a
+> small git diff even when nothing else changed. Discard it with
+> `git checkout examples/acme-store docs/index.html`.
+
+### The commands underneath
+
+The scripts are thin — this is all they call, and the plain form still works:
 
 ```bash
 python3 plugins/audit/scripts/validate-manifest.py examples/acme-store/audit-plan.json
+python3 plugins/audit/scripts/render-report.py     examples/acme-store/audit-plan.json
+python3 plugins/audit/scripts/panel-server.py --project examples/acme-store
 ```
 
 > This manifest is checked in CI on every push, so the example never drifts out of validity.

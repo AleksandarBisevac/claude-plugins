@@ -93,6 +93,12 @@ One release = **one commit** that:
 2. finalizes the `CHANGELOG.md` section for that version,
 3. carries the annotated tag `v<version>` on that same commit.
 
+If the release changed the report, re-render the example with
+**`examples/report.sh`** rather than calling `render-report.py` directly: CI
+requires `docs/index.html` to be a byte copy of the committed example report,
+and the script makes that copy for you. The live demo went a month stale exactly
+once, by re-rendering and forgetting it.
+
 Push with `git push origin main --follow-tags` **only after CI is green** on the
 commit. Verify that commit specifically — `gh workflow run ci.yml --ref main`
 addresses a run by ref, so a commit whose push never produced one can still be

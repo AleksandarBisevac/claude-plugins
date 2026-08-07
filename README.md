@@ -78,6 +78,10 @@ everything else reads and updates it. The report is one self-contained file
 for what a manifest and its report look like, or the [plugin README](plugins/audit/README.md)
 for the full command reference.
 
+Want to try the two UIs before installing anything? The example ships a script
+for each — `examples/panel.sh` opens the control panel on it, `examples/report.sh
+--open` re-renders and opens the report. No install, no session, no dependencies.
+
 ## This repo, dogfooded
 
 `docs/audit/audit-plan.json` is this repository's own roadmap written as an

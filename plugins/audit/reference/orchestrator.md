@@ -237,6 +237,9 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
       into the shard — optimistic cross-machine coordination, so a same-phase double-claim on another
       branch surfaces as a shard merge conflict. The FS phase-lock is the same-machine guard; the
       claim is the durable, pushed record for other machines. It is released at sign-off.
+      `sessionId` is **`$CLAUDE_CODE_SESSION_ID`** — say which one, because a session has more than
+      one name and the hooks see a different id in their payload. `meter-usage` accepts either, so
+      spend still lands on the claimed phase; write this one so the record is consistent.
 2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the phase's manifest file — the shard when sharded).
    If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
 3. **Spawn the plugin's executor agent** via the `Agent` tool —

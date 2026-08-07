@@ -54,6 +54,16 @@ a refusal no longer gets to write anyway.
   opening a new one.
 
 ### Fixed
+- **Token attribution had the same identity split, silently.** `phase.claim.sessionId` is
+  written by the orchestrator from Bash (`$CLAUDE_CODE_SESSION_ID`); `meter-usage` matched it
+  against the id in its own hook payload. Those are different values, so the comparison could
+  only ever fail — and it fails quietly, as orchestrator spend that stays `unattributed`
+  instead of landing on the phase that claimed the session. Found while fixing the same
+  assumption in the lock, not by hitting it: no `phase.claim` has ever been written in this
+  repo, and all 148 ledger rows here are `unattributed` for the unrelated reason that these
+  sessions were not phase runs. The reader now accepts either name; every ledger row still
+  carries the payload id, so the ledger's shape is unchanged. The orchestrator's instruction
+  now says *which* id to write, instead of leaving it to be inferred.
 - **A selftest that only passed on a day someone edited the file.** `audit-lock.py`'s j6 used
   `__file__` as a stand-in for "a file with a recent mtime", so it asserted the source file had
   been touched in the last hour. It went red the first time the full suite ran against an

@@ -247,6 +247,26 @@ def agent_id_of(jsonl_path):
 _TASK_ID_RE = re.compile(r"([A-Za-z]{1,4}\d+\.\d+)")
 
 
+def _session_ids(session_id, aliases=None):
+    """Normalise "who am I" to a set, because a session has more than one name.
+
+    `phase.claim.sessionId` is written by the ORCHESTRATOR, from Bash, where the
+    id available is `$CLAUDE_CODE_SESSION_ID`. This module is driven by
+    `meter-usage.py`, which takes `session_id` from its HOOK PAYLOAD. Measured in
+    a live session those are different values, so comparing one to the other can
+    only ever fail — and it fails silently, as spend that quietly stays
+    `unattributed` instead of landing on the phase that claimed the session.
+
+    Nothing here can make the two ids equal, so the reader accepts either.
+    `meter-usage` passes both; a single string still works for every other caller.
+    """
+    out = {str(session_id)} if session_id else set()
+    for a in (aliases or ()):
+        if a:
+            out.add(str(a))
+    return out
+
+
 class Attributor(object):
     """Maps one transcript entry to (phaseId, taskId, attribution).
 
@@ -254,8 +274,13 @@ class Attributor(object):
     task-id set makes description parsing safe: a description is only read as a task
     label when it actually names a task this manifest knows about."""
 
-    def __init__(self, manifest, session_id):
+    def __init__(self, manifest, session_id, session_aliases=None):
+        """`session_id` is the canonical id; `session_aliases` are other names the
+        same session answers to, used ONLY to match a `phase.claim` — see
+        `_session_ids`. The canonical id is what lands on every ledger row, so it
+        stays a plain string and the ledger's shape is unchanged."""
         self.session_id = session_id
+        self.session_ids = _session_ids(session_id, session_aliases)
         self.phase_of_task = {}
         self.task_windows = []          # (taskId, startEpoch, endEpoch or None)
         self.claimed_phase = None
@@ -268,8 +293,8 @@ class Attributor(object):
                     continue
                 self.phase_of_task[t["id"]] = pid
             claim = ph.get("claim")
-            if (isinstance(claim, dict) and session_id
-                    and claim.get("sessionId") == session_id):
+            if (isinstance(claim, dict) and self.session_ids
+                    and claim.get("sessionId") in self.session_ids):
                 self.claimed_phase = ph
         if self.claimed_phase:
             for t in (self.claimed_phase.get("tasks") or []):
@@ -434,7 +459,8 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
     opts = opts or {}
     cursor = dict(cursor or {})
     files = dict(cursor.get("files") or {})
-    attributor = Attributor(manifest, session_id)
+    attributor = Attributor(manifest, session_id,
+                            session_aliases=opts.get("sessionAliases"))
     pricing = opts.get("pricing")
     author = cursor.get("author")
     repo = opts.get("repo")
@@ -1354,6 +1380,23 @@ def _selftest():
     check("attr: overlapping parallel windows collapse to the phase",
           att.attribute({}, parse_ts("2026-08-06T07:20:00Z"))
           == ("P3", None, "phase"))
+    # The session that claimed a phase writes `claim.sessionId` from Bash under
+    # $CLAUDE_CODE_SESSION_ID, while meter-usage identifies the session by its HOOK
+    # PAYLOAD id. Those are different values in a live session, so matching only the
+    # payload id can never fire — and it fails silently, as spend that stays
+    # `unattributed`. Aliases exist so the reader accepts either name.
+    aliased = Attributor(manifest, "hook-payload-id",
+                         session_aliases=["sess-1"])
+    check("attr: a claim written under the session's OTHER name still matches",
+          aliased.claimed_phase is not None
+          and aliased.claimed_phase.get("id") == manifest["phases"][0]["id"])
+    check("attr: an alias never matches somebody else's claim",
+          Attributor(manifest, "hook-payload-id",
+                     session_aliases=["sess-nope"]).claimed_phase is None)
+    check("attr: aliases are optional and None is not an alias",
+          Attributor(manifest, "sess-1", session_aliases=[None, ""]).claimed_phase
+          is not None)
+
     unclaimed = Attributor(manifest, "sess-other")
     check("attr: unclaimed session -> unattributed, never dropped",
           unclaimed.attribute({}, parse_ts("2026-08-06T07:20:00Z"))

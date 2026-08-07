@@ -210,6 +210,14 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
             "pricing": ucfg.get("pricing"),
             "backfillOnFirstRun": bool(ucfg.get("backfillOnFirstRun", True)),
             "maxScanBytes": int(ucfg.get("maxScanBytes") or 33554432),
+            # The other name this session answers to. `phase.claim.sessionId` is
+            # written by the orchestrator from Bash, where the id available is
+            # $CLAUDE_CODE_SESSION_ID; `session_id` above comes from this hook's
+            # payload, and in a live session those are DIFFERENT values. Comparing
+            # only the payload id could never match a claim, and the failure is
+            # silent — orchestrator spend just stays `unattributed`. Used only to
+            # match a claim; every ledger row still carries `session_id` itself.
+            "sessionAliases": [os.environ.get("CLAUDE_CODE_SESSION_ID")],
         })
 
     written = ul.append_rows(ledger, rows)

@@ -59,7 +59,9 @@ while [ "$i" -lt "$n" ]; do
   case "$arg" in
     --open) do_open=1 ;;
     -h|--help)
-      sed -n '2,30p' "$0" | cut -c3-
+      # The header comment IS the help text, so the two can never disagree:
+      # print it from line 2 up to the first line that is not a comment.
+      awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
       exit 0 ;;
     *) set -- "$@" "$arg" ;;
   esac
