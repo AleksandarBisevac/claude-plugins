@@ -442,6 +442,47 @@ def governing_lock(manifest_rel, rel):
     return None
 
 
+def _own_identities(session_id):
+    """Every id that means "this same Claude Code process took that lock".
+
+    There is more than one, and assuming otherwise nearly shipped a gate that
+    denied the orchestrator its own writes. The lock is taken from **Bash**, which
+    reads `$CLAUDE_CODE_SESSION_ID`; the decision is made in a **hook**, which is
+    handed `session_id` in its payload. Measured in a live session, those two are
+    NOT the same value:
+
+        $CLAUDE_CODE_SESSION_ID  ad510b54-c8d8-400c-9d3c-f227e85b50f9
+        hook payload session_id  f6cea720-f3ff-4de5-aef8-8ac328782d7a
+
+    So a run would have locked as one identity and then been refused as another.
+    Selftests could never catch it — they pass explicit ids to both sides.
+
+    What saves it is that a hook subprocess inherits the parent's environment, so
+    the hook can read the SAME env vars Bash read. Any of the three matching means
+    one process, and the tie goes to "ours": matching too eagerly costs a missed
+    denial (fail-open, the direction this whole file leans), while failing to match
+    denies a run its own bookkeeping — which is the worse mistake by far.
+    """
+    ids = {str(session_id)} if session_id else set()
+    env_sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if env_sid:
+        ids.add(str(env_sid))
+    return ids
+
+
+def _own_pid(info):
+    """True when the lock's pid IS this Claude Code process.
+
+    The strongest of the three, and the one that survives any session-id shape:
+    `$CLAUDE_PID` is the same number in Bash and in a hook, and it is already in
+    the lock because liveness needs it."""
+    try:
+        env_pid = os.environ.get("CLAUDE_PID")
+        return bool(env_pid) and int(env_pid) == int(info.get("pid"))
+    except (TypeError, ValueError):
+        return False
+
+
 def manifest_lock_conflict(root, cfg, manifest_rel, rel, session_id):
     """Is another session's lock in the way of this manifest write?
 
@@ -484,7 +525,9 @@ def manifest_lock_conflict(root, cfg, manifest_rel, rel, session_id):
             return None
         info = lock.read_lock(path)
         holder = info.get("sessionId")
-        if not holder or not session_id or holder == session_id:
+        if not holder or not session_id:
+            return None
+        if holder in _own_identities(session_id) or _own_pid(info):
             return None
         live, basis = lock.judge(info, path)
         return {"lock": name, "holder": holder, "live": bool(live),
@@ -881,6 +924,44 @@ def _selftest() -> int:
             check("h7 another live session -> a conflict, with its basis",
                   isinstance(got, dict) and got["live"] is True
                   and got["holder"] == "s" and bool(got["basis"]))
+
+            # h8-h10: the identity split that nearly shipped a gate denying the
+            # orchestrator its own writes. The lock is taken from Bash under
+            # $CLAUDE_CODE_SESSION_ID; the hook is handed a DIFFERENT session_id in
+            # its payload. Measured in a live session, they do not match. Every
+            # identity that means "the same Claude Code process" must count as ours.
+            _sid, _pid_env = (os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                              os.environ.get("CLAUDE_PID"))
+            try:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = "from-bash"
+                os.environ.pop("CLAUDE_PID", None)
+                write_lock(hostname=platform.node(), pid=os.getpid(),
+                           sessionId="from-bash")
+                check("h8 a lock taken under the env session id is ours, even "
+                      "though the hook is handed a different one",
+                      manifest_lock_conflict(tmp_h, cfg_h, M, M,
+                                             "from-hook-payload") is None)
+                # And the pid path, which survives any session-id shape at all.
+                os.environ["CLAUDE_CODE_SESSION_ID"] = "something-else"
+                os.environ["CLAUDE_PID"] = str(os.getpid())
+                write_lock(hostname=platform.node(), pid=os.getpid(),
+                           sessionId="from-bash")
+                check("h9 or matched by $CLAUDE_PID when neither id lines up",
+                      manifest_lock_conflict(tmp_h, cfg_h, M, M, "from-hook") is None)
+                # A genuinely different process must still conflict.
+                write_lock(hostname=platform.node(), pid=os.getpid(),
+                           sessionId="a-real-other-session")
+                os.environ["CLAUDE_PID"] = str(os.getpid() + 1)
+                got = manifest_lock_conflict(tmp_h, cfg_h, M, M, "from-hook")
+                check("h10 but a genuinely different session still conflicts",
+                      isinstance(got, dict) and got["holder"] == "a-real-other-session")
+            finally:
+                for k, v in (("CLAUDE_CODE_SESSION_ID", _sid),
+                             ("CLAUDE_PID", _pid_env)):
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
     finally:
         shutil.rmtree(tmp_h, ignore_errors=True)
 

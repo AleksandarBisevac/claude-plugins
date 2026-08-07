@@ -65,10 +65,18 @@ only decision keyed on session identity, so it is worth being exact about when i
 |---|---|
 | No lock file for that path | **allow** — taking a lock is honoured, not required |
 | Lock has no `sessionId` (hand-written, or an older orchestrator) | **allow** — an unattributable lock must never be able to deny |
-| The lock is this session's | **allow** |
+| The lock is this session's | **allow** — matched on the payload `session_id`, `$CLAUDE_CODE_SESSION_ID` **or** `$CLAUDE_PID`, because those are not all the same value (see below) |
 | Another session, and its pid is **alive on this host** | **deny** |
 | Another session, but its pid is **gone** | **allow**, with a PostToolUse notice that the lock is still there |
 | No git repo, unreadable lock, `audit-lock.py` missing | **allow** |
+
+**"This session" has more than one name, and that nearly broke it.** The lock is taken from
+**Bash**, which reads `$CLAUDE_CODE_SESSION_ID`; the decision is made in a **hook**, which is
+handed `session_id` in its payload. Measured in a live session those are different values, so a
+run would have locked as one identity and then been refused as another — the gate denying the
+orchestrator its own bookkeeping. A hook subprocess inherits the parent environment, so it
+compares against all three ids and treats any match as its own lock. The tie goes to "ours":
+matching too eagerly costs a missed denial, failing to match breaks the run.
 
 It is scoped to `manifestPath` and `<manifest dir>/phases/*.json` and touches nothing else —
 ordinary source files remain entirely the plan gate's business. The point is narrow: two live

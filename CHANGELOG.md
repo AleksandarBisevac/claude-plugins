@@ -35,6 +35,16 @@ a refusal no longer gets to write anyway.
   one command that resolves it. Ordinary source files are untouched by this and remain entirely
   the plan gate's business.
 
+  **"This session" turned out to have more than one name.** The lock is taken from Bash, which
+  reads `$CLAUDE_CODE_SESSION_ID`; the decision is made in a hook, which is handed `session_id`
+  in its payload. Measured in a live session those are *different values*
+  (`ad510b54…` vs `f6cea720…`), so the first cut of this would have locked under one identity
+  and then refused the write under another — the gate denying the orchestrator its own
+  bookkeeping, which is the exact bug class the previous release fixed twice. Selftests could
+  not have caught it: they pass explicit ids to both sides. A hook subprocess inherits the
+  parent environment, so it now compares against the payload id, `$CLAUDE_CODE_SESSION_ID` and
+  `$CLAUDE_PID`, and any match is its own lock.
+
 ### Changed
 - **`guard-bash-writes` reports a shell write onto a locked manifest.** A `sed -i` on a shard
   cannot be caught before it lands, so the deny above does not apply — and it was invisible

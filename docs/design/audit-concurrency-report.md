@@ -124,7 +124,7 @@ identity, and the scope is deliberately narrow — everything unattributable all
 | Situation | Verdict |
 |---|---|
 | No lock, or a lock with no `sessionId` | allow — an unattributable lock must never deny |
-| The lock is this session's | allow |
+| The lock is this session's | allow — matched on payload `session_id`, `$CLAUDE_CODE_SESSION_ID` or `$CLAUDE_PID`; measured in a live session, those are not the same value, and comparing only the first would have denied the orchestrator its own writes |
 | Another session, pid alive on this host | **deny**, naming the holder and the basis |
 | Another session, pid gone | allow, with a notice that the lock is still there |
 | No git, unreadable lock, module missing | allow |
