@@ -66,12 +66,31 @@ CONFIG_REL = ".claude/audit.config.json"
 DEFAULTS = {
     "manifestPath": "docs/audit/audit-plan.json",
     "gitRoot": ".",
+    # The test-file exemption exists so red-first TDD stays frictionless: the first
+    # act of a red-first fix is writing a test that FAILS, and a gate that blocks
+    # that blocks the discipline this plugin ships.
+    #
+    # It only ever recognised the JavaScript spelling. `*.test.js` and `*.spec.ts`
+    # were exempt while `test_cart.py` — Python's dominant convention, and what both
+    # unittest and pytest discover by default — was denied, as was `cart_test.go`,
+    # which is not a convention in Go but a REQUIREMENT of the toolchain. A Python
+    # or Go consumer got the opposite of the intended behaviour, and this repo never
+    # saw it because it dogfoods on its own manifest where every test lives inside a
+    # task's `files`. Found by running the pipeline end to end in a sandbox project.
+    #
+    # The suffix pair covers Go, Python, Ruby and Elixir at once; the prefix form is
+    # Python's alone. This widens an already-documented bypass class (SECURITY.md,
+    # "Test-file exemption") rather than opening a new one — the same compensations
+    # apply: remind-tdd stays visible and the phase review gate still reads the diff.
     "exemptGlobs": [
         "docs/audit/**",
         "**/*.md",
         ".claude/**",
         "**/*.spec.*",
         "**/*.test.*",
+        "**/*_test.*",
+        "**/*_spec.*",
+        "**/test_*.*",
     ],
     # false grades the plan gate by evidence; true restores always-on deny.
     "enforce": False,
@@ -676,6 +695,27 @@ def _selftest() -> int:
         check("f12 a non-bool enforce is ignored rather than trusted",
               plan_gate_mode({"enforce": "yes"}, st) == "observe")
         check("f13 enforce defaults to false", DEFAULTS["enforce"] is False)
+
+        # --- the test-file exemption knows more than one language ------------
+        # Found by running the pipeline end to end in a sandbox Python project:
+        # the exemption exists so red-first TDD stays frictionless, and it only
+        # recognised the JavaScript spelling — so the first act of a red-first
+        # fix, writing the failing test, was DENIED for Python and Go.
+        _eg = DEFAULTS["exemptGlobs"]
+        for _rel, _why in (("tests/test_cart.py", "python, unittest/pytest default"),
+                           ("tests/cart_test.py", "python suffix form"),
+                           ("pkg/cart_test.go", "go - required by the toolchain"),
+                           ("spec/cart_spec.rb", "ruby rspec"),
+                           ("test/cart_test.exs", "elixir"),
+                           ("src/cart.test.js", "js"),
+                           ("src/cart.spec.ts", "ts")):
+            check("g1 %s is exempt (%s)" % (_rel, _why), matches_exempt(_rel, _eg))
+        # The exemption is for TEST FILES, not for anything with "test" in the name.
+        # A wider glob here would quietly hand every file a bypass.
+        for _rel in ("src/cart.py", "src/testimonials.py", "src/contest.py",
+                     "src/protest_handler.go", "src/latest.py"):
+            check("g2 %s is NOT exempt - 'test' inside a word is not a test file"
+                  % _rel, not matches_exempt(_rel, _eg))
 
         # Never raises, and degrades to the least aggressive verdict.
         check("f14 manifest_state on garbage input still returns the safe shape",

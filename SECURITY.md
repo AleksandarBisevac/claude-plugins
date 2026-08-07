@@ -117,9 +117,20 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    dev-mode exception when the plugin checkout IS the working repo. Claude Code
    settings/hook wiring files outside the plugin remain editable by design
    (upstream: anthropics/claude-code#32376).
-4. **Test-file exemption.** `**/*.spec.*` / `**/*.test.*` are exempt from
-   plan-first so TDD stays frictionless — logic can be smuggled into a test
-   file. Compensations: `remind-tdd` visibility and the phase review gate.
+4. **Test-file exemption.** Test files are exempt from plan-first so red-first
+   TDD stays frictionless — the first act of a red-first fix is writing a test
+   that fails, and a gate that blocks that blocks the discipline. Logic can
+   therefore be smuggled into a test file. Compensations: `remind-tdd`
+   visibility and the phase review gate, which reads the whole diff.
+   **Widened in 0.26.0** from `**/*.spec.*` / `**/*.test.*` — the JavaScript
+   spelling only — to also cover `**/*_test.*`, `**/*_spec.*` and
+   `**/test_*.*`. `test_cart.py` (what unittest and pytest discover by default)
+   and `cart_test.go` (required by the Go toolchain) were being denied, so on
+   those stacks the exemption did the opposite of its purpose. The same
+   `_config.py` already listed those patterns under `tddReminder.testGlobs`:
+   two lists in one file disagreeing about what a test file is. Note this is a
+   **wider** bypass than before by design; a project that wants the narrow set
+   can pin `exemptGlobs` in `.claude/audit.config.json`.
 5. **Bypass residuals.** The single-use `#no-plan` bypass is consumed on
    PostToolUse; several edits batched in ONE assistant message can ride one
    bypass ("single-use per tool batch"). Arming is substring-based: a prompt
