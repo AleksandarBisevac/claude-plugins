@@ -200,10 +200,30 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
     ld = logs_dir if logs_dir is not None else _config.logs_dir(root, cfg)
     rel = _rel_path(root, file_path)
 
-    # 2a. the manifest itself and its lockfile ARE the plan — never gated,
-    #     even when a custom manifestPath falls outside the exempt globs
+    # 2a. the manifest itself, its lockfile and its phase shards ARE the plan —
+    #     never gated, even when a custom manifestPath falls outside the exempt
+    #     globs.
+    #
+    #     The shard clause is not decoration. In the sharded layout the
+    #     orchestrator writes `<manifest dir>/phases/<phaseId>.json` on every
+    #     bookkeeping step — task status, attempts, the commit SHA, the outcome —
+    #     and exact equality with `manifestPath` does not match those. At the
+    #     DEFAULT path it worked anyway, by accident: `docs/audit/**` is an exempt
+    #     glob and swallows the shards. At a custom path there is no such glob, so
+    #     the gate denied the orchestrator its own writes — and only AFTER phase
+    #     entry set `status: in_progress`, which is what flips the gate to deny.
+    #     A phase run therefore died one step into itself, on exactly the layout
+    #     `/audit:migrate` produces.
+    #
+    #     Scoped to `<dir>/phases/*.json` rather than the manifest's directory:
+    #     a manifest at the repo root (`"manifestPath": "plan.json"`) would make
+    #     that directory `.` and hand every file in the repo a permanent bypass.
     if rel == manifest_rel or rel == manifest_rel + ".lock":
         return ("allow", "manifest/lock path: %s" % rel)
+    _mdir = os.path.dirname(manifest_rel)
+    _shards = (_mdir + "/" if _mdir else "") + "phases/"
+    if rel.startswith(_shards) and rel.endswith(".json"):
+        return ("allow", "phase shard of the manifest: %s" % rel)
 
     # 2b. exempt globs
     if _matches_exempt(rel, exempt):
@@ -437,6 +457,27 @@ def _selftest() -> int:
     check_custom("a5 custom-path lockfile allowed", "allow",
                  payload("Write", "planning/plan.json.lock", content="{}",
                          sid="selftest-session-a4"))
+    # a5b-a5d: the SHARDS of a custom-path manifest. The orchestrator writes
+    # `<manifest dir>/phases/<phaseId>.json` on every bookkeeping step, and exact
+    # equality with manifestPath does not match those. At the default path it
+    # worked by accident — `docs/audit/**` swallows the shards — so a phase run on
+    # a custom sharded path died one step in, right after phase entry set
+    # `in_progress` and flipped the gate to deny. Found by running the pipeline in
+    # a sandbox whose manifest was not at the default path.
+    check_custom("a5b custom-path phase shard allowed", "allow",
+                 payload("Edit", "planning/phases/P1.json", new_string=big,
+                         sid="selftest-session-a5b"))
+    check_custom("a5c custom-path bugfix shard allowed", "allow",
+                 payload("Edit", "planning/phases/BF1.json", new_string=big,
+                         sid="selftest-session-a5c"))
+    # Scoped to phases/*.json, NOT to the manifest's directory: a manifest at the
+    # repo root would make that directory `.` and bypass the gate for everything.
+    check_custom("a5d a non-shard file beside the manifest is still gated", "block",
+                 payload("Edit", "planning/notes.json", new_string=big,
+                         sid="selftest-session-a5d"))
+    check_custom("a5e a non-JSON file inside phases/ is still gated", "block",
+                 payload("Edit", "planning/phases/notes.txt", new_string=big,
+                         sid="selftest-session-a5e"))
     check_custom("a6 sibling file still gated", "block",
                  payload("Write", "planning/other.json", content=big,
                          sid="selftest-session-a6"))
