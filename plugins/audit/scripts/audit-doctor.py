@@ -451,47 +451,37 @@ def check_ledger(rep, project, cfg, manifest_rel):
 
 
 def check_locks(rep, git_root, project, manifest_rel):
-    """A held lock is why a command refuses; a stale one is why it refuses wrongly."""
-    lock_dir = None
-    if git_root and shutil.which("git"):
-        try:
-            out = subprocess.run(["git", "-C", git_root, "rev-parse",
-                                  "--git-common-dir"],
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 timeout=15)
-            if out.returncode == 0:
-                common = out.stdout.decode("utf-8", "replace").strip()
-                if not os.path.isabs(common):
-                    common = os.path.join(git_root, common)
-                lock_dir = os.path.join(common, "audit-locks")
-        except Exception:
-            lock_dir = None
-    if not lock_dir or not os.path.isdir(lock_dir):
+    """A held lock is why a command refuses; a stale one is why it refuses wrongly.
+
+    Delegates to audit-lock.py rather than re-deriving the verdict. This used to
+    call anything older than 60 minutes stale, which told the human a healthy
+    90-minute phase run had crashed — the diagnostic manufacturing the very
+    takeover that loses work. The lock script answers by probing the holder's pid
+    on this host, and falls back to age only when it cannot.
+    """
+    if not (git_root and shutil.which("git")):
         rep.ok("locks", "no audit locks held")
         return
     try:
-        locks = [f for f in os.listdir(lock_dir) if f.endswith(".lock")]
-    except Exception:
-        locks = []
-    if not locks:
+        lock = _load("audit_lock", "audit-lock.py")
+        rows = lock.collect(git_root)
+    except Exception as exc:
+        rep.warn("locks", "could not read the lock directory: %s" % exc,
+                 "run `audit-lock.py status` by hand to see what is held")
+        return
+    if not rows:
         rep.ok("locks", "no audit locks held")
         return
-    stale = []
-    for name in locks:
-        p = os.path.join(lock_dir, name)
-        try:
-            age_min = (time.time() - os.path.getmtime(p)) / 60.0
-        except Exception:
-            continue
-        if age_min > 60:
-            stale.append("%s (%.0f min)" % (name, age_min))
-    if stale:
+    abandoned = ["%s (%s)" % (r["name"], r["basis"]) for r in rows if not r["live"]]
+    if abandoned:
         rep.warn("locks",
-                 "stale lock(s) older than 60 min: %s" % ", ".join(stale),
+                 "lock(s) with no live holder: %s" % "; ".join(abandoned),
                  "a mutating /audit command will offer to take over; if no run is "
                  "live you can delete the file")
     else:
-        rep.ok("locks", "%d lock(s) held by a live run" % len(locks))
+        rep.ok("locks", "%d lock(s) held by a live run: %s"
+               % (len(rows), "; ".join("%s (%s)" % (r["name"], r["basis"])
+                                       for r in rows)))
 
 
 def diagnose(project):
@@ -608,6 +598,41 @@ def _selftest():
                   repr([r for r in rep.rows if r["level"] == "FINDING"]))
         if have_git:
             check("fresh repo: exit code 0", rep.exit_code() == 0)
+        if have_git:
+            # Locks. The case that used to be reported wrongly: a phase run that
+            # has been going for 95 minutes is healthy, and calling it stale is
+            # how the doctor talked a human into the takeover that loses work.
+            lockmod = _load("audit_lock", "audit-lock.py")
+            ld = lockmod.lock_dir(tmp)
+            os.makedirs(ld, exist_ok=True)
+            old = time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                time.gmtime(time.time() - 95 * 60))
+            here = __import__("platform").node()
+            lp = os.path.join(ld, "phase-P1.lock")
+
+            def put(info):
+                with open(lp, "w", encoding="utf-8") as fh:
+                    json.dump(info, fh)
+
+            put({"hostname": here, "pid": os.getpid(), "startedAt": old,
+                 "note": "phase P1"})
+            rep = diagnose(tmp)
+            check("locks: a 95-min-old run with a live pid is OK, not stale",
+                  levels(rep, "locks") == ["OK"], detail(rep, "locks"))
+            check("locks: and the OK says how it knows",
+                  "is running on this host" in detail(rep, "locks"),
+                  detail(rep, "locks"))
+            dead = subprocess.Popen([sys.executable, "-c", "pass"])
+            dead.wait()
+            put({"hostname": here, "pid": dead.pid,
+                 "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                 "note": "phase P1"})
+            rep = diagnose(tmp)
+            check("locks: a 1-min-old run whose pid is gone is a WARNING",
+                  levels(rep, "locks") == ["WARNING"], detail(rep, "locks"))
+            check("locks: a dead holder is never a FINDING (nothing is broken)",
+                  rep.counts()["FINDING"] == 0)
+            os.unlink(lp)
 
         if have_git:
             check("fresh repo: git root resolves", levels(rep, "git") == ["OK"],

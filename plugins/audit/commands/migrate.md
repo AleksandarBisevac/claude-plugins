@@ -17,8 +17,8 @@ this is **opt-in** and **reversible** (a timestamped backup is written); a legac
 1. Resolve `manifestPath` and read the manifest (conventions → Locating the manifest). If it is
    **already sharded**, say so and stop (nothing to do).
 2. Preflight the git root (orchestrator → Preflight): the lock lives in the shared git dir.
-3. Acquire the **index lock** (`"$LOCKDIR/index.lock"`, conventions → Concurrency lock): refuse if a
-   fresh lock is held; offer a stale takeover via AskUserQuestion.
+3. Acquire the **index lock** (`audit-lock.py acquire index`, conventions → Concurrency lock):
+   exit 3 → stop, a live run holds it; exit 4 → offer a confirmed takeover via AskUserQuestion.
 4. **Refuse a mid-run or dirty-tree migration.** If any phase is `in_progress`, stop and ask the user
    to finish/pause it first (the script also enforces this; `--force` overrides). Prefer a **clean
    working tree** so the new shard files land in their own commit.

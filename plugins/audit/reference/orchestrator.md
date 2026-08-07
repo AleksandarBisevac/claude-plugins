@@ -151,40 +151,57 @@ run in parallel (spawn multiple Agents in one message). Tasks sharing a file or 
 
 Locks live in the **shared git directory**, not the working tree — so they coordinate across git
 **worktrees/clones on one machine** AND never appear as a working-tree change (no `git status` /
-hook noise). Resolve the lock directory once, at command start:
+hook noise).
+
+**Do not hand-roll the lock. Run the script and read its exit code:**
 
 ```bash
-LOCKDIR="$(git -C <gitRoot> rev-parse --git-common-dir)/audit-locks"   # shared by all worktrees
-mkdir -p "$LOCKDIR"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py" acquire <name> \
+        --project <gitRoot> --note "<verb> <scope>"
 ```
-(If `git rev-parse` fails — no git repo — fall back to `<manifestPath>.lock` in the working tree;
-that path coordinates within a single clone only. The git-root preflight normally guarantees a repo.)
 
-**Two tiers — take the narrowest lock that covers your writes:**
+`<name>` is one of the **two tiers — take the narrowest lock that covers your writes:**
 
-- **Index lock** `"$LOCKDIR/index.lock"` — held **briefly** for STRUCTURAL writes and id allocation:
-  `init`, `task`, `bug`, `sync`, allocating a new phase/task/bug id, and the phase **status-mirror**
-  write in the index. Acquire → edit the index → release, within that step.
-- **Phase-shard lock** `"$LOCKDIR/phase-<phaseId>.lock"` — held for the DURATION of a phase run by
-  `next`/`run`/`phase`/`review`/`resume` on that phase. Two DIFFERENT phases take two different
-  locks → they run in **parallel** (separate worktrees), each writing only its own shard. A run that
-  must also allocate an id or touch the index takes the index lock too, briefly (nested), then releases it.
+- **`index`** — held **briefly** for STRUCTURAL writes and id allocation: `init`, `task`, `bug`,
+  `sync`, allocating a new phase/task/bug id, and the phase **status-mirror** write in the index.
+  Acquire → edit the index → release, within that step.
+- **`phase-<phaseId>`** — held for the DURATION of a phase run by `next`/`run`/`phase`/`review`/
+  `resume` on that phase. Two DIFFERENT phases take two different locks → they run in **parallel**
+  (separate worktrees), each writing only its own shard. A run that must also allocate an id or
+  touch the index takes the index lock too, briefly (nested), then releases it.
 
-**The protocol for EITHER lock file:**
+**Exit codes are the protocol:**
 
-1. **Acquire (at command start).** If the lock file exists, read it (`{hostname, startedAt, note}`):
-   - `startedAt` younger than **60 minutes** → REFUSE: print the holder info and stop —
-     another session holds this lock (this manifest's index, or this specific phase).
-   - older → stale (a crashed run): ask the human (AskUserQuestion) to confirm **takeover**,
-     then overwrite the lock.
-   Otherwise create it via Bash:
-   `printf '{"hostname":"%s","startedAt":"%s","note":"<verb> <scope>"}' "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOCKDIR/<lockfile>"`
-2. **Release** — delete the lock file at the END of the command, including failure paths you control
-   (a refusal that never acquired it releases nothing). Human-confirmation pauses (AskUserQuestion)
-   keep the lock — that is still your run.
-3. `/audit:status` and `/audit:report` never lock and never wait for one.
-4. The lock directory is inside the git dir — it is NEVER committed or shown by `git status`, so no
-   `.gitignore` entry is needed. (The legacy `<manifestPath>.lock` fallback still wants `*.lock` ignored.)
+| Exit | Meaning | What you do |
+|---|---|---|
+| **0** | acquired | proceed |
+| **3** | held by a **live** run | **STOP.** Print the script's output verbatim and end the command. Do not take it over. |
+| **4** | holder is **not alive** | Print the output, ask the human (AskUserQuestion) to confirm, then rerun with `--takeover`. |
+| **1** | not a git repo / cannot write | Stop and report. Fall back to `<manifestPath>.lock` only if you have no git repo at all — that path coordinates within a single clone only. |
+
+The script decides live-vs-abandoned by probing the holder's **pid on this host**, not by age.
+The old "older than 60 minutes is a crashed run" rule was wrong in both directions — it called a
+healthy 90-minute phase run crashed (and a phase run pauses on human confirmation more than once),
+and it made you wait fifty minutes on a run that died after ten. Age is still the fallback when
+liveness is unknowable: no pid recorded, or a lock from another host. **Never second-guess an
+exit 3 by looking at `startedAt` yourself** — that is the rule the script exists to replace.
+
+**Release** at the END of the command, including failure paths you control:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py" release <name> --project <gitRoot>
+```
+
+A refusal that never acquired it releases nothing. Human-confirmation pauses (AskUserQuestion) keep
+the lock — that is still your run. **Release can itself exit 3**: that means another session took
+the lock over while you were working. Do not `--force` past it. Stop, tell the human, and re-read
+the shard before trusting anything you wrote after the takeover.
+
+`/audit:status` and `/audit:report` never lock and never wait for one. `audit-lock.py status`
+lists what is held, with the basis for each verdict, and is read-only.
+
+The lock directory is inside the git dir — it is NEVER committed or shown by `git status`, so no
+`.gitignore` entry is needed. (The legacy `<manifestPath>.lock` fallback still wants `*.lock` ignored.)
 
 ## Branch-per-phase
 

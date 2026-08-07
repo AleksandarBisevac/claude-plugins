@@ -65,10 +65,63 @@ two allocations of the same kind, which requires the same array, which is the sa
 - **O1 discipline** remains the answer for the merge-conflict modes, which are now the only
   modes.
 
+### C1 — closed 2026-08-07 (v0.26.0), and it was worse than this report said
+
+**C1 was answered by removing the threshold from the decision, not by tuning it.** The
+60-minute rule is a proxy for "is the holder still alive", and measuring it showed it wrong
+in *both* directions — this report only recorded one:
+
+- **False stale** (what the matrix caught): a healthy 90-minute run reads as crashed. This
+  report rated the likelihood **Low**. That was too kind. The protocol says human-confirmation
+  pauses KEEP the lock, and a phase run pauses for the human at least three times (a
+  `risk: "high"` task, a budget at 100%, the review sign-off). A run that asks a question and
+  gets an answer after lunch is stale by the protocol's own definition while perfectly healthy.
+  The **doctor manufactured the same mistake**: it reported any lock over 60 minutes as stale,
+  telling the human to take over the run that was working.
+- **False fresh** (not in this report at all): a run that crashes after ten minutes holds its
+  lock for the remaining fifty, and the next session is told to wait for nothing.
+
+**What was measured before designing anything** (sandbox at
+`.claude/jobs/*/tmp/c1`, a real repo, sharded manifest, two sessions):
+
+| Step | Observed |
+|---|---|
+| B reads a 95-min lock | offered a takeover — and `phase.claim` names `sess-A` right beside it, which nothing in the acquire protocol reads |
+| B overwrites the lock and claims the phase | no error, no warning, no conflict — one working tree, so git never sees two versions |
+| A, still alive, writes `P1.1 = done` | **accepted.** Nothing checked the lock; nothing checked the claim |
+| A releases at the end of its run | **deleted B's lock**, and neither session ever learned |
+
+The root cause was structural: **the lock was taken, judged and released entirely by the
+orchestrator's prose.** No script acquired it, `_manifest_io`'s write path knew nothing about
+it, and all three code references (`audit-doctor.py`, `audit-usage.py`, `panel-server.py`)
+only read it. A convention nobody can execute is not a lock.
+
+**The fix** is `plugins/audit/scripts/audit-lock.py` — acquire/release/status with exit codes,
+and the verdict in code:
+
+| Holder | Verdict |
+|---|---|
+| same host, recorded pid alive | **live** — refuse at any age |
+| same host, recorded pid gone | **abandoned** — offer takeover at once, no waiting |
+| no pid, or another host | fall back to the age rule, unchanged |
+
+Same-host is the right jurisdiction and not a compromise: this lock lives in the shared git
+dir, so it only ever coordinated worktrees and clones of **one machine** — `phase.claim` and
+the shard merge conflict are what cover the rest. Every uncertainty resolves to *live*: a false
+"dead" is two writers and a corrupted shard, a false "alive" is a refusal the human clears by
+deleting one file. Also fixed along the way: acquire is `O_CREAT|O_EXCL` (the prose's
+check-then-write had a window), and **release refuses when the lock is no longer yours** —
+which is how a taken-over session finds out, instead of silently deleting the winner's lock.
+
+The doctor, the panel badge and the usage backfill lock now share that one verdict rather than
+keeping three copies of the threshold. 79 new selftest cases.
+
+**Still not enforced:** the write path does not verify that the writer holds the lock. A
+session that ignores an exit 3 is stopped by nothing. That is a separate decision — it would
+be the plugin's first denial based on session identity — and it is not made here.
+
 ### What is still open
 
-- **C1 — the 60-minute staleness threshold** is unchanged. A legitimate run longer than an
-  hour still looks crashed, and the takeover prompt then permits two mutating sessions.
 - **Clones and separate machines are still outside the lock.** `--git-common-dir` is shared
   by worktrees of one clone and by nothing else — verified by comparing absolute paths. What
   changed is the consequence: an unlocked concurrent run now produces a conflict you must
@@ -226,7 +279,7 @@ integrity finding, or a silently wrong file→task map.
 | ID | Issue | Effect | Severity |
 |----|-------|--------|----------|
 | **C2** | Lock is a per-file, advisory mutex | **No protection across worktrees/clones** — the root cause of all of Class B. | High (structural) |
-| **C1** | 60-min staleness threshold | A legitimate long run (>60 min) looks "crashed"; another session offers a takeover and both then mutate. | Med / likelihood Low |
+| **C1** | 60-min staleness threshold | A legitimate long run (>60 min) looks "crashed"; another session offers a takeover and both then mutate. | Med / likelihood Low — **the likelihood was wrong; see the C1 section above**. Closed v0.26.0 |
 | **C3** | Manifest write isn't atomic | A crash mid-write can leave malformed JSON; softened (not removed) by the edit-and-revalidate rule (`manifest-conventions.md:17-26`). | Low |
 
 ### The conflict surface
@@ -259,7 +312,7 @@ Position is the risk (bottom-left calm → top-right hot). B2 sits top-right pre
 |---|---|---|---|
 | **High** | B1 (append) | B3 (status flip) | **B2 (ID collision)** |
 | **Medium** | — | B4 (links) · B5 (fileIndex) | — |
-| **Low** | C3 (atomicity) | — | C1 (stale takeover) |
+| **Low** | C3 (atomicity) | — | C1 (stale takeover) — re-rated, see above |
 
 *C2 (lock is blind across clones) isn't an event — it's the structural precondition that makes the
 whole B column possible.*

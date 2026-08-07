@@ -24,7 +24,7 @@ If a file already exists at `manifestPath`, ask the user (AskUserQuestion):
 
 On **Regenerate** or **Append**, take the **concurrency lock** (see
 `manifest-conventions.md` → Concurrency lock) BEFORE touching the file: refuse
-while another session's lock is fresh (<60 min) so a generation never clobbers
+while another session holds the index lock, so a generation never clobbers
 an in-flight run, and hold it through write + validate (released in step 7).
 
 ## 2. Interview (BEFORE any exploration)

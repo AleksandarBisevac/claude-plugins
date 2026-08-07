@@ -471,41 +471,39 @@ def _jsonl_in(base):
         return []
 
 
+def _lockmod():
+    """audit-lock.py, loaded by path (hyphenated filename)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location(
+        "audit_lock", os.path.join(here, "audit-lock.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def acquire_lock(ledger_dir, project):
     """Backfill rewrites monthly files, so it locks; the hook only appends and never
-    does. Mirrors the orchestrator's lock shape and 60-minute staleness rule."""
-    lock_dir = None
-    try:
-        import subprocess
-        out = subprocess.run(["git", "-C", project, "rev-parse", "--git-common-dir"],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             timeout=5)
-        common = (out.stdout or b"").decode("utf-8", "replace").strip()
-        if common:
-            if not os.path.isabs(common):
-                common = os.path.join(project, common)
-            lock_dir = os.path.join(common, "audit-locks")
-    except Exception:
-        lock_dir = None
-    if not lock_dir:
-        lock_dir = ledger_dir
+    does. Shares audit-lock.py's verdict rather than re-deriving it — a backfill
+    that crashed used to keep the next one out for the rest of the hour, and the
+    lock file said nothing about who held it. Unlike the orchestrator's locks this
+    one is held by THIS process, so os.getpid() is the pid that belongs in it."""
+    import platform
+    lock = _lockmod()
+    lock_dir = lock.lock_dir(project) or ledger_dir
     path = os.path.join(lock_dir, "usage.lock")
     try:
         os.makedirs(lock_dir, exist_ok=True)
     except Exception:
         return None, "cannot create lock directory %s" % lock_dir
     if os.path.exists(path):
-        try:
-            age = time.time() - os.path.getmtime(path)
-        except OSError:
-            age = 0
-        if age < 3600:
-            return None, ("another usage backfill is running (%s, %.0f min old); "
-                          "delete it if that is stale" % (path, age / 60.0))
+        live, basis = lock.judge(lock.read_lock(path), path)
+        if live:
+            return None, ("another usage backfill is running (%s) — %s"
+                          % (path, basis))
     try:
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"hostname": os.uname().nodename if hasattr(os, "uname")
-                       else "unknown",
+            json.dump({"hostname": platform.node(),
+                       "pid": os.getpid(),
                        "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                                   time.gmtime()),
                        "note": "usage backfill"}, fh)
@@ -898,6 +896,31 @@ def _selftest():
         code, msg = backfill(args_b, tmp, ledger, manifest, None)
         check("backfill: missing transcripts -> exit 2 with guidance",
               code == 2 and "--transcript-dir" in msg)
+
+        # The backfill lock. It used to keep the next run out for a full hour
+        # after a crash, and the file named nobody — so "delete it if that is
+        # stale" was advice the human had no way to act on.
+        import platform as _pf
+        import subprocess as _sp
+        lockdir = os.path.dirname(acquire_lock(ledger, tmp)[0])
+        lpath = os.path.join(lockdir, "usage.lock")
+        check("lock: acquiring records this process's pid",
+              json.load(open(lpath, encoding="utf-8")).get("pid") == os.getpid())
+        got, err = acquire_lock(ledger, tmp)
+        check("lock: a live backfill blocks the next one",
+              got is None and "another usage backfill is running" in (err or ""))
+        check("lock: and says on what basis", "pid %d" % os.getpid() in (err or ""))
+        dead = _sp.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        with open(lpath, "w", encoding="utf-8") as fh:
+            json.dump({"hostname": _pf.node(), "pid": dead.pid,
+                       "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                  time.gmtime()),
+                       "note": "usage backfill"}, fh)
+        got, err = acquire_lock(ledger, tmp)
+        check("lock: a crashed backfill does not block for the rest of the hour",
+              got is not None and err is None)
+        os.unlink(lpath)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

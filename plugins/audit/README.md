@@ -665,9 +665,13 @@ commands and will tell you when it finds none.
 <a id="sharded-layout--parallel-phases"></a>
 Mutating subcommands hold a lock in the **shared git dir**
 (`$(git rev-parse --git-common-dir)/audit-locks/`), **two-tier**: a brief **index lock**
-(structural writes + id allocation) and a per-phase **shard lock** (a phase run). A fresh lock
-refuses a second session with the holder's info; a stale one (>60 min — a crashed run) offers a
-confirmed takeover. `status` and `report` never lock. Because the lock lives inside `.git/`, it
+(structural writes + id allocation) and a per-phase **shard lock** (a phase run). Taking, judging
+and releasing a lock is `scripts/audit-lock.py`, not prose — a lock held by a **live** run refuses
+a second session with the holder's info, and one whose holder is **gone** offers a confirmed
+takeover. It decides which by probing the holder's pid on this host rather than by the lock's age:
+a healthy 90-minute phase run is not a crashed one, and a run that died after ten minutes should
+not hold its lock for another fifty. Age remains the fallback when liveness is unknowable — no pid
+recorded, or a lock from another machine. `status` and `report` never lock. Because the lock lives inside `.git/`, it
 never shows up in `git status` and needs no `.gitignore` entry. (No git repo → it falls back to
 `<manifestPath>.lock` in the working tree, which coordinates within a single clone only.)
 

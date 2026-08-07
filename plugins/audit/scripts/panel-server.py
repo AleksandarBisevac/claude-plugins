@@ -356,9 +356,30 @@ def _audit_lock_held(project, config):
     return os.path.exists(_manifest_path(project, config) + ".lock")   # legacy fallback
 
 
+def _lockmod():
+    """audit-lock.py, loaded by path. None if it cannot be loaded — the panel
+    then shows the lock without a liveness verdict rather than showing nothing."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "audit_lock", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "audit-lock.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
 def _lock_info(lockdir):
     """Read the shared audit-locks dir into {'index': info|None, 'phases': {pid: info}}.
-    Each info is the lock file's `{hostname, startedAt, note}` (or {} if unreadable)."""
+
+    Each info is the lock file's `{hostname, startedAt, note}` (or {} if unreadable),
+    plus `live` and `liveBasis` from audit-lock.py. The panel used to badge every
+    lock file "running", which is a claim about a process it had not checked — an
+    abandoned lock and a working one looked identical, and the badge was most
+    confident exactly when it was most likely wrong.
+    """
     out = {"index": None, "phases": {}}
     if not (lockdir and os.path.isdir(lockdir)):
         return out
@@ -366,16 +387,23 @@ def _lock_info(lockdir):
         names = os.listdir(lockdir)
     except Exception:
         return out
+    lock = _lockmod()
     for name in names:
         if not name.endswith(".lock"):
             continue
+        path = os.path.join(lockdir, name)
         try:
-            with open(os.path.join(lockdir, name), "r", encoding="utf-8") as fh:
+            with open(path, "r", encoding="utf-8") as fh:
                 info = json.load(fh)
         except Exception:
             info = {}
         if not isinstance(info, dict):
             info = {}
+        if lock is not None:
+            try:
+                info["live"], info["liveBasis"] = lock.judge(info, path)
+            except Exception:
+                pass
         if name == "index.lock":
             out["index"] = info
         elif name.startswith("phase-"):
@@ -1223,6 +1251,9 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .badge{font-size:.68rem;font-weight:700;padding:.25rem .5em;border-radius:var(--pill);
  background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
 .badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
+/* A lock whose holder is gone is not green: nothing is running, and nothing is
+   wrong yet either — it is the state the human has to resolve. */
+.badge.held{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
 .badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
 .badge.area{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent;text-transform:uppercase;letter-spacing:.03em}
 .chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.25rem .5em;border-radius:var(--pill);
@@ -1936,14 +1967,20 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
    :manifestFindingsBox(r.findings,STATE.manifestFindings||[]);
  card.append(vstate);
  const rs=RUNSTATUS||STATE.runStatus||{index:null,phases:{}};
- if(rs.index){const h=rs.index.hostname||'?';
-  card.append(el('div',{class:'findings warn'},
-   '⚙ index locked (structural op / id allocation)'+(h?' · '+h:'')+(rs.index.startedAt?' · since '+rs.index.startedAt:'')));}
+ if(rs.index){const h=rs.index.hostname||'?';const dead=rs.index.live===false;
+  card.append(el('div',{class:'findings warn',title:rs.index.liveBasis||''},
+   (dead?'⚠ index lock held by no live run':'⚙ index locked (structural op / id allocation)')
+   +(h?' · '+h:'')+(rs.index.startedAt?' · since '+rs.index.startedAt:'')
+   +(dead?' · '+(rs.index.liveBasis||''):'')));}
  card.append(el('h2',{},'Phases'));
  r.phases.forEach(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;
   const st=(rs.phases||{})[p.id]||{};let runBadge=null;
-  if(st.lock){const h=st.lock.hostname||'?';
-   runBadge=el('span',{class:'badge run',title:'phase lock held'+(st.lock.startedAt?' since '+st.lock.startedAt:'')},'● running'+(h?' · '+h:''));}
+  if(st.lock){const h=st.lock.hostname||'?';const dead=st.lock.live===false;
+   // "running" is a claim about a process. Say it only when the pid was probed
+   // and answered; an abandoned lock says so, with the basis in the tooltip.
+   runBadge=el('span',{class:'badge '+(dead?'held':'run'),
+    title:(st.lock.liveBasis||'phase lock held')+(st.lock.startedAt?' · since '+st.lock.startedAt:'')},
+    (dead?'○ lock, no live run':'● running')+(h?' · '+h:''));}
   else if(st.claim){const s=(st.claim.sessionId||'').slice(0,8);
    runBadge=el('span',{class:'badge claim',title:'claimed'+(st.claim.branch?' on '+st.claim.branch:'')},'◷ claimed'+(s?' · '+s:''));}
   const areaBadges=(p.area||[]).map(a=>el('span',{class:'badge area',title:'area'},a));
@@ -2837,6 +2874,33 @@ def _selftest():
     li = _lock_info(ld)
     check("_lock_info reads the index lock", (li["index"] or {}).get("hostname") == "hi")
     check("_lock_info reads a phase lock", (li["phases"].get("P1") or {}).get("hostname") == "hp")
+
+    # C1 — the badge says "running", which is a claim about a live process.
+    import platform as _pf
+    import subprocess as _sp
+    import time as _t
+    _here = _pf.node()
+    _old = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(_t.time() - 95 * 60))
+    _atomic_write_json(os.path.join(ld, "phase-P2.lock"),
+                       {"hostname": _here, "pid": os.getpid(), "startedAt": _old})
+    _d = _sp.Popen([sys.executable, "-c", "pass"]); _d.wait()
+    _atomic_write_json(os.path.join(ld, "phase-P3.lock"),
+                       {"hostname": _here, "pid": _d.pid,
+                        "startedAt": _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())})
+    li = _lock_info(ld)
+    check("lock verdict: a 95-min-old run with a live pid is live",
+          li["phases"]["P2"].get("live") is True)
+    check("lock verdict: a 1-min-old run whose pid is gone is not",
+          li["phases"]["P3"].get("live") is False)
+    check("lock verdict: each carries the basis behind it",
+          bool(li["phases"]["P2"].get("liveBasis"))
+          and bool(li["phases"]["P3"].get("liveBasis")))
+    check("lock verdict: a pid-less lock gets one too (age fallback)",
+          li["phases"]["P1"].get("live") is not None)
+    check("the UI badges an abandoned lock differently from a running one",
+          "no live run" in UI_HTML and ".badge.held" in UI_HTML)
+    os.remove(os.path.join(ld, "phase-P2.lock"))
+    os.remove(os.path.join(ld, "phase-P3.lock"))
     m2 = _read_json(mpath)
     m2["phases"][0]["claim"] = {"sessionId": "sess-abcd1234", "host": "h", "branch": "audit/p1"}
     _atomic_write_json(mpath, m2)
