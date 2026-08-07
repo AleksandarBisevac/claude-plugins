@@ -222,6 +222,14 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
                 % (n_phases, n_tasks)),
             "buildCommands": {"test": "yarn test", "lint": "yarn lint",
                               "build": "yarn build"},
+            # Declared, like the acme example declares it. Without it the demo
+            # rendered real dollar figures and, since the renderer refuses to
+            # invent a rate date, correctly labelled them "rates undated" — an
+            # honest report of a badly-formed manifest, on the page that exists
+            # to show what a well-formed one looks like. The fixture was the
+            # defect there, not the renderer.
+            "usage": {"ledgerDir": ".claude/usage", "showCost": True,
+                      "pricingAsOf": "2026-08-06"},
         },
         "phases": phases,
         "fileIndex": file_index,

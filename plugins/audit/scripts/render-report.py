@@ -1318,8 +1318,23 @@ def _usage_context(u):
     # Withheld when showCost is off, in both renderers: with no dollars on screen
     # this dates a table nothing visible was derived from. A basis without its
     # claim is noise, which is the same rule read backwards.
-    if u.get("pricingAsOf") and u.get("showCost", True):
-        bits.append("rates as of %s" % u["pricingAsOf"])
+    #
+    # And when costs ARE shown with no date declared, say THAT rather than nothing.
+    # The default table carries a `pricingAsOf`, so falling back to it would almost
+    # always produce a plausible date — which is exactly why it is not done. The
+    # ledger stores `costUSD` priced at write time and no rate vintage, so a report
+    # whose manifest omits the declaration genuinely does not know it, and printing
+    # the default's date would manufacture a basis rather than state one. Silence
+    # is worse still: it renders dollars that look pinned to a table nobody named.
+    # Same rule the routing advisory follows when it refuses to recommend a move
+    # onto a `_default` guess.
+    # Gated on there being spend to price, not merely on showCost. u21 caught the
+    # first version of this emitting "rates undated" for an EMPTY usage block —
+    # a basis announced for a claim that was never made, which is the same noise
+    # this branch exists to prevent, produced by the fix for it.
+    if u.get("showCost", True) and (u.get("totals") or {}).get("tokens"):
+        bits.append("rates as of %s" % u["pricingAsOf"] if u.get("pricingAsOf")
+                    else "rates undated (set usage.pricingAsOf)")
     if not bits:
         return ""
     return '<p class="uctx">%s</p>' % e(" · ".join(bits))
@@ -2102,8 +2117,9 @@ def _usage_md(u):
         head += " · ~%s equiv" % _fmt_cost(t["costUSD"])
     head += " · %s msgs · %d session(s) · cache hit %.0f%%" % (
         "{:,}".format(t["msgs"]), t["sessions"], t["cacheHitPct"])
-    if u.get("pricingAsOf") and show_cost:
-        head += " · rates as of %s" % u["pricingAsOf"]
+    if show_cost:                       # see _usage_context for why there is no fallback
+        head += (" · rates as of %s" % u["pricingAsOf"] if u.get("pricingAsOf")
+                 else " · rates undated (set usage.pricingAsOf)")
     lines += [head, ""]
 
     def block(title, data, key_label):
@@ -2459,10 +2475,34 @@ def _selftest():
           "(the trap this case sat in)",
           "rates as of %s" % time.strftime("%Y-%m-%d", time.gmtime()) not in uh)
     _uq = dict(_u, showCost=False)
+    _hq, _mq = (render_html(manifest, _sum, "audit-report", _uq),
+                render_md(manifest, _sum, _uq))
     check("u4d withheld when showCost is off, in both renderers - with no dollars "
           "on screen it dates a table nothing visible came from",
-          "rates as of" not in render_html(manifest, _sum, "audit-report", _uq)
-          and "rates as of" not in render_md(manifest, _sum, _uq))
+          "rates as of" not in _hq and "rates as of" not in _mq
+          and "rates undated" not in _hq and "rates undated" not in _mq)
+    # Costs shown with no date declared. The default price table HAS a pricingAsOf,
+    # so a fallback would nearly always render a plausible date - which is why there
+    # is none. The ledger stores costUSD priced at write time and no rate vintage,
+    # so the report genuinely does not know it, and printing the default's date
+    # would manufacture a basis instead of stating one.
+    _un = dict(_u); _un.pop("pricingAsOf", None)
+    _hn, _mn = (render_html(manifest, _sum, "audit-report", _un),
+                render_md(manifest, _sum, _un))
+    check("u4e costs with no declared rate date say so, rather than showing bare "
+          "dollars that look pinned to a table nobody named",
+          "rates undated" in _hn and "rates undated" in _mn)
+    check("u4f and it never invents one - the default table's date must not leak "
+          "in as though the manifest had declared it",
+          "rates as of" not in _hn and "rates as of" not in _mn)
+    check("u4g the undated notice names the cheap exit, since a reader who cannot "
+          "act on it will learn to scroll past it",
+          "usage.pricingAsOf" in _hn and "usage.pricingAsOf" in _mn)
+    check("u4h silent when there is no spend to price at all - announcing a basis "
+          "for a claim never made is the same noise this branch prevents",
+          "rates" not in _usage_context({})
+          and "rates" not in _usage_context({"counts": {"phases": 1}})
+          and "rates" not in _usage_context({"totals": {"tokens": 0}}))
     check("u5 model identity is never colour-alone: legend on the unlabelled "
           "stacks, direct labels on the ranked list",
           'class="legend"' in uh and uh.count("claude-opus-5") >= 2)
