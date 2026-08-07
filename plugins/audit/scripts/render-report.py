@@ -2181,6 +2181,46 @@ _GATE_LABELS = {
 }
 
 
+# Columns that exist only when the plan has something to put in them. `id`, `title`
+# and `status` are not here: they are never empty, and a table with no status column
+# is not this table.
+#
+# §7 asked for "collapse to four always-visible columns", on the reading that six of
+# nine were blank. Measured across three real manifests that turned out to describe
+# the PHASE rows (which span the table) rather than the task rows: model and risk are
+# 100% filled everywhere, outcome 35-100%, commit and done track completion — and
+# only ADO is consistently empty (0%, 0%, 10%), because it exists solely for repos
+# that run the Azure DevOps sync. Cutting to a fixed four would have thrown away
+# columns that are full for everyone in order to lose one that is empty for most.
+#
+# So the rule rather than the decree: density follows the data. A plan on day one
+# renders id/title/status and little else; a finished one renders all nine; and a
+# repo that has never touched Azure DevOps never sees an ADO column at all.
+_OPTIONAL_COLS = (
+    ("model", lambda t: t.get("model")),
+    ("risk", lambda t: t.get("risk")),
+    ("commit", lambda t: t.get("commit")),
+    ("done", lambda t: t.get("completedAt") or t.get("startedAt")),
+    ("ADO", lambda t: (t.get("ado") or {}).get("id")
+     if isinstance(t.get("ado"), dict) else None),
+    ("outcome", lambda t: _outcome_text(t)),
+)
+
+
+def _present_columns(manifest):
+    """The optional columns at least one task actually fills."""
+    tasks = [t for p in (manifest.get("phases") or []) if isinstance(p, dict)
+             for t in (p.get("tasks") or []) if isinstance(t, dict)]
+    out = []
+    for name, get in _OPTIONAL_COLS:
+        try:
+            if any(get(t) not in (None, "", [], {}) for t in tasks):
+                out.append(name)
+        except Exception:                 # a malformed task never removes a column
+            out.append(name)
+    return out
+
+
 def _verdict(summary):
     """The gate's own verdict, not a second opinion composed here.
 
@@ -2364,10 +2404,11 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     out.append('<section id="%s" class="sec">' % section("phases", "Phases",
                                                         len(summary["phases"])))
     out.append(table_tools)
+    cols = _present_columns(manifest)
+    ncol = 3 + len(cols)
     out.append('<div class="tablewrap"><table class="phases"><thead><tr>'
-               "<th>id</th><th>title</th><th>status</th><th>model</th>"
-               "<th>risk</th><th>commit</th><th>done</th><th>ADO</th>"
-               "<th>outcome</th></tr></thead><tbody>")
+               "<th>id</th><th>title</th><th>status</th>%s</tr></thead><tbody>"
+               % "".join("<th>%s</th>" % e(c) for c in cols))
     _done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
@@ -2397,32 +2438,38 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         out.append(
             '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
             'data-area="%s" tabindex="0" '
-            'aria-expanded="false"><td colspan="9"><span class="tri"></span> '
+            'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
             '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s %s%s</td></tr>'
             % (e(pid), e(pid), e(psum["status"]),
                ' data-held="1"' if held else "",
-               e(" ".join(areas)), e(pid), e(psum["title"]),
+               e(" ".join(areas)), ncol, e(pid), e(psum["title"]),
                area_tags, _chip(psum["status"]), held_mark, stamp,
                _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
         # per-phase task-status filter (shown only when the phase is expanded);
         # _SCRIPT fills .tf-chips from this phase's own task statuses.
-        out.append('<tr class="taskfilter" data-phase="%s"><td colspan="9">'
+        out.append('<tr class="taskfilter" data-phase="%s"><td colspan="%d">'
                    '<span class="tf-label">Filter tasks by status:</span>'
-                   '<span class="tf-chips"></span></td></tr>' % e(pid))
+                   '<span class="tf-chips"></span></td></tr>' % (e(pid), ncol))
         for t in ph.get("tasks") or []:
             if not isinstance(t, dict):
                 continue
+            cells = {
+                "model": lambda: "<td>%s</td>" % e(t.get("model") or "—"),
+                "risk": lambda: "<td>%s</td>" % _risk_chip(t.get("risk")),
+                "commit": lambda: "<td class=mono>%s</td>"
+                % e((t.get("commit") or "—")[:9]),
+                "done": lambda: "<td class=when>%s</td>" % _timing_cell(t),
+                "ADO": lambda: "<td>%s</td>" % _ado_cell(t),
+                "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
+            }
             out.append(
                 '<tr class="task" data-phase="%s" data-status="%s"%s>'
-                '<td class="mono tid">%s</td><td>%s</td><td>%s</td>'
-                "<td>%s</td><td>%s</td><td class=mono>%s</td><td class=when>%s</td>"
-                "<td>%s</td><td class=muted>%s</td></tr>"
+                '<td class="mono tid">%s</td><td>%s</td><td>%s</td>%s</tr>'
                 % (e(pid), e(t.get("status")),
                    ' data-held="1"' if held else "",
                    e(t.get("id")), e(t.get("title")),
-                   _chip(t.get("status")), e(t.get("model") or "—"),
-                   _risk_chip(t.get("risk")), e((t.get("commit") or "—")[:9]),
-                   _timing_cell(t), _ado_cell(t), e(_outcome_text(t))))
+                   _chip(t.get("status")),
+                   "".join(cells[c]() for c in cols)))
     out.append("</tbody></table></div></section>")
 
     # Usage is the longest section by far — a chart, five tiles, three ranked
@@ -3065,6 +3112,36 @@ def _selftest():
           and "min-width:78rem" in _CSS)
     check("shell: paper gets the document back - no bars, no nav, no section tools",
           ".topbar,.snav,.toolbar,tr.taskfilter{display:none!important}" in _CSS)
+
+    # --- table density follows the data ---------------------------------------
+    _fresh = {"meta": {}, "bugs": [], "phases": [
+        {"id": "P1", "title": "x", "status": "pending",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "pending"}]}]}
+    check("cols: a plan with nothing done renders id/title/status and no more - "
+          "six columns of em dashes describe the schema, not the work",
+          _present_columns(_fresh) == [])
+    _ado = json.loads(json.dumps(_fresh))
+    _ado["phases"][0]["tasks"][0]["ado"] = {"id": 7}
+    check("cols: ADO appears only for a repo that actually syncs to Azure DevOps",
+          _present_columns(_ado) == ["ADO"])
+    _done = json.loads(json.dumps(_fresh))
+    _done["phases"][0]["tasks"][0].update(
+        {"status": "done", "commit": "abc1234", "completedAt": "2026-01-02T00:00:00Z"})
+    check("cols: a column appears as soon as ONE task fills it",
+          _present_columns(_done) == ["commit", "done"])
+    check("cols: a malformed task never silently removes a column",
+          _present_columns({"phases": [{"tasks": [{"ado": "not-an-object"}]}]}) is not None)
+    # The header, the cells and both colspans have to agree, or the table skews.
+    _fh = render_html(_fresh, _load_status_lib().rollup(_fresh, [], []), "r", None)
+    check("cols: header, colspan and cells agree on the count",
+          _fh.count("<th>") == 3 and 'colspan="3"' in _fh
+          and "<th>ADO</th>" not in _fh)
+    # Scoped to the phases table: the bugs table has its own headers, and counting
+    # <th> across the document measured both.
+    _phead = html_out[html_out.index('<table class="phases">'):]
+    _phead = _phead[:_phead.index("</thead>")]
+    check("cols: the full example still renders every column it has data for",
+          _phead.count("<th>") == 3 + len(_present_columns(manifest)))
 
     # --- fragment mode (publishable as a Claude Code Artifact) --------------
     # The host wraps what it is given in its own doctype/head/body, so every one
