@@ -4,6 +4,85 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.23.0] - 2026-08-07
+
+**A principle you apply where you remember to is one you are persuading yourself of.**
+Every release note here has said some version of the same thing: a claim carries the basis
+that makes it true, or it does not get made. The routing advisory stays silent without
+evidence. The projection is a range, suppressed below a sample gate. The cache section
+refuses to state a dollar saving it would have to invent.
+
+Meanwhile every dollar figure this plugin printed said nothing about the rate table it was
+priced from — on five surfaces, for five releases. The HTML report named it only once the
+rates were more than ninety days stale, while the Markdown twin named it every time. One
+report, two answers to *on what basis*, and the more public half gave the worse one.
+
+Nobody noticed because the case guarding it read `"2026-08-06" in html`, and the report
+stamps `generated <today>`. On the day it was written its own timestamp satisfied the
+assertion. It asserted nothing for four releases and failed for the first time when the
+clock rolled over — which is the only reason any of this was found.
+
+### Fixed
+- **A setting that existed for one purpose and did not work.** `audit-usage.py` resolved
+  `docs/audit/audit-plan.json` and nothing else, so a project keeping its manifest anywhere
+  else loaded **no manifest** and then read every project value off `{}` —
+  **`meta.usage.showCost` included**. A repo that had set `showCost: false`, asking for
+  dollars to stay off the screen, got them printed anyway. Resolution is now
+  `<argument> > config manifestPath > docs/audit/audit-plan.json`, taking the first that
+  exists, falling back rather than raising on a malformed config. `/audit:panel` was taught
+  to read that key long ago; `/audit:usage` never was — and the shipped example is exactly
+  such a project, its own config comment warning what happens without it.
+- **All five surfaces that render a cost now name the rate table behind it**: the HTML
+  report, its Markdown twin, `/audit:usage`, `/audit:status` and the panel's Usage tab.
+  They print `rates as of <date>`, or `rates undated (set usage.pricingAsOf)`.
+  - **`/audit:status` matters most.** Its budget lines are what the preflight check reads
+    before spawning the next executor, and a number that can halt a phase should say what
+    priced it.
+  - **There is deliberately no fallback to the default table's date.** The default carries
+    one, so a fallback would nearly always render something plausible that the project never
+    chose. Plausible is the argument against it. The ledger stores `costUSD` priced at write
+    time and no rate vintage, so a manifest that declares nothing genuinely leaves the
+    report not knowing.
+  - **The panel needed a different fix for the same reason.** `usage_cfg()` merges
+    `DEFAULTS`, so its `pricingAsOf` is set even for a project that never chose one. The
+    server now reports `pricingAsOfDeclared` from the **raw** config as a separate fact, so
+    the client cannot mistake a default for a declaration.
+  - All five stay silent under `showCost: false` and when there is no spend to price.
+- **The demo fixture, not the renderer.** `gen-demo-manifest.py` now declares a usage block
+  like the example does. Without it the scale demo was an honest report of a badly-formed
+  manifest, published on the page whose whole job is to show a well-formed one.
+
+### Changed
+- **`meter-usage.py`'s session-end line is deliberately exempt**, and that is now a rule
+  rather than an oversight: **consulted surfaces carry the basis, pushed ones carry the
+  minimum**. You open a report and run a command; a hook line arrives uninvited and already
+  hedged to `~$2.40`. Growing it is how it becomes the message people learn to skip — the
+  same reasoning that keeps that hook de-duplicated and advisory.
+- **`CONTRIBUTING.md` carries the rule as a hard rule**, with the three parts that are not
+  obvious until you have got them wrong: never fall back to a default to fill a missing
+  basis; a basis with no claim is noise (the first version of this fix shipped exactly that
+  bug, and an existing case caught it); and the consulted/pushed distinction above.
+- **The roadmap's T2.12 premise was wrong and is corrected.** `claude-plugins-official` is
+  curated at Anthropic's discretion — there is no application process and the submission
+  form does not add plugins to it. The form feeds `claude-plugins-community`, which is the
+  achievable target. The auto-propagation claim survives in a sharper form: approved plugins
+  are pinned to a commit SHA and CI bumps the pin as commits land, with the catalog syncing
+  nightly. Recorded in the status table beside the wrong claim, not edited over it.
+
+### Validation
+- **968 cases across 20 suites** (from 941). Both rate-basis branches on every surface, that
+  the default date never leaks in, silence under `showCost: false` and under an empty
+  ledger, and each rung of the manifest resolution order including the malformed-config and
+  nothing-anywhere paths. The panel's Usage tab was checked in a browser, not only by
+  assertion.
+
+### Compatibility
+No schema change, no command renamed, no flag or exit code altered. Two behaviour changes,
+both toward saying less rather than more: the Markdown twin no longer prints `rates as of`
+when `showCost` is false, and `/audit:usage` on a project with a configured `manifestPath`
+now honours that manifest's `usage` block — which is the fix, and which will hide costs on
+any repo that had asked for them hidden and been ignored.
+
 ## [0.22.0] - 2026-08-07
 
 **Everything here is about the boundary.** Every release before this one made the tool
