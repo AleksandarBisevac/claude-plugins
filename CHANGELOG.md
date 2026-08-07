@@ -4,6 +4,103 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.24.0] - 2026-08-07
+
+**The report stops being a table and starts being an answer.** For a product whose whole
+thesis is *gates*, nothing in the report expressed one. It opened with a title, a metadata
+line and a progress bar; the readiness graph that decides what you can work on next was in
+the manifest and drawn nowhere; and the most actionable string on the page — the one task
+you can start right now — sat at the bottom in small monospace with no affordance.
+
+Nothing here changes what the plugin does. It changes what it says first.
+
+### Added
+- **The verdict leads.** The hero is the same verdict `audit-status.py --gate` produces,
+  with the conditions that decided it printed underneath — `Checks manifest validity,
+  high-severity bugs, blocked tasks. Spend is deliberately not one of them.` A hero that
+  scored the plan by a private rule would be a second opinion nobody asked for; this one is
+  reproducible with one command.
+- **The gate rail.** A continuous spine down the phase list with one gate per phase: a
+  crossbar with a gap where work can pass, solid where something holds it shut, and the rail
+  **dimmed below a closed gate**. `blockedBy` has been in the manifest since v0.1.0 and had
+  never been drawn — a reader could see that a phase was pending but not that another phase
+  was the reason. A held phase names what holds it and links there. A signed-off one carries
+  a stamp with the last commit recorded inside it, labelled as that rather than as a
+  signature the manifest does not record.
+- **`Next → /audit:run P2.4`, copyable**, in the hero. Reading an id off a screen and
+  retyping it is a transcription error waiting to happen. The clipboard API is unavailable
+  on `file://` in some browsers — exactly where this report is most often opened — so the
+  fallback selects the text rather than leaving a button that does nothing.
+- **An app shell: navigation at the side, actions on top.** A 70rem centred column wasted
+  half a laptop and gave a long document no map. The split follows what a control acts on:
+  Save-as-PDF, the markdown twin and the theme act on the document and stay in the top bar;
+  search, the status chips and expand-all act on the phases table and now sit on it, where
+  they were previously following the reader through the usage charts doing nothing.
+  - The side nav is **not a menu of five links** — a top bar carries that fine. It is a
+    position indicator for a document you scroll for a long time, so it has scroll-spy.
+  - It is rendered **server-side**, from the same list the anchors are written from. Built
+    by scanning headings in JS it would have been shorter and would have left every PDF, and
+    every reader with scripting off, with no contents list.
+  - One information architecture, two presentations: under 72rem the same items become a
+    horizontal strip. Above 78rem the verdict and summary pair, verdict taking the larger
+    share. On paper the shell disappears entirely.
+- **The panel gets the same shell**, with the difference that matters: its four sections are
+  exclusive views, not anchors, so it has real navigation — `aria-current` and a scroll
+  reset — and no scroll-spy. Deliberately not collapsible to an icon rail: that pattern
+  stops a long nav competing for width, and with four items it would add a control, a
+  persisted preference and four hand-drawn icons to save 230px on screens that have it.
+
+### Changed
+- **The phases table renders the columns the plan actually fills.** §7 asked to collapse to
+  four always-visible columns, on the reading that six of nine were blank. Measured across
+  three real manifests first, and that describes the phase rows, which span the table by
+  design. For task rows `model` and `risk` are 100% filled everywhere, `outcome` 35–100%,
+  and `commit`/`done` track completion — an unfinished task has no commit, which is the
+  column working. Only `ADO` is consistently empty (0%, 0%, 10%), because it exists for
+  repos that run the Azure DevOps sync. A fixed cut would have discarded columns that are
+  full for everyone to lose one that is empty for most, so: a fresh plan renders **3**
+  columns, this repo and the scale demo **8**, the shipped example **9**.
+- **Panel settings are named by what they do**, with the JSON key beside them.
+  `h2{text-transform:uppercase}` was not merely shouting `GUARDEDITS.TOKENVARS` — config
+  keys are case-sensitive, so the uppercased string could not be pasted back into the file.
+  "Secrets never written to logs" cannot be typed into JSON; `guardEdits.tokenVars` tells
+  you nothing about what it does. Both audiences are real and they want different strings.
+- **The project path in the panel header is middle-elided on one line**, full path in the
+  tooltip. `word-break:break-all` wrapped it across two rows and broke at an arbitrary
+  character, so neither the root nor the project name stayed readable.
+- **Typography has a point of view.** The display voice is mono, uppercase and tight — the
+  stamp on an inspection record, not a marketing headline — and mono stopped being spent on
+  metadata chrome.
+
+### Fixed
+- **Phase prose no longer lives at the table's scroll width.** A `desiredOutcome` was being
+  laid out 683px wide inside a 34rem-min table under `overflow-x` on a 390px screen, so
+  reading one line meant scrolling sideways and back, per line. It wraps inside the viewport
+  now: text wraps to the reader, data tables scroll.
+- **The panel scrolled sideways by 34px before anyone touched it.** The 17rem hint bubble is
+  anchored left and overflows for any hint in the right half — and an absolutely-positioned
+  box counts toward scrollable overflow *while hidden*, so `visibility:hidden` was not
+  enough. `display:none` is, at the cost of a fade, and it flips to the right edge when
+  shown, measured from that hint's own position.
+- **The composition table overflowed by 96px**, because `.comptblwrap` only scrolled under
+  48rem — the page had been a 64rem column the table happened to fit. Both guards were tied
+  to the viewport rather than to the thing overflowing.
+- All twelve README screenshots recaptured. Every one showed the pre-shell layout, which is
+  the one drift a redesign cannot leave behind: they are what people see before installing.
+
+### Validation
+- **1011 cases across 20 suites** (from 968). Verified by measurement at 1920/1440/1150/
+  1100/1000/390 and on all four panel views: no sideways scroll anywhere, prose capped at a
+  measure, tables scrolling in their own boxes. A case pins that the header, both colspans
+  and the task cells agree on the column count — a table that disagrees with itself skews
+  every row — and that every nav link points at a section that exists.
+
+### Compatibility
+No schema change, no command renamed, no flag or exit code altered, and no manifest renders
+differently except in layout. The `--json` rollup is untouched. A report generated by 0.23.0
+and one generated by 0.24.0 describe the same plan; only the second one answers the question
+first.
+
 ## [0.23.0] - 2026-08-07
 
 **A principle you apply where you remember to is one you are persuading yourself of.**
