@@ -4,6 +4,94 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.25.0] - 2026-08-07
+
+**Three things that were half-true.** A feature the TODO said was missing and was in fact
+built but not live. A filter that was fast at the scale we test and slow at the scale we
+claim. And a product whose whole thesis is a refusal, with no artifact anywhere showing a
+refusal happening.
+
+None of them were visible from inside. Each needed something measured, recorded or run
+rather than reasoned about.
+
+### Added
+- **The panel's run badges are live.** `● running · <host>` and `◷ claimed · <session>`
+  already existed and were already correct — what was missing was the word the TODO used:
+  *live*. State was fetched once at page load, so a colleague taking a phase lock in
+  another worktree appeared only if you happened to reload, which is exactly the situation
+  the badges exist for. `/api/runstatus` polls every 5s.
+  - **It is deliberately not `/api/state` on a timer.** That is correctness, not economy:
+    full state re-renders the guards form and would discard whatever the human had
+    half-typed into it. The narrow endpoint returns the lock dir and the phases' claims,
+    and the client repaints Overview alone — the one view with no inputs.
+  - Identical payloads do not repaint; polling stops while the tab is hidden and catches up
+    on return; a failed poll is swallowed, because a panel that dies over one request is
+    worse than a badge thirty seconds old.
+- **A recording of the gate refusing an edit** — `docs/screenshots/demo-gate.gif`, and
+  `tools/capture-demo-gif.py` that produces it. Every artifact this repo ships shows the
+  product at rest; a refusal is an event, and a still frame of a denied edit is
+  indistinguishable from a still frame of an allowed one.
+  - **Nothing in it is typed by hand.** `audit-status.py` renders the plan and
+    `require-plan.py` is fed the same `PreToolUse` payload Claude Code sends it — its
+    stdout is the refusal on screen, down to `change magnitude 96 (> 80)` and the exempt
+    globs. Both outcomes are real: the edit a task covers produces no output at all,
+    because that is what an allow looks like from outside.
+  - **CI asserts the behaviour, not the bytes.** Nothing can tell that a committed GIF has
+    gone stale — it is pixels. `--check` runs the whole capture and fails if the in-plan
+    edit is denied, the out-of-plan edit is allowed, or the refusal stops naming the file
+    or the way out. It writes no file and needs no font, so it runs anywhere.
+
+### Changed
+- **The phases table stopped re-querying the DOM once per phase.** Measured first, at
+  10/50/100/200 phases. Python was never the problem (0.38s and 2.4MB for 4000 tasks, linear
+  at ~0.62 KB/task) and neither was load (249ms). The cost was in the one thing you do
+  continuously: `refresh()` looped over phases and called `querySelectorAll` inside that
+  loop — at 200 phases, 200 selector queries over 4200 rows, roughly 840,000 node visits,
+  again on the next keystroke. Row text was re-lowercased every pass, work with a constant
+  answer. The index is built once, the text cached, and typing debounced at 90ms; Enter and
+  Escape bypass the debounce because they are decisions rather than typing.
+
+      5-key typing burst, main thread blocked   333ms  ->    0ms
+      one filter pass                           117ms  ->    9ms
+      sort, collapsed                           708ms  ->   51ms
+      expand all (JS)                          42-47ms ->    2ms
+
+  **Expand-all's total time did not move**, and that is the honest result: repeated four
+  times per build it is 196–272ms before and 203–242ms after, because what remains is the
+  browser laying out 4000 rows that just became visible. An early isolated reading looked
+  like a 2.5× regression and was one cheap first paint, not a difference between builds.
+  `content-visibility:auto` was measured and rejected — 433ms and 228ms for the same
+  operation, no clear win, and it perturbs column widths, find-in-page and printing in a
+  report whose two most-used controls are Ctrl+F and Save as PDF.
+- **`remind-tdd`'s throttle is described as per-session**, which is what it has always been:
+  state is loaded per `session_id`, so concurrent sessions throttle independently. Two lines
+  called it "global" and contradicted the header docstring.
+
+### Decisions recorded
+- **The plugin keeps the name `audit`**, decided before submission because the catalog pins
+  an approved plugin to a commit SHA and the name becomes a public install id. Measured:
+  2287 plugins, `audit` not taken, `displayName` used by 2 of 2287 and never differing from
+  `name` — so there is no separate display lever. Kept because the prefix is typed daily
+  while the name is read once, because `quality-gates` (the thesis) and `audit` (the job)
+  are already the right two levels, and because the names that would cut through 2287
+  entries buy memorability with precision. Its revisit trigger is observable — someone
+  reporting they could not find it, or an actual collision — rather than aesthetic.
+- **Submitted to the community marketplace** on 2026-08-07, awaiting screening and review.
+  Recorded as submitted rather than done: the action is finished, the outcome is not.
+
+### Validation
+- **1022 cases across 20 suites** (from 1011). The scale cases pin the shape rather than the
+  timings, which are machine-dependent: no DOM query inside the refresh loop, the index
+  built once, text cached, sorting copying the index before ordering it, the debounce, and
+  Enter/Escape bypassing it. The hot path was re-verified functionally at 200 phases after
+  the rewrite — filtering narrows, Escape clears without waiting, sorting reorders in both
+  directions with every task preserved and none leaking into a neighbour.
+
+### Compatibility
+No schema change, no command renamed, no flag or exit code altered. The panel gains one
+read-only endpoint. The report's markup and rendering are unchanged — only the script that
+filters it is faster.
+
 ## [0.24.0] - 2026-08-07
 
 **The report stops being a table and starts being an answer.** For a product whose whole
