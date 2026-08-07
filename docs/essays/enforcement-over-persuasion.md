@@ -163,6 +163,29 @@ everywhere:
 - Even the version number is a claim. A release that added two features cannot
   ship as a patch bump, because the number asserts something about what changed.
 
+And the rule bites hardest where you have already stopped looking. Every dollar
+figure this plugin prints is a claim, and its basis is the rate table it was
+priced from — yet for five releases the HTML report named that table only once
+the rates were more than ninety days stale, while the Markdown twin named it
+every time. One report, two answers to *on what basis*, and the more public half
+gave the worse one. Nobody noticed because the test guarding it read
+`"2026-08-06" in html`, and the report stamps `generated <today>`: on the day it
+was written, its own timestamp satisfied the assertion. It asserted nothing until
+the clock rolled over.
+
+Fixing it turned up four more surfaces doing the same, including the one printing
+the budget numbers that can halt a phase mid-run. And the fix has a trap of its
+own worth naming: the default price table carries a date, so falling back to it
+would almost always produce something plausible. **Plausible is the problem.** A
+manufactured basis is worse than an admitted absence, so the surfaces say `rates
+undated` instead — and one of them had to be taught to report *whether the
+project declared a date* separately from the date itself, because by the time the
+value reached it the default had already been merged in and the two were
+indistinguishable.
+
+A principle you only apply where you remember to is a principle you are
+persuading yourself of.
+
 None of these are about security. They are the same discipline at different
 scales: a statement that cannot be checked is a statement that should not be
 printed, and a rule that depends on someone remembering it is not a rule.

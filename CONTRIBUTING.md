@@ -60,6 +60,31 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   for the table; keep it true.
 - Every command that mutates the manifest must revalidate
   (`scripts/validate-manifest.py`, exit codes 0/1/2).
+- **Every claim in output carries the basis that makes it true — and when the
+  basis is missing, that is the thing to say.** The routing advisory stays
+  silent without enough in-repo evidence; the projection is a range, suppressed
+  below a sample gate; the ready list states the count it folded. The worked
+  example is cost: a dollar figure is a claim, and its basis is the rate table
+  it was priced from, so all five surfaces that render one — HTML report,
+  Markdown twin, `/audit:usage`, `/audit:status`, the panel's Usage tab —
+  print `rates as of <date>`, or `rates undated (set usage.pricingAsOf)`.
+  - **Never fall back to a default to fill the gap.** `usage_cfg()` merges a
+    default `pricingAsOf`, so a fallback would nearly always render a plausible
+    date the project never chose. That is the argument against it. Where the
+    merged value is all that is available (the panel), the server reports
+    *whether the project declared it* as a separate fact rather than letting the
+    client mistake a default for a declaration.
+  - **A basis with no claim is noise** — the same rule backwards. All five stay
+    silent under `showCost: false` and when there is no spend to price. The
+    first version of this shipped a bug of exactly that kind, caught by an
+    existing case: an empty usage block announced undated rates for costs that
+    were never on screen.
+  - **Consulted surfaces carry the basis; pushed ones carry the minimum.**
+    `meter-usage.py`'s session-end line is deliberately exempt. You open a
+    report and run a command; a hook line arrives uninvited and already hedged,
+    and growing it is how it becomes the message people learn to skip.
+  - A new surface that renders a number someone acts on inherits all of this,
+    and the pattern to copy is `render-report._usage_context`.
 
 ## Release rule
 
