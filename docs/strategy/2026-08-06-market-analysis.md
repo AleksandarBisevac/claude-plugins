@@ -21,7 +21,7 @@ since shipped:
 | **T0 — complete** (PR #15) | v0.17.0–v0.19.0 pushed with tags · live demo refreshed and gated · scale demo regenerated from a valid manifest · screenshots automated with assertions · topics, homepage and badges set |
 | Found during T0, not predicted here | The report's progress bars had **never** painted (§8) · a missing semicolon had killed every animation in the stylesheet · the scale demo had been serving an "INVALID MANIFEST" banner |
 | Corrected here | The empty-bar root cause (§8), and the test-case count (675 → 721 across 18 suites; the 686 figure was a static grep, not a runtime count) |
-| Shipped since | **T1 complete** in 0.20.0 (evidence-graded plan gate · `/audit:doctor` · free-first quickstart · the eight §8 defects) · **T2.9 + T2.10** in 0.21.0 (deterministic `/audit:status` render · budget as a gate) · **T2.11 + T3.16 + T3.13** in 0.22.0 (report published to a link · thin skills, ADR amended · the enforcement essay) |
+| Shipped since | **T1 complete** in 0.20.0 (evidence-graded plan gate · `/audit:doctor` · free-first quickstart · the eight §8 defects) · **T2.9 + T2.10** in 0.21.0 (deterministic `/audit:status` render · budget as a gate) · **T2.11 + T3.16 + T3.13** in 0.22.0 (report published to a link · thin skills, ADR amended · the enforcement essay) · **the rate-basis sweep** in 0.23.0 (five cost surfaces name their price table; `/audit:usage` honours a configured `manifestPath`, so `showCost: false` works on non-default layouts) |
 | Corrected by events | The §6 threat "the ADR watches for the wrong signal" was the accurate half of that entry; the fix was neither NO-GO nor migration but shipping both layouts — see the v0.22.0 amendment in `CONTRIBUTING.md` |
 | **Premise of T2.12 was wrong** | §6 and the T2 table both say external plugins are *submitted to the official directory with automated screening*. They are not. `claude-plugins-official` is **curated by Anthropic at its discretion — there is no application process, and the submission form does not add plugins to it**. The form feeds `claude-plugins-community` (installed as `@claude-community`), which is where third-party submissions land after review. The achievable item is the **community** marketplace, and the auto-propagation claim survives intact in a sharper form: approved plugins are pinned to a commit SHA and CI bumps the pin as commits land, with the public catalog syncing nightly. Submission is in-app — [claude.ai](https://claude.ai/admin-settings/directory/submissions/plugins/new) (needs a Team/Enterprise org with directory access) or [Console](https://platform.claude.com/plugins/submit) (individual authors). `claude plugin validate ./plugins/audit --strict` is the same check the review pipeline runs; it exits 0 here. |
 | Still open | T2.12 (**community** marketplace submission — see above) · T3.15 (report visual identity). #14 deferred pending re-assessment — observe-by-default largely removes its rationale |
@@ -61,7 +61,7 @@ The hosted demo omits the flagship feature set. `examples/acme-store/acme-store-
 |---|---|
 | Tracked lines | 24,491 — 14,138 Python · 3,889 Markdown · 3,886 JSON · 2,126 HTML |
 | Surface | 15 commands · 2 skills · 3 agents · 8 hooks · 2 JSON Schemas · 2 templates |
-| Tests | **921** runtime cases across 20 `--selftest` suites in CI, globbed rather than enumerated (675 across 17 before this work) |
+| Tests | **968** runtime cases across 20 `--selftest` suites in CI, globbed rather than enumerated (675 across 17 before this work) |
 | CI | 3 jobs · ubuntu + windows matrix · ajv draft-2020-12 · `claude plugin validate` |
 | Runtime dependencies | 0 (stdlib-only, enforced as a hard rule in `CONTRIBUTING.md`) |
 | Releases | 24, from v0.1.0 to v0.19.0, between 2026-07-06 and 2026-08-06 |
@@ -303,7 +303,7 @@ is the same move the CHANGELOG makes on every other feature.
   market where most "enforcement" is a strongly-worded skill.
 - **Zero runtime dependencies**, stdlib-only, with a Windows CI leg proving the interpreter
   fallback. Installs where npm-based competitors do not.
-- **921 runtime test cases across 20 suites in CI** (a static `check(` grep reads 686; the runtime count is the verifiable one), plus ajv schema validation, plus `claude plugin validate`, plus a
+- **968 runtime test cases across 20 suites in CI** (a static `check(` grep reads 686; the runtime count is the verifiable one), plus ajv schema validation, plus `claude plugin validate`, plus a
   determinism check that regenerates the demo ledger and diffs it against the committed copy.
 - **Spend attributed to plan units** — not replicable by native OTel, as argued in §3.
 - **The prose is publishable-grade.** "A claim whose basis is invisible cannot be checked."
