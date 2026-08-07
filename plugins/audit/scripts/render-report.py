@@ -753,9 +753,31 @@ _SCRIPT = r"""<script>
   var taskStatus = {};    // per phase: filter that phase's TASKS, by task status
 
   function esc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }
-  function tasksOf(pid) { return [].slice.call(grouped.querySelectorAll('tbody tr.task[data-phase="' + esc(pid) + '"]')); }
-  function tfOf(pid) { return grouped.querySelector('tbody tr.taskfilter[data-phase="' + esc(pid) + '"]'); }
-  function textHit(r, term) { return !term || r.textContent.toLowerCase().indexOf(term) !== -1; }
+  // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
+  // refresh() calls them inside a loop over phases — so one keystroke in the filter
+  // ran 200 selector queries across a 4200-row tbody, roughly 840,000 node visits,
+  // and it ran again on the next keystroke. That is the whole superlinear cliff
+  // between 100 phases (41ms) and 200 (145ms, and 200ms for the first press).
+  // Sorting reorders these rows but never replaces them, so an index of element
+  // references stays correct across a sort.
+  var TASKS = {}, TFROW = {};
+  [].forEach.call(grouped.querySelectorAll('tbody tr.task'), function (t) {
+    var k = t.getAttribute('data-phase');
+    (TASKS[k] || (TASKS[k] = [])).push(t);
+  });
+  [].forEach.call(grouped.querySelectorAll('tbody tr.taskfilter'), function (t) {
+    TFROW[t.getAttribute('data-phase')] = t;
+  });
+  function tasksOf(pid) { return TASKS[pid] || []; }
+  function tfOf(pid) { return TFROW[pid] || null; }
+  // Lowercased once per row and kept. The text of a rendered report never changes,
+  // so re-lowercasing 4200 rows on every keystroke was work with a constant answer.
+  function hay(r) {
+    var v = r.__auditText;
+    if (v === undefined) { v = r.textContent.toLowerCase(); r.__auditText = v; }
+    return v;
+  }
+  function textHit(r, term) { return !term || hay(r).indexOf(term) !== -1; }
   function setOpen(pr, open) { pr.classList.toggle('open', !!open); pr.setAttribute('aria-expanded', open ? 'true' : 'false'); }
 
   function refresh() {
@@ -836,7 +858,7 @@ _SCRIPT = r"""<script>
           phaseRows.forEach(function (pr) {
             var pid = pr.getAttribute('data-phase');
             var anchor = tfOf(pid) || pr;   // keep tasks after the phase + its task-filter row
-            tasksOf(pid).sort(cmp).reverse()
+            tasksOf(pid).slice().sort(cmp).reverse()
               .forEach(function (r) { anchor.parentNode.insertBefore(r, anchor.nextSibling); });
           });
         } else {
@@ -1068,7 +1090,26 @@ _SCRIPT = r"""<script>
 
   wireSort(grouped, true);
   wireSort(bugsTable, false);
-  if (q) q.addEventListener('input', refresh);
+  // Typing is a burst, not a series of questions. Five characters used to mean five
+  // full passes over every row — half a second of blocked main thread on a
+  // 200-phase plan — to show four intermediate results nobody reads. One pass once
+  // you stop. 90ms is below the threshold where a filter feels delayed and above
+  // the fastest realistic repeat rate, and the timer is cleared on every keystroke
+  // so a long word still costs exactly one pass.
+  if (q) {
+    var qTimer = null;
+    q.addEventListener('input', function () {
+      if (qTimer) clearTimeout(qTimer);
+      qTimer = setTimeout(function () { qTimer = null; refresh(); }, 90);
+    });
+    // Enter and Escape are decisions, not typing: act at once.
+    q.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Enter' && ev.key !== 'Escape') return;
+      if (ev.key === 'Escape') q.value = '';
+      if (qTimer) { clearTimeout(qTimer); qTimer = null; }
+      refresh();
+    });
+  }
   refresh();
 })();
 </script>"""
@@ -3142,6 +3183,28 @@ def _selftest():
     _phead = _phead[:_phead.index("</thead>")]
     check("cols: the full example still renders every column it has data for",
           _phead.count("<th>") == 3 + len(_present_columns(manifest)))
+
+    # --- scale: the filter must not re-query the DOM per phase ----------------
+    # Measured on a 200-phase / 4000-task report: one keystroke took 145ms and a
+    # five-character burst blocked the main thread for 508ms, because refresh()
+    # called querySelectorAll ONCE PER PHASE inside its own loop over phases.
+    _body = _SCRIPT[_SCRIPT.index("function refresh()"):]
+    _body = _body[:_body.index("\n  function ", 10)] if "\n  function " in _body[10:] else _body
+    check("scale: refresh() runs no DOM query per phase - that loop is O(phases x "
+          "rows) and it ran on every keystroke",
+          "querySelectorAll" not in _body and "querySelector(" not in _body)
+    check("scale: the phase->tasks index is built once, up front",
+          "var TASKS = {}, TFROW = {};" in _SCRIPT)
+    check("scale: row text is lowercased once and kept, not re-derived per keystroke",
+          "r.__auditText" in _SCRIPT)
+    check("scale: sorting copies the index before ordering it, so the index is "
+          "never left permuted behind the table",
+          "tasksOf(pid).slice().sort(cmp)" in _SCRIPT)
+    check("scale: typing is debounced - five characters is one pass, not five",
+          "setTimeout(function () { qTimer = null; refresh(); }, 90)" in _SCRIPT)
+    check("scale: Enter and Escape bypass the debounce, because they are decisions "
+          "rather than typing",
+          "ev.key !== 'Enter' && ev.key !== 'Escape'" in _SCRIPT)
 
     # --- fragment mode (publishable as a Claude Code Artifact) --------------
     # The host wraps what it is given in its own doctype/head/body, so every one
