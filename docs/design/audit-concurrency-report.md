@@ -10,6 +10,77 @@
 
 ---
 
+## Implementation status — measured 2026-08-07 (v0.25.0)
+
+The catalogue below is kept as written, at the architecture it described (single-file
+manifest, `<manifestPath>.lock`), because a report that quietly edits its own premises
+cannot be checked against what happened. **That architecture no longer exists**, and one of
+this report's central claims did not survive contact with it.
+
+### What shipped
+
+| Option | Status | Where |
+|---|---|---|
+| **O4** per-phase sharding | **shipped** v0.15.0 | `meta.version: 3`; phases are `{id, title, shard}` stubs pointing at `phases/<id>.json`. Every runtime field lives in the phase's own shard |
+| **O5** cross-worktree lock | **shipped** | `$(git rev-parse --git-common-dir)/audit-locks` — outside the working tree, shared by all worktrees of one clone, invisible to `git status` |
+| — two-tier locking | shipped, not in this report | brief `index.lock` for structural writes and id allocation; `phase-<id>.lock` held for a phase run. Different phases take different locks and run in parallel |
+| — `phase.claim` | shipped, not in this report | `{sessionId, host, branch, at}` in the shard: optimistic **cross-machine** coordination, so a same-phase double-claim on another branch surfaces as a shard merge conflict |
+| **C3** atomic write | **fixed** | `_manifest_io._atomic_write_json` — temp file + `os.replace` |
+| **O2** id namespacing | **not implemented**, and see below | ids are still "highest + 1" (`manifest-conventions.md:59-73`) |
+
+### B2 is no longer silent — the headline claim is retracted
+
+This report's central argument was that **B2 (ID collision) merges cleanly and git never
+complains**, which is what put it top-right in the risk matrix. Measured against the current
+architecture with real clones and real merges, that is **false**.
+
+Sharding moved every id-allocating write — `bugs[]`, `phases[]`, `fileIndex` — into the
+**index**, under the index lock. Two allocations of the same kind therefore land on the same
+array tail, in the same hunk:
+
+| Measured scenario (two separate clones, no shared lock) | Result |
+|---|---|
+| Both allocate `BUG-4` from the same base, commit, merge | **CONFLICT** — `CONFLICT (content): Merge conflict in docs/audit/audit-plan.json` |
+| Both add a task to their own phase **and** extend the shared `fileIndex` | **CONFLICT** |
+| Each runs its **own phase**, writing only its own shard | **clean merge**, both shards intact, index untouched |
+
+The third row is O4 working exactly as designed, and it is the scenario the product
+advertises. The first two are B2 and B5 — and git announces both.
+
+Task ids close the remaining surface by construction: `<phaseId>.<n>` is scoped to a phase,
+so two clones running *different* phases cannot mint the same task id even in principle, and
+two clones running the *same* phase collide inside one shard, which conflicts.
+
+No silent duplicate-id path could be constructed in the sharded layout. A collision requires
+two allocations of the same kind, which requires the same array, which is the same hunk.
+
+### What that does to the options
+
+- **O2 (id namespacing) is not recommended.** Its whole justification in §5 was that B2 is
+  silent. It is not, so O2 would add a prefix or a random suffix to every id — `BUG-4`
+  becomes something worse to read and to type, permanently — in exchange for a collision git
+  already reports. The cheap mitigation the matrix lists under O1 (run `validate-manifest.py`
+  after a merge) still works and is still worth doing: two `BUG-4` entries produce
+  `FINDING: duplicate id: BUG-4`.
+- **O1 discipline** remains the answer for the merge-conflict modes, which are now the only
+  modes.
+
+### What is still open
+
+- **C1 — the 60-minute staleness threshold** is unchanged. A legitimate run longer than an
+  hour still looks crashed, and the takeover prompt then permits two mutating sessions.
+- **Clones and separate machines are still outside the lock.** `--git-common-dir` is shared
+  by worktrees of one clone and by nothing else — verified by comparing absolute paths. What
+  changed is the consequence: an unlocked concurrent run now produces a conflict you must
+  resolve, not a corruption you never notice. `phase.claim` covers the cross-machine
+  same-phase case by the same mechanism.
+- **Likelihood, for this repository, measured the same day:** no project using the plugin has
+  more than one worktree, and no repository on this machine is cloned twice. The precondition
+  for the entire B class — two mutating sessions without a shared lock — does not currently
+  occur here.
+
+---
+
 ## TL;DR
 
 The audit **manifest** (`docs/audit/audit-plan.json`) is a *single JSON file* that plays four
@@ -109,6 +180,11 @@ Git flags a conflict at the array boundary. **This is the PR #380 case.**
 *Resolve:* keep both blocks + both `fileIndex` entries, re-run `validate-manifest.py`. Annoying, not dangerous.
 
 **B2 · ID collision** &nbsp;·&nbsp; *git SILENT — no conflict* &nbsp;·&nbsp; **sev High / likelihood High** &nbsp;·&nbsp; **headline hazard**
+> **RETRACTED 2026-08-07 — see the status block at the top.** "git SILENT" was true of the
+> single-file layout this paragraph describes. Under sharding every id-allocating write goes
+> to the index, so two allocations of the same kind share a hunk and git reports a conflict.
+> Measured with real clones and real merges. The paragraph is left standing because it is
+> what the report argued at the time.
 Allocation is "highest + 1", repo-wide (`manifest-conventions.md:50-54`). Two branches forked from
 the same point both see `BUG-3` as the max and both allocate **`BUG-4`** (or `BF2`, or `P2.5`) — to
 *different* work. Because they touch different lines, **git merges cleanly with no conflict marker**.

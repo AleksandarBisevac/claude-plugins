@@ -16,11 +16,18 @@ always-on first line.
 
 ## Fail modes (by design)
 
-All six hooks launch through `hooks/py-launch.sh`, which resolves
+All **seven** hook scripts launch through `hooks/py-launch.sh`, which resolves
 `python3` → `python` → `py`. The fail mode when **no interpreter exists** is
 hardcoded per hook in `hooks/hooks.json` — it cannot live in
 `.claude/audit.config.json` because reading that config requires Python
-(chicken-and-egg):
+(chicken-and-egg).
+
+The table has **eight rows for seven scripts**: `require-plan` is registered
+twice, once on `PreToolUse` to decide and once on `PostToolUse` to commit that
+decision, and the two registrations fail differently — which is the whole reason
+this table is per-registration rather than per-script. Elsewhere you may see
+"six guard hooks": that is the six that guard, excluding `meter-usage`, which
+only records. Three defensible counts, so each one now says what it counts.
 
 | Hook | Event | No interpreter | On internal error |
 |---|---|---|---|

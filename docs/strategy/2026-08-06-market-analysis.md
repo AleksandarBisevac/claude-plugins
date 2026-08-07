@@ -24,7 +24,10 @@ since shipped:
 | Shipped since | **T1 complete** in 0.20.0 (evidence-graded plan gate · `/audit:doctor` · free-first quickstart · the eight §8 defects) · **T2.9 + T2.10** in 0.21.0 (deterministic `/audit:status` render · budget as a gate) · **T2.11 + T3.16 + T3.13** in 0.22.0 (report published to a link · thin skills, ADR amended · the enforcement essay) · **the rate-basis sweep** in 0.23.0 (five cost surfaces name their price table; `/audit:usage` honours a configured `manifestPath`, so `showCost: false` works on non-default layouts) · **T3.15 complete** in 0.24.0 (verdict-led hero · the gate rail drawing `blockedBy` · app shell on report and panel · data-driven column density · all twelve screenshots recaptured) |
 | Corrected by events | The §6 threat "the ADR watches for the wrong signal" was the accurate half of that entry; the fix was neither NO-GO nor migration but shipping both layouts — see the v0.22.0 amendment in `CONTRIBUTING.md` |
 | **Premise of T2.12 was wrong** | §6 and the T2 table both say external plugins are *submitted to the official directory with automated screening*. They are not. `claude-plugins-official` is **curated by Anthropic at its discretion — there is no application process, and the submission form does not add plugins to it**. The form feeds `claude-plugins-community` (installed as `@claude-community`), which is where third-party submissions land after review. The achievable item is the **community** marketplace, and the auto-propagation claim survives intact in a sharper form: approved plugins are pinned to a commit SHA and CI bumps the pin as commits land, with the public catalog syncing nightly. Submission is in-app — [claude.ai](https://claude.ai/admin-settings/directory/submissions/plugins/new) (needs a Team/Enterprise org with directory access) or [Console](https://platform.claude.com/plugins/submit) (individual authors). `claude plugin validate ./plugins/audit --strict` is the same check the review pipeline runs; it exits 0 here. |
+| **Where the numbers live** | §1.2 and §6 hold the figures **as measured on 2026-08-06** and are not updated — that is what "kept as written" means, and I had been quietly editing the test count inside them across three commits, which left the section half-frozen and half-live with no way for a reader to tell which. Current figures live here: **1034 runtime cases across 20 suites** · 16 commands · 2 skills · 3 agents · 7 hook scripts · 27 releases through v0.25.0 |
+| **Hook count clarified** | §1.2 says "8 hooks" and §2 says "Eight deterministic hooks" then enumerates seven; §5.1 quotes the README's "six guard hooks". All three are defensible and none said what it counted: **7 scripts**, **8 registrations** (`require-plan` is registered on both `PreToolUse` and `PostToolUse`, and the two fail differently), **6 guards** (excluding `meter-usage`, which only records). `SECURITY.md` said "All six hooks" directly above a table listing seven — fixed there, since that one is a live document |
 | Still open | **T2.12 submitted 2026-08-07**, awaiting automated screening + review (Console form, as `audit`, path `plugins/audit`). Nothing else on the roadmap is open. #14 deferred pending re-assessment — observe-by-default largely removes its rationale |
+| **Concurrency report re-measured** | `docs/design/audit-concurrency-report.md` carried B2 (ID collision) as the headline hazard because git merged it **silently**. Measured 2026-08-07 against the sharded layout with real clones: it **conflicts**. Sharding moved every id-allocating write into the index, so two allocations of the same kind share a hunk. O2 (id namespacing) is consequently **not recommended** — its entire justification was the silence. O4 and O5 shipped; C1 (60-minute staleness) is still open. The report now carries a status block and the B2 paragraph is marked retracted |
 
 ---
 
@@ -60,8 +63,8 @@ The hosted demo omits the flagship feature set. `examples/acme-store/acme-store-
 | | |
 |---|---|
 | Tracked lines | 24,491 — 14,138 Python · 3,889 Markdown · 3,886 JSON · 2,126 HTML |
-| Surface | 15 commands · 2 skills · 3 agents · 8 hooks · 2 JSON Schemas · 2 templates |
-| Tests | **1022** runtime cases across 20 `--selftest` suites in CI, globbed rather than enumerated (675 across 17 before this work) |
+| Surface | 15 commands · 3 agents · 8 hook registrations · 2 JSON Schemas · 2 templates — *as measured 2026-08-06* |
+| Tests | **721** runtime cases across 18 `--selftest` suites in CI (675 across 17 before this work) — *as measured on 2026-08-06; the current figure is in the status table above* |
 | CI | 3 jobs · ubuntu + windows matrix · ajv draft-2020-12 · `claude plugin validate` |
 | Runtime dependencies | 0 (stdlib-only, enforced as a hard rule in `CONTRIBUTING.md`) |
 | Releases | 24, from v0.1.0 to v0.19.0, between 2026-07-06 and 2026-08-06 |
@@ -303,7 +306,7 @@ is the same move the CHANGELOG makes on every other feature.
   market where most "enforcement" is a strongly-worded skill.
 - **Zero runtime dependencies**, stdlib-only, with a Windows CI leg proving the interpreter
   fallback. Installs where npm-based competitors do not.
-- **1022 runtime test cases across 20 suites in CI** (a static `check(` grep reads 686; the runtime count is the verifiable one), plus ajv schema validation, plus `claude plugin validate`, plus a
+- **721 runtime test cases across 18 suites in CI** (a static `check(` grep reads 686; the runtime count is the verifiable one), plus ajv schema validation, plus `claude plugin validate`, plus a
   determinism check that regenerates the demo ledger and diffs it against the committed copy.
 - **Spend attributed to plan units** — not replicable by native OTel, as argued in §3.
 - **The prose is publishable-grade.** "A claim whose basis is invisible cannot be checked."
