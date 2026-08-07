@@ -96,6 +96,21 @@ def _config_path(project):
     return os.path.join(project, CONFIG_REL)
 
 
+def _declared_as_of(config):
+    """Did the PROJECT set `usage.pricingAsOf`, or is the effective value a default?
+
+    `usage_cfg()` merges `DEFAULTS`, so `ucfg["pricingAsOf"]` is almost never absent
+    — it falls back to the default table's date. Rendering that as the rate basis
+    would present a date this project never chose as though it had, which is the
+    manufactured basis `render-report._usage_context` refuses for the same reason.
+    The panel needs the raw config to tell the two apart, so it reports the fact
+    separately rather than making the client guess from a value that is always set.
+    """
+    block = (config or {}).get("usage")
+    return isinstance(block, dict) and isinstance(block.get("pricingAsOf"), str) \
+        and bool(block["pricingAsOf"].strip())
+
+
 def _manifest_path(project, config):
     mp = (config or {}).get("manifestPath") or _defaults()["manifestPath"]
     return os.path.normpath(os.path.join(project, mp))
@@ -459,7 +474,9 @@ def usage_state(project):
     ledger_dir = str(cfg_mod.ledger_dir(project, config))
     empty = {"enabled": bool(ucfg.get("enabled", True)), "ledgerDir": ledger_dir,
              "showCost": bool(ucfg.get("showCost", True)),
-             "pricingAsOf": ucfg.get("pricingAsOf"), "facts": [], "fields": [],
+             "pricingAsOf": ucfg.get("pricingAsOf"),
+             "pricingAsOfDeclared": _declared_as_of(config),
+             "facts": [], "fields": [],
              # Every key the populated branch returns must appear here too: the
              # client reads this shape on a repo with no ledger yet, and a missing
              # key there is an `undefined` that only shows up on a fresh install.
@@ -547,6 +564,7 @@ def usage_state(project):
         "ledgerDir": ledger_dir,
         "showCost": bool(ucfg.get("showCost", True)),
         "pricingAsOf": ucfg.get("pricingAsOf"),
+        "pricingAsOfDeclared": _declared_as_of(config),
         "fields": ["ts", "phase", "task", "model", "author", "agent", "attr",
                    "tokens", "cost", "msgs"],
         "facts": [list(k) + [v[0], round(v[1], 6), v[2]]
@@ -2384,6 +2402,13 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
  // chart names its own period in its heading, so this says "ledger" out loud
  // rather than leaving two different resolutions on screen unlabelled.
  bits.push(USAGE.rolled?'daily ledger (rolled up)':'hourly ledger');
+ // The rate table behind every dollar in this tab. `pricingAsOf` is served from the
+ // MERGED config, so it is set even when this project never chose it — printing it
+ // unconditionally would present the default table's date as the project's own.
+ // `pricingAsOfDeclared` is the server saying which of the two it is.
+ if(USAGE.showCost)bits.push(USAGE.pricingAsOfDeclared
+   ?'rates as of '+USAGE.pricingAsOf
+   :'rates undated (set usage.pricingAsOf)');
  card.append(el('div',{class:'uctx'},bits.join(' - ')));
 
  // filters: typeahead for the high-cardinality dimensions, select for range
@@ -2715,6 +2740,24 @@ def _selftest():
     check("usage tab is registered and has a view container",
           "data-t=usage" in UI_HTML and "<div id=usage" in UI_HTML
           and "'usage'" in UI_HTML)
+    # The rate basis behind every dollar in this tab. It reads the DECLARED flag,
+    # never `pricingAsOf` alone: usage_cfg() merges defaults, so that value is set
+    # even for a project that never chose it, and printing it unconditionally would
+    # present the default table's date as the project's own.
+    check("the usage tab names the rate table behind its costs",
+          "rates as of '+USAGE.pricingAsOf" in UI_HTML
+          and "rates undated (set usage.pricingAsOf)" in UI_HTML)
+    check("and it decides on pricingAsOfDeclared, not on the merged value, so a "
+          "default date is never shown as the project's own",
+          "USAGE.pricingAsOfDeclared" in UI_HTML)
+    check("withheld with the dollars when showCost is off",
+          "if(USAGE.showCost)bits.push(USAGE.pricingAsOfDeclared" in UI_HTML)
+    check("_declared_as_of separates a project's own value from the default",
+          _declared_as_of({"usage": {"pricingAsOf": "2026-01-02"}}) is True
+          and _declared_as_of({"usage": {"showCost": True}}) is False
+          and _declared_as_of({}) is False
+          and _declared_as_of({"usage": {"pricingAsOf": "   "}}) is False
+          and _declared_as_of({"usage": {"pricingAsOf": 20260102}}) is False)
     # UI_HTML carries the stylesheet AND the JS that writes inline styles, which
     # is where an undeclared token actually hides.
     _css = UI_HTML[UI_HTML.index("<style>"):UI_HTML.index("</style>")]
@@ -3056,6 +3099,22 @@ def _selftest():
         du = usage_state(proj)
         check("usage_state reports metering off so the tab can explain itself",
               du["enabled"] is False and du["showCost"] is False)
+        # The empty branch's own comment requires it: every key the populated
+        # branch returns must appear here too, or a fresh install reads undefined.
+        check("the no-ledger shape carries pricingAsOfDeclared as well, so a "
+              "fresh install does not read undefined",
+              "pricingAsOfDeclared" in du and du["pricingAsOfDeclared"] is False)
+        with open(_cfg_path, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"pricingAsOf": "2026-01-02"}}, fh)
+        check("a declared date is reported as declared, and travels with it",
+              usage_state(proj)["pricingAsOfDeclared"] is True
+              and usage_state(proj)["pricingAsOf"] == "2026-01-02")
+        with open(_cfg_path, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"showCost": True}}, fh)
+        _dd = usage_state(proj)
+        check("an undeclared one still carries the merged default as the VALUE, "
+              "flagged as undeclared - the client decides, the server does not lie",
+              _dd["pricingAsOfDeclared"] is False and _dd["pricingAsOf"])
     finally:
         if _prev_cfg is None:
             os.remove(_cfg_path)
