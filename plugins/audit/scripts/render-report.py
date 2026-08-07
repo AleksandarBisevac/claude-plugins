@@ -70,6 +70,13 @@ _CSS = """
      worst CVD dE 7.5, which the 6-8 band permits because every bar wearing it
      carries a direct text label. */
   --bar-neutral:#5c636d;
+  /* The gate rail. The line is STRUCTURE and carries no state — it is one colour
+     the whole way down, so the only thing that changes along it is the gates. It
+     dims below a gate that is closed, because nothing behind that gate can be
+     worked on. Before this the left border repeated each row's status colour,
+     which made the spine a second copy of the chip beside it rather than a
+     drawing of what holds what. */
+  --rail:#9aa8bd;--rail-held:#dfe5ee;
   --radius:9px;--radius-lg:14px;--pill:999px;
   --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
   --shadow-md:0 10px 30px rgba(15,23,42,.14);
@@ -94,6 +101,7 @@ _CSS = """
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
   --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
   --bar-neutral:#a6adb8;
+  --rail:#4a5c7d;--rail-held:#1b2740;
   /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
      zero still recedes into the surface, so the ramp runs dark -> light. */
   --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
@@ -110,6 +118,7 @@ _CSS = """
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
   --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
   --bar-neutral:#a6adb8;
+  --rail:#4a5c7d;--rail-held:#1b2740;
   /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
      zero still recedes into the surface, so the ramp runs dark -> light. */
   --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
@@ -130,10 +139,91 @@ _CSS = """
 /* ---- base ---------------------------------------------------------------- */
 *{box-sizing:border-box}
 html{background:var(--bg)}
-body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);max-width:70rem;
-     margin:0 auto;padding:2rem 1.5rem 4rem;-webkit-font-smoothing:antialiased}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
+     margin:0;padding:0;-webkit-font-smoothing:antialiased}
+
+/* ---- app shell -----------------------------------------------------------
+   A 70rem centred column wasted half a laptop screen and gave a long document no
+   map: this report runs verdict -> phases -> bugs -> ready -> usage, and usage
+   alone has a chart, tiles, ranked lists, a budget block and a heatmap. So:
+   navigation at the side, actions on top — the split follows what the controls
+   DO, not where they fit.
+
+   The side nav is not a menu of five links, which a top bar would carry perfectly
+   well. It is a position indicator for a document you scroll for a long time, and
+   that is a different job: it says where you are, not only where you can go.
+
+   One information architecture, two presentations (the app-shell rule): above
+   72rem it is a sticky column; below, the same items become a horizontal strip
+   under the top bar. Never two different menus. */
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:.75rem 1rem;
+  flex-wrap:wrap;padding:.6rem 1.5rem;background:color-mix(in srgb,var(--surface) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.topbar.scrolled{box-shadow:var(--shadow-sm)}
+/* The title identifies the report and must survive being shared, so it stays in
+   the bar — but capped and elided. Uncapped it pushed the actions onto a third
+   row at 1440px, which is the opposite of what a persistent action bar is for. */
+.tb-id{display:flex;flex-direction:column;min-width:0;margin-right:auto;
+  max-width:min(40%,32rem)}
+.tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+.tb-id .meta{font-size:.72rem}
+.tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
+.shell{display:grid;grid-template-columns:14.5rem minmax(0,1fr);gap:2.5rem;
+  max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
+.content{min-width:0}
+/* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
+   not "using the space", it is unreadable. Tables and charts take the full
+   column; text does not. */
+.pmeta{max-width:82ch}
+/* How the cards compose as the screen grows. Below 78rem they stack, because two
+   400px columns of prose is worse than one. Above it they pair, which is the only
+   honest use of the extra width: a summary paragraph set 1100px wide is not
+   "filling the space", it is 130 characters per line and unreadable. The verdict
+   takes the larger share — it is the answer, the summary is the elaboration.
+   A lone card spans the full width rather than sitting in half of it. */
+.topgrid{display:grid;gap:1rem;grid-template-columns:minmax(0,1fr);margin:1rem 0}
+.topgrid>*{margin:0}
+.topgrid>:only-child{grid-column:1/-1}
+@media (min-width:78rem){.topgrid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+  align-items:start}}
+.snav{position:sticky;top:4.1rem;max-height:calc(100vh - 5.5rem);overflow:auto;
+  padding-right:.25rem}
+.snav ol{list-style:none;margin:0;padding:0}
+.snav a{display:flex;align-items:center;gap:.5rem;text-decoration:none;color:var(--muted);
+  font-size:.85rem;padding:.34rem .6rem;border-radius:var(--radius);
+  border-left:2px solid transparent;transition:color var(--dur),background var(--dur)}
+.snav a:hover{color:var(--text);background:var(--surface-2)}
+.snav a[aria-current="true"]{color:var(--text);background:var(--surface-2);
+  border-left-color:var(--accent);font-weight:600}
+.snav .sub-item a{padding-left:1.5rem;font-size:.8rem}
+/* The count is the point of putting it here: "Bugs 5" tells you whether the
+   section is worth the scroll before you take it. */
+.snav .n{margin-left:auto;font-family:var(--mono);font-size:.72rem;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.snav-title{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
+  color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
+@media (max-width:48rem){
+  /* On a phone the title is the only thing identifying the report, and 40% of
+     390px is not a title, it is three words and an ellipsis. It takes the row. */
+  .tb-id{max-width:100%}
+}
+@media (max-width:72rem){
+  .shell{grid-template-columns:minmax(0,1fr);gap:1rem;padding-top:.5rem}
+  /* Same items, different presentation — a horizontal strip, not a second menu. */
+  .snav{position:sticky;top:3.4rem;max-height:none;overflow-x:auto;overflow-y:hidden;
+    margin:0 -1.5rem;padding:.4rem 1.5rem;background:var(--bg);
+    border-bottom:1px solid var(--border);z-index:20}
+  .snav-title{display:none}
+  .snav ol{display:flex;gap:.25rem;white-space:nowrap}
+  .snav a{border-left:none;border-bottom:2px solid transparent;border-radius:var(--radius) var(--radius) 0 0}
+  .snav a[aria-current="true"]{border-left-color:transparent;border-bottom-color:var(--accent)}
+  .snav .sub-item{display:none}
+}
 a{color:var(--accent);text-underline-offset:2px}
-h1{font-size:1.7rem;font-weight:680;letter-spacing:-.02em;margin:0 0 .25rem}
+/* The title names the document; it does not lead it. §7: the reader arrives with
+   one question and it is not "what is this called". So the h1 is set at body-ish
+   size and the verdict below it carries the display weight. */
+h1{font-size:1.22rem;font-weight:680;letter-spacing:-.01em;margin:0 0 .2rem}
 h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
    margin:2rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
 .meta{color:var(--muted);font-family:var(--mono);font-size:.8rem;margin:0 0 1.5rem;
@@ -142,12 +232,33 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .muted{color:var(--muted)}
 .mono{font-family:var(--mono);font-size:.86em;font-variant-numeric:tabular-nums}
 
-/* ---- hero / overall band ------------------------------------------------- */
-.overall{display:flex;align-items:center;gap:.75rem 1.5rem;flex-wrap:wrap;background:var(--surface);
-  border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem 1rem;margin:1rem 0;
-  box-shadow:var(--shadow-sm)}
-.overall>strong{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
-.overall .muted{font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+/* ---- verdict hero --------------------------------------------------------
+   The page opens on the question the reader actually has: can this ship? The
+   answer is not composed here — it is `audit-status.py --gate`, the same verdict
+   the CI job produces, with the conditions that decided it printed underneath.
+   A hero that scored the plan by its own private rule would be a second opinion
+   nobody asked for; this one can be checked by running the gate. */
+.overall{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--vd);
+  border-radius:var(--radius-lg);padding:1rem 1.25rem;margin:1rem 0;box-shadow:var(--shadow-sm);
+  --vd:var(--st-pending)}
+.overall[data-gate="clear"]{--vd:var(--st-done)}
+.overall[data-gate="blocked"]{--vd:var(--st-blocked)}
+.vd-eyebrow{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.14em;
+  color:var(--muted);font-weight:700;margin:0}
+/* Mono, uppercase, tight: the display voice of this report is the stamp on an
+   inspection record, not a marketing headline. §7 asked for typography with a
+   point of view and for mono to stop being spent on chrome — this is both. */
+.vd-word{font-family:var(--mono);font-size:2.15rem;line-height:1.1;letter-spacing:-.01em;
+  font-weight:700;color:var(--vd);margin:.1rem 0 .3rem;text-transform:uppercase}
+.vd-why{margin:0;font-size:.95rem}
+.vd-basis{margin:.35rem 0 0;color:var(--muted);font-size:.78rem}
+.vd-next{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.9rem;
+  padding-top:.9rem;border-top:1px solid var(--border)}
+.vd-run{font-family:var(--mono);font-size:.9rem;background:var(--surface-2);
+  border:1px solid var(--border-strong);border-radius:var(--radius);padding:.2rem .45rem;
+  font-variant-numeric:tabular-nums}
+.vd-stats{display:flex;align-items:center;gap:.6rem 1.25rem;flex-wrap:wrap;margin-top:.8rem}
+.vd-stats .muted{font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
 
 /* ---- summary card -------------------------------------------------------- */
 .summary{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
@@ -173,11 +284,18 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 @keyframes fillIn{from{width:0}to{width:var(--w,0)}}
 
 /* ---- toolbar ------------------------------------------------------------- */
-.toolbar{position:sticky;top:.5rem;z-index:10;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;
-  padding:.5rem .75rem;margin:1.5rem 0 1rem;background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius-lg);transition:box-shadow var(--dur) var(--ease)}
-.toolbar.scrolled{box-shadow:var(--shadow-md)}
-#audit-q{flex:1 1 17rem;min-width:11rem;padding:.5rem .75rem;font:inherit;color:var(--text);
+/* The toolbar moved into the top bar: these are global actions (search the whole
+   plan, filter every phase, print, download, theme) and they were scrolling away
+   from the reader halfway down a long report. */
+.toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0}
+/* Section-scoped controls sit on the thing they act on, sticky under the top bar
+   so they stay reachable while you scroll the table they filter — and stop
+   existing once you have scrolled past it. */
+.sectools{position:sticky;top:3.6rem;z-index:15;padding:.5rem .75rem;margin:0 0 .75rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)}
+@media (max-width:72rem){.sectools{top:6.6rem}}
+@media print{.sectools{display:none!important}}
+#audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
 #audit-q::placeholder{color:var(--muted)}
@@ -239,13 +357,47 @@ tbody tr:last-child td{border-bottom:none}
 tbody tr:last-child td:first-child{border-bottom-left-radius:var(--radius-lg)}
 tbody tr:last-child td:last-child{border-bottom-right-radius:var(--radius-lg)}
 
-/* ---- phase group-rows: the pipeline rail + status node (signature) ------- */
+/* ---- the gate rail (signature) -------------------------------------------
+   A continuous spine down the phase list, with one gate per phase. The CROSSBAR
+   is the gate: broken in the middle when work can pass, solid when something
+   holds it shut. Below a closed gate the rail dims, because that is exactly what
+   `blockedBy` means and it was invisible in this report until now — the reader
+   could see that P3 was pending but not that P2 was the reason.
+   Colour is never the only carrier: every phase row also states its status in a
+   text chip, and a held one names what holds it. */
 tr.phase{cursor:pointer}
+/* The spine is drawn on EVERY row in the body, not just phase rows, which is what
+   makes it continuous: a rail that restarts at each group reads as a set of ticks,
+   not as one line running the length of the plan. It sits INSIDE the table with
+   clear space either side — sharing the card's left border made it read as the
+   border it was sitting on rather than as a structure of its own. */
+table.phases tbody>tr>td:first-child{position:relative;padding-left:2.3rem}
+table.phases tbody>tr>td:first-child::after{content:"";position:absolute;left:1.15rem;top:0;bottom:0;
+  width:2px;background:var(--rail)}
+table.phases tbody>tr[data-held]>td:first-child::after{background:var(--rail-held)}
 tr.phase>td{position:relative;background:var(--surface-2);border-top:1px solid var(--border-strong);
-  border-left:2px solid var(--st,var(--st-pending));padding:.75rem .75rem .75rem 1rem;transition:background var(--dur)}
+  padding:.75rem .75rem .75rem 2.3rem;transition:background var(--dur)}
 tr.phase:hover>td{background:var(--surface)}
-tr.phase>td::before{content:"";position:absolute;left:-6px;top:1.05rem;width:11px;height:11px;border-radius:50%;
-  background:var(--st,var(--st-pending));box-shadow:0 0 0 3px var(--surface)}
+/* Open gate: a crossbar with a gap you can pass through. */
+tr.phase>td::before{content:"";position:absolute;left:calc(1.15rem - 9px);top:1.2rem;width:20px;height:3px;
+  border-radius:1px;z-index:1;
+  background:linear-gradient(90deg,var(--st,var(--st-pending)) 0 7px,var(--surface-2) 7px 13px,
+    var(--st,var(--st-pending)) 13px 20px)}
+tr.phase:hover>td::before{background:linear-gradient(90deg,var(--st,var(--st-pending)) 0 7px,
+  var(--surface) 7px 13px,var(--st,var(--st-pending)) 13px 20px)}
+/* Closed gate: solid, no gap. Everything it holds is dimmed below it. */
+tr.phase[data-held]>td::before,tr.phase[data-held]:hover>td::before{background:var(--st-blocked);width:22px;
+  left:calc(1.15rem - 10px);height:3px}
+/* The stamp: the last commit recorded inside a signed-off phase. */
+.stamp{font-family:var(--mono);font-size:.7rem;letter-spacing:.02em;color:var(--muted);
+  border:1px dashed var(--border-strong);border-radius:3px;padding:.05rem .3rem;margin-left:.4rem;
+  vertical-align:.06em}
+/* What holds this phase shut, named and linkable — the rail says "closed", this
+   says by what. A gate that cannot tell you what shut it is a locked door with no
+   sign on it. */
+.heldby{font-family:var(--mono);font-size:.7rem;color:var(--st-blocked);border:1px solid currentColor;
+  border-radius:3px;padding:.05rem .3rem;margin-left:.4rem;text-decoration:none;vertical-align:.06em}
+.heldby:hover{background:var(--st-blocked);color:var(--chip-ink)}
 .tri{display:inline-block;width:1em;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .tri::before{content:"\\25B6";font-size:.72em}
 tr.phase.open .tri{transform:rotate(90deg)}
@@ -255,11 +407,11 @@ tr.phase strong{font-weight:650}
 /* ---- task rows continue the rail ----------------------------------------- */
 tr.task>td{background:var(--surface)}
 tr.task:hover>td{background:var(--surface-2)}
-tr.task>td.tid{padding-left:2rem;border-left:2px solid var(--st,var(--border))}
+tr.task>td.tid{padding-left:3.1rem}
 
 /* ---- per-phase task-status filter row ------------------------------------ */
 tr.taskfilter{display:none}
-tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 2rem;border-bottom:1px dashed var(--border)}
+tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 3.1rem;border-bottom:1px dashed var(--border)}
 .tf-label{font-size:.75rem;color:var(--muted);margin-right:.5rem}
 .tf-chips{display:inline-flex;gap:.25rem;flex-wrap:wrap}
 
@@ -279,13 +431,21 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);
     border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
   table.phases,table.data{border:none;border-radius:0;box-shadow:none;min-width:34rem}
+  /* Prose must not live at the table's scroll width. A phase's desiredOutcome is a
+     sentence, and inside a 34rem-min table under overflow-x it was being laid out
+     683px wide on a 390px screen — so reading one line meant scrolling sideways and
+     back, per line. Sticky pins it to the visible left edge and the cap makes it
+     wrap inside the viewport, so the prose reads straight down while the COLUMNS
+     keep their scroll. Text wraps to the reader; data tables scroll. */
+  .pmeta{position:sticky;left:0;max-width:calc(100vw - 5.5rem);white-space:normal}
   thead th{position:static}
   thead th:first-child,thead th:last-child,
   tbody tr:last-child td:first-child,tbody tr:last-child td:last-child{border-radius:0}
 }
 @media (max-width:40rem){
   body{padding:1.5rem .75rem 3rem;font-size:14.5px}
-  h1{font-size:1.4rem}
+  h1{font-size:1.1rem}
+  .vd-word{font-size:1.75rem}
   .overall,.summary{padding:.75rem 1rem}
   .toolbar{gap:.5rem .5rem}
   #audit-q{flex-basis:100%;order:-1}
@@ -304,7 +464,12 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   :root,:root[data-theme="dark"]{--bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
     --muted:#374151;--border:#d1d5db;--chip-ink:#fff}
   body{max-width:none;margin:0;padding:0;font-size:10.5pt}
-  .toolbar,tr.taskfilter{display:none!important}
+  /* Paper has no scroll position to indicate and no controls to press, so the
+     whole shell collapses back to the document it always was underneath. */
+  .topbar,.snav,.toolbar,tr.taskfilter{display:none!important}
+  .shell{display:block;max-width:none;padding:0}
+  .pmeta{max-width:none}
+  .topgrid{display:block}
   tr.task{display:table-row!important}
   tr.phase,tr.task{break-inside:avoid}
   thead th{position:static!important}
@@ -533,8 +698,40 @@ _SCRIPT = r"""<script>
     paintTheme();
   });
 
+  // Scroll-spy. The links work without any of this — they are plain anchors
+  // rendered server-side — so this only adds the half a nav cannot do statically:
+  // saying where you ARE. Without it the sidebar is a menu; with it, a position.
+  var navLinks = [].slice.call(document.querySelectorAll('.snav a'));
+  if (navLinks.length && window.IntersectionObserver) {
+    var targets = navLinks.map(function (a) {
+      return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+    });
+    var visible = {};
+    var mark = function () {
+      // Topmost visible section wins. Picking "most visible" instead makes the
+      // marker jump backwards when a long section scrolls past a short one.
+      var best = -1;
+      targets.forEach(function (el, i) {
+        if (el && visible[i] && (best < 0 || el.getBoundingClientRect().top <
+            targets[best].getBoundingClientRect().top)) best = i;
+      });
+      navLinks.forEach(function (a, i) {
+        if (i === best) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      });
+    };
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var i = targets.indexOf(en.target);
+        if (i >= 0) visible[i] = en.isIntersecting;
+      });
+      mark();
+    }, { rootMargin: '-15% 0px -70% 0px' });
+    targets.forEach(function (el) { if (el) io.observe(el); });
+  }
+
   // Toolbar elevation once the page scrolls under it.
-  var toolbar = document.querySelector('.toolbar');
+  var toolbar = document.querySelector('.topbar');
   if (toolbar) {
     var onScroll = function () { toolbar.classList.toggle('scrolled', (window.scrollY || 0) > 8); };
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -833,6 +1030,28 @@ _SCRIPT = r"""<script>
   })();
 
   // Download the Markdown twin (embedded as base64, decoded to a Blob).
+  // Copy the run command. clipboard.writeText is unavailable on file:// in some
+  // browsers, which is exactly where this report is most often opened, so the
+  // fallback selects the text and lets the reader use their own copy key rather
+  // than failing silently and leaving a button that does nothing.
+  [].slice.call(document.querySelectorAll('.btn-copy')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      var text = b.getAttribute('data-copy') || '';
+      var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1600); };
+      try {
+        navigator.clipboard.writeText(text).then(done, function () { selectRun(b); });
+      } catch (e) { selectRun(b); }
+    });
+  });
+  function selectRun(btn) {
+    var code = btn.parentNode.querySelector('.vd-run');
+    if (!code) return;
+    var r = document.createRange(); r.selectNodeContents(code);
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    btn.textContent = 'Press to copy';
+    setTimeout(function () { btn.textContent = 'Copy'; }, 2400);
+  }
+
   var dlBtn = document.getElementById('audit-dl-md');
   if (dlBtn) dlBtn.addEventListener('click', function () {
     try {
@@ -1938,6 +2157,65 @@ def _usage_section(u):
     return "".join(out)
 
 
+def _plural(n, one, many=None):
+    return "%d %s" % (n, one if n == 1 else (many or one + "s"))
+
+
+_GATE_WORDS = {
+    "invalid": lambda n: _plural(n, "validator finding"),
+    "open-high-bugs": lambda n: _plural(n, "high-severity bug") + " still open",
+    "blocked-tasks": lambda n: _plural(n, "blocked task"),
+}
+# The conditions in the reader's words. `open-high-bugs` is a flag name; printing it
+# raw makes the basis look like a config dump and quietly assumes the reader knows
+# the CLI. The flag names still appear in the title attribute for whoever is going
+# to type them.
+_GATE_LABELS = {
+    "invalid": "manifest validity",
+    "open-high-bugs": "high-severity bugs",
+    "blocked-tasks": "blocked tasks",
+    "open-bugs": "any open bug",
+    "in-progress": "work in progress",
+    "over-budget": "phases over budget",
+    "budget-80": "phases past 80% of budget",
+}
+
+
+def _verdict(summary):
+    """The gate's own verdict, not a second opinion composed here.
+
+    Runs `evaluate_gate` with the same DEFAULT_GATE the CI job uses, so the word at
+    the top of the report is the word the pipeline would print, and the conditions
+    that produced it are named underneath. A hero that scored the plan by a private
+    rule would be unverifiable — this one is reproducible with one command.
+    """
+    lib = _load_status_lib()
+    try:
+        failed = lib.evaluate_gate(summary, lib.DEFAULT_GATE)
+    except Exception:                     # defensive: a hero must never be the crash
+        return None, [], []
+    counts = {
+        "invalid": summary.get("findings") or 0,
+        "open-high-bugs": summary["bugs"]["openHighSeverity"],
+        "blocked-tasks": summary["tasks"]["byStatus"].get("blocked", 0),
+    }
+    why = [_GATE_WORDS[c](counts[c]) for c in failed if c in _GATE_WORDS]
+    return ("blocked" if failed else "clear"), why, list(lib.DEFAULT_GATE)
+
+
+def _held_by(ph, done_ids):
+    """Which of this phase's `blockedBy` targets are not done yet.
+
+    The manifest has carried this since v0.1.0 and the report has never drawn it:
+    a reader could see that a phase was pending but not that another phase was the
+    reason. It is also what actually decides what you can work on next."""
+    out = []
+    for b in ph.get("blockedBy") or []:
+        if isinstance(b, str) and b not in done_ids:
+            out.append(b)
+    return out
+
+
 def render_html(manifest, summary, basename="audit-report", usage=None,
                 fragment=False):
     """The HTML report. `fragment=True` emits it for an embedding host.
@@ -1969,25 +2247,77 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         '<meta name="viewport" content="width=device-width, initial-scale=1">']
     out += ['<title>%s</title>' % e(meta.get("title") or "Audit report"),
             "<style>%s</style>" % _CSS]
-    out.append("<h1>%s</h1>" % e(meta.get("title") or "Audit report"))
-    out.append('<p class="meta">repo: %s · generated %s · %d phases · %d tasks'
-               " · %d bugs</p>"
-               % (e(meta.get("repo") or "?"), now, len(summary["phases"]),
-                  summary["tasks"]["total"], summary["bugs"]["total"]))
+    # The shell. `sections` is the ONE list both the nav and the content are drawn
+    # from — a hand-kept nav beside hand-placed anchors is the same trap as the
+    # hand-maintained selftest list that drifted three ways: adding a section and
+    # remembering to link it would be two separate acts, and only one of them shows.
+    sections = []
+
+    def section(anchor, label, count=None, sub=False):
+        sections.append((anchor, label, count, sub))
+        return anchor
+
+    out.append('<header class="topbar"><div class="tb-id">'
+               '<h1>%s</h1><p class="meta">%s · %d phases · %d tasks · %d bugs · '
+               "generated %s</p></div>"
+               % (e(meta.get("title") or "Audit report"),
+                  e(meta.get("repo") or "?"), len(summary["phases"]),
+                  summary["tasks"]["total"], summary["bugs"]["total"], now))
+    out.append("@@TOOLBAR@@</header>")
+    out.append('<div class="shell">@@NAV@@<main class="content">')
     if not summary["valid"]:
         out.append('<p><strong class="invalid">INVALID MANIFEST: %d '
                    "validator finding(s) — fix before trusting this report."
                    "</strong></p>" % summary["findings"])
 
-    # Overall progress header: total task completion + phase/bug rollup.
+    # The verdict hero. The old band led with the word "Overall" and a bar — true,
+    # but it answered "how far along" when the reader's question is "can I ship".
     tdone = sum(p["done"] for p in summary["phases"])
     ttotal = summary["tasks"]["total"]
     phdone = sum(1 for p in summary["phases"] if p["status"] == "done")
-    out.append('<div class="overall"><strong>Overall</strong> %s '
-               '<span class="muted">· %d/%d phases signed off · %d open bug(s)'
-               " · %d ready now</span></div>"
-               % (_bar(tdone, ttotal), phdone, len(summary["phases"]),
-                  summary["bugs"]["open"], len(summary["ready"])))
+    gate, why, conds = _verdict(summary)
+    ready = summary["ready"]
+    if ready:
+        # The most actionable string on the page. It used to sit at the bottom in
+        # small monospace with no affordance; it is now the one thing in the hero
+        # you can act on, and it is copyable because reading an id off a screen and
+        # retyping it is a transcription error waiting to happen.
+        nxt = ('<span class="tbl">Next</span> <code class="vd-run">/audit:run %s</code>'
+               '<button type="button" class="btn btn-copy" data-copy="/audit:run %s">'
+               "Copy</button>" % (e(ready[0]), e(ready[0])))
+        if len(ready) > 1:
+            nxt += ('<span class="muted">%d more ready</span>'
+                    % (len(ready) - 1))
+    elif ttotal and tdone == ttotal:
+        nxt = '<span class="muted">Nothing left to run — every task is done.</span>'
+    else:
+        nxt = ('<span class="muted">Nothing ready — every remaining task is '
+               "waiting on something.</span>")
+    out.append('<div class="topgrid">')
+    out.append(
+        '<section class="overall" id="%s"%s aria-label="Gate verdict">'
+        '<p class="vd-eyebrow">Gate</p>'
+        '<p class="vd-word">%s</p><p class="vd-why">%s</p>'
+        '<p class="vd-basis">%s</p>'
+        '<div class="vd-next">%s</div>'
+        '<div class="vd-stats">%s<span class="muted">%s · '
+        "%d of %d phases signed off · %s</span></div></section>"
+        % (section("gate", "Gate", None),
+           (' data-gate="%s"' % gate) if gate else "",
+           e({"clear": "Clear", "blocked": "Blocked"}.get(gate, "Unknown")),
+           e(" · ".join(why)) if why
+           else ("No blocking condition." if gate == "clear"
+                 else "The gate could not be evaluated."),
+           # The conditions are printed, not implied. A verdict whose criteria are
+           # invisible is a score, and the reader cannot tell whether it covers the
+           # thing they care about — spend, for instance, is deliberately NOT here.
+           ('<span title="audit-status.py --gate --fail-on %s">Checks %s. '
+            "Spend is deliberately not one of them.</span>"
+            % (e(",".join(conds)),
+               e(", ".join(_GATE_LABELS.get(c, c) for c in conds)))) if conds else "",
+           nxt, _bar(tdone, ttotal), _plural(tdone, "task") + " done",
+           phdone, len(summary["phases"]),
+           _plural(summary["bugs"]["open"], "open bug")))
 
     # AI-authored narrative summary (written by /audit:report into
     # meta.reportSummary); the quantitative "Overall" line above is the
@@ -1996,15 +2326,17 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     if isinstance(rsum, str) and rsum.strip():
         out.append('<div class="summary"><strong>Summary</strong>%s</div>'
                    % e(rsum.strip()))
+    out.append("</div>")   # close .topgrid
 
-    # Interactive toolbar (search + per-status quick-filter). Enhanced by
-    # _SCRIPT; with JS off the tables below are still fully readable.
-    out.append(
-        '<div class="toolbar" role="search">'
-        '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
-        'placeholder="Filter phases &amp; tasks by text…">'
-        '<span class="tbl">Phase status:</span><span id="audit-phase-status"></span>'
-        '<button type="button" id="audit-expand" class="btn">expand all</button>'
+    # Controls are split by WHAT THEY ACT ON, which is the same rule that put
+    # navigation at the side and actions on top. Save-as-PDF, the markdown twin and
+    # the theme act on the document, so they live in the persistent bar. Search,
+    # the status chips and expand-all act on the phases table and nothing else — in
+    # the top bar they were three rows of chrome following the reader through the
+    # usage charts, where they do nothing at all. They now sit on the table they
+    # drive. Enhanced by _SCRIPT; with JS off both tables are still fully readable.
+    doc_actions = (
+        '<div class="toolbar tb-actions">'
         '<button type="button" id="audit-print" class="btn btn-primary" '
         'title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button>'
         '<button type="button" id="audit-dl-md" class="btn">Download .md</button>'
@@ -2017,28 +2349,61 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         + ('' if fragment else
            '<button type="button" id="audit-theme" class="btn btn-icon" '
            'aria-label="Toggle light/dark theme" title="Toggle light/dark theme">'
-           '☾</button>')
-        + '<span id="audit-count" class="muted"></span></div>')
+           '\u263e</button>')
+        + '</div>')
+    table_tools = (
+        '<div class="toolbar sectools" role="search">'
+        '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
+        'placeholder="Filter phases &amp; tasks by text\u2026">'
+        '<span class="tbl">Phase status:</span><span id="audit-phase-status"></span>'
+        '<button type="button" id="audit-expand" class="btn">expand all</button>'
+        '<span id="audit-count" class="muted"></span></div>')
 
     # One collapsible table: each phase is a group-row (click to expand its task
     # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
+    out.append('<section id="%s" class="sec">' % section("phases", "Phases",
+                                                        len(summary["phases"])))
+    out.append(table_tools)
     out.append('<div class="tablewrap"><table class="phases"><thead><tr>'
                "<th>id</th><th>title</th><th>status</th><th>model</th>"
                "<th>risk</th><th>commit</th><th>done</th><th>ADO</th>"
                "<th>outcome</th></tr></thead><tbody>")
+    _done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
         pid = psum["id"]
         areas = psum["area"] if isinstance(psum.get("area"), list) else _areas_of(ph.get("area"))
         area_tags = "".join(' <span class="area-tag">%s</span>' % e(a) for a in areas)
+        held = _held_by(ph, _done_ids)
+        # The gate closes only where something actually holds it. A phase that is
+        # merely pending is an OPEN gate nobody has walked through yet, and drawing
+        # those the same way would make the rail a restatement of status rather
+        # than a drawing of dependency.
+        held_mark = "".join(
+            '<a class="heldby" href="#phase-%s" title="This phase is held until %s '
+            'is done">held by %s</a>' % (e(h), e(h), e(h)) for h in held)
+        # The stamp on a signed-off phase: the last commit recorded inside it. The
+        # manifest has no separate sign-off SHA, so this is labelled as what it is
+        # rather than presented as a signature it is not.
+        stamp = ""
+        if psum["status"] == "done":
+            shas = [t.get("commit") for t in (ph.get("tasks") or [])
+                    if isinstance(t, dict) and isinstance(t.get("commit"), str)
+                    and t["commit"].strip()]
+            if shas:
+                stamp = ('<span class="stamp" title="Last commit recorded in this '
+                         'phase">%s</span>' % e(shas[-1][:7]))
         out.append(
-            '<tr class="phase" data-phase="%s" data-status="%s" data-area="%s" tabindex="0" '
+            '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
+            'data-area="%s" tabindex="0" '
             'aria-expanded="false"><td colspan="9"><span class="tri"></span> '
-            '<span class="mono">%s</span> <strong>%s</strong>%s %s %s%s</td></tr>'
-            % (e(pid), e(psum["status"]), e(" ".join(areas)), e(pid), e(psum["title"]),
-               area_tags, _chip(psum["status"]), _bar(psum["done"], psum["total"]),
-               _phase_meta_div(ph)))
+            '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s %s%s</td></tr>'
+            % (e(pid), e(pid), e(psum["status"]),
+               ' data-held="1"' if held else "",
+               e(" ".join(areas)), e(pid), e(psum["title"]),
+               area_tags, _chip(psum["status"]), held_mark, stamp,
+               _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
         # per-phase task-status filter (shown only when the phase is expanded);
         # _SCRIPT fills .tf-chips from this phase's own task statuses.
         out.append('<tr class="taskfilter" data-phase="%s"><td colspan="9">'
@@ -2048,22 +2413,39 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
             if not isinstance(t, dict):
                 continue
             out.append(
-                '<tr class="task" data-phase="%s" data-status="%s">'
+                '<tr class="task" data-phase="%s" data-status="%s"%s>'
                 '<td class="mono tid">%s</td><td>%s</td><td>%s</td>'
                 "<td>%s</td><td>%s</td><td class=mono>%s</td><td class=when>%s</td>"
                 "<td>%s</td><td class=muted>%s</td></tr>"
-                % (e(pid), e(t.get("status")), e(t.get("id")), e(t.get("title")),
+                % (e(pid), e(t.get("status")),
+                   ' data-held="1"' if held else "",
+                   e(t.get("id")), e(t.get("title")),
                    _chip(t.get("status")), e(t.get("model") or "—"),
                    _risk_chip(t.get("risk")), e((t.get("commit") or "—")[:9]),
                    _timing_cell(t), _ado_cell(t), e(_outcome_text(t))))
-    out.append("</tbody></table></div>")
+    out.append("</tbody></table></div></section>")
 
-    out.append(_usage_section(usage))
+    # Usage is the longest section by far — a chart, five tiles, three ranked
+    # lists, a budget block, economics and a heatmap — so its own headings become
+    # sub-items. A nav that stops at the section a reader is already inside stops
+    # helping exactly where the scrolling gets long.
+    _usage_html = _usage_section(usage)
+    if _usage_html:
+        section("usage", "Usage", None)
+        for _label, _anchor in (("Tokens per day", "usage-trend"),
+                                ("Budget", "usage-budget")):
+            _tag = '<h3 class="sub">%s</h3>' % _label
+            if _tag in _usage_html:
+                _usage_html = _usage_html.replace(
+                    _tag, '<h3 class="sub" id="%s">%s</h3>' % (_anchor, _label), 1)
+                section(_anchor, _label, None, sub=True)
+    out.append(_usage_html)
 
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
         task_by_id = _tasks_by_id(manifest)
-        out.append("<h2>Bugs</h2>")
+        out.append('<h2 id="%s">Bugs</h2>'
+                   % section("bugs", "Bugs", summary["bugs"]["open"] or None))
         rows = []
         for b in bugs:
             bstatus, bfixed = _bug_view(b, task_by_id)
@@ -2081,8 +2463,11 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                    % "".join(rows))
 
     if summary["ready"]:
-        out.append("<h2>Ready now</h2><p class=mono>%s</p>"
-                   % ", ".join(e(r) for r in summary["ready"]))
+        out.append('<h2 id="%s">Ready now</h2><p class=mono>%s</p>'
+                   % (section("ready", "Ready now", len(summary["ready"])),
+                      ", ".join(e(r) for r in summary["ready"])))
+    out.append("</main></div>")   # close .content and .shell
+
     # Embed the Markdown twin as base64 so the "Download .md" button works from a
     # standalone file. base64 (not raw text) keeps any manifest HTML/`</script>`
     # out of the page and preserves UTF-8 exactly.
@@ -2094,7 +2479,25 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     out.append(_SCRIPT)
     if not fragment:
         out.append("</html>")
-    return "\n".join(out) + "\n"
+
+    # The nav is emitted from `sections`, the same list the anchors were written
+    # from, so it cannot list a section that is not there or miss one that is. It
+    # is rendered server-side rather than built by the script: with JS off this
+    # report still has to be a whole document, and a nav that only exists once
+    # JavaScript runs is a nav that is missing from every PDF and every reader
+    # with scripting disabled. The script adds scroll-spy on top; it does not
+    # supply the links.
+    nav = ""
+    if sections:
+        items = "".join(
+            '<li class="%s"><a href="#%s">%s%s</a></li>'
+            % ("sub-item" if sub else "item", e(anchor), e(label),
+               ('<span class="n">%d</span>' % count) if count else "")
+            for anchor, label, count, sub in sections)
+        nav = ('<nav class="snav" aria-label="Report sections">'
+               '<p class="snav-title">Contents</p><ol>%s</ol></nav>' % items)
+    body = "\n".join(out) + "\n"
+    return body.replace("@@NAV@@", nav).replace("@@TOOLBAR@@", doc_actions)
 
 
 def _md(v):
@@ -2577,6 +2980,92 @@ def _selftest():
           '<html lang="en">' in html_out)
     check("a2 the document element is closed", html_out.rstrip().endswith("</html>"))
 
+    # --- the gate rail (signature) --------------------------------------------
+    # A phase row's class stays exactly `phase` whatever the gate is doing. The
+    # first version carried held-ness in the class (`class="phase held"`), which
+    # silently broke CI's `grep -c 'tr class="phase"'` on the scale demo — 37 of 40
+    # phases counted, because three were held. Gate state is derived state and
+    # belongs with `data-status`, not in the identity of the row.
+    check("rail: a phase row is class=phase whatever its gate state, so counting "
+          "phase rows cannot depend on the plan's shape",
+          html_out.count('<tr class="phase"') == len(_sum["phases"]))
+    # A purpose-built chain rather than the main fixture: A done, B blocked by A
+    # (satisfied), C blocked by B (not). That is the whole point of the rail in
+    # three phases — one gate that opened, one that has not.
+    _rm = {"meta": {"title": "rail"}, "bugs": [], "phases": [
+        {"id": "A", "title": "First", "status": "done",
+         "tasks": [{"id": "A.1", "title": "t", "status": "done",
+                    "commit": "abc1234def"}]},
+        {"id": "B", "title": "Second", "status": "pending", "blockedBy": ["A"],
+         "tasks": [{"id": "B.1", "title": "t", "status": "pending"}]},
+        {"id": "C", "title": "Third", "status": "pending", "blockedBy": ["B"],
+         "tasks": [{"id": "C.1", "title": "t", "status": "pending"}]}]}
+    _rh = render_html(_rm, _load_status_lib().rollup(_rm, [], []), "r", None)
+    check("rail: a held phase is marked with data-held, beside data-status",
+          _rh.count('data-held="1"') == 2)   # phase C and its one task
+    check("rail: it names what holds it, and links there - a closed gate with no "
+          "sign on it is just a locked door",
+          'class="heldby" href="#phase-B"' in _rh)
+    check("rail: a gate whose blocker is DONE is drawn open - B is blocked by A "
+          "and A is signed off, so nothing holds B",
+          'id="phase-B"' in _rh and 'href="#phase-A"' not in _rh)
+    check("rail: a phase blocked by a phase that IS done is not held - the gate "
+          "draws dependency, not a restatement of status",
+          _held_by({"blockedBy": ["P1"]}, {"P1"}) == []
+          and _held_by({"blockedBy": ["P1", "P2"]}, {"P1"}) == ["P2"])
+    check("rail: the line is one colour and the gates carry the state, so the "
+          "spine is structure rather than a second copy of the status chip",
+          "--rail:" in _CSS and "border-left:2px solid var(--st" not in _CSS)
+    check("rail: a signed-off phase is stamped with a commit it actually has, "
+          "short-formed, and labelled as the last commit rather than as a "
+          "signature the manifest does not record",
+          'class="stamp"' in _rh and ">abc1234<" in _rh
+          and "Last commit recorded in this phase" in _rh)
+    check("rail: an unsigned phase carries no stamp",
+          _rh.count('class="stamp"') == 1)
+    # The verdict is the gate's, not the report's.
+    check("verdict: the hero states the same verdict --gate would, with the "
+          "conditions that produced it named",
+          'data-gate=' in html_out and "vd-word" in html_out
+          and "Spend is deliberately not one of them" in html_out)
+    check("verdict: the conditions are in the reader's words, with the flag "
+          "names kept in the title for whoever will type them",
+          "manifest validity" in html_out and "--fail-on" in html_out)
+    check("verdict: the ready task is promoted into the hero and is copyable",
+          'class="vd-run"' in html_out and "btn-copy" in html_out)
+
+    # --- app shell -------------------------------------------------------------
+    check("shell: navigation at the side, document actions on top",
+          'class="topbar"' in html_out and 'class="snav"' in html_out
+          and 'class="shell"' in html_out)
+    # The nav and the anchors come from ONE list, so a section cannot be linked
+    # without existing or exist without being linked.
+    _anchors = set(re.findall(r'<(?:section|div|h2|h3)[^>]*id="([a-z0-9-]+)"', html_out))
+    _links = set(re.findall(r'class="snav"[\s\S]*?</nav>', html_out)
+                 and re.findall(r'<a href="#([a-z0-9-]+)"',
+                                html_out[html_out.index('class="snav"'):
+                                         html_out.index("</nav>")]))
+    check("shell: every nav link points at a section that exists: %r"
+          % sorted(_links - _anchors), _links and _links <= _anchors)
+    check("shell: the nav is rendered server-side, so a report read with JS off - "
+          "or printed - still has its contents list",
+          "<nav class=\"snav\"" in html_out and 'href="#gate"' in html_out)
+    check("shell: scroll-spy only ADDS position; it does not supply the links",
+          "IntersectionObserver" in _SCRIPT and "aria-current" in _SCRIPT)
+    # Controls sit with what they act on.
+    check("shell: document-level actions are in the top bar",
+          html_out.index('id="audit-print"') < html_out.index('class="shell"'))
+    check("shell: the phases filter sits on the phases table, not in the top bar - "
+          "it does nothing while you are reading the usage charts",
+          html_out.index('id="audit-q"') > html_out.index('class="shell"')
+          and html_out.index('id="audit-q"') < html_out.index('class="phases"'))
+    check("shell: prose pairs with the verdict on a wide screen instead of being "
+          "set 130 characters wide",
+          'class="topgrid"' in html_out and ".topgrid{" in _CSS
+          and "min-width:78rem" in _CSS)
+    check("shell: paper gets the document back - no bars, no nav, no section tools",
+          ".topbar,.snav,.toolbar,tr.taskfilter{display:none!important}" in _CSS)
+
     # --- fragment mode (publishable as a Claude Code Artifact) --------------
     # The host wraps what it is given in its own doctype/head/body, so every one
     # of these tags would nest a second document inside the first.
@@ -2918,8 +3407,12 @@ def _selftest():
           'id="audit-theme"' in html_out and ":root{" in html_out
           and "--accent" in html_out and "prefers-color-scheme:dark" in html_out
           and "prefers-reduced-motion" in html_out)
+    # Counts the CLASS, not one exact tag: the phases wrapper gained an id when it
+    # became a nav anchor, and an assertion that breaks on an added attribute was
+    # testing the markup rather than the guarantee (both wide tables scroll in
+    # their own box).
     check("h13 responsive: wide tables wrapped + mobile breakpoint",
-          html_out.count('<div class="tablewrap">') == 2
+          html_out.count('class="tablewrap"') == 2
           and ".tablewrap{overflow-x:auto" in html_out
           and "@media (max-width:40rem)" in html_out)
     check("m4 markdown twin has the done column with the completion date",

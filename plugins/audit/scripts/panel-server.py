@@ -1128,18 +1128,69 @@ UI_HTML = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
  --bar-neutral:#a6adb8;
  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}
 *{box-sizing:border-box}html{background:var(--bg)}
-body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);margin:0;
- max-width:64rem;margin:0 auto;padding:1.5rem 1.5rem 4rem;-webkit-font-smoothing:antialiased}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
+ margin:0;padding:0;-webkit-font-smoothing:antialiased}
+
+/* ---- app shell -----------------------------------------------------------
+   Same split as the report — navigation at the side, actions on top — but the
+   two are not the same kind of thing, and the nav reflects that. The report's
+   sidebar points INTO one long document and marks where you are. This one
+   switches between four exclusive views, so it is real navigation: `aria-current`
+   on the active view, no scroll-spy, and the four remain four wherever they are
+   drawn.
+
+   Deliberately NOT collapsible to an icon rail. The rail pattern exists to stop a
+   long nav competing with content for width; with four items it would add a
+   control and a persisted preference to save 230px on screens that have it to
+   spare, and four hand-drawn icons that mean less than the words they replace. */
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:.75rem 1rem;
+ flex-wrap:nowrap;padding:.6rem 1.25rem;
+ background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);
+ border-bottom:1px solid var(--border)}
+.top>div:first-child{min-width:0;margin-right:auto;max-width:min(52%,34rem)}
+.shell{display:grid;grid-template-columns:13.5rem minmax(0,1fr);gap:2rem;
+ max-width:92rem;margin:0 auto;padding:1.25rem 1.25rem 4rem;align-items:start}
+.view{min-width:0}
+.tabs{position:sticky;top:3.9rem}
+.tabs .navttl{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
+ color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
+@media(max-width:70rem){
+ /* One information architecture, two presentations: the same four buttons become
+    a horizontal strip. Never a second menu. */
+ .shell{grid-template-columns:minmax(0,1fr);gap:.75rem;padding-top:.5rem}
+ .tabs{position:sticky;top:3.4rem;z-index:20;margin:0 -1.25rem;padding:.4rem 1.25rem;
+  background:var(--bg);border-bottom:1px solid var(--border);
+  overflow-x:auto;overflow-y:hidden}
+ .tabs .navttl{display:none}
+}
 h1{font-size:1.35rem;font-weight:680;letter-spacing:-.02em;margin:0}
 h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
  font-weight:700;margin:1.5rem 0 .5rem}
-.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:.25rem 0 0;word-break:break-all}
-.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-.tabs{display:flex;gap:.5rem;margin:1.5rem 0 .25rem;flex-wrap:wrap}
-.tab{cursor:pointer;font:inherit;font-size:.85rem;padding:.5rem 1rem;border-radius:var(--pill);
- border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
+/* The JSON key beside a human heading. `text-transform:none` is the whole point:
+   it sits inside an uppercased h2, and a config key is case-sensitive — uppercased
+   it would be a string you cannot paste back into the file. */
+.k2{font-family:var(--mono);font-size:.72rem;text-transform:none;letter-spacing:0;
+ font-weight:500;color:var(--muted);opacity:.8;margin-left:.45rem;
+ background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:.02rem .3rem}
+/* One line, middle-elided, full path in the tooltip. `word-break:break-all` wrapped
+   a long project path across two lines and pushed the header controls down — and it
+   broke at an arbitrary character, so neither the root nor the project name stayed
+   readable. A path's two ends are the informative parts; the middle is what to drop. */
+.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:.25rem 0 0;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(56ch,100%)}
+.tabs{display:flex;flex-direction:column;gap:.15rem;margin:0}
+.tab{cursor:pointer;font:inherit;font-size:.87rem;text-align:left;padding:.42rem .65rem;
+ border-radius:var(--radius);border:1px solid transparent;border-left:2px solid transparent;
+ background:transparent;color:var(--muted);transition:all var(--dur) var(--ease)}
+@media(max-width:70rem){
+ .tabs{flex-direction:row;gap:.25rem;white-space:nowrap}
+ .tab{border-left:none;border-bottom:2px solid transparent;
+  border-radius:var(--radius) var(--radius) 0 0}
+}
 .tab:hover{border-color:var(--border-strong)}
-.tab.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.tab.on{background:var(--surface-2);color:var(--text);font-weight:600;
+ border-left-color:var(--accent)}
+@media(max-width:70rem){.tab.on{border-left-color:transparent;border-bottom-color:var(--accent)}}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
  box-shadow:var(--shadow-sm);padding:1rem 1rem;margin:.75rem 0}
 .row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
@@ -1387,8 +1438,17 @@ table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,t
 .hint::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + .4rem);z-index:60;width:17rem;max-width:72vw;
  background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
  box-shadow:var(--shadow-md);padding:.5rem .5rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
- white-space:normal;opacity:0;visibility:hidden;transition:opacity var(--dur);pointer-events:none}
-.hint:hover::after,.hint:focus::after{opacity:1;visibility:visible}
+ white-space:normal;display:none;pointer-events:none}
+.hint:hover::after,.hint:focus::after{display:block}
+/* Two fixes for one bug. A 17rem bubble anchored left overflows the viewport for
+   any hint in the right half of a wide layout, and an absolutely-positioned box
+   counts toward scrollable overflow even while hidden — so the page carried 34px
+   of sideways scroll before anyone hovered anything. `visibility:hidden` was not
+   enough for that; `display:none` is, at the cost of the fade, which is a fair
+   trade for a tooltip that appears under the cursor anyway. And when it IS shown
+   it flips to the right edge if it would not fit. The old guard
+   (`overflow-x:hidden` under 48rem) hid the symptom, and only on phones. */
+.hint.flip::after{left:auto;right:0}
 /* custom autocomplete combobox (replaces native datalist) */
 .combo{position:relative;flex:1 1 18rem}
 .combo>input{width:100%}
@@ -1430,7 +1490,13 @@ table.regtbl td.d{color:var(--muted)}
 .filt:hover{border-color:var(--border-strong)}
 .filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 .count{font-size:.73rem;color:var(--muted);font-variant-numeric:tabular-nums}
-.comptblwrap{border:1px solid var(--border);border-radius:var(--radius);overflow:visible}
+/* A wide data table scrolls inside its own box at EVERY width, not only on a
+   phone. The old rule was scoped to 48rem because the page was a 64rem column
+   that the table happened to fit; widening the shell exposed that the guard was
+   tied to the viewport rather than to the table being wider than its container.
+   Same rule the report follows: text wraps to the reader, data tables scroll. */
+.comptblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow-x:auto;-webkit-overflow-scrolling:touch}
 table.comp{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
 table.comp th,table.comp td{padding:.5rem .5rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
 table.comp thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);
@@ -1457,7 +1523,7 @@ td.tskills{min-width:15rem}
 .comp .chips{gap:.25rem}
 .topbtns{display:flex;gap:var(--sp-1);align-items:center;flex-shrink:0}
 .comp .combo{flex:1 1 8rem;min-width:7rem}
-@media(max-width:48rem){.comptblwrap{overflow-x:auto}html,body{overflow-x:hidden}}
+
 </style></head><body>
 <div class=top>
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
@@ -1466,16 +1532,21 @@ td.tskills{min-width:15rem}
   <button class="btn small" id=theme title="light/dark">☾</button>
  </div>
 </div>
-<div class=tabs>
- <button class="tab on" data-t=guards>Guards &amp; paths</button>
+<div class=shell>
+<nav class=tabs aria-label="Panel sections">
+ <p class=navttl>Sections</p>
+ <button class="tab on" data-t=guards aria-current="true">Guards &amp; paths</button>
  <button class="tab" data-t=comp>Composition</button>
  <button class="tab" data-t=over>Overview</button>
  <button class="tab" data-t=usage>Usage</button>
-</div>
+</nav>
+<main class=view>
 <div id=guards></div>
 <div id=comp class=hidden></div>
 <div id=over class=hidden></div>
 <div id=usage class=hidden></div>
+</main>
+</div>
 <div id=toast></div>
 <script>
 const TOKEN=__AUDIT_TOKEN__, PROJECT=__AUDIT_PROJECT__;
@@ -1489,7 +1560,14 @@ const api=async(m,p,b)=>{const r=await fetch(p,{method:m,headers:{'X-Audit-Token
 // token has to ride in the query string (the guard accepts either).
 const url=p=>p+'?t='+encodeURIComponent(TOKEN);
 let STATE=null, REG={skills:[],agents:[],mcp:[]};
-$('#proj').textContent=PROJECT;
+// Middle ellipsis, not a tail cut: the head says which machine/checkout this is
+// and the tail says which project, and a plain truncation throws away whichever
+// end the CSS happens to reach first. The full path stays in the tooltip, so
+// nothing is lost — it is just no longer allowed to set the header's height.
+function midElide(s,max){if(!s||s.length<=max)return s||'';
+ const keep=max-1,head=Math.ceil(keep*0.38);return s.slice(0,head)+'…'+s.slice(s.length-(keep-head));}
+$('#proj').textContent=midElide(PROJECT,56);
+$('#proj').title=PROJECT;
 // theme
 const root=document.documentElement, TK='audit-panel-theme';
 try{const s=localStorage.getItem(TK);if(s)root.setAttribute('data-theme',s);}catch(e){}
@@ -1512,8 +1590,12 @@ $('#report').onclick=async e=>{const b=e.currentTarget;
  finally{b.disabled=false;b.textContent=was;}};
 // tabs
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
- document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
- for(const id of['guards','comp','over','usage'])$('#'+id).classList.toggle('hidden',id!==t.dataset.t);});
+ document.querySelectorAll('.tab').forEach(x=>{const on=x===t;x.classList.toggle('on',on);
+  // Colour alone does not say which view you are in — a screen reader gets nothing
+  // from a background change, and these four are exclusive views, not filters.
+  if(on)x.setAttribute('aria-current','true');else x.removeAttribute('aria-current');});
+ for(const id of['guards','comp','over','usage'])$('#'+id).classList.toggle('hidden',id!==t.dataset.t);
+ window.scrollTo({top:0,behavior:'auto'});});
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'');
  setTimeout(()=>t.className=t.className.replace('show','').trim(),2600);}
 function findingsBox(res){const box=el('div');
@@ -1544,9 +1626,26 @@ const DESC={
  phaseReviewModel:"Model used for this phase's sign-off review.",
  taskModel:"Model the executor uses to implement this task.",
  taskSkills:"Skills the executor loads (via the Skill tool) before writing code for this task."};
-function hint(t){return t?el('span',{class:'hint',tabindex:'0','data-tip':t},'i'):null;}
+function hint(t){if(!t)return null;
+ const h=el('span',{class:'hint',tabindex:'0','data-tip':t},'i');
+ // Measured at open time, not guessed from a breakpoint: whether the bubble fits
+ // depends on where this particular hint sits, which CSS cannot ask.
+ const place=()=>{const r=h.getBoundingClientRect();
+  h.classList.toggle('flip',r.left+272>document.documentElement.clientWidth-8);};
+ h.addEventListener('mouseenter',place);h.addEventListener('focus',place);
+ return h;}
 function flabel(text,tip){return el('span',{class:'lbl'},text,hint(tip));}
 function h2h(text,tip){return el('h2',{},text,hint(tip));}
+// Heading in the reader's words, with the JSON key beside it for whoever is
+// editing .claude/audit.config.json by hand. Both audiences are real and they
+// want different strings: "guardEdits.tokenVars" tells you nothing about what the
+// setting DOES, and "Secrets never written to logs" cannot be typed into a file.
+// The key keeps its own case on purpose — h2 is uppercased, and an uppercased
+// camelCase key is not merely shouted, it is WRONG: config keys are
+// case-sensitive, so copying it out of here would produce a setting that silently
+// does nothing.
+function h2k(text,key,tip){return el('h2',{},text,el('code',{class:'k2'},key),hint(tip));}
+function klabel(text,key,tip){return el('span',{class:'lbl'},text,el('code',{class:'k2'},key),hint(tip));}
 // A custom autocomplete: menu opens directly under the input, limited height,
 // clear items (name + source + description), keyboard + click select.
 function comboWrap(inp,itemsFn,onChoose,onEnterFree){
@@ -1599,20 +1698,22 @@ function renderGuards(){const c=$('#guards');c.textContent='';const cfg=JSON.par
  const tog=el('div',{class:'row'});
  const mk=(lbl,tip,val,fn)=>{const cb=el('input',{type:'checkbox'});cb.checked=val;cb.onchange=()=>fn(cb.checked);
   return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,flabel(lbl,tip));};
- tog.append(mk('bashWriteCheck.enabled',DESC.bashWriteCheck,bw.enabled!==false,v=>{bw.enabled=v;cfg.bashWriteCheck=bw;}));
- tog.append(mk('tddReminder.enabled',DESC.tddReminder,td.enabled!==false,v=>{td.enabled=v;cfg.tddReminder=td;}));
- tog.append(mk('enforce (always deny)',DESC.enforce,cfg.enforce===true,v=>{if(v)cfg.enforce=true;else delete cfg.enforce;}));
+ const mk2=(lbl,key,tip,val,fn)=>{const cb=el('input',{type:'checkbox'});cb.checked=val;cb.onchange=()=>fn(cb.checked);
+  return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,klabel(lbl,key,tip));};
+ tog.append(mk2('Warn on unplanned shell writes','bashWriteCheck.enabled',DESC.bashWriteCheck,bw.enabled!==false,v=>{bw.enabled=v;cfg.bashWriteCheck=bw;}));
+ tog.append(mk2('Nudge when tests are untouched','tddReminder.enabled',DESC.tddReminder,td.enabled!==false,v=>{td.enabled=v;cfg.tddReminder=td;}));
+ tog.append(mk2('Always deny edits outside the plan','enforce',DESC.enforce,cfg.enforce===true,v=>{if(v)cfg.enforce=true;else delete cfg.enforce;}));
  card.append(el('h2',{},'Guards'),tog);
  // lists
- card.append(h2h('exemptGlobs',DESC.exemptGlobs),listEditor(()=>cfg.exemptGlobs??d.exemptGlobs,a=>cfg.exemptGlobs=a,'glob…'));
- card.append(h2h('guardEdits.tokenVars (never logged)',DESC.tokenVars),
+ card.append(h2k('Paths the guards skip','exemptGlobs',DESC.exemptGlobs),listEditor(()=>cfg.exemptGlobs??d.exemptGlobs,a=>cfg.exemptGlobs=a,'glob…'));
+ card.append(h2k('Secrets never written to logs','guardEdits.tokenVars',DESC.tokenVars),
   listEditor(()=>{cfg.guardEdits=cfg.guardEdits||{};return cfg.guardEdits.tokenVars??d.guardEdits.tokenVars;},
    a=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.tokenVars=a;},'identifier…'));
- card.append(h2h('secretPatterns.extra (regex)',DESC.secretPatternsExtra),
+ card.append(h2k('Extra files treated as secrets','secretPatterns.extra',DESC.secretPatternsExtra),
   listEditor(()=>{cfg.secretPatterns=cfg.secretPatterns||{};return cfg.secretPatterns.extra??[];},
    a=>{cfg.secretPatterns=cfg.secretPatterns||{};cfg.secretPatterns.extra=a;},'regex…'));
  // custom rules
- card.append(h2h('guardEdits.customRules',DESC.customRules));
+ card.append(h2k('Your own banned patterns','guardEdits.customRules',DESC.customRules));
  const rulesWrap=el('div');const rules=()=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.customRules=cfg.guardEdits.customRules||[];return cfg.guardEdits.customRules;};
  const drawRules=()=>{rulesWrap.textContent='';rules().forEach((r,i)=>{
    const pp=el('input',{value:r.pathPrefix||'',placeholder:'pathPrefix'});pp.oninput=()=>r.pathPrefix=pp.value;
@@ -2731,6 +2832,68 @@ def _selftest():
           "function comboWrap(" in UI_HTML and "combo-menu" in UI_HTML
           and "<datalist" not in UI_HTML and "list:" not in UI_HTML)
     check("UI labels carry info hints", "function hint(" in UI_HTML and "data-tip" in UI_HTML)
+    # --- settings are named by what they do -----------------------------------
+    # Every heading in the guards card used to BE a JSON path, uppercased by the h2
+    # rule: "GUARDEDITS.TOKENVARS (NEVER LOGGED)". That reads as a config dump and
+    # assumes the reader already knows the schema they came here to learn.
+    for human, key in (("Secrets never written to logs", "guardEdits.tokenVars"),
+                       ("Extra files treated as secrets", "secretPatterns.extra"),
+                       ("Paths the guards skip", "exemptGlobs"),
+                       ("Your own banned patterns", "guardEdits.customRules"),
+                       ("Warn on unplanned shell writes", "bashWriteCheck.enabled"),
+                       ("Nudge when tests are untouched", "tddReminder.enabled"),
+                       ("Always deny edits outside the plan", "enforce")):
+        check("the %r setting is named by what it does, with %r kept beside it"
+              % (human, key),
+              ("'%s'" % human) in UI_HTML and ("'%s'" % key) in UI_HTML)
+    check("no heading is a bare JSON path any more",
+          "h2h('guardEdits" not in UI_HTML and "h2h('secretPatterns" not in UI_HTML
+          and "h2h('exemptGlobs'" not in UI_HTML)
+    check("the key beside a heading keeps its own case - h2 is uppercased and a "
+          "config key is case-sensitive, so an uppercased one cannot be pasted back",
+          ".k2{" in UI_HTML and "text-transform:none" in UI_HTML[
+              UI_HTML.index(".k2{"):UI_HTML.index(".k2{") + 200])
+    # --- the project path is one line -----------------------------------------
+    # The RULE, not the string: the comment above it names `word-break:break-all`
+    # to say what was removed and why, and a substring test over the whole document
+    # cannot tell the fix from the note explaining it.
+    _sub = UI_HTML[UI_HTML.index(".sub{"):]
+    _sub = _sub[:_sub.index("}")]
+    check("the project path is middle-elided rather than wrapped across the header",
+          "function midElide(" in UI_HTML and "midElide(PROJECT" in UI_HTML
+          and "word-break" not in _sub and "text-overflow:ellipsis" in _sub)
+    check("and the full path survives in the tooltip, so nothing is lost",
+          "$('#proj').title=PROJECT" in UI_HTML)
+
+    # --- app shell -------------------------------------------------------------
+    check("shell: navigation at the side, actions on top",
+          '<div class=shell>' in UI_HTML and '<nav class=tabs' in UI_HTML
+          and '<main class=view>' in UI_HTML)
+    check("shell: the four sections are ONE list that changes presentation, not "
+          "two menus - a column above 70rem, a strip below it",
+          ".tabs{display:flex;flex-direction:column" in UI_HTML
+          and "@media(max-width:70rem){\n .tabs{flex-direction:row" in UI_HTML)
+    check("shell: the active view is announced, not only coloured - these are "
+          "exclusive views and a background change tells a screen reader nothing",
+          'aria-current="true"' in UI_HTML and "x.setAttribute('aria-current'" in UI_HTML
+          and "x.removeAttribute('aria-current')" in UI_HTML)
+    check("shell: switching a view returns to the top, since the previous view's "
+          "scroll position means nothing in the next one",
+          "window.scrollTo({top:0" in UI_HTML)
+    # Both of these were exposed by widening the shell, and both were guards tied
+    # to the viewport rather than to the thing overflowing.
+    check("shell: a wide data table scrolls inside its own box at every width, "
+          "not only under 48rem",
+          ".comptblwrap{border:1px solid var(--border);border-radius:var(--radius);\n"
+          " overflow-x:auto" in UI_HTML
+          and "@media(max-width:48rem){.comptblwrap{overflow-x:auto}}" not in UI_HTML)
+    check("shell: a closed hint occupies no layout, so it cannot push the page "
+          "sideways before anyone hovers it",
+          "white-space:normal;display:none;pointer-events:none}" in UI_HTML)
+    check("shell: and an open one flips at the right edge, measured rather than "
+          "guessed from a breakpoint",
+          ".hint.flip::after{left:auto;right:0}" in UI_HTML
+          and "h.classList.toggle('flip'" in UI_HTML)
     check("UI building blocks are a tabbed table", "regtbl" in UI_HTML and "subtab" in UI_HTML)
     check("composition is a compact collapsible filterable table",
           "comptools" in UI_HTML and "table.comp" in UI_HTML and "needs skills" in UI_HTML

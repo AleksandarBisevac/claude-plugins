@@ -33,6 +33,13 @@
      worst CVD dE 7.5, which the 6-8 band permits because every bar wearing it
      carries a direct text label. */
   --bar-neutral:#5c636d;
+  /* The gate rail. The line is STRUCTURE and carries no state — it is one colour
+     the whole way down, so the only thing that changes along it is the gates. It
+     dims below a gate that is closed, because nothing behind that gate can be
+     worked on. Before this the left border repeated each row's status colour,
+     which made the spine a second copy of the chip beside it rather than a
+     drawing of what holds what. */
+  --rail:#9aa8bd;--rail-held:#dfe5ee;
   --radius:9px;--radius-lg:14px;--pill:999px;
   --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
   --shadow-md:0 10px 30px rgba(15,23,42,.14);
@@ -57,6 +64,7 @@
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
   --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
   --bar-neutral:#a6adb8;
+  --rail:#4a5c7d;--rail-held:#1b2740;
   /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
      zero still recedes into the surface, so the ramp runs dark -> light. */
   --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
@@ -73,6 +81,7 @@
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
   --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
   --bar-neutral:#a6adb8;
+  --rail:#4a5c7d;--rail-held:#1b2740;
   /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
      zero still recedes into the surface, so the ramp runs dark -> light. */
   --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
@@ -93,10 +102,91 @@
 /* ---- base ---------------------------------------------------------------- */
 *{box-sizing:border-box}
 html{background:var(--bg)}
-body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);max-width:70rem;
-     margin:0 auto;padding:2rem 1.5rem 4rem;-webkit-font-smoothing:antialiased}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
+     margin:0;padding:0;-webkit-font-smoothing:antialiased}
+
+/* ---- app shell -----------------------------------------------------------
+   A 70rem centred column wasted half a laptop screen and gave a long document no
+   map: this report runs verdict -> phases -> bugs -> ready -> usage, and usage
+   alone has a chart, tiles, ranked lists, a budget block and a heatmap. So:
+   navigation at the side, actions on top — the split follows what the controls
+   DO, not where they fit.
+
+   The side nav is not a menu of five links, which a top bar would carry perfectly
+   well. It is a position indicator for a document you scroll for a long time, and
+   that is a different job: it says where you are, not only where you can go.
+
+   One information architecture, two presentations (the app-shell rule): above
+   72rem it is a sticky column; below, the same items become a horizontal strip
+   under the top bar. Never two different menus. */
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:.75rem 1rem;
+  flex-wrap:wrap;padding:.6rem 1.5rem;background:color-mix(in srgb,var(--surface) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.topbar.scrolled{box-shadow:var(--shadow-sm)}
+/* The title identifies the report and must survive being shared, so it stays in
+   the bar — but capped and elided. Uncapped it pushed the actions onto a third
+   row at 1440px, which is the opposite of what a persistent action bar is for. */
+.tb-id{display:flex;flex-direction:column;min-width:0;margin-right:auto;
+  max-width:min(40%,32rem)}
+.tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+.tb-id .meta{font-size:.72rem}
+.tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
+.shell{display:grid;grid-template-columns:14.5rem minmax(0,1fr);gap:2.5rem;
+  max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
+.content{min-width:0}
+/* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
+   not "using the space", it is unreadable. Tables and charts take the full
+   column; text does not. */
+.pmeta{max-width:82ch}
+/* How the cards compose as the screen grows. Below 78rem they stack, because two
+   400px columns of prose is worse than one. Above it they pair, which is the only
+   honest use of the extra width: a summary paragraph set 1100px wide is not
+   "filling the space", it is 130 characters per line and unreadable. The verdict
+   takes the larger share — it is the answer, the summary is the elaboration.
+   A lone card spans the full width rather than sitting in half of it. */
+.topgrid{display:grid;gap:1rem;grid-template-columns:minmax(0,1fr);margin:1rem 0}
+.topgrid>*{margin:0}
+.topgrid>:only-child{grid-column:1/-1}
+@media (min-width:78rem){.topgrid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+  align-items:start}}
+.snav{position:sticky;top:4.1rem;max-height:calc(100vh - 5.5rem);overflow:auto;
+  padding-right:.25rem}
+.snav ol{list-style:none;margin:0;padding:0}
+.snav a{display:flex;align-items:center;gap:.5rem;text-decoration:none;color:var(--muted);
+  font-size:.85rem;padding:.34rem .6rem;border-radius:var(--radius);
+  border-left:2px solid transparent;transition:color var(--dur),background var(--dur)}
+.snav a:hover{color:var(--text);background:var(--surface-2)}
+.snav a[aria-current="true"]{color:var(--text);background:var(--surface-2);
+  border-left-color:var(--accent);font-weight:600}
+.snav .sub-item a{padding-left:1.5rem;font-size:.8rem}
+/* The count is the point of putting it here: "Bugs 5" tells you whether the
+   section is worth the scroll before you take it. */
+.snav .n{margin-left:auto;font-family:var(--mono);font-size:.72rem;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.snav-title{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
+  color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
+@media (max-width:48rem){
+  /* On a phone the title is the only thing identifying the report, and 40% of
+     390px is not a title, it is three words and an ellipsis. It takes the row. */
+  .tb-id{max-width:100%}
+}
+@media (max-width:72rem){
+  .shell{grid-template-columns:minmax(0,1fr);gap:1rem;padding-top:.5rem}
+  /* Same items, different presentation — a horizontal strip, not a second menu. */
+  .snav{position:sticky;top:3.4rem;max-height:none;overflow-x:auto;overflow-y:hidden;
+    margin:0 -1.5rem;padding:.4rem 1.5rem;background:var(--bg);
+    border-bottom:1px solid var(--border);z-index:20}
+  .snav-title{display:none}
+  .snav ol{display:flex;gap:.25rem;white-space:nowrap}
+  .snav a{border-left:none;border-bottom:2px solid transparent;border-radius:var(--radius) var(--radius) 0 0}
+  .snav a[aria-current="true"]{border-left-color:transparent;border-bottom-color:var(--accent)}
+  .snav .sub-item{display:none}
+}
 a{color:var(--accent);text-underline-offset:2px}
-h1{font-size:1.7rem;font-weight:680;letter-spacing:-.02em;margin:0 0 .25rem}
+/* The title names the document; it does not lead it. §7: the reader arrives with
+   one question and it is not "what is this called". So the h1 is set at body-ish
+   size and the verdict below it carries the display weight. */
+h1{font-size:1.22rem;font-weight:680;letter-spacing:-.01em;margin:0 0 .2rem}
 h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
    margin:2rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
 .meta{color:var(--muted);font-family:var(--mono);font-size:.8rem;margin:0 0 1.5rem;
@@ -105,12 +195,33 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .muted{color:var(--muted)}
 .mono{font-family:var(--mono);font-size:.86em;font-variant-numeric:tabular-nums}
 
-/* ---- hero / overall band ------------------------------------------------- */
-.overall{display:flex;align-items:center;gap:.75rem 1.5rem;flex-wrap:wrap;background:var(--surface);
-  border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem 1rem;margin:1rem 0;
-  box-shadow:var(--shadow-sm)}
-.overall>strong{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
-.overall .muted{font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+/* ---- verdict hero --------------------------------------------------------
+   The page opens on the question the reader actually has: can this ship? The
+   answer is not composed here — it is `audit-status.py --gate`, the same verdict
+   the CI job produces, with the conditions that decided it printed underneath.
+   A hero that scored the plan by its own private rule would be a second opinion
+   nobody asked for; this one can be checked by running the gate. */
+.overall{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--vd);
+  border-radius:var(--radius-lg);padding:1rem 1.25rem;margin:1rem 0;box-shadow:var(--shadow-sm);
+  --vd:var(--st-pending)}
+.overall[data-gate="clear"]{--vd:var(--st-done)}
+.overall[data-gate="blocked"]{--vd:var(--st-blocked)}
+.vd-eyebrow{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.14em;
+  color:var(--muted);font-weight:700;margin:0}
+/* Mono, uppercase, tight: the display voice of this report is the stamp on an
+   inspection record, not a marketing headline. §7 asked for typography with a
+   point of view and for mono to stop being spent on chrome — this is both. */
+.vd-word{font-family:var(--mono);font-size:2.15rem;line-height:1.1;letter-spacing:-.01em;
+  font-weight:700;color:var(--vd);margin:.1rem 0 .3rem;text-transform:uppercase}
+.vd-why{margin:0;font-size:.95rem}
+.vd-basis{margin:.35rem 0 0;color:var(--muted);font-size:.78rem}
+.vd-next{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.9rem;
+  padding-top:.9rem;border-top:1px solid var(--border)}
+.vd-run{font-family:var(--mono);font-size:.9rem;background:var(--surface-2);
+  border:1px solid var(--border-strong);border-radius:var(--radius);padding:.2rem .45rem;
+  font-variant-numeric:tabular-nums}
+.vd-stats{display:flex;align-items:center;gap:.6rem 1.25rem;flex-wrap:wrap;margin-top:.8rem}
+.vd-stats .muted{font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
 
 /* ---- summary card -------------------------------------------------------- */
 .summary{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
@@ -136,11 +247,18 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 @keyframes fillIn{from{width:0}to{width:var(--w,0)}}
 
 /* ---- toolbar ------------------------------------------------------------- */
-.toolbar{position:sticky;top:.5rem;z-index:10;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;
-  padding:.5rem .75rem;margin:1.5rem 0 1rem;background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius-lg);transition:box-shadow var(--dur) var(--ease)}
-.toolbar.scrolled{box-shadow:var(--shadow-md)}
-#audit-q{flex:1 1 17rem;min-width:11rem;padding:.5rem .75rem;font:inherit;color:var(--text);
+/* The toolbar moved into the top bar: these are global actions (search the whole
+   plan, filter every phase, print, download, theme) and they were scrolling away
+   from the reader halfway down a long report. */
+.toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0}
+/* Section-scoped controls sit on the thing they act on, sticky under the top bar
+   so they stay reachable while you scroll the table they filter — and stop
+   existing once you have scrolled past it. */
+.sectools{position:sticky;top:3.6rem;z-index:15;padding:.5rem .75rem;margin:0 0 .75rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)}
+@media (max-width:72rem){.sectools{top:6.6rem}}
+@media print{.sectools{display:none!important}}
+#audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
 #audit-q::placeholder{color:var(--muted)}
@@ -202,13 +320,47 @@ tbody tr:last-child td{border-bottom:none}
 tbody tr:last-child td:first-child{border-bottom-left-radius:var(--radius-lg)}
 tbody tr:last-child td:last-child{border-bottom-right-radius:var(--radius-lg)}
 
-/* ---- phase group-rows: the pipeline rail + status node (signature) ------- */
+/* ---- the gate rail (signature) -------------------------------------------
+   A continuous spine down the phase list, with one gate per phase. The CROSSBAR
+   is the gate: broken in the middle when work can pass, solid when something
+   holds it shut. Below a closed gate the rail dims, because that is exactly what
+   `blockedBy` means and it was invisible in this report until now — the reader
+   could see that P3 was pending but not that P2 was the reason.
+   Colour is never the only carrier: every phase row also states its status in a
+   text chip, and a held one names what holds it. */
 tr.phase{cursor:pointer}
+/* The spine is drawn on EVERY row in the body, not just phase rows, which is what
+   makes it continuous: a rail that restarts at each group reads as a set of ticks,
+   not as one line running the length of the plan. It sits INSIDE the table with
+   clear space either side — sharing the card's left border made it read as the
+   border it was sitting on rather than as a structure of its own. */
+table.phases tbody>tr>td:first-child{position:relative;padding-left:2.3rem}
+table.phases tbody>tr>td:first-child::after{content:"";position:absolute;left:1.15rem;top:0;bottom:0;
+  width:2px;background:var(--rail)}
+table.phases tbody>tr[data-held]>td:first-child::after{background:var(--rail-held)}
 tr.phase>td{position:relative;background:var(--surface-2);border-top:1px solid var(--border-strong);
-  border-left:2px solid var(--st,var(--st-pending));padding:.75rem .75rem .75rem 1rem;transition:background var(--dur)}
+  padding:.75rem .75rem .75rem 2.3rem;transition:background var(--dur)}
 tr.phase:hover>td{background:var(--surface)}
-tr.phase>td::before{content:"";position:absolute;left:-6px;top:1.05rem;width:11px;height:11px;border-radius:50%;
-  background:var(--st,var(--st-pending));box-shadow:0 0 0 3px var(--surface)}
+/* Open gate: a crossbar with a gap you can pass through. */
+tr.phase>td::before{content:"";position:absolute;left:calc(1.15rem - 9px);top:1.2rem;width:20px;height:3px;
+  border-radius:1px;z-index:1;
+  background:linear-gradient(90deg,var(--st,var(--st-pending)) 0 7px,var(--surface-2) 7px 13px,
+    var(--st,var(--st-pending)) 13px 20px)}
+tr.phase:hover>td::before{background:linear-gradient(90deg,var(--st,var(--st-pending)) 0 7px,
+  var(--surface) 7px 13px,var(--st,var(--st-pending)) 13px 20px)}
+/* Closed gate: solid, no gap. Everything it holds is dimmed below it. */
+tr.phase[data-held]>td::before,tr.phase[data-held]:hover>td::before{background:var(--st-blocked);width:22px;
+  left:calc(1.15rem - 10px);height:3px}
+/* The stamp: the last commit recorded inside a signed-off phase. */
+.stamp{font-family:var(--mono);font-size:.7rem;letter-spacing:.02em;color:var(--muted);
+  border:1px dashed var(--border-strong);border-radius:3px;padding:.05rem .3rem;margin-left:.4rem;
+  vertical-align:.06em}
+/* What holds this phase shut, named and linkable — the rail says "closed", this
+   says by what. A gate that cannot tell you what shut it is a locked door with no
+   sign on it. */
+.heldby{font-family:var(--mono);font-size:.7rem;color:var(--st-blocked);border:1px solid currentColor;
+  border-radius:3px;padding:.05rem .3rem;margin-left:.4rem;text-decoration:none;vertical-align:.06em}
+.heldby:hover{background:var(--st-blocked);color:var(--chip-ink)}
 .tri{display:inline-block;width:1em;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .tri::before{content:"\25B6";font-size:.72em}
 tr.phase.open .tri{transform:rotate(90deg)}
@@ -218,11 +370,11 @@ tr.phase strong{font-weight:650}
 /* ---- task rows continue the rail ----------------------------------------- */
 tr.task>td{background:var(--surface)}
 tr.task:hover>td{background:var(--surface-2)}
-tr.task>td.tid{padding-left:2rem;border-left:2px solid var(--st,var(--border))}
+tr.task>td.tid{padding-left:3.1rem}
 
 /* ---- per-phase task-status filter row ------------------------------------ */
 tr.taskfilter{display:none}
-tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 2rem;border-bottom:1px dashed var(--border)}
+tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 3.1rem;border-bottom:1px dashed var(--border)}
 .tf-label{font-size:.75rem;color:var(--muted);margin-right:.5rem}
 .tf-chips{display:inline-flex;gap:.25rem;flex-wrap:wrap}
 
@@ -242,13 +394,21 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);
     border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
   table.phases,table.data{border:none;border-radius:0;box-shadow:none;min-width:34rem}
+  /* Prose must not live at the table's scroll width. A phase's desiredOutcome is a
+     sentence, and inside a 34rem-min table under overflow-x it was being laid out
+     683px wide on a 390px screen — so reading one line meant scrolling sideways and
+     back, per line. Sticky pins it to the visible left edge and the cap makes it
+     wrap inside the viewport, so the prose reads straight down while the COLUMNS
+     keep their scroll. Text wraps to the reader; data tables scroll. */
+  .pmeta{position:sticky;left:0;max-width:calc(100vw - 5.5rem);white-space:normal}
   thead th{position:static}
   thead th:first-child,thead th:last-child,
   tbody tr:last-child td:first-child,tbody tr:last-child td:last-child{border-radius:0}
 }
 @media (max-width:40rem){
   body{padding:1.5rem .75rem 3rem;font-size:14.5px}
-  h1{font-size:1.4rem}
+  h1{font-size:1.1rem}
+  .vd-word{font-size:1.75rem}
   .overall,.summary{padding:.75rem 1rem}
   .toolbar{gap:.5rem .5rem}
   #audit-q{flex-basis:100%;order:-1}
@@ -267,7 +427,12 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   :root,:root[data-theme="dark"]{--bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
     --muted:#374151;--border:#d1d5db;--chip-ink:#fff}
   body{max-width:none;margin:0;padding:0;font-size:10.5pt}
-  .toolbar,tr.taskfilter{display:none!important}
+  /* Paper has no scroll position to indicate and no controls to press, so the
+     whole shell collapses back to the document it always was underneath. */
+  .topbar,.snav,.toolbar,tr.taskfilter{display:none!important}
+  .shell{display:block;max-width:none;padding:0}
+  .pmeta{max-width:none}
+  .topgrid{display:block}
   tr.task{display:table-row!important}
   tr.phase,tr.task{break-inside:avoid}
   thead th{position:static!important}
@@ -462,32 +627,36 @@ details.more>summary:hover{color:var(--text)}
   .mm .spark{grid-column:1/-1}
 }
 </style>
-<h1>ACME Store — security &amp; correctness audit</h1>
-<p class="meta">repo: acme-store · generated 2026-08-07 07:00 UTC · 4 phases · 10 tasks · 5 bugs</p>
-<div class="overall"><strong>Overall</strong> <span class="bar"><span class="fill" style="--w:40%"></span></span> <span class="muted">4/10</span> <span class="muted">· 1/4 phases signed off · 3 open bug(s) · 1 ready now</span></div>
+<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-07 10:37 UTC</p></div>
+<div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div></header>
+<div class="shell"><nav class="snav" aria-label="Report sections"><p class="snav-title">Contents</p><ol><li class="item"><a href="#gate">Gate</a></li><li class="item"><a href="#phases">Phases<span class="n">4</span></a></li><li class="item"><a href="#usage">Usage</a></li><li class="sub-item"><a href="#usage-trend">Tokens per day</a></li><li class="sub-item"><a href="#usage-budget">Budget</a></li><li class="item"><a href="#bugs">Bugs<span class="n">3</span></a></li><li class="item"><a href="#ready">Ready now<span class="n">1</span></a></li></ol></nav><main class="content">
+<div class="topgrid">
+<section class="overall" id="gate" data-gate="blocked" aria-label="Gate verdict"><p class="vd-eyebrow">Gate</p><p class="vd-word">Blocked</p><p class="vd-why">1 blocked task</p><p class="vd-basis"><span title="audit-status.py --gate --fail-on invalid,open-high-bugs,blocked-tasks">Checks manifest validity, high-severity bugs, blocked tasks. Spend is deliberately not one of them.</span></p><div class="vd-next"><span class="tbl">Next</span> <code class="vd-run">/audit:run P2.4</code><button type="button" class="btn btn-copy" data-copy="/audit:run P2.4">Copy</button></div><div class="vd-stats"><span class="bar"><span class="fill" style="--w:40%"></span></span> <span class="muted">4/10</span><span class="muted">4 tasks done · 1 of 4 phases signed off · 3 open bugs</span></div></section>
 <div class="summary"><strong>Summary</strong>Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.</div>
-<div class="toolbar" role="search"><input id="audit-q" type="search" aria-label="Filter phases and tasks by text" placeholder="Filter phases &amp; tasks by text…"><span class="tbl">Phase status:</span><span id="audit-phase-status"></span><button type="button" id="audit-expand" class="btn">expand all</button><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button><span id="audit-count" class="muted"></span></div>
+</div>
+<section id="phases" class="sec">
+<div class="toolbar sectools" role="search"><input id="audit-q" type="search" aria-label="Filter phases and tasks by text" placeholder="Filter phases &amp; tasks by text…"><span class="tbl">Phase status:</span><span id="audit-phase-status"></span><button type="button" id="audit-expand" class="btn">expand all</button><span id="audit-count" class="muted"></span></div>
 <div class="tablewrap"><table class="phases"><thead><tr><th>id</th><th>title</th><th>status</th><th>model</th><th>risk</th><th>commit</th><th>done</th><th>ADO</th><th>outcome</th></tr></thead><tbody>
-<tr class="phase" data-phase="P1" data-status="done" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P1</span> <strong>Auth hardening</strong> <span class="chip" data-status="done">done</span> <span class="bar"><span class="fill" style="--w:100%"></span></span> <span class="muted">2/2</span><div class="pmeta muted">Desired: Credentials are stored and checked safely: modern password hashing and a rate-limited login path. · branch audit/p1-auth-hardening · merged 2026-06-10T11:05:00Z · Argon2id replaces the legacy MD5 hashing and the login endpoint is now rate-limited. Meets the desired outcome; verified by new tests and a passing review.</div></td></tr>
+<tr class="phase" id="phase-P1" data-phase="P1" data-status="done" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P1</span> <strong>Auth hardening</strong> <span class="chip" data-status="done">done</span><span class="stamp" title="Last commit recorded in this phase">b2d7e58</span> <span class="bar"><span class="fill" style="--w:100%"></span></span> <span class="muted">2/2</span><div class="pmeta muted">Desired: Credentials are stored and checked safely: modern password hashing and a rate-limited login path. · branch audit/p1-auth-hardening · merged 2026-06-10T11:05:00Z · Argon2id replaces the legacy MD5 hashing and the login endpoint is now rate-limited. Meets the desired outcome; verified by new tests and a passing review.</div></td></tr>
 <tr class="taskfilter" data-phase="P1"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"></span></td></tr>
 <tr class="task" data-phase="P1" data-status="done"><td class="mono tid">P1.1</td><td>Hash passwords with Argon2id</td><td><span class="chip" data-status="done">done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>9a1f0c2</td><td class=when><span title="started 2026-06-02T09:10:00Z · completed 2026-06-02T15:40:00Z">2026-06-02</span></td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1421">#1421</a></td><td class=muted>Passwords are now stored with a modern, memory-hard hash.</td></tr>
 <tr class="task" data-phase="P1" data-status="done"><td class="mono tid">P1.2</td><td>Rate-limit the login endpoint</td><td><span class="chip" data-status="done">done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>b2d7e58</td><td class=when><span title="started 2026-06-08T10:00:00Z · completed 2026-06-09T12:20:00Z">2026-06-09</span></td><td><span class="muted">—</span></td><td class=muted>Repeated failed logins are now throttled.</td></tr>
-<tr class="phase" data-phase="P2" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P2</span> <strong>Input validation</strong> <span class="chip" data-status="in_progress">in_progress</span> <span class="bar"><span class="fill" style="--w:25%"></span></span> <span class="muted">1/4</span><div class="pmeta muted">Desired: Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template. · branch audit/p2-input-validation</div></td></tr>
+<tr class="phase" id="phase-P2" data-phase="P2" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P2</span> <strong>Input validation</strong> <span class="chip" data-status="in_progress">in_progress</span> <span class="bar"><span class="fill" style="--w:25%"></span></span> <span class="muted">1/4</span><div class="pmeta muted">Desired: Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template. · branch audit/p2-input-validation</div></td></tr>
 <tr class="taskfilter" data-phase="P2"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"></span></td></tr>
 <tr class="task" data-phase="P2" data-status="done"><td class="mono tid">P2.1</td><td>Validate the checkout payload</td><td><span class="chip" data-status="done">done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>c4a11b9</td><td class=when><span title="started 2026-06-22T09:30:00Z · completed 2026-06-23T16:10:00Z">2026-06-23</span></td><td><span class="muted">—</span></td><td class=muted>Malformed checkouts are turned away early.</td></tr>
 <tr class="task" data-phase="P2" data-status="in_progress"><td class="mono tid">P2.2</td><td>Sanitize the product-search query</td><td><span class="chip" data-status="in_progress">in_progress</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-06T09:00:00Z · completed —">started 2026-07-06</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
 <tr class="task" data-phase="P2" data-status="blocked"><td class="mono tid">P2.3</td><td>Escape server-rendered template output</td><td><span class="chip" data-status="blocked">blocked</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-13T09:15:00Z · completed —">started 2026-07-13</span></td><td><span class="muted">—</span></td><td class=muted>Blocked pending a cross-cutting escaping-helper decision.</td></tr>
 <tr class="task" data-phase="P2" data-status="pending"><td class="mono tid">P2.4</td><td>Add zod schemas for cart mutations</td><td><span class="chip" data-status="pending">pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="phase" data-phase="P3" data-status="pending" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P3</span> <strong>Performance pass</strong> <span class="chip" data-status="pending">pending</span> <span class="bar"><span class="fill" style="--w:0%"></span></span> <span class="muted">0/2</span><div class="pmeta muted">Desired: The catalog and product pages render without the known redundant work and heavy above-the-fold images.</div></td></tr>
+<tr class="phase" id="phase-P3" data-phase="P3" data-status="pending" data-held="1" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P3</span> <strong>Performance pass</strong> <span class="chip" data-status="pending">pending</span><a class="heldby" href="#phase-P2" title="This phase is held until P2 is done">held by P2</a> <span class="bar"><span class="fill" style="--w:0%"></span></span> <span class="muted">0/2</span><div class="pmeta muted">Desired: The catalog and product pages render without the known redundant work and heavy above-the-fold images.</div></td></tr>
 <tr class="taskfilter" data-phase="P3"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"></span></td></tr>
-<tr class="task" data-phase="P3" data-status="pending"><td class="mono tid">P3.1</td><td>Memoize the product-list selector</td><td><span class="chip" data-status="pending">pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="task" data-phase="P3" data-status="pending"><td class="mono tid">P3.2</td><td>Lazy-load below-the-fold images</td><td><span class="chip" data-status="pending">pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="phase" data-phase="BF1" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">BF1</span> <strong>Bugfix batch 1</strong> <span class="chip" data-status="in_progress">in_progress</span> <span class="bar"><span class="fill" style="--w:50%"></span></span> <span class="muted">1/2</span><div class="pmeta muted">Desired: Reported bugs are reproduced red-first and fixed. · branch audit/bf1-bugfix-batch-1</div></td></tr>
+<tr class="task" data-phase="P3" data-status="pending" data-held="1"><td class="mono tid">P3.1</td><td>Memoize the product-list selector</td><td><span class="chip" data-status="pending">pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="task" data-phase="P3" data-status="pending" data-held="1"><td class="mono tid">P3.2</td><td>Lazy-load below-the-fold images</td><td><span class="chip" data-status="pending">pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="phase" id="phase-BF1" data-phase="BF1" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">BF1</span> <strong>Bugfix batch 1</strong> <span class="chip" data-status="in_progress">in_progress</span> <span class="bar"><span class="fill" style="--w:50%"></span></span> <span class="muted">1/2</span><div class="pmeta muted">Desired: Reported bugs are reproduced red-first and fixed. · branch audit/bf1-bugfix-batch-1</div></td></tr>
 <tr class="taskfilter" data-phase="BF1"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"></span></td></tr>
 <tr class="task" data-phase="BF1" data-status="in_progress"><td class="mono tid">BF1.1</td><td>Fix BUG-3: cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">in_progress</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-20T11:00:00Z · completed —">started 2026-07-20</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
 <tr class="task" data-phase="BF1" data-status="done"><td class="mono tid">BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td><span class="chip" data-status="done">done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>a1b2c3d</td><td class=when><span title="started 2026-07-21T09:40:00Z · completed 2026-07-21T18:05:00Z">2026-07-21</span></td><td><span class="muted">—</span></td><td class=muted>Logging out now actually ends the session.</td></tr>
-</tbody></table></div>
-<h2 id="usage">Usage</h2><p class="uctx">3 phases · 3 people · 4 models · 4 sessions · 2026-06-02 to 2026-07-21 · rates as of 2026-08-06</p><div class="tiles"><div class="tile"><div class="k">tokens</div><div class="v">93.1M<span class="dl up">+79%</span></div><div class="s">899 messages</div></div><div class="tile"><div class="k">equivalent cost</div><div class="v">$103.65<span class="dl up">+127%</span></div><div class="s">not a bill — subscription plans have no per-token charge</div></div><div class="tile"><div class="k">cache hit</div><div class="v">94%</div><div class="s">input side bills at 18% of fresh-token rates</div></div><div class="tile"><div class="k">cost per task</div><div class="v">$15.77</div><div class="s">4 task(s) completed</div></div><div class="tile"><div class="k">attributed</div><div class="v">95%</div><div class="s">88% down to a specific task</div></div></div><h3 class="sub">Tokens per day</h3><p class="muted small" style="margin:0 0 var(--sp-1)">Deltas above compare 2026-06-22 to 2026-07-21 with the 30 days before it.</p><div class="colswrap"><svg class="cols" viewBox="0 0 720 210" preserveAspectRatio="none" role="img" aria-label="Tokens per day, peak 34.1M"><line class="grid" x1="0" y1="14.0" x2="720" y2="14.0" vector-effect="non-scaling-stroke"></line><line class="grid" x1="0" y1="101.0" x2="720" y2="101.0" vector-effect="non-scaling-stroke"></line><path class="col" d="M3.7 188.0L3.7 136.4Q3.7 132.4 7.7 132.4L23.7 132.4Q27.7 132.4 27.7 136.4L27.7 188.0Z"><title>2026-06-02
+</tbody></table></div></section>
+<h2 id="usage">Usage</h2><p class="uctx">3 phases · 3 people · 4 models · 4 sessions · 2026-06-02 to 2026-07-21 · rates as of 2026-08-06</p><div class="tiles"><div class="tile"><div class="k">tokens</div><div class="v">93.1M<span class="dl up">+79%</span></div><div class="s">899 messages</div></div><div class="tile"><div class="k">equivalent cost</div><div class="v">$103.65<span class="dl up">+127%</span></div><div class="s">not a bill — subscription plans have no per-token charge</div></div><div class="tile"><div class="k">cache hit</div><div class="v">94%</div><div class="s">input side bills at 18% of fresh-token rates</div></div><div class="tile"><div class="k">cost per task</div><div class="v">$15.77</div><div class="s">4 task(s) completed</div></div><div class="tile"><div class="k">attributed</div><div class="v">95%</div><div class="s">88% down to a specific task</div></div></div><h3 class="sub" id="usage-trend">Tokens per day</h3><p class="muted small" style="margin:0 0 var(--sp-1)">Deltas above compare 2026-06-22 to 2026-07-21 with the 30 days before it.</p><div class="colswrap"><svg class="cols" viewBox="0 0 720 210" preserveAspectRatio="none" role="img" aria-label="Tokens per day, peak 34.1M"><line class="grid" x1="0" y1="14.0" x2="720" y2="14.0" vector-effect="non-scaling-stroke"></line><line class="grid" x1="0" y1="101.0" x2="720" y2="101.0" vector-effect="non-scaling-stroke"></line><path class="col" d="M3.7 188.0L3.7 136.4Q3.7 132.4 7.7 132.4L23.7 132.4Q27.7 132.4 27.7 136.4L27.7 188.0Z"><title>2026-06-02
 tokens	10.88M
 cost	$12.38</title></path><path class="col" d="M35.0 188.0L35.0 188.0Q35.0 186.9 36.1 186.9L57.9 186.9Q59.0 186.9 59.0 188.0L59.0 188.0Z"><title>2026-06-04
 tokens	214.62K
@@ -577,7 +746,7 @@ messages	479"><span class="nm">alex@acme.example</span><span class="track"><i st
 tokens	20.00M
 share	21%
 cost	$23.85
-messages	174"><span class="nm">sara@acme.example</span><span class="track"><i style="width:41.8%;background:var(--bar-neutral)"></i></span><span class="amt">20.0M &middot; $23.85</span></div></div></div><h3 class="sub">Budget</h3><div class="buds"><div class="bud over"><span class="nm"><span class="mono">P2</span> Input validation</span><span class="track"><i style="width:100.0%"></i></span><span class="pct">130%</span><span class="amt">$32.53 of $25.00 &middot; over</span></div><div class="bud"><span class="nm"><span class="mono">P1</span> Auth hardening</span><span class="track"><i style="width:70.5%"></i></span><span class="pct">70%</span><span class="amt">$28.22 of $40.00</span></div><div class="bud total"><span class="nm">All budgeted phases</span><span class="track"></span><span class="pct"></span><span class="amt">$60.74 of $65.00</span></div></div><p class="muted small">2 phase(s) have no <code>budgetUSD</code> set and are not shown here — they are not phases at zero.</p><details class="more"><summary>Detail — per-author split, phase composition, unit economics, model routing, hourly pattern</summary><h4 class="sub">Each author, by model</h4><p class="muted small">Every panel shares one axis (2026-06-02 to 2026-07-21, one column per day) and one scale (peak 34.1M tokens per column), so heights and positions compare directly across people. A column too small to draw shows as a hairline — some spend, below this chart's resolution; hover it for the dates and the count.</p><div class="smgrid"><div class="smcell"><h4>milos@acme.example</h4><div class="mm"><span class="mk" style="background:var(--viz-1)"></span><span class="mn">claude-fable-5</span><svg class="spark" viewBox="0 0 140 30" preserveAspectRatio="none" aria-hidden="true" style="--sc:var(--viz-1)"><rect x="12.17" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="30.43" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="115.65" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect class="hit" x="12.17" y="0" width="5.09" height="30"><title>2026-06-06
+messages	174"><span class="nm">sara@acme.example</span><span class="track"><i style="width:41.8%;background:var(--bar-neutral)"></i></span><span class="amt">20.0M &middot; $23.85</span></div></div></div><h3 class="sub" id="usage-budget">Budget</h3><div class="buds"><div class="bud over"><span class="nm"><span class="mono">P2</span> Input validation</span><span class="track"><i style="width:100.0%"></i></span><span class="pct">130%</span><span class="amt">$32.53 of $25.00 &middot; over</span></div><div class="bud"><span class="nm"><span class="mono">P1</span> Auth hardening</span><span class="track"><i style="width:70.5%"></i></span><span class="pct">70%</span><span class="amt">$28.22 of $40.00</span></div><div class="bud total"><span class="nm">All budgeted phases</span><span class="track"></span><span class="pct"></span><span class="amt">$60.74 of $65.00</span></div></div><p class="muted small">2 phase(s) have no <code>budgetUSD</code> set and are not shown here — they are not phases at zero.</p><details class="more"><summary>Detail — per-author split, phase composition, unit economics, model routing, hourly pattern</summary><h4 class="sub">Each author, by model</h4><p class="muted small">Every panel shares one axis (2026-06-02 to 2026-07-21, one column per day) and one scale (peak 34.1M tokens per column), so heights and positions compare directly across people. A column too small to draw shows as a hairline — some spend, below this chart's resolution; hover it for the dates and the count.</p><div class="smgrid"><div class="smcell"><h4>milos@acme.example</h4><div class="mm"><span class="mk" style="background:var(--viz-1)"></span><span class="mn">claude-fable-5</span><svg class="spark" viewBox="0 0 140 30" preserveAspectRatio="none" aria-hidden="true" style="--sc:var(--viz-1)"><rect x="12.17" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="30.43" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="115.65" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect class="hit" x="12.17" y="0" width="5.09" height="30"><title>2026-06-06
 claude-fable-5	34.35K</title></rect><rect class="hit" x="30.43" y="0" width="5.09" height="30"><title>2026-06-10
 claude-fable-5	79.02K</title></rect><rect class="hit" x="115.65" y="0" width="5.09" height="30"><title>2026-07-06
 claude-fable-5	64.16K</title></rect></svg></div><div class="mm"><span class="mk" style="background:var(--viz-2)"></span><span class="mn">claude-haiku-4-5</span><svg class="spark" viewBox="0 0 140 30" preserveAspectRatio="none" aria-hidden="true" style="--sc:var(--viz-2)"><rect x="6.09" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="36.52" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="48.70" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="97.39" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="109.57" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect class="hit" x="6.09" y="0" width="5.09" height="30"><title>2026-06-04
@@ -628,10 +797,11 @@ claude-sonnet-5	200.34K</title></rect><rect class="hit" x="91.30" y="0" width="5
 claude-sonnet-5	180.72K</title></rect><rect class="hit" x="103.48" y="0" width="5.09" height="30"><title>2026-07-02
 claude-sonnet-5	187.76K</title></rect><rect class="hit" x="127.83" y="0" width="5.09" height="30"><title>2026-07-20
 claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Phase composition by model</h4><div class="legend"><b><i style="background:var(--viz-1)"></i>claude-fable-5</b><b><i style="background:var(--viz-2)"></i>claude-haiku-4-5</b><b><i style="background:var(--viz-3)"></i>claude-opus-5</b><b><i style="background:var(--viz-4)"></i>claude-sonnet-5</b></div><div class="uphase"><span class="nm"><span class="mono">BF1</span> Bugfix batch 1</span><span class="stack" style="width:100.0%" role="img" aria-label="BF1: 50.1M tokens"><i class="seg" style="flex:36073971 0 0;background:var(--viz-3)" title="BF1 - claude-opus-5 - 36.07M tokens"></i><i class="seg" style="flex:14072365 0 0;background:var(--viz-4)" title="BF1 - claude-sonnet-5 - 14.07M tokens"></i></span><span class="amt">50.1M</span></div><div class="uphase"><span class="nm"><span class="mono">P1</span> Auth hardening</span><span class="stack" style="width:61.5%" role="img" aria-label="P1: 30.8M tokens"><i class="seg" style="flex:12642324 0 0;background:var(--viz-3)" title="P1 - claude-opus-5 - 12.64M tokens"></i><i class="seg" style="flex:18203248 0 0;background:var(--viz-4)" title="P1 - claude-sonnet-5 - 18.20M tokens"></i></span><span class="amt">30.8M</span></div><div class="uphase"><span class="nm"><span class="mono">P2</span> Input validation</span><span class="stack" style="width:15.0%" role="img" aria-label="P2: 7.5M tokens"><i class="seg" style="flex:2743746 0 0;background:var(--viz-3)" title="P2 - claude-opus-5 - 2.74M tokens"></i><i class="seg" style="flex:4778259 0 0;background:var(--viz-4)" title="P2 - claude-sonnet-5 - 4.78M tokens"></i></span><span class="amt">7.5M</span></div><div class="uphase"><span class="nm"><span class="mono">--</span> unattributed</span><span class="stack" style="width:9.2%" role="img" aria-label="--: 4.6M tokens"><i class="seg" style="flex:655243 0 0;background:var(--viz-1)" title="-- - claude-fable-5 - 655.24K tokens"></i><i class="seg" style="flex:1957149 0 0;background:var(--viz-2)" title="-- - claude-haiku-4-5 - 1.96M tokens"></i><i class="seg" style="flex:924932 0 0;background:var(--viz-3)" title="-- - claude-opus-5 - 924.93K tokens"></i><i class="seg" style="flex:1075560 0 0;background:var(--viz-4)" title="-- - claude-sonnet-5 - 1.08M tokens"></i></span><span class="amt">4.6M</span></div><h4 class="sub">Unit economics</h4><p class="muted small">Projection needs 5 completed tasks to mean anything; there are 4. A forecast off a smaller sample would be noise.</p><p class="fact">$5.82 on tasks that needed more than one attempt (1 task(s), 6% of spend) &middot; <strong>$5.82</strong> on tasks that ended blocked (1 task(s)).</p><p class="muted small">Retried spend is not the same as wasted spend: the ledger buckets by hour, not by attempt, so a task that retried and then landed did not burn every attempt for nothing. Only the blocked figure is spend with no outcome (the same task is in both figures here).</p><h4 class="sub">Most expensive tasks</h4><p class="muted small">No cost band yet — it calibrates from this project's own completed tasks and needs 5, of which there are 4. Set <code>usage.bands.highUSD</code> and <code>usage.bands.outlierUSD</code> to band against a fixed budget instead.</p><div class="tablewrap"><table class="data"><thead><tr><th>id</th><th>title</th><th>cost band</th><th>cost</th><th>attempts</th></tr></thead><tbody><tr><td class=mono>BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td>&mdash;</td><td class=mono>$26.56</td><td>1</td></tr><tr><td class=mono>P1.2</td><td>Rate-limit the login endpoint</td><td>&mdash;</td><td class=mono>$13.76</td><td>1</td></tr><tr><td class=mono>P2.2</td><td>Sanitize the product-search query</td><td>&mdash;</td><td class=mono>$12.10</td><td>1</td></tr><tr><td class=mono>P1.1</td><td>Hash passwords with Argon2id</td><td>&mdash;</td><td class=mono>$11.42</td><td>1</td></tr><tr><td class=mono>P2.1</td><td>Validate the checkout payload</td><td>&mdash;</td><td class=mono>$11.33</td><td>1</td></tr></tbody></table></div><h4 class="sub">Model cost within each risk band</h4><p class="muted small">Compared inside a band on purpose. Hard work is routed to the stronger model deliberately, so a raw spend-per-task comparison across bands would flag that working system as a fault.</p><div class="tablewrap"><table class="data"><thead><tr><th>risk</th><th>model</th><th>tasks</th><th>cost/task</th><th>mean attempts</th></tr></thead><tbody><tr><td>high</td><td class=mono>claude-opus-5</td><td>3</td><td class=mono>$16.69</td><td class=mono>1.0</td></tr><tr><td>med</td><td class=mono>claude-sonnet-5</td><td>4</td><td class=mono>$9.50</td><td class=mono>1.5</td></tr></tbody></table></div><h4 class="sub">When the tokens are spent (UTC)</h4><div class="hmwrap"><table class="hm"><thead><tr><th></th><th>00</th><th></th><th></th><th></th><th></th><th></th><th>06</th><th></th><th></th><th></th><th></th><th></th><th>12</th><th></th><th></th><th></th><th></th><th></th><th>18</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody><tr><th>Mon</th><td><i data-l="0" title="Mon 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 08:00 - 0 tokens"></i></td><td><i data-l="1" title="Mon 09:00 - 757.88K tokens"></i></td><td><i data-l="2" title="Mon 10:00 - 2.44M tokens"></i></td><td><i data-l="3" title="Mon 11:00 - 2.93M tokens"></i></td><td><i data-l="3" title="Mon 12:00 - 3.95M tokens"></i></td><td><i data-l="2" title="Mon 13:00 - 1.74M tokens"></i></td><td><i data-l="5" title="Mon 14:00 - 5.52M tokens"></i></td><td><i data-l="4" title="Mon 15:00 - 4.31M tokens"></i></td><td><i data-l="3" title="Mon 16:00 - 3.65M tokens"></i></td><td><i data-l="3" title="Mon 17:00 - 3.35M tokens"></i></td><td><i data-l="1" title="Mon 18:00 - 528.10K tokens"></i></td><td><i data-l="1" title="Mon 19:00 - 1.34M tokens"></i></td><td><i data-l="1" title="Mon 20:00 - 923.78K tokens"></i></td><td><i data-l="1" title="Mon 21:00 - 484.68K tokens"></i></td><td><i data-l="1" title="Mon 22:00 - 1.11M tokens"></i></td><td><i data-l="1" title="Mon 23:00 - 402.96K tokens"></i></td></tr><tr><th>Tue</th><td><i data-l="1" title="Tue 00:00 - 544.30K tokens"></i></td><td><i data-l="1" title="Tue 01:00 - 983.99K tokens"></i></td><td><i data-l="1" title="Tue 02:00 - 682.43K tokens"></i></td><td><i data-l="1" title="Tue 03:00 - 776.74K tokens"></i></td><td><i data-l="1" title="Tue 04:00 - 1.20M tokens"></i></td><td><i data-l="1" title="Tue 05:00 - 681.72K tokens"></i></td><td><i data-l="1" title="Tue 06:00 - 582.51K tokens"></i></td><td><i data-l="2" title="Tue 07:00 - 1.74M tokens"></i></td><td><i data-l="1" title="Tue 08:00 - 1.17M tokens"></i></td><td><i data-l="3" title="Tue 09:00 - 2.85M tokens"></i></td><td><i data-l="5" title="Tue 10:00 - 5.86M tokens"></i></td><td><i data-l="5" title="Tue 11:00 - 5.44M tokens"></i></td><td><i data-l="5" title="Tue 12:00 - 5.59M tokens"></i></td><td><i data-l="6" title="Tue 13:00 - 6.72M tokens"></i></td><td><i data-l="4" title="Tue 14:00 - 5.23M tokens"></i></td><td><i data-l="5" title="Tue 15:00 - 6.35M tokens"></i></td><td><i data-l="3" title="Tue 16:00 - 3.84M tokens"></i></td><td><i data-l="5" title="Tue 17:00 - 6.19M tokens"></i></td><td><i data-l="0" title="Tue 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 23:00 - 0 tokens"></i></td></tr><tr><th>Wed</th><td><i data-l="0" title="Wed 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Wed 11:00 - 307.50K tokens"></i></td><td><i data-l="0" title="Wed 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Wed 16:00 - 261.70K tokens"></i></td><td><i data-l="0" title="Wed 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 23:00 - 0 tokens"></i></td></tr><tr><th>Thu</th><td><i data-l="0" title="Thu 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Thu 11:00 - 383.24K tokens"></i></td><td><i data-l="0" title="Thu 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Thu 16:00 - 483.82K tokens"></i></td><td><i data-l="0" title="Thu 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 23:00 - 0 tokens"></i></td></tr><tr><th>Fri</th><td><i data-l="0" title="Fri 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Fri 11:00 - 307.04K tokens"></i></td><td><i data-l="0" title="Fri 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Fri 16:00 - 382.81K tokens"></i></td><td><i data-l="0" title="Fri 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 23:00 - 0 tokens"></i></td></tr><tr><th>Sat</th><td><i data-l="0" title="Sat 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Sat 11:00 - 366.42K tokens"></i></td><td><i data-l="0" title="Sat 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Sat 16:00 - 253.20K tokens"></i></td><td><i data-l="0" title="Sat 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 23:00 - 0 tokens"></i></td></tr><tr><th>Sun</th><td><i data-l="0" title="Sun 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Sun 11:00 - 284.54K tokens"></i></td><td><i data-l="0" title="Sun 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Sun 16:00 - 231.38K tokens"></i></td><td><i data-l="0" title="Sun 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 23:00 - 0 tokens"></i></td></tr></tbody></table></div><p class="hmkey">0 <i style="background:var(--hm-0)"></i><i style="background:var(--hm-1)"></i><i style="background:var(--hm-2)"></i><i style="background:var(--hm-3)"></i><i style="background:var(--hm-4)"></i><i style="background:var(--hm-5)"></i><i style="background:var(--hm-6)"></i> 6.7M tokens/hour</p></details>
-<h2>Bugs</h2>
+<h2 id="bugs">Bugs</h2>
 <div class="tablewrap"><table class="data bugs"><thead><tr><th>id</th><th>title</th><th>status</th><th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th></tr></thead><tbody><tr data-status="open"><td class=mono>BUG-1</td><td>Product images 404 intermittently on Safari</td><td><span class="chip" data-status="open">open</span></td><td>med</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="triaged"><td class=mono>BUG-2</td><td>Checkout is slow on 3G mobile</td><td><span class="chip" data-status="triaged">triaged</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="in_progress"><td class=mono>BUG-3</td><td>Cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">in_progress</span></td><td>med</td><td class=mono>BF1.1</td><td class=mono>—</td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1508">#1508</a></td></tr><tr data-status="fixed"><td class=mono>BUG-4</td><td>Logout does not clear the session cookie</td><td><span class="chip" data-status="fixed">fixed</span></td><td>high</td><td class=mono>BF1.2</td><td class=mono>a1b2c3d</td><td><span class="muted">—</span></td></tr><tr data-status="wontfix"><td class=mono>BUG-5</td><td>Dark-mode label contrast below AA</td><td><span class="chip" data-status="wontfix">wontfix</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr></tbody></table></div>
-<h2>Ready now</h2><p class=mono>P2.4</p>
-<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTA3IDA3OjAwIFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgLS0gfCA0LjZNIHwgJDYuNzQgfCAxOTQgfAoKIyMjIEJ5IG1vZGVsCgp8IG1vZGVsIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IGNsYXVkZS1vcHVzLTUgfCA1Mi40TSB8ICQ2MC44MCB8IDM1NiB8CnwgY2xhdWRlLXNvbm5ldC01IHwgMzguMU0gfCAkMzkuMTIgfCA0MjEgfAp8IGNsYXVkZS1oYWlrdS00LTUgfCAyLjBNIHwgJDAuNzUgfCA4NSB8CnwgY2xhdWRlLWZhYmxlLTUgfCA2NTUuMksgfCAkMi45OCB8IDM3IHwKCiMjIyBCeSBhdXRob3IKCnwgYXV0aG9yIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IG1pbG9zQGFjbWUuZXhhbXBsZSB8IDQ3LjhNIHwgJDQ4LjA2IHwgMjQ2IHwKfCBhbGV4QGFjbWUuZXhhbXBsZSB8IDI1LjNNIHwgJDMxLjc0IHwgNDc5IHwKfCBzYXJhQGFjbWUuZXhhbXBsZSB8IDIwLjBNIHwgJDIzLjg1IHwgMTc0IHwKCiMjIyBFY29ub21pY3MKCi0gKipDYWNoZToqKiA5NCUgaGl0OyB0aGUgaW5wdXQgc2lkZSBiaWxscyBhdCAxOCUgb2YgZnJlc2gtdG9rZW4gcmF0ZXMuCi0gKipMb3dlc3QgY2FjaGUgcGhhc2U6KiogUDIgYXQgNjIlLgotICoqQXR0cmlidXRpb246KiogOTUlIG9mIHNwZW5kIGF0dHJpYnV0ZWQgKDg4JSB0byBhIHNwZWNpZmljIHRhc2spLgotICoqQ29zdCBwZXIgY29tcGxldGVkIHRhc2s6KiogJDE1Ljc3IGFjcm9zcyA0IHRhc2socykuCi0gKipQcm9qZWN0aW9uOioqIHN1cHByZXNzZWQg4oCUIG5lZWRzIDUgY29tcGxldGVkIHRhc2tzLCBoYXMgNC4KLSAqKlJldHJpZWQgdGFza3M6KiogJDUuODIgYWNyb3NzIDEgdGFzayhzKSAoNiUgb2Ygc3BlbmQpLiBOb3QgdGhlIHNhbWUgYXMgd2FzdGVkIHNwZW5kIOKAlCB0aGUgbGVkZ2VyIGJ1Y2tldHMgYnkgaG91ciwgbm90IGJ5IGF0dGVtcHQuCi0gKipCbG9ja2VkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykg4oCUIHNwZW5kIHdpdGggbm8gb3V0Y29tZS4KCiMjIyBNb2RlbCBjb3N0IHdpdGhpbiBlYWNoIHJpc2sgYmFuZAoKQ29tcGFyZWQgaW5zaWRlIGEgYmFuZCBvbiBwdXJwb3NlOiBoYXJkIHdvcmsgaXMgcm91dGVkIHRvIHRoZSBzdHJvbmdlciBtb2RlbCBkZWxpYmVyYXRlbHksIHNvIGEgcmF3IHNwZW5kLXBlci10YXNrIGNvbXBhcmlzb24gYWNyb3NzIGJhbmRzIHdvdWxkIGZsYWcgdGhhdCB3b3JraW5nIHN5c3RlbSBhcyBhIGZhdWx0LgoKfCByaXNrIHwgbW9kZWwgfCB0YXNrcyB8IGNvc3QvdGFzayB8IG1lYW4gYXR0ZW1wdHMgfAp8LS0tfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBoaWdoIHwgY2xhdWRlLW9wdXMtNSB8IDMgfCAkMTYuNjkgfCAxLjAgfAp8IG1lZCB8IGNsYXVkZS1zb25uZXQtNSB8IDQgfCAkOS41MCB8IDEuNSB8Cg==";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
+<h2 id="ready">Ready now</h2><p class=mono>P2.4</p>
+</main></div>
+<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTA3IDEwOjM3IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgLS0gfCA0LjZNIHwgJDYuNzQgfCAxOTQgfAoKIyMjIEJ5IG1vZGVsCgp8IG1vZGVsIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IGNsYXVkZS1vcHVzLTUgfCA1Mi40TSB8ICQ2MC44MCB8IDM1NiB8CnwgY2xhdWRlLXNvbm5ldC01IHwgMzguMU0gfCAkMzkuMTIgfCA0MjEgfAp8IGNsYXVkZS1oYWlrdS00LTUgfCAyLjBNIHwgJDAuNzUgfCA4NSB8CnwgY2xhdWRlLWZhYmxlLTUgfCA2NTUuMksgfCAkMi45OCB8IDM3IHwKCiMjIyBCeSBhdXRob3IKCnwgYXV0aG9yIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IG1pbG9zQGFjbWUuZXhhbXBsZSB8IDQ3LjhNIHwgJDQ4LjA2IHwgMjQ2IHwKfCBhbGV4QGFjbWUuZXhhbXBsZSB8IDI1LjNNIHwgJDMxLjc0IHwgNDc5IHwKfCBzYXJhQGFjbWUuZXhhbXBsZSB8IDIwLjBNIHwgJDIzLjg1IHwgMTc0IHwKCiMjIyBFY29ub21pY3MKCi0gKipDYWNoZToqKiA5NCUgaGl0OyB0aGUgaW5wdXQgc2lkZSBiaWxscyBhdCAxOCUgb2YgZnJlc2gtdG9rZW4gcmF0ZXMuCi0gKipMb3dlc3QgY2FjaGUgcGhhc2U6KiogUDIgYXQgNjIlLgotICoqQXR0cmlidXRpb246KiogOTUlIG9mIHNwZW5kIGF0dHJpYnV0ZWQgKDg4JSB0byBhIHNwZWNpZmljIHRhc2spLgotICoqQ29zdCBwZXIgY29tcGxldGVkIHRhc2s6KiogJDE1Ljc3IGFjcm9zcyA0IHRhc2socykuCi0gKipQcm9qZWN0aW9uOioqIHN1cHByZXNzZWQg4oCUIG5lZWRzIDUgY29tcGxldGVkIHRhc2tzLCBoYXMgNC4KLSAqKlJldHJpZWQgdGFza3M6KiogJDUuODIgYWNyb3NzIDEgdGFzayhzKSAoNiUgb2Ygc3BlbmQpLiBOb3QgdGhlIHNhbWUgYXMgd2FzdGVkIHNwZW5kIOKAlCB0aGUgbGVkZ2VyIGJ1Y2tldHMgYnkgaG91ciwgbm90IGJ5IGF0dGVtcHQuCi0gKipCbG9ja2VkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykg4oCUIHNwZW5kIHdpdGggbm8gb3V0Y29tZS4KCiMjIyBNb2RlbCBjb3N0IHdpdGhpbiBlYWNoIHJpc2sgYmFuZAoKQ29tcGFyZWQgaW5zaWRlIGEgYmFuZCBvbiBwdXJwb3NlOiBoYXJkIHdvcmsgaXMgcm91dGVkIHRvIHRoZSBzdHJvbmdlciBtb2RlbCBkZWxpYmVyYXRlbHksIHNvIGEgcmF3IHNwZW5kLXBlci10YXNrIGNvbXBhcmlzb24gYWNyb3NzIGJhbmRzIHdvdWxkIGZsYWcgdGhhdCB3b3JraW5nIHN5c3RlbSBhcyBhIGZhdWx0LgoKfCByaXNrIHwgbW9kZWwgfCB0YXNrcyB8IGNvc3QvdGFzayB8IG1lYW4gYXR0ZW1wdHMgfAp8LS0tfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBoaWdoIHwgY2xhdWRlLW9wdXMtNSB8IDMgfCAkMTYuNjkgfCAxLjAgfAp8IG1lZCB8IGNsYXVkZS1zb25uZXQtNSB8IDQgfCAkOS41MCB8IDEuNSB8Cg==";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
 <script>
 (function () {
   var q = document.getElementById('audit-q');
@@ -663,8 +833,40 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     paintTheme();
   });
 
+  // Scroll-spy. The links work without any of this — they are plain anchors
+  // rendered server-side — so this only adds the half a nav cannot do statically:
+  // saying where you ARE. Without it the sidebar is a menu; with it, a position.
+  var navLinks = [].slice.call(document.querySelectorAll('.snav a'));
+  if (navLinks.length && window.IntersectionObserver) {
+    var targets = navLinks.map(function (a) {
+      return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+    });
+    var visible = {};
+    var mark = function () {
+      // Topmost visible section wins. Picking "most visible" instead makes the
+      // marker jump backwards when a long section scrolls past a short one.
+      var best = -1;
+      targets.forEach(function (el, i) {
+        if (el && visible[i] && (best < 0 || el.getBoundingClientRect().top <
+            targets[best].getBoundingClientRect().top)) best = i;
+      });
+      navLinks.forEach(function (a, i) {
+        if (i === best) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      });
+    };
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var i = targets.indexOf(en.target);
+        if (i >= 0) visible[i] = en.isIntersecting;
+      });
+      mark();
+    }, { rootMargin: '-15% 0px -70% 0px' });
+    targets.forEach(function (el) { if (el) io.observe(el); });
+  }
+
   // Toolbar elevation once the page scrolls under it.
-  var toolbar = document.querySelector('.toolbar');
+  var toolbar = document.querySelector('.topbar');
   if (toolbar) {
     var onScroll = function () { toolbar.classList.toggle('scrolled', (window.scrollY || 0) > 8); };
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -963,6 +1165,28 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   })();
 
   // Download the Markdown twin (embedded as base64, decoded to a Blob).
+  // Copy the run command. clipboard.writeText is unavailable on file:// in some
+  // browsers, which is exactly where this report is most often opened, so the
+  // fallback selects the text and lets the reader use their own copy key rather
+  // than failing silently and leaving a button that does nothing.
+  [].slice.call(document.querySelectorAll('.btn-copy')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      var text = b.getAttribute('data-copy') || '';
+      var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1600); };
+      try {
+        navigator.clipboard.writeText(text).then(done, function () { selectRun(b); });
+      } catch (e) { selectRun(b); }
+    });
+  });
+  function selectRun(btn) {
+    var code = btn.parentNode.querySelector('.vd-run');
+    if (!code) return;
+    var r = document.createRange(); r.selectNodeContents(code);
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    btn.textContent = 'Press to copy';
+    setTimeout(function () { btn.textContent = 'Copy'; }, 2400);
+  }
+
   var dlBtn = document.getElementById('audit-dl-md');
   if (dlBtn) dlBtn.addEventListener('click', function () {
     try {
