@@ -131,6 +131,46 @@ def resolve_project(args):
         args.project_dir or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
 
+DEFAULT_MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
+
+
+def resolve_manifest_path(args, project):
+    """`<manifestPath argument>` > config `manifestPath` > `docs/audit/audit-plan.json`.
+
+    The middle term is the one that was missing, and its absence was not cosmetic.
+    This resolved the default location and nothing else, so a project keeping its
+    manifest anywhere else loaded NO manifest — and then read every project value
+    off `{}`. The shipped example is exactly that project: its config sets
+    `"manifestPath": "audit-plan.json"` and says in its own comment why. So
+    `/audit:usage` there ignored `meta.usage` entirely, including
+    **`showCost: false`** — a repo that had asked for dollars to stay off the
+    screen got them printed anyway, which is the failure the setting exists to
+    prevent. `panel-server.py` has always resolved it this way; this is that.
+
+    The manifest stays the commands' source for project values and the config is
+    read for one key only. That does not cross the standing manifest/hooks split
+    — finding the manifest is not the same act as reading it.
+    """
+    if args.manifest:
+        return args.manifest
+    rel = None
+    try:
+        with open(os.path.join(project, ".claude", "audit.config.json"),
+                  encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        if isinstance(cfg, dict) and isinstance(cfg.get("manifestPath"), str):
+            rel = cfg["manifestPath"]
+    except Exception:
+        rel = None                    # unreadable or malformed: fall through, never raise
+    for cand in (rel, DEFAULT_MANIFEST_REL):
+        if not cand:
+            continue
+        p = os.path.normpath(os.path.join(project, cand))
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def resolve_ledger(args, project, manifest):
     """`--ledger-dir` > manifest `meta.usage.ledgerDir` > `.claude/usage`.
 
@@ -216,6 +256,18 @@ def render(rows, args, manifest, window, show_cost):
                    fmt_tokens(tot["in"]), fmt_tokens(tot["out"]),
                    fmt_tokens(tot["cacheW5m"] + tot["cacheW1h"]),
                    fmt_tokens(tot["cacheR"]), tot["cacheHitPct"]))
+    # The rate table behind every dollar above. This is the third surface of the
+    # same gap: the JSON payload has carried `pricingAsOf` all along and the
+    # terminal printed a cost with no basis at all, exactly as the HTML report did
+    # before 0.22.0. There is no fallback to the default table's date here either
+    # — see render-report._usage_context for why manufacturing one is worse than
+    # admitting the manifest never declared it.
+    if show_cost and rows:
+        as_of = ((((manifest or {}).get("meta") or {}).get("usage") or {})
+                 .get("pricingAsOf"))
+        out.append("          costs priced at %s" % (
+            "rates as of %s" % as_of if as_of
+            else "undated rates - set usage.pricingAsOf"))
     if not rows:
         out.append("")
         out.append("  No usage recorded for this window.")
@@ -553,10 +605,7 @@ def build_parser():
 def main(argv):
     args = build_parser().parse_args(argv)
     project = resolve_project(args)
-    manifest_path = args.manifest
-    if not manifest_path:
-        guess = os.path.join(project, "docs", "audit", "audit-plan.json")
-        manifest_path = guess if os.path.isfile(guess) else None
+    manifest_path = resolve_manifest_path(args, project)
     manifest = load_manifest(manifest_path)
     ledger_dir = resolve_ledger(args, project, manifest)
 
@@ -728,12 +777,32 @@ def _selftest():
                       for c in text))
         check("render: cost shown by default", "equiv" in text)
 
+        # The rate basis, third surface of the gap the HTML report carried until
+        # 0.22.0: a cost printed with nothing saying what priced it.
+        _mp = json.loads(json.dumps(manifest))
+        _mp.setdefault("meta", {}).setdefault("usage", {})["pricingAsOf"] = "2026-08-06"
+        _dated = render(loaded, args, _mp, "all time", True)
+        check("render: a declared rate date is printed beside the costs",
+              "rates as of 2026-08-06" in _dated)
+        check("render: with none declared it says so and names the exit, rather "
+              "than printing dollars that look pinned to a table nobody named",
+              "undated rates" in text and "usage.pricingAsOf" in text)
+        check("render: it never falls back to the default table's date - that "
+              "would manufacture a basis instead of stating one",
+              "rates as of" not in text)
+
         no_cost = render(loaded, args, manifest, "all time", False)
         check("render: --no-cost drops every dollar figure", "$" not in no_cost)
+        check("render: --no-cost drops the rate basis too - with no dollars on "
+              "screen it dates a table nothing visible came from",
+              "rates" not in no_cost and "undated" not in no_cost)
 
         empty = render([], args, manifest, "all time", True)
         check("render: empty ledger explains itself, not a traceback",
               "No usage recorded" in empty and "backfill" in empty)
+        check("render: and says nothing about rates when there is no spend to "
+              "price - a basis announced for a claim never made is noise",
+              "rates" not in empty and "undated" not in empty)
 
         args_by = build_parser().parse_args(["--by", "model"])
         args_by.ledger_dir = ledger
@@ -756,6 +825,52 @@ def _selftest():
 
         check("ledger: --since bounds the window",
               len(ul.read_ledger(ledger, since="2026-08-02")) == 1)
+
+        # --- manifest resolution ------------------------------------------------
+        # This used to resolve docs/audit/audit-plan.json and nothing else, so a
+        # project keeping its manifest elsewhere loaded none and then read every
+        # project value off {} - showCost included. The shipped example is exactly
+        # that project.
+        _mr = os.path.join(tmp, "mres")
+        os.makedirs(os.path.join(_mr, ".claude"), exist_ok=True)
+        os.makedirs(os.path.join(_mr, "docs", "audit"), exist_ok=True)
+        _elsewhere = os.path.join(_mr, "audit-plan.json")
+        for _p in (_elsewhere, os.path.join(_mr, "docs", "audit", "audit-plan.json")):
+            with open(_p, "w", encoding="utf-8") as fh:
+                json.dump({"meta": {}, "phases": [], "bugs": []}, fh)
+        _cfgp = os.path.join(_mr, ".claude", "audit.config.json")
+        _noargs = build_parser().parse_args([])
+
+        with open(_cfgp, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "audit-plan.json"}, fh)
+        check("manifest: a configured manifestPath is honoured, not just the "
+              "default location",
+              resolve_manifest_path(_noargs, _mr) == os.path.normpath(_elsewhere))
+        check("manifest: an explicit argument still outranks the config",
+              resolve_manifest_path(
+                  build_parser().parse_args(["some/other.json"]), _mr)
+              == "some/other.json")
+
+        with open(_cfgp, "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        check("manifest: a malformed config falls back instead of raising - the "
+              "usage view is read-only and must not die on someone else's typo",
+              resolve_manifest_path(_noargs, _mr)
+              == os.path.normpath(os.path.join(_mr, DEFAULT_MANIFEST_REL)))
+        os.remove(_cfgp)
+        check("manifest: no config at all still finds the default location",
+              resolve_manifest_path(_noargs, _mr)
+              == os.path.normpath(os.path.join(_mr, DEFAULT_MANIFEST_REL)))
+
+        with open(_cfgp, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "nowhere/absent.json"}, fh)
+        check("manifest: a configured path that does not exist falls back rather "
+              "than reporting a file that is not there",
+              resolve_manifest_path(_noargs, _mr)
+              == os.path.normpath(os.path.join(_mr, DEFAULT_MANIFEST_REL)))
+        check("manifest: nothing anywhere -> None, and the caller renders without "
+              "project values rather than crashing",
+              resolve_manifest_path(_noargs, os.path.join(tmp, "empty-proj")) is None)
 
         # --json path
         argv = ["--ledger-dir", ledger, "--project-dir", tmp, "--json"]
