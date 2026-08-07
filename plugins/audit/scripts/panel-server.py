@@ -838,6 +838,20 @@ def _make_handler(project, token):
                 return
             if path == "/api/state":
                 self._json(200, build_state(project)); return
+            if path == "/api/runstatus":
+                # Deliberately NOT `/api/state` on a timer. Two reasons, and the
+                # second is correctness rather than cost: build_state computes the
+                # rollup, the composition and up to 20000 usage facts, and the
+                # client would have to re-render from it — blowing away whatever
+                # the human had half-typed into the guards form. This endpoint
+                # reads the lock dir and the phases' claims and nothing else, so
+                # the poll can update the badges without touching the editors.
+                cfg = read_config(project)
+                try:
+                    man = _mio.load_manifest_safe(_manifest_path(project, cfg))
+                except Exception:
+                    man = {}
+                self._json(200, _run_status(project, cfg, man)); return
             if path == "/api/registry":
                 self._json(200, discover(project)); return
             if path == "/api/usage":
@@ -1605,7 +1619,8 @@ function findingsBox(res){const box=el('div');
  return box;}
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;
- renderGuards();renderComp();renderOver();renderUsage();}
+ renderGuards();renderComp();renderOver();renderUsage();
+ RUNSTATUS=STATE.runStatus||null;startRunPoll();}
 // ---------- shared: info hints + autocomplete ----------
 const DESC={
  manifestPath:"Path to the audit manifest JSON (project-relative). Default docs/audit/audit-plan.json.",
@@ -1884,13 +1899,43 @@ function manifestFindingsBox(n,list){
    el('summary',{},'every finding, unfolded'),ol));
  return box;}
 
+// ---------- live run status ----------
+// Who is driving which phase changes WHILE you are looking at the panel — that is
+// the whole point of the badges, and until now they were a snapshot taken at page
+// load. A colleague taking a phase lock in another worktree appeared only if you
+// happened to reload.
+//
+// It polls the narrow endpoint, never /api/state: re-rendering from full state
+// would discard whatever is half-typed in the guards form, so "live" would have
+// cost you your edits. And it only repaints Overview, which has no inputs.
+//
+// Stops while the tab is hidden. A backgrounded panel polling a colleague's laptop
+// every few seconds forever is the kind of thing people notice in a battery graph
+// and never forgive.
+let RUNSTATUS=null, RUNPOLL=null;
+function runStatusKey(rs){return JSON.stringify(rs&&{i:rs.index,p:rs.phases});}
+async function pollRunStatus(){
+ if(document.hidden)return;
+ try{
+  const next=await api('GET','/api/runstatus');
+  if(runStatusKey(next)===runStatusKey(RUNSTATUS))return;   // no repaint on no change
+  RUNSTATUS=next;
+  if(!$('#over').classList.contains('hidden'))renderOver();
+ }catch(e){/* a panel that dies because a poll failed is worse than a stale badge */}
+}
+function startRunPoll(){
+ if(RUNPOLL)clearInterval(RUNPOLL);
+ RUNPOLL=setInterval(pollRunStatus,5000);
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollRunStatus();});
+
 // ---------- Overview ----------
 function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;const card=el('div',{class:'card'});
  if(!r){card.append(el('div',{class:'mut'},'No manifest at '+STATE.manifestPath+'. Run /audit:init.'));c.append(card);return;}
  const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)')
    :manifestFindingsBox(r.findings,STATE.manifestFindings||[]);
  card.append(vstate);
- const rs=STATE.runStatus||{index:null,phases:{}};
+ const rs=RUNSTATUS||STATE.runStatus||{index:null,phases:{}};
  if(rs.index){const h=rs.index.hostname||'?';
   card.append(el('div',{class:'findings warn'},
    '⚙ index locked (structural op / id allocation)'+(h?' · '+h:'')+(rs.index.startedAt?' · since '+rs.index.startedAt:'')));}
@@ -2801,6 +2846,24 @@ def _selftest():
           == "sess-abcd1234")
     check("runStatus phase lock is None when the git-dir lock isn't held (non-git tmp)",
           (st2["runStatus"]["phases"].get("P1") or {}).get("lock") is None)
+    # D9, second half: the badges were a snapshot taken at page load, so a colleague
+    # taking a phase lock in another worktree showed up only if you reloaded.
+    check("D9: run status is served on its own endpoint, so the poll never has to "
+          "refetch full state",
+          "/api/runstatus" in UI_HTML
+          and _run_status(tmp, {}, {}) is not None)
+    check("D9: and the poll repaints ONLY Overview - re-rendering from full state "
+          "would discard whatever is half-typed in the guards form",
+          "if(!$('#over').classList.contains('hidden'))renderOver();" in UI_HTML
+          and "renderGuards()" not in UI_HTML[UI_HTML.index("async function pollRunStatus"):
+                                              UI_HTML.index("// ---------- Overview")])
+    check("D9: it skips identical payloads rather than repainting on a timer",
+          "runStatusKey(next)===runStatusKey(RUNSTATUS)" in UI_HTML)
+    check("D9: it stops while the tab is hidden, and catches up on return",
+          "if(document.hidden)return;" in UI_HTML
+          and "visibilitychange" in UI_HTML)
+    check("D9: a failed poll leaves a stale badge rather than killing the panel",
+          "catch(e){/* a panel that dies because a poll failed" in UI_HTML)
 
     # v0.16 — composition view surfaces per-phase area (list) + reviewSkill;
     # a phase can carry cross-cutting tags (['backend','security'])

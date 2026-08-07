@@ -27,7 +27,7 @@ Decision order (see `decide`):
   test file → RECORD it (BEFORE any warn logic — this ordering is the whole
   mechanism: the hook watches its own Edit stream to learn that tests exist);
   exempt / non-source / covered-by-task / test-already-touched / throttled →
-  SILENT; otherwise → WARN (once per file, globally throttled).
+  SILENT; otherwise → WARN (once per file, throttled per session).
 
 State: <stateDir>/tdd-reminder-<session_id>.json
   {"testTouched": bool, "testFiles": [rel...], "warned": {rel: epoch}, "lastWarnAt": epoch}
@@ -137,7 +137,10 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, now: float = None):
     if state.get("testTouched"):
         return ("silent", "test already touched this session")
 
-    # 6. Throttle: once per file, and a global minimum gap between warnings.
+    # 6. Throttle: once per file, and a minimum gap between warnings WITHIN THIS
+    #    SESSION. Not global — the state is loaded per session_id, so two
+    #    concurrent sessions throttle independently, which is what the header
+    #    docstring has always said and these two lines did not.
     if rel in (state.get("warned") or {}):
         return ("silent", "already warned for %s" % rel)
     throttle_s = float(tr.get("throttleMinutes") or 0) * 60.0
