@@ -26,7 +26,10 @@ Attribution, highest precision first (nothing is ever dropped):
                      Exact even when a phase runs several tasks in parallel, because
                      each subagent owns a separate transcript file.
   2. phase         - main-session (orchestrator) spend, matched on
-                     `phase.claim.sessionId == sessionId`.
+                     `phase.claim.sessionId` against ANY name this session answers
+                     to (see `_session_ids`): the claim is written from Bash under
+                     $CLAUDE_CODE_SESSION_ID while the meter is driven by its hook
+                     payload's id, and those are not the same value.
   3. window        - no subagent label, but exactly one task's
                      [startedAt, completedAt] window contains the entry timestamp.
   4. unattributed  - everything else (ad-hoc edits, `#no-plan`, work outside any
