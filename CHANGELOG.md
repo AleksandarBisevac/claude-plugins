@@ -4,6 +4,95 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.22.0] - 2026-08-07
+
+**Everything here is about the boundary.** Every release before this one made the tool
+better for someone already inside it — someone who had installed the plugin, learned the
+command names, and was reading the changelog. That person is not the problem. The repo has
+938 test cases and four unique visitors in a fortnight.
+
+So three changes, and they are the same change three times. The report can now be opened by
+someone who never installed anything. The plugin can now be reached by someone who does not
+know it is called `/audit:usage`. And the argument behind it can be read by someone who was
+never going to read a changelog to find it.
+
+None of this alters a single existing behaviour. That is the point: the tool was not the
+thing that needed fixing.
+
+### Added
+- **`/audit:report --share` publishes the report to a link.** A self-contained file is
+  shareable only by sending the file, and `file://` does not travel. `--share` publishes it
+  as a Claude Code Artifact — a URL a reviewer opens having installed nothing.
+  - **It asks first, every time, and names what is in the page**: phase and task titles,
+    `desiredOutcome` prose, the file paths under audit, commit hashes, open bugs, and spend
+    when `usage.showCost` is on. A `--share` in the arguments is a request, not consent.
+    This is the only outward-facing thing any `/audit:*` command does.
+  - The page is private until you share it from its own menu. Re-rendering an audit and
+    publishing to the **same** URL is the intended loop — a stale audit link that still
+    resolves is worse than no link.
+- **`render-report.py --format artifact`** writes `<basename>.artifact.html`: the same
+  report with no document wrapper. An Artifact supplies its own `<!doctype>`, `<head>` and
+  `<body>`, so publishing the standalone file would nest a second document inside the first.
+  It writes a separate file and **never overwrites the `.html`** — that one is what people
+  open from disk and what CI diffs the live demo against.
+- **Two thin skills, `audit-codebase` and `audit-spend`.** Skills auto-trigger on what
+  someone types; commands do not. "Audit this codebase" and "what did that cost" now reach
+  the plugin without knowing a command name. They carry a triggering description and a
+  routing table and restate no procedure — they name the command file to read, because two
+  copies of a procedure is one copy and one lie.
+  - `audit-codebase` carries an explicit **do not use this for**, sending one-shot diff
+    review back to `/review`. A skill that fired on "review this code" would be worse than
+    silence; a skill without a negative condition is a claim without one.
+  - `audit-spend` leads with `--backfill`, which needs no manifest and no agents and answers
+    from transcripts already on disk. Someone asking what things cost should not first be
+    sold a pipeline.
+- **The essay, [`docs/essays/enforcement-over-persuasion.md`](docs/essays/enforcement-over-persuasion.md).**
+  One claim with one test — *what happens when the model does not comply?* Two of its five
+  sections are failures this repo shipped: the hand-maintained selftest list that drifted
+  three ways, and the plan gate that denied on no evidence. It states what enforcement
+  cannot do rather than leaving that to `SECURITY.md`, because an enforcement claim
+  published without its limits is persuasion wearing a lab coat.
+
+### Changed
+- **The report withholds its own theme toggle when embedded**, and only reinstates a
+  persisted theme where that toggle exists. The host stamps `data-theme` on the same root
+  element the button writes, so a viewer who had chosen dark would have been flipped back to
+  a light report saved on some earlier visit. A page that does not offer the control has no
+  business reinstating its state. Standalone reports are unchanged.
+- **The `commands/` vs `skills/` decision record is amended, not replaced.** It asked "is
+  `commands/` going away yet" three times and answered NO-GO three times; each answer was
+  defensible and the question was wrong. The cost was never deprecation — it was that skills
+  auto-trigger and commands do not, true since v0.4.0, and a revisit trigger set to
+  "deprecation only" could never fire on it. The answer is neither NO-GO nor migrate: both
+  layouts ship. Its next trigger is now something observable in a transcript.
+
+### Fixed
+- **The HTML report showed costs without saying what priced them.** `pricingAsOf` reached
+  the HTML only through the >90-day stale notice, so the ordinary report rendered dollar
+  figures with no visible rate date, while the Markdown twin printed "rates as of" every
+  time. Same report, two different answers to *on what basis*. It is now in the usage
+  context line in both renderers — and **withheld in both when `usage.showCost` is off**,
+  since with no dollars on screen it dates a table nothing visible came from.
+- **The test that should have caught it asserted nothing.** `u4` read
+  `"2026-08-06" in html` — and `render_html` stamps `generated <today>`, so on the day it
+  was written the report's own timestamp satisfied it. It passed for four releases and
+  failed for the first time when the clock rolled over, which is the only reason the gap
+  above was found. It now asserts the phrase `rates as of <date>`, which no timestamp can
+  produce, plus a case pinning that the date is not today's generation stamp — the trap
+  the original sat in.
+
+### Validation
+- **941 cases across 20 suites** (from 921). The fragment is verified in a browser rather
+  than by assertion alone: one `<html>` element and not two, no theme button, background and
+  text responding to `data-theme` in both directions, and at 380px the phases table
+  scrolling inside its own box while the document does not scroll sideways at all.
+
+### Compatibility
+Nothing breaks and nothing changes for an existing user who does not type `--share`. The
+new format writes a new file and touches no existing one; the skills add a discovery path
+beside the commands and remove none of them; `/audit:report` without arguments behaves
+exactly as it did in 0.21.0.
+
 ## [0.21.0] - 2026-08-07
 
 **The instrument stops improvising.** Two surfaces here had a number and did nothing
