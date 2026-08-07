@@ -239,6 +239,20 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
+      - name: Demo GIF still shows what it claims (the gate still refuses)
+        shell: bash
+        run: |
+          set -e
+          # The README's headline image is a recording of the plan gate denying an
+          # edit. Nothing in CI can tell that a committed GIF has gone stale — it is
+          # just bytes — so this asserts the BEHAVIOUR the recording depends on:
+          # the in-plan edit allowed, the out-of-plan edit denied, and the refusal
+          # still naming the file and the way out. If the gate's wording moves, this
+          # fails and the GIF gets re-recorded, rather than shipping a picture of
+          # something the product no longer does. --check writes no file and needs
+          # no font.
+          python tools/capture-demo-gif.py --check
+
       - name: Screenshot preconditions (the report actually paints what it claims)
         shell: bash
         run: |

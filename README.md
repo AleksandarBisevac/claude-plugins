@@ -8,6 +8,15 @@ A [Claude Code](https://code.claude.com) plugin marketplace with one theme:
 **enforced** engineering discipline — plan gates, test gates, sign-off gates,
 secret guards. Deterministic hooks, not prompt suggestions.
 
+### ▶ The gate, refusing
+
+The plan gate denying an edit no task covers, while a phase is running. Every line is
+this plugin's real output — `audit-status.py` renders the plan, `require-plan.py` is fed
+the same `PreToolUse` payload Claude Code sends it, and its refusal is what you see.
+Re-record with `python3 tools/capture-demo-gif.py`.
+
+![The plan gate: an edit inside the plan passes silently, an edit outside it is refused with the file named and a way out](docs/screenshots/demo-gate.gif)
+
 ### ▶ See it
 
 A live, interactive audit report (search, filter, collapsible phases, Save-as-PDF) — nothing to install:
