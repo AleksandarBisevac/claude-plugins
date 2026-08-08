@@ -270,6 +270,35 @@ jobs:
           npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.0
           npx playwright install --with-deps chromium
           node tools/capture-screenshots.mjs --check
+
+      - name: The report is interactive, not just well-formed
+        shell: bash
+        run: |
+          set -e
+          # Everything else about the report is checked by grepping the output for
+          # markers. A JavaScript error that kills every event handler leaves every
+          # one of those markers intact — so the report can ship completely inert
+          # with this workflow green, and the interactive layer is roughly a third of
+          # render-report.py. This drives the real file in a real browser: click a
+          # phase title, expand all, type in the filter, press Escape, click a status
+          # chip, and assert the visible row counts actually change.
+          #
+          # Opened over file://, because that is how a report gets shared. Proven to
+          # fail, not just to pass: a TypeError injected into the script and a filter
+          # stubbed to match everything both exit 1, while `grep id="usage"` passes
+          # on both.
+          #
+          # Chromium is already installed by the screenshot step above.
+          #
+          # Every shipped report, not just one. docs/index.html is the live demo —
+          # the first thing anyone who has not installed the plugin ever sees — and
+          # demo-large.html is the 40-phase scale demo, where the interactive layer
+          # matters most and is least likely to be opened by hand before a release.
+          for f in examples/acme-store/acme-store-audit.html \
+                   docs/index.html \
+                   docs/demo-large.html; do
+            node tools/check-report-interactive.mjs "$f"
+          done
       - name: JSON Schema validation (ajv, draft 2020-12)
         run: |
           npx --yes ajv-cli validate --spec=draft2020 \
