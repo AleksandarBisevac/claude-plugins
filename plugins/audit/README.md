@@ -50,8 +50,10 @@ background process:
 - In a terminal you can also run it in the foreground (`Ctrl-C` to stop); in a Node repo
   `npm run panel` / `npm run panel:stop` is the shortcut.
 
-It tunes the guards/paths in `.claude/audit.config.json` (schema-validated; every field has an ⓘ
-hint), and **wires composition** — `meta.reviewSkill`, per-task `skills`/`model`, per-phase review
+Its **Settings** tab is a form over the whole of `.claude/audit.config.json` — paths & gate,
+write guards, TDD reminder, usage & pricing — schema-validated, every field named by what it
+does with its JSON key and an ⓘ hint beside it, and every field left empty simply absent from
+the file. It also **wires composition** — `meta.reviewSkill`, per-task `skills`/`model`, per-phase review
 model, `meta.buildCommands` — from **an autocomplete populated by the skills & agents actually
 available** in this repo + `~/.claude/` + installed plugins. Same Slate & Teal look, light/dark,
 responsive. It writes only config + composition fields (never structural manifest CRUD, and never
@@ -59,7 +61,7 @@ while a `/audit` run holds the lock), validating before each atomic save. Compos
 **compact, collapsible, filterable table** (search · phase-status · "needs skills" · expand-all)
 that scales to hundreds of tasks — phases are collapsed by default; expand only what you touch.
 
-| Guards & paths | Composition (compact/collapsible) | Composition expanded | Dark |
+| Settings | Composition (compact/collapsible) | Composition expanded | Dark |
 |---|---|---|---|
 | [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
 
@@ -335,12 +337,25 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `bypassKeyword` | Single-use plan-first opt-out keyword | `#no-plan` |
 | `secretPatterns.extra` | Extra secret-path regexes (added to the built-in set) | `[]` |
 | `guardEdits.tokenVars` | Identifier names treated as auth tokens | `accessToken`, `refreshToken`, `idToken` |
-| `guardEdits.customRules` | Project banned patterns `{pathPrefix, bannedPattern, message}` | `[]` |
+| `guardEdits.customRules` | Project banned patterns `{pathPrefix, bannedPattern, message}`. `pathPrefix` is matched as a **substring** of the path the edit tool reported (usually absolute) — `realtime/` covers every `realtime/` directory in the tree, not only one root | `[]` |
 | `bashWriteCheck.enabled` | PostToolUse git-status diff check for shell writes into source | `true` |
 | `tddReminder.enabled` | Master switch for the non-blocking TDD nudge | `true` |
 | `tddReminder.sourceGlobs` / `testGlobs` | What counts as source vs test files (source also feeds the shell-write guard) | common code (incl. `.ipynb`) / test patterns |
 | `tddReminder.throttleMinutes` | Minimum gap between nudges | `10` |
 | `tddReminder.inProgressPolicy` | Manifest interplay: `skip-gate-only` \| `skip-all` \| `warn-always` | `skip-gate-only` |
+| `usage.enabled` | Meter token usage on Stop / SubagentStop | `true` |
+| `usage.ledgerDir` | Where the monthly NDJSON ledger + scan cursors live (deliberately outside `stateDir`, which is GC'd) | `.claude/usage` |
+| `usage.authorMode` | How the spender is recorded: `email` \| `name` \| `hash` \| `none` | `email` |
+| `usage.showCost` | Show an equivalent API cost beside the tokens | `true` |
+| `usage.backfillOnFirstRun` / `maxScanBytes` | On first sight of a transcript, read it from the start, up to this many bytes | `true` / `33554432` |
+| `usage.currency` / `pricingAsOf` | Currency label, and the date the rate table was accurate (undated until you set it) | `USD` / the shipped table's date |
+| `usage.bands` | `{highUSD, outlierUSD}` absolute cost bands; both unset → calibrate from this project's own completed tasks | both unset |
+| `usage.pricing` | Model id → `{in, out, cacheW5m, cacheW1h, cacheR}` in currency per **million** tokens | shipped table |
+
+Every key above has a control in the panel's **Settings** tab, grouped into *Paths & gate*,
+*Write guards*, *TDD reminder* and *Usage & pricing* — the coverage is asserted by
+`panel-server.py --selftest` against `validate-config.py`'s own key sets, so a key documented
+here and unreachable there is a build failure rather than a discovery.
 
 ### The manifest's `meta` block
 
@@ -467,7 +482,8 @@ the design, not a failure: off-pipeline work is exactly what you would otherwise
 **Cost bands.** Tasks are sorted into `typical` / `high` / `outlier` by what they cost, and the
 threshold is the project's **own** median and p90 — so it means something on day one with no
 configuration and re-calibrates as the work grows. Pin absolute numbers instead with
-`usage.bands.highUSD` / `usage.bands.outlierUSD` when you have a real budget; a malformed or
+`usage.bands.highUSD` / `usage.bands.outlierUSD` when you have a real budget (the panel's
+**Settings → Usage & pricing** edits the pair and checks it as you type); a malformed or
 inverted pair falls back to the relative basis rather than banding anything wrongly. Below five
 completed tasks nothing is banded at all — percentiles off three samples are noise, and a
 confidently wrong band is worse than none. Every surface prints the thresholds it used, because

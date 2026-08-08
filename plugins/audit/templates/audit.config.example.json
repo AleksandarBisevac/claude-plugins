@@ -24,7 +24,7 @@
     ]
   },
   "guardEdits": {
-    "//": "tokenVars: identifier names treated as auth tokens for the logging ban. customRules: project-specific banned patterns, each fires only when the edited path starts with pathPrefix.",
+    "//": "tokenVars: identifier names treated as auth tokens for the logging ban; your list REPLACES the three defaults rather than adding to them. customRules: project-specific banned patterns, each fires when pathPrefix occurs ANYWHERE in the edited path (a substring match, despite the name), so 'src/realtime/' also covers packages/web/src/realtime/.",
     "tokenVars": [
       "accessToken",
       "refreshToken",
@@ -80,6 +80,11 @@
     "showCost": true,
     "backfillOnFirstRun": true,
     "pricingAsOf": "2026-08-06",
+    "//bands": "Absolute cost bands for typical/high/outlier. Left null, the bands calibrate from this project's own completed tasks (median and p90), which needs no guess to mean something. Set BOTH to band by a budget instead - highUSD must be > 0 and <= outlierUSD, and any other pair is ignored in favour of the relative basis.",
+    "bands": {
+      "highUSD": null,
+      "outlierUSD": null
+    },
     "pricing": {
       "_default": {
         "in": 5.0,

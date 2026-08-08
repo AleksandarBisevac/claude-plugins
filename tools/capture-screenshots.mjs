@@ -276,6 +276,15 @@ async function main() {
         reducedMotion: 'reduce', colorScheme: 'light',
       });
       const page = await ctx.newPage();
+      // The panel is ONE inline script. A syntax error anywhere in it kills every
+      // view at once, and the page still serves 200 with its full static shell — so
+      // a check that asserts on the HTML source, or even on `.tab` being present,
+      // passes against a completely dead panel. That is the same failure the report
+      // shipped once (see tools/check-report-interactive.mjs); this is the panel's
+      // half of it, and it costs nothing because a browser is already open.
+      const jsErrors = [];
+      page.on('pageerror', (e) => jsErrors.push(String(e.message).split('\n')[0]));
+      page.on('console', (m) => { if (m.type() === 'error') jsErrors.push(m.text()); });
       await page.goto(panel.url, { waitUntil: 'load' });
       await page.waitForSelector('.tab', { timeout: 15000 });
       await page.waitForTimeout(400);
@@ -284,6 +293,26 @@ async function main() {
       note(`panel tabs present: ${tabs.join(', ')}`);
       if (!tabs.includes('usage')) {
         fail('panel has no Usage tab — the fixture or the UI is out of date');
+      }
+
+      // Settings is rendered by that script, from the field table panel-server.py
+      // ships. Both halves are asserted: the cards exist, and every declared setting
+      // put a control in the document — so a field added in Python and never wired
+      // up in the UI fails here rather than silently not existing.
+      const declared = JSON.parse(py([path.join(SCRIPTS, 'panel-server.py'),
+                                      '--settings-paths']));
+      const rendered = await page.evaluate((paths) => ({
+        cards: [...document.querySelectorAll('#guards > .card')].map((c) => c.id),
+        missing: paths.filter((p) => !document.getElementById('set-' + p)),
+      }), declared);
+      if (rendered.cards.length !== 4) {
+        fail(`Settings rendered ${rendered.cards.length} group cards, expected 4 `
+           + `(the script may not be running at all)`);
+      } else if (rendered.missing.length) {
+        fail(`Settings declares ${declared.length} config paths but rendered no `
+           + `control for: ${rendered.missing.join(', ')}`);
+      } else {
+        note(`settings: 4 groups, ${declared.length}/${declared.length} controls rendered`);
       }
 
       await shot(page, 'panel-guards');
@@ -350,6 +379,14 @@ async function main() {
       await page.click('#theme');
       await page.waitForTimeout(300);
       await shot(page, 'panel-dark');
+      // Collected across every tab this run touched, and reported last so the more
+      // specific failures above name themselves first.
+      if (jsErrors.length) {
+        fail(`the panel logged ${jsErrors.length} script error(s): `
+           + [...new Set(jsErrors)].slice(0, 5).join(' | '));
+      } else {
+        note('panel: no uncaught exceptions and no console errors');
+      }
       await ctx.close();
     }
   } finally {

@@ -77,7 +77,7 @@
         },
         "customRules": {
           "type": "array",
-          "description": "Opt-in per-path banned patterns. Each rule blocks bannedPattern when the edited path starts with pathPrefix.",
+          "description": "Opt-in per-path banned patterns. Each rule blocks bannedPattern when pathPrefix appears ANYWHERE in the edited path - it is a substring test, not a prefix test, despite the key's name.",
           "items": {
             "type": "object",
             "additionalProperties": true,
@@ -88,7 +88,7 @@
             "properties": {
               "pathPrefix": {
                 "type": "string",
-                "description": "Path prefix (project-dir-relative) the rule applies under.",
+                "description": "Substring the rule applies under: it fires when this text occurs anywhere in the path the edit tool reported (usually absolute), so 'realtime/' matches src/realtime/x.ts as well as libs/realtime/y.ts. The key is named pathPrefix for compatibility with configs already in the field; the match has always been a substring one.",
                 "minLength": 1
               },
               "bannedPattern": {
@@ -203,6 +203,23 @@
           "type": "string",
           "minLength": 1,
           "description": "Date the shipped pricing table was accurate, surfaced in the report so a stale rate is visible."
+        },
+        "bands": {
+          "type": "object",
+          "description": "Absolute cost thresholds that sort tasks into typical / high / outlier. Both null (the default) means the bands calibrate from this project's own completed tasks (median/p90), which needs no guess to mean something on day one. Set BOTH to band by a real budget instead - highUSD must be > 0 and <= outlierUSD, and a pair that isn't falls back to the relative basis rather than classifying anything wrongly. NOT named 'risk': tasks already carry a `risk` field, meaning risk of the change.",
+          "additionalProperties": true,
+          "properties": {
+            "highUSD": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "description": "Equivalent USD above which one task's spend counts as high."
+            },
+            "outlierUSD": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "description": "Equivalent USD above which one task's spend counts as an outlier."
+            }
+          }
         },
         "pricing": {
           "type": "object",

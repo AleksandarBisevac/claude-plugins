@@ -38,10 +38,15 @@ KNOWN_RULE = {"pathPrefix", "bannedPattern", "message"}
 KNOWN_BASHW = {"enabled"}
 KNOWN_TDD = {"enabled", "sourceGlobs", "testGlobs", "throttleMinutes",
              "inProgressPolicy"}
+# `bands` is shipped in hooks/_config.py DEFAULTS and the plugin README tells you to
+# set it. It was missing from this set, so following the documentation produced
+# "unknown usage key 'bands'" from the plugin's own validator — the same shape of
+# bug as `warn-always` below, one layer down.
 KNOWN_USAGE = {"enabled", "ledgerDir", "authorMode", "showCost",
                "backfillOnFirstRun", "maxScanBytes", "currency", "pricingAsOf",
-               "pricing"}
+               "bands", "pricing"}
 KNOWN_RATE = {"in", "out", "cacheW5m", "cacheW1h", "cacheR"}
+KNOWN_BANDS = {"highUSD", "outlierUSD"}
 # All three are implemented by remind-tdd.py and covered by its selftests;
 # "warn-always" was documented in four places and rejected here, so setting the
 # documented value made the config invalid and the panel refuse to save it.
@@ -190,9 +195,48 @@ def validate_config(obj):
                 v = us["maxScanBytes"]
                 if isinstance(v, bool) or not isinstance(v, int) or v < 0:
                     findings.append("usage.maxScanBytes must be a non-negative integer")
+            _check_bands(us.get("bands"), findings, warnings)
             _check_pricing(us.get("pricing"), findings, warnings)
 
     return findings, warnings
+
+
+def _check_bands(bands, findings, warnings):
+    """Absolute cost-band thresholds.
+
+    `null` is meaningful here and is the shipped default — it means "calibrate from
+    this project's own completed tasks" — so a null is not a missing value to
+    complain about.
+
+    An inverted pair (`highUSD` > `outlierUSD`) is a WARNING, not a finding. The
+    runtime already handles it: `usage_ledger.cost_bands` requires
+    `0 < high <= outlier` and otherwise falls back to the relative basis rather than
+    classifying anything wrongly. Calling it invalid would make the panel refuse to
+    save a file that works, which is a harsher verdict than the behaviour justifies —
+    and this validator's own contract reserves FINDING for a config that would be
+    MISREAD."""
+    if bands is None:
+        return
+    if not isinstance(bands, dict):
+        findings.append("usage.bands must be an object")
+        return
+    for k in _real_keys(bands):
+        if k not in KNOWN_BANDS:
+            warnings.append("unknown usage.bands key %r" % k)
+    vals = {}
+    for k in ("highUSD", "outlierUSD"):
+        if k not in bands or bands[k] is None:
+            continue
+        v = bands[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+            findings.append("usage.bands.%s must be a non-negative number or null" % k)
+        else:
+            vals[k] = float(v)
+    if len(vals) == 2 and vals["highUSD"] > vals["outlierUSD"]:
+        warnings.append(
+            "usage.bands.highUSD (%g) is above outlierUSD (%g), so the pair is "
+            "ignored and the bands fall back to this project's own completed tasks"
+            % (vals["highUSD"], vals["outlierUSD"]))
 
 
 def _check_pricing(pricing, findings, warnings):
@@ -351,6 +395,42 @@ def _selftest():
     check("unknown rate key -> warning only", not f and any("pricing" in x for x in w))
     f, w = validate_config({"usage": {"bogusKey": 1}})
     check("unknown usage key -> warning only", not f and len(w) == 1)
+
+    # --- usage.bands ---------------------------------------------------------
+    # The key is in DEFAULTS and the README tells you to set it; it was not in
+    # KNOWN_USAGE, so doing what the documentation says produced a warning from the
+    # plugin's own validator. This is the test for "the documented key is a real key".
+    f, w = validate_config({"usage": {"bands": {"highUSD": 4, "outlierUSD": 12}}})
+    check("the documented usage.bands pair validates clean - no unknown-key warning",
+          not f and not w)
+    # null is the shipped default and MEANS something: calibrate from the project.
+    f, w = validate_config({"usage": {"bands": {"highUSD": None, "outlierUSD": None}}})
+    check("null thresholds are the default, not a missing value", not f and not w)
+    f, w = validate_config({"usage": {"bands": {}}})
+    check("an empty bands object is valid", not f and not w)
+    f, w = validate_config({"usage": {"bands": {"highUSD": -1}}})
+    check("a negative threshold -> finding",
+          any("usage.bands.highUSD" in x for x in f))
+    f, w = validate_config({"usage": {"bands": {"outlierUSD": "12"}}})
+    check("a string threshold -> finding",
+          any("usage.bands.outlierUSD" in x for x in f))
+    f, w = validate_config({"usage": {"bands": {"highUSD": True, "outlierUSD": 2}}})
+    check("a bool threshold is rejected (not a number)",
+          any("usage.bands.highUSD" in x for x in f))
+    f, w = validate_config({"usage": {"bands": []}})
+    check("non-object bands -> finding", any("usage.bands must be" in x for x in f))
+    f, w = validate_config({"usage": {"bands": {"highUsd": 4}}})
+    check("a misspelled band key -> warning only (the real one is highUSD)",
+          not f and any("usage.bands" in x for x in w))
+    # Inverted is a WARNING: cost_bands falls back to the relative basis, so the file
+    # is not misread — and a finding would make the panel refuse to save a config
+    # that works.
+    f, w = validate_config({"usage": {"bands": {"highUSD": 20, "outlierUSD": 5}}})
+    check("an inverted pair warns rather than failing - the runtime falls back "
+          "instead of misclassifying", not f and any("fall back" in x for x in w))
+    f, w = validate_config({"usage": {"bands": {"highUSD": 5, "outlierUSD": 5}}})
+    check("high == outlier is legal (the runtime's own predicate is high <= outlier)",
+          not f and not w)
 
     f, w = validate_config([])
     check("non-object root -> finding", len(f) == 1 and not w)

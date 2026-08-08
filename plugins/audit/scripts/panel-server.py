@@ -56,6 +56,241 @@ _PHASE_KEYS = ("reviewModel",)
 _TASK_KEYS = ("model", "skills")
 
 
+# --- the Settings form, described once, in Python --------------------------------
+# WHY IN PYTHON. This used to be a `DESC = {...}` literal inside the UI string, and
+# the form itself was hand-written field by field — so the set of settings the panel
+# could edit was whatever someone had remembered to type. It had drifted: the whole
+# `usage.*` block and four of the five `tddReminder.*` keys had no control at all,
+# on the one surface whose entire job is making the config legible.
+#
+# Described here instead, the coverage question becomes mechanical. validate-config
+# already knows every legal key (KNOWN_ROOT / KNOWN_SECRET / KNOWN_GUARD /
+# KNOWN_BASHW / KNOWN_TDD / KNOWN_USAGE), so the selftest DERIVES the expected paths
+# from the validator and compares — no hand-kept list on either side. A new config
+# key without a control here fails the build rather than quietly not existing in the
+# UI.
+#
+# `kind` drives a generic renderer for the ordinary shapes; `custom` hands the path
+# to a bespoke renderer in the UI (lists of regexes, the rules table, the band pair,
+# the pricing rows). Either way the path appears here, so it counts as covered.
+FIELD_HELP = {
+    "manifestPath":
+        "Path to the audit manifest JSON, relative to this project. "
+        "Default docs/audit/audit-plan.json.",
+    "gitRoot":
+        "Path of the git repo root, where git and the build/gate commands run. "
+        "Default '.' — this directory IS the git root.",
+    "stateDir":
+        "Where the hooks keep their per-session state files. They are local scratch, "
+        "garbage-collected after 7 days; gitignore them.",
+    "logsDir": "Where the hooks write the bypass log. Local scratch; gitignore it.",
+    "bypassKeyword":
+        "Type this in a prompt to arm a ONE-OFF plan-first bypass for the next edit. "
+        "It is consumed by that edit and logged.",
+    "trivialLineThreshold":
+        "The first file you touch in a session is free if the edit adds at most this "
+        "many lines. Anything larger needs a plan.",
+    "enforce":
+        "Force the plan gate to DENY even with no manifest. Off by default, which "
+        "grades it on evidence: observe (no manifest) -> warn (a manifest, nothing "
+        "running) -> deny (a phase is in_progress). The secret guards are never "
+        "graded — they deny either way.",
+    "exemptGlobs":
+        "Globs whose edits skip the plan-first, TDD and shell-write guards — docs, "
+        "tests, .claude/** and the manifest. Globs, not regexes: each one is matched "
+        "against the whole relative path AND against the bare file name, so "
+        "**/*.test.* and *.test.* both work.",
+    "secretPatterns.extra":
+        "Extra file paths to treat as secrets, so reading one is refused. These are "
+        "REGEXES, not globs, and they are matched case-insensitively anywhere in the "
+        "path: '.env' means 'any character, then env' and matches secrets.envelope. "
+        "Write \\.env$ if you mean the file. A pattern that does not compile is "
+        "dropped in silence at runtime — this form refuses to save one instead.",
+    "guardEdits.tokenVars":
+        "Identifier names that must never be logged: a console.log or print of any "
+        "of these is blocked. Your list REPLACES the three defaults rather than "
+        "adding to them.",
+    "guardEdits.customRules":
+        "Your own banned patterns: block a regex in new content when a piece of text "
+        "appears in the path being edited. The path test is a SUBSTRING match against "
+        "the path the edit tool reported (usually absolute), so 'realtime/' covers "
+        "every realtime/ directory in the repo. A rule missing either field, or whose "
+        "pattern does not compile, is skipped in silence at runtime — this form "
+        "refuses to save one instead.",
+    "bashWriteCheck.enabled":
+        "After a Bash command, diff git status and warn when it created source files "
+        "that were not planned. A warning, never a block.",
+    "tddReminder.enabled":
+        "Nudge when you edit source without touching a test. Non-blocking: it prints "
+        "a reminder and gets out of the way.",
+    "tddReminder.sourceGlobs":
+        "Globs that count as source, so editing one is a candidate for the nudge. "
+        "This list also defines what 'source' means to the shell-write guard — the "
+        "two read the same setting so they cannot disagree.",
+    "tddReminder.testGlobs":
+        "Globs that count as tests. Touching one in the same session silences the "
+        "nudge.",
+    "tddReminder.throttleMinutes":
+        "Least time between two nudges in one session. 0 means nudge every time.",
+    "tddReminder.inProgressPolicy":
+        "What the nudge does while an audit task is in_progress. skip-gate-only "
+        "(default) stays quiet for files the task already covers; skip-all goes quiet "
+        "for the whole run; warn-always ignores the manifest entirely.",
+    "usage.enabled":
+        "Meter token usage on the Stop and SubagentStop hooks. The ledger records "
+        "counts, model ids, timestamps, branch and author — never prompt content.",
+    "usage.ledgerDir":
+        "Where the monthly NDJSON ledger and its scan cursors are written. "
+        "Deliberately outside stateDir, which is garbage-collected: a lost cursor "
+        "would re-scan a transcript from the start and double-count.",
+    "usage.authorMode":
+        "How the spender is recorded: their git email, their git name, a short "
+        "salt-free sha256 (pseudonymous but still groupable), or nobody at all.",
+    "usage.showCost":
+        "Show an equivalent API cost beside the tokens. Labelled 'equiv' because a "
+        "subscription plan carries no per-token bill.",
+    "usage.backfillOnFirstRun":
+        "The first time a transcript is seen, read it from the start instead of "
+        "metering only from now on. Bounded by the scan ceiling below.",
+    "usage.maxScanBytes":
+        "Ceiling in bytes for that first-sight backfill; above it the scan seeks to "
+        "the end, so the 10-second hook timeout stays safe. "
+        "'/audit:usage --backfill' has no ceiling.",
+    "usage.currency": "Currency label printed beside the rates. Default USD.",
+    "usage.pricingAsOf":
+        "The date the rate table below was accurate. Surfaced in the report and the "
+        "Usage tab so a stale rate is visible rather than assumed — until you set it, "
+        "both say the rates are undated rather than showing you a date you never "
+        "chose.",
+    "usage.bands":
+        "Absolute thresholds that sort each task's spend into typical / high / "
+        "outlier. Leave both empty and the bands calibrate from this project's own "
+        "completed tasks (median and p90), which needs no guess to mean something. "
+        "Set both to band by a real budget instead.",
+    "usage.pricing":
+        "Rates in this project's currency per MILLION tokens. Lookup is exact match, "
+        "then longest matching prefix — so a dated model id resolves to its family — "
+        "then the _default row. Leave a cell empty to keep the shipped rate shown in "
+        "it.",
+}
+
+# The manifest levers the Composition tab edits. A separate dict on purpose: these
+# are not config paths, and the coverage selftest above would have to special-case
+# them if they lived in the same namespace.
+COMPOSITION_HELP = {
+    "reviewSkill": "Skill the reviewer agent invokes at phase sign-off. Empty = tests"
+                   " are the only signer.",
+    "buildCommands": "Named shell commands (typecheck / test / lint …) the pipeline "
+                     "runs as gates.",
+    "phaseReviewModel": "Model used for this phase's sign-off review.",
+    "taskModel": "Model the executor uses to implement this task.",
+    "taskSkills": "Skills the executor loads (via the Skill tool) before writing code "
+                  "for this task.",
+}
+
+SETTINGS_GROUPS = (
+    {
+        "id": "paths",
+        "title": "Paths & gate",
+        "blurb": "Where the plugin looks for things, and how hard the plan-first gate "
+                 "pushes. Paths are relative to this project directory. Leave a field "
+                 "empty to use the default shown inside it — nothing is written for a "
+                 "setting you have not changed.",
+        "fields": (
+            {"path": "manifestPath", "label": "The plan", "kind": "text"},
+            {"path": "gitRoot", "label": "Git root", "kind": "text"},
+            {"path": "stateDir", "label": "Hook state", "kind": "text"},
+            {"path": "logsDir", "label": "Hook logs", "kind": "text"},
+            {"path": "bypassKeyword", "label": "Bypass keyword", "kind": "text"},
+            {"path": "trivialLineThreshold", "label": "Free first touch, in lines",
+             "kind": "int", "min": 1},
+            {"path": "enforce", "label": "Always deny edits outside the plan",
+             "kind": "bool"},
+            {"path": "exemptGlobs", "label": "Paths the guards skip", "kind": "list",
+             "placeholder": "glob…"},
+        ),
+    },
+    {
+        "id": "guards",
+        "title": "Write guards",
+        "blurb": "The rules that can REFUSE an edit rather than warn about it. Unlike "
+                 "the plan gate these are never graded on evidence: logging an auth "
+                 "token is wrong whether or not a plan exists.",
+        "fields": (
+            {"path": "bashWriteCheck.enabled",
+             "label": "Warn on unplanned shell writes", "kind": "bool"},
+            {"path": "guardEdits.tokenVars",
+             "label": "Secrets never written to logs", "kind": "custom"},
+            {"path": "secretPatterns.extra",
+             "label": "Extra files treated as secrets", "kind": "custom"},
+            {"path": "guardEdits.customRules", "label": "Your own banned patterns",
+             "kind": "custom"},
+        ),
+    },
+    {
+        "id": "tdd",
+        "title": "TDD reminder",
+        "blurb": "A nudge, never a block. It prints one line when you change source "
+                 "without touching a test, and then leaves you alone for the throttle "
+                 "window.",
+        "fields": (
+            {"path": "tddReminder.enabled", "label": "Nudge when tests are untouched",
+             "kind": "bool"},
+            {"path": "tddReminder.throttleMinutes", "label": "Minutes between nudges",
+             "kind": "number", "min": 0},
+            {"path": "tddReminder.inProgressPolicy",
+             "label": "While an audit task is running", "kind": "enum",
+             "enum": "inProgressPolicy"},
+            {"path": "tddReminder.sourceGlobs", "label": "What counts as source",
+             "kind": "list", "placeholder": "glob…"},
+            {"path": "tddReminder.testGlobs", "label": "What counts as a test",
+             "kind": "list", "placeholder": "glob…"},
+        ),
+    },
+    {
+        "id": "usage",
+        "title": "Usage & pricing",
+        "blurb": "Token metering and the rate table every dollar in the Usage tab is "
+                 "computed from. The ledger holds counts, model ids, timestamps, "
+                 "branch and author — never prompt content.",
+        "fields": (
+            {"path": "usage.enabled", "label": "Meter token usage", "kind": "bool"},
+            {"path": "usage.showCost", "label": "Show equivalent cost", "kind": "bool"},
+            {"path": "usage.backfillOnFirstRun",
+             "label": "Read transcripts already on disk", "kind": "bool"},
+            {"path": "usage.ledgerDir", "label": "Ledger directory", "kind": "text"},
+            {"path": "usage.authorMode", "label": "How the spender is recorded",
+             "kind": "enum", "enum": "authorMode"},
+            {"path": "usage.currency", "label": "Currency label", "kind": "text"},
+            {"path": "usage.pricingAsOf", "label": "Rates accurate as of",
+             "kind": "date"},
+            {"path": "usage.maxScanBytes", "label": "Backfill ceiling, bytes",
+             "kind": "int", "min": 0},
+            {"path": "usage.bands", "label": "Cost bands", "kind": "custom"},
+            {"path": "usage.pricing", "label": "Rates per million tokens",
+             "kind": "custom"},
+        ),
+    },
+)
+
+
+def _settings_paths():
+    """Every config path the Settings form binds a control to."""
+    return [f["path"] for g in SETTINGS_GROUPS for f in g["fields"]]
+
+
+def _cfg_enums():
+    """The enum choices, read off the validator that enforces them.
+
+    Not a copy. `warn-always` was documented in four places, implemented in
+    remind-tdd.py and rejected by validate-config, so following the documentation
+    produced a config the panel refused to save; a hand-kept list of options in the
+    UI is the same failure with one more place to forget."""
+    _, vc, _, _ = _cores()
+    return {"inProgressPolicy": list(vc.IN_PROGRESS_POLICY),
+            "authorMode": list(vc.AUTHOR_MODES)}
+
+
 # --- lazy import of the plugin's own pure cores (hyphenated filenames) ----------
 def _load(modname, path):
     spec = importlib.util.spec_from_file_location(modname, path)
@@ -1279,9 +1514,17 @@ def main(argv):
     ap.add_argument("--stop", action="store_true", help="stop a running panel for --project")
     ap.add_argument("--status", action="store_true", help="report whether a panel is running")
     ap.add_argument("--selftest", action="store_true")
+    # Read by tools/capture-screenshots.mjs, which then asserts the live page has a
+    # control for each one. The list is derived from SETTINGS_GROUPS rather than
+    # restated in the checker, so the browser check cannot go stale against it.
+    ap.add_argument("--settings-paths", action="store_true",
+                    help="print the config paths the Settings form binds, as JSON")
     args = ap.parse_args(argv)
     if args.selftest:
         return _selftest()
+    if args.settings_paths:
+        print(json.dumps(_settings_paths()))
+        return 0
     project = os.path.realpath(args.project)
     if not os.path.isdir(project):
         sys.stderr.write("ERROR: --project %s is not a directory\n" % project)
@@ -1589,6 +1832,59 @@ table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,t
  .urow .bar{display:none}
  .ufil .combo{flex:1 1 100%}
 }
+/* ---- settings ------------------------------------------------------------
+   Four cards over one file. The grouping is the whole point: the config is not a
+   flat bag of keys, it is four decisions (where things are, what may be refused,
+   how loud the nudge is, what a token costs), and a reader looking for one of
+   them should not have to read the other three. */
+.blurb{color:var(--muted);font-size:.8rem;margin:.15rem 0 .75rem;max-width:62ch}
+/* Bottoms, not centres. A label that wraps to two lines is centred against
+   single-line siblings and drags its input half a line down, so one long field name
+   knocks a whole row out of alignment. */
+#guards .row{align-items:end}
+.sub2{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;
+ color:var(--muted);font-weight:700;margin:1.25rem 0 .4rem}
+.sub2 .lbl{gap:.35rem}
+label.f.wide{flex:1 1 100%}
+/* A checkbox and its words are one line, and the words are not a column header. */
+label.f.cbf{flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto}
+label.f.cbf input{margin:0}
+/* Reachable from any of the four cards. A form this long with the Save at the
+   bottom is a form people leave without saving. */
+.savebar{position:sticky;bottom:0;z-index:var(--z-strip);display:flex;gap:.75rem;
+ align-items:center;flex-wrap:wrap;margin:.75rem 0 0;padding:.75rem 1rem;
+ background:color-mix(in srgb,var(--surface) 92%,transparent);
+ backdrop-filter:blur(10px);border:1px solid var(--border);
+ border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
+.savebar .findings-slot{flex:1 1 100%}
+/* Defaults that are ACTIVE, drawn as what they are: real, and not yours yet. */
+.ghost{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;margin-top:.4rem}
+.chip.ghosted{border-style:dashed;color:var(--muted);background:transparent}
+/* A value this browser's regex engine will not accept. Never green for the
+   opposite case: Python's engine is the one that decides, on save. */
+.chip.bad{border-color:var(--err);color:var(--err)}
+input.bad{border-color:var(--err)}
+.ferr{color:var(--err);font-size:.74rem;margin:-.1rem 0 .35rem}
+.rule.rulehead{text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;
+ margin-bottom:.15rem}
+@media(max-width:40rem){.rule.rulehead{display:none}}
+.ptblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow-x:auto;-webkit-overflow-scrolling:touch;max-height:24rem;overflow-y:auto}
+table.ptbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.ptbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:.4rem .5rem;white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.ptbl th.n,table.ptbl td.n{text-align:right}
+table.ptbl td{padding:.25rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.ptbl td input{width:6rem;padding:.2rem .4rem;font-size:.78rem;text-align:right;
+ font-variant-numeric:tabular-nums}
+table.ptbl tbody tr:last-child td{border-bottom:none}
+/* Arriving from a link in another tab: say WHICH field you were sent to, briefly.
+   Scrolling to it silently leaves the reader hunting for what changed. */
+.flash{outline:2px solid var(--accent);outline-offset:3px;border-radius:var(--radius)}
+@media (prefers-reduced-motion:no-preference){
+ .flash{transition:outline-color var(--dur) var(--ease)}}
 .tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .75rem;background:var(--bg)}
 .tsk .h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
 .dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block;background:var(--muted)}
@@ -1723,7 +2019,7 @@ td.tskills{min-width:15rem}
 <div class=shell>
 <nav class=tabs aria-label="Panel sections">
  <p class=navttl>Sections</p>
- <button class="tab on" data-t=guards aria-current="true">Guards &amp; paths</button>
+ <button class="tab on" data-t=guards aria-current="true">Settings</button>
  <button class="tab" data-t=comp>Composition</button>
  <button class="tab" data-t=over>Overview</button>
  <button class="tab" data-t=usage>Usage</button>
@@ -1830,30 +2126,17 @@ function findingsBox(res){const box=el('div');
  return box;}
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;
- renderGuards();renderComp();renderOver();renderUsage();
+ renderSettings();renderComp();renderOver();renderUsage();
  // Restored last, once every view has content to scroll to.
  showTab(initialTab());
  RUNSTATUS=STATE.runStatus||null;startRunPoll();}
 // ---------- shared: info hints + autocomplete ----------
-const DESC={
- manifestPath:"Path to the audit manifest JSON (project-relative). Default docs/audit/audit-plan.json.",
- gitRoot:"Path of the git repo root, where git + build/gate commands run. Default '.' (this dir).",
- stateDir:"Where the hooks keep transactional state files. Default .claude/state.",
- logsDir:"Where the hooks write logs. Default .claude/logs.",
- bypassKeyword:"Type this in a prompt to arm a one-off plan-first bypass for the next edit. Default #no-plan.",
- trivialLineThreshold:"First-touch edits at or under this many lines skip the plan-first gate. Default 80.",
- bashWriteCheck:"Warn when a Bash command creates new source files that weren't planned.",
- tddReminder:"Non-blocking nudge when you edit source without touching a test.",
- exemptGlobs:"Globs whose edits skip the plan-first / TDD / bash-write guards (docs, tests, .claude/**, the manifest).",
- enforce:"Force the plan gate to DENY even with no manifest. Off by default, which grades it on evidence: observe (no manifest) -> warn (manifest, nothing running) -> deny (a phase is in_progress). The secret guards are never graded.",
- tokenVars:"Identifier names that must never be logged — a console.log/print of any of these is blocked.",
- secretPatternsExtra:"Extra regexes that mark a file path as a secret; reading a matching file is blocked.",
- customRules:"Per-path banned patterns: block a regex in new content when the edited path starts with a prefix.",
- reviewSkill:"Skill the reviewer agent invokes at phase sign-off. Empty = tests are the only signer.",
- buildCommands:"Named shell commands (typecheck / test / lint …) the pipeline runs as gates.",
- phaseReviewModel:"Model used for this phase's sign-off review.",
- taskModel:"Model the executor uses to implement this task.",
- taskSkills:"Skills the executor loads (via the Skill tool) before writing code for this task."};
+// The help text, the form's shape and the enum choices all arrive from Python —
+// see FIELD_HELP / SETTINGS_GROUPS / _cfg_enums in this file. They used to be a JS
+// literal here, which is how the form came to cover only part of the config while
+// nothing said so. HELP is keyed by dotted config path; MDESC covers the manifest
+// levers the Composition tab edits, which are not config paths.
+const SETTINGS=__SETTINGS__, HELP=__FIELD_HELP__, MDESC=__COMP_HELP__, ENUMS=__CFG_ENUMS__;
 function hint(t){if(!t)return null;
  const h=el('span',{class:'hint',tabindex:'0','data-tip':t},'i');
  // Measured at open time, not guessed from a breakpoint: whether the bubble fits
@@ -1872,7 +2155,6 @@ function h2h(text,tip){return el('h2',{},text,hint(tip));}
 // camelCase key is not merely shouted, it is WRONG: config keys are
 // case-sensitive, so copying it out of here would produce a setting that silently
 // does nothing.
-function h2k(text,key,tip){return el('h2',{},text,el('code',{class:'k2'},key),hint(tip));}
 function klabel(text,key,tip){return el('span',{class:'lbl'},text,el('code',{class:'k2'},key),hint(tip));}
 // A custom autocomplete: menu opens directly under the input, limited height,
 // clear items (name + source + description), keyboard + click select.
@@ -1903,59 +2185,280 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
  inp.addEventListener('blur',()=>setTimeout(close,150));
  wrap.append(inp,menu);return wrap;}
 
-// ---------- Guards & paths ----------
-function listEditor(getArr,setArr,ph){const wrap=el('div',{class:'pill-in'});
+// ---------- Settings ----------
+// The view id stays `guards`: it is the hash route (#/guards), the screenshot name
+// and what several selftests pin. An internal id is an address, not a description —
+// renaming it would break every link anyone already has for the sake of a word only
+// this file ever sees.
+function listEditor(getArr,setArr,ph,validate){const wrap=el('div',{class:'pill-in'});
  const draw=()=>{wrap.textContent='';(getArr()||[]).forEach((v,i)=>{
-   wrap.append(el('span',{class:'chip'},v,el('button',{onclick:()=>{const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×')));});
+   const bad=validate?validate(v):null;
+   wrap.append(el('span',{class:'chip'+(bad?' bad':''),title:bad||null},v,
+     el('button',{'aria-label':'remove '+v,
+       onclick:()=>{const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×')));});
    const inp=el('input',{placeholder:ph||'add…'});inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&inp.value.trim()){const a=(getArr()||[]).slice();a.push(inp.value.trim());setArr(a);draw();}});
    wrap.append(inp);};draw();return wrap;}
-function renderGuards(){const c=$('#guards');c.textContent='';const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
- const g=(k)=>cfg[k]!==undefined?cfg[k]:d[k];
- const card=el('div',{class:'card'});
- const paths=el('div',{class:'row'});
- for(const k of['manifestPath','gitRoot','stateDir','logsDir','bypassKeyword']){
-  const inp=el('input',{value:cfg[k]??'',placeholder:d[k]});inp.oninput=()=>{if(inp.value==='')delete cfg[k];else cfg[k]=inp.value;};
-  paths.append(el('label',{class:'f'},flabel(k,DESC[k]),inp));}
- const thr=el('input',{type:'number',min:'1',value:cfg.trivialLineThreshold??'',placeholder:d.trivialLineThreshold});
- thr.oninput=()=>{if(thr.value==='')delete cfg.trivialLineThreshold;else cfg.trivialLineThreshold=parseInt(thr.value,10);};
- paths.append(el('label',{class:'f'},flabel('trivialLineThreshold',DESC.trivialLineThreshold),thr));
- card.append(el('h2',{},'Paths'),paths);
- // toggles
- const bw=cfg.bashWriteCheck?{...cfg.bashWriteCheck}:{};const td=cfg.tddReminder?{...cfg.tddReminder}:{};
- const tog=el('div',{class:'row'});
- const mk=(lbl,tip,val,fn)=>{const cb=el('input',{type:'checkbox'});cb.checked=val;cb.onchange=()=>fn(cb.checked);
-  return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,flabel(lbl,tip));};
- const mk2=(lbl,key,tip,val,fn)=>{const cb=el('input',{type:'checkbox'});cb.checked=val;cb.onchange=()=>fn(cb.checked);
-  return el('label',{class:'f',style:'flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto'},cb,klabel(lbl,key,tip));};
- tog.append(mk2('Warn on unplanned shell writes','bashWriteCheck.enabled',DESC.bashWriteCheck,bw.enabled!==false,v=>{bw.enabled=v;cfg.bashWriteCheck=bw;}));
- tog.append(mk2('Nudge when tests are untouched','tddReminder.enabled',DESC.tddReminder,td.enabled!==false,v=>{td.enabled=v;cfg.tddReminder=td;}));
- tog.append(mk2('Always deny edits outside the plan','enforce',DESC.enforce,cfg.enforce===true,v=>{if(v)cfg.enforce=true;else delete cfg.enforce;}));
- card.append(el('h2',{},'Guards'),tog);
- // lists
- card.append(h2k('Paths the guards skip','exemptGlobs',DESC.exemptGlobs),listEditor(()=>cfg.exemptGlobs??d.exemptGlobs,a=>cfg.exemptGlobs=a,'glob…'));
- card.append(h2k('Secrets never written to logs','guardEdits.tokenVars',DESC.tokenVars),
-  listEditor(()=>{cfg.guardEdits=cfg.guardEdits||{};return cfg.guardEdits.tokenVars??d.guardEdits.tokenVars;},
-   a=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.tokenVars=a;},'identifier…'));
- card.append(h2k('Extra files treated as secrets','secretPatterns.extra',DESC.secretPatternsExtra),
-  listEditor(()=>{cfg.secretPatterns=cfg.secretPatterns||{};return cfg.secretPatterns.extra??[];},
-   a=>{cfg.secretPatterns=cfg.secretPatterns||{};cfg.secretPatterns.extra=a;},'regex…'));
- // custom rules
- card.append(h2k('Your own banned patterns','guardEdits.customRules',DESC.customRules));
- const rulesWrap=el('div');const rules=()=>{cfg.guardEdits=cfg.guardEdits||{};cfg.guardEdits.customRules=cfg.guardEdits.customRules||[];return cfg.guardEdits.customRules;};
- const drawRules=()=>{rulesWrap.textContent='';rules().forEach((r,i)=>{
-   const pp=el('input',{value:r.pathPrefix||'',placeholder:'pathPrefix'});pp.oninput=()=>r.pathPrefix=pp.value;
-   const bp=el('input',{value:r.bannedPattern||'',placeholder:'bannedPattern (regex)'});bp.oninput=()=>r.bannedPattern=bp.value;
-   const ms=el('input',{value:r.message||'',placeholder:'message'});ms.oninput=()=>r.message=ms.value;
-   rulesWrap.append(el('div',{class:'rule'},pp,bp,ms,el('button',{class:'btn small',onclick:()=>{rules().splice(i,1);drawRules();}},'×')));});
-   rulesWrap.append(el('button',{class:'btn small',onclick:()=>{rules().push({pathPrefix:'',bannedPattern:'',message:''});drawRules();}},'+ rule'));};
- drawRules();card.append(rulesWrap);
+// Does the browser's engine accept this pattern? A first pass only — the config is
+// compiled by Python's `re` on save, and the two dialects are not the same, so this
+// says "your browser rejects it", never "this is valid".
+function reErr(src){if(!src)return null;
+ try{new RegExp(src);return null;}catch(e){return String(e.message||e);}}
+// Read/write a dotted config path. The form is described by path in Python, so the
+// only alternative would be a getter and a setter per field, hand-written.
+function getPath(o,p){let cur=o;for(const k of p.split('.')){
+  if(cur==null||typeof cur!=='object')return undefined;cur=cur[k];}return cur;}
+function setPath(o,p,v){const ks=p.split('.');let cur=o;
+ for(const k of ks.slice(0,-1)){if(typeof cur[k]!=='object'||cur[k]===null)cur[k]={};cur=cur[k];}
+ cur[ks[ks.length-1]]=v;}
+// An empty field means "use the default", which is written by REMOVING the key, not
+// by storing an empty string — a config listing every default is a config nobody can
+// read, and it also freezes today's defaults into the file.
+function delPath(o,p){const ks=p.split('.');let cur=o;
+ for(const k of ks.slice(0,-1)){if(cur==null||typeof cur[k]!=='object')return;cur=cur[k];}
+ delete cur[ks[ks.length-1]];
+ // Drop the container too if this emptied it, so removing the last usage override
+ // does not leave `"usage": {}` behind.
+ if(ks.length>1){const par=getPath(o,ks.slice(0,-1).join('.'));
+  if(par&&typeof par==='object'&&!Object.keys(par).length)delPath(o,ks.slice(0,-1).join('.'));}}
+const fieldId=p=>'set-'+p;
+// Every "set X in audit.config.json" notice elsewhere in the panel comes here, to
+// the field itself. A notice that names a setting and cannot reach it is a dead end
+// on the one surface built to edit that setting.
+function gotoSetting(path){showTab('guards');
+ requestAnimationFrame(()=>{const t=document.getElementById(fieldId(path));
+  if(!t)return;t.scrollIntoView({block:'center',behavior:'auto'});
+  try{t.focus({preventScroll:true});}catch(e){}
+  t.classList.add('flash');setTimeout(()=>t.classList.remove('flash'),1600);});}
+function settingsLink(text,path){
+ return el('button',{class:'lnk',type:'button',onclick:()=>gotoSetting(path)},text);}
+
+function renderSettings(){const c=$('#guards');c.textContent='';
+ const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
+ const findings=el('div',{class:'findings-slot'});
+ // One `cfg`, one Save: the four cards are one FILE, and saving a quarter of a
+ // document is not a thing this API can do.
  const save=el('button',{class:'btn primary',onclick:async()=>{
-   const res=await api('PUT','/api/config',cfg);const fb=findingsBox(res);
-   c.querySelector('.findings-slot').replaceChildren(fb);
-   toast(res.ok?'config saved':'config rejected',res.ok?'ok':'err');if(res.ok){STATE.config=cfg;}}},'Save config');
- card.append(el('div',{class:'row',style:'margin-top:.9rem'},save),el('div',{class:'findings-slot'}));
- c.append(card);}
+   const res=await api('PUT','/api/config',cfg);
+   findings.replaceChildren(findingsBox(res));
+   toast(res.ok?'settings saved':'settings rejected',res.ok?'ok':'err');
+   if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));}}},'Save settings');
+ const CUSTOM={
+  'guardEdits.tokenVars':()=>tokenVarsField(cfg,d),
+  'secretPatterns.extra':()=>secretPatternsField(cfg),
+  'guardEdits.customRules':()=>customRulesField(cfg),
+  'usage.bands':()=>bandsField(cfg),
+  'usage.pricing':()=>pricingField(cfg,d)};
+ for(const grp of SETTINGS){
+  const card=el('div',{class:'card',id:'setgrp-'+grp.id});
+  card.append(el('h2',{},grp.title));
+  if(grp.blurb)card.append(el('p',{class:'blurb'},grp.blurb));
+  // Ordinary fields flow into a shared row; a custom one gets its own heading and
+  // closes the row before it. The row is APPENDED and replaced, never cloned —
+  // cloneNode copies the elements and drops every listener on them, which would
+  // leave a form that looks complete and edits nothing.
+  let inline=el('div',{class:'row'}),was=null;
+  const flush=()=>{if(inline.childNodes.length){card.append(inline);
+    inline=el('div',{class:'row'});}};
+  for(const f of grp.fields){
+   const tip=HELP[f.path];
+   if(f.kind==='custom'){
+    flush();was=null;
+    card.append(el('h3',{class:'sub2'},klabel(f.label,f.path,tip)),CUSTOM[f.path]());
+    continue;}
+   // Switches and boxes wrap differently — a checkbox is as wide as its words, a
+   // text field claims 15rem — so mixing them in one flex row leaves a ragged edge
+   // that reads as an accident. They get their own rows.
+   const kind=f.kind==='bool'?'bool':'input';
+   if(was&&kind!==was)flush();
+   was=kind;
+   inline.append(kind==='bool'?boolField(cfg,d,f,tip):scalarField(cfg,d,f,tip));}
+  flush();
+  c.append(card);}
+ // Sticky, because the form is now four cards long and a Save you have to go
+ // looking for is a Save people forget to press.
+ c.append(el('div',{class:'savebar'},save,
+   el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));}
+
+function boolField(cfg,d,f,tip){
+ const cur=getPath(cfg,f.path),def=getPath(d,f.path)!==false;
+ const cb=el('input',{type:'checkbox',id:fieldId(f.path)});
+ cb.checked=cur===undefined?def:cur!==false;
+ cb.onchange=()=>{if(cb.checked===def)delPath(cfg,f.path);else setPath(cfg,f.path,cb.checked);};
+ return el('label',{class:'f cbf'},cb,klabel(f.label,f.path,tip));}
+
+function scalarField(cfg,d,f,tip){
+ const cur=getPath(cfg,f.path),def=getPath(d,f.path);
+ let inp;
+ if(f.kind==='enum'){
+  // Options come from the validator's own tuple — see _cfg_enums.
+  inp=el('select',{id:fieldId(f.path)},
+    el('option',{value:''},'default'+(def?' ('+def+')':'')),
+    (ENUMS[f.enum]||[]).map(v=>el('option',Object.assign({value:v},
+      v===cur?{selected:'selected'}:{}),v)));}
+ else if(f.kind==='list'){
+  // The id lands on the editor, not the label: it is what gotoSetting() scrolls to
+  // and focuses, and a label is neither focusable nor the thing you came to edit.
+  const ed=listEditor(()=>getPath(cfg,f.path)??def??[],a=>setPath(cfg,f.path,a),
+    f.placeholder||'add…');
+  ed.id=fieldId(f.path);ed.tabIndex=-1;
+  return el('label',{class:'f wide'},klabel(f.label,f.path,tip),ed);}
+ else{const t=f.kind==='date'?'date':(f.kind==='int'||f.kind==='number')?'number':'text';
+  inp=el('input',Object.assign({type:t,id:fieldId(f.path),value:cur??'',
+    placeholder:def==null?'':String(def)},f.min!=null?{min:String(f.min)}:{}));}
+ inp.oninput=inp.onchange=()=>{const v=inp.value;
+  if(v===''){delPath(cfg,f.path);return;}
+  if(f.kind==='int')setPath(cfg,f.path,parseInt(v,10));
+  else if(f.kind==='number')setPath(cfg,f.path,Number(v));
+  else setPath(cfg,f.path,v);};
+ return el('label',{class:'f'},klabel(f.label,f.path,tip),inp);}
+
+// The three defaults are ACTIVE while this list is empty, and vanish the moment it
+// is not — `_config.token_vars` returns the configured list only when it is
+// non-empty. An empty box that silently means "accessToken, refreshToken, idToken"
+// and a one-entry box that silently means "only that one" look identical, so both
+// states say which they are.
+function tokenVarsField(cfg,d){
+ const defs=d.guardEdits.tokenVars;
+ const box=el('div',{id:fieldId('guardEdits.tokenVars'),tabindex:'-1'});
+ const note=el('div');
+ const cur=()=>{const v=getPath(cfg,'guardEdits.tokenVars');return Array.isArray(v)?v:[];};
+ // Only the notice is redrawn. Rebuilding the list editor would take the caret out
+ // of the box you are typing in, every time you add a name.
+ const draw=()=>{note.textContent='';
+  const list=cur();
+  if(!list.length){
+   note.append(el('div',{class:'ghost'},
+     el('span',{class:'mut small'},'defaults are active:'),
+     defs.map(v=>el('span',{class:'chip ghosted'},v))));return;}
+  const missing=defs.filter(v=>!list.includes(v));
+  if(missing.length)note.append(el('div',{class:'findings warn'},
+    'Your list REPLACES the defaults — it does not add to them. Not covered any '
+    +'more: '+missing.join(', ')+'. ',
+    el('button',{class:'lnk',type:'button',onclick:()=>{
+      const merged=[...missing,...cur()];setPath(cfg,'guardEdits.tokenVars',merged);
+      redraw(merged);}},'put them back')));};
+ let redraw=()=>{};
+ const list=listEditor(cur,a=>{if(a.length)setPath(cfg,'guardEdits.tokenVars',a);
+   else delPath(cfg,'guardEdits.tokenVars');draw();},'identifier…');
+ redraw=()=>{const fresh=listEditor(cur,a=>{
+   if(a.length)setPath(cfg,'guardEdits.tokenVars',a);
+   else delPath(cfg,'guardEdits.tokenVars');draw();},'identifier…');
+  list.replaceWith(fresh);draw();};
+ box.append(list,note);draw();return box;}
+
+function secretPatternsField(cfg){
+ const box=el('div',{id:fieldId('secretPatterns.extra'),tabindex:'-1'});
+ const cur=()=>{const v=getPath(cfg,'secretPatterns.extra');return Array.isArray(v)?v:[];};
+ box.append(listEditor(cur,a=>{if(a.length)setPath(cfg,'secretPatterns.extra',a);
+   else delPath(cfg,'secretPatterns.extra');},'regex…  e.g.  \\.env$',reErr));
+ box.append(el('p',{class:'blurb'},'Regexes, matched case-insensitively anywhere in '
+  +'the path — so ".env" also matches secrets.envelope. Anchor it (\\.env$) when you '
+  +'mean the file. A pattern your browser rejects is marked here; the save is '
+  +'decided by Python’s engine, which is the one the hook uses.'));
+ return box;}
+
+function customRulesField(cfg){
+ const wrap=el('div',{id:fieldId('guardEdits.customRules'),tabindex:'-1'});
+ const rules=()=>{const v=getPath(cfg,'guardEdits.customRules');
+  if(Array.isArray(v))return v;setPath(cfg,'guardEdits.customRules',[]);
+  return getPath(cfg,'guardEdits.customRules');};
+ const draw=()=>{wrap.textContent='';
+  wrap.append(el('div',{class:'rule rulehead mut small'},
+    el('span',{},'path contains'),el('span',{},'banned pattern (regex)'),
+    el('span',{},'message shown when it fires'),el('span',{},'')));
+  rules().forEach((r,i)=>{
+   // `pathPrefix` is the key on disk and stays that, because configs in the field
+   // already use it. The LABEL tells the truth about what it does: the hook tests
+   // `prefix in path` against the path the tool reported, usually absolute.
+   const pp=el('input',{value:r.pathPrefix||'',placeholder:'realtime/'});
+   pp.oninput=()=>r.pathPrefix=pp.value;
+   const bp=el('input',{value:r.bannedPattern||'',placeholder:'\\.removeAllListeners\\('});
+   const err=el('div',{class:'ferr'});
+   const lint=()=>{const e=reErr(bp.value);bp.classList.toggle('bad',!!e);
+     err.textContent=e?'your browser rejects this pattern: '+e:'';};
+   bp.oninput=()=>{r.bannedPattern=bp.value;lint();};lint();
+   const ms=el('input',{value:r.message||'',placeholder:'why this is banned here'});
+   ms.oninput=()=>r.message=ms.value;
+   wrap.append(el('div',{class:'rule'},pp,bp,ms,
+     el('button',{class:'btn small','aria-label':'remove rule '+(i+1),
+       onclick:()=>{rules().splice(i,1);draw();}},'×')),err);});
+  wrap.append(el('button',{class:'btn small',onclick:()=>{
+    rules().push({pathPrefix:'',bannedPattern:'',message:''});draw();}},'+ rule'));
+  wrap.append(el('p',{class:'blurb'},'The path test is a SUBSTRING match, not a '
+   +'prefix — "realtime/" fires under src/realtime/ and packages/web/src/realtime/ '
+   +'alike. A rule missing either field, or whose pattern will not compile, is '
+   +'skipped in silence when the hook runs; saving here refuses it instead.'));};
+ draw();return wrap;}
+
+// The same predicate usage_ledger.cost_bands applies: 0 < high <= outlier, and
+// anything else falls back to the relative basis. Said here, next to the pair,
+// because the fallback is silent everywhere else.
+function bandsField(cfg){
+ const box=el('div',{id:fieldId('usage.bands'),tabindex:'-1'});
+ const row=el('div',{class:'row'}),warn=el('div');
+ const mk=(key,lbl)=>{const p='usage.bands.'+key;
+  const inp=el('input',{type:'number',min:'0',step:'0.01',id:fieldId(p),
+    value:getPath(cfg,p)??'',placeholder:'not set'});
+  inp.oninput=()=>{if(inp.value==='')delPath(cfg,p);else setPath(cfg,p,Number(inp.value));lint();};
+  return el('label',{class:'f'},klabel(lbl,p,null),inp);};
+ const lint=()=>{const hi=getPath(cfg,'usage.bands.highUSD'),
+   ou=getPath(cfg,'usage.bands.outlierUSD');
+  warn.textContent='';
+  if(hi==null&&ou==null){warn.append(el('div',{class:'findings ok'},
+    'Both empty: bands calibrate from this project’s own completed tasks '
+    +'(median and p90), once there are five of them.'));return;}
+  if(hi==null||ou==null){warn.append(el('div',{class:'findings warn'},
+    'Set BOTH or neither — one threshold alone is ignored and the bands fall back '
+    +'to the project-relative basis.'));return;}
+  if(!(hi>0&&hi<=ou))warn.append(el('div',{class:'findings warn'},
+    'high must be above 0 and no greater than outlier. As written this pair is '
+    +'ignored at runtime and the bands fall back to the project-relative basis — '
+    +'silently, which is why it is said here.'));};
+ row.append(mk('highUSD','high above'),mk('outlierUSD','outlier above'));
+ box.append(row,warn);lint();
+ return box;}
+
+function pricingField(cfg,d){
+ const wrap=el('div',{id:fieldId('usage.pricing'),tabindex:'-1'});
+ const COLS=[['in','input'],['out','output'],['cacheW5m','cache w 5m'],
+   ['cacheW1h','cache w 1h'],['cacheR','cache read']];
+ const cur=()=>{const v=getPath(cfg,'usage.pricing');
+  return (v&&typeof v==='object'&&!Array.isArray(v))?v:{};};
+ const draw=()=>{wrap.textContent='';
+  const over=cur(),models=[...new Set([...Object.keys(d.usage.pricing),...Object.keys(over)])].sort();
+  const tbl=el('table',{class:'ptbl'},el('thead',{},el('tr',{},
+    el('th',{},'model'),COLS.map(([,l])=>el('th',{class:'n'},l)),el('th',{}))));
+  const tb=el('tbody');
+  models.forEach(m=>{
+   const def=(d.usage.pricing||{})[m]||{},row=over[m]||{};
+   const tds=COLS.map(([k])=>{
+    const inp=el('input',{type:'number',min:'0',step:'0.01',value:row[k]??'',
+      placeholder:def[k]==null?'—':String(def[k]),'aria-label':m+' '+k});
+    inp.oninput=()=>{const o=cur();
+     if(inp.value===''){if(o[m])delete o[m][k];}
+     else{o[m]=o[m]||{};o[m][k]=Number(inp.value);}
+     if(o[m]&&!Object.keys(o[m]).length)delete o[m];
+     if(Object.keys(o).length)setPath(cfg,'usage.pricing',o);
+     else delPath(cfg,'usage.pricing');};
+    return el('td',{class:'n'},inp);});
+   tb.append(el('tr',{},el('td',{class:'mono'},m),tds,
+     el('td',{},over[m]?el('button',{class:'btn small','aria-label':'reset '+m,
+       title:'drop this override and use the shipped rate',
+       onclick:()=>{const o=cur();delete o[m];
+        if(Object.keys(o).length)setPath(cfg,'usage.pricing',o);
+        else delPath(cfg,'usage.pricing');draw();}},'reset'):null)));});
+  tbl.append(tb);wrap.append(el('div',{class:'ptblwrap'},tbl));
+  const add=el('input',{placeholder:'add a model id…'});
+  add.addEventListener('keydown',e=>{if(e.key!=='Enter'||!add.value.trim())return;
+   const o=cur();o[add.value.trim()]=o[add.value.trim()]||{};
+   setPath(cfg,'usage.pricing',o);add.value='';draw();});
+  wrap.append(el('div',{class:'row'},add));
+  wrap.append(el('p',{class:'blurb'},'Empty means the shipped rate shown in the box, '
+   +'so only what you change is written. An unrecognised model id falls back to the '
+   +'longest matching prefix and then to _default, which is priced at the top tier '
+   +'on purpose: over-stating spend is the safer error for a cost display.'));};
+ draw();return wrap;}
 // ---------- Composition ----------
 function skillPicker(current,onChange){
  const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)'});
@@ -1973,15 +2476,15 @@ function skillChips(getArr,setArr){
  draw();box.append(chips,combo);return box;}
 function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.composition;
  const patch={meta:{},phases:{},tasks:{}};
- const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',DESC.reviewSkill));
+ const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill));
  meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,v=>patch.meta.reviewSkill=v)));
- meta.append(h2h('meta.buildCommands (JSON)',DESC.buildCommands));
+ meta.append(h2h('meta.buildCommands (JSON)',MDESC.buildCommands));
  const bc=el('textarea',{});bc.value=comp.meta.buildCommands?JSON.stringify(comp.meta.buildCommands,null,2):'';
  bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;bc.style.borderColor='';}
   catch(e){bc.style.borderColor='var(--err)';}};
  meta.append(bc);c.append(meta);
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
- const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',DESC.taskSkills));
+ const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills));
  const q=el('input',{type:'search',placeholder:'filter phases & tasks…'});
  const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
  const needsBtn=el('button',{class:'filt',type:'button','aria-pressed':'false',title:'only tasks with no skills yet'},'needs skills');
@@ -2005,7 +2508,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
     (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
     el('span',{class:'st','data-status':ph.status||''},label(ph.status)),
     el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
-    el('span',{class:'comp-review'},flabel('review',DESC.phaseReviewModel),rev))));
+    el('span',{class:'comp-review'},flabel('review',MDESC.phaseReviewModel),rev))));
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
   tbody.append(pr);
   const taskEls=[];
@@ -2687,9 +3190,10 @@ function openBrowse(dim,title,facts){
        : 'this project’s own completed tasks, median/p90')
      +' — typical ≤ '+uCost(bi.high)+' · high ≤ '+uCost(bi.outlier)
      +' · outlier above'
-   : 'cost band: not shown — needs '+bi.gate+' completed tasks to calibrate, '
-     +'there are '+bi.sample+'. Set usage.bands.highUSD/outlierUSD to band by an '
-     +'absolute budget instead.');
+   : ['cost band: not shown — needs '+bi.gate+' completed tasks to calibrate, '
+      +'there are '+bi.sample+'. ',
+      settingsLink('Set absolute thresholds instead','usage.bands'),
+      ' to band by a budget rather than by this project’s own history.']);
  const search=el('input',{type:'search',placeholder:'search '+dim+'…'});
  // An <input type=search> eats the FIRST Escape to clear itself, so the dialog
  // only closed on the second press - which reads as the key being broken. One
@@ -2754,12 +3258,15 @@ function openBrowse(dim,title,facts){
 function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
  const card=el('div',{class:'card'});
  if(!USAGE||!USAGE.facts.length){
-  card.append(el('div',{class:'mut'},USAGE&&!USAGE.enabled
-   ?'Token metering is off (usage.enabled=false in .claude/audit.config.json).'
-   :'No usage recorded yet. Metering runs on the Stop/SubagentStop hooks; '
-    +'"/audit:usage --backfill" reads transcripts already on disk.'),
+  card.append(USAGE&&!USAGE.enabled
+   ?el('div',{class:'mut'},'Token metering is off — ',
+     settingsLink('turn it back on in Settings','usage.enabled'),'.')
+   :el('div',{class:'mut'},'No usage recorded yet. Metering runs on the '
+     +'Stop/SubagentStop hooks; "/audit:usage --backfill" reads transcripts already '
+     +'on disk.'),
    el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
-     'ledger: '+((USAGE||{}).ledgerDir||'-')));
+     'ledger: '+((USAGE||{}).ledgerDir||'-'),' · ',
+     settingsLink('change where it is written','usage.ledgerDir')));
   c.append(card);return;}
 
  // context line: the shape of the ledger, at zero card weight
@@ -2775,10 +3282,14 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
  // MERGED config, so it is set even when this project never chose it — printing it
  // unconditionally would present the default table's date as the project's own.
  // `pricingAsOfDeclared` is the server saying which of the two it is.
- if(USAGE.showCost)bits.push(USAGE.pricingAsOfDeclared
-   ?'rates as of '+USAGE.pricingAsOf
-   :'rates undated (set usage.pricingAsOf)');
- card.append(el('div',{class:'uctx'},bits.join(' - ')));
+ if(USAGE.showCost&&USAGE.pricingAsOfDeclared)bits.push('rates as of '+USAGE.pricingAsOf);
+ const ctx=el('div',{class:'uctx'},bits.join(' - '));
+ // This used to end the sentence with "set usage.pricingAsOf" — an instruction to
+ // go and edit a file, printed on the surface built to edit that file. Now it is
+ // the way there.
+ if(USAGE.showCost&&!USAGE.pricingAsOfDeclared)ctx.append(' - ',
+   settingsLink('rates undated: date them in Settings','usage.pricingAsOf'));
+ card.append(ctx);
 
  // filters: typeahead for the high-cardinality dimensions, select for range
  const uniq=dim=>[...new Set(USAGE.facts.map(f=>f[F[dim]]).filter(Boolean))].sort();
@@ -2928,6 +3439,17 @@ boot().catch(e=>toast('load failed: '+e,'err'));
 # asks `... in UI_HTML` still sees the whole finished stylesheet.
 UI_HTML = UI_HTML.replace("/*__THEME_TOKENS__*/", _theme.TOKEN_CSS)
 UI_HTML = UI_HTML.replace("__LABELS__", json.dumps(_theme.LABELS, sort_keys=True))
+# `ensure_ascii=False` because the page is served as UTF-8 and this prose contains
+# em dashes and curly apostrophes like the rest of it. \uXXXX escapes would render
+# identically but leave the copy unreadable in the source and ungreppable by the
+# selftests, which is how a sentence gets edited in one place and pinned in another.
+_JS_JSON = dict(sort_keys=True, ensure_ascii=False)
+UI_HTML = UI_HTML.replace("__SETTINGS__", json.dumps(SETTINGS_GROUPS, **_JS_JSON))
+UI_HTML = UI_HTML.replace("__FIELD_HELP__", json.dumps(FIELD_HELP, **_JS_JSON))
+UI_HTML = UI_HTML.replace("__COMP_HELP__", json.dumps(COMPOSITION_HELP, **_JS_JSON))
+# Loads validate-config, so it runs at import rather than in the string above. The
+# enums are the validator's own tuples — see _cfg_enums.
+UI_HTML = UI_HTML.replace("__CFG_ENUMS__", json.dumps(_cfg_enums(), sort_keys=True))
 
 
 # --- selftest -------------------------------------------------------------------
@@ -3172,10 +3694,10 @@ def _selftest():
           "/api/runstatus" in UI_HTML
           and _run_status(tmp, {}, {}) is not None)
     check("D9: and the poll repaints ONLY Overview - re-rendering from full state "
-          "would discard whatever is half-typed in the guards form",
+          "would discard whatever is half-typed in the settings form",
           "if(!$('#over').classList.contains('hidden'))renderOver();" in UI_HTML
-          and "renderGuards()" not in UI_HTML[UI_HTML.index("async function pollRunStatus"):
-                                              UI_HTML.index("// ---------- Overview")])
+          and "renderSettings()" not in UI_HTML[UI_HTML.index("async function pollRunStatus"):
+                                                UI_HTML.index("// ---------- Overview")])
     check("D9: it skips identical payloads rather than repainting on a timer",
           "runStatusKey(next)===runStatusKey(RUNSTATUS)" in UI_HTML)
     check("D9: it stops while the tab is hidden, and catches up on return",
@@ -3214,23 +3736,109 @@ def _selftest():
           "function comboWrap(" in UI_HTML and "combo-menu" in UI_HTML
           and "<datalist" not in UI_HTML and "list:" not in UI_HTML)
     check("UI labels carry info hints", "function hint(" in UI_HTML and "data-tip" in UI_HTML)
-    # --- settings are named by what they do -----------------------------------
-    # Every heading in the guards card used to BE a JSON path, uppercased by the h2
-    # rule: "GUARDEDITS.TOKENVARS (NEVER LOGGED)". That reads as a config dump and
-    # assumes the reader already knows the schema they came here to learn.
-    for human, key in (("Secrets never written to logs", "guardEdits.tokenVars"),
-                       ("Extra files treated as secrets", "secretPatterns.extra"),
-                       ("Paths the guards skip", "exemptGlobs"),
-                       ("Your own banned patterns", "guardEdits.customRules"),
-                       ("Warn on unplanned shell writes", "bashWriteCheck.enabled"),
-                       ("Nudge when tests are untouched", "tddReminder.enabled"),
-                       ("Always deny edits outside the plan", "enforce")):
-        check("the %r setting is named by what it does, with %r kept beside it"
-              % (human, key),
-              ("'%s'" % human) in UI_HTML and ("'%s'" % key) in UI_HTML)
-    check("no heading is a bare JSON path any more",
-          "h2h('guardEdits" not in UI_HTML and "h2h('secretPatterns" not in UI_HTML
-          and "h2h('exemptGlobs'" not in UI_HTML)
+    # --- Settings: the whole config, named by what it does ---------------------
+    # The claim this tab makes is "here is the configuration". It was not true: the
+    # form covered part of the config and nothing anywhere said which part, so the
+    # `usage.*` block and four of five `tddReminder.*` keys were invisible on the one
+    # surface built to make them legible.
+    #
+    # The expected set is DERIVED from validate-config's own key sets rather than
+    # listed here. A hand-kept list would be a third place to forget a key — the
+    # exact failure this chunk exists to fix, one level up.
+    _vc = _cores()[1]
+    _containers = {"secretPatterns": _vc.KNOWN_SECRET, "guardEdits": _vc.KNOWN_GUARD,
+                   "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
+                   "usage": _vc.KNOWN_USAGE}
+    _expected = {k for k in _vc.KNOWN_ROOT if k not in _containers}
+    for _parent, _keys in _containers.items():
+        _expected |= {"%s.%s" % (_parent, k) for k in _keys}
+    _bound = set(_settings_paths())
+    check("Settings binds a control to EVERY key the validator accepts - the "
+          "missing ones were the whole usage block and most of tddReminder",
+          _bound == _expected,)
+    if _bound != _expected:
+        print("     missing: %s" % sorted(_expected - _bound))
+        print("     unknown: %s" % sorted(_bound - _expected))
+    check("every bound setting has help text, and no help text names a key the "
+          "validator does not know",
+          set(FIELD_HELP) == _bound)
+    check("no path is bound twice (a duplicate would render two controls writing "
+          "the same key)", len(_settings_paths()) == len(_bound))
+    # Named by what they DO, with the key beside them. Every heading used to BE a
+    # JSON path, uppercased by the h2 rule: "GUARDEDITS.TOKENVARS". That reads as a
+    # config dump and assumes the schema the reader came here to learn.
+    for _g in SETTINGS_GROUPS:
+        for _f in _g["fields"]:
+            check("%r is labelled %r rather than shown as a bare key"
+                  % (_f["path"], _f["label"]),
+                  bool(_f["label"]) and _f["label"] != _f["path"]
+                  and not _f["label"][0].islower())
+    check("the four groups are the four decisions the config makes, not one list",
+          tuple(g["id"] for g in SETTINGS_GROUPS)
+          == ("paths", "guards", "tdd", "usage")
+          and all(g["blurb"] for g in SETTINGS_GROUPS))
+    check("the form's shape, its help and its enums are injected from Python - "
+          "the JS literal they replaced is what let the two drift",
+          "const DESC={" not in UI_HTML
+          and "const SETTINGS=" in UI_HTML and "__SETTINGS__" not in UI_HTML
+          and "__FIELD_HELP__" not in UI_HTML and "__CFG_ENUMS__" not in UI_HTML
+          and FIELD_HELP["usage.pricingAsOf"] in UI_HTML)
+    # `warn-always` was documented in four places, implemented, and rejected by the
+    # validator — so following the docs produced a config the panel refused to save.
+    # A hand-kept <option> list is that failure with one more place to forget.
+    check("the enum choices ARE the validator's tuples, not a copy of them",
+          json.dumps(_cfg_enums(), sort_keys=True) in UI_HTML
+          and set(_cfg_enums()["inProgressPolicy"]) == set(_vc.IN_PROGRESS_POLICY)
+          and set(_cfg_enums()["authorMode"]) == set(_vc.AUTHOR_MODES))
+    check("an empty field REMOVES the key rather than writing an empty string - a "
+          "config listing every default is unreadable and freezes today's defaults",
+          "function delPath(" in UI_HTML and "delPath(cfg,f.path)" in UI_HTML)
+    check("and it drops the container it emptied, so no \"usage\": {} is left behind",
+          "if(par&&typeof par==='object'&&!Object.keys(par).length)" in UI_HTML)
+    check("Settings keeps the route, the screenshot name and the pinned id it "
+          "already had - an internal id is an address, not a description",
+          "data-t=guards aria-current=\"true\">Settings<" in UI_HTML
+          and "$('#guards')" in UI_HTML)
+    check("one Save for four cards, and it is reachable from all of them",
+          UI_HTML.count("'/api/config'") == 1 and ".savebar{position:sticky" in UI_HTML)
+    # --- the three facts the form has to state out loud ------------------------
+    check("tokenVars: an empty box means the three defaults are ACTIVE, and says so "
+          "rather than looking like nothing is protected",
+          "'defaults are active:'" in UI_HTML and "chip ghosted" in UI_HTML)
+    check("tokenVars: and a non-empty one warns that the list REPLACES them, "
+          "naming what stopped being covered",
+          "Your list REPLACES the defaults" in UI_HTML
+          and "'put them back'" in UI_HTML)
+    check("secret patterns say regex-not-glob, with the anchor a reader needs",
+          "matched case-insensitively anywhere in " in UI_HTML
+          and "\\\\.env$" in UI_HTML)
+    check("custom rules are labelled 'path contains' and say SUBSTRING, because "
+          "four documents said 'starts with' while the hook tested `prefix in path`",
+          "'path contains'" in UI_HTML
+          and "The path test is a SUBSTRING match, not a '" in UI_HTML
+          and "starts with" not in UI_HTML)
+    check("both guard fields state the silent skip - a malformed rule is dropped "
+          "without a word at runtime, and saving here refuses it instead",
+          UI_HTML.count("skipped in silence") >= 1
+          and "dropped in silence at runtime" in FIELD_HELP["secretPatterns.extra"])
+    check("a regex the browser rejects is marked, and the microcopy does NOT claim "
+          "the reverse - Python's engine is the one that decides on save",
+          "function reErr(" in UI_HTML
+          and "your browser rejects this pattern: " in UI_HTML
+          and "decided by Python’s engine" in UI_HTML)
+    check("the band pair is linted against the SAME predicate cost_bands applies, "
+          "and names the fallback that is otherwise silent",
+          "if(!(hi>0&&hi<=ou))" in UI_HTML
+          and "fall back to the project-relative basis" in UI_HTML)
+    check("usage.bands is a legitimate key now, so the pair the README documents "
+          "no longer warns from the plugin's own validator",
+          "bands" in _vc.KNOWN_USAGE
+          and _vc.validate_config(
+              {"usage": {"bands": {"highUSD": 4, "outlierUSD": 12}}}) == ([], []))
+    check("pricing rows write only what you change - an empty cell keeps the "
+          "shipped rate rather than storing a copy of it",
+          "if(inp.value===''){if(o[m])delete o[m][k];}" in UI_HTML
+          and "delPath(cfg,'usage.pricing')" in UI_HTML)
     check("the key beside a heading keeps its own case - h2 is uppercased and a "
           "config key is case-sensitive, so an uppercased one cannot be pasted back",
           ".k2{" in UI_HTML and "text-transform:none" in UI_HTML[
@@ -3326,12 +3934,25 @@ def _selftest():
     # present the default table's date as the project's own.
     check("the usage tab names the rate table behind its costs",
           "rates as of '+USAGE.pricingAsOf" in UI_HTML
-          and "rates undated (set usage.pricingAsOf)" in UI_HTML)
+          and "'rates undated: date them in Settings','usage.pricingAsOf'" in UI_HTML)
     check("and it decides on pricingAsOfDeclared, not on the merged value, so a "
           "default date is never shown as the project's own",
           "USAGE.pricingAsOfDeclared" in UI_HTML)
     check("withheld with the dollars when showCost is off",
-          "if(USAGE.showCost)bits.push(USAGE.pricingAsOfDeclared" in UI_HTML)
+          "if(USAGE.showCost&&USAGE.pricingAsOfDeclared)bits.push" in UI_HTML
+          and "if(USAGE.showCost&&!USAGE.pricingAsOfDeclared)ctx.append" in UI_HTML)
+    # Every one of these used to end with an instruction to go and edit a JSON file
+    # by hand - printed on the surface whose whole job is editing that file.
+    check("no notice in Usage tells you to set a config value without taking you "
+          "to it",
+          "function gotoSetting(" in UI_HTML
+          and "function settingsLink(" in UI_HTML
+          and UI_HTML.count("settingsLink(") >= 5
+          and ".claude/audit.config.json)" not in UI_HTML
+          and "Set usage.bands.highUSD/outlierUSD" not in UI_HTML)
+    check("and arriving there says which field you were sent to, rather than "
+          "scrolling somewhere silently",
+          "t.classList.add('flash')" in UI_HTML and ".flash{outline:" in UI_HTML)
     check("_declared_as_of separates a project's own value from the default",
           _declared_as_of({"usage": {"pricingAsOf": "2026-01-02"}}) is True
           and _declared_as_of({"usage": {"showCost": True}}) is False

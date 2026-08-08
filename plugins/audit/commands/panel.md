@@ -34,10 +34,13 @@ run it themselves; in a Node repo `npm run panel` / `npm run panel:stop` is the 
 otherwise `python3 "$PANEL" --project "$(pwd)"`.
 
 ## What the panel does (summary for the user)
-- **Guards & paths** — a form over `.claude/audit.config.json` (paths, `exemptGlobs`,
-  `guardEdits.tokenVars` / `customRules`, `secretPatterns.extra`, `tddReminder`,
-  `bashWriteCheck`); each field has an ⓘ hint. Validated against
-  `schema/audit-config.schema.json`; saves atomically, refuses invalid input.
+- **Settings** — a form over the **whole** of `.claude/audit.config.json`, in four groups:
+  *Paths & gate*, *Write guards*, *TDD reminder*, *Usage & pricing* — including the rate
+  table, the cost bands and the TDD globs, which previously had no control at all. Each field
+  is named by what it does with its JSON key beside it and an ⓘ hint; an empty field removes
+  the key rather than writing a default. Regexes and the band pair are checked as you type;
+  the save is decided by `validate-config.py`, which refuses invalid input, and writes
+  atomically. Every "set X in the config" notice elsewhere in the panel links here.
 - **Composition** — set `meta.reviewSkill`, per-task `skills[]` / `model`, per-phase
   `review.model`, `meta.buildCommands` — via an autocomplete **populated by discovery** of
   the skills & agents actually available (project `.claude/`, `~/.claude/`, installed
