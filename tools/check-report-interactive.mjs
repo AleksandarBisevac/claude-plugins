@@ -144,17 +144,110 @@ if (hit.phases < 1 || hit.phases >= load.total) {
 if (!/\d+\s*\/\s*\d+/.test(hit.count)) {
   failures.push(`FAIL the count reports the filtered total: got "${hit.count}"`);
 } else notes.push(`ok   the count reports the filtered total: "${hit.count}"`);
+// A TEXT filter is the one that used to force its matches open — one character
+// typed grew the page by screens and scrolled away what was being read, and
+// clearing it afterwards shut rows that had been opened by hand. Asserted here
+// rather than in a string pin, because `expanded[pid]` reads identically either
+// way: only a browser can say whether the rows are on screen.
+expect('a text filter does not auto-expand the phases it matches', hit.tasks, 0);
 await page.keyboard.press('Escape');
 await page.waitForTimeout(250);
 
+// ...and the closed row has to say WHY it survived, which is what replaces the
+// expansion: a row reading "1 of 3 match" is a row worth opening. That needs a
+// term matching some of a phase's tasks and not the phase's own heading — a term
+// the heading carries makes every task a match, and "3 of 3" is deliberately not
+// drawn. Found in the document rather than hard-coded, so this works on any report.
+const partial = await page.evaluate(() => {
+  const g = document.querySelector('table.phases');
+  const q = (sel) => [...g.querySelectorAll(sel)];
+  for (const pr of q('tbody tr.phase')) {
+    const pid = pr.getAttribute('data-phase');
+    const sibs = q('tbody tr.task').filter((t) => t.getAttribute('data-phase') === pid);
+    if (sibs.length < 2) continue;
+    const head = pr.textContent.toLowerCase();
+    for (const t of sibs) {
+      for (const w of t.textContent.match(/[A-Za-z]{5,}/g) || []) {
+        const term = w.toLowerCase();
+        if (head.includes(term)) continue;
+        const hits = sibs.filter((s) => s.textContent.toLowerCase().includes(term)).length;
+        if (hits > 0 && hits < sibs.length) return { term, hits, of: sibs.length };
+      }
+    }
+  }
+  return null;
+});
+if (!partial) {
+  notes.push('ok   (no phase in this plan has a partly-matching task set — badge check skipped)');
+} else {
+  await page.click('#audit-q');
+  await page.keyboard.type(partial.term, { delay: 5 });
+  await page.waitForTimeout(250);
+  const shown = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.phase')]
+      .filter((r) => r.style.display !== 'none')
+      .map((r) => { const b = r.querySelector('.pmatch'); return b && !b.hidden ? b.textContent : ''; })
+      .filter(Boolean));
+  const wanted = `${partial.hits} of ${partial.of} match`;
+  if (!shown.includes(wanted)) {
+    failures.push(`FAIL a collapsed phase states how many of its tasks matched: wanted "${wanted}", got ${JSON.stringify(shown)}`);
+  } else notes.push(`ok   a collapsed phase states its own match count: "${wanted}"`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+}
+
 // 4. A status chip in the toolbar.
-if (await page.$('.fchip')) {
-  await page.click('.fchip');
+if (await page.$('#audit-phase-status .fchip')) {
+  await page.click('#audit-phase-status .fchip');
   await page.waitForTimeout(250);
   const chip = await state();
   if (chip.phases === load.total) failures.push('FAIL a status chip filters the phase list: nothing changed');
   else notes.push(`ok   a status chip filters the phase list: ${chip.phases} of ${load.total}`);
+
+  expect('a status chip does not auto-expand either', chip.tasks, 0);
+  await page.click('#audit-phase-status .fchip');   // release it
+  await page.waitForTimeout(250);
+  expect('releasing the chip restores every phase', (await state()).phases, load.total);
 } else notes.push('ok   (no status chips in this report — skipped)');
+
+// 6. The More-filters panel: model, and the empty state that offers a way back.
+//    Skipped rather than failed on a plan that records no models — the panel is
+//    emitted from the data, so its absence there is correct.
+if (await page.$('#audit-model .fchip')) {
+  await page.click('.fdetails > summary');
+  await page.waitForTimeout(80);
+  await page.click('#audit-model .fchip');
+  await page.waitForTimeout(250);
+  const m = await state();
+  if (m.phases < 1 || m.phases > load.total) {
+    failures.push(`FAIL a model chip narrows the table: got ${m.phases} of ${load.total}`);
+  } else notes.push(`ok   a model chip narrows the table: ${m.phases} of ${load.total}`);
+  if (!/#!.*m=/.test(await page.evaluate(() => location.hash))) {
+    failures.push(`FAIL the filtered view is a link: hash is "${await page.evaluate(() => location.hash)}"`);
+  } else notes.push('ok   the filtered view is written into the URL');
+
+  // Model AND a text term that cannot co-occur: nothing survives, and the empty
+  // state has to appear with the one control that undoes all of it.
+  await page.click('#audit-q');
+  await page.keyboard.type('zzzznotpresentanywhere', { delay: 5 });
+  await page.waitForTimeout(250);
+  const empty = await state();
+  expect('filtered to nothing, no phase is left', empty.phases, 0);
+  const emptyShown = await page.evaluate(() => {
+    const r = document.querySelector('tr.norows');
+    return !!r && r.style.display !== 'none';
+  });
+  expect('...and the table says so instead of showing an empty frame', emptyShown, true);
+  // The TOOLBAR copy, deliberately: with the panel open, the empty state's own
+  // button lands underneath it and cannot be clicked. That is how this line came
+  // to exist — the first version clicked the one in the table and timed out
+  // against the date input covering it.
+  await page.click('.sectools [data-clear]');
+  await page.waitForTimeout(250);
+  expect('Clear filters puts every phase back', (await state()).phases, load.total);
+  expect('...and takes the filter fragment out of the URL with it',
+    /#!/.test(await page.evaluate(() => location.hash)), false);
+} else notes.push('ok   (this plan records no models — More filters skipped)');
 
 if (pageErrors.length) failures.push(`FAIL the page raised ${pageErrors.length} error(s): ${pageErrors.slice(0, 3).join(' | ')}`);
 else notes.push('ok   no page errors');
