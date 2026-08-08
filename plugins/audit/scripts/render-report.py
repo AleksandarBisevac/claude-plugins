@@ -33,6 +33,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the panel)
 
 
 def _plugin_version():
@@ -59,112 +60,7 @@ def _plugin_version():
 # Risk chips render only for these levels:
 _RISK_LEVELS = ("low", "med", "high")
 
-_CSS = """
-/* ---- design tokens (Slate & Teal) ---------------------------------------- */
-:root{
-  color-scheme:light dark;
-  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
-  --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
-  --bg:#f5f7fb;--surface:#ffffff;--surface-2:#eef2f7;--text:#0f172a;--muted:#64748b;
-  --border:#e2e8f0;--border-strong:#cbd5e1;
-  --accent:#0d9488;--accent-solid:#0d9488;--ring:rgba(13,148,136,.35);
-  --st-done:#15803d;--st-prog:#f59e0b;--st-blocked:#dc2626;--st-pending:#64748b;
-  --chip-ink:#ffffff;
-  --rk-low-bg:#dcfce7;--rk-low-fg:#166534;--rk-med-bg:#fef9c3;--rk-med-fg:#854d0e;
-  --rk-high-bg:#fee2e2;--rk-high-fg:#b91c1c;
-  /* Usage viz. Categorical slots carry MODEL identity (assigned by name, never by
-     rank, so a filter can't repaint the survivors). Palette validated for CVD and
-     contrast against this report's own surfaces with the dataviz validator:
-     light worst-adjacent CVD dE 9.1 / normal-vision 19.6 - dark 8.4 / 19.3. Three
-     light slots sit under 3:1, which the per-phase token/cost table relieves. */
-  --viz-1:#2a78d6;--viz-2:#eb6834;--viz-3:#1baf7a;--viz-4:#eda100;
-  --viz-5:#e87ba4;--viz-6:#008300;--viz-7:#4a3aa7;--viz-8:#e34948;
-  /* Sequential single-hue ramp for the day x hour heatmap: light -> dark, zero
-     recedes into the surface. Never a rainbow. */
-  --hm-0:#eef2f7;--hm-1:#cde2fb;--hm-2:#9ec5f4;--hm-3:#6da7ec;
-  --hm-4:#3987e5;--hm-5:#256abf;--hm-6:#0d366b;--hm-ink:#ffffff;
-  /* Magnitude-only bars (phase, author, task). Deliberately NOT --accent and
-     deliberately low-chroma: it must not read as a series colour. Validated
-     against all 8 viz slots on this surface - worst normal-vision dE 16.4,
-     worst CVD dE 7.5, which the 6-8 band permits because every bar wearing it
-     carries a direct text label. */
-  --bar-neutral:#5c636d;
-  /* The gate rail. The line is STRUCTURE and carries no state — it is one colour
-     the whole way down, so the only thing that changes along it is the gates. It
-     dims below a gate that is closed, because nothing behind that gate can be
-     worked on. Before this the left border repeated each row's status colour,
-     which made the spine a second copy of the chip beside it rather than a
-     drawing of what holds what. */
-  --rail:#9aa8bd;--rail-held:#dfe5ee;
-  --radius:9px;--radius-lg:14px;--pill:999px;
-  --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
-  --shadow-md:0 10px 30px rgba(15,23,42,.14);
-  --dur:.22s;--ease:cubic-bezier(.4,0,.2,1);
-  /* 8pt spacing scale + 3 text levels. Introduced so spacing stops being
-     ad-hoc: every margin/padding/gap below snaps to one of these steps, which is
-     what makes the vertical rhythm read as deliberate rather than accidental.
-     Spacing and type are theme-independent, so unlike the colour tokens these are
-     declared ONCE and are not repeated in the dark blocks. */
-  --sp-0:.25rem;--sp-1:.5rem;--sp-2:.75rem;--sp-3:1rem;
-  --sp-4:1.5rem;--sp-5:2rem;--sp-6:3rem;--sp-7:4rem;
-  --t-1:1.7rem;--t-2:1.0625rem;--t-3:.875rem;--t-label:.68rem;
-  /* ---- the sticky stack ---------------------------------------------------
-     Three things pin to the top of this document — the bar, the mobile nav strip
-     and the table's filter row — and a fourth (the column headers) has to pin
-     below all of them. Every one of those offsets used to be a hand-tuned
-     constant: 4.1rem for the nav, 3.6rem for the filter bar, 3.5rem for the
-     headers, 6.6rem for the filter bar again below 72rem. Four guesses at one
-     number, and none of them was right: the bar measures 70px, so the filter bar
-     pinned 12px UNDER it and the column headers pinned above the filter bar and
-     were painted out of existence entirely.
-
-     Now there is one measurement and everything derives from it. --topbar-h is
-     restated at runtime from the bar's own height (it depends on the title, the
-     viewport and the font), so the stack cannot drift from what is on screen;
-     the values here are the no-JS fallback and are deliberately generous. */
-  --topbar-h:4.4rem;--strip-h:0rem;--sectools-h:3.9rem;
-  --sticky-1:var(--topbar-h);
-  --sticky-2:calc(var(--sticky-1) + var(--strip-h));
-  --sticky-3:calc(var(--sticky-2) + var(--sectools-h));
-  /* Painting order for those same layers. Lower pins deeper: the column headers
-     must slide UNDER the filter bar, which slides under the bar. */
-  --z-topbar:30;--z-strip:20;--z-sectools:15;--z-thead:10;
-}
-/* dark tokens: OS default (JS off) + explicit toggle. --theme=light pins light. */
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
-  --border:#1f2b40;--border-strong:#33425c;
-  --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
-  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
-  --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
-  --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
-  --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
-  --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
-  --bar-neutral:#a6adb8;
-  --rail:#4a5c7d;--rail-held:#1b2740;
-  /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
-     zero still recedes into the surface, so the ramp runs dark -> light. */
-  --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
-  --hm-4:#2a78d6;--hm-5:#5598e7;--hm-6:#9ec5f4;--hm-ink:#07130f;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)
-}}
-:root[data-theme="dark"]{
-  --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
-  --border:#1f2b40;--border-strong:#33425c;
-  --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
-  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
-  --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
-  --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
-  --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
-  --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
-  --bar-neutral:#a6adb8;
-  --rail:#4a5c7d;--rail-held:#1b2740;
-  /* Dark heatmap steps are SELECTED for the dark surface, not an inverted copy:
-     zero still recedes into the surface, so the ramp runs dark -> light. */
-  --hm-0:#172236;--hm-1:#104281;--hm-2:#184f95;--hm-3:#1c5cab;
-  --hm-4:#2a78d6;--hm-5:#5598e7;--hm-6:#9ec5f4;--hm-ink:#07130f;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)
-}
+_CSS = _theme.TOKEN_CSS + """
 /* one status token drives both the pipeline rail and the status chip */
 [data-status="done"],[data-status="fixed"]{--st:var(--st-done)}
 [data-status="in_progress"],[data-status="triaged"]{--st:var(--st-prog)}
@@ -216,7 +112,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
 .tb-id .meta{font-size:.72rem}
 .tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
-.shell{display:grid;grid-template-columns:14.5rem minmax(0,1fr);gap:2.5rem;
+.shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
   max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
 .content{min-width:0}
 /* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
@@ -1354,98 +1250,12 @@ def _bar(done, total):
             '<span class="muted">%d/%d</span>' % (pct, done, total))
 
 
-def _undeclared_css_vars(css):
-    """Custom properties referenced by var() but never declared anywhere.
-
-    This check exists because the failure mode is SILENT and total: an undeclared
-    `var(--x)` makes the whole declaration invalid at computed-value time, so the
-    property falls back to its INITIAL value rather than to the stylesheet rule
-    underneath it. An undeclared colour token therefore paints transparent — a bar
-    chart with no bars — and logs nothing. That is exactly how `--bar-neutral`
-    shipped invisible in light mode once."""
-    declared = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", css))
-    # Only FALLBACK-LESS references are dangerous. `var(--x, something)` degrades
-    # gracefully by design, and tokens set inline per element from Python (--w on a
-    # progress fill, --sc on a sparkline) are always written that way for exactly
-    # this reason.
-    used = set(re.findall(r"var\(\s*(--[A-Za-z0-9_-]+)\s*\)", css))
-    return sorted(used - declared)
-
-
-def _unterminated_css_decls(css):
-    """Custom-property declarations that run past their line without a `;`.
-
-    A custom property's value is almost anything up to the next `;` or the block's
-    closing `}` — comments and later declarations included. So a missing semicolon
-    does not raise; it silently ANNEXES whatever follows. One missing `;` after
-    `--ease` swallowed a five-line comment plus the `--sp-0` declaration, which cost
-    two things at once: `--ease` became a garbage multi-line value, making every
-    `animation`/`transition` shorthand that referenced it invalid at computed-value
-    time (so the report's progress-bar fill, card and button transitions and the
-    heading fade were all dead), and `--sp-0` was never declared at all.
-
-    `_undeclared_css_vars` cannot see this: the annexed text still reads as
-    `--sp-0:` to a regex looking for declarations, so the token appears declared.
-    That is why this is a separate check rather than a stricter one.
-
-    Omitting the `;` on the LAST declaration in a block is legal and common, so a
-    line only counts when more content follows before the block closes."""
-    bad, lines = [], css.split("\n")
-    for i, raw in enumerate(lines):
-        line = raw.strip()
-        if not re.search(r"--[A-Za-z0-9_-]+\s*:", line):
-            continue
-        if line.endswith((";", "{", "}")):
-            continue
-        # Unterminated. Harmless only if the block ends before any further content.
-        for nxt in lines[i + 1:]:
-            nxt = nxt.strip()
-            if not nxt:
-                continue
-            if nxt.startswith("}"):
-                break                      # last declaration in its block — legal
-            bad.append("line %d: %s" % (i + 1, line[:72]))
-            break
-    return bad
-
-
-def _theme_asymmetric_vars(css):
-    """Colour tokens that exist in one theme but not the other - in EITHER direction.
-
-    The light `:root` is the base token set; the dark blocks are overrides. There are
-    two distinct silent failures here, and the first version of this check only
-    caught one of them:
-
-      * declared in light, missing from dark -> the token vanishes in dark mode
-      * declared ONLY in a dark block        -> it vanishes in LIGHT mode, which is
-        exactly how `--bar-neutral` shipped as invisible bars
-
-    Both render transparent with nothing in the console, so both are checked."""
-    light = re.search(r":root\s*\{([^}]*)\}", css)
-    if not light:
-        return []
-    light_vars = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", light.group(1)))
-    dark_vars = set()
-    for block in re.findall(
-            r"(?:prefers-color-scheme\s*:\s*dark|data-theme=.?dark)[^{]*\{(.*?)\}\}?",
-            css, re.S):
-        dark_vars |= set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", block))
-    if not dark_vars:
-        return []
-    # spacing / type / motion / font / layout tokens are theme-independent by design
-    # and are deliberately declared once, in the base only. The sticky-stack
-    # offsets and paint order (--topbar-h, --sticky-*, --z-*) are geometry, not
-    # colour: a dark report pins its bar in exactly the same place.
-    neutral = ("--sp-", "--t-", "--dur", "--ease", "--radius", "--pill",
-               "--sans", "--mono", "--shadow",
-               "--topbar-h", "--strip-h", "--sectools-h", "--sticky-", "--z-")
-
-    def colourish(names):
-        return {v for v in names if not any(v.startswith(n) for n in neutral)}
-
-    return sorted("%s (light only)" % v
-                  for v in colourish(light_vars) - dark_vars) + \
-        sorted("%s (dark only)" % v for v in colourish(dark_vars) - light_vars)
+# The stylesheet lints live beside the stylesheet they police, in _ui_theme,
+# so the panel is held to the same rules. Aliased rather than renamed at the
+# call sites: these names are what the selftest below asks for by hand.
+_undeclared_css_vars = _theme.undeclared_css_vars
+_unterminated_css_decls = _theme.unterminated_css_decls
+_theme_asymmetric_vars = _theme.theme_asymmetric_vars
 
 
 def _iso_day(epoch):
