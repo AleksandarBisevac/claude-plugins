@@ -61,16 +61,17 @@ def _plugin_version():
 _RISK_LEVELS = ("low", "med", "high")
 
 _CSS = _theme.TOKEN_CSS + """
-/* one status token drives both the pipeline rail and the status chip */
-[data-status="done"],[data-status="fixed"]{--st:var(--st-done)}
-[data-status="in_progress"],[data-status="triaged"]{--st:var(--st-prog)}
-[data-status="blocked"],[data-status="open"]{--st:var(--st-blocked)}
-[data-status="pending"],[data-status="wontfix"]{--st:var(--st-pending)}
-/* amber status chips read best with dark ink (both themes) */
-[data-status="in_progress"] .chip,[data-status="triaged"] .chip,
-.chip[data-status="in_progress"],.chip[data-status="triaged"]{--chip-ink:#78350f}
-.area-tag{display:inline-block;font-size:.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
-  padding:.25rem .4em;border-radius:.5em;background:var(--surface-2);color:var(--muted);vertical-align:middle}
+/* One status token drives the pipeline rail AND the badge, and now carries its
+   own ink with it. The amber exception below this is gone: it existed because a
+   solid amber fill needs dark text while the other three need white, i.e. because
+   the fill was the design. */
+[data-status="done"],[data-status="fixed"]{--st:var(--st-done);--st-ink:var(--st-done-ink)}
+[data-status="in_progress"],[data-status="triaged"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
+[data-status="blocked"],[data-status="open"]{--st:var(--st-blocked);--st-ink:var(--st-blocked-ink)}
+[data-status="pending"],[data-status="wontfix"]{--st:var(--st-pending);--st-ink:var(--st-pending-ink)}
+.area-tag{display:inline-block;font-size:var(--t-label);font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  padding:.25rem .5em;border-radius:var(--pill);background:var(--surface-2);color:var(--muted);
+  border:1px solid var(--border);vertical-align:middle}
 
 /* ---- base ---------------------------------------------------------------- */
 *{box-sizing:border-box}
@@ -266,15 +267,40 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .fchip:hover,.tf-chip:hover{border-color:var(--border-strong);transform:translateY(-1px)}
 .fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .fchip.on,.tf-chip.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+/* State carried by more than hue: a filter that is on says so in forced-colours,
+   in greyscale and on paper, where the accent fill says nothing. */
+.fchip.on::before,.tf-chip.on::before{content:"\2713\a0";font-weight:700}
 .tf-chip{font-size:.73rem;padding:.25rem .5rem}
 
-/* ---- status + risk chips ------------------------------------------------- */
-.chip{display:inline-block;padding:.25rem .6em;border-radius:var(--pill);font-size:.76rem;font-weight:600;
-  letter-spacing:.01em;background:var(--st,var(--st-pending));color:var(--chip-ink)}
+/* ---- badges -------------------------------------------------------------
+   ONE grammar for everything that REPORTS a value: tinted from its own colour,
+   inked in that colour, outlined in it, with a dot carrying the hue at full
+   strength. Four different grammars used to share these tables — a solid fill
+   with white text (status), an outline that inverted when active (filters), a
+   pastel fill with a matching border (risk), and a grey uppercase tag (area) —
+   so four things that all mean "here is a value" looked like four kinds of
+   thing. Interactive chips (.fchip/.tf-chip) keep a deliberately different,
+   button-like grammar, because they are the one kind you can press. */
+.chip{display:inline-flex;align-items:center;gap:.4em;padding:.25rem .65em;border-radius:var(--pill);
+  font-size:.76rem;font-weight:600;letter-spacing:.01em;white-space:nowrap;
+  background:color-mix(in srgb,var(--st,var(--st-pending)) 12%,var(--surface));
+  color:var(--st-ink,var(--st-pending-ink));
+  border:1px solid color-mix(in srgb,var(--st,var(--st-pending)) 30%,transparent)}
+/* The hue at full strength, so the status stays legible at a glance without the
+   text having to carry the colour at a contrast that hurts to read. */
+.chip::before{content:"";width:.45em;height:.45em;border-radius:50%;flex:none;
+  background:var(--st,var(--st-pending))}
 .rchip{display:inline-block;padding:.25rem .55em;border-radius:var(--pill);font-size:.73rem;font-weight:600;border:1px solid transparent}
-.rchip[data-risk="low"]{background:var(--rk-low-bg);color:var(--rk-low-fg);border-color:var(--rk-low-fg)}
-.rchip[data-risk="med"]{background:var(--rk-med-bg);color:var(--rk-med-fg);border-color:var(--rk-med-fg)}
-.rchip[data-risk="high"]{background:var(--rk-high-bg);color:var(--rk-high-fg);border-color:var(--rk-high-fg)}
+/* Same tint/ink/outline recipe as .chip, at the same border weight — these read
+   as a heavier kind of thing purely because their outline was the ink colour at
+   full strength. No leading dot, though: the dot marks a lifecycle STATE, and
+   risk is an attribute of the task rather than a stage it is passing through. */
+.rchip[data-risk="low"]{background:var(--rk-low-bg);color:var(--rk-low-fg);
+  border-color:color-mix(in srgb,var(--rk-low-fg) 30%,transparent)}
+.rchip[data-risk="med"]{background:var(--rk-med-bg);color:var(--rk-med-fg);
+  border-color:color-mix(in srgb,var(--rk-med-fg) 30%,transparent)}
+.rchip[data-risk="high"]{background:var(--rk-high-bg);color:var(--rk-high-fg);
+  border-color:color-mix(in srgb,var(--rk-high-fg) 30%,transparent)}
 
 /* ---- tables -------------------------------------------------------------- */
 .tablewrap{margin:.5rem 0 1rem}
@@ -342,9 +368,11 @@ tr.phase[data-held]>td::before,tr.phase[data-held]:hover>td::before{background:v
 /* What holds this phase shut, named and linkable — the rail says "closed", this
    says by what. A gate that cannot tell you what shut it is a locked door with no
    sign on it. */
-.heldby{font-family:var(--mono);font-size:.7rem;color:var(--st-blocked);border:1px solid currentColor;
-  border-radius:3px;padding:.05rem .3rem;margin-left:.4rem;text-decoration:none;vertical-align:.06em}
-.heldby:hover{background:var(--st-blocked);color:var(--chip-ink)}
+.heldby{font-family:var(--mono);font-size:.7rem;color:var(--st-blocked-ink);
+  background:color-mix(in srgb,var(--st-blocked) 12%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--st-blocked) 30%,transparent);
+  border-radius:var(--pill);padding:.15rem .5rem;margin-left:.4rem;text-decoration:none;vertical-align:.06em}
+.heldby:hover{background:var(--st-blocked);color:var(--surface)}
 .tri{display:inline-block;width:1em;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .tri::before{content:"\\25B6";font-size:.72em}
 tr.phase.open .tri{transform:rotate(90deg)}
@@ -409,7 +437,7 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
 @page{size:A4;margin:1.4cm}
 @media print{
   :root,:root[data-theme="dark"]{--bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
-    --muted:#374151;--border:#d1d5db;--chip-ink:#fff}
+    --muted:#374151;--border:#d1d5db}
   body{max-width:none;margin:0;padding:0;font-size:10.5pt}
   /* Paper has no scroll position to indicate and no controls to press, so the
      whole shell collapses back to the document it always was underneath. */
@@ -865,19 +893,15 @@ _SCRIPT = r"""<script>
     });
   }
 
-  // build a toggle-chip bar from a set of statuses
-  function buildChips(host, statuses, dataAttr, onToggle) {
-    Object.keys(statuses).sort().forEach(function (s) {
-      var b = document.createElement('button');
-      b.type = 'button'; b.className = 'fchip';
-      // Which filter is on was conveyed by the `on` class alone — i.e. by colour.
-      // aria-pressed is what makes a toggle button's state readable.
-      b.setAttribute('aria-pressed', 'false');
-      b.setAttribute(dataAttr, s); b.textContent = s;
-      host.appendChild(b);
-    });
+  // Attach behaviour to chips that are already in the document. They used to be
+  // created here, which meant the filter UI simply did not exist for anything
+  // that does not run scripts — and "the filters are gone" and "the filters are
+  // broken" look identical from the outside.
+  function wireChips(host, dataAttr, onToggle) {
+    if (!host) return;
     host.addEventListener('click', function (e) {
-      var val = e.target && e.target.getAttribute(dataAttr);
+      var btn = e.target && e.target.closest ? e.target.closest('[' + dataAttr + ']') : null;
+      var val = btn && btn.getAttribute(dataAttr);
       if (!val) return;
       onToggle(val, host, dataAttr);
     });
@@ -915,34 +939,21 @@ _SCRIPT = r"""<script>
     persist(); refresh();
   });
 
-  // toolbar phase-status chips (distinct PHASE statuses)
-  if (phaseStatusBar) {
-    var pseen = {};
-    phaseRows.forEach(function (pr) { var s = pr.getAttribute('data-status'); if (s) pseen[s] = 1; });
-    buildChips(phaseStatusBar, pseen, 'data-ps', function (val, host, attr) {
-      phaseStatus = (phaseStatus === val) ? '' : val;
-      highlight(host, attr, phaseStatus);
-      refresh();
-    });
-  }
+  // toolbar phase-status chips (distinct PHASE statuses, rendered server-side)
+  wireChips(phaseStatusBar, 'data-ps', function (val, host, attr) {
+    phaseStatus = (phaseStatus === val) ? '' : val;
+    highlight(host, attr, phaseStatus);
+    refresh();
+  });
 
   // per-phase task-status chips (contextual — only that phase's task statuses)
   phaseRows.forEach(function (pr) {
     var pid = pr.getAttribute('data-phase');
     var tfRow = tfOf(pid); if (!tfRow) return;
     var host = tfRow.querySelector('.tf-chips'); if (!host) return;
-    var seen = {};
-    tasksOf(pid).forEach(function (t) { var s = t.getAttribute('data-status'); if (s) seen[s] = 1; });
-    Object.keys(seen).sort().forEach(function (s) {
-      var b = document.createElement('button');
-      b.type = 'button'; b.className = 'tf-chip';
-      b.setAttribute('data-ts', s); b.textContent = s;
-      host.appendChild(b);
-    });
-    host.addEventListener('click', function (e) {
-      var val = e.target && e.target.getAttribute('data-ts'); if (!val) return;
+    wireChips(host, 'data-ts', function (val) {
       taskStatus[pid] = (taskStatus[pid] === val) ? '' : val;
-      [].forEach.call(host.children, function (x) { x.className = x.getAttribute('data-ts') === taskStatus[pid] ? 'tf-chip on' : 'tf-chip'; });
+      highlight(host, 'data-ts', taskStatus[pid]);
       refresh();
     });
   });
@@ -1176,9 +1187,27 @@ def _bug_view(b, task_by_id):
     return stored, (fixed_in or "—")
 
 
+def _chip_buttons(statuses, attr, cls):
+    """Toggle buttons for a set of statuses — machine value in `attr`, words shown.
+
+    `aria-pressed` is what makes a toggle's state readable; without it "which
+    filter is on" is carried by colour alone.
+    """
+    return "".join(
+        '<button type="button" class="%s" %s="%s" aria-pressed="false">%s</button>'
+        % (cls, attr, e(s), e(_theme.label(s))) for s in statuses)
+
+
 def _chip(status):
-    # Colored by the CSS theme token selected via data-status (see _CSS).
-    return '<span class="chip" data-status="%s">%s</span>' % (e(status), e(status))
+    """A status badge: machine value in the attribute, words in the text.
+
+    `in_progress` is a key — it sorts, compares and survives serialization — and
+    it was being shown to people as-is, in the one place they look to find out how
+    the work is going. The attribute keeps the key (the CSS themes off it and the
+    filters compare it), the text says what it means.
+    """
+    return '<span class="chip" data-status="%s">%s</span>' % (
+        e(status), e(_theme.label(status)))
 
 
 def _ado_cell(item):
@@ -2353,13 +2382,22 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
            'aria-label="Toggle light/dark theme" title="Toggle light/dark theme">'
            '\u263e</button>')
         + '</div>')
+    # The chips are rendered HERE, not built by the script. Built in JS they were
+    # invisible to anything that does not run it \u2014 a printed page, a reader with
+    # scripting off \u2014 which is the one context where "the filters are gone" is
+    # indistinguishable from "the filters are broken". Server-rendered they are
+    # always present; the script only attaches behaviour to them.
+    _phase_statuses = sorted({p["status"] for p in summary["phases"] if p.get("status")})
     table_tools = (
-        '<div class="toolbar sectools" role="search">'
+        '<div class="toolbar sectools" role="search" aria-label="Filter the phases table">'
         '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
         'placeholder="Filter phases &amp; tasks by text\u2026">'
-        '<span class="tbl">Phase status:</span><span id="audit-phase-status"></span>'
+        '<span class="tbl">Phase status:</span><span id="audit-phase-status">%s</span>'
         '<button type="button" id="audit-expand" class="btn">expand all</button>'
-        '<span id="audit-count" class="muted"></span></div>')
+        '<span id="audit-count" class="muted"></span>'
+        "<noscript><span class=\"tbl\">Filtering and collapsing need JavaScript "
+        "\u2014 every row is shown.</span></noscript></div>"
+        % _chip_buttons(_phase_statuses, "data-ps", "fchip"))
 
     # One collapsible table: each phase is a group-row (click to expand its task
     # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
@@ -2409,9 +2447,12 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
         # per-phase task-status filter (shown only when the phase is expanded);
         # _SCRIPT fills .tf-chips from this phase's own task statuses.
+        _tstat = sorted({t.get("status") for t in (ph.get("tasks") or [])
+                         if isinstance(t, dict) and t.get("status")})
         out.append('<tr class="taskfilter" data-phase="%s"><td colspan="%d">'
                    '<span class="tf-label">Filter tasks by status:</span>'
-                   '<span class="tf-chips"></span></td></tr>' % (e(pid), ncol))
+                   '<span class="tf-chips">%s</span></td></tr>'
+                   % (e(pid), ncol, _chip_buttons(_tstat, "data-ts", "tf-chip")))
         for t in ph.get("tasks") or []:
             if not isinstance(t, dict):
                 continue
@@ -3118,6 +3159,36 @@ def _selftest():
     # is the first thing worth knowing.
     check("stamp: the page names the plugin version that rendered it",
           'class="stampv"' in html_out and "audit " in html_out)
+
+    # --- one badge grammar, and words instead of keys --------------------------
+    check("badges: a status reads as English, with the machine value kept in the "
+          "attribute so filtering and theming still compare keys",
+          'data-status="in_progress"' in html_out
+          and ">In progress<" in html_out
+          and ">in_progress<" not in html_out)
+    check("badges: one tinted grammar drives every status, so the amber "
+          "special case is gone with the solid fill that required it",
+          "--st-ink" in _CSS and "color-mix(in srgb,var(--st" in _CSS
+          and "--chip-ink" not in _CSS)
+    check("badges: the hue is carried by a dot, not only by the text colour",
+          ".chip::before{" in _CSS)
+    check("filters: an active chip says so without relying on hue",
+          ".fchip.on::before" in _CSS)
+    # The markdown twin is a data table read by machines and by GitHub; it keeps
+    # the machine spelling on purpose.
+    check("badges: the markdown twin still speaks the manifest's own vocabulary",
+          "| done |" in md_out or "| in_progress |" in md_out)
+    # Built in JS, the whole filter bar was missing from any context that does not
+    # run scripts - the one case where "gone" and "broken" look the same.
+    check("filters: the chips are in the document, not created by the script",
+          'class="fchip" data-ps=' in html_out
+          and 'class="tf-chip" data-ts=' in html_out
+          and 'aria-pressed="false"' in html_out
+          and "createElement('button')" not in _SCRIPT)
+    check("filters: the script attaches behaviour rather than building the UI",
+          "function wireChips" in _SCRIPT and "buildChips" not in _SCRIPT)
+    check("filters: a no-script reader is told why nothing filters",
+          "<noscript>" in html_out)
     # Controls sit with what they act on.
     check("shell: document-level actions are in the top bar",
           html_out.index('id="audit-print"') < html_out.index('class="shell"'))

@@ -35,7 +35,13 @@ TOKEN_CSS = """
   --border:#e2e8f0;--border-strong:#cbd5e1;
   --accent:#0d9488;--accent-solid:#0d9488;--ring:rgba(13,148,136,.35);
   --st-done:#15803d;--st-prog:#f59e0b;--st-blocked:#dc2626;--st-pending:#64748b;
-  --chip-ink:#ffffff;
+  /* Ink for a TINTED status badge. One solid-fill chip per status needed one ink
+     and an exception (amber on white is unreadable, so in_progress alone got dark
+     ink) — four statuses wearing three different grammars. A badge tinted from
+     its own status colour carries readable ink of that same hue instead, and the
+     exception disappears. Mirrors the --rk-*-fg pattern, which already worked. */
+  --st-done-ink:#166534;--st-prog-ink:#854d0e;--st-blocked-ink:#b91c1c;
+  --st-pending-ink:#475569;
   --rk-low-bg:#dcfce7;--rk-low-fg:#166534;--rk-med-bg:#fef9c3;--rk-med-fg:#854d0e;
   --rk-high-bg:#fee2e2;--rk-high-fg:#b91c1c;
   /* Usage viz. Categorical slots carry MODEL identity (assigned by name, never by
@@ -106,7 +112,9 @@ TOKEN_CSS = """
   --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
   --border:#1f2b40;--border-strong:#33425c;
   --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
-  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
+  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
+  --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
+  --st-pending-ink:#cbd5e1;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
@@ -123,7 +131,9 @@ TOKEN_CSS = """
   --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
   --border:#1f2b40;--border-strong:#33425c;
   --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
-  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;--chip-ink:#07130f;
+  --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
+  --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
+  --st-pending-ink:#cbd5e1;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
