@@ -86,6 +86,15 @@ if (load.total < 2) {
 expect('on load, every phase is listed', load.phases, load.total);
 expect('on load, tasks are collapsed', load.tasks, 0);
 
+// The no-script banner. It is rendered into the HTML and removed by the script's
+// very first statement, so its ABSENCE is live proof that the script ran — and
+// its presence is exactly what a reader sees in an IDE preview pane, which
+// sandboxes inline <script> and was the real cause of one "the report is broken"
+// report. Checking it here means the banner can never rot into a lie: if the
+// removal breaks, the banner shows in a working browser and this goes red.
+const banner = await page.$('#audit-nojs');
+expect('the no-script banner is removed once the script runs', banner === null, true);
+
 // 1. A click on the phase TITLE — where a reader actually clicks, not the <tr>.
 await page.click('table.phases tbody tr.phase strong');
 await page.waitForTimeout(150);

@@ -101,6 +101,18 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
    One information architecture, two presentations (the app-shell rule): above
    72rem it is a sticky column; below, the same items become a horizontal strip
    under the top bar. Never two different menus. */
+/* Shown only when the script did not run - its first act is to remove this.
+   Amber (the in-progress token), not the blocked red: nothing is broken, the page
+   is just being viewed somewhere that will not run it, and the reader fixes that
+   in one step. Read, not dismissed - but not an error state.
+   Tokens are the ones THIS stylesheet declares. The first draft reached for the
+   panel's palette, which is a different file, and the undeclared-var guard caught
+   it: an undeclared token makes the whole declaration invalid at computed-value
+   time, so the banner would have painted transparent and logged nothing. */
+.nojs{padding:.7rem 1.5rem;background:color-mix(in srgb,var(--st-prog) 14%,var(--surface));
+  color:var(--text);border-bottom:1px solid color-mix(in srgb,var(--st-prog) 45%,transparent);
+  font-size:.86rem;line-height:1.5}
+.nojs strong{color:var(--st-prog)}
 .topbar{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
   flex-wrap:wrap;padding:.6rem 1.5rem;background:color-mix(in srgb,var(--surface) 88%,transparent);
   backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -441,7 +453,7 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   body{max-width:none;margin:0;padding:0;font-size:10.5pt}
   /* Paper has no scroll position to indicate and no controls to press, so the
      whole shell collapses back to the document it always was underneath. */
-  .topbar,.snav,.toolbar,tr.taskfilter{display:none!important}
+  .topbar,.snav,.toolbar,tr.taskfilter,.nojs{display:none!important}
   .shell{display:block;max-width:none;padding:0}
   .pmeta{max-width:none}
   .topgrid{display:block}
@@ -645,6 +657,13 @@ details.more>summary:hover{color:var(--text)}
 _SCRIPT = r"""<script>
 (function () {
   var q = document.getElementById('audit-q');
+  // First, before anything below can throw: the page is running scripts, so drop
+  // the banner that says it is not. Deliberately ahead of every other statement —
+  // if a later line fails, the banner staying up is then TRUE and useful, because
+  // the interactive layer really is dead.
+  var _nojs = document.getElementById('audit-nojs');
+  if (_nojs && _nojs.parentNode) _nojs.parentNode.removeChild(_nojs);
+
   var count = document.getElementById('audit-count');
   var phaseStatusBar = document.getElementById('audit-phase-status');
   var expandBtn = document.getElementById('audit-expand');
@@ -2285,6 +2304,26 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         sections.append((anchor, label, count, sub))
         return anchor
 
+    # Say so when the script did not run. This report is a static file people are
+    # meant to SEND each other, and a very common way of opening one — an IDE's
+    # HTML preview pane — sandboxes inline <script>. The page then renders
+    # completely and looks finished, while filtering, search and every expandable
+    # phase silently do nothing. Reported as "the report is broken", and it took
+    # two browsers, two origins, five viewports and real mouse input to establish
+    # that the report was fine and the viewer was not.
+    #
+    # Written into the HTML rather than a <noscript>: the failure is not only "JS
+    # disabled" — a sandbox can leave scripts enabled but strip inline ones, which
+    # <noscript> does not catch. The script's first act is to remove this, so it is
+    # visible exactly when it is true, and its absence is itself a live proof that
+    # the script ran (the CI interactivity check asserts that).
+    out.append(
+        '<div id="audit-nojs" class="nojs" role="status">'
+        "<strong>This report is interactive, and its scripts are not running here.</strong> "
+        "Filtering, search, sorting and expanding a phase all need them. "
+        "An IDE preview pane usually blocks inline scripts — "
+        "open this file in a real browser and it will work.</div>")
+
     _ver = _plugin_version()
     out.append('<header class="topbar"><div class="tb-id">'
                '<h1>%s</h1><p class="meta">%s · %d phases · %d tasks · %d bugs · '
@@ -3201,7 +3240,44 @@ def _selftest():
           'class="topgrid"' in html_out and ".topgrid{" in _CSS
           and "min-width:78rem" in _CSS)
     check("shell: paper gets the document back - no bars, no nav, no section tools",
-          ".topbar,.snav,.toolbar,tr.taskfilter{display:none!important}" in _CSS)
+          ".topbar,.snav,.toolbar,tr.taskfilter,.nojs{display:none!important}" in _CSS)
+    # The no-script banner is screen-only: on paper there is no script to run and
+    # no browser to open the file in, so it would be advice about nothing.
+    check("shell: the no-script banner never reaches paper",
+          ".nojs" in _CSS[_CSS.index("@media print"):])
+
+    # The banner exists because a report is a file people SEND each other, and a
+    # common way of opening one - an IDE preview pane - sandboxes inline <script>.
+    # The page then renders completely, looks finished, and every interaction
+    # silently does nothing. Reported as "the report is broken"; it took two
+    # browsers, two origins, five viewports and real mouse input to establish that
+    # the report was fine and the viewer was not. Now it says so itself.
+    check("nojs: the banner is in the HTML, so it shows without any script",
+          'id="audit-nojs"' in html_out)
+    check("nojs: it names the likely cause and the one-step fix",
+          "IDE preview" in html_out and "browser" in html_out)
+    check("nojs: it says which features are affected, not just 'interactive'",
+          all(w in html_out for w in ("Filtering", "search", "expanding")))
+    # NOT inside the <noscript>. The report already had one ("Filtering and
+    # collapsing need JavaScript"), and it was the right intent with a mechanism
+    # that could not fire: <noscript> renders only when SCRIPTING IS DISABLED. An
+    # IDE preview pane leaves scripting on and strips the inline <script>, so the
+    # page ran no code and still showed no warning. That existing note stays - it
+    # is correct for the disabled case and adds "every row is shown" - but it
+    # cannot be the only signal.
+    _banner = html_out[html_out.index('id="audit-nojs"'):]
+    check("nojs: the banner renders unconditionally, not only when scripting is off",
+          "<noscript" not in html_out[:html_out.index('id="audit-nojs"')]
+          or html_out.index("</noscript>") > html_out.index('id="audit-nojs"'))
+    check("nojs: and the older <noscript> note is still there for the disabled case",
+          "<noscript>" in html_out)
+    # Removal is the script's FIRST act, ahead of anything that can throw. If a
+    # later line fails, the banner staying up is then true and useful.
+    _first = _SCRIPT[:_SCRIPT.index("var count = document.getElementById")]
+    check("nojs: the script removes it before any statement that could throw",
+          "audit-nojs" in _first and "removeChild" in _first)
+    check("nojs: removal is guarded, so a report rendered without it cannot throw",
+          "if (_nojs && _nojs.parentNode)" in _SCRIPT)
 
     # --- table density follows the data ---------------------------------------
     _fresh = {"meta": {}, "bugs": [], "phases": [

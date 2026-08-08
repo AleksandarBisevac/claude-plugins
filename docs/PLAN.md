@@ -47,11 +47,20 @@ and awaiting review (**B1** below).
 
 ## Actionable now
 
-### R1 — The report's interactivity, reported broken, not reproduced
+### R1 — The report's interactivity, reported broken — CAUSE FOUND 2026-08-08
 
-**Goal.** Either reproduce the failure the user sees when opening
-`examples/acme-store/acme-store-audit.html`, or establish what is different about their
-environment and fix it there.
+**Cause: an IDE preview pane, which sandboxes inline `<script>`.** The page renders
+completely and looks finished while every interaction silently does nothing. Not a repo defect —
+but the report said nothing about it, which made it indistinguishable from a broken product.
+
+**Fixed** by making the report say so itself: a banner rendered into the HTML, removed by the
+script's very first statement. Visible exactly when it is true. The report already had a
+`<noscript>` for this — the right intent with a mechanism that cannot fire, since `<noscript>`
+renders only when scripting is *disabled*, and a preview pane leaves it enabled and strips the
+inline script. That note stays for the disabled case; it just could not be the only signal.
+
+`tools/check-report-interactive.mjs` asserts the banner is **gone** after load, so its absence is
+live proof the script ran and the banner can never rot into a lie.
 
 **Why.** The rendered report is the product's best surface. A user opening it and finding that
 filtering, search, phase expand/collapse and clicking all do nothing is a total failure of that
