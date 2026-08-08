@@ -33,3 +33,13 @@ docs/audit/audit-report.artifact.html
 # append-only NDJSON, so a union merge resolves concurrent appends cleanly, and the
 # `author` on every row is what makes cross-developer analytics work.
 .claude/usage/
+
+# Planning, backlog and market analysis live in the PRIVATE repo
+# AleksandarBisevac/quality-gates-internal (moved 2026-08-08). These entries exist so
+# they cannot drift back into a public repository people install a plugin from —
+# which is how a competitive analysis and a defect backlog got published once already.
+# See docs/README.md.
+docs/PLAN.md
+docs/plans/
+docs/strategy/
+TODO.local.md
