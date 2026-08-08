@@ -294,6 +294,17 @@ The full roadmap is in `docs/strategy/2026-08-06-market-analysis.md` §9 and eve
   the JavaScript spelling; the plan gate denied the orchestrator its own phase shards on a custom
   `manifestPath`; the concurrency lock judged its holder by a clock instead of asking whether the
   process is alive.
+- **Two-session E2E, 2026-08-08.** The v0.27.0 enforcement driven end to end in a sandbox
+  (`~/.claude/jobs/*/tmp/e2e2/shop`) with two live processes, two session ids, a sharded manifest
+  at a non-default path, and the hook payload id deliberately different from the env id — the
+  real shape, not the selftests' shape. Every step behaved: A takes `phase-P1` and writes its own
+  shard (allowed); B is refused the same lock with A's identity and basis (exit 3); B ignores that
+  and edits the shard anyway (**denied**, naming A); B takes `phase-P2` instead and both write
+  their own shards in parallel; A is killed, so the lock reads abandoned at once rather than after
+  an hour (exit 4); B writes P1's shard pre-takeover (allowed, and the Post pass says the lock is
+  still A's); B takes it over properly (Post goes silent); both release cleanly. One boundary
+  confirmed by the run and worth knowing: B *was* allowed to edit A's **source** file, because
+  `src/pricing.py` is in an `in_progress` task and the lock guards the manifest, not the tree.
 - **v0.27.0**: the lock stops being advice — the plan gate refuses a manifest write held by
   another live session. Includes the discovery that a session has **more than one name**
   (`$CLAUDE_CODE_SESSION_ID` in Bash vs. the hook payload's `session_id` — different values), which
