@@ -271,6 +271,8 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .btn-primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 .btn-primary:hover{filter:brightness(1.08);background:var(--accent-solid);border-color:var(--accent-solid)}
 .btn-icon{padding:.5rem .5rem;font-size:1rem}
+/* `hidden` is only a hint, and .btn's own display beats it. */
+.btn[hidden]{display:none}
 
 /* ---- filter chips (toolbar phase-status + per-phase task-status) --------- */
 .fchip,.tf-chip{cursor:pointer;font:inherit;font-size:.79rem;line-height:1;padding:.25rem .75rem;
@@ -280,9 +282,62 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .fchip.on,.tf-chip.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 /* State carried by more than hue: a filter that is on says so in forced-colours,
-   in greyscale and on paper, where the accent fill says nothing. */
-.fchip.on::before,.tf-chip.on::before{content:"\2713\a0";font-weight:700}
+   in greyscale and on paper, where the accent fill says nothing. Both backslashes
+   are DOUBLED because this sheet is a non-raw Python string. Written once, Python
+   reads the hex escape as an OCTAL byte and the `a0` as the bell character, and
+   the browser is handed `¹3<BEL>0` — which it draws, faithfully, on the one chip
+   whose entire purpose was to be legible without colour. `mangled_css_escapes()`
+   now fails the build on either half; the panel's copy of this rule always had it
+   right, and nothing in either suite could see the two disagree. */
+.fchip.on::before,.tf-chip.on::before{content:"\\2713\\a0";font-weight:700}
 .tf-chip{font-size:.73rem;padding:.25rem .5rem}
+
+/* ---- more filters: model + dates, in a native <details> ------------------
+   A <details>, not a scripted popover, for the same reason the chips above are
+   rendered server-side: it opens, closes, takes focus and answers the keyboard
+   with no script at all, and a reader who prints the page or runs none still
+   sees what the filters ARE.
+
+   The panel is absolutely positioned, and that is load-bearing rather than
+   decorative. This bar is the thing the rest of the document pins against —
+   --sectools-h decides where the column headers land, where every anchor lands
+   and where the scroll-spy fold sits — so a panel that pushed the bar taller
+   when opened would move all three under the reader mid-scroll. Out of flow, the
+   bar is one height open or shut, and the panel is drawn OVER the table. */
+.fdetails{position:relative}
+.fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
+  display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
+  border-radius:var(--pill);border:1px solid var(--border);background:var(--surface);
+  color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
+.fdetails>summary::-webkit-details-marker{display:none}
+.fdetails>summary::after{content:"\\25BE";font-size:.7em;color:var(--muted)}
+.fdetails[open]>summary::after{content:"\\25B4"}
+.fdetails>summary:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* The count of what is narrowing the table, on the closed control. A panel that
+   hides an active filter behind a fold is how a reader concludes the report is
+   missing rows; the summary has to say that something is on. */
+.fdetails .fcount{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+/* Hung from its control's RIGHT edge, because this control sits near the right of
+   the bar: anchored left, a panel this wide ran off the side of the viewport and
+   took its last column with it.
+
+   The floor was 19rem, then 27rem — the width at which "Worked between: [date]
+   and [date]" stopped wrapping after the word "and" and reading as a broken
+   sentence. 27rem cleared that but left the panel feeling cramped: four control
+   rows at .5rem apart inside .75rem of padding, with nothing to separate the
+   date range from the model chips from the note. 32rem with roomier padding and
+   gap is the same content given space to be read. `max-width` still caps it to
+   the viewport, so the extra width costs nothing on a narrow screen. */
+.filterpanel{position:absolute;top:calc(100% + .4rem);right:0;z-index:1;min-width:32rem;max-width:calc(100vw - 2rem);
+  display:flex;flex-direction:column;gap:.7rem;padding:1rem 1.1rem;background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
+.frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.frow input[type=date]{font:inherit;font-size:.78rem;padding:.3rem .45rem;color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)}
+.frow input[type=date]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+#audit-model,#audit-presets{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+.fnote{margin:0;font-size:.7rem;line-height:1.45;color:var(--muted)}
 
 /* ---- badges -------------------------------------------------------------
    ONE grammar for everything that REPORTS a value: tinted from its own colour,
@@ -385,6 +440,18 @@ tr.phase[data-held]>td::before,tr.phase[data-held]:hover>td::before{background:v
   border:1px solid color-mix(in srgb,var(--st-blocked) 30%,transparent);
   border-radius:var(--pill);padding:.15rem .5rem;margin-left:.4rem;text-decoration:none;vertical-align:.06em}
 .heldby:hover{background:var(--st-blocked);color:var(--surface)}
+/* "3 of 12 match" on a COLLAPSED phase. Filtering no longer forces phases open —
+   a search used to expand every hit at once, which turned a five-character query
+   into a page that jumped and scrolled away from what you were reading. The cost
+   of not opening them is that a closed row hides its own evidence: the phase
+   survived the filter and you cannot see why. This is that evidence, and it is
+   also the affordance — a row that says 3 of 12 is a row worth opening. */
+.pmatch{font-size:.72rem;font-weight:600;color:var(--accent);margin-left:.4rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+/* `hidden` is a presentation hint, and any class rule with a display beats it.
+   Without this the badge would be permanently visible, reading "10 of 10 match"
+   at rest on every phase in an unfiltered report. */
+.pmatch[hidden]{display:none}
 .tri{display:inline-block;width:1em;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .tri::before{content:"\\25B6";font-size:.72em}
 tr.phase.open .tri{transform:rotate(90deg)}
@@ -401,6 +468,21 @@ tr.taskfilter{display:none}
 tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 3.1rem;border-bottom:1px dashed var(--border)}
 .tf-label{font-size:.75rem;color:var(--muted);margin-right:.5rem}
 .tf-chips{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+
+/* ---- the empty state ------------------------------------------------------
+   Filtered down to nothing, the table was an empty frame: no rows, no
+   explanation, and no way back except undoing each control by hand. Same
+   `display:none` default as tr.taskfilter, and for the same reason — with no
+   script running, every row is shown, so an empty state would be a lie. It lives
+   in its own <tbody> so `tbody tr:last-child` still means the last DATA row and
+   the table keeps its rounded bottom edge while this is hidden. */
+tr.norows{display:none}
+/* Out-specifies the gate rail deliberately: the rail is a drawing of what holds
+   what, and there is nothing here for it to run past. */
+table.phases tbody>tr.norows>td:first-child{text-align:center;color:var(--muted);
+  padding:1.5rem .75rem;background:var(--surface)}
+table.phases tbody>tr.norows>td:first-child::after{content:none}
+tr.norows .btn{margin-left:.6rem}
 
 /* ---- load reveal (ends visible -> readable with JS off) ------------------ */
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -668,6 +750,23 @@ _SCRIPT = r"""<script>
   var _nojs = document.getElementById('audit-nojs');
   if (_nojs && _nojs.parentNode) _nojs.parentNode.removeChild(_nojs);
 
+  // A filtered view of this report is a LINK. Read here, written by syncHash()
+  // below. The `#!` prefix is not decoration: the side nav's links are plain
+  // fragments over the same slot, and without a marker separating the two,
+  // restoring filter state and following a heading link would each undo the other.
+  var HASH = {};
+  (function () {
+    var h = location.hash || '';
+    if (h.indexOf('#!') !== 0) return;
+    h.slice(2).split('&').forEach(function (pair) {
+      if (!pair) return;
+      var i = pair.indexOf('=');
+      var k = i < 0 ? pair : pair.slice(0, i);
+      var v = i < 0 ? '' : pair.slice(i + 1);
+      try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { HASH[k] = ''; }
+    });
+  })();
+
   var count = document.getElementById('audit-count');
   var phaseStatusBar = document.getElementById('audit-phase-status');
   var expandBtn = document.getElementById('audit-expand');
@@ -687,6 +786,9 @@ _SCRIPT = r"""<script>
   // that does not offer the control has no business reinstating its state.
   if (themeBtn) {
     try { var savedTheme = localStorage.getItem(THEME_KEY); if (savedTheme) root.setAttribute('data-theme', savedTheme); } catch (e) {}
+    // A theme carried in the link beats one saved on an earlier visit: whoever
+    // sent this URL chose how it should be read, and they chose more recently.
+    if (HASH.th === 'dark' || HASH.th === 'light') root.setAttribute('data-theme', HASH.th);
   }
   paintTheme();
   if (themeBtn) themeBtn.addEventListener('click', function () {
@@ -694,6 +796,7 @@ _SCRIPT = r"""<script>
     root.setAttribute('data-theme', next);
     try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
     paintTheme();
+    syncHash();
   });
 
   // The sticky stack, measured rather than assumed. --topbar-h decides where the
@@ -788,6 +891,17 @@ _SCRIPT = r"""<script>
 
   var phaseStatus = '';   // toolbar: filter which PHASES show, by phase status
   var taskStatus = {};    // per phase: filter that phase's TASKS, by task status
+  var modelFilter = '';   // panel: only tasks run by this model
+  var dFrom = '', dTo = '';  // panel: ISO dates, compared as plain strings
+  var preset = '';        // which relative-span chip is lit, if any
+
+  var modelBar = document.getElementById('audit-model');
+  var fromInput = document.getElementById('audit-from');
+  var toInput = document.getElementById('audit-to');
+  var presetBar = document.getElementById('audit-presets');
+  var fcount = document.getElementById('audit-fcount');
+  var clearBtns = [].slice.call(document.querySelectorAll('[data-clear]'));
+  var norow = grouped ? grouped.querySelector('tr.norows') : null;
 
   function esc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }
   // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
@@ -797,16 +911,27 @@ _SCRIPT = r"""<script>
   // between 100 phases (41ms) and 200 (145ms, and 200ms for the first press).
   // Sorting reorders these rows but never replaces them, so an index of element
   // references stays correct across a sort.
+  // The newest day this plan has any record of. The relative presets measure back
+  // from HERE and never from the wall clock: "the last 30 days" read off the
+  // system clock answers a different question every morning, and it would make the
+  // committed example a file that cannot stay byte-equal to itself between two CI
+  // runs — which is exactly what ci.yml compares docs/index.html against.
+  var DMAX = '';
   var TASKS = {}, TFROW = {};
   if (grouped) {
     [].forEach.call(grouped.querySelectorAll('tbody tr.task'), function (t) {
       var k = t.getAttribute('data-phase');
       (TASKS[k] || (TASKS[k] = [])).push(t);
+      var d = t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
+      if (d > DMAX) DMAX = d;
     });
     [].forEach.call(grouped.querySelectorAll('tbody tr.taskfilter'), function (t) {
       TFROW[t.getAttribute('data-phase')] = t;
     });
   }
+  // Resolved once, with everything else that refresh() would otherwise have to
+  // look up per phase per keystroke.
+  phaseRows.forEach(function (pr) { pr.__pmatch = pr.querySelector('.pmatch'); });
   function tasksOf(pid) { return TASKS[pid] || []; }
   function tfOf(pid) { return TFROW[pid] || null; }
   // Lowercased once per row and kept. The text of a rendered report never changes,
@@ -819,23 +944,101 @@ _SCRIPT = r"""<script>
   function textHit(r, term) { return !term || hay(r).indexOf(term) !== -1; }
   function setOpen(pr, open) { pr.classList.toggle('open', !!open); pr.setAttribute('aria-expanded', open ? 'true' : 'false'); }
 
+  // The date this task SHOWS in the table: completed if it is, else started.
+  // Filtering on a date other than the one printed in the row reads as a bug the
+  // first time a reader checks one against the other.
+  function taskDate(t) {
+    return t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
+  }
+  function dateOk(t) {
+    if (!dFrom && !dTo) return true;
+    var d = taskDate(t);
+    // A task with no dates at all is not "inside every range"; it is unknown, and
+    // a date filter is a question it has no answer to.
+    if (!d) return false;
+    // Plain string comparison. Fixed-width ISO dates order lexicographically, and
+    // <input type=date> hands back exactly that shape — so a range test over four
+    // thousand rows costs no Date parsing at all.
+    return (!dFrom || d >= dFrom) && (!dTo || d <= dTo);
+  }
+
+  // The filtered view, written back into the URL so it can be sent to someone.
+  // `history.replaceState` and not an assignment to location.hash: assigning
+  // pushes a history entry per keystroke and scrolls the document to whatever it
+  // reads the fragment as. Wrapped, because History is refused on a file://
+  // document in some browsers — which is where this report is most often opened,
+  // and a filter that throws on every pass is a filter that does not run.
+  //
+  // Deliberately NOT encoded: the per-phase task-status chips. They are keyed by
+  // phase id, so carrying them would put a list as long as the plan into the URL
+  // to describe a drill-down inside one row. A link names the view, not the state
+  // of every control on the page.
+  function syncHash() {
+    var parts = [];
+    function put(k, v) { if (v) parts.push(k + '=' + encodeURIComponent(v)); }
+    put('q', q ? q.value.trim() : '');
+    put('ps', phaseStatus);
+    put('m', modelFilter);
+    put('from', dFrom);
+    put('to', dTo);
+    // Only where this report OWNS the toggle. Embedded as a fragment, the host
+    // stamps data-theme on the same root, and a link carrying a theme would flip
+    // the page AROUND the report rather than the report. And only alongside a
+    // real filter: a theme alone must not mint a `#!` fragment, or simply opening
+    // the report with a remembered theme would overwrite the heading you linked to.
+    if (themeBtn && parts.length) put('th', root.getAttribute('data-theme') || '');
+    try {
+      if (parts.length) history.replaceState(null, '', '#!' + parts.join('&'));
+      else if ((location.hash || '').indexOf('#!') === 0) {
+        // Strip only OUR fragment. A plain `#usage` belongs to the nav, and
+        // clearing the filters has no business throwing away where you are.
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    } catch (e) {}
+  }
+
   function refresh() {
     var term = (q ? q.value : '').trim().toLowerCase();
-    var visP = 0;
+    // Filters that narrow the TASKS inside a phase, rather than the phase list.
+    // A phase none of whose tasks survive is not a phase that matches: keeping it
+    // is the difference between "these four phases used opus" and "here are all
+    // twelve, four of them usefully".
+    var narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
+    var anyFilter = narrows || term !== '' || phaseStatus !== '';
+    var visP = 0, visT = 0, totT = 0;
     phaseRows.forEach(function (pr) {
       var pid = pr.getAttribute('data-phase');
       var tasks = tasksOf(pid);
       var tf = taskStatus[pid] || '';
       var pText = textHit(pr, term);
-      var taskShown = function (t) { return (pText || textHit(t, term)) && (!tf || t.getAttribute('data-status') === tf); };
-      var anyTaskText = tasks.some(function (t) { return textHit(t, term); });
+      var anyTaskText = false, nMatch = 0;
+      totT += tasks.length;
+      tasks.forEach(function (t) {
+        var tText = textHit(t, term);
+        if (tText) anyTaskText = true;
+        // Marked on the row rather than gathered into an array: this runs on
+        // every keystroke over every task in the plan, and one array per phase
+        // per pass is garbage the filter has no need to make.
+        t.__hit = (pText || tText)
+                  && (!tf || t.getAttribute('data-status') === tf)
+                  && (!modelFilter || t.getAttribute('data-model') === modelFilter)
+                  && dateOk(t);
+        if (t.__hit) nMatch++;
+      });
       // phase-level: phase-status filter + text (phase title OR any task matches)
       var showP = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
-                  && (term === '' || pText || anyTaskText);
+                  && (term === '' || pText || anyTaskText)
+                  && (!narrows || nMatch > 0);
       pr.style.display = showP ? '' : 'none';
-      if (showP) visP++;
-      // open when drilling into tasks (text or task-status filter active), else manual
-      var open = showP && ((term !== '' || tf !== '') || !!expanded[pid]);
+      if (showP) { visP++; visT += nMatch; }
+      // Manual state, and ONLY manual state. This used to OR the search term and
+      // the per-phase task filter into the condition, so one character typed
+      // into the filter threw every matching phase open at once: the page grew by
+      // several screens, the row being read left the viewport, and clearing the
+      // filter afterwards shut the phases that had been opened by hand. What a
+      // filter owes the reader instead is a REASON to open a row, which is the
+      // job the match badge below does.
+      var open = showP && !!expanded[pid];
       setOpen(pr, open);
       var tfRow = tfOf(pid);
       // 'table-row', NOT '': clearing the inline style hands the row back to the
@@ -844,18 +1047,44 @@ _SCRIPT = r"""<script>
       // never be seen. `tr.task` survives the same pattern only because it has no
       // default display rule to fall back to.
       if (tfRow) tfRow.style.display = open ? 'table-row' : 'none';
-      tasks.forEach(function (t) { t.style.display = (open && taskShown(t)) ? '' : 'none'; });
+      tasks.forEach(function (t) { t.style.display = (open && t.__hit) ? '' : 'none'; });
+      // "3 of 12 match" on a row that is closed and hiding its own evidence. Not
+      // shown at rest, and not shown when everything matched — "12 of 12" is a
+      // sentence that tells a reader nothing they did not already have.
+      var badge = pr.__pmatch;
+      if (badge) {
+        var wanted = showP && !open && anyFilter && nMatch !== tasks.length;
+        if (wanted) badge.textContent = nMatch + ' of ' + tasks.length + ' match';
+        badge.hidden = !wanted;
+      }
     });
     bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
 
     if (count) {
-      var filtered = term !== '' || phaseStatus !== '';
-      count.textContent = filtered ? (visP + ' / ' + phaseRows.length + ' phases') : (phaseRows.length + ' phases');
+      // Tasks as well as phases, now that a filter can narrow a phase from the
+      // inside: with the model or date filters on, the phase count alone moves
+      // hardly at all while the thing being counted moves a great deal.
+      count.textContent = anyFilter
+        ? (visP + ' / ' + phaseRows.length + ' phases · ' + visT + ' of ' + totT + ' tasks')
+        : (phaseRows.length + ' phases');
+    }
+    // Filtered down to nothing, the table was an empty frame with no explanation
+    // and no way back except undoing each control by hand.
+    if (norow) norow.style.display = (anyFilter && visP === 0) ? 'table-row' : 'none';
+    // The toolbar copy appears the moment anything is filtering, so there is a way
+    // back that does not depend on the table having rows left to draw it in.
+    clearBtns.forEach(function (b) { b.hidden = !anyFilter; });
+    // A filter folded away inside a closed <details> is how a reader concludes
+    // rows are missing. The count on the summary says something is on.
+    if (fcount) {
+      var nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0);
+      fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {
       var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
       expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
     }
+    syncHash();
   }
 
   function natCmp(a, b) {
@@ -970,16 +1199,106 @@ _SCRIPT = r"""<script>
   });
 
   // per-phase task-status chips (contextual — only that phase's task statuses)
+  var tfHosts = [];
   phaseRows.forEach(function (pr) {
     var pid = pr.getAttribute('data-phase');
     var tfRow = tfOf(pid); if (!tfRow) return;
     var host = tfRow.querySelector('.tf-chips'); if (!host) return;
+    tfHosts.push(host);
     wireChips(host, 'data-ts', function (val) {
       taskStatus[pid] = (taskStatus[pid] === val) ? '' : val;
       highlight(host, 'data-ts', taskStatus[pid]);
       refresh();
     });
   });
+
+  // model chips (inside the More filters panel)
+  wireChips(modelBar, 'data-m', function (val, host, attr) {
+    modelFilter = (modelFilter === val) ? '' : val;
+    highlight(host, attr, modelFilter);
+    refresh();
+  });
+
+  // The More-filters panel closes on an outside click and on Escape. A <details>
+  // natively closes only through its own summary, so a reader who opens it,
+  // picks a filter and moves on leaves it hanging over the table — and it is
+  // absolutely positioned, so it covers rows that have nothing to do with it.
+  //
+  // Clicking the summary to OPEN is not caught by this: the toggle is the click's
+  // default action and runs after the event has finished bubbling, so at this
+  // point the element is still closed and the query below finds nothing. Clicking
+  // the summary to CLOSE is inside `contains`, so it is left to the native
+  // behaviour rather than being closed twice. Clicks inside the panel — a chip, a
+  // date field — are `contains` too, so changing a filter never dismisses the
+  // thing you are changing it in.
+  function openPanel() { return document.querySelector('details.fdetails[open]'); }
+  document.addEventListener('click', function (ev) {
+    var d = openPanel();
+    if (d && !d.contains(ev.target)) d.open = false;
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    // Escape in the search box already means "clear the search"; leave it alone
+    // rather than have one key do two things at once.
+    if (q && ev.target === q) return;
+    var d = openPanel();
+    if (!d) return;
+    d.open = false;
+    var sum = d.querySelector('summary');
+    if (sum) sum.focus();          // put focus back on the control that opened it
+  });
+
+  function paintDates() {
+    if (fromInput) fromInput.value = dFrom;
+    if (toInput) toInput.value = dTo;
+    if (presetBar) highlight(presetBar, 'data-days', preset);
+  }
+  function onDateInput() {
+    dFrom = fromInput ? fromInput.value : '';
+    dTo = toInput ? toInput.value : '';
+    preset = '';                       // a hand-picked range is no longer a preset
+    if (presetBar) highlight(presetBar, 'data-days', '');
+    refresh();
+  }
+  if (fromInput) fromInput.addEventListener('change', onDateInput);
+  if (toInput) toInput.addEventListener('change', onDateInput);
+
+  // Relative spans, measured back from the plan's last recorded day (DMAX) rather
+  // than from today — see DMAX above for why the wall clock is not an option here.
+  function applyPreset(days) {
+    preset = days;
+    var ms = DMAX ? Date.parse(DMAX + 'T00:00:00Z') : NaN;
+    if (days === 'all' || isNaN(ms)) {
+      dFrom = ''; dTo = '';
+      if (days !== 'all') preset = '';   // nothing to measure from; claim nothing
+    } else {
+      // Inclusive of the last day, so "7 days" spans seven of them and not eight.
+      dFrom = new Date(ms - (Number(days) - 1) * 86400000).toISOString().slice(0, 10);
+      dTo = DMAX;
+    }
+    paintDates();
+    refresh();
+  }
+  wireChips(presetBar, 'data-days', function (val) {
+    applyPreset(preset === val ? 'all' : val);
+  });
+
+  // One control that undoes all of them. It lives in the empty state because that
+  // is the one view from which no other control is reachable — every chip that
+  // could clear itself has been filtered off the screen along with the rows.
+  function clearAll() {
+    if (q) q.value = '';
+    phaseStatus = ''; modelFilter = ''; dFrom = ''; dTo = ''; preset = '';
+    taskStatus = {};
+    if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', '');
+    if (modelBar) highlight(modelBar, 'data-m', '');
+    // Clearing the state without unlighting these would leave rows claiming a
+    // filter that no longer applies to them.
+    tfHosts.forEach(function (h) { highlight(h, 'data-ts', ''); });
+    paintDates();
+    refresh();
+  }
+  clearBtns.forEach(function (b) { b.addEventListener('click', clearAll); });
 
   // Save as PDF — the print stylesheet lays the report out on A4 with every
   // phase expanded; the browser's print dialog offers "Save as PDF" (no bundled
@@ -1145,6 +1464,18 @@ _SCRIPT = r"""<script>
       refresh();
     });
   }
+  // Restore what the link asked for BEFORE the first pass, so a shared URL renders
+  // the view it names instead of rendering everything and then rearranging itself.
+  if (q && HASH.q) q.value = HASH.q;
+  if (HASH.ps) {
+    phaseStatus = HASH.ps;
+    if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', phaseStatus);
+  }
+  if (HASH.m) {
+    modelFilter = HASH.m;
+    if (modelBar) highlight(modelBar, 'data-m', modelFilter);
+  }
+  if (HASH.from || HASH.to) { dFrom = HASH.from || ''; dTo = HASH.to || ''; paintDates(); }
   refresh();
 })();
 </script>"""
@@ -1210,15 +1541,22 @@ def _bug_view(b, task_by_id):
     return stored, (fixed_in or "—")
 
 
-def _chip_buttons(statuses, attr, cls):
-    """Toggle buttons for a set of statuses — machine value in `attr`, words shown.
+def _chip_buttons(statuses, attr, cls, humanize=True):
+    """Toggle buttons for a set of values — machine value in `attr`, words shown.
 
     `aria-pressed` is what makes a toggle's state readable; without it "which
     filter is on" is carried by colour alone.
+
+    `humanize` is off for values that are IDENTIFIERS rather than vocabulary. A
+    status is a word this product chose and should read as English; a model name
+    is a string someone types into a manifest and reads back out of a bill, and
+    running it through label() gave a chip reading "Opus" beside a table cell
+    reading `opus` — two spellings of one value, in one table.
     """
     return "".join(
         '<button type="button" class="%s" %s="%s" aria-pressed="false">%s</button>'
-        % (cls, attr, e(s), e(_theme.label(s))) for s in statuses)
+        % (cls, attr, e(s), e(_theme.label(s) if humanize else s))
+        for s in statuses)
 
 
 def _chip(status):
@@ -1271,6 +1609,99 @@ def _timing_cell(task):
     return '<span class="muted">—</span>'
 
 
+def _filter_attrs(task):
+    """The data a task row is filtered BY, in attributes rather than in its text.
+
+    Model and dates are filtered on, and the text search already reads the row's
+    rendered text — but neither of those is reliable to read back out of it. The
+    model may not be a rendered column at all (`_present_columns` drops it when no
+    task has one), and the `done` cell shows a date that is sometimes prefixed
+    with the word "started". A filter reading its own attributes compares the
+    manifest's values, not the table's prose.
+
+    Dates are cut to their date part on purpose: ISO-8601 dates compare correctly
+    as STRINGS while they are the same length and shape, so the whole range test
+    in the script is `d >= from && d <= to` with no Date parsing per row. Whole
+    timestamps would break that against a bare `<input type=date>` value.
+
+    Emitted only when present — an absent value is an absent attribute, so the
+    script's `getAttribute(...) || ''` sees the same thing either way and the
+    markup does not carry a row of empty strings for a plan that tracks neither.
+    """
+    out = []
+    if task.get("model"):
+        out.append(' data-model="%s"' % e(task["model"]))
+    for attr, key in (("data-started", "startedAt"), ("data-completed", "completedAt")):
+        if task.get(key):
+            out.append(' %s="%s"' % (attr, e(_short_date(task[key]))))
+    return "".join(out)
+
+
+def _filter_panel(manifest):
+    """The model and date controls, server-rendered, or "" when the plan has neither.
+
+    Everything here is emitted from the manifest rather than built by the script,
+    which is the rule the status chips already follow: built in JS, a filter UI is
+    missing from every printed page and every reader that runs no script, and
+    "the filters are gone" is indistinguishable from "the filters are broken".
+
+    The date inputs carry the plan's own range as `min`/`max`, so the picker opens
+    on the months the work actually happened in rather than on this century.
+    """
+    models, dates = set(), []
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        for t in (ph.get("tasks") or []):
+            if not isinstance(t, dict):
+                continue
+            if t.get("model"):
+                models.add(str(t["model"]))
+            for key in ("startedAt", "completedAt"):
+                if t.get(key):
+                    dates.append(_short_date(t[key]))
+    if not models and not dates:
+        return ""
+
+    rows = []
+    if models:
+        rows.append('<div class="frow"><span class="tbl">Model:</span>'
+                    '<span id="audit-model">%s</span></div>'
+                    % _chip_buttons(sorted(models), "data-m", "fchip",
+                                    humanize=False))
+    if dates:
+        span = ' min="%s" max="%s"' % (e(min(dates)), e(max(dates)))
+        # The presets are relative to the LAST DAY IN THE DATA, not to today.
+        # "Last 30 days" measured against the wall clock answers a different
+        # question every morning, and would make the committed example — which CI
+        # byte-compares against docs/index.html — a file that cannot stay equal to
+        # itself. The script derives the dates from the rows; these carry only the
+        # span, so the arithmetic has one home.
+        rows.append(
+            '<div class="frow"><span class="tbl">Worked between:</span>'
+            '<input type="date" id="audit-from" aria-label="Show tasks worked on '
+            'or after this date"%s>'
+            '<span class="tbl">and</span>'
+            '<input type="date" id="audit-to" aria-label="Show tasks worked on or '
+            'before this date"%s></div>' % (span, span))
+        rows.append(
+            '<div class="frow"><span class="tbl">Last:</span><span id="audit-presets">'
+            '<button type="button" class="fchip" data-days="7" aria-pressed="false">'
+            '7 days</button>'
+            '<button type="button" class="fchip" data-days="30" aria-pressed="false">'
+            '30 days</button>'
+            '<button type="button" class="fchip" data-days="all" aria-pressed="false">'
+            'All</button></span></div>')
+        # Says which "last 30 days" this is. Without it a reader compares the
+        # dates against their own calendar, finds them stale, and concludes the
+        # report is out of date rather than that it is measuring the work.
+        rows.append('<p class="fnote">Counted back from %s, the last day this '
+                    "plan recorded work — not from today.</p>" % e(max(dates)))
+    return ('<details class="fdetails"><summary aria-label="More filters">'
+            'More filters<span class="fcount" id="audit-fcount"></span></summary>'
+            '<div class="filterpanel">%s</div></details>' % "".join(rows))
+
+
 def _risk_chip(risk):
     """Tinted risk chip (low/med/high); em dash for null/unknown. Colored by the
     CSS theme token selected via data-risk (see _CSS)."""
@@ -1307,6 +1738,7 @@ def _bar(done, total):
 # call sites: these names are what the selftest below asks for by hand.
 _undeclared_css_vars = _theme.undeclared_css_vars
 _unterminated_css_decls = _theme.unterminated_css_decls
+_mangled_css_escapes = _theme.mangled_css_escapes
 _theme_asymmetric_vars = _theme.theme_asymmetric_vars
 _themes_missing_color_scheme = _theme.themes_missing_color_scheme
 
@@ -2438,11 +2870,19 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
         'placeholder="Filter phases &amp; tasks by text\u2026">'
         '<span class="tbl">Phase status:</span><span id="audit-phase-status">%s</span>'
+        '%s'
         '<button type="button" id="audit-expand" class="btn">expand all</button>'
+        # Shown only while something is actually filtering. It is a second copy of
+        # the empty state's button on purpose: the More-filters panel is drawn OVER
+        # the top of the table, so when a filter leaves no rows at all, the empty
+        # state — and the only way back from it — ends up underneath the very panel
+        # that caused it. A browser click found that; no string check could.
+        '<button type="button" class="btn" data-clear hidden>Clear filters</button>'
         '<span id="audit-count" class="muted"></span>'
         "<noscript><span class=\"tbl\">Filtering and collapsing need JavaScript "
         "\u2014 every row is shown.</span></noscript></div>"
-        % _chip_buttons(_phase_statuses, "data-ps", "fchip"))
+        % (_chip_buttons(_phase_statuses, "data-ps", "fchip"),
+           _filter_panel(manifest)))
 
     # One collapsible table: each phase is a group-row (click to expand its task
     # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
@@ -2484,7 +2924,8 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
             '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
             'data-area="%s" tabindex="0" '
             'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
-            '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s %s%s</td></tr>'
+            '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s %s'
+            '<span class="pmatch" hidden></span>%s</td></tr>'
             % (e(pid), e(pid), e(psum["status"]),
                ' data-held="1"' if held else "",
                e(" ".join(areas)), ncol, e(pid), e(psum["title"]),
@@ -2511,14 +2952,22 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                 "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
             }
             out.append(
-                '<tr class="task" data-phase="%s" data-status="%s"%s>'
+                '<tr class="task" data-phase="%s" data-status="%s"%s%s>'
                 '<td class="mono tid">%s</td><td>%s</td><td>%s</td>%s</tr>'
                 % (e(pid), e(t.get("status")),
                    ' data-held="1"' if held else "",
+                   _filter_attrs(t),
                    e(t.get("id")), e(t.get("title")),
                    _chip(t.get("status")),
                    "".join(cells[c]() for c in cols)))
-    out.append("</tbody></table></div></section>")
+    # Its own <tbody>, so `tbody tr:last-child` keeps meaning the last DATA row —
+    # the table's rounded bottom corner and its missing final rule both hang off
+    # that selector, and a permanently-present hidden row in the main body would
+    # have quietly taken both.
+    out.append('</tbody><tbody><tr class="norows"><td colspan="%d">'
+               "No phase matches these filters."
+               '<button type="button" class="btn" data-clear>Clear filters'
+               "</button></td></tr></tbody></table></div></section>" % ncol)
 
     # Usage is the longest section by far — a chart, five tiles, three ranked
     # lists, a budget block, economics and a heatmap — so its own headings become
@@ -2881,11 +3330,16 @@ def _selftest():
              "tasks": [
                  {"id": "P1.1", "title": "done task", "status": "done",
                   "commit": "abcdef1234567", "files": ["src/a.ts"], "risk": "high",
+                  "model": "sonnet",
                   "startedAt": "2026-07-09T08:00:00Z",
                   "completedAt": "2026-07-09T09:30:00Z",
                   "outcome": {"descriptive": "did the thing cleanly"},
                   "ado": {"id": 42, "url": "https://dev.azure.com/o/p/_workitems/edit/42"}},
+                 # A SECOND model, so the filter has something to choose between:
+                 # one model renders one chip, and a set of one cannot tell a
+                 # working filter from a filter that always matches.
                  {"id": "P1.2", "title": "evil url", "status": "pending",
+                  "model": "opus",
                   "ado": {"id": 7, "url": "javascript:alert(1)"}},
              ]},
         ],
@@ -3046,6 +3500,13 @@ def _selftest():
     _nocs = _themes_missing_color_scheme(_CSS)
     check("u14i every explicit data-theme restates color-scheme, so the toggle "
           "moves the native controls with it", _nocs == [], repr(_nocs))
+    # This stylesheet lives in a non-raw Python string, so every CSS escape has to
+    # be written twice over. `content:"\2713\a0"` compiled to `¹3<BEL>0` and drew
+    # exactly that on the one chip whose whole job was to state its own state
+    # without colour — for as long as that chip has existed, with the suite green.
+    _esc = _mangled_css_escapes(_CSS)
+    check("u14j no CSS escape was eaten by Python before the browser saw it",
+          _esc == [], repr(_esc))
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
     _unterm = _unterminated_css_decls(_CSS)
@@ -3224,8 +3685,13 @@ def _selftest():
           and "--chip-ink" not in _CSS)
     check("badges: the hue is carried by a dot, not only by the text colour",
           ".chip::before{" in _CSS)
-    check("filters: an active chip says so without relying on hue",
-          ".fchip.on::before" in _CSS)
+    # The GLYPH, not just the selector. The selector-only version of this check was
+    # green for the entire life of a chip that drew `¹30` where the tick belonged.
+    check("filters: an active chip says so without relying on hue - and the tick "
+          "reaches the browser as an escape, not as the octal wreckage of one",
+          ".fchip.on::before" in _CSS
+          and _mangled_css_escapes(
+              _CSS[_CSS.index(".fchip.on::before"):][:120]) == [])
     # The markdown twin is a data table read by machines and by GitHub; it keeps
     # the machine spelling on purpose.
     check("badges: the markdown twin still speaks the manifest's own vocabulary",
@@ -3239,6 +3705,109 @@ def _selftest():
           and "createElement('button')" not in _SCRIPT)
     check("filters: the script attaches behaviour rather than building the UI",
           "function wireChips" in _SCRIPT and "buildChips" not in _SCRIPT)
+
+    # --- c5: model + date filters, no auto-expand, match counts, hash state ----
+    # These pin the SHAPE. Whether any of it works is settled in a browser by
+    # tools/check-report-interactive.mjs, because a report whose script dies on
+    # line one still contains every string below.
+    check("c5: a task row carries what the filters compare, rather than making "
+          "them read it back out of the rendered prose",
+          'data-model="' in html_out and 'data-completed="' in html_out)
+    check("c5: dates are cut to their date part, so a range test is a string "
+          "comparison and an <input type=date> value can be one end of it",
+          re.search(r'data-completed="\d{4}-\d{2}-\d{2}"', html_out) is not None
+          and 'data-completed="20' in html_out
+          and not re.search(r'data-(completed|started)="[^"]*T', html_out))
+    check("c5: the model and date controls are in the document inside a native "
+          "<details> - built in JS they would be missing from every no-script "
+          "reader and every printed page, the same trap the status chips fell in",
+          'class="fdetails"' in html_out
+          and 'class="filterpanel"' in html_out
+          and '<summary' in html_out
+          and 'class="fchip" data-m=' in html_out
+          and '<input type="date" id="audit-from"' in html_out)
+    check("c5: a model chip is spelled the way the table spells it - a model name "
+          "is an identifier, not a word this product chose",
+          '<button type="button" class="fchip" data-m="opus" aria-pressed="false">'
+          "opus</button>" in html_out)
+    check("c5: the date picker opens on the months the plan actually covers",
+          re.search(r'id="audit-from"[^>]*min="\d{4}-\d{2}-\d{2}"[^>]*'
+                    r'max="\d{4}-\d{2}-\d{2}"', html_out) is not None)
+    check("c5: the panel is out of flow, so opening it cannot move the sticky "
+          "stack every anchor and column header is pinned against",
+          ".filterpanel{position:absolute" in _CSS and ".fdetails{position:relative}" in _CSS)
+    # The panel is a popover, so it answers to the two things every popover
+    # answers to. A <details> does neither on its own — it closes only through its
+    # own summary — and this one is absolutely positioned, so left open it covers
+    # rows it has nothing to do with.
+    check("filters: an outside click closes the More-filters panel",
+          "details.fdetails[open]" in _SCRIPT and "!d.contains(ev.target)" in _SCRIPT)
+    check("filters: Escape closes it and returns focus to the control that opened it",
+          "if (ev.key !== 'Escape') return;" in _SCRIPT and "sum.focus()" in _SCRIPT)
+    # Escape already means "clear the search" in the search box. One key doing two
+    # things at once is worse than either.
+    check("filters: Escape in the search box keeps its own meaning",
+          "if (q && ev.target === q) return;" in _SCRIPT)
+    # Room to read, not just room to fit: 27rem cleared the wrapping floor but left
+    # four control rows crowded inside .75rem of padding.
+    check("filters: the panel has room for its four rows",
+          "min-width:32rem" in _CSS and "padding:1rem 1.1rem" in _CSS)
+    check("filters: and still cannot outgrow a narrow viewport",
+          "max-width:calc(100vw - 2rem)" in _CSS)
+    # A relative span measured against the wall clock answers a different question
+    # every morning — and would make the committed example a file that cannot stay
+    # byte-equal to itself, which is precisely what ci.yml compares.
+    check("c5: the presets measure back from the plan's own last recorded day, "
+          "never from today",
+          "var DMAX" in _SCRIPT
+          and "Date.now()" not in _SCRIPT
+          and "new Date()" not in _SCRIPT
+          and "DMAX + 'T00:00:00Z'" in _SCRIPT)
+    check("c5: filtering no longer forces its matches open - it offers a reason "
+          "to open a row instead",
+          "var open = showP && !!expanded[pid];" in _SCRIPT
+          and "(term !== '' || tf !== '')" not in _SCRIPT)
+    check("c5: and that reason is rendered - the match badge is in the row, "
+          "hidden until there is something to say",
+          'class="pmatch" hidden' in html_out
+          and "' of ' + tasks.length + ' match'" in _SCRIPT)
+    check("c5: the badge's `hidden` is honoured (a class with a display would "
+          "otherwise beat it and pin '10 of 10 match' to every row at rest)",
+          ".pmatch[hidden]{display:none}" in _CSS)
+    check("c5: the count reports tasks as well as phases, now that a filter can "
+          "narrow a phase from the inside without changing the phase count",
+          "' of ' + totT + ' tasks'" in _SCRIPT)
+    # Same trap as tr.taskfilter: with no script running every row is shown, so an
+    # empty state that rendered by default would be a statement contradicted by
+    # the table directly beneath it.
+    check("c5: the empty state is hidden by default and revealed explicitly",
+          "tr.norows{display:none}" in _CSS
+          and 'class="norows"' in html_out
+          and "'table-row' : 'none'" in _SCRIPT)
+    check("c5: the way back out of an empty table does not live only INSIDE the "
+          "empty table - the filter panel is drawn over that row",
+          html_out.count('<button type="button" class="btn" data-clear') == 2
+          and html_out.index("data-clear") < html_out.index('class="phases"'))
+    check("c5: the view is a link, written with replaceState so it neither piles "
+          "up history per keystroke nor throws on a file:// document",
+          "history.replaceState(null, '', '#!'" in _SCRIPT
+          and "try {" in _SCRIPT and "catch (e) {}" in _SCRIPT)
+    check("c5: `#!` distinguishes filter state from the nav's plain fragments, "
+          "and clearing filters strips only ours",
+          "h.indexOf('#!') !== 0" in _SCRIPT
+          and "(location.hash || '').indexOf('#!') === 0" in _SCRIPT)
+    check("c5: the theme travels in the link only where this report owns the "
+          "toggle - embedded, the host stamps data-theme on the same root",
+          "if (themeBtn && parts.length) put('th'" in _SCRIPT)
+    # The panel is emitted from the manifest, so a plan that records neither must
+    # not ship an empty disclosure promising filters it cannot offer.
+    _plain = {"meta": {}, "bugs": [], "phases": [
+        {"id": "P1", "title": "x", "status": "pending",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "pending"}]}]}
+    check("c5: a plan that records no models and no dates gets no panel at all",
+          _filter_panel(_plain) == ""
+          and 'class="fdetails"' not in render_html(
+              _plain, _load_status_lib().rollup(_plain, [], []), "r", None))
     check("filters: a no-script reader is told why nothing filters",
           "<noscript>" in html_out)
     # Controls sit with what they act on.

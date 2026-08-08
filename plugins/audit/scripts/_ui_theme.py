@@ -320,6 +320,44 @@ def theme_asymmetric_vars(css):
         sorted("%s (dark only)" % v for v in colourish(dark_vars) - light_vars)
 
 
+def mangled_css_escapes(css):
+    """CSS escapes eaten by Python before the browser ever saw them.
+
+    A CSS escape is a backslash, and a backslash in a non-raw Python string is an
+    escape too — so `content:"\\2713\\a0"` written inside a plain `\"\"\"...\"\"\"`
+    block never reaches the stylesheet. Python reads `\\271` as an OCTAL byte and
+    `\\a` as the bell character, and the browser is handed `content:"¹3<BEL>0"`.
+    It renders it faithfully: the filter chip whose whole job was to say it is on
+    without relying on hue showed `¹30` instead of a tick, in every report shipped
+    since that chip was added — while the selftest stayed green, because it
+    asserted that the SELECTOR existed and never what it drew.
+
+    The spelling that works is `\\\\2713\\\\a0`, which the panel's copy of the same
+    rule already had. Two files, one glyph, and nothing able to see them disagree:
+    the same shape as every other defect this module exists to catch.
+
+    Two signatures, because the accident has two halves and each is silent alone:
+
+      * a raw control character anywhere in the sheet. `\\a`, `\\f`, `\\v`, `\\0`
+        cannot survive as text and are never intentional in CSS.
+      * a character in U+0080-U+00FF inside a `content:` value. That is precisely
+        the range a Python octal escape can produce (`\\377` is the largest), and
+        nothing legitimate lands there — a real glyph written literally (✓ ▶ —)
+        sits above U+00FF, and everything else in a content string is ASCII.
+    """
+    bad = []
+    for i, ch in enumerate(css):
+        if ord(ch) < 0x20 and ch not in "\n\t":
+            bad.append("raw control char %r near %r"
+                       % (ch, css[max(0, i - 44):i + 6].strip()))
+    for m in re.finditer(r"content\s*:\s*([\"'])(.*?)\1", css):
+        for ch in m.group(2):
+            if 0x80 <= ord(ch) <= 0xFF:
+                bad.append("octal-escape residue %r in %r" % (ch, m.group(0)))
+                break
+    return bad
+
+
 def themes_missing_color_scheme(css):
     """Explicit theme choices that never restate `color-scheme`.
 
@@ -439,6 +477,20 @@ def _selftest():
               ':root[data-theme="dark"]{--bg:#000}\n'
               '@media print{:root,:root[data-theme="dark"]{color-scheme:light}}')
           == ["dark"])
+    # An escape that Python ate is invisible in the source and visible on screen.
+    check("no escape was eaten before the browser saw it: %r"
+          % (mangled_css_escapes(TOKEN_CSS),),
+          not mangled_css_escapes(TOKEN_CSS))
+    check("the escape lint catches the tick that shipped mangled - the octal "
+          "residue and the bell, which are the two halves of one typo",
+          mangled_css_escapes('.a::before{content:"¹3\x070"}')
+          and mangled_css_escapes('.a::before{content:"¹3"}')
+          and mangled_css_escapes('.a{--x:"\x07"}'))
+    check("...and passes the doubled spelling that actually reaches the browser",
+          mangled_css_escapes('.a::before{content:"\\2713\\a0"}') == [])
+    check("a glyph written literally is not a broken escape: ✓ and — are above "
+          "the range an octal escape can reach, so they are left alone",
+          mangled_css_escapes('.a::before{content:"✓—"}') == [])
     check("no declaration is left unterminated: %r" % (unterminated_css_decls(TOKEN_CSS),),
           not unterminated_css_decls(TOKEN_CSS))
     check("braces balance", TOKEN_CSS.count("{") == TOKEN_CSS.count("}"))

@@ -352,6 +352,8 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .btn-primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 .btn-primary:hover{filter:brightness(1.08);background:var(--accent-solid);border-color:var(--accent-solid)}
 .btn-icon{padding:.5rem .5rem;font-size:1rem}
+/* `hidden` is only a hint, and .btn's own display beats it. */
+.btn[hidden]{display:none}
 
 /* ---- filter chips (toolbar phase-status + per-phase task-status) --------- */
 .fchip,.tf-chip{cursor:pointer;font:inherit;font-size:.79rem;line-height:1;padding:.25rem .75rem;
@@ -361,9 +363,58 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .fchip.on,.tf-chip.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 /* State carried by more than hue: a filter that is on says so in forced-colours,
-   in greyscale and on paper, where the accent fill says nothing. */
-.fchip.on::before,.tf-chip.on::before{content:"¹30";font-weight:700}
+   in greyscale and on paper, where the accent fill says nothing. Both backslashes
+   are DOUBLED because this sheet is a non-raw Python string. Written once, Python
+   reads the hex escape as an OCTAL byte and the `a0` as the bell character, and
+   the browser is handed `¹3<BEL>0` — which it draws, faithfully, on the one chip
+   whose entire purpose was to be legible without colour. `mangled_css_escapes()`
+   now fails the build on either half; the panel's copy of this rule always had it
+   right, and nothing in either suite could see the two disagree. */
+.fchip.on::before,.tf-chip.on::before{content:"\2713\a0";font-weight:700}
 .tf-chip{font-size:.73rem;padding:.25rem .5rem}
+
+/* ---- more filters: model + dates, in a native <details> ------------------
+   A <details>, not a scripted popover, for the same reason the chips above are
+   rendered server-side: it opens, closes, takes focus and answers the keyboard
+   with no script at all, and a reader who prints the page or runs none still
+   sees what the filters ARE.
+
+   The panel is absolutely positioned, and that is load-bearing rather than
+   decorative. This bar is the thing the rest of the document pins against —
+   --sectools-h decides where the column headers land, where every anchor lands
+   and where the scroll-spy fold sits — so a panel that pushed the bar taller
+   when opened would move all three under the reader mid-scroll. Out of flow, the
+   bar is one height open or shut, and the panel is drawn OVER the table. */
+.fdetails{position:relative}
+.fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
+  display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
+  border-radius:var(--pill);border:1px solid var(--border);background:var(--surface);
+  color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
+.fdetails>summary::-webkit-details-marker{display:none}
+.fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
+.fdetails[open]>summary::after{content:"\25B4"}
+.fdetails>summary:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* The count of what is narrowing the table, on the closed control. A panel that
+   hides an active filter behind a fold is how a reader concludes the report is
+   missing rows; the summary has to say that something is on. */
+.fdetails .fcount{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+/* Two measurements, both taken from a screenshot rather than guessed. Wide
+   enough that "Worked between: [date] and [date]" stays on one line — at 19rem
+   it wrapped after the word "and", which reads as a broken sentence rather than
+   as a range. And hung from its control's RIGHT edge, because this control sits
+   near the right of the bar: anchored left, a panel this wide ran off the side
+   of the viewport and took its last column with it. */
+.filterpanel{position:absolute;top:calc(100% + .4rem);right:0;z-index:1;min-width:27rem;
+  max-width:calc(100vw - 2rem);
+  display:flex;flex-direction:column;gap:.5rem;padding:.75rem;background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
+.frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.frow input[type=date]{font:inherit;font-size:.78rem;padding:.3rem .45rem;color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)}
+.frow input[type=date]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+#audit-model,#audit-presets{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+.fnote{margin:0;font-size:.7rem;line-height:1.45;color:var(--muted)}
 
 /* ---- badges -------------------------------------------------------------
    ONE grammar for everything that REPORTS a value: tinted from its own colour,
@@ -466,6 +517,18 @@ tr.phase[data-held]>td::before,tr.phase[data-held]:hover>td::before{background:v
   border:1px solid color-mix(in srgb,var(--st-blocked) 30%,transparent);
   border-radius:var(--pill);padding:.15rem .5rem;margin-left:.4rem;text-decoration:none;vertical-align:.06em}
 .heldby:hover{background:var(--st-blocked);color:var(--surface)}
+/* "3 of 12 match" on a COLLAPSED phase. Filtering no longer forces phases open —
+   a search used to expand every hit at once, which turned a five-character query
+   into a page that jumped and scrolled away from what you were reading. The cost
+   of not opening them is that a closed row hides its own evidence: the phase
+   survived the filter and you cannot see why. This is that evidence, and it is
+   also the affordance — a row that says 3 of 12 is a row worth opening. */
+.pmatch{font-size:.72rem;font-weight:600;color:var(--accent);margin-left:.4rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+/* `hidden` is a presentation hint, and any class rule with a display beats it.
+   Without this the badge would be permanently visible, reading "10 of 10 match"
+   at rest on every phase in an unfiltered report. */
+.pmatch[hidden]{display:none}
 .tri{display:inline-block;width:1em;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .tri::before{content:"\25B6";font-size:.72em}
 tr.phase.open .tri{transform:rotate(90deg)}
@@ -482,6 +545,21 @@ tr.taskfilter{display:none}
 tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 3.1rem;border-bottom:1px dashed var(--border)}
 .tf-label{font-size:.75rem;color:var(--muted);margin-right:.5rem}
 .tf-chips{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+
+/* ---- the empty state ------------------------------------------------------
+   Filtered down to nothing, the table was an empty frame: no rows, no
+   explanation, and no way back except undoing each control by hand. Same
+   `display:none` default as tr.taskfilter, and for the same reason — with no
+   script running, every row is shown, so an empty state would be a lie. It lives
+   in its own <tbody> so `tbody tr:last-child` still means the last DATA row and
+   the table keeps its rounded bottom edge while this is hidden. */
+tr.norows{display:none}
+/* Out-specifies the gate rail deliberately: the rail is a drawing of what holds
+   what, and there is nothing here for it to run past. */
+table.phases tbody>tr.norows>td:first-child{text-align:center;color:var(--muted);
+  padding:1.5rem .75rem;background:var(--surface)}
+table.phases tbody>tr.norows>td:first-child::after{content:none}
+tr.norows .btn{margin-left:.6rem}
 
 /* ---- load reveal (ends visible -> readable with JS off) ------------------ */
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -737,7 +815,7 @@ details.more>summary:hover{color:var(--text)}
 }
 </style>
 <div id="audit-nojs" class="nojs" role="status"><strong>This report is interactive, and its scripts are not running here.</strong> Filtering, search, sorting and expanding a phase all need them. An IDE preview pane usually blocks inline scripts — open this file in a real browser and it will work.</div>
-<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-08 12:05 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.27.0</span></p></div>
+<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-08 18:33 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.27.0</span></p></div>
 <div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div></header>
 <div class="shell"><nav class="snav" aria-label="Report sections"><p class="snav-title">Contents</p><ol><li class="item"><a href="#gate">Gate</a></li><li class="item"><a href="#phases">Phases<span class="n">4</span></a></li><li class="item"><a href="#usage">Usage</a></li><li class="sub-item"><a href="#usage-trend">Tokens per day</a></li><li class="sub-item"><a href="#usage-budget">Budget</a></li><li class="item"><a href="#bugs">Bugs<span class="n">3</span></a></li><li class="item"><a href="#ready">Ready now<span class="n">1</span></a></li></ol></nav><main class="content">
 <div class="topgrid">
@@ -745,27 +823,27 @@ details.more>summary:hover{color:var(--text)}
 <div class="summary"><strong>Summary</strong>Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.</div>
 </div>
 <section id="phases" class="sec">
-<div class="toolbar sectools" role="search" aria-label="Filter the phases table"><input id="audit-q" type="search" aria-label="Filter phases and tasks by text" placeholder="Filter phases &amp; tasks by text…"><span class="tbl">Phase status:</span><span id="audit-phase-status"><button type="button" class="fchip" data-ps="done" aria-pressed="false">Done</button><button type="button" class="fchip" data-ps="in_progress" aria-pressed="false">In progress</button><button type="button" class="fchip" data-ps="pending" aria-pressed="false">Pending</button></span><button type="button" id="audit-expand" class="btn">expand all</button><span id="audit-count" class="muted"></span><noscript><span class="tbl">Filtering and collapsing need JavaScript — every row is shown.</span></noscript></div>
+<div class="toolbar sectools" role="search" aria-label="Filter the phases table"><input id="audit-q" type="search" aria-label="Filter phases and tasks by text" placeholder="Filter phases &amp; tasks by text…"><span class="tbl">Phase status:</span><span id="audit-phase-status"><button type="button" class="fchip" data-ps="done" aria-pressed="false">Done</button><button type="button" class="fchip" data-ps="in_progress" aria-pressed="false">In progress</button><button type="button" class="fchip" data-ps="pending" aria-pressed="false">Pending</button></span><details class="fdetails"><summary aria-label="More filters">More filters<span class="fcount" id="audit-fcount"></span></summary><div class="filterpanel"><div class="frow"><span class="tbl">Model:</span><span id="audit-model"><button type="button" class="fchip" data-m="haiku" aria-pressed="false">haiku</button><button type="button" class="fchip" data-m="opus" aria-pressed="false">opus</button><button type="button" class="fchip" data-m="sonnet" aria-pressed="false">sonnet</button></span></div><div class="frow"><span class="tbl">Worked between:</span><input type="date" id="audit-from" aria-label="Show tasks worked on or after this date" min="2026-06-02" max="2026-07-21"><span class="tbl">and</span><input type="date" id="audit-to" aria-label="Show tasks worked on or before this date" min="2026-06-02" max="2026-07-21"></div><div class="frow"><span class="tbl">Last:</span><span id="audit-presets"><button type="button" class="fchip" data-days="7" aria-pressed="false">7 days</button><button type="button" class="fchip" data-days="30" aria-pressed="false">30 days</button><button type="button" class="fchip" data-days="all" aria-pressed="false">All</button></span></div><p class="fnote">Counted back from 2026-07-21, the last day this plan recorded work — not from today.</p></div></details><button type="button" id="audit-expand" class="btn">expand all</button><button type="button" class="btn" data-clear hidden>Clear filters</button><span id="audit-count" class="muted"></span><noscript><span class="tbl">Filtering and collapsing need JavaScript — every row is shown.</span></noscript></div>
 <div class="tablewrap"><table class="phases"><thead><tr><th>id</th><th>title</th><th>status</th><th>model</th><th>risk</th><th>commit</th><th>done</th><th>ADO</th><th>outcome</th></tr></thead><tbody>
-<tr class="phase" id="phase-P1" data-phase="P1" data-status="done" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P1</span> <strong>Auth hardening</strong> <span class="chip" data-status="done">Done</span><span class="stamp" title="Last commit recorded in this phase">b2d7e58</span> <span class="bar"><span class="fill" style="--w:100%"></span></span> <span class="muted">2/2</span><div class="pmeta muted">Desired: Credentials are stored and checked safely: modern password hashing and a rate-limited login path. · branch audit/p1-auth-hardening · merged 2026-06-10T11:05:00Z · Argon2id replaces the legacy MD5 hashing and the login endpoint is now rate-limited. Meets the desired outcome; verified by new tests and a passing review.</div></td></tr>
+<tr class="phase" id="phase-P1" data-phase="P1" data-status="done" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P1</span> <strong>Auth hardening</strong> <span class="chip" data-status="done">Done</span><span class="stamp" title="Last commit recorded in this phase">b2d7e58</span> <span class="bar"><span class="fill" style="--w:100%"></span></span> <span class="muted">2/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Credentials are stored and checked safely: modern password hashing and a rate-limited login path. · branch audit/p1-auth-hardening · merged 2026-06-10T11:05:00Z · Argon2id replaces the legacy MD5 hashing and the login endpoint is now rate-limited. Meets the desired outcome; verified by new tests and a passing review.</div></td></tr>
 <tr class="taskfilter" data-phase="P1"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button></span></td></tr>
-<tr class="task" data-phase="P1" data-status="done"><td class="mono tid">P1.1</td><td>Hash passwords with Argon2id</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>9a1f0c2</td><td class=when><span title="started 2026-06-02T09:10:00Z · completed 2026-06-02T15:40:00Z">2026-06-02</span></td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1421">#1421</a></td><td class=muted>Passwords are now stored with a modern, memory-hard hash.</td></tr>
-<tr class="task" data-phase="P1" data-status="done"><td class="mono tid">P1.2</td><td>Rate-limit the login endpoint</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>b2d7e58</td><td class=when><span title="started 2026-06-08T10:00:00Z · completed 2026-06-09T12:20:00Z">2026-06-09</span></td><td><span class="muted">—</span></td><td class=muted>Repeated failed logins are now throttled.</td></tr>
-<tr class="phase" id="phase-P2" data-phase="P2" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P2</span> <strong>Input validation</strong> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:25%"></span></span> <span class="muted">1/4</span><div class="pmeta muted">Desired: Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template. · branch audit/p2-input-validation</div></td></tr>
+<tr class="task" data-phase="P1" data-status="done" data-model="opus" data-started="2026-06-02" data-completed="2026-06-02"><td class="mono tid">P1.1</td><td>Hash passwords with Argon2id</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>9a1f0c2</td><td class=when><span title="started 2026-06-02T09:10:00Z · completed 2026-06-02T15:40:00Z">2026-06-02</span></td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1421">#1421</a></td><td class=muted>Passwords are now stored with a modern, memory-hard hash.</td></tr>
+<tr class="task" data-phase="P1" data-status="done" data-model="sonnet" data-started="2026-06-08" data-completed="2026-06-09"><td class="mono tid">P1.2</td><td>Rate-limit the login endpoint</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>b2d7e58</td><td class=when><span title="started 2026-06-08T10:00:00Z · completed 2026-06-09T12:20:00Z">2026-06-09</span></td><td><span class="muted">—</span></td><td class=muted>Repeated failed logins are now throttled.</td></tr>
+<tr class="phase" id="phase-P2" data-phase="P2" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P2</span> <strong>Input validation</strong> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:25%"></span></span> <span class="muted">1/4</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template. · branch audit/p2-input-validation</div></td></tr>
 <tr class="taskfilter" data-phase="P2"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="blocked" aria-pressed="false">Blocked</button><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button><button type="button" class="tf-chip" data-ts="in_progress" aria-pressed="false">In progress</button><button type="button" class="tf-chip" data-ts="pending" aria-pressed="false">Pending</button></span></td></tr>
-<tr class="task" data-phase="P2" data-status="done"><td class="mono tid">P2.1</td><td>Validate the checkout payload</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>c4a11b9</td><td class=when><span title="started 2026-06-22T09:30:00Z · completed 2026-06-23T16:10:00Z">2026-06-23</span></td><td><span class="muted">—</span></td><td class=muted>Malformed checkouts are turned away early.</td></tr>
-<tr class="task" data-phase="P2" data-status="in_progress"><td class="mono tid">P2.2</td><td>Sanitize the product-search query</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-06T09:00:00Z · completed —">started 2026-07-06</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="task" data-phase="P2" data-status="blocked"><td class="mono tid">P2.3</td><td>Escape server-rendered template output</td><td><span class="chip" data-status="blocked">Blocked</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-13T09:15:00Z · completed —">started 2026-07-13</span></td><td><span class="muted">—</span></td><td class=muted>Blocked pending a cross-cutting escaping-helper decision.</td></tr>
-<tr class="task" data-phase="P2" data-status="pending"><td class="mono tid">P2.4</td><td>Add zod schemas for cart mutations</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="phase" id="phase-P3" data-phase="P3" data-status="pending" data-held="1" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P3</span> <strong>Performance pass</strong> <span class="chip" data-status="pending">Pending</span><a class="heldby" href="#phase-P2" title="This phase is held until P2 is done">held by P2</a> <span class="bar"><span class="fill" style="--w:0%"></span></span> <span class="muted">0/2</span><div class="pmeta muted">Desired: The catalog and product pages render without the known redundant work and heavy above-the-fold images.</div></td></tr>
+<tr class="task" data-phase="P2" data-status="done" data-model="sonnet" data-started="2026-06-22" data-completed="2026-06-23"><td class="mono tid">P2.1</td><td>Validate the checkout payload</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>c4a11b9</td><td class=when><span title="started 2026-06-22T09:30:00Z · completed 2026-06-23T16:10:00Z">2026-06-23</span></td><td><span class="muted">—</span></td><td class=muted>Malformed checkouts are turned away early.</td></tr>
+<tr class="task" data-phase="P2" data-status="in_progress" data-model="opus" data-started="2026-07-06"><td class="mono tid">P2.2</td><td>Sanitize the product-search query</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-06T09:00:00Z · completed —">started 2026-07-06</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="task" data-phase="P2" data-status="blocked" data-model="sonnet" data-started="2026-07-13"><td class="mono tid">P2.3</td><td>Escape server-rendered template output</td><td><span class="chip" data-status="blocked">Blocked</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-13T09:15:00Z · completed —">started 2026-07-13</span></td><td><span class="muted">—</span></td><td class=muted>Blocked pending a cross-cutting escaping-helper decision.</td></tr>
+<tr class="task" data-phase="P2" data-status="pending" data-model="haiku"><td class="mono tid">P2.4</td><td>Add zod schemas for cart mutations</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="phase" id="phase-P3" data-phase="P3" data-status="pending" data-held="1" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P3</span> <strong>Performance pass</strong> <span class="chip" data-status="pending">Pending</span><a class="heldby" href="#phase-P2" title="This phase is held until P2 is done">held by P2</a> <span class="bar"><span class="fill" style="--w:0%"></span></span> <span class="muted">0/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: The catalog and product pages render without the known redundant work and heavy above-the-fold images.</div></td></tr>
 <tr class="taskfilter" data-phase="P3"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="pending" aria-pressed="false">Pending</button></span></td></tr>
-<tr class="task" data-phase="P3" data-status="pending" data-held="1"><td class="mono tid">P3.1</td><td>Memoize the product-list selector</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="task" data-phase="P3" data-status="pending" data-held="1"><td class="mono tid">P3.2</td><td>Lazy-load below-the-fold images</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="phase" id="phase-BF1" data-phase="BF1" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">BF1</span> <strong>Bugfix batch 1</strong> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:50%"></span></span> <span class="muted">1/2</span><div class="pmeta muted">Desired: Reported bugs are reproduced red-first and fixed. · branch audit/bf1-bugfix-batch-1</div></td></tr>
+<tr class="task" data-phase="P3" data-status="pending" data-held="1" data-model="haiku"><td class="mono tid">P3.1</td><td>Memoize the product-list selector</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="task" data-phase="P3" data-status="pending" data-held="1" data-model="haiku"><td class="mono tid">P3.2</td><td>Lazy-load below-the-fold images</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="phase" id="phase-BF1" data-phase="BF1" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">BF1</span> <strong>Bugfix batch 1</strong> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:50%"></span></span> <span class="muted">1/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Reported bugs are reproduced red-first and fixed. · branch audit/bf1-bugfix-batch-1</div></td></tr>
 <tr class="taskfilter" data-phase="BF1"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button><button type="button" class="tf-chip" data-ts="in_progress" aria-pressed="false">In progress</button></span></td></tr>
-<tr class="task" data-phase="BF1" data-status="in_progress"><td class="mono tid">BF1.1</td><td>Fix BUG-3: cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-20T11:00:00Z · completed —">started 2026-07-20</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="task" data-phase="BF1" data-status="done"><td class="mono tid">BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>a1b2c3d</td><td class=when><span title="started 2026-07-21T09:40:00Z · completed 2026-07-21T18:05:00Z">2026-07-21</span></td><td><span class="muted">—</span></td><td class=muted>Logging out now actually ends the session.</td></tr>
-</tbody></table></div></section>
+<tr class="task" data-phase="BF1" data-status="in_progress" data-model="sonnet" data-started="2026-07-20"><td class="mono tid">BF1.1</td><td>Fix BUG-3: cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-20T11:00:00Z · completed —">started 2026-07-20</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="task" data-phase="BF1" data-status="done" data-model="opus" data-started="2026-07-21" data-completed="2026-07-21"><td class="mono tid">BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>a1b2c3d</td><td class=when><span title="started 2026-07-21T09:40:00Z · completed 2026-07-21T18:05:00Z">2026-07-21</span></td><td><span class="muted">—</span></td><td class=muted>Logging out now actually ends the session.</td></tr>
+</tbody><tbody><tr class="norows"><td colspan="9">No phase matches these filters.<button type="button" class="btn" data-clear>Clear filters</button></td></tr></tbody></table></div></section>
 <h2 id="usage">Usage</h2><p class="uctx">3 phases · 3 people · 4 models · 4 sessions · 2026-06-02 to 2026-07-21 · rates as of 2026-08-06</p><div class="tiles"><div class="tile"><div class="k">tokens</div><div class="v">93.1M<span class="dl up">+79%</span></div><div class="s">899 messages</div></div><div class="tile"><div class="k">equivalent cost</div><div class="v">$103.65<span class="dl up">+127%</span></div><div class="s">not a bill — subscription plans have no per-token charge</div></div><div class="tile"><div class="k">cache hit</div><div class="v">94%</div><div class="s">input side bills at 18% of fresh-token rates</div></div><div class="tile"><div class="k">cost per task</div><div class="v">$15.77</div><div class="s">4 task(s) completed</div></div><div class="tile"><div class="k">attributed</div><div class="v">95%</div><div class="s">88% down to a specific task</div></div></div><h3 class="sub" id="usage-trend">Tokens per day</h3><p class="muted small" style="margin:0 0 var(--sp-1)">Deltas above compare 2026-06-22 to 2026-07-21 with the 30 days before it.</p><div class="colswrap"><svg class="cols" viewBox="0 0 720 210" preserveAspectRatio="none" role="img" aria-label="Tokens per day, peak 34.1M"><line class="grid" x1="0" y1="14.0" x2="720" y2="14.0" vector-effect="non-scaling-stroke"></line><line class="grid" x1="0" y1="101.0" x2="720" y2="101.0" vector-effect="non-scaling-stroke"></line><path class="col" d="M3.7 188.0L3.7 136.4Q3.7 132.4 7.7 132.4L23.7 132.4Q27.7 132.4 27.7 136.4L27.7 188.0Z"><title>2026-06-02
 tokens	10.88M
 cost	$12.38</title></path><path class="col" d="M35.0 188.0L35.0 188.0Q35.0 186.9 36.1 186.9L57.9 186.9Q59.0 186.9 59.0 188.0L59.0 188.0Z"><title>2026-06-04
@@ -911,7 +989,7 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
 <div class="tablewrap"><table class="data bugs"><thead><tr><th>id</th><th>title</th><th>status</th><th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th></tr></thead><tbody><tr data-status="open"><td class=mono>BUG-1</td><td>Product images 404 intermittently on Safari</td><td><span class="chip" data-status="open">Open</span></td><td>med</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="triaged"><td class=mono>BUG-2</td><td>Checkout is slow on 3G mobile</td><td><span class="chip" data-status="triaged">Triaged</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="in_progress"><td class=mono>BUG-3</td><td>Cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>med</td><td class=mono>BF1.1</td><td class=mono>—</td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1508">#1508</a></td></tr><tr data-status="fixed"><td class=mono>BUG-4</td><td>Logout does not clear the session cookie</td><td><span class="chip" data-status="fixed">Fixed</span></td><td>high</td><td class=mono>BF1.2</td><td class=mono>a1b2c3d</td><td><span class="muted">—</span></td></tr><tr data-status="wontfix"><td class=mono>BUG-5</td><td>Dark-mode label contrast below AA</td><td><span class="chip" data-status="wontfix">Won’t fix</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr></tbody></table></div>
 <h2 id="ready">Ready now</h2><p class=mono>P2.4</p>
 </main></div>
-<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTA4IDEyOjA1IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgLS0gfCA0LjZNIHwgJDYuNzQgfCAxOTQgfAoKIyMjIEJ5IG1vZGVsCgp8IG1vZGVsIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IGNsYXVkZS1vcHVzLTUgfCA1Mi40TSB8ICQ2MC44MCB8IDM1NiB8CnwgY2xhdWRlLXNvbm5ldC01IHwgMzguMU0gfCAkMzkuMTIgfCA0MjEgfAp8IGNsYXVkZS1oYWlrdS00LTUgfCAyLjBNIHwgJDAuNzUgfCA4NSB8CnwgY2xhdWRlLWZhYmxlLTUgfCA2NTUuMksgfCAkMi45OCB8IDM3IHwKCiMjIyBCeSBhdXRob3IKCnwgYXV0aG9yIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IG1pbG9zQGFjbWUuZXhhbXBsZSB8IDQ3LjhNIHwgJDQ4LjA2IHwgMjQ2IHwKfCBhbGV4QGFjbWUuZXhhbXBsZSB8IDI1LjNNIHwgJDMxLjc0IHwgNDc5IHwKfCBzYXJhQGFjbWUuZXhhbXBsZSB8IDIwLjBNIHwgJDIzLjg1IHwgMTc0IHwKCiMjIyBFY29ub21pY3MKCi0gKipDYWNoZToqKiA5NCUgaGl0OyB0aGUgaW5wdXQgc2lkZSBiaWxscyBhdCAxOCUgb2YgZnJlc2gtdG9rZW4gcmF0ZXMuCi0gKipMb3dlc3QgY2FjaGUgcGhhc2U6KiogUDIgYXQgNjIlLgotICoqQXR0cmlidXRpb246KiogOTUlIG9mIHNwZW5kIGF0dHJpYnV0ZWQgKDg4JSB0byBhIHNwZWNpZmljIHRhc2spLgotICoqQ29zdCBwZXIgY29tcGxldGVkIHRhc2s6KiogJDE1Ljc3IGFjcm9zcyA0IHRhc2socykuCi0gKipQcm9qZWN0aW9uOioqIHN1cHByZXNzZWQg4oCUIG5lZWRzIDUgY29tcGxldGVkIHRhc2tzLCBoYXMgNC4KLSAqKlJldHJpZWQgdGFza3M6KiogJDUuODIgYWNyb3NzIDEgdGFzayhzKSAoNiUgb2Ygc3BlbmQpLiBOb3QgdGhlIHNhbWUgYXMgd2FzdGVkIHNwZW5kIOKAlCB0aGUgbGVkZ2VyIGJ1Y2tldHMgYnkgaG91ciwgbm90IGJ5IGF0dGVtcHQuCi0gKipCbG9ja2VkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykg4oCUIHNwZW5kIHdpdGggbm8gb3V0Y29tZS4KCiMjIyBNb2RlbCBjb3N0IHdpdGhpbiBlYWNoIHJpc2sgYmFuZAoKQ29tcGFyZWQgaW5zaWRlIGEgYmFuZCBvbiBwdXJwb3NlOiBoYXJkIHdvcmsgaXMgcm91dGVkIHRvIHRoZSBzdHJvbmdlciBtb2RlbCBkZWxpYmVyYXRlbHksIHNvIGEgcmF3IHNwZW5kLXBlci10YXNrIGNvbXBhcmlzb24gYWNyb3NzIGJhbmRzIHdvdWxkIGZsYWcgdGhhdCB3b3JraW5nIHN5c3RlbSBhcyBhIGZhdWx0LgoKfCByaXNrIHwgbW9kZWwgfCB0YXNrcyB8IGNvc3QvdGFzayB8IG1lYW4gYXR0ZW1wdHMgfAp8LS0tfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBoaWdoIHwgY2xhdWRlLW9wdXMtNSB8IDMgfCAkMTYuNjkgfCAxLjAgfAp8IG1lZCB8IGNsYXVkZS1zb25uZXQtNSB8IDQgfCAkOS41MCB8IDEuNSB8Cg==";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
+<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTA4IDE4OjMzIFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgLS0gfCA0LjZNIHwgJDYuNzQgfCAxOTQgfAoKIyMjIEJ5IG1vZGVsCgp8IG1vZGVsIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IGNsYXVkZS1vcHVzLTUgfCA1Mi40TSB8ICQ2MC44MCB8IDM1NiB8CnwgY2xhdWRlLXNvbm5ldC01IHwgMzguMU0gfCAkMzkuMTIgfCA0MjEgfAp8IGNsYXVkZS1oYWlrdS00LTUgfCAyLjBNIHwgJDAuNzUgfCA4NSB8CnwgY2xhdWRlLWZhYmxlLTUgfCA2NTUuMksgfCAkMi45OCB8IDM3IHwKCiMjIyBCeSBhdXRob3IKCnwgYXV0aG9yIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IG1pbG9zQGFjbWUuZXhhbXBsZSB8IDQ3LjhNIHwgJDQ4LjA2IHwgMjQ2IHwKfCBhbGV4QGFjbWUuZXhhbXBsZSB8IDI1LjNNIHwgJDMxLjc0IHwgNDc5IHwKfCBzYXJhQGFjbWUuZXhhbXBsZSB8IDIwLjBNIHwgJDIzLjg1IHwgMTc0IHwKCiMjIyBFY29ub21pY3MKCi0gKipDYWNoZToqKiA5NCUgaGl0OyB0aGUgaW5wdXQgc2lkZSBiaWxscyBhdCAxOCUgb2YgZnJlc2gtdG9rZW4gcmF0ZXMuCi0gKipMb3dlc3QgY2FjaGUgcGhhc2U6KiogUDIgYXQgNjIlLgotICoqQXR0cmlidXRpb246KiogOTUlIG9mIHNwZW5kIGF0dHJpYnV0ZWQgKDg4JSB0byBhIHNwZWNpZmljIHRhc2spLgotICoqQ29zdCBwZXIgY29tcGxldGVkIHRhc2s6KiogJDE1Ljc3IGFjcm9zcyA0IHRhc2socykuCi0gKipQcm9qZWN0aW9uOioqIHN1cHByZXNzZWQg4oCUIG5lZWRzIDUgY29tcGxldGVkIHRhc2tzLCBoYXMgNC4KLSAqKlJldHJpZWQgdGFza3M6KiogJDUuODIgYWNyb3NzIDEgdGFzayhzKSAoNiUgb2Ygc3BlbmQpLiBOb3QgdGhlIHNhbWUgYXMgd2FzdGVkIHNwZW5kIOKAlCB0aGUgbGVkZ2VyIGJ1Y2tldHMgYnkgaG91ciwgbm90IGJ5IGF0dGVtcHQuCi0gKipCbG9ja2VkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykg4oCUIHNwZW5kIHdpdGggbm8gb3V0Y29tZS4KCiMjIyBNb2RlbCBjb3N0IHdpdGhpbiBlYWNoIHJpc2sgYmFuZAoKQ29tcGFyZWQgaW5zaWRlIGEgYmFuZCBvbiBwdXJwb3NlOiBoYXJkIHdvcmsgaXMgcm91dGVkIHRvIHRoZSBzdHJvbmdlciBtb2RlbCBkZWxpYmVyYXRlbHksIHNvIGEgcmF3IHNwZW5kLXBlci10YXNrIGNvbXBhcmlzb24gYWNyb3NzIGJhbmRzIHdvdWxkIGZsYWcgdGhhdCB3b3JraW5nIHN5c3RlbSBhcyBhIGZhdWx0LgoKfCByaXNrIHwgbW9kZWwgfCB0YXNrcyB8IGNvc3QvdGFzayB8IG1lYW4gYXR0ZW1wdHMgfAp8LS0tfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBoaWdoIHwgY2xhdWRlLW9wdXMtNSB8IDMgfCAkMTYuNjkgfCAxLjAgfAp8IG1lZCB8IGNsYXVkZS1zb25uZXQtNSB8IDQgfCAkOS41MCB8IDEuNSB8Cg==";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
 <script>
 (function () {
   var q = document.getElementById('audit-q');
@@ -921,6 +999,23 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // the interactive layer really is dead.
   var _nojs = document.getElementById('audit-nojs');
   if (_nojs && _nojs.parentNode) _nojs.parentNode.removeChild(_nojs);
+
+  // A filtered view of this report is a LINK. Read here, written by syncHash()
+  // below. The `#!` prefix is not decoration: the side nav's links are plain
+  // fragments over the same slot, and without a marker separating the two,
+  // restoring filter state and following a heading link would each undo the other.
+  var HASH = {};
+  (function () {
+    var h = location.hash || '';
+    if (h.indexOf('#!') !== 0) return;
+    h.slice(2).split('&').forEach(function (pair) {
+      if (!pair) return;
+      var i = pair.indexOf('=');
+      var k = i < 0 ? pair : pair.slice(0, i);
+      var v = i < 0 ? '' : pair.slice(i + 1);
+      try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { HASH[k] = ''; }
+    });
+  })();
 
   var count = document.getElementById('audit-count');
   var phaseStatusBar = document.getElementById('audit-phase-status');
@@ -941,6 +1036,9 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // that does not offer the control has no business reinstating its state.
   if (themeBtn) {
     try { var savedTheme = localStorage.getItem(THEME_KEY); if (savedTheme) root.setAttribute('data-theme', savedTheme); } catch (e) {}
+    // A theme carried in the link beats one saved on an earlier visit: whoever
+    // sent this URL chose how it should be read, and they chose more recently.
+    if (HASH.th === 'dark' || HASH.th === 'light') root.setAttribute('data-theme', HASH.th);
   }
   paintTheme();
   if (themeBtn) themeBtn.addEventListener('click', function () {
@@ -948,6 +1046,7 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     root.setAttribute('data-theme', next);
     try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
     paintTheme();
+    syncHash();
   });
 
   // The sticky stack, measured rather than assumed. --topbar-h decides where the
@@ -1042,6 +1141,17 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
 
   var phaseStatus = '';   // toolbar: filter which PHASES show, by phase status
   var taskStatus = {};    // per phase: filter that phase's TASKS, by task status
+  var modelFilter = '';   // panel: only tasks run by this model
+  var dFrom = '', dTo = '';  // panel: ISO dates, compared as plain strings
+  var preset = '';        // which relative-span chip is lit, if any
+
+  var modelBar = document.getElementById('audit-model');
+  var fromInput = document.getElementById('audit-from');
+  var toInput = document.getElementById('audit-to');
+  var presetBar = document.getElementById('audit-presets');
+  var fcount = document.getElementById('audit-fcount');
+  var clearBtns = [].slice.call(document.querySelectorAll('[data-clear]'));
+  var norow = grouped ? grouped.querySelector('tr.norows') : null;
 
   function esc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }
   // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
@@ -1051,16 +1161,27 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // between 100 phases (41ms) and 200 (145ms, and 200ms for the first press).
   // Sorting reorders these rows but never replaces them, so an index of element
   // references stays correct across a sort.
+  // The newest day this plan has any record of. The relative presets measure back
+  // from HERE and never from the wall clock: "the last 30 days" read off the
+  // system clock answers a different question every morning, and it would make the
+  // committed example a file that cannot stay byte-equal to itself between two CI
+  // runs — which is exactly what ci.yml compares docs/index.html against.
+  var DMAX = '';
   var TASKS = {}, TFROW = {};
   if (grouped) {
     [].forEach.call(grouped.querySelectorAll('tbody tr.task'), function (t) {
       var k = t.getAttribute('data-phase');
       (TASKS[k] || (TASKS[k] = [])).push(t);
+      var d = t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
+      if (d > DMAX) DMAX = d;
     });
     [].forEach.call(grouped.querySelectorAll('tbody tr.taskfilter'), function (t) {
       TFROW[t.getAttribute('data-phase')] = t;
     });
   }
+  // Resolved once, with everything else that refresh() would otherwise have to
+  // look up per phase per keystroke.
+  phaseRows.forEach(function (pr) { pr.__pmatch = pr.querySelector('.pmatch'); });
   function tasksOf(pid) { return TASKS[pid] || []; }
   function tfOf(pid) { return TFROW[pid] || null; }
   // Lowercased once per row and kept. The text of a rendered report never changes,
@@ -1073,23 +1194,101 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   function textHit(r, term) { return !term || hay(r).indexOf(term) !== -1; }
   function setOpen(pr, open) { pr.classList.toggle('open', !!open); pr.setAttribute('aria-expanded', open ? 'true' : 'false'); }
 
+  // The date this task SHOWS in the table: completed if it is, else started.
+  // Filtering on a date other than the one printed in the row reads as a bug the
+  // first time a reader checks one against the other.
+  function taskDate(t) {
+    return t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
+  }
+  function dateOk(t) {
+    if (!dFrom && !dTo) return true;
+    var d = taskDate(t);
+    // A task with no dates at all is not "inside every range"; it is unknown, and
+    // a date filter is a question it has no answer to.
+    if (!d) return false;
+    // Plain string comparison. Fixed-width ISO dates order lexicographically, and
+    // <input type=date> hands back exactly that shape — so a range test over four
+    // thousand rows costs no Date parsing at all.
+    return (!dFrom || d >= dFrom) && (!dTo || d <= dTo);
+  }
+
+  // The filtered view, written back into the URL so it can be sent to someone.
+  // `history.replaceState` and not an assignment to location.hash: assigning
+  // pushes a history entry per keystroke and scrolls the document to whatever it
+  // reads the fragment as. Wrapped, because History is refused on a file://
+  // document in some browsers — which is where this report is most often opened,
+  // and a filter that throws on every pass is a filter that does not run.
+  //
+  // Deliberately NOT encoded: the per-phase task-status chips. They are keyed by
+  // phase id, so carrying them would put a list as long as the plan into the URL
+  // to describe a drill-down inside one row. A link names the view, not the state
+  // of every control on the page.
+  function syncHash() {
+    var parts = [];
+    function put(k, v) { if (v) parts.push(k + '=' + encodeURIComponent(v)); }
+    put('q', q ? q.value.trim() : '');
+    put('ps', phaseStatus);
+    put('m', modelFilter);
+    put('from', dFrom);
+    put('to', dTo);
+    // Only where this report OWNS the toggle. Embedded as a fragment, the host
+    // stamps data-theme on the same root, and a link carrying a theme would flip
+    // the page AROUND the report rather than the report. And only alongside a
+    // real filter: a theme alone must not mint a `#!` fragment, or simply opening
+    // the report with a remembered theme would overwrite the heading you linked to.
+    if (themeBtn && parts.length) put('th', root.getAttribute('data-theme') || '');
+    try {
+      if (parts.length) history.replaceState(null, '', '#!' + parts.join('&'));
+      else if ((location.hash || '').indexOf('#!') === 0) {
+        // Strip only OUR fragment. A plain `#usage` belongs to the nav, and
+        // clearing the filters has no business throwing away where you are.
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    } catch (e) {}
+  }
+
   function refresh() {
     var term = (q ? q.value : '').trim().toLowerCase();
-    var visP = 0;
+    // Filters that narrow the TASKS inside a phase, rather than the phase list.
+    // A phase none of whose tasks survive is not a phase that matches: keeping it
+    // is the difference between "these four phases used opus" and "here are all
+    // twelve, four of them usefully".
+    var narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
+    var anyFilter = narrows || term !== '' || phaseStatus !== '';
+    var visP = 0, visT = 0, totT = 0;
     phaseRows.forEach(function (pr) {
       var pid = pr.getAttribute('data-phase');
       var tasks = tasksOf(pid);
       var tf = taskStatus[pid] || '';
       var pText = textHit(pr, term);
-      var taskShown = function (t) { return (pText || textHit(t, term)) && (!tf || t.getAttribute('data-status') === tf); };
-      var anyTaskText = tasks.some(function (t) { return textHit(t, term); });
+      var anyTaskText = false, nMatch = 0;
+      totT += tasks.length;
+      tasks.forEach(function (t) {
+        var tText = textHit(t, term);
+        if (tText) anyTaskText = true;
+        // Marked on the row rather than gathered into an array: this runs on
+        // every keystroke over every task in the plan, and one array per phase
+        // per pass is garbage the filter has no need to make.
+        t.__hit = (pText || tText)
+                  && (!tf || t.getAttribute('data-status') === tf)
+                  && (!modelFilter || t.getAttribute('data-model') === modelFilter)
+                  && dateOk(t);
+        if (t.__hit) nMatch++;
+      });
       // phase-level: phase-status filter + text (phase title OR any task matches)
       var showP = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
-                  && (term === '' || pText || anyTaskText);
+                  && (term === '' || pText || anyTaskText)
+                  && (!narrows || nMatch > 0);
       pr.style.display = showP ? '' : 'none';
-      if (showP) visP++;
-      // open when drilling into tasks (text or task-status filter active), else manual
-      var open = showP && ((term !== '' || tf !== '') || !!expanded[pid]);
+      if (showP) { visP++; visT += nMatch; }
+      // Manual state, and ONLY manual state. This used to OR the search term and
+      // the per-phase task filter into the condition, so one character typed
+      // into the filter threw every matching phase open at once: the page grew by
+      // several screens, the row being read left the viewport, and clearing the
+      // filter afterwards shut the phases that had been opened by hand. What a
+      // filter owes the reader instead is a REASON to open a row, which is the
+      // job the match badge below does.
+      var open = showP && !!expanded[pid];
       setOpen(pr, open);
       var tfRow = tfOf(pid);
       // 'table-row', NOT '': clearing the inline style hands the row back to the
@@ -1098,18 +1297,44 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       // never be seen. `tr.task` survives the same pattern only because it has no
       // default display rule to fall back to.
       if (tfRow) tfRow.style.display = open ? 'table-row' : 'none';
-      tasks.forEach(function (t) { t.style.display = (open && taskShown(t)) ? '' : 'none'; });
+      tasks.forEach(function (t) { t.style.display = (open && t.__hit) ? '' : 'none'; });
+      // "3 of 12 match" on a row that is closed and hiding its own evidence. Not
+      // shown at rest, and not shown when everything matched — "12 of 12" is a
+      // sentence that tells a reader nothing they did not already have.
+      var badge = pr.__pmatch;
+      if (badge) {
+        var wanted = showP && !open && anyFilter && nMatch !== tasks.length;
+        if (wanted) badge.textContent = nMatch + ' of ' + tasks.length + ' match';
+        badge.hidden = !wanted;
+      }
     });
     bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
 
     if (count) {
-      var filtered = term !== '' || phaseStatus !== '';
-      count.textContent = filtered ? (visP + ' / ' + phaseRows.length + ' phases') : (phaseRows.length + ' phases');
+      // Tasks as well as phases, now that a filter can narrow a phase from the
+      // inside: with the model or date filters on, the phase count alone moves
+      // hardly at all while the thing being counted moves a great deal.
+      count.textContent = anyFilter
+        ? (visP + ' / ' + phaseRows.length + ' phases · ' + visT + ' of ' + totT + ' tasks')
+        : (phaseRows.length + ' phases');
+    }
+    // Filtered down to nothing, the table was an empty frame with no explanation
+    // and no way back except undoing each control by hand.
+    if (norow) norow.style.display = (anyFilter && visP === 0) ? 'table-row' : 'none';
+    // The toolbar copy appears the moment anything is filtering, so there is a way
+    // back that does not depend on the table having rows left to draw it in.
+    clearBtns.forEach(function (b) { b.hidden = !anyFilter; });
+    // A filter folded away inside a closed <details> is how a reader concludes
+    // rows are missing. The count on the summary says something is on.
+    if (fcount) {
+      var nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0);
+      fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {
       var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
       expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
     }
+    syncHash();
   }
 
   function natCmp(a, b) {
@@ -1224,16 +1449,77 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   });
 
   // per-phase task-status chips (contextual — only that phase's task statuses)
+  var tfHosts = [];
   phaseRows.forEach(function (pr) {
     var pid = pr.getAttribute('data-phase');
     var tfRow = tfOf(pid); if (!tfRow) return;
     var host = tfRow.querySelector('.tf-chips'); if (!host) return;
+    tfHosts.push(host);
     wireChips(host, 'data-ts', function (val) {
       taskStatus[pid] = (taskStatus[pid] === val) ? '' : val;
       highlight(host, 'data-ts', taskStatus[pid]);
       refresh();
     });
   });
+
+  // model chips (inside the More filters panel)
+  wireChips(modelBar, 'data-m', function (val, host, attr) {
+    modelFilter = (modelFilter === val) ? '' : val;
+    highlight(host, attr, modelFilter);
+    refresh();
+  });
+
+  function paintDates() {
+    if (fromInput) fromInput.value = dFrom;
+    if (toInput) toInput.value = dTo;
+    if (presetBar) highlight(presetBar, 'data-days', preset);
+  }
+  function onDateInput() {
+    dFrom = fromInput ? fromInput.value : '';
+    dTo = toInput ? toInput.value : '';
+    preset = '';                       // a hand-picked range is no longer a preset
+    if (presetBar) highlight(presetBar, 'data-days', '');
+    refresh();
+  }
+  if (fromInput) fromInput.addEventListener('change', onDateInput);
+  if (toInput) toInput.addEventListener('change', onDateInput);
+
+  // Relative spans, measured back from the plan's last recorded day (DMAX) rather
+  // than from today — see DMAX above for why the wall clock is not an option here.
+  function applyPreset(days) {
+    preset = days;
+    var ms = DMAX ? Date.parse(DMAX + 'T00:00:00Z') : NaN;
+    if (days === 'all' || isNaN(ms)) {
+      dFrom = ''; dTo = '';
+      if (days !== 'all') preset = '';   // nothing to measure from; claim nothing
+    } else {
+      // Inclusive of the last day, so "7 days" spans seven of them and not eight.
+      dFrom = new Date(ms - (Number(days) - 1) * 86400000).toISOString().slice(0, 10);
+      dTo = DMAX;
+    }
+    paintDates();
+    refresh();
+  }
+  wireChips(presetBar, 'data-days', function (val) {
+    applyPreset(preset === val ? 'all' : val);
+  });
+
+  // One control that undoes all of them. It lives in the empty state because that
+  // is the one view from which no other control is reachable — every chip that
+  // could clear itself has been filtered off the screen along with the rows.
+  function clearAll() {
+    if (q) q.value = '';
+    phaseStatus = ''; modelFilter = ''; dFrom = ''; dTo = ''; preset = '';
+    taskStatus = {};
+    if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', '');
+    if (modelBar) highlight(modelBar, 'data-m', '');
+    // Clearing the state without unlighting these would leave rows claiming a
+    // filter that no longer applies to them.
+    tfHosts.forEach(function (h) { highlight(h, 'data-ts', ''); });
+    paintDates();
+    refresh();
+  }
+  clearBtns.forEach(function (b) { b.addEventListener('click', clearAll); });
 
   // Save as PDF — the print stylesheet lays the report out on A4 with every
   // phase expanded; the browser's print dialog offers "Save as PDF" (no bundled
@@ -1399,6 +1685,18 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       refresh();
     });
   }
+  // Restore what the link asked for BEFORE the first pass, so a shared URL renders
+  // the view it names instead of rendering everything and then rearranging itself.
+  if (q && HASH.q) q.value = HASH.q;
+  if (HASH.ps) {
+    phaseStatus = HASH.ps;
+    if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', phaseStatus);
+  }
+  if (HASH.m) {
+    modelFilter = HASH.m;
+    if (modelBar) highlight(modelBar, 'data-m', modelFilter);
+  }
+  if (HASH.from || HASH.to) { dFrom = HASH.from || ''; dTo = HASH.to || ''; paintDates(); }
   refresh();
 })();
 </script>

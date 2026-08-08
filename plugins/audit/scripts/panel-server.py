@@ -555,6 +555,7 @@ def _composition_view(manifest):
 _undeclared_css_vars = _theme.undeclared_css_vars
 _theme_asymmetric_vars = _theme.theme_asymmetric_vars
 _themes_missing_color_scheme = _theme.themes_missing_color_scheme
+_mangled_css_escapes = _theme.mangled_css_escapes
 
 
 # --- concurrency-lock detection (locks live in the shared git dir, not the tree) --
@@ -3978,6 +3979,12 @@ def _selftest():
     check("every explicit data-theme restates color-scheme, so the toggle moves "
           "the selects, spinners, date picker and scrollbars too: %r" % _nocs,
           _nocs == [])
+    # This sheet is a non-raw Python string too. The report's copy of the filter
+    # chip's tick shipped as `¹3<BEL>0` for want of a doubled backslash; this one
+    # was written correctly, and neither suite could see that they differed.
+    _esc = _mangled_css_escapes(_css)
+    check("no CSS escape was eaten by Python before the browser saw it: %r" % _esc,
+          _esc == [])
     check("usage colours come from the same validated palette as the report",
           "--viz-1:#2a78d6" in UI_HTML and "--viz-1:#3987e5" in UI_HTML)
     # Two series in the same hue is the one failure a categorical palette cannot
