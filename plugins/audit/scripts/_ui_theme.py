@@ -268,10 +268,17 @@ def theme_asymmetric_vars(css):
         exactly how `--bar-neutral` shipped as invisible bars
 
     Both render transparent with nothing in the console, so both are checked."""
-    light = re.search(r":root\s*\{([^}]*)\}", css)
-    if not light:
+    # EVERY unqualified `:root{...}` rule, not just the first. A stylesheet may
+    # declare its base tokens in more than one block — the panel adds a small one
+    # for roles the report has no equivalent of — and reading only the first made
+    # every token in the others look like it existed in dark mode alone.
+    # `:root[data-theme=dark]` and `:root:not(...)` do not match this pattern.
+    light_blocks = re.findall(r":root\s*\{([^}]*)\}", css)
+    if not light_blocks:
         return []
-    light_vars = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", light.group(1)))
+    light_vars = set()
+    for block in light_blocks:
+        light_vars |= set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", block))
     dark_vars = set()
     for block in re.findall(
             r"(?:prefers-color-scheme\s*:\s*dark|data-theme=.?dark)[^{]*\{(.*?)\}\}?",

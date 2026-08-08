@@ -48,6 +48,7 @@ CONFIG_REL = ".claude/audit.config.json"
 
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the report)
 
 # Fields the composition patch is allowed to touch — the security allow-list.
 _META_KEYS = ("reviewSkill", "buildCommands")
@@ -314,6 +315,12 @@ def _composition_view(manifest):
     }
 
 
+# The stylesheet lints live in _ui_theme, beside the tokens they police, so the
+# report and the panel are held to exactly the same rules by the same code.
+_undeclared_css_vars = _theme.undeclared_css_vars
+_theme_asymmetric_vars = _theme.theme_asymmetric_vars
+
+
 # --- concurrency-lock detection (locks live in the shared git dir, not the tree) --
 _LOCKDIR_CACHE = {}
 
@@ -430,60 +437,6 @@ def _run_status(project, config, manifest):
 
 
 _MAX_FACTS = 20000
-
-
-def _undeclared_css_vars(css):
-    """Custom properties referenced by var() but never declared anywhere.
-
-    This check exists because the failure mode is SILENT and total: an undeclared
-    `var(--x)` makes the whole declaration invalid at computed-value time, so the
-    property falls back to its INITIAL value rather than to the stylesheet rule
-    underneath it. An undeclared colour token therefore paints transparent — a bar
-    chart with no bars — and logs nothing. That is exactly how `--bar-neutral`
-    shipped invisible in light mode once."""
-    declared = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", css))
-    # Only FALLBACK-LESS references are dangerous. `var(--x, something)` degrades
-    # gracefully by design, and tokens set inline per element from Python (--w on a
-    # progress fill, --sc on a sparkline) are always written that way for exactly
-    # this reason.
-    used = set(re.findall(r"var\(\s*(--[A-Za-z0-9_-]+)\s*\)", css))
-    return sorted(used - declared)
-
-
-def _theme_asymmetric_vars(css):
-    """Colour tokens that exist in one theme but not the other - in EITHER direction.
-
-    The light `:root` is the base token set; the dark blocks are overrides. There are
-    two distinct silent failures here, and the first version of this check only
-    caught one of them:
-
-      * declared in light, missing from dark -> the token vanishes in dark mode
-      * declared ONLY in a dark block        -> it vanishes in LIGHT mode, which is
-        exactly how `--bar-neutral` shipped as invisible bars
-
-    Both render transparent with nothing in the console, so both are checked."""
-    light = re.search(r":root\s*\{([^}]*)\}", css)
-    if not light:
-        return []
-    light_vars = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", light.group(1)))
-    dark_vars = set()
-    for block in re.findall(
-            r"(?:prefers-color-scheme\s*:\s*dark|data-theme=.?dark)[^{]*\{(.*?)\}\}?",
-            css, re.S):
-        dark_vars |= set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", block))
-    if not dark_vars:
-        return []
-    # spacing / type / motion / font tokens are theme-independent by design and are
-    # deliberately declared once, in the base only.
-    neutral = ("--sp-", "--t-", "--dur", "--ease", "--radius", "--pill",
-               "--sans", "--mono", "--shadow")
-
-    def colourish(names):
-        return {v for v in names if not any(v.startswith(n) for n in neutral)}
-
-    return sorted("%s (light only)" % v
-                  for v in colourish(light_vars) - dark_vars) + \
-        sorted("%s (dark only)" % v for v in colourish(dark_vars) - light_vars)
 
 
 def usage_state(project):
@@ -1345,42 +1298,19 @@ UI_HTML = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>audit · control panel</title>
 <style>
-:root{color-scheme:light dark;
- --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
- --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
- --bg:#f5f7fb;--surface:#fff;--surface-2:#eef2f7;--text:#0f172a;--muted:#64748b;
- --border:#e2e8f0;--border-strong:#cbd5e1;--accent:#0d9488;--accent-solid:#0d9488;
- --ring:rgba(13,148,136,.35);--ok:#15803d;--warn:#b45309;--err:#dc2626;
- --bar-neutral:#5c636d;
- /* Usage viz. Same validated categorical palette as the report, so a model
-    keeps one identity across both surfaces. Slots are assigned by model NAME,
-    never by rank, so filtering cannot repaint the survivors. */
- --viz-1:#2a78d6;--viz-2:#eb6834;--viz-3:#1baf7a;--viz-4:#eda100;
- --viz-5:#e87ba4;--viz-6:#008300;--viz-7:#4a3aa7;--viz-8:#e34948;
- --radius:9px;--radius-lg:14px;--pill:999px;--shadow-sm:0 1px 2px rgba(15,23,42,.05),0 2px 8px rgba(15,23,42,.06);
- --shadow-md:0 10px 30px rgba(15,23,42,.14);--dur:.2s;--ease:cubic-bezier(.4,0,.2,1);
- /* 8pt spacing scale + 3 text levels, matching the report so both surfaces
-    share one rhythm. Spacing and type are theme-independent, so unlike the
-    colour tokens these are declared ONCE, not repeated in the dark blocks. */
- --sp-0:.25rem;--sp-1:.5rem;--sp-2:.75rem;--sp-3:1rem;
- --sp-4:1.5rem;--sp-5:2rem;--sp-6:3rem;--sp-7:4rem;
- --t-1:1.7rem;--t-2:1.0625rem;--t-3:.875rem;--t-label:.68rem}
+/*__THEME_TOKENS__*/
+/* Panel-only roles. The shared tokens carry the product's colour; these three
+   name jobs the report has no equivalent of — a validated field, a warning on a
+   config value, a refused write — so they live here rather than pushing
+   panel-shaped vocabulary into the shared layer. */
+:root{--ok:#15803d;--warn:#b45309;--err:#dc2626}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
- --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
- --border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
- --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
- --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
- --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
- --bar-neutral:#a6adb8;
- --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}}
-:root[data-theme=dark]{--bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;
- --muted:#93a4bd;--border:#1f2b40;--border-strong:#33425c;--accent:#2dd4bf;--accent-solid:#0f766e;
- --ring:rgba(45,212,191,.4);--ok:#34d399;--warn:#fbbf24;--err:#f87171;
- --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
- --viz-5:#d55181;--viz-6:#008300;--viz-7:#9085e9;--viz-8:#e66767;
- --bar-neutral:#a6adb8;
- --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)}
-*{box-sizing:border-box}html{background:var(--bg)}
+ --ok:#34d399;--warn:#fbbf24;--err:#f87171}}
+:root[data-theme=dark]{--ok:#34d399;--warn:#fbbf24;--err:#f87171}
+*{box-sizing:border-box}
+/* Reserve the scrollbar always: Guards is short and Overview is long, and
+   without this the whole centred shell jumps sideways between them. */
+html{background:var(--bg);scrollbar-gutter:stable}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
  margin:0;padding:0;-webkit-font-smoothing:antialiased}
 
@@ -1396,22 +1326,22 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
    long nav competing with content for width; with four items it would add a
    control and a persisted preference to save 230px on screens that have it to
    spare, and four hand-drawn icons that mean less than the words they replace. */
-.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:.75rem 1rem;
+.top{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
  flex-wrap:nowrap;padding:.6rem 1.25rem;
  background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);
  border-bottom:1px solid var(--border)}
 .top>div:first-child{min-width:0;margin-right:auto;max-width:min(52%,34rem)}
-.shell{display:grid;grid-template-columns:13.5rem minmax(0,1fr);gap:2rem;
+.shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
  max-width:92rem;margin:0 auto;padding:1.25rem 1.25rem 4rem;align-items:start}
 .view{min-width:0}
-.tabs{position:sticky;top:3.9rem}
+.tabs{position:sticky;top:calc(var(--topbar-h) + var(--sp-1))}
 .tabs .navttl{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
  color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
 @media(max-width:70rem){
  /* One information architecture, two presentations: the same four buttons become
     a horizontal strip. Never a second menu. */
  .shell{grid-template-columns:minmax(0,1fr);gap:.75rem;padding-top:.5rem}
- .tabs{position:sticky;top:3.4rem;z-index:20;margin:0 -1.25rem;padding:.4rem 1.25rem;
+ .tabs{position:sticky;top:var(--topbar-h);z-index:var(--z-strip);margin:0 -1.25rem;padding:.4rem 1.25rem;
   background:var(--bg);border-bottom:1px solid var(--border);
   overflow-x:auto;overflow-y:hidden}
  .tabs .navttl{display:none}
@@ -1745,6 +1675,8 @@ table.regtbl td.d{color:var(--muted)}
  border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
 .filt:hover{border-color:var(--border-strong)}
 .filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+/* State carried by more than hue, as in the report. */
+.filt.on::before{content:"\2713\a0";font-weight:700}
 .count{font-size:.73rem;color:var(--muted);font-variant-numeric:tabular-nums}
 /* A wide data table scrolls inside its own box at EVERY width, not only on a
    phone. The old rule was scoped to 48rem because the page was a 64rem column
@@ -1803,7 +1735,7 @@ td.tskills{min-width:15rem}
 <div id=usage class=hidden></div>
 </main>
 </div>
-<div id=toast></div>
+<div id=toast role=status aria-live=polite></div>
 <script>
 const TOKEN=__AUDIT_TOKEN__, PROJECT=__AUDIT_PROJECT__;
 const $=(s,r=document)=>r.querySelector(s), el=(t,a={},...k)=>{const e=document.createElement(t);
@@ -1856,13 +1788,39 @@ $('#report').onclick=async e=>{const b=e.currentTarget;
  }catch(err){if(win)win.close();toast('render failed: '+err,'err');}
  finally{b.disabled=false;b.textContent=was;}};
 // tabs
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
- document.querySelectorAll('.tab').forEach(x=>{const on=x===t;x.classList.toggle('on',on);
+// Views are addressable, and each remembers where you were in it. Every switch
+// used to slam the page back to the top and the URL never changed: a 50-phase
+// Composition table lost your place the moment you glanced at Usage, and there
+// was no way to link anyone to a tab — a reload always landed on Guards.
+// The manifest's vocabulary is machine-facing: `in_progress` sorts, compares and
+// survives serialization. It is not a thing to show anyone, and it was leaking
+// into every status pill, every filter button and every phase row. The machine
+// value stays in data-status (the CSS themes off it, the filters compare it);
+// only the text changes.
+const LABELS=__LABELS__;
+const label=v=>LABELS[v]||(v?String(v).replace(/[_-]+/g,' ').replace(/^./,c=>c.toUpperCase()):'—');
+const TABS=['guards','comp','over','usage'],SCROLL={};
+let CURTAB=null;
+function showTab(t,push){
+ if(!TABS.includes(t))t='guards';
+ if(CURTAB)SCROLL[CURTAB]=window.scrollY;
+ CURTAB=t;
+ document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.t===t;x.classList.toggle('on',on);
   // Colour alone does not say which view you are in — a screen reader gets nothing
   // from a background change, and these four are exclusive views, not filters.
   if(on)x.setAttribute('aria-current','true');else x.removeAttribute('aria-current');});
- for(const id of['guards','comp','over','usage'])$('#'+id).classList.toggle('hidden',id!==t.dataset.t);
- window.scrollTo({top:0,behavior:'auto'});});
+ for(const id of TABS)$('#'+id).classList.toggle('hidden',id!==t);
+ if(push!==false){const h='#/'+t;if(location.hash!==h)history.replaceState(null,'',h);}
+ try{localStorage.setItem('audit-panel-tab',t);}catch(e){}
+ // After the browser has laid the view out, not before it.
+ requestAnimationFrame(()=>window.scrollTo({top:SCROLL[t]||0,behavior:'auto'}));}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.t));
+addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'');
+ if(TABS.includes(t)&&t!==CURTAB)showTab(t,false);});
+function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'');
+ if(TABS.includes(h))return h;
+ try{const s=localStorage.getItem('audit-panel-tab');if(TABS.includes(s))return s;}catch(e){}
+ return 'guards';}
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'');
  setTimeout(()=>t.className=t.className.replace('show','').trim(),2600);}
 function findingsBox(res){const box=el('div');
@@ -1873,6 +1831,8 @@ function findingsBox(res){const box=el('div');
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;
  renderGuards();renderComp();renderOver();renderUsage();
+ // Restored last, once every view has content to scroll to.
+ showTab(initialTab());
  RUNSTATUS=STATE.runStatus||null;startRunPoll();}
 // ---------- shared: info hints + autocomplete ----------
 const DESC={
@@ -2024,7 +1984,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',DESC.taskSkills));
  const q=el('input',{type:'search',placeholder:'filter phases & tasks…'});
  const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
- const needsBtn=el('button',{class:'filt',type:'button',title:'only tasks with no skills yet'},'needs skills');
+ const needsBtn=el('button',{class:'filt',type:'button','aria-pressed':'false',title:'only tasks with no skills yet'},'needs skills');
  const expandBtn=el('button',{class:'btn small',type:'button'},'expand all');
  const count=el('span',{class:'count',style:'margin-left:auto'});
  tcard.append(el('div',{class:'comptools'},q,el('span',{class:'filtlbl'},'phase:'),statusBar,needsBtn,expandBtn,count));
@@ -2043,7 +2003,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
   pr.append(el('td',{colspan:'5'},el('div',{class:'phtd'},
     el('span',{class:'tri'}),el('span',{class:'mono'},ph.id||''),el('strong',{},ph.title||''),
     (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
-    el('span',{class:'st','data-status':ph.status||''},ph.status||'—'),
+    el('span',{class:'st','data-status':ph.status||''},label(ph.status)),
     el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
     el('span',{class:'comp-review'},flabel('review',DESC.phaseReviewModel),rev))));
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
@@ -2056,7 +2016,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(needsOnly)refresh();});
    const tr=el('tr',{class:'task','data-status':t.status||''});
    tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle',title:t.title||''},t.title||''),
-     el('td',{},el('span',{class:'st','data-status':t.status||''},t.status||'—')),
+     el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
      el('td',{class:'tmodel'},model),el('td',{class:'tskills'},chips));
    tbody.append(tr);
    taskEls.push({id:t.id||'',title:t.title||'',tr,getSkills});
@@ -2064,11 +2024,15 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
   phaseEls.push({id:ph.id,title:ph.title||'',status:ph.status||'',area:(ph.area||[]).join(' '),tr:pr,tasks:taskEls});
  });
  [...new Set(comp.phases.map(p=>p.status).filter(Boolean))].sort().forEach(s=>{
-  const b=el('button',{class:'filt',type:'button','data-status':s},s);
+  const b=el('button',{class:'filt',type:'button','data-status':s,'aria-pressed':'false'},label(s));
   b.onclick=()=>{phaseFilter=phaseFilter===s?'':s;
-   [...statusBar.children].forEach(x=>x.classList.toggle('on',x.getAttribute('data-status')===phaseFilter));refresh();};
+   // aria-pressed alongside the class: which filter is on was carried by the
+   // accent fill alone, which a screen reader never sees.
+   [...statusBar.children].forEach(x=>{const on=x.getAttribute('data-status')===phaseFilter;
+    x.classList.toggle('on',on);x.setAttribute('aria-pressed',on?'true':'false');});refresh();};
   statusBar.append(b);});
- needsBtn.onclick=()=>{needsOnly=!needsOnly;needsBtn.classList.toggle('on',needsOnly);refresh();};
+ needsBtn.onclick=()=>{needsOnly=!needsOnly;needsBtn.classList.toggle('on',needsOnly);
+  needsBtn.setAttribute('aria-pressed',needsOnly?'true':'false');refresh();};
  expandBtn.onclick=()=>{const anyClosed=phaseEls.some(P=>!open[P.id]);phaseEls.forEach(P=>open[P.id]=anyClosed);refresh();};
  const hit=(s,term)=>!term||s.toLowerCase().includes(term);
  function refresh(){
@@ -2207,7 +2171,7 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
    runBadge=el('span',{class:'badge claim',title:'claimed'+(st.claim.branch?' on '+st.claim.branch:'')},'◷ claimed'+(s?' · '+s:''));}
   const areaBadges=(p.area||[]).map(a=>el('span',{class:'badge area',title:'area'},a));
   card.append(el('div',{class:'row'},el('span',{class:'mono',style:'flex:0 0 3rem'},p.id),
-   el('span',{style:'flex:1 1 10rem'},p.title||''),el('span',{class:'badge'},p.status||''),
+   el('span',{style:'flex:1 1 10rem'},p.title||''),el('span',{class:'st','data-status':p.status||''},label(p.status)),
    areaBadges,runBadge,
    el('span',{class:'bar'},el('i',{style:'width:'+pct+'%'})),el('span',{class:'mut'},p.done+'/'+p.total)));});
  const t=r.tasks,b=r.bugs;
@@ -2959,6 +2923,12 @@ document.addEventListener('keydown',e=>{
 boot().catch(e=>toast('load failed: '+e,'err'));
 </script></body></html>"""
 
+# Assembled once, at import: the shared token layer and the words both surfaces
+# render. One substitution rather than a template engine, so every selftest that
+# asks `... in UI_HTML` still sees the whole finished stylesheet.
+UI_HTML = UI_HTML.replace("/*__THEME_TOKENS__*/", _theme.TOKEN_CSS)
+UI_HTML = UI_HTML.replace("__LABELS__", json.dumps(_theme.LABELS, sort_keys=True))
+
 
 # --- selftest -------------------------------------------------------------------
 def _selftest():
@@ -3289,9 +3259,44 @@ def _selftest():
           "exclusive views and a background change tells a screen reader nothing",
           'aria-current="true"' in UI_HTML and "x.setAttribute('aria-current'" in UI_HTML
           and "x.removeAttribute('aria-current')" in UI_HTML)
-    check("shell: switching a view returns to the top, since the previous view's "
-          "scroll position means nothing in the next one",
-          "window.scrollTo({top:0" in UI_HTML)
+    # A view still never inherits ANOTHER view's scroll position — but it keeps its
+    # own. Slamming to the top meant a glance at Usage cost you your place in a
+    # 50-phase Composition table, every time.
+    check("shell: each view remembers where you were in it, and never inherits "
+          "another view's position",
+          "SCROLL[CURTAB]=window.scrollY" in UI_HTML
+          and "SCROLL[t]||0" in UI_HTML
+          and "requestAnimationFrame(()=>window.scrollTo" in UI_HTML)
+    check("shell: views are addressable, so a tab can be linked and a reload does "
+          "not always land on Guards",
+          "history.replaceState(null,''" in UI_HTML and "'#/'+t" in UI_HTML
+          and "addEventListener('hashchange'" in UI_HTML
+          and "function initialTab()" in UI_HTML)
+    check("shell: the scrollbar's width is reserved, so a short view and a long "
+          "one do not centre the shell at two different offsets",
+          "scrollbar-gutter:stable" in UI_HTML)
+    # Verbatim containment, so the two surfaces cannot drift to 14.5rem and
+    # 13.5rem again without this failing; and declared ONCE, so the copy this
+    # replaced cannot quietly come back alongside it.
+    check("shell: the panel renders the shared token layer, not a hand-kept copy",
+          _theme.TOKEN_CSS in UI_HTML
+          and UI_HTML.count("--nav-w:") == 1
+          and UI_HTML.count("--bg:#f5f7fb") == 1)
+    check("shell: a saved-or-refused result is announced, not only shown",
+          "id=toast role=status aria-live=polite" in UI_HTML)
+    # `in_progress` was reaching people in the status pill, the phase row and the
+    # filter buttons — the three places you look to find out how the work is going.
+    check("labels: statuses read as words, with the machine value kept in "
+          "data-status so theming and filtering still compare keys",
+          "const LABELS=" in UI_HTML and '"in_progress": "In progress"' in UI_HTML
+          and "label(ph.status)" in UI_HTML and "label(t.status)" in UI_HTML
+          and "label(p.status)" in UI_HTML
+          and "},ph.status||'—')" not in UI_HTML)
+    check("labels: Overview colours its status the same way Composition does - "
+          "same data, one treatment",
+          "el('span',{class:'badge'},p.status" not in UI_HTML)
+    check("labels: a status filter announces whether it is on",
+          "'aria-pressed':'false'},label(s))" in UI_HTML)
     # Both of these were exposed by widening the shell, and both were guards tied
     # to the viewport rather than to the thing overflowing.
     check("shell: a wide data table scrolls inside its own box at every width, "
