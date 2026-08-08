@@ -629,7 +629,13 @@ def report_paths(project):
     try:
         rr = _load("audit_render_report", os.path.join(_HERE, "render-report.py"))
         manifest = _mio.load_manifest_safe(mpath)
-        base = rr._report_basename(manifest, None)
+        # `_report_basename` takes META, not the manifest — it reads
+        # `reportBasename` off the mapping it is handed. Passed the whole manifest
+        # it found no such key and always answered "audit-report", so on every
+        # project that sets meta.reportBasename (the shipped example does) the
+        # panel rendered the report correctly and then looked for it under the
+        # wrong name: "wrote 2 files" followed by a 404.
+        base = rr._report_basename(manifest.get("meta"), None)
     except Exception:
         base = "audit-report"
     return mpath, out_dir, os.path.join(out_dir, base + ".html")
@@ -703,6 +709,108 @@ def build_state(project):
     }
 
 
+# --- write locking ---------------------------------------------------------------
+def _panel_session():
+    """This panel's lock identity. A pid the OS can vouch for is what lets a
+    crashed panel's lock be judged dead rather than waited out for an hour."""
+    return "panel-%d" % os.getpid()
+
+
+def _acquire_write_lock(project, config, touched_phases=None):
+    """Take the index lock for the duration of a write.
+
+    Returns {"blocked": False, ...} when the caller may proceed, or
+    {"blocked": True, "response": <dict to return to the client>}.
+
+    `touched_phases` matters only in the sharded layout: a phase running in
+    another worktree owns its own shard, and editing a DIFFERENT phase's shard
+    cannot conflict with it. Passing None (single file) means any phase lock
+    contends, because there is only one file.
+    """
+    lockmod = _lockmod()
+    mpath = _manifest_path(project, config)
+    if lockmod is None:
+        # No lock library: fall back to the old check-only behaviour rather than
+        # writing unguarded or refusing everything.
+        if _audit_lock_held(project, config):
+            return {"blocked": True, "response": {
+                "ok": False, "locked": True,
+                "findings": ["manifest is locked by a running /audit command; "
+                             "try again once it finishes"]}}
+        return {"blocked": False, "held": False}
+
+    # A phase lock on a shard this write does not touch is not our business: that
+    # phase owns its own file, and editing a different one cannot collide with it.
+    # An abandoned lock does not block either — that is what `live` is for.
+    info = _lock_info(_audit_lock_dir(project, config)) or {}
+    blocking = [pid for pid, ph in (info.get("phases") or {}).items()
+                if (ph or {}).get("live", True)
+                and (touched_phases is None or pid in touched_phases)]
+    if blocking:
+        host = ((info.get("phases") or {}).get(blocking[0]) or {}).get("hostname")
+        return {"blocked": True, "response": {
+            "ok": False, "locked": True, "lockedPhases": sorted(blocking),
+            "findings": ["phase %s is running elsewhere (%s); it cannot be edited "
+                         "until that run finishes"
+                         % (", ".join(sorted(blocking)), host or "unknown host")]}}
+
+    git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
+    out = []
+    try:
+        code = lockmod.main(["acquire", "index", "--project", git_root,
+                             "--note", "panel write", "--session", _panel_session(),
+                             "--pid", str(os.getpid())], out=out.append)
+    except Exception:
+        code = None
+    if code == 0:
+        return {"blocked": False, "held": True, "project": git_root, "mod": lockmod}
+    if code == getattr(lockmod, "E_LIVE", 3):
+        return {"blocked": True, "response": {
+            "ok": False, "locked": True,
+            "findings": [" ".join(out).strip()
+                         or "the manifest is locked by a running /audit command; "
+                            "try again once it finishes"]}}
+    if code == getattr(lockmod, "E_STALE", 4):
+        # Never taken over silently: a lock whose holder died is a decision for
+        # the person who knows what that run was doing.
+        return {"blocked": True, "response": {
+            "ok": False, "locked": True, "lockStale": True,
+            "findings": [(" ".join(out).strip() + " ") if out else "" +
+                         "Release it with: audit-lock.py release index --project ."]}}
+    # Not a git repo (or the lock library refused for a reason of its own): keep
+    # the legacy working-tree lock as the guard rather than writing unguarded.
+    legacy = mpath + ".lock"
+    try:
+        fd = os.open(legacy, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+        return {"blocked": False, "held": True, "legacy": legacy}
+    except FileExistsError:
+        return {"blocked": True, "response": {
+            "ok": False, "locked": True,
+            "findings": ["manifest is locked by a running /audit command; "
+                         "try again once it finishes"]}}
+    except OSError:
+        return {"blocked": False, "held": False}
+
+
+def _release_write_lock(lock):
+    """Give the lock back. Never raises: a write that succeeded must not be
+    reported as failed because the release did."""
+    if not lock or not lock.get("held"):
+        return
+    try:
+        if lock.get("legacy"):
+            os.unlink(lock["legacy"])
+            return
+        mod = lock.get("mod")
+        if mod is not None:
+            mod.main(["release", "index", "--project", lock.get("project") or ".",
+                      "--session", _panel_session(), "--pid", str(os.getpid())],
+                     out=lambda *_a, **_k: None)
+    except Exception:
+        pass
+
+
 # --- writes ---------------------------------------------------------------------
 def write_config(project, obj):
     """Validate then atomically write .claude/audit.config.json. Returns dict."""
@@ -715,7 +823,15 @@ def write_config(project, obj):
     path = _config_path(project)
     if not _within(project, path):
         return {"ok": False, "findings": ["refused: path escapes project"]}
-    _atomic_write_json(path, obj)
+    # The config decides where the manifest is and which guards run; writing it
+    # under a running phase is the same class of surprise as writing the manifest.
+    lock = _acquire_write_lock(project, read_config(project), None)
+    if lock.get("blocked"):
+        return lock["response"]
+    try:
+        _atomic_write_json(path, obj)
+    finally:
+        _release_write_lock(lock)
     return {"ok": True, "findings": [], "warnings": warnings,
             "path": os.path.relpath(path, project)}
 
@@ -776,8 +892,83 @@ def apply_composition_patch(manifest, patch):
     return None
 
 
+def _touched_phase_ids(manifest, patch):
+    """Which phases a patch actually changes — named directly, or owning a task."""
+    touched = set((patch.get("phases") or {}).keys())
+    want = set((patch.get("tasks") or {}).keys())
+    if want:
+        for ph in (manifest.get("phases") or []):
+            if not isinstance(ph, dict):
+                continue
+            for t in (ph.get("tasks") or []):
+                if isinstance(t, dict) and t.get("id") in want:
+                    touched.add(ph.get("id"))
+    return touched
+
+
+def _write_back(project, mpath, raw_index, assembled, patch, touched):
+    """Persist a patched manifest into whichever layout it is stored in.
+
+    SINGLE FILE: write the assembled dict; it IS the file.
+
+    SHARDED: write only what the patch touched — the body of each touched phase's
+    shard, and the index only if `meta` changed. Two reasons this is targeted
+    rather than a wholesale `save_sharded`:
+
+      * The index stub is deliberately {id, title, shard} with no body mirror, and
+        `_merge_phase` treats the shard as the source of truth. Writing a phase's
+        `review.model` into the stub — which is what this used to do — put it
+        somewhere the next load discards.
+      * Rewriting untouched shards would renormalize files no one edited and
+        manufacture merge conflicts against the parallel phase branches the
+        sharded layout exists to keep conflict-free.
+
+    Returns the list of written paths, project-relative.
+    """
+    if not _mio.is_sharded(raw_index):
+        _atomic_write_json(mpath, assembled)
+        return [os.path.relpath(mpath, project)]
+
+    base = os.path.dirname(os.path.abspath(mpath))
+    by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
+              if isinstance(p, dict)}
+    written = []
+    for stub in (raw_index.get("phases") or []):
+        if not isinstance(stub, dict) or stub.get("id") not in touched:
+            continue
+        patched = by_pid.get(stub.get("id"))
+        if patched is None:
+            continue
+        if "shard" not in stub:
+            continue          # inline phase in a sharded index: falls to the index write
+        spath = os.path.abspath(os.path.join(base, stub["shard"]))
+        if not _within(project, spath):
+            raise ValueError("refused: shard path escapes project: %s" % stub["shard"])
+        body = dict(patched)
+        # The stub owns identity; the shard body never carries its own pointer.
+        body.pop("shard", None)
+        _atomic_write_json(spath, body)
+        written.append(os.path.relpath(spath, project))
+
+    if patch.get("meta"):
+        idx = dict(raw_index)
+        idx["meta"] = assembled.get("meta") or {}
+        _atomic_write_json(mpath, idx)
+        written.append(os.path.relpath(mpath, project))
+    return written
+
+
 def apply_composition(project, patch):
-    """Load manifest, apply an allow-listed patch, validate, atomic-write."""
+    """Load manifest, apply an allow-listed patch, validate, write it back.
+
+    Reads through the dual-format loader and patches the ASSEMBLED manifest. It
+    used to read the raw index instead, which on a sharded manifest — this repo's
+    own, and the shipped example's — meant the phases were stubs with no tasks in
+    them: every per-task edit was refused as "unknown task" for a task the panel
+    had just listed, phase edits landed in a stub the next load throws away, and
+    even a meta-only save failed on a wall of validator findings about stubs
+    missing fields they are not supposed to have.
+    """
     vm, _, _, _ = _cores()
     if not isinstance(patch, dict):
         return {"ok": False, "findings": ["patch must be a JSON object"]}
@@ -787,25 +978,45 @@ def apply_composition(project, patch):
         return {"ok": False, "findings": ["refused: manifest path escapes project"]}
     if not os.path.isfile(mpath):
         return {"ok": False, "findings": ["manifest not found: run /audit:init first"]}
-    if _audit_lock_held(project, config):
-        return {"ok": False, "locked": True,
-                "findings": ["manifest is locked by a running /audit command; "
-                             "try again once it finishes"]}
     try:
-        manifest = _read_json(mpath)
+        raw_index = _read_json(mpath)
     except Exception as exc:
         return {"ok": False, "findings": ["cannot parse manifest: %s" % exc]}
-    if not isinstance(manifest, dict):
+    if not isinstance(raw_index, dict):
         return {"ok": False, "findings": ["manifest root is not an object"]}
-    err = apply_composition_patch(manifest, patch)
+    try:
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        return {"ok": False, "findings": ["cannot assemble manifest: %s" % exc]}
+    if not isinstance(assembled, dict):
+        return {"ok": False, "findings": ["manifest root is not an object"]}
+
+    err = apply_composition_patch(assembled, patch)
     if err:
         return {"ok": False, "findings": ["refused: " + err]}
-    findings, warnings = vm.validate(manifest)
+    findings, warnings = vm.validate(assembled)
     if findings:
         return {"ok": False, "findings": findings, "warnings": warnings}
-    _atomic_write_json(mpath, manifest)
+
+    touched = _touched_phase_ids(assembled, patch)
+    sharded = _mio.is_sharded(raw_index)
+    # Hold the lock across read-patch-write. Checking it and then writing left a
+    # window an /audit run could start in; acquiring it closes that window with
+    # the same O_EXCL primitive the CLI uses.
+    lock = _acquire_write_lock(project, config,
+                               touched if sharded else None)
+    if lock.get("blocked"):
+        return lock["response"]
+    try:
+        written = _write_back(project, mpath, raw_index, assembled, patch, touched)
+    except ValueError as exc:
+        return {"ok": False, "findings": [str(exc)]}
+    finally:
+        _release_write_lock(lock)
     return {"ok": True, "findings": [], "warnings": warnings,
-            "path": os.path.relpath(mpath, project)}
+            "path": os.path.relpath(mpath, project),
+            "layout": "sharded" if sharded else "single",
+            "written": written}
 
 
 # --- HTTP server ----------------------------------------------------------------
@@ -1627,11 +1838,22 @@ $('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data
 // machinery here.
 $('#report').onclick=async e=>{const b=e.currentTarget;
  const was=b.textContent;b.disabled=true;b.textContent='Rendering…';
+ // Opened NOW, inside the click, and navigated once the render returns. Called
+ // after the await it is no longer a user gesture, and a render that takes a
+ // second or two is exactly when a browser silently blocks the popup — the
+ // button then reports success and nothing appears.
+ let win=null; try{win=window.open('','_blank','noopener');}catch(_e){}
  try{const r=await api('POST','/api/report',{});
-  if(!r.ok){toast((r.findings||['render failed'])[0],'err');return;}
+  if(!r.ok){if(win)win.close();toast((r.findings||['render failed'])[0],'err');return;}
+  if(!r.exists){if(win)win.close();
+   toast('rendered, but no HTML report was written — check /audit:report','err');return;}
   toast('wrote '+(r.files||[]).length+' file(s)','ok');
-  window.open(url('/report'),'_blank','noopener');
- }catch(err){toast('render failed: '+err,'err');}
+  if(win){win.location=url('/report');}
+  else{
+   // Blocked anyway: leave a link rather than a button that did nothing.
+   const a=$('#replink')||el('a',{id:'replink',class:'lnk',target:'_blank',rel:'noopener'},'open report ↗');
+   a.href=url('/report');if(!a.parentNode)b.parentNode.insertBefore(a,b.nextSibling);}
+ }catch(err){if(win)win.close();toast('render failed: '+err,'err');}
  finally{b.disabled=false;b.textContent=was;}};
 // tabs
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
@@ -2858,6 +3080,69 @@ def _selftest():
     check("write refused while locked", not res["ok"] and res.get("locked"))
     os.remove(mpath + ".lock")
 
+    # --- the SHARDED layout ---------------------------------------------------
+    # Everything above ran on a single-file manifest, and that is exactly why this
+    # was broken in the field for so long: this repo's own manifest and the shipped
+    # example are both sharded, and there the writer read the raw INDEX. Its phases
+    # are stubs with no tasks in them, so every task edit was refused as "unknown
+    # task" for a task the panel had just listed, phase edits went into a stub the
+    # next load discards, and a meta-only save died on validator findings about
+    # stubs missing fields stubs are not supposed to have.
+    import shutil as _shutil
+    _sproj = tempfile.mkdtemp(prefix="panel-sharded-")
+    try:
+        _atomic_write_json(_config_path(_sproj),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+        _sm = _manifest_path(_sproj, read_config(_sproj))
+        os.makedirs(os.path.dirname(_sm), exist_ok=True)
+        _full = {"meta": {"version": 3, "reviewSkill": None},
+                 "phases": [
+                     {"id": "P1", "title": "One", "status": "pending",
+                      "review": {"model": "sonnet"},
+                      "tasks": [{"id": "P1.1", "title": "T1", "status": "pending"}]},
+                     {"id": "P2", "title": "Two", "status": "pending",
+                      "tasks": [{"id": "P2.1", "title": "T2", "status": "pending"}]}]}
+        _mio.save_sharded(_sm, _full)
+        _idx = _read_json(_sm)
+        check("sharded fixture really is sharded", _mio.is_sharded(_idx))
+        _p2shard = os.path.join(os.path.dirname(_sm), _idx["phases"][1]["shard"])
+        _p2_before = open(_p2shard, "rb").read()
+
+        res = apply_composition(_sproj, {
+            "meta": {"reviewSkill": "sk"},
+            "phases": {"P1": {"reviewModel": "opus"}},
+            "tasks": {"P1.1": {"model": "haiku", "skills": ["a"]}}})
+        check("sharded: a task the panel listed can actually be edited", res["ok"])
+        check("sharded: the response names the layout it wrote",
+              res.get("layout") == "sharded")
+        _re = _mio.load_manifest(_sm)
+        _p1 = [p for p in _re["phases"] if p["id"] == "P1"][0]
+        check("sharded: task model + skills survive a reload",
+              _p1["tasks"][0].get("model") == "haiku"
+              and _p1["tasks"][0].get("skills") == ["a"])
+        check("sharded: per-phase review model lands in the shard, not the stub "
+              "that _merge_phase throws away",
+              _p1.get("review", {}).get("model") == "opus")
+        check("sharded: meta lands on the index", _re["meta"]["reviewSkill"] == "sk")
+        # The whole point of shards is that two phase branches never touch the same
+        # file. A writer that rewrites every shard would renormalize files nobody
+        # edited and manufacture exactly the conflicts the layout exists to avoid.
+        check("sharded: an untouched phase's shard is not rewritten at all",
+              open(_p2shard, "rb").read() == _p2_before)
+        check("sharded: only the touched files are reported written",
+              sorted(res.get("written") or []) == sorted(
+                  [os.path.relpath(os.path.join(os.path.dirname(_sm),
+                                                _idx["phases"][0]["shard"]), _sproj),
+                   os.path.relpath(_sm, _sproj)]))
+        # A meta-only save used to fail with ~22 findings about phase stubs.
+        res = apply_composition(_sproj, {"meta": {"reviewSkill": "sk2"}})
+        check("sharded: a meta-only save is not blocked by findings about stubs",
+              res["ok"] and not res.get("findings"))
+        check("sharded: unknown task still refused", not apply_composition(
+            _sproj, {"tasks": {"P9.9": {"model": "x"}}})["ok"])
+    finally:
+        _shutil.rmtree(_sproj, ignore_errors=True)
+
     # build_state shape
     st = build_state(proj)
     check("build_state has rollup + composition",
@@ -3261,7 +3546,18 @@ def _selftest():
     check("the button opens through this origin with the token in the query "
           "string (window.open cannot set a header)",
           "const url=p=>p+'?t='+encodeURIComponent(TOKEN)" in UI_HTML
-          and "window.open(url('/report')" in UI_HTML)
+          and "win.location=url('/report')" in UI_HTML)
+    # Opened during the click, navigated after the render returns. The other order
+    # is a popup opened outside a user gesture, which Safari and a strict Firefox
+    # block silently — leaving a button that reports success and does nothing.
+    _rep = UI_HTML[UI_HTML.index("$('#report').onclick"):]
+    _rep = _rep[:_rep.index("// tabs")]
+    check("the window is opened inside the gesture, before the await, and a "
+          "blocked popup still leaves a link",
+          _rep.index("window.open('','_blank'") < _rep.index("await api('POST','/api/report'")
+          and "id:'replink'" in _rep)
+    check("a render that wrote no HTML says so instead of opening a 404",
+          "if(!r.exists)" in _rep)
 
     # --- routing advice -----------------------------------------------------------
     # The only server-computed metric in the tab: the counterfactual re-prices the
