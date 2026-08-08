@@ -448,7 +448,11 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
 /* ---- print: force a light sheet + keep the interactive semantics --------- */
 @page{size:A4;margin:1.4cm}
 @media print{
-  :root,:root[data-theme="dark"]{--bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
+  /* color-scheme comes with the colours. Overriding the tokens alone would print
+     a white sheet whose checkboxes, selects and date picker are still painted
+     dark by the UA, because those read this property and nothing else. */
+  :root,:root[data-theme="dark"]{color-scheme:light;
+    --bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
     --muted:#374151;--border:#d1d5db}
   body{max-width:none;margin:0;padding:0;font-size:10.5pt}
   /* Paper has no scroll position to indicate and no controls to press, so the
@@ -1304,6 +1308,7 @@ def _bar(done, total):
 _undeclared_css_vars = _theme.undeclared_css_vars
 _unterminated_css_decls = _theme.unterminated_css_decls
 _theme_asymmetric_vars = _theme.theme_asymmetric_vars
+_themes_missing_color_scheme = _theme.themes_missing_color_scheme
 
 
 def _iso_day(epoch):
@@ -2272,9 +2277,10 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     nests a second `<html>` inside the first. The fragment carries no document
     wrapper — but it keeps `<title>` (the host reads it to name the page) and the
     whole `<style>`, which already does what an embedded page needs: it declares
-    `color-scheme:light dark`, honours both `prefers-color-scheme` and an explicit
-    `:root[data-theme]`, and scrolls its wide tables inside `.tablewrap` instead of
-    the page.
+    `color-scheme:light dark` for the reader who has chosen nothing and restates it
+    under each `:root[data-theme]` so a chosen theme takes the native controls with
+    it, honours both `prefers-color-scheme` and that attribute for colour, and
+    scrolls its wide tables inside `.tablewrap` instead of the page.
 
     Nothing here is fetched from a network, in either mode. That was true before
     this flag existed — it is why the report can be embedded at all under a CSP
@@ -3033,6 +3039,13 @@ def _selftest():
     _asym = _theme_asymmetric_vars(_CSS)
     check("u14c no colour token exists in only one theme (either direction)",
           _asym == [], repr(_asym))
+    # Tokens paint our boxes; the UA paints the checkboxes, selects, spinners,
+    # date picker and scrollbars from `color-scheme` alone. A theme that does not
+    # restate it leaves those wearing the OS's theme while everything around them
+    # follows the toggle — invisible in the stylesheet, obvious on screen.
+    _nocs = _themes_missing_color_scheme(_CSS)
+    check("u14i every explicit data-theme restates color-scheme, so the toggle "
+          "moves the native controls with it", _nocs == [], repr(_nocs))
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
     _unterm = _unterminated_css_decls(_CSS)

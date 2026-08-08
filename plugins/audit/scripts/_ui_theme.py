@@ -28,6 +28,18 @@ import re
 TOKEN_CSS = """
 /* ---- design tokens (Slate & Teal) ---------------------------------------- */
 :root{
+  /* `color-scheme` is the ONLY part of the visual system the custom properties
+     below cannot reach: checkboxes, <select> menus, number spinners, the
+     <input type=date> picker and the scrollbars are painted by the UA, which
+     reads this and nothing else. So it has to be restated wherever a theme is
+     chosen, or a reader who presses the toggle gets our dark surface wearing
+     the OS's light controls. Three states, three declarations:
+
+       no data-theme          -> `light dark`, follow the OS (here)
+       data-theme="light"     -> pin light  (below)
+       data-theme="dark"      -> pin dark   (below)
+
+     `themes_missing_color_scheme()` fails the build if one goes missing. */
   color-scheme:light dark;
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
   --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
@@ -127,7 +139,12 @@ TOKEN_CSS = """
   --hm-4:#2a78d6;--hm-5:#5598e7;--hm-6:#9ec5f4;--hm-ink:#07130f;
   --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 12px 34px rgba(0,0,0,.5)
 }}
+/* An explicit LIGHT choice needs no colour overrides — the base :root already is
+   light — but it does need this one line, or an OS-dark reader who presses the
+   toggle reads a white page through dark checkboxes and a dark date picker. */
+:root[data-theme="light"]{color-scheme:light}
 :root[data-theme="dark"]{
+  color-scheme:dark;
   --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
   --border:#1f2b40;--border-strong:#33425c;
   --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
@@ -303,6 +320,69 @@ def theme_asymmetric_vars(css):
         sorted("%s (dark only)" % v for v in colourish(dark_vars) - light_vars)
 
 
+def themes_missing_color_scheme(css):
+    """Explicit theme choices that never restate `color-scheme`.
+
+    Custom properties paint OUR boxes. Native UI — checkbox, radio, `<select>`
+    menu, number spinner, `<input type=date>` picker, scrollbar — is painted by
+    the UA from `color-scheme` alone, and no amount of care in the tokens beside
+    it reaches them. Declare `color-scheme:light dark` once on bare `:root` and
+    it resolves from `prefers-color-scheme` *and ignores the toggle*: on an
+    OS-light machine the dark theme ships with light checkboxes, a light select
+    menu and light scrollbars, and the inverse is just as true. That shipped for
+    four releases, and reading the stylesheet is what made it look fine — the
+    property is present, it is the OVERRIDE that was absent.
+
+    Checked per theme VALUE rather than per rule, because a surface may legally
+    add a second block for the same theme: the panel carries
+    `:root[data-theme=dark]{--ok:...}` for three roles the report has no
+    equivalent of, and it has no business restating `color-scheme` — the shared
+    token block already did. So the question is "is this theme met by a
+    color-scheme anywhere in this stylesheet", not "does every block carry one".
+
+    A negation cannot SATISFY a theme — `:root:not([data-theme=light])` styles the
+    absence of a choice, which the base `light dark` already covers — but it does
+    NAME one, and that is the only place some themes appear. `light` needs no
+    colour overrides at all (the base :root is light), so the one rule that
+    mentions it is the negation guarding the OS-dark block; harvesting names from
+    negations is what makes the explicit-light case checkable rather than
+    invisible, and dropping the light pin red rather than green.
+
+    `@media print` is skipped in both directions, and that exclusion is load-
+    bearing rather than tidy: the report's print sheet forces a light page for
+    `:root,:root[data-theme="dark"]`, so without it a `color-scheme:light` meant
+    for paper counted as satisfying the dark theme on screen — and the first
+    version of this check went green with the screen defect fully restored."""
+    def themes_named_in(selector_text):
+        return set(re.findall(r"\[data-theme\s*=\s*[\"']?([A-Za-z-]+)",
+                              selector_text))
+
+    print_spans = []
+    for at in re.finditer(r"@media([^{]*)\{", css):
+        if "print" not in at.group(1):
+            continue
+        depth, i = 1, at.end()
+        while i < len(css) and depth:
+            if css[i] == "{":
+                depth += 1
+            elif css[i] == "}":
+                depth -= 1
+            i += 1
+        print_spans.append((at.start(), i))
+
+    seen, satisfied = set(), set()
+    for rule in re.finditer(r"([^{}]*?)\{([^{}]*)\}", css):
+        if any(lo <= rule.start() < hi for lo, hi in print_spans):
+            continue
+        selector, block = rule.group(1), rule.group(2)
+        negated = " ".join(re.findall(r":not\(([^)]*)\)", selector))
+        chosen = themes_named_in(re.sub(r":not\([^)]*\)", "", selector))
+        seen |= chosen | themes_named_in(negated)
+        if chosen and re.search(r"(?<![-\w])color-scheme\s*:", block):
+            satisfied |= chosen
+    return sorted(seen - satisfied)
+
+
 def _selftest():
     """Both surfaces depend on this module, so it carries its own gate."""
     ok = bad = 0
@@ -323,6 +403,42 @@ def _selftest():
           and ':root[data-theme="dark"]' in TOKEN_CSS)
     check("no token is declared in only one theme: %r" % (theme_asymmetric_vars(TOKEN_CSS),),
           not theme_asymmetric_vars(TOKEN_CSS))
+    # The toggle has to move the NATIVE controls too, and tokens cannot reach them.
+    check("every explicit theme restates color-scheme, so the toggle moves the "
+          "checkboxes, selects, spinners, date pickers and scrollbars with it: %r"
+          % (themes_missing_color_scheme(TOKEN_CSS),),
+          not themes_missing_color_scheme(TOKEN_CSS))
+    check("both directions are pinned, not just dark",
+          "color-scheme:dark" in TOKEN_CSS and "color-scheme:light}" in TOKEN_CSS)
+    check("bare :root still follows the OS when nobody has chosen",
+          re.search(r":root\{[^}]*color-scheme:light dark;", TOKEN_CSS) is not None)
+    # The lint's own two ways of being wrong. It caught nothing for four releases
+    # because there was nothing like it; these prove it can fail and can pass.
+    check("the lint detects a theme with no color-scheme",
+          themes_missing_color_scheme(
+              ':root{color-scheme:light dark}\n:root[data-theme="dark"]{--bg:#000}')
+          == ["dark"])
+    check("the lint accepts a theme satisfied by a DIFFERENT block, which is how "
+          "the panel adds its own roles without restating the property",
+          themes_missing_color_scheme(
+              ':root[data-theme=dark]{color-scheme:dark}\n'
+              ':root[data-theme=dark]{--ok:#0f0}') == [])
+    check("a :not() negation cannot satisfy a theme, but it does NAME one - which "
+          "is the only mention explicit-light gets, since light needs no colours",
+          themes_missing_color_scheme(
+              '@media (prefers-color-scheme:dark){:root:not([data-theme=light])'
+              '{--bg:#000}}') == ["light"])
+    check("...and naming it is enough for a pin elsewhere to answer it",
+          themes_missing_color_scheme(
+              ':root[data-theme=light]{color-scheme:light}\n'
+              '@media (prefers-color-scheme:dark){:root:not([data-theme=light])'
+              '{--bg:#000}}') == [])
+    check("a print sheet cannot vouch for a SCREEN theme - the report's forces a "
+          "light page for :root[data-theme=dark], and counting it hid the defect",
+          themes_missing_color_scheme(
+              ':root[data-theme="dark"]{--bg:#000}\n'
+              '@media print{:root,:root[data-theme="dark"]{color-scheme:light}}')
+          == ["dark"])
     check("no declaration is left unterminated: %r" % (unterminated_css_decls(TOKEN_CSS),),
           not unterminated_css_decls(TOKEN_CSS))
     check("braces balance", TOKEN_CSS.count("{") == TOKEN_CSS.count("}"))
