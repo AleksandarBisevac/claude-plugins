@@ -34,6 +34,25 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 
+
+def _plugin_version():
+    """The version of the plugin that rendered this file, or '' if unknown.
+
+    A report is a file that outlives the tree it came from: it gets mailed, put in
+    a CI artifact, opened next week. When someone says a control does not work,
+    the first thing worth knowing is which renderer wrote the page in front of
+    them — and until now nothing on the page could answer that. Best-effort by
+    construction: a missing or malformed plugin.json costs the stamp, never the
+    report.
+    """
+    try:
+        with open(os.path.join(os.path.dirname(_HERE), ".claude-plugin",
+                               "plugin.json"), encoding="utf-8") as fh:
+            v = json.load(fh).get("version")
+        return v if isinstance(v, str) and v.strip() else ""
+    except Exception:
+        return ""
+
 # Chip and pipeline-rail colors live in the report's CSS theme tokens (see _CSS),
 # keyed off the `data-status` / `data-risk` attributes the markup carries — so a
 # single token set themes every status/risk consistently in both light and dark.
@@ -89,6 +108,27 @@ _CSS = """
   --sp-0:.25rem;--sp-1:.5rem;--sp-2:.75rem;--sp-3:1rem;
   --sp-4:1.5rem;--sp-5:2rem;--sp-6:3rem;--sp-7:4rem;
   --t-1:1.7rem;--t-2:1.0625rem;--t-3:.875rem;--t-label:.68rem;
+  /* ---- the sticky stack ---------------------------------------------------
+     Three things pin to the top of this document — the bar, the mobile nav strip
+     and the table's filter row — and a fourth (the column headers) has to pin
+     below all of them. Every one of those offsets used to be a hand-tuned
+     constant: 4.1rem for the nav, 3.6rem for the filter bar, 3.5rem for the
+     headers, 6.6rem for the filter bar again below 72rem. Four guesses at one
+     number, and none of them was right: the bar measures 70px, so the filter bar
+     pinned 12px UNDER it and the column headers pinned above the filter bar and
+     were painted out of existence entirely.
+
+     Now there is one measurement and everything derives from it. --topbar-h is
+     restated at runtime from the bar's own height (it depends on the title, the
+     viewport and the font), so the stack cannot drift from what is on screen;
+     the values here are the no-JS fallback and are deliberately generous. */
+  --topbar-h:4.4rem;--strip-h:0rem;--sectools-h:3.9rem;
+  --sticky-1:var(--topbar-h);
+  --sticky-2:calc(var(--sticky-1) + var(--strip-h));
+  --sticky-3:calc(var(--sticky-2) + var(--sectools-h));
+  /* Painting order for those same layers. Lower pins deeper: the column headers
+     must slide UNDER the filter bar, which slides under the bar. */
+  --z-topbar:30;--z-strip:20;--z-sectools:15;--z-thead:10;
 }
 /* dark tokens: OS default (JS off) + explicit toggle. --theme=light pins light. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
@@ -138,7 +178,15 @@ _CSS = """
 
 /* ---- base ---------------------------------------------------------------- */
 *{box-sizing:border-box}
-html{background:var(--bg)}
+/* Reserve the scrollbar's width always. Without it a short section and a long one
+   centre the whole shell at two different offsets, and every jump between them
+   shifts the page sideways. */
+html{background:var(--bg);scrollbar-gutter:stable}
+/* Every anchor in this document lands under a sticky bar unless it says otherwise
+   — and this report is navigated almost entirely by anchor. One rule covers the
+   section headings, the phase rows a "held by" link points at, and anything a
+   later section adds an id to. */
+[id]{scroll-margin-top:calc(var(--sticky-2) + var(--sp-2))}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
      margin:0;padding:0;-webkit-font-smoothing:antialiased}
 
@@ -156,7 +204,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
    One information architecture, two presentations (the app-shell rule): above
    72rem it is a sticky column; below, the same items become a horizontal strip
    under the top bar. Never two different menus. */
-.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:.75rem 1rem;
+.topbar{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
   flex-wrap:wrap;padding:.6rem 1.5rem;background:color-mix(in srgb,var(--surface) 88%,transparent);
   backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
 .topbar.scrolled{box-shadow:var(--shadow-sm)}
@@ -186,7 +234,8 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .topgrid>:only-child{grid-column:1/-1}
 @media (min-width:78rem){.topgrid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
   align-items:start}}
-.snav{position:sticky;top:4.1rem;max-height:calc(100vh - 5.5rem);overflow:auto;
+.snav{position:sticky;top:calc(var(--topbar-h) + var(--sp-1));
+  max-height:calc(100vh - var(--topbar-h) - var(--sp-4));overflow:auto;
   padding-right:.25rem}
 .snav ol{list-style:none;margin:0;padding:0}
 .snav a{display:flex;align-items:center;gap:.5rem;text-decoration:none;color:var(--muted);
@@ -210,9 +259,9 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 @media (max-width:72rem){
   .shell{grid-template-columns:minmax(0,1fr);gap:1rem;padding-top:.5rem}
   /* Same items, different presentation — a horizontal strip, not a second menu. */
-  .snav{position:sticky;top:3.4rem;max-height:none;overflow-x:auto;overflow-y:hidden;
+  .snav{position:sticky;top:var(--topbar-h);max-height:none;overflow-x:auto;overflow-y:hidden;
     margin:0 -1.5rem;padding:.4rem 1.5rem;background:var(--bg);
-    border-bottom:1px solid var(--border);z-index:20}
+    border-bottom:1px solid var(--border);z-index:var(--z-strip)}
   .snav-title{display:none}
   .snav ol{display:flex;gap:.25rem;white-space:nowrap}
   .snav a{border-left:none;border-bottom:2px solid transparent;border-radius:var(--radius) var(--radius) 0 0}
@@ -291,9 +340,8 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 /* Section-scoped controls sit on the thing they act on, sticky under the top bar
    so they stay reachable while you scroll the table they filter — and stop
    existing once you have scrolled past it. */
-.sectools{position:sticky;top:3.6rem;z-index:15;padding:.5rem .75rem;margin:0 0 .75rem;
+.sectools{position:sticky;top:var(--sticky-2);z-index:var(--z-sectools);padding:.5rem .75rem;margin:0 0 .75rem;
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)}
-@media (max-width:72rem){.sectools{top:6.6rem}}
 @media print{.sectools{display:none!important}}
 #audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
@@ -337,7 +385,10 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 table.phases,table.data{border-collapse:separate;border-spacing:0;width:100%;font-size:.92rem;
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
   box-shadow:var(--shadow-sm);margin:0}
-thead th{position:sticky;top:3.5rem;z-index:2;background:var(--surface-2);color:var(--muted);font-weight:700;
+/* Pinned BELOW the filter bar, not above it. At top:3.5rem these headers pinned
+   1.6px higher than the bar that filters them and, being the lower layer, were
+   painted out completely — the table scrolled with no headers at all. */
+thead th{position:sticky;top:var(--sticky-3);z-index:var(--z-thead);background:var(--surface-2);color:var(--muted);font-weight:700;
   font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;text-align:left;
   padding:.5rem .75rem;border-bottom:1px solid var(--border)}
 /* Only headers that actually sort look and behave like controls. `role="button"` is
@@ -698,48 +749,87 @@ _SCRIPT = r"""<script>
     paintTheme();
   });
 
+  // The sticky stack, measured rather than assumed. --topbar-h decides where the
+  // nav strip, the filter bar, the column headers and every anchor land, and it
+  // depends on things a stylesheet cannot know: how far the title wraps, how tall
+  // the strip is at this width, what text size the reader chose. The CSS values
+  // are the no-JS fallback; these are the truth.
+  var toolbar = document.querySelector('.topbar');
+  var snav = document.querySelector('.snav');
+  // Only the horizontal strip stacks UNDER the bar. Above 72rem the same nav is a
+  // column beside the content and adds nothing to what follows it, so the query
+  // that switches the presentation is the one that decides whether it counts.
+  var stripQ = window.matchMedia ? matchMedia('(max-width:72rem)') : null;
+  function px(el) { return el ? Math.round(el.getBoundingClientRect().height) : 0; }
+  function measureStack() {
+    if (toolbar) root.style.setProperty('--topbar-h', px(toolbar) + 'px');
+    root.style.setProperty('--strip-h',
+      (snav && stripQ && stripQ.matches ? px(snav) : 0) + 'px');
+    var st = document.querySelector('.sectools');
+    if (st) root.style.setProperty('--sectools-h', px(st) + 'px');
+  }
+  measureStack();
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(measureStack);
+    [toolbar, snav, document.querySelector('.sectools')].forEach(function (el) { if (el) ro.observe(el); });
+  }
+  window.addEventListener('resize', measureStack, { passive: true });
+
   // Scroll-spy. The links work without any of this — they are plain anchors
   // rendered server-side — so this only adds the half a nav cannot do statically:
   // saying where you ARE. Without it the sidebar is a menu; with it, a position.
+  //
+  // This was an IntersectionObserver watching each target inside a 15%-30% band of
+  // the viewport. Most of those targets are <h2> elements a line and a half tall,
+  // so at any given scroll position usually NONE of them was inside the band and
+  // the nav marked nothing at all — the state existed and was almost never shown.
+  // Position is not a question about visibility, it is a question about order:
+  // whichever heading most recently passed under the bar is the one being read.
   var navLinks = [].slice.call(document.querySelectorAll('.snav a'));
-  if (navLinks.length && window.IntersectionObserver) {
-    var targets = navLinks.map(function (a) {
-      return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+  var spyTargets = navLinks.map(function (a) {
+    try { return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))); }
+    catch (e) { return null; }
+  });
+  function markSpy() {
+    if (!navLinks.length) return;
+    var fold = px(toolbar) + (snav && stripQ && stripQ.matches ? px(snav) : 0) + 4;
+    var best = -1;
+    spyTargets.forEach(function (el, i) {
+      if (el && el.getBoundingClientRect().top <= fold) best = i;
     });
-    var visible = {};
-    var mark = function () {
-      // Topmost visible section wins. Picking "most visible" instead makes the
-      // marker jump backwards when a long section scrolls past a short one.
-      var best = -1;
-      targets.forEach(function (el, i) {
-        if (el && visible[i] && (best < 0 || el.getBoundingClientRect().top <
-            targets[best].getBoundingClientRect().top)) best = i;
-      });
-      navLinks.forEach(function (a, i) {
-        if (i === best) a.setAttribute('aria-current', 'true');
-        else a.removeAttribute('aria-current');
-      });
-    };
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        var i = targets.indexOf(en.target);
-        if (i >= 0) visible[i] = en.isIntersecting;
-      });
-      mark();
-    }, { rootMargin: '-15% 0px -70% 0px' });
-    targets.forEach(function (el) { if (el) io.observe(el); });
+    if (best < 0) best = 0;   // above the first heading, the first link still answers
+    // At the end of the document nothing further can cross the fold, so a short
+    // final section would otherwise be unreachable by the marker.
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+      for (var j = spyTargets.length - 1; j >= 0; j--) { if (spyTargets[j]) { best = j; break; } }
+    }
+    navLinks.forEach(function (a, i) {
+      if (i === best) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    });
   }
 
-  // Toolbar elevation once the page scrolls under it.
-  var toolbar = document.querySelector('.topbar');
-  if (toolbar) {
-    var onScroll = function () { toolbar.classList.toggle('scrolled', (window.scrollY || 0) > 8); };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
+  // One scroll listener drives both the marker and the bar's elevation, coalesced
+  // to a frame: scroll fires far faster than the screen repaints.
+  var ticking = false;
+  function onScroll() {
+    if (toolbar) toolbar.classList.toggle('scrolled', (window.scrollY || 0) > 8);
+    markSpy();
   }
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () { ticking = false; onScroll(); });
+  }, { passive: true });
+  window.addEventListener('hashchange', markSpy);
+  onScroll();
 
-  if (!grouped) return;
-  var phaseRows = [].slice.call(grouped.querySelectorAll('tbody tr.phase'));
+  // No early return here. The print button, the markdown download, the copy
+  // buttons and the whole chart tooltip layer have nothing to do with the phases
+  // table, and a single `if (!grouped) return` above them took all of them down
+  // together whenever that one element was absent. Everything below degrades to a
+  // no-op instead: an empty phaseRows makes every loop over it vacuous.
+  var phaseRows = grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.phase')) : [];
   var bugRows = bugsTable ? [].slice.call(bugsTable.querySelectorAll('tbody tr')) : [];
 
   // Expand state persists across filtering AND page reload (best-effort;
@@ -761,13 +851,15 @@ _SCRIPT = r"""<script>
   // Sorting reorders these rows but never replaces them, so an index of element
   // references stays correct across a sort.
   var TASKS = {}, TFROW = {};
-  [].forEach.call(grouped.querySelectorAll('tbody tr.task'), function (t) {
-    var k = t.getAttribute('data-phase');
-    (TASKS[k] || (TASKS[k] = [])).push(t);
-  });
-  [].forEach.call(grouped.querySelectorAll('tbody tr.taskfilter'), function (t) {
-    TFROW[t.getAttribute('data-phase')] = t;
-  });
+  if (grouped) {
+    [].forEach.call(grouped.querySelectorAll('tbody tr.task'), function (t) {
+      var k = t.getAttribute('data-phase');
+      (TASKS[k] || (TASKS[k] = [])).push(t);
+    });
+    [].forEach.call(grouped.querySelectorAll('tbody tr.taskfilter'), function (t) {
+      TFROW[t.getAttribute('data-phase')] = t;
+    });
+  }
   function tasksOf(pid) { return TASKS[pid] || []; }
   function tfOf(pid) { return TFROW[pid] || null; }
   // Lowercased once per row and kept. The text of a rendered report never changes,
@@ -897,7 +989,10 @@ _SCRIPT = r"""<script>
   function highlight(host, dataAttr, active) {
     [].forEach.call(host.children, function (x) {
       var on = x.getAttribute(dataAttr) === active;
-      x.className = (on ? x.className.split(' ')[0] + ' on' : x.className.split(' ')[0]);
+      // classList, not a className rebuilt from its first word: that rebuild
+      // silently dropped every class after the first, so any second utility class
+      // a chip carries disappeared the moment the chip was toggled.
+      x.classList.toggle('on', on);
       x.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
@@ -905,8 +1000,18 @@ _SCRIPT = r"""<script>
   // phase expand/collapse (click or Enter/Space); state persists
   phaseRows.forEach(function (pr) {
     function toggle() { var pid = pr.getAttribute('data-phase'); expanded[pid] = !expanded[pid]; persist(); refresh(); }
-    pr.addEventListener('click', toggle);
-    pr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    pr.addEventListener('click', function (e) {
+      // A phase row contains its own controls — the "held by" link that jumps to
+      // the phase holding this one shut, and anything a later section adds. Those
+      // have their own meaning; swallowing them into the row's toggle meant
+      // following the link ALSO collapsed the row you were about to read.
+      if (e.target && e.target.closest && e.target.closest('a,button,input,select,summary,label')) return;
+      toggle();
+    });
+    pr.addEventListener('keydown', function (e) {
+      if (e.target !== pr) return;   // Enter on a focused link inside the row is the link's
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
   });
   if (expandBtn) expandBtn.addEventListener('click', function () {
     var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
@@ -1327,10 +1432,13 @@ def _theme_asymmetric_vars(css):
         dark_vars |= set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", block))
     if not dark_vars:
         return []
-    # spacing / type / motion / font tokens are theme-independent by design and are
-    # deliberately declared once, in the base only.
+    # spacing / type / motion / font / layout tokens are theme-independent by design
+    # and are deliberately declared once, in the base only. The sticky-stack
+    # offsets and paint order (--topbar-h, --sticky-*, --z-*) are geometry, not
+    # colour: a dark report pins its bar in exactly the same place.
     neutral = ("--sp-", "--t-", "--dur", "--ease", "--radius", "--pill",
-               "--sans", "--mono", "--shadow")
+               "--sans", "--mono", "--shadow",
+               "--topbar-h", "--strip-h", "--sectools-h", "--sticky-", "--z-")
 
     def colourish(names):
         return {v for v in names if not any(v.startswith(n) for n in neutral)}
@@ -2338,12 +2446,15 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         sections.append((anchor, label, count, sub))
         return anchor
 
+    _ver = _plugin_version()
     out.append('<header class="topbar"><div class="tb-id">'
                '<h1>%s</h1><p class="meta">%s · %d phases · %d tasks · %d bugs · '
-               "generated %s</p></div>"
+               "generated %s%s</p></div>"
                % (e(meta.get("title") or "Audit report"),
                   e(meta.get("repo") or "?"), len(summary["phases"]),
-                  summary["tasks"]["total"], summary["bugs"]["total"], now))
+                  summary["tasks"]["total"], summary["bugs"]["total"], now,
+                  (' · <span class="stampv" title="The plugin version that '
+                   'rendered this file">audit %s</span>' % e(_ver)) if _ver else ""))
     out.append("@@TOOLBAR@@</header>")
     out.append('<div class="shell">@@NAV@@<main class="content">')
     if not summary["valid"]:
@@ -3139,7 +3250,64 @@ def _selftest():
           "or printed - still has its contents list",
           "<nav class=\"snav\"" in html_out and 'href="#gate"' in html_out)
     check("shell: scroll-spy only ADDS position; it does not supply the links",
-          "IntersectionObserver" in _SCRIPT and "aria-current" in _SCRIPT)
+          "markSpy" in _SCRIPT and "aria-current" in _SCRIPT)
+    # The observer this replaced watched each target inside a 15%-30% band of the
+    # viewport. Most targets are <h2> elements a line and a half tall, so usually
+    # NONE was in the band and the nav marked nothing at all. Order, not
+    # visibility: whichever heading last passed under the bar is where you are.
+    check("shell: the marker is decided by which heading last passed the fold, so "
+          "one link is always marked - a band-based observer marked none",
+          "new IntersectionObserver" not in _SCRIPT
+          and "if (best < 0) best = 0;" in _SCRIPT
+          and "getBoundingClientRect().top <= fold" in _SCRIPT)
+
+    # --- the sticky stack ------------------------------------------------------
+    # Four hand-tuned offsets (4.1rem nav, 3.6rem filter bar, 3.5rem headers,
+    # 6.6rem below 72rem) were four guesses at ONE number. The bar measures 70px:
+    # the filter bar pinned 12px under it and the column headers pinned ABOVE the
+    # filter bar and were painted out entirely.
+    check("sticky: one measured offset, and every pinned layer derives from it",
+          "--topbar-h:" in _CSS and "--sticky-2:calc(var(--sticky-1)" in _CSS
+          and "--sticky-3:calc(var(--sticky-2)" in _CSS
+          and "top:var(--sticky-2)" in _CSS and "top:var(--sticky-3)" in _CSS)
+    # Checked against declarations only: the prose above these rules still names
+    # the old constants, and it should - it is the record of what went wrong.
+    _css_decl = re.sub(r"/\*.*?\*/", "", _CSS, flags=re.S)
+    check("sticky: no layer keeps a hand-tuned offset the bar can outgrow",
+          not re.search(r"top:\s*(3\.4|3\.5|3\.6|4\.1|6\.6)rem", _css_decl))
+    check("sticky: the column headers pin BELOW the bar that filters them, and "
+          "paint under it rather than over it",
+          "--z-sectools:15" in _CSS and "--z-thead:10" in _CSS
+          and "z-index:var(--z-thead)" in _CSS
+          and "z-index:var(--z-sectools)" in _CSS)
+    check("sticky: the stack is restated at runtime, because its height depends "
+          "on the title, the width and the reader's font size",
+          "measureStack" in _SCRIPT and "--topbar-h" in _SCRIPT
+          and "ResizeObserver" in _SCRIPT)
+    # Anchors are how this report is navigated; every one of them landed under the
+    # bar, which reads as "the link goes somewhere slightly below the heading".
+    check("sticky: every anchor clears the stack instead of landing beneath it",
+          "[id]{scroll-margin-top:calc(var(--sticky-2)" in _CSS)
+    check("sticky: the scrollbar's width is reserved, so a short page and a long "
+          "one do not centre the shell at two different offsets",
+          "scrollbar-gutter:stable" in _CSS)
+
+    # --- one missing element must not take the page down -----------------------
+    check("guards: no early return above the print/download/copy/tooltip wiring - "
+          "they have nothing to do with the phases table",
+          "if (!grouped) return;" not in _SCRIPT
+          and "grouped ? [].slice.call(grouped" in _SCRIPT)
+    check("guards: a link inside a phase row is followed, not swallowed by the "
+          "row's own expand/collapse",
+          "closest('a,button,input,select,summary,label')" in _SCRIPT)
+    check("guards: a chip's other classes survive being toggled",
+          "classList.toggle('on', on)" in _SCRIPT
+          and "x.className.split(' ')[0]" not in _SCRIPT)
+    # A report outlives its tree: it gets mailed, archived, opened next week. When
+    # someone reports a control that does not work, which renderer wrote the page
+    # is the first thing worth knowing.
+    check("stamp: the page names the plugin version that rendered it",
+          'class="stampv"' in html_out and "audit " in html_out)
     # Controls sit with what they act on.
     check("shell: document-level actions are in the top bar",
           html_out.index('id="audit-print"') < html_out.index('class="shell"'))
