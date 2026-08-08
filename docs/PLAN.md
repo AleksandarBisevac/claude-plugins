@@ -5,6 +5,14 @@ in `TODO.local.md`, which is in `.git/info/exclude`, so it could not travel to a
 new clone, or a new session that had not read this one's history. A plan nobody else can open is
 a plan that has to be reconstructed from memory every time.
 
+**How this file went wrong once already, on the day it was created.** It was built from what is
+*in the repository* — the roadmap, `TODO.local.md`, the design docs — and it therefore missed an
+entire plan of ~29 requirements that lived in `~/.claude/plans/`, written by a different session.
+Nobody noticed until the user read this file and asked where those items were. The lesson is the
+same one this file opens with, one level up: **a plan outside the repository does not exist.**
+That plan is now at `docs/plans/2026-08-08-report-panel-ui-governance.md`. When a session plans
+in `~/.claude/plans/`, copy it into `docs/plans/` before acting on it.
+
 Every item below is written to be picked up **cold** — with no context beyond this file and the
 repository. Each carries the same six fields, and the ones that cost the most to rediscover are
 `Known` and `Do not` :
@@ -37,8 +45,13 @@ Conventions every item inherits — these are not repeated per item:
   distinguishes them.
 - **Fix the class, not the instance.** A reported defect is a category — audit every call site,
   state the rule, add the guard that would have caught it.
+- **A plan outside the repository does not exist.** `~/.claude/plans/` and `TODO.local.md` are
+  both invisible to the next machine, clone and session. Copy any plan into `docs/plans/` before
+  acting on it, and record open work here. Both halves of that rule have already been broken
+  once each.
 
-Status as of 2026-08-08: **v0.27.0**, 1165 selftest cases across 21 suites, CI green on
+Status as of 2026-08-08: **v0.27.0** tagged, four commits past it on `main`, 1225 selftest
+cases across 22 suites, CI green on
 `ubuntu-latest` and `windows-latest`. The entire T0–T3 roadmap in
 `docs/strategy/2026-08-06-market-analysis.md` §9 is shipped except item 12, which is submitted
 and awaiting review (**B1** below).
@@ -46,6 +59,77 @@ and awaiting review (**B1** below).
 ---
 
 ## Actionable now
+
+### U1 — Report & Panel UI/UX overhaul + governance (the 2026-08-08 plan)
+
+**Goal.** Finish the plan in `docs/plans/2026-08-08-report-panel-ui-governance.md`: 29
+requirements (A1–A11 report, B1–B16 panel, C1–C2 extras) across 16 chunks and four
+version-targeted governance releases.
+
+**Why.** It is a direct response to the user's own UI/UX review of the plugin's two visual
+surfaces — dead controls, lost filters, layout jumps, unclear forms, raw labels — plus four
+capabilities the product does not have (monorepo areas, capability policy, tamper-evident
+journal, in-product help). It is by a wide margin the largest body of open work in this repo.
+
+**Where it stands** — verified against the tree, not read off commit titles. The status table is
+in that file; in one line: **Report c1–c4 and Panel c1–c2 are done** (five commits,
+`8529957`…`f05ae6f`), **Report c5–c8 and Panel c3–c8 are open**, and **all of workstream C
+(v0.28 areas, v0.29 journal, v0.30 policy, v0.31 help) is untouched** — none of
+`scripts/audit-journal.py`, `hooks/guard-capabilities.py`, `hooks/journal-writes.py` or
+`agents/audit-guide.md` exists.
+
+**Files.** `plugins/audit/scripts/render-report.py`, `panel-server.py`, `_ui_theme.py`; new
+scripts, hooks and an agent for workstream C. Per-chunk file lists are in the plan.
+
+**Verify.** Per the plan's own gates: `--selftest` on every touched script,
+`node tools/capture-screenshots.mjs --check`, and now also
+`node tools/check-report-interactive.mjs` on all three shipped reports.
+
+**Known.**
+- The plan's diagnosis of A2/A3/A4/A9 — *"stale install likely"* — **was wrong**. The confirmed
+  cause is an IDE preview pane sandboxing inline `<script>`; see R1 below and the correction
+  section in the plan file. Do not spend time on stale-install theories.
+- c8's `file://` runtime click-through already shipped, separately, as
+  `tools/check-report-interactive.mjs`.
+- The plan's **Stage 2 green-light checkpoint** is binding and matches standing guidance: generate
+  the report and panel screenshots, show them locally, and get explicit approval **before** any
+  PR or push of visual work.
+- Rollout order matters and is argued in the plan: **journal (v0.29) before policy (v0.30)**, so
+  policy mutations are journaled from birth.
+
+**Do not.**
+- Do not re-plan this. The brief is written, the contracts are fixed (`_ui_theme.py`,
+  `audit-journal.py`, the `policy` config block), and re-deriving them costs a day and produces
+  something incompatible with the four chunks already shipped.
+- Do not start workstream C before Report c5–c8 / Panel c3–c6: the plan's stages exist because
+  the governance UI (panel c7/c8) consumes the Settings and confirm-flow work from c3 and c6.
+- Do not take the requirement map as the spec — it is an index. The chunk sections carry the
+  actual behaviour, including the c5 behaviour matrix the plan calls "the test spec".
+
+### U2 — Multi-manifest workspace: decide it, do not drift on it
+
+**Goal.** Answer one question: does the plugin need a workspace descriptor spanning several
+manifests, or do `phase.area` + `meta.areas` cover the monorepo case well enough that it never
+should?
+
+**Why.** It is the one item of the 2026-07-29 roadmap
+(`docs/plans/2026-07-29-per-phase-config-and-monorepo.md`) that never shipped, and it has sat
+undecided since. Left alone it is the kind of thing that gets half-built twice.
+
+**Known.** Everything else in that roadmap shipped: `phase.reviewSkill` (A), `phase.area` plus the
+`areas` rollup and report column (B), and `/audit:worktree` (D) — verified against the tree.
+Option C was written as a *design outline*, not a task, and the plan set its own decision
+criterion: **decide after dogfooding A/B on a synthetic monorepo.** That dogfooding has not
+happened. The 2026-08-08 plan's `meta.areas` registry (v0.28) is a richer successor to B and
+pushes further down the single-manifest road — evidence toward "C is not needed", but not the
+decision.
+
+**Verify.** A written decision in this file: either C moves to *Decided against* with the
+reasoning, or it becomes a real item with a scope. Not code either way, until it is decided.
+
+**Do not.** Do not start building a workspace descriptor because it appears in an old plan. The
+submodule preflight already forbids one audit spanning repos, which is the constraint C exists to
+work around — and `meta.areas` may make that unnecessary.
 
 ### R1 — The report's interactivity, reported broken — CAUSE FOUND 2026-08-08
 
