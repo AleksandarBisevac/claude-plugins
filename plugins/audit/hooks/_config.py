@@ -41,6 +41,9 @@ Config keys (all optional; defaults in DEFAULTS below):
   guardEdits.tokenVars    [str] — identifier names treated as auth tokens (logging ban)
   guardEdits.customRules  [obj] — project-specific banned-pattern rules, each:
         { "pathPrefix": "libs/x/", "bannedPattern": "<regex>", "message": "<why>" }
+        `pathPrefix` is matched as a SUBSTRING of the path the edit tool reported
+        (usually absolute), not as a prefix — see guard-edits.py, which owns the
+        rule and pins it in its selftest.
   bashWriteCheck.enabled  bool  — PostToolUse git-status diff check for shell
         writes into source files (guard-bash-writes.py); default true
   tddReminder             obj   — non-blocking TDD nudge (remind-tdd.py):
@@ -49,7 +52,8 @@ Config keys (all optional; defaults in DEFAULTS below):
   usage                   obj   — token metering (meter-usage.py, /audit:usage):
         enabled (bool), ledgerDir (str), authorMode ("email"|"name"|"hash"|"none"),
         showCost (bool), backfillOnFirstRun (bool), maxScanBytes (int),
-        currency (str), pricingAsOf (str), pricing (obj: model -> USD per MTok)
+        currency (str), pricingAsOf (str), pricing (obj: model -> USD per MTok),
+        bands (obj: highUSD / outlierUSD, both null = calibrate from the project)
 
 This module also hosts the path/manifest helpers shared by require-plan.py and
 remind-tdd.py (rel_path, matches_exempt, strip_line_suffix, in_progress_*).

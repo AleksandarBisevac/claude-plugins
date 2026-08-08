@@ -327,9 +327,11 @@ server (the UI's HTML/CSS/JS is embedded inline as a string; it reuses the plugi
 `validate-manifest.py`, `validate-config.py`, `audit-status.py`, `hooks/_config.py` — via
 importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
 on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
-`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned). Three tabs:
-**Guards & paths** (form over `.claude/audit.config.json`, every field with an ⓘ hint,
-schema-validated), **Composition** (a compact, collapsible, **filterable** table of phases ·
+`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned). Four tabs:
+**Settings** (a form over the WHOLE of `.claude/audit.config.json` in four groups, described
+once by `SETTINGS_GROUPS`/`FIELD_HELP` in `panel-server.py` and rendered from that — the
+coverage is asserted against `validate-config.py`'s own key sets, so a new config key with no
+control fails the selftest), **Composition** (a compact, collapsible, **filterable** table of phases ·
 tasks · per-task skills/model + per-phase review model, scaling to ~50×20, plus a discovered
 "building blocks" sub-section — skills/agents/mcp — feeding the autocomplete), and **Overview**
 (the live rollup + validation banner). Writes **only** config + composition fields — never

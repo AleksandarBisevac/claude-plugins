@@ -13,7 +13,13 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
   2. Project custom rules (opt-in) — `.claude/audit.config.json` →
      guardEdits.customRules: a list of
         { "pathPrefix": "libs/x/", "bannedPattern": "<regex>", "message": "<why>" }
-     Each rule blocks `bannedPattern` when the edited path starts with `pathPrefix`.
+     Each rule blocks `bannedPattern` when `pathPrefix` occurs ANYWHERE in the
+     edited path — a substring test, not a prefix test, and against the path the
+     tool reported (usually absolute) rather than a repo-relative one. So
+     "realtime/" matches both src/realtime/x.ts and libs/realtime/y.ts, which is
+     what makes the rule usable in a monorepo where the same concern lives under
+     several roots. The key keeps its name because configs in the field already
+     use it; the documentation is what was wrong.
      Ships EMPTY by default — the plugin has no hardcoded project rules.
 
   3. Self-edit protection — edits targeting the INSTALLED plugin's own files
@@ -156,6 +162,9 @@ def decide(data: dict, *, cfg=None):
             pattern = str(rule.get("bannedPattern", ""))
             if not prefix or not pattern:
                 continue
+            # SUBSTRING, not a prefix — see the module docstring. Pinned by c3/c4
+            # in the selftest below, because four documents said "starts with"
+            # while this line said something else for the whole life of the hook.
             if prefix in path and re.search(pattern, text):
                 msg = rule.get("message") or (
                     "Blocked by a project custom rule: pattern %r is banned under %s."
@@ -233,6 +242,19 @@ def _selftest() -> int:
           "src/realtime/useX.tsx", "qObject.removeAllListeners()")
     check("c2 removeAllListeners elsewhere allowed", "allow", "Write",
           "src/other/useX.tsx", "qObject.removeAllListeners()")
+    # `pathPrefix` is matched as a SUBSTRING of the path the tool reported, which is
+    # normally ABSOLUTE. Four documents said "starts with" instead; a rule written
+    # to that description would have been believed to cover nothing (no real edit
+    # path starts with "src/") while actually covering every occurrence anywhere in
+    # the tree. These two pin the behaviour the docs now describe: an implementation
+    # using str.startswith would fail c3, and one anchoring at the repo root would
+    # fail c4.
+    check("c3 the same rule fires from an ABSOLUTE path (a startswith match "
+          "would not)", "block", "Write",
+          "/Users/dev/checkout/src/realtime/useX.tsx", "q.removeAllListeners()")
+    check("c4 and from a second root in a monorepo - the match is a substring, "
+          "so one rule covers every place the concern lives", "block", "Write",
+          "packages/web/src/realtime/useX.tsx", "q.removeAllListeners()")
     # token logging
     check("t1 logger with token value blocked", "block", "Write",
           "src/api.ts", "console.log('tok', %s)" % tok)
