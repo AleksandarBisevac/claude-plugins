@@ -554,6 +554,7 @@ def _composition_view(manifest):
 # report and the panel are held to exactly the same rules by the same code.
 _undeclared_css_vars = _theme.undeclared_css_vars
 _theme_asymmetric_vars = _theme.theme_asymmetric_vars
+_themes_missing_color_scheme = _theme.themes_missing_color_scheme
 
 
 # --- concurrency-lock detection (locks live in the shared git dir, not the tree) --
@@ -3969,6 +3970,14 @@ def _selftest():
     _asym = _theme_asymmetric_vars(_css)
     check("no colour token exists in only one theme (either direction): %r"
           % _asym, _asym == [])
+    # Settings alone ships a <select>, an <input type=date> and four number
+    # inputs; all six are painted by the UA from `color-scheme`, which no custom
+    # property can reach. A theme that does not restate it renders our dark cards
+    # with the OS's light spinners and menu.
+    _nocs = _themes_missing_color_scheme(_css)
+    check("every explicit data-theme restates color-scheme, so the toggle moves "
+          "the selects, spinners, date picker and scrollbars too: %r" % _nocs,
+          _nocs == [])
     check("usage colours come from the same validated palette as the report",
           "--viz-1:#2a78d6" in UI_HTML and "--viz-1:#3987e5" in UI_HTML)
     # Two series in the same hue is the one failure a categorical palette cannot

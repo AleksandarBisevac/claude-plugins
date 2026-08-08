@@ -183,6 +183,46 @@ async function assertBarsPainted(page, label) {
   }
 }
 
+/**
+ * The theme toggle must move the NATIVE controls, not just our boxes.
+ *
+ * Custom properties cannot reach a checkbox, a `<select>` menu, a number spinner,
+ * an `<input type=date>` picker or a scrollbar — the UA paints those from
+ * `color-scheme` alone. Declared once on bare `:root` as `light dark`, it resolves
+ * from `prefers-color-scheme` and ignores the toggle entirely, so an OS-light
+ * reader who picks dark gets our dark surface wearing light controls. That shipped
+ * for four releases and reading the stylesheet is exactly what hid it: the property
+ * was present, the OVERRIDE was missing.
+ *
+ * So this is measured in a browser and never inferred from the CSS. The page is
+ * driven from an OS-light context, which is the case a stylesheet-only reading
+ * gets wrong: `light dark` under a light OS looks correct until you press the
+ * button. Both directions, because pinning only dark is half a fix.
+ */
+async function assertThemeMovesNativeControls(page, label, toggleSel) {
+  const scheme = () => page.evaluate(() =>
+    getComputedStyle(document.documentElement).colorScheme);
+  const btn = page.locator(toggleSel);
+  if (!(await btn.count())) {
+    fail(`${label}: no theme toggle at ${toggleSel} — selector is stale`);
+    return;
+  }
+  await btn.click();
+  await page.waitForTimeout(120);
+  const dark = await scheme();
+  await btn.click();
+  await page.waitForTimeout(120);
+  const light = await scheme();
+  if (dark !== 'dark' || light !== 'light') {
+    fail(`${label}: the toggle leaves the native controls behind — root `
+       + `color-scheme reads "${dark}" on dark and "${light}" on light `
+       + `(want "dark" / "light"); checkboxes, selects, spinners, the date picker `
+       + `and the scrollbars keep the OS theme`);
+  } else {
+    note(`${label}: color-scheme follows the toggle (dark -> light round trip)`);
+  }
+}
+
 async function shot(page, name, { full = false } = {}) {
   await settle(page);
   if (CHECK) return;
@@ -241,6 +281,9 @@ async function main() {
       const chip = page.locator('#audit-phase-status button').first();
       if (await chip.count()) { await chip.click(); await page.waitForTimeout(120); }
       await shot(page, 'filtered');
+      // After the last shot this context takes: the round trip ends where it
+      // started, but it also writes localStorage, and nothing below reuses it.
+      await assertThemeMovesNativeControls(page, 'report', '#audit-theme');
       await ctx.close();
 
       const darkCtx = await browser.newContext({
@@ -376,6 +419,10 @@ async function main() {
       await page.waitForTimeout(600);
       await shot(page, 'panel-usage');
 
+      // Round trip first — it ends where it started, so the shot below is still
+      // the first press. The panel needs this more than the report does: Settings
+      // alone ships a <select>, an <input type=date> and four number inputs.
+      await assertThemeMovesNativeControls(page, 'panel', '#theme');
       await page.click('#theme');
       await page.waitForTimeout(300);
       await shot(page, 'panel-dark');
