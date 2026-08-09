@@ -352,6 +352,40 @@ def _manifest_path(project, config):
     return os.path.normpath(os.path.join(project, mp))
 
 
+# --- who is looking at this panel -------------------------------------------------
+_VIEWER_CACHE = {}
+
+
+def _viewer(project, config):
+    """Who is driving the panel: `{author, mode}`.
+
+    Resolved by `usage_ledger.resolve_author` — the SAME function, reading the same
+    `usage.authorMode` — rather than by asking git here. The two names have to be
+    one string: the Usage tab offers a "my spend" filter that compares this value
+    with the `author` column the ledger writes, and a second implementation would
+    produce a filter that matches nothing on any project where the two disagreed
+    (mode `hash`, say, or a repo-local `user.email`).
+
+    `mode: none` is a real answer, not a failure: it means this project chose not
+    to record who spent what, and the panel says so rather than inventing a name.
+
+    Cached per (project, mode) because resolve_author shells out to git and
+    build_state runs on every /api/state.
+    """
+    _, _, _, cfg_mod = _cores()
+    mode = str((cfg_mod.usage_cfg(config) or {}).get("authorMode") or "email")
+    key = (os.path.realpath(project), mode)
+    if key not in _VIEWER_CACHE:
+        author = None
+        try:
+            ul = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
+            author = ul.resolve_author(project, mode)
+        except Exception:
+            author = None
+        _VIEWER_CACHE[key] = {"author": author, "mode": mode}
+    return _VIEWER_CACHE[key]
+
+
 def _atomic_write_json(path, obj):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
@@ -566,6 +600,20 @@ def _bugs_view(manifest):
     return out
 
 
+def _skills_of(task):
+    """A task's skills as the panel SHOWS them: a list, always.
+
+    Absent and `null` both render as an empty chip row, so this is the value the
+    reader is looking at — which is what a change row has to be written against.
+    Reading the raw `None` here instead would be a truer reading of the file and a
+    false mismatch against the form: adding one skill would make the client say
+    `[] -> [a]` and the server `null -> [a]`, and the panel would warn about a
+    disagreement that is only a normalisation.
+    """
+    v = (task or {}).get("skills")
+    return v if isinstance(v, list) else []
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     phases_out, tasks_out = [], []
@@ -583,7 +631,7 @@ def _composition_view(manifest):
                 "id": t.get("id"), "title": t.get("title"),
                 "phaseId": ph.get("id"), "status": t.get("status"),
                 "model": t.get("model"),
-                "skills": t.get("skills") if isinstance(t.get("skills"), list) else [],
+                "skills": _skills_of(t),
             })
     return {
         "meta": {"reviewSkill": meta.get("reviewSkill"),
@@ -932,6 +980,7 @@ def build_state(project):
         "manifestPath": os.path.relpath(mpath, project),
         "manifestExists": exists,
         "manifestLocked": _audit_lock_held(project, config),
+        "viewer": _viewer(project, config),
         "config": config,
         "defaults": _defaults(),
         "configFindings": cfg_findings,
@@ -1046,6 +1095,167 @@ def _release_write_lock(lock):
         pass
 
 
+# --- what a save would change, and the record of it -------------------------------
+# One row shape for both writers and for the journal: {target, field, from, to}.
+# The panel renders it as "P1.2 · model · sonnet -> opus" before you confirm, the
+# server recomputes it from the document on disk and echoes it back as `applied`,
+# and the client compares the two. That comparison is the point: it is what turns
+# "the save went through" into "the save changed exactly what I was shown", and it
+# catches the case a confirm dialog otherwise makes WORSE — a second tab, or an
+# /audit run, having moved the manifest under you between render and save.
+def _flat_paths(obj, prefix=""):
+    """Dotted leaf paths of a JSON object. Lists and empty dicts are leaves.
+
+    A leaf per path rather than per block so `usage.bands.highUSD` reads as one
+    change instead of "usage changed" — which is not a sentence anyone can check.
+    """
+    out = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            p = "%s.%s" % (prefix, k) if prefix else str(k)
+            if isinstance(v, dict) and v:
+                out.update(_flat_paths(v, p))
+            else:
+                out[p] = v
+    return out
+
+
+def _config_changes(before, after):
+    """Rows for a config save: one per dotted leaf path that actually differs."""
+    a, b = _flat_paths(before or {}), _flat_paths(after or {})
+    rows = []
+    for p in sorted(set(a) | set(b)):
+        # Presence as well as value: removing a key whose value was null is a real
+        # change — deleting the key is how "use the default" is written — and
+        # comparing two `.get()` results alone would call that a no-op.
+        if (p in a) == (p in b) and a.get(p) == b.get(p):
+            continue
+        rows.append({"target": "config", "field": p,
+                     "from": a.get(p), "to": b.get(p)})
+    return rows
+
+
+def _composition_changes(manifest, patch):
+    """Rows for a composition save, computed BEFORE the patch is applied.
+
+    Read off the ASSEMBLED manifest — the same document the panel rendered its form
+    from — so the client's list and this one are two readings of one pair of values.
+
+    A field set back to the value it already had is dropped here, and the client
+    drops it too. That symmetry is what makes the mismatch check mean something: a
+    row on one side only is news, not a difference of opinion about what counts.
+
+    Unknown ids are skipped rather than reported: `apply_composition_patch` refuses
+    them a moment later, with the message that names them.
+    """
+    rows = []
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    for k in _META_KEYS:
+        if k in (patch.get("meta") or {}):
+            was, now = meta.get(k), patch["meta"][k]
+            if was != now:
+                rows.append({"target": "meta", "field": k, "from": was, "to": now})
+    by_pid = {p.get("id"): p for p in (manifest.get("phases") or [])
+              if isinstance(p, dict)}
+    for pid, pv in sorted((patch.get("phases") or {}).items()):
+        ph = by_pid.get(pid)
+        if ph is None or "reviewModel" not in (pv or {}):
+            continue
+        rev = ph.get("review") if isinstance(ph.get("review"), dict) else {}
+        was, now = rev.get("model"), pv["reviewModel"]
+        if was != now:
+            rows.append({"target": pid, "field": "review model",
+                         "from": was, "to": now})
+    by_tid = {t.get("id"): t for p in (manifest.get("phases") or [])
+              if isinstance(p, dict)
+              for t in (p.get("tasks") or []) if isinstance(t, dict)}
+    for tid, tv in sorted((patch.get("tasks") or {}).items()):
+        t = by_tid.get(tid)
+        if t is None:
+            continue
+        for k in _TASK_KEYS:
+            if k in (tv or {}):
+                # `skills` through the same normaliser the view uses — see
+                # _skills_of for why the raw value would be the wrong `from`.
+                was = _skills_of(t) if k == "skills" else t.get(k)
+                now = tv[k]
+                if was != now:
+                    rows.append({"target": tid, "field": k,
+                                 "from": was, "to": now})
+    return rows
+
+
+def _fmt_change(row):
+    """One row as the panel prints it, for the journal's one-line summary."""
+    def side(v):
+        if v is None:
+            return "(unset)"
+        if isinstance(v, (list, dict)):
+            return json.dumps(v, sort_keys=True)
+        return str(v)
+    return "%s %s: %s -> %s" % (row.get("target"), row.get("field"),
+                                side(row.get("from")), side(row.get("to")))
+
+
+_JOURNAL = {"tried": False, "mod": None}
+
+
+def _journalmod():
+    """`audit-journal.py`, loaded by path — or None, which is the normal answer
+    today: the module ships with v0.29 and this call site ships before it, on
+    purpose, so that the release which adds the journal does not also have to reach
+    back into every writer. Loaded once; a missing file is not retried per save."""
+    if not _JOURNAL["tried"]:
+        _JOURNAL["tried"] = True
+        path = os.path.join(_HERE, "audit-journal.py")
+        if os.path.isfile(path):
+            try:
+                _JOURNAL["mod"] = _load("audit_journal", path)
+            except Exception:
+                _JOURNAL["mod"] = None
+    return _JOURNAL["mod"]
+
+
+def _journal(project, config, action, target, rows):
+    """Append one row to the tamper-evident journal. Response fields, not a bool.
+
+    FAIL-SOFT BY CONTRACT, and the contract is the interesting part: a write that
+    SUCCEEDED must never be reported as failed because the journal was absent,
+    unwritable or broken. Nothing here can raise into a writer.
+
+    Returns `{"journaled": True}`, or False plus a `journaledWhy` that the panel
+    needs in order not to lie in either direction:
+
+      "unavailable" — this install has no journal (the module ships with v0.29,
+        this call site ships now). The toast then says nothing about logging at
+        all: "not logged" would advertise a feature that is not here and make every
+        ordinary save read like a failure.
+      "failed"      — the journal exists and would not take the row. That one IS
+        worth saying out loud, in the same breath as the save: an unlogged change
+        and a broken audit trail are not the same news.
+
+    The changes go into `summary` rather than a field of their own: the journal row
+    is a fixed shape ({v, ts, actor, action, target, summary, stateHash, prev,
+    hash}) and inventing a key here would be this file deciding a format that file
+    owns.
+    """
+    mod = _journalmod()
+    if mod is None or not hasattr(mod, "append"):
+        return {"journaled": False, "journaledWhy": "unavailable"}
+    try:
+        ok = bool(mod.append(project, {
+            "action": action,
+            "target": target,
+            "summary": "%d change(s): %s" % (
+                len(rows), "; ".join(_fmt_change(r) for r in rows)),
+            "actor": {"author": _viewer(project, config).get("author"),
+                      "sessionId": _panel_session(), "via": "panel"}}))
+    except Exception:
+        ok = False
+    return {"journaled": True} if ok else {"journaled": False,
+                                           "journaledWhy": "failed"}
+
+
 # --- writes ---------------------------------------------------------------------
 def write_config(project, obj):
     """Validate then atomically write .claude/audit.config.json. Returns dict."""
@@ -1058,17 +1268,33 @@ def write_config(project, obj):
     path = _config_path(project)
     if not _within(project, path):
         return {"ok": False, "findings": ["refused: path escapes project"]}
+    current = read_config(project)
+    applied = _config_changes(current, obj)
+    if not applied:
+        # Nothing to write. Not an error and not a lie either: the response says
+        # `unchanged`, so the panel can say "no changes" rather than "saved" —
+        # and no file is touched, so a save with nothing in it cannot rewrite a
+        # config someone else edited in the meantime.
+        return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
+                "unchanged": True, "journaled": False,
+                "journaledWhy": "unchanged",
+                "path": os.path.relpath(path, project)}
     # The config decides where the manifest is and which guards run; writing it
     # under a running phase is the same class of surprise as writing the manifest.
-    lock = _acquire_write_lock(project, read_config(project), None)
+    lock = _acquire_write_lock(project, current, None)
     if lock.get("blocked"):
         return lock["response"]
     try:
         _atomic_write_json(path, obj)
     finally:
         _release_write_lock(lock)
-    return {"ok": True, "findings": [], "warnings": warnings,
-            "path": os.path.relpath(path, project)}
+    out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
+           "path": os.path.relpath(path, project)}
+    # `current`, not the config just written: the actor is resolved under the mode
+    # that was in force when they made the change, not one this same save may have
+    # altered.
+    out.update(_journal(project, current, "config.write", out["path"], applied))
+    return out
 
 
 def _reject_unknown(patch):
@@ -1226,12 +1452,25 @@ def apply_composition(project, patch):
     if not isinstance(assembled, dict):
         return {"ok": False, "findings": ["manifest root is not an object"]}
 
+    # Computed against the manifest as it is NOW, before the patch touches it: the
+    # `from` half of every row has to be the value on disk, not the value the patch
+    # is about to put there.
+    applied = _composition_changes(assembled, patch)
     err = apply_composition_patch(assembled, patch)
     if err:
         return {"ok": False, "findings": ["refused: " + err]}
     findings, warnings = vm.validate(assembled)
     if findings:
         return {"ok": False, "findings": findings, "warnings": warnings}
+    if not applied:
+        # A patch whose every field already holds the value it asks for. Writing it
+        # would rewrite shards nobody edited — the exact renormalisation the
+        # targeted write-back exists to avoid — to record no change at all.
+        return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
+                "unchanged": True, "journaled": False,
+                "journaledWhy": "unchanged", "written": [],
+                "path": os.path.relpath(mpath, project),
+                "layout": "sharded" if _mio.is_sharded(raw_index) else "single"}
 
     touched = _touched_phase_ids(assembled, patch)
     sharded = _mio.is_sharded(raw_index)
@@ -1248,10 +1487,13 @@ def apply_composition(project, patch):
         return {"ok": False, "findings": [str(exc)]}
     finally:
         _release_write_lock(lock)
-    return {"ok": True, "findings": [], "warnings": warnings,
-            "path": os.path.relpath(mpath, project),
-            "layout": "sharded" if sharded else "single",
-            "written": written}
+    out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
+           "path": os.path.relpath(mpath, project),
+           "layout": "sharded" if sharded else "single",
+           "written": written}
+    out.update(_journal(project, config, "composition.write",
+                        out["path"], applied))
+    return out
 
 
 # --- HTTP server ----------------------------------------------------------------
@@ -1897,6 +2139,53 @@ table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,t
  dialog.browse{width:calc(100vw - 1rem)}
  .btblwrap{overflow-x:auto}
 }
+/* Who the panel thinks you are. A pill rather than plain text: it is a fact about
+   the session, not a heading, and it sits beside the two controls that act on the
+   project. Elided rather than wrapped — an email address is long, and the topbar is
+   nowrap, so an un-capped name would push the buttons off the edge. */
+.who{display:inline-flex;align-items:center;gap:.35rem;font-size:.74rem;
+ color:var(--muted);background:var(--surface-2);border:1px solid var(--border);
+ border-radius:var(--pill);padding:.15rem .6rem;max-width:16rem;min-width:0}
+.who b{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+.who .wk{white-space:nowrap}
+.who[hidden]{display:none}
+@media(max-width:60rem){.who{max-width:10rem}.who .wk{display:none}}
+@media(max-width:34rem){.who{display:none}}
+/* Confirm-before-write. Same native <dialog> the browse table uses, for the same
+   reasons — focus trap, backdrop and Esc are the platform's — and deliberately the
+   same visual object, because both are "here is the data, decide". */
+dialog.confirm{width:min(42rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
+ padding:0;border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden}
+dialog.confirm::backdrop{background:rgb(0 0 0 / .45)}
+dialog.confirm>*{padding:0 var(--sp-3)}
+.cflist{max-height:min(50vh,22rem);overflow:auto;border-top:1px solid var(--border);
+ padding:0}
+table.cftbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.cftbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.cftbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.cftbl td.tgt{font-family:var(--mono);white-space:nowrap}
+table.cftbl td.fld{color:var(--muted);white-space:nowrap}
+/* Old on the left, new on the right, and the arrow between them is text — a glyph
+   drawn in CSS would vanish in the copy of this dialog nobody can take. */
+.cfv{font-family:var(--mono);font-size:.76rem;word-break:break-word}
+.cfv.was{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+.cfv.unset{font-style:italic;text-decoration:none}
+.cfarr{color:var(--muted);padding:0 .35rem}
+.cffoot{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;
+ padding-top:var(--sp-2);padding-bottom:var(--sp-2)}
+.cffoot .push{margin-left:auto}
+/* A lock is a live fact about somebody else's run, so it is stated inside the
+   dialog rather than only guessed at from the last page load. */
+.cflock{margin:var(--sp-1) 0 0;font-size:.76rem}
+@media (max-width:34rem){dialog.confirm{width:calc(100vw - 1rem)}
+ .cflist{overflow-x:auto}}
 /* one shared tooltip element, moved on hover */
 .utip{position:fixed;z-index:60;pointer-events:none;background:var(--surface);
  border:1px solid var(--border-strong);border-radius:var(--radius);
@@ -1992,6 +2281,7 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);
  border-radius:var(--pill);padding:.5rem 1rem;font-size:.85rem;opacity:0;transition:opacity var(--dur);pointer-events:none}
 #toast.show{opacity:1}#toast.err{border-color:var(--err);color:var(--err)}#toast.ok{border-color:var(--ok)}
+#toast.warn{border-color:var(--warn);color:var(--warn)}
 .findings{margin:.5rem 0 0;padding:.5rem .75rem;border-radius:var(--radius);font-size:.82rem}
 .findings.err{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
 .findings.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
@@ -2169,6 +2459,7 @@ td.tskills{min-width:15rem}
 <div class=top>
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
  <div class=topbtns>
+  <span class=who id=who hidden></span>
   <button class="btn small" id=report title="render the standalone HTML report (it carries Save-as-PDF)">Export report</button>
   <button class="btn small" id=theme title="light/dark">☾</button>
  </div>
@@ -2281,9 +2572,237 @@ function findingsBox(res){const box=el('div');
  if(res.warnings&&res.warnings.length)box.append(el('div',{class:'findings warn'},'! '+res.warnings.join(' · ')));
  if(res.ok&&!(res.warnings&&res.warnings.length))box.append(el('div',{class:'findings ok'},'✓ saved'));
  return box;}
+// ---------- who is writing, what exactly, and whether it was recorded ----------
+// Three questions the panel could not answer until now, and they are one flow: a
+// save wrote whatever the form happened to hold, said "manifest saved", and left
+// no trace of who did it or what changed. So: the topbar names you, Save shows the
+// exact rows before it writes anything, the server echoes back what it really
+// applied, and the journal (when this install has one) keeps the record.
+
+// The name comes from the server, resolved by usage_ledger.resolve_author — the
+// same function and the same usage.authorMode that decide the `author` column in
+// the token ledger. That is what makes the Usage tab's "my spend" chip able to
+// filter on it: two ways of naming the same person would produce a filter that
+// silently matches nothing.
+function renderViewer(){
+ const v=(STATE&&STATE.viewer)||{},w=$('#who');
+ if(!w)return;
+ w.hidden=false;w.textContent='';w.append(el('span',{class:'wk'},'viewing as'));
+ if(v.author){
+  w.append(el('b',{title:v.author},v.author));
+  w.title='Resolved from git config in '+(v.mode||'email')+' mode (usage.authorMode). '
+   +'This is the name written into the token ledger, so Usage → my spend filters on '
+   +'exactly this string.';
+  return;}
+ // `none` is a decision this project made, not a failure to find you — and it is
+ // the reason the ledger has no author column to filter on either. Anything else
+ // means the resolver could not answer, which is worth the same link.
+ w.append(settingsLink(v.mode==='none'?'not recorded':'unknown','usage.authorMode'));
+ w.title=v.mode==='none'
+  ?'usage.authorMode is "none": this project records no author, here or in the '
+   +'token ledger.'
+  :'Could not resolve a name from git config or the environment.';}
+
+// A re-render replaces a view's children but never the view element itself, so a
+// delegated listener added per render would stack up one more copy on every save.
+// One controller per view, aborted at the top of that view's own wiring.
+const VIEWAC={};
+function onViewEdit(id,fn){
+ if(VIEWAC[id])VIEWAC[id].abort();
+ VIEWAC[id]=new AbortController();
+ const opt={signal:VIEWAC[id].signal},run=()=>requestAnimationFrame(fn);
+ ['input','change','click'].forEach(e=>$('#'+id).addEventListener(e,run,opt));
+ fn();}
+
+// Unsaved edits, registered per surface rather than tracked with a boolean. A
+// boolean answers "is something dirty"; three callers need the ROWS — the confirm
+// dialog lists them, Discard says how many are about to be lost, and beforeunload
+// only earns the right to interrupt a close if there really are some.
+const EDITS={guards:null,comp:null};
+function editRows(k){try{return (EDITS[k]?EDITS[k]():[])||[];}catch(e){return[];}}
+function dirtyRows(){return Object.keys(EDITS).reduce((a,k)=>a.concat(editRows(k)),[]);}
+addEventListener('beforeunload',ev=>{
+ if(!dirtyRows().length)return;              // never interrupt a clean close
+ ev.preventDefault();ev.returnValue='';return '';});
+
+// --- change rows: {target, field, from, to} -------------------------------------
+// The same shape the server echoes back as `applied`, computed here from the form
+// and there from the file. Values are compared through JSON so a skills list is
+// compared by content, and undefined and null are the one thing they mean here:
+// "no value".
+const cfNorm=v=>v===undefined?null:v;
+const cfSame=(a,b)=>JSON.stringify(cfNorm(a))===JSON.stringify(cfNorm(b));
+const cfRow=(target,field,from,to)=>({target,field,from:cfNorm(from),to:cfNorm(to)});
+// Field order matches the server's (_META_KEYS, then phases, then tasks by
+// _TASK_KEYS) so the dialog and the echo read as the same list, not two lists.
+function compChanges(patch){
+ const comp=STATE.composition||{meta:{},phases:[],tasks:[]},rows=[];
+ for(const k of ['reviewSkill','buildCommands'])
+  if(patch.meta&&(k in patch.meta)&&!cfSame(comp.meta[k],patch.meta[k]))
+   rows.push(cfRow('meta',k,comp.meta[k],patch.meta[k]));
+ const byP={};(comp.phases||[]).forEach(p=>{byP[p.id]=p;});
+ Object.keys(patch.phases||{}).sort().forEach(pid=>{
+  const p=byP[pid],pv=patch.phases[pid]||{};
+  if(!p||!('reviewModel' in pv))return;
+  if(!cfSame(p.reviewModel,pv.reviewModel))
+   rows.push(cfRow(pid,'review model',p.reviewModel,pv.reviewModel));});
+ const byT={};(comp.tasks||[]).forEach(t=>{byT[t.id]=t;});
+ Object.keys(patch.tasks||{}).sort().forEach(tid=>{
+  const t=byT[tid],tv=patch.tasks[tid]||{};
+  if(!t)return;
+  ['model','skills'].forEach(k=>{if(!(k in tv))return;
+   if(!cfSame(t[k],tv[k]))rows.push(cfRow(tid,k,t[k],tv[k]));});});
+ return rows;}
+// Dotted leaf paths, matching _flat_paths in this file: a non-empty object is a
+// branch, everything else is a leaf. "usage.bands.highUSD changed" is a sentence
+// somebody can check; "usage changed" is not.
+function cfFlat(o,pre,out){out=out||{};
+ if(o&&typeof o==='object'&&!Array.isArray(o))for(const k of Object.keys(o)){
+  const p=pre?pre+'.'+k:k,v=o[k];
+  if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)cfFlat(v,p,out);
+  else out[p]=v;}
+ return out;}
+function configChanges(cfg){
+ const a=cfFlat(STATE.config||{}),b=cfFlat(cfg||{}),rows=[];
+ [...new Set([...Object.keys(a),...Object.keys(b)])].sort().forEach(p=>{
+  const ina=(p in a),inb=(p in b);
+  // Presence as well as value: deleting a key is how "use the default" is
+  // written, and a key whose value was already null would otherwise vanish.
+  if(ina===inb&&cfSame(a[p],b[p]))return;
+  rows.push(cfRow('config',p,ina?a[p]:null,inb?b[p]:null));});
+ return rows;}
+
+// --- the confirm dialog ---------------------------------------------------------
+let CFDLG=null;
+// Absent, empty-list and empty-string are three different values and the dialog
+// says so. Collapsing them into one "not set" made a real change read as a no-op —
+// "not set → not set" — which is precisely the row a reader would skim past.
+function cfVal(v,cls){
+ const none=v===null||v===undefined;
+ const empty=none||v===''||(Array.isArray(v)&&!v.length);
+ return el('span',{class:'cfv '+cls+(empty?' unset':'')},
+   none?'not set'
+    :(Array.isArray(v)&&!v.length?'(empty list)'
+      :(v===''?'(empty text)'
+        :(typeof v==='object'?JSON.stringify(v):String(v)))));}
+// Which phases a change list touches, so the lock notice can be about the phases
+// you are actually writing rather than about the manifest in general. A task id is
+// mapped through the composition view rather than sliced out of the string: task
+// ids are the plan's to shape, not this file's to parse.
+function cfTouched(rows){
+ const byT={};((STATE.composition||{}).tasks||[]).forEach(t=>{byT[t.id]=t.phaseId;});
+ const s=new Set();
+ rows.forEach(r=>{if(r.target==='meta'||r.target==='config')return;
+  s.add(byT[r.target]||r.target);});
+ return [...s];}
+// Live, from the 5s poll — not from the page-load snapshot. A dialog that opens to
+// say "nothing is running" because nothing was running when the tab loaded is
+// exactly the reassurance this flow must not give.
+function cfLock(rows,scope){
+ const rs=RUNSTATUS||(STATE||{}).runStatus||{index:null,phases:{}};
+ const idx=rs.index&&rs.index.live!==false;
+ const livePhases=Object.keys(rs.phases||{}).filter(pid=>{
+  const l=(rs.phases[pid]||{}).lock;return l&&l.live!==false;});
+ if(idx)return{kind:'warn',text:'An /audit command holds the manifest lock right '
+  +'now. This write will be refused while it does — nothing here is lost if it is.'};
+ if(scope==='comp'){
+  const hit=cfTouched(rows).filter(p=>livePhases.includes(p));
+  if(hit.length)return{kind:'warn',text:'Running elsewhere right now: '+hit.join(', ')
+   +'. A phase that is being worked cannot be edited here until that run finishes, '
+   +'so this write will be refused.'};}
+ if(livePhases.length)return{kind:'ok',text:'Running elsewhere: '+livePhases.join(', ')
+  +' — none of them touched by these changes.'};
+ return null;}
+/**
+ * Show the exact rows and wait for an answer. Resolves true only on the primary
+ * button; Esc, the backdrop, the × and Cancel all resolve false, which is the
+ * point of using a native <dialog> — the focus trap, the backdrop and Esc are the
+ * platform's rather than three hand-written listeners that each forget one case.
+ */
+function confirmChanges(o){
+ return new Promise(resolve=>{
+  if(!CFDLG){CFDLG=el('dialog',{class:'confirm'});
+   // Clicking the backdrop is the same intent as Esc. The dialog element fills the
+   // viewport, so a click whose target IS the dialog landed outside the panel.
+   CFDLG.addEventListener('click',ev=>{if(ev.target===CFDLG)CFDLG.close();});
+   document.body.append(CFDLG);}
+  const d=CFDLG;let done=false;
+  const settle=v=>{if(done)return;done=true;resolve(v);};
+  d.addEventListener('close',()=>settle(false),{once:true});
+  d.textContent='';
+  d.append(el('div',{class:'bhead'},el('h2',{},o.title),
+    el('button',{class:'bx','aria-label':'close',type:'button',
+      onclick:()=>d.close()},'×')));
+  const tb=el('tbody');
+  o.rows.forEach(r=>tb.append(el('tr',{'data-cfrow':r.target+' '+r.field},
+    el('td',{class:'tgt'},r.target),el('td',{class:'fld'},r.field),
+    el('td',{},cfVal(r.from,'was'),el('span',{class:'cfarr'},'→'),
+      cfVal(r.to,'now')))));
+  d.append(el('div',{class:'cflist'},el('table',{class:'cftbl'},
+    el('thead',{},el('tr',{},el('th',{},'what'),el('th',{},'field'),
+      el('th',{},'change'))),tb)));
+  const lk=o.lock===false?null:cfLock(o.rows,o.scope);
+  if(lk)d.append(el('div',{class:'cflock'},
+    el('div',{class:'findings '+lk.kind},lk.text)));
+  const cancel=el('button',{class:'btn small push',type:'button',
+    'data-cfcancel':'1',onclick:()=>d.close()},'Cancel');
+  const go=el('button',{class:'btn primary',type:'button','data-cfgo':'1',
+    onclick:()=>{settle(true);d.close();}},o.verb);
+  // The identity is repeated here, at the moment of the write, and not only in the
+  // topbar: below 34rem the topbar pill is dropped for want of room, and "who is
+  // this being recorded as" is a question that matters most on the screen where
+  // there is least room to answer it. Not on the Discard dialog — nothing is
+  // written there, so a name would be answering a question nobody asked.
+  const who=((STATE||{}).viewer||{}).author;
+  d.append(el('div',{class:'cffoot'},
+    el('span',{class:'mut small','data-cfwho':who&&!o.danger?'1':null},
+      (who&&!o.danger?'as '+who+' · ':'')+(o.note||'')),cancel,go));
+  d.showModal();
+  // A destructive primary must not be one Enter away from a keyboard that opened
+  // the dialog by pressing Enter on a button.
+  (o.danger?cancel:go).focus();});}
+
+// --- what came back -------------------------------------------------------------
+// The server recomputes the change list against the document it is about to write
+// and echoes it as `applied`. Comparing it with what the dialog showed is the only
+// way this flow tells "your save landed" apart from "your save landed on a
+// manifest that is no longer the one you were reading" — a second tab, or an
+// /audit run, having moved it in between. Without the comparison a confirm dialog
+// makes that case WORSE: it adds a screenful of reassurance about stale values.
+function appliedDiff(rows,res){
+ if(!res||!res.ok||!Array.isArray(res.applied))return null;
+ const key=r=>JSON.stringify([r.target,r.field,cfNorm(r.from),cfNorm(r.to)]);
+ const mine=new Set(rows.map(key)),theirs=new Set(res.applied.map(key));
+ const missing=[...mine].filter(k=>!theirs.has(k)).length;
+ const extra=[...theirs].filter(k=>!mine.has(k)).length;
+ return (missing||extra)?{missing,extra,shown:rows.length,
+   applied:res.applied.length}:null;}
+// One sentence for what happened to your changes: how many landed, and whether
+// there is a record of it. "not logged" is said only when a journal exists and
+// refused the row — on an install with no journal at all the clause is left off
+// rather than reporting the absence of a feature as a failure of a save.
+function saveOutcome(res,rows,what,slot){
+ if(!res||!res.ok){
+  toast(res&&res.locked?(what+' is locked — nothing was written')
+    :('rejected — nothing was written'),'err');
+  return null;}
+ if(res.unchanged){toast('nothing to save — no values changed');return null;}
+ const n=(res.applied||[]).length;
+ const diff=appliedDiff(rows,res);
+ const log=res.journaled?' · logged'
+   :(res.journaledWhy==='failed'?' · NOT logged':'');
+ toast('Saved · '+n+' change'+(n===1?'':'s')+log,diff?'warn':'ok');
+ if(diff&&slot)slot.append(el('div',{class:'findings warn','data-cfdiff':'1'},
+   'Saved, but not exactly what the dialog listed: '+diff.applied+' of the '
+   +diff.shown+' change(s) shown were applied'
+   +(diff.extra?(', and '+diff.extra+' other change(s) were'):'')
+   +'. The file moved between opening this view and saving — reload the panel to '
+   +'see what it holds now.'));
+ return diff;}
+
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;
- renderSettings();renderComp();renderOver();renderUsage();
+ renderViewer();renderSettings();renderComp();renderOver();renderUsage();
  // Restored last, once every view has content to scroll to.
  showTab(initialTab());
  RUNSTATUS=STATE.runStatus||null;startRunPoll();}
@@ -2393,13 +2912,40 @@ function settingsLink(text,path){
 function renderSettings(){const c=$('#guards');c.textContent='';
  const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
  const findings=el('div',{class:'findings-slot'});
+ // What this form would change, against the config the server last served. Read by
+ // Save (to list it), by Discard (to say what is being thrown away) and by
+ // beforeunload (to decide whether it may interrupt at all).
+ EDITS.guards=()=>configChanges(cfg);
  // One `cfg`, one Save: the four cards are one FILE, and saving a quarter of a
  // document is not a thing this API can do.
  const save=el('button',{class:'btn primary',onclick:async()=>{
+   const rows=configChanges(cfg);
+   if(!rows.length){toast('nothing to save — no settings changed');return;}
+   if(!await confirmChanges({title:'Save settings',rows,scope:'guards',
+     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     note:'writes .claude/audit.config.json'}))return;
    const res=await api('PUT','/api/config',cfg);
    findings.replaceChildren(findingsBox(res));
-   toast(res.ok?'settings saved':'settings rejected',res.ok?'ok':'err');
+   saveOutcome(res,rows,'the config',findings);
    if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));}}},'Save settings');
+ // Enabled only when there is something to discard, and it says how much: a
+ // control that throws work away must not be reachable by an idle click, and
+ // "Discard" alone does not tell you whether pressing it costs you anything.
+ const discard=el('button',{class:'btn small','data-discard':'guards',
+   type:'button',onclick:async()=>{
+   const rows=configChanges(cfg);
+   if(!rows.length)return;
+   if(!await confirmChanges({title:'Discard unsaved settings',rows,danger:1,
+     lock:false,verb:'Discard '+rows.length+' change'+(rows.length===1?'':'s'),
+     note:'nothing is written; the form goes back to the saved file'}))return;
+   renderSettings();toast('discarded — the form is back to the saved file');}},
+   'Discard');
+ // Every control in this form mutates `cfg` and none of them announces it, so the
+ // counter is refreshed from the events that reach the view rather than from a
+ // hook added to each of the twenty-odd field builders.
+ onViewEdit('guards',()=>{const n=configChanges(cfg).length;
+   discard.disabled=!n;
+   discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';});
  const CUSTOM={
   'guardEdits.tokenVars':()=>tokenVarsField(cfg,d),
   'secretPatterns.extra':()=>secretPatternsField(cfg),
@@ -2434,7 +2980,7 @@ function renderSettings(){const c=$('#guards');c.textContent='';
   c.append(card);}
  // Sticky, because the form is now four cards long and a Save you have to go
  // looking for is a Save people forget to press.
- c.append(el('div',{class:'savebar'},save,
+ c.append(el('div',{class:'savebar'},save,discard,
    el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));}
 
 function boolField(cfg,d,f,tip){
@@ -2517,9 +3063,19 @@ function secretPatternsField(cfg){
 
 function customRulesField(cfg){
  const wrap=el('div',{id:fieldId('guardEdits.customRules'),tabindex:'-1'});
- const rules=()=>{const v=getPath(cfg,'guardEdits.customRules');
-  if(Array.isArray(v))return v;setPath(cfg,'guardEdits.customRules',[]);
-  return getPath(cfg,'guardEdits.customRules');};
+ // The list is held here and written into `cfg` only when it has something in it.
+ // It used to create `guardEdits.customRules: []` in the config the moment this
+ // field RENDERED, so merely opening Settings on a project that had never set a
+ // custom rule left an edit sitting in the form — invisible while a save wrote
+ // whatever the form held, and, now that a save says what it is about to do, a
+ // phantom row in the confirm dialog and a Discard button offering to throw away
+ // a change nobody made.
+ const cur=()=>{const v=getPath(cfg,'guardEdits.customRules');
+  return Array.isArray(v)?v:[];};
+ let arr=cur();
+ const sync=()=>{if(arr.length)setPath(cfg,'guardEdits.customRules',arr);
+  else delPath(cfg,'guardEdits.customRules');};
+ const rules=()=>arr;
  const draw=()=>{wrap.textContent='';
   wrap.append(el('div',{class:'rule rulehead mut small'},
     el('span',{},'path contains'),el('span',{},'banned pattern (regex)'),
@@ -2539,9 +3095,9 @@ function customRulesField(cfg){
    ms.oninput=()=>r.message=ms.value;
    wrap.append(el('div',{class:'rule'},pp,bp,ms,
      el('button',{class:'btn small','aria-label':'remove rule '+(i+1),
-       onclick:()=>{rules().splice(i,1);draw();}},'×')),err);});
+       onclick:()=>{arr.splice(i,1);sync();draw();}},'×')),err);});
   wrap.append(el('button',{class:'btn small',onclick:()=>{
-    rules().push({pathPrefix:'',bannedPattern:'',message:''});draw();}},'+ rule'));
+    arr.push({pathPrefix:'',bannedPattern:'',message:''});sync();draw();}},'+ rule'));
   wrap.append(el('p',{class:'blurb'},'The path test is a SUBSTRING match, not a '
    +'prefix — "realtime/" fires under src/realtime/ and packages/web/src/realtime/ '
    +'alike. A rule missing either field, or whose pattern will not compile, is '
@@ -2647,8 +3203,10 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,v=>patch.meta.reviewSkill=v)));
  meta.append(h2h('meta.buildCommands (JSON)',MDESC.buildCommands));
  const bc=el('textarea',{});bc.value=comp.meta.buildCommands?JSON.stringify(comp.meta.buildCommands,null,2):'';
- bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;bc.style.borderColor='';}
-  catch(e){bc.style.borderColor='var(--err)';}};
+ let bcBad=false;
+ bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;
+   bcBad=false;bc.style.borderColor='';}
+  catch(e){bcBad=true;bc.style.borderColor='var(--err)';}};
  meta.append(bc);c.append(meta);
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
  const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills));
@@ -2726,14 +3284,48 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  COMPF.apply=()=>{q.value=COMPF.q;syncFilters();refresh();};
  syncFilters();q.addEventListener('input',refresh);refresh();
 
+ EDITS.comp=()=>compChanges(patch);
  const save=el('button',{class:'btn primary',onclick:async()=>{
+   // The textarea only writes into the patch when its contents PARSE, so an
+   // unparseable box would confirm — and then save — the last value that did. A
+   // dialog that shows something other than what the form holds is worse than no
+   // dialog, so this is refused at the door and the field says which one it is.
+   if(bcBad){toast('meta.buildCommands is not valid JSON — fix it or clear it '
+     +'before saving','err');bc.focus();return;}
+   const rows=compChanges(patch);
+   if(!rows.length){toast('nothing to save — no values changed');return;}
+   if(!await confirmChanges({title:'Save composition',rows,scope:'comp',
+     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     note:'writes '+STATE.manifestPath}))return;
    const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
    for(const k of Object.keys(patch.meta))clean.meta[k]=patch.meta[k];
    const res=await api('PUT','/api/composition',clean);
-   c.querySelector('.findings-slot').replaceChildren(findingsBox(res));
-   toast(res.ok?'manifest saved':(res.locked?'manifest locked':'rejected'),res.ok?'ok':'err');
-   if(res.ok){STATE=await api('GET','/api/state');}}},'Save composition');
- tcard.append(el('div',{class:'row',style:'margin-top:.9rem'},save),el('div',{class:'findings-slot'}));
+   if(!res.ok){c.querySelector('.findings-slot').replaceChildren(findingsBox(res));
+    saveOutcome(res,rows,'the manifest',null);return;}
+   // Re-render from the saved state. Without it the form kept showing the values
+   // you typed rather than the values on disk — indistinguishable while they
+   // agree, and silently wrong the moment the server normalised one or refused
+   // part of a patch. COMPF is hoisted, so the filter, the search and which
+   // phases were open all survive this.
+   STATE=await api('GET','/api/state');renderComp();renderOver();
+   const slot=$('#comp .findings-slot');
+   if(slot)slot.replaceChildren(findingsBox(res));
+   saveOutcome(res,rows,'the manifest',slot);}},'Save composition');
+ const discard=el('button',{class:'btn small','data-discard':'comp',type:'button',
+   onclick:async()=>{
+   const rows=compChanges(patch);
+   if(!rows.length)return;
+   if(!await confirmChanges({title:'Discard unsaved composition edits',rows,
+     danger:1,lock:false,
+     verb:'Discard '+rows.length+' change'+(rows.length===1?'':'s'),
+     note:'nothing is written; the table goes back to the saved manifest'}))return;
+   renderComp();toast('discarded — the table is back to the saved manifest');}},
+   'Discard');
+ onViewEdit('comp',()=>{const n=compChanges(patch).length;
+   discard.disabled=!n;
+   discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';});
+ tcard.append(el('div',{class:'row',style:'margin-top:.9rem'},save,discard),
+   el('div',{class:'findings-slot'}));
  if(!STATE.manifestExists)tcard.append(el('div',{class:'findings warn'},'No manifest yet — run /audit:init first.'));
  if(STATE.manifestLocked)tcard.append(el('div',{class:'findings warn'},'Manifest is locked by a running /audit command.'));
  c.append(tcard);
@@ -3912,6 +4504,23 @@ function renderUsage(){const c=$('#usage');
     onchange:e=>setF(dim,all.includes(e.target.value)?e.target.value:'')});
   r1.append(comboWrap(inp,()=>all.map(v=>({name:v,
     description:uTok(tot.get(v)||0)})),(name,close)=>{close();setF(dim,name);}));});
+ // "My spend" — the author filter, pre-loaded with the name in the topbar. It is
+ // the SAME string on both ends by construction: the server resolves it with
+ // usage_ledger.resolve_author, which is the function that wrote the author column
+ // on every row here. A toggle, not a jump: pressing it twice puts you back.
+ const me=((STATE||{}).viewer||{}).author;
+ if(me){
+  const mine=USAGE.facts.filter(f=>f[F.author]===me).length,on=UF.author===me;
+  // Rendered even when the count is zero, and saying so, because that is a fact
+  // worth having: `usage.authorMode` may name you differently here (hash mode, a
+  // repo-local user.email) and a chip that quietly disappeared would leave that
+  // unanswerable. Pressing it lands on the empty state, which names the author
+  // filter as the cause and offers to lift it.
+  r1.append(el('button',{class:'filt'+(on?' on':''),type:'button','data-umine':'1',
+    'aria-pressed':on?'true':'false',
+    title:mine?('Scope to the '+mine+' row(s) recorded for '+me)
+      :('No rows are recorded for '+me+' in this ledger'),
+    onclick:()=>setF('author',on?'':me)},'my spend'));}
  [['agent','all agents'],['attr','all attributions']].forEach(([dim,none])=>{
   const vals=uniq(dim);
   if(!vals.length)return;
@@ -4313,6 +4922,164 @@ def _selftest():
     finally:
         _shutil.rmtree(_sproj, ignore_errors=True)
 
+    # --- c6: what a save would change, who is making it, and the record of it ---
+    # The rows the confirm dialog lists ARE the rows the server echoes as
+    # `applied`; the client compares the two. Everything below is about those two
+    # lists being computable from the same pair of values.
+    check("a leaf path per row, not a block per row",
+          _flat_paths({"usage": {"bands": {"highUSD": 1}}, "enforce": True})
+          == {"usage.bands.highUSD": 1, "enforce": True})
+    check("an empty object is a leaf, so emptying a block is still a change",
+          _flat_paths({"usage": {}}) == {"usage": {}})
+    check("a list is a leaf: a changed list is one row, not one row per element",
+          _flat_paths({"secretPatterns": {"extra": ["a", "b"]}})
+          == {"secretPatterns.extra": ["a", "b"]})
+    # The WHOLE path, not the leaf's own name: `highUSD` alone would not say which
+    # of the settings called that had moved.
+    check("config diff names the dotted path and both sides",
+          _config_changes({"usage": {"bands": {"highUSD": 1}}},
+                          {"usage": {"bands": {"highUSD": 2}}})
+          == [{"target": "config", "field": "usage.bands.highUSD",
+               "from": 1, "to": 2}])
+    check("config diff: an untouched key is not a change",
+          _config_changes({"a": 1, "b": 2}, {"a": 1, "b": 3})
+          == [{"target": "config", "field": "b", "from": 2, "to": 3}])
+    # Deleting a key is how "use the default" is written, and a key whose value was
+    # already null would vanish from a diff that only compared .get() results.
+    check("config diff: removing a null key is still a change",
+          [r["field"] for r in _config_changes({"x": None}, {})] == ["x"])
+
+    _cm = _mio.load_manifest(mpath)
+    check("composition diff reads `from` off the manifest, not off the patch",
+          _composition_changes(_cm, {"tasks": {"P1.1": {"model": "haiku"}}})
+          == [{"target": "P1.1", "field": "model",
+               "from": "opus", "to": "haiku"}])
+    check("composition diff drops a field set back to what it already held",
+          _composition_changes(_cm, {"tasks": {"P1.1": {"model": "opus"}}}) == [])
+    check("composition diff covers meta and the per-phase review model",
+          [(r["target"], r["field"]) for r in _composition_changes(_cm, {
+              "meta": {"reviewSkill": "other"},
+              "phases": {"P1": {"reviewModel": "haiku"}}})]
+          == [("meta", "reviewSkill"), ("P1", "review model")])
+    check("composition diff skips an unknown id (the patch refuses it a line later)",
+          _composition_changes(_cm, {"tasks": {"P9.9": {"model": "x"}}}) == [])
+    # The `from` side has to be the value the FORM shows. _composition_view turns a
+    # missing skills key into [], so reading the raw None here would make adding a
+    # skill read as `null -> [a]` on the server and `[] -> [a]` in the browser, and
+    # the panel would warn about a disagreement that is only a normalisation.
+    _nos = {"meta": {}, "phases": [{"id": "PX", "tasks": [{"id": "PX.1"}]}]}
+    check("composition diff normalises skills exactly as the view does",
+          _composition_changes(_nos, {"tasks": {"PX.1": {"skills": ["a"]}}})
+          == [{"target": "PX.1", "field": "skills", "from": [], "to": ["a"]}]
+          and _composition_view(_nos)["tasks"][0]["skills"] == [])
+    check("composition diff: an empty skills list set to empty is not a change",
+          _composition_changes(_nos, {"tasks": {"PX.1": {"skills": []}}}) == [])
+
+    # The response the client compares against.
+    res = apply_composition(proj, {"tasks": {"P1.1": {"model": "sonnet"}}})
+    check("a composition save echoes exactly what it applied",
+          res["ok"] and res["applied"] == [{"target": "P1.1", "field": "model",
+                                            "from": "opus", "to": "sonnet"}])
+    _mtime = os.path.getmtime(mpath)
+    res = apply_composition(proj, {"tasks": {"P1.1": {"model": "sonnet"}}})
+    check("a save that changes nothing writes nothing and says so",
+          res["ok"] and res.get("unchanged") is True and res["applied"] == []
+          and res.get("written") == [] and os.path.getmtime(mpath) == _mtime)
+    _cfg_now = read_config(proj)
+    res = write_config(proj, dict(_cfg_now))
+    check("the same rule for the config: nothing changed, nothing written",
+          res["ok"] and res.get("unchanged") is True and res["applied"] == [])
+    res = write_config(proj, dict(_cfg_now, trivialLineThreshold=41))
+    check("a config save echoes the dotted path it changed",
+          res["ok"] and res["applied"] == [
+              {"target": "config", "field": "trivialLineThreshold",
+               "from": 40, "to": 41}])
+
+    # --- the journal call site, exercised before the journal exists -------------
+    # audit-journal.py ships with v0.29 and this call site ships now. Without the
+    # stub below the whole path would be untested code until that release, which is
+    # the one thing a fail-soft call site must not be: it fails silently by design.
+    check("no journal on this install -> journaled false, and it says WHY",
+          _journal(proj, read_config(proj), "config.write", "x", [])
+          == {"journaled": False, "journaledWhy": "unavailable"})
+
+    class _JStub(object):
+        rows = []
+
+        @staticmethod
+        def append(project, entry):
+            _JStub.rows.append((project, entry))
+            return True
+
+    class _JBroken(object):
+        @staticmethod
+        def append(project, entry):
+            raise RuntimeError("disk on fire")
+
+    _saved_j = dict(_JOURNAL)
+    try:
+        _JOURNAL.update({"tried": True, "mod": _JStub})
+        _rows = [{"target": "P1.1", "field": "model",
+                  "from": "opus", "to": "sonnet"}]
+        out = _journal(proj, read_config(proj), "composition.write", "m.json", _rows)
+        _ent = _JStub.rows[-1][1] if _JStub.rows else {}
+        check("with a journal present the row is appended and reported",
+              out == {"journaled": True} and len(_JStub.rows) == 1)
+        check("the journal row carries the contract's fields, not this file's",
+              _ent.get("action") == "composition.write"
+              and _ent.get("target") == "m.json"
+              and set(_ent) == {"action", "target", "summary", "actor"})
+        check("the actor is the viewer, tagged with how the write arrived",
+              (_ent.get("actor") or {}).get("via") == "panel"
+              and (_ent.get("actor") or {}).get("sessionId") == _panel_session())
+        check("the changes travel in the summary the row does have room for",
+              "P1.1 model: opus -> sonnet" in (_ent.get("summary") or "")
+              and (_ent.get("summary") or "").startswith("1 change(s)"))
+        _JOURNAL.update({"tried": True, "mod": _JBroken})
+        # Caught HERE as well: "fail-soft" means the exception does not leave
+        # _journal, so a version that let it through would take this suite down
+        # with a traceback instead of failing the one case that is about it.
+        try:
+            _fs = _journal(proj, read_config(proj), "x", "y", [])
+        except Exception as exc:                                # pragma: no cover
+            _fs = "it raised: %s" % exc
+        check("a journal that throws never breaks the write it is recording",
+              _fs == {"journaled": False, "journaledWhy": "failed"})
+        _JOURNAL.update({"tried": True, "mod": _JStub})
+        _JStub.rows = []
+        res = apply_composition(proj, {"tasks": {"P1.1": {"model": "opus"}}})
+        check("a real save appends one row and reports journaled",
+              res["ok"] and res.get("journaled") is True and len(_JStub.rows) == 1)
+    finally:
+        _JOURNAL.clear()
+        _JOURNAL.update(_saved_j)
+
+    check("a change renders the same way for the journal as for the dialog",
+          _fmt_change({"target": "P1.2", "field": "model",
+                       "from": None, "to": "opus"}) == "P1.2 model: (unset) -> opus"
+          and _fmt_change({"target": "P1.2", "field": "skills",
+                           "from": [], "to": ["a"]}) == 'P1.2 skills: [] -> ["a"]')
+
+    # --- who is looking --------------------------------------------------------
+    _vw = _viewer(proj, read_config(proj))
+    check("the panel knows who is driving it, and in which mode",
+          isinstance(_vw, dict) and set(_vw) == {"author", "mode"}
+          and isinstance(_vw["mode"], str))
+    check("viewer travels with the state, so the topbar can name the writer",
+          isinstance(build_state(proj).get("viewer"), dict))
+    _vprev = open(_config_path(proj), encoding="utf-8").read()
+    try:
+        with open(_config_path(proj), "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"authorMode": "none"}}, fh)
+        _vn = _viewer(proj, read_config(proj))
+        # .get(), not [] — a viewer missing a key is the case the check above is
+        # about, and a KeyError here would take the suite down before it printed.
+        check("authorMode none means no name — a decision, not a failure",
+              _vn.get("mode") == "none" and _vn.get("author") is None)
+    finally:
+        with open(_config_path(proj), "w", encoding="utf-8") as fh:
+            fh.write(_vprev)
+
     # build_state shape
     st = build_state(proj)
     check("build_state has rollup + composition",
@@ -4644,6 +5411,77 @@ def _selftest():
           "const COMPF={q:'',status:'',needs:false,open:{},apply:null};" in UI_HTML
           and "const open=COMPF.open;" in UI_HTML
           and "COMPF.apply=()=>{q.value=COMPF.q;syncFilters();refresh();};" in UI_HTML)
+    # --- c6: confirm before write, and who is writing --------------------------
+    # These are string pins, and string pins cannot tell a working panel from a
+    # dead one — the whole inline script is one <script>, so a missing paren kills
+    # every view while every `'…' in UI_HTML` here still passes. The behaviour is
+    # driven for real in tools/capture-screenshots.mjs (assertConfirmFlowWorks,
+    # assertViewerIdentity); these guard the constructs those checks depend on.
+    check("the topbar names the identity a write will be recorded under",
+          "<span class=who id=who hidden></span>" in UI_HTML
+          and "function renderViewer()" in UI_HTML
+          and "renderViewer();renderSettings();" in UI_HTML)
+    check("the write dialog names the identity too — the topbar pill is dropped "
+          "below 34rem, which is where the question is least easy to answer",
+          "'data-cfwho':who&&!o.danger?'1':null" in UI_HTML
+          and "(who&&!o.danger?'as '+who+' · ':'')" in UI_HTML
+          and "@media(max-width:34rem){.who{display:none}}" in UI_HTML)
+    check("no author resolved -> a way to the setting that decides it, not a blank",
+          "settingsLink(v.mode==='none'?'not recorded':'unknown','usage.authorMode')"
+          in UI_HTML)
+    check("unsaved work is registered per surface, and both surfaces register",
+          "const EDITS={guards:null,comp:null};" in UI_HTML
+          and "EDITS.comp=()=>compChanges(patch);" in UI_HTML
+          and "EDITS.guards=()=>configChanges(cfg);" in UI_HTML)
+    check("beforeunload interrupts a close only when there is something to lose",
+          "addEventListener('beforeunload',ev=>{" in UI_HTML
+          and "if(!dirtyRows().length)return;" in UI_HTML)
+    check("a re-render does not stack up one more delegated listener per save",
+          "if(VIEWAC[id])VIEWAC[id].abort();" in UI_HTML
+          and UI_HTML.count("onViewEdit('") == 2)
+    check("the dialog is the platform's here too — focus trap, backdrop, Esc",
+          "el('dialog',{class:'confirm'})" in UI_HTML
+          and "d.showModal()" in UI_HTML
+          and "if(ev.target===CFDLG)CFDLG.close()" in UI_HTML
+          and "dialog.confirm::backdrop" in UI_HTML)
+    check("a destructive primary is not one Enter away from the button that opened "
+          "the dialog",
+          "(o.danger?cancel:go).focus();" in UI_HTML)
+    check("absent, empty list and empty text are three values, and the dialog says "
+          "which — collapsing them made a real change read as 'not set -> not set'",
+          "?'(empty list)'" in UI_HTML and "?'(empty text)'" in UI_HTML
+          and "none?'not set'" in UI_HTML)
+    check("the change rows the dialog lists are the shape the server echoes",
+          "const cfRow=(target,field,from,to)=>({target,field,"
+          "from:cfNorm(from),to:cfNorm(to)});" in UI_HTML
+          and "function compChanges(patch)" in UI_HTML
+          and "function configChanges(cfg)" in UI_HTML)
+    check("what came back is compared with what was shown, not merely trusted",
+          "function appliedDiff(rows,res)" in UI_HTML
+          and "res.applied.map(key)" in UI_HTML
+          and "'data-cfdiff':'1'" in UI_HTML)
+    check("the save toast says how many landed and whether it was recorded",
+          "'Saved · '+n+' change'+(n===1?'':'s')+log" in UI_HTML
+          # "not logged" only when a journal exists and refused: reporting the
+          # absence of a feature as a failed save would cry wolf on every write.
+          and "res.journaledWhy==='failed'?' · NOT logged':''" in UI_HTML)
+    check("a save re-reads from disk afterwards, and the filter survives it",
+          "STATE=await api('GET','/api/state');renderComp();renderOver();" in UI_HTML)
+    check("an unparseable buildCommands box cannot be confirmed as something else",
+          "if(bcBad){toast('meta.buildCommands is not valid JSON" in UI_HTML)
+    check("Discard exists on both surfaces, counts what it would throw away, and "
+          "is dead while there is nothing to throw",
+          UI_HTML.count("'data-discard':'") == 2
+          and UI_HTML.count("discard.disabled=!n;") == 2)
+    check("Usage: my-spend filters on the very string the topbar shows",
+          "const me=((STATE||{}).viewer||{}).author;" in UI_HTML
+          and "onclick:()=>setF('author',on?'':me)},'my spend')" in UI_HTML
+          and "'data-umine':'1'" in UI_HTML)
+    check("a field must not write into the form merely by rendering — that is an "
+          "unsaved change nobody made",
+          "const cur=()=>{const v=getPath(cfg,'guardEdits.customRules');" in UI_HTML
+          and "setPath(cfg,'guardEdits.customRules',[])" not in UI_HTML)
+
     check("overview: the phase row says what the phase is FOR, not only what it "
           "is called",
           "p.desiredOutcome?el('span',{class:'ovout'" in UI_HTML

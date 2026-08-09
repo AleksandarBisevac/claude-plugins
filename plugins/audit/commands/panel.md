@@ -48,6 +48,16 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   **refuses while an `/audit` run holds a lock** (the index or any phase — see conventions →
   Concurrency lock). Never touches phases/tasks/bugs structure — use `/audit:task`,
   `/audit:bug`, `/audit:run` for that.
+- **Nothing is written without showing you what** — on both Settings and Composition. Save
+  opens a dialog listing every change as `P1.2 · model · sonnet → opus`, together with any
+  phase that is running elsewhere *right now*; Cancel writes nothing and keeps your edits.
+  **Discard** says how many changes it would throw away and is dead while there are none,
+  closing the tab with unsaved work asks first, and the server recomputes the change list
+  against the file it is about to write and sends it back — so if a second tab or an
+  `/audit` run moved the file under you, the save says so instead of quietly reassuring you.
+  The toast reports how many changes landed. The topbar names the identity the write is
+  recorded under (`viewing as …`, resolved exactly as the token ledger resolves a spender —
+  see `usage.authorMode`), and Usage has a **my spend** chip that filters on that same name.
 - **Overview** — the live rollup + validation status, as something you can steer by: task and
   bug **status strips** that are both the legend and the filter (press one to scope the phase
   list), search over id / title / area / desired outcome, sort by plan order, progress or

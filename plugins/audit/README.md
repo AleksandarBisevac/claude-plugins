@@ -61,6 +61,15 @@ while a `/audit` run holds the lock), validating before each atomic save. Compos
 **compact, collapsible, filterable table** (search · phase-status · "needs skills" · expand-all)
 that scales to hundreds of tasks — phases are collapsed by default; expand only what you touch.
 
+Neither tab writes anything without showing you what: **Save opens a dialog listing every
+change** (`P1.2 · model · sonnet → opus`) plus any phase running elsewhere right now, **Discard**
+says how much work it would throw away, closing the tab with unsaved edits asks first, and the
+server recomputes that list against the file it is about to write and sends it back — so a
+manifest a second tab or an `/audit` run moved under you is reported rather than papered over.
+The topbar names the identity a write is recorded under (`viewing as …`, resolved exactly as the
+token ledger resolves a spender — see `usage.authorMode`), and Usage's **my spend** chip filters
+on that same name.
+
 | Settings | Composition (compact/collapsible) | Composition expanded | Dark |
 |---|---|---|---|
 | [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |

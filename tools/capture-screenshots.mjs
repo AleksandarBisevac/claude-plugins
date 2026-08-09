@@ -395,15 +395,8 @@ async function assertUsageWorks(page) {
     const rows = USAGE.facts.filter((f) => fn(f, F, USAGE));
     return { n: rows.length, msgs: rows.reduce((a, f) => a + f[F.msgs], 0) };
   }, body);
-  // The digits of the rendered `messages` tile.
-  const shownMsgs = () => page.evaluate(() => {
-    const t = [...document.querySelectorAll('#usage .utile')]
-      .find((x) => x.querySelector('.k').textContent === 'messages');
-    return t ? parseInt(t.querySelector('.v').firstChild.textContent
-      .replace(/\D/g, ''), 10) : null;
-  });
   const compare = async (label, body) => {
-    const want = await oracle(body); const got = await shownMsgs();
+    const want = await oracle(body); const got = await shownMsgs(page);
     if (got !== want.msgs) {
       fail(`usage: ${label} shows ${got} messages, but ${want.n} matching rows `
          + `carry ${want.msgs}`);
@@ -673,6 +666,413 @@ async function assertUsageWorks(page) {
   await clear();
 }
 
+// The digits of the rendered `messages` tile — the one KPI printed as a plain
+// integer, so parsing it compares an exact number with an exact number and no
+// second implementation of the compact token format exists to drift.
+const shownMsgs = (page) => page.evaluate(() => {
+  const t = [...document.querySelectorAll('#usage .utile')]
+    .find((x) => x.querySelector('.k').textContent === 'messages');
+  return t ? parseInt(t.querySelector('.v').firstChild.textContent
+    .replace(/\D/g, ''), 10) : null;
+});
+
+/**
+ * Who the panel says you are, and the one filter that depends on that answer.
+ *
+ * The name in the topbar and the name in the ledger's `author` column have to be
+ * one string: "my spend" compares them, so two ways of naming the same person
+ * would produce a chip that silently selects nothing. This drives both ends — the
+ * pill against `STATE.viewer`, and the chip against `USAGE.facts`.
+ */
+async function assertViewerIdentity(page) {
+  const v = await page.evaluate(() => STATE.viewer || null);
+  if (!v) { fail('panel: /api/state carries no viewer — the topbar cannot name you'); return; }
+  const pill = await page.evaluate(() => {
+    const w = document.querySelector('#who');
+    if (!w) return null;
+    return { hidden: w.hidden, name: (w.querySelector('b') || {}).textContent || null,
+             link: !!w.querySelector('.lnk'), text: w.textContent };
+  });
+  if (!pill) { fail('panel: no "viewing as" pill in the topbar'); return; }
+  if (pill.hidden) {
+    fail('panel: the "viewing as" pill is in the DOM but hidden — the identity '
+       + 'the panel writes with is not on screen');
+  } else if (v.author && pill.name !== v.author) {
+    fail(`panel: the topbar says "${pill.text}" but the server resolved `
+       + `"${v.author}" — the name that will be written is not the name shown`);
+  } else if (!v.author && !pill.link) {
+    fail(`panel: no author could be resolved (mode ${v.mode}) and the pill offers `
+       + `no way to the setting that decides it: "${pill.text}"`);
+  } else {
+    note(`panel: viewing as ${v.author || '(' + pill.text.trim() + ')'} (mode ${v.mode})`);
+  }
+
+  // The chip. This fixture's ledger carries generated author names, so the honest
+  // thing to drive is the WIRING: point the viewer at an author the ledger really
+  // has, and check the chip selects exactly that author's rows — measured against
+  // USAGE.facts, never against the renderer's own aggregation.
+  const pick = await page.evaluate(() => {
+    const by = {};
+    for (const f of USAGE.facts) by[f[F.author]] = (by[f[F.author]] || 0) + f[F.msgs];
+    const names = Object.keys(by).filter((n) => n && n !== 'unknown');
+    return names.length ? { name: names[0], msgs: by[names[0]] } : null;
+  });
+  if (!pick) { note('usage: the ledger records no author — my-spend cannot be driven'); return; }
+  const was = await page.evaluate((name) => {
+    const prev = STATE.viewer.author; STATE.viewer.author = name; renderUsage();
+    return prev;
+  }, pick.name);
+  await page.waitForTimeout(250);
+  try {
+    const chip = page.locator('#usage [data-umine]');
+    if (!(await chip.count())) {
+      fail('usage: the viewer has a name and there is no "my spend" chip'); return;
+    }
+    await chip.click();
+    await page.waitForTimeout(300);
+    const got = await shownMsgs(page);
+    const state = await page.evaluate(() => ({ author: UF.author,
+      pressed: (document.querySelector('#usage [data-umine]') || {})
+        .getAttribute('aria-pressed') }));
+    if (got !== pick.msgs) {
+      fail(`usage: "my spend" shows ${got} messages, but ${pick.name}'s rows carry `
+         + `${pick.msgs}`);
+    } else if (state.author !== pick.name || state.pressed !== 'true') {
+      fail(`usage: "my spend" filtered to "${state.author}" and reports `
+         + `aria-pressed=${state.pressed}`);
+    } else {
+      note(`usage: "my spend" -> ${pick.msgs} messages for ${pick.name}, pressed`);
+      // A toggle, not a one-way door: the same chip is the way back.
+      await chip.click();
+      await page.waitForTimeout(300);
+      if (await page.evaluate(() => UF.author) !== '') {
+        fail('usage: pressing "my spend" a second time did not lift the filter');
+      }
+    }
+  } finally {
+    await page.evaluate((prev) => {
+      STATE.viewer.author = prev; clearAll();
+    }, was);
+    await page.waitForTimeout(200);
+  }
+}
+
+/**
+ * Confirm-before-write: the dialog, the discard, the beforeunload guard and the
+ * server's echo.
+ *
+ * The point of every assertion here is that the panel says what it is about to do
+ * and then does exactly that. So the expected rows are computed from
+ * `STATE.composition` — the document the form was built from — and the value on
+ * disk is read back through /api/state rather than from the form that claims to
+ * have written it. A confirm dialog that lists the wrong changes is worse than no
+ * dialog: it is a screenful of reassurance about values nobody checked.
+ */
+async function assertConfirmFlowWorks(page) {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.click('.tab[data-t=comp]');
+  await page.waitForSelector('#comp table', { timeout: 15000 });
+  await page.waitForTimeout(300);
+
+  const target = await page.evaluate(() => {
+    const t = ((STATE.composition || {}).tasks || [])[0];
+    return t ? { id: t.id, phaseId: t.phaseId, was: t.model == null ? null : t.model } : null;
+  });
+  if (!target) { fail('composition: the fixture has no task to edit'); return; }
+  const NEW = target.was === 'opus' ? 'haiku' : 'opus';
+
+  // The same hand-off Overview uses: filter to the phase and open it.
+  await page.evaluate((pid) => openInComp(pid), target.phaseId);
+  await page.waitForTimeout(300);
+  const row = page.locator('#comp tr.task').filter({
+    has: page.locator('td.tid', { hasText: new RegExp(`^${esc(target.id)}$`) }) });
+  if (!(await row.count())) {
+    fail(`composition: no row for ${target.id} after opening ${target.phaseId}`); return;
+  }
+  const modelInput = row.locator('.tmodel input');
+  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save composition' });
+  const discardBtn = page.locator('#comp [data-discard=comp]');
+  const onDisk = () => page.evaluate(async (id) => {
+    const s = await api('GET', '/api/state');
+    const t = (s.composition.tasks || []).find((x) => x.id === id);
+    return t && t.model != null ? t.model : null;
+  }, target.id);
+
+  // --- a freshly loaded panel has nothing to confirm anywhere ----------------
+  // dirtyRows() spans BOTH editable surfaces on purpose: this is the assertion
+  // that catches a field which writes into the form while merely rendering, and
+  // one already did — customRulesField created `guardEdits.customRules: []` on
+  // sight, so every fresh panel arrived with an unsaved change nobody had made.
+  // A panel that warns when nothing is at stake is a panel whose warning gets
+  // clicked through.
+  const clean = await page.evaluate(() => {
+    const ev = new Event('beforeunload', { cancelable: true });
+    dispatchEvent(ev);
+    return { rows: dirtyRows(), comp: editRows('comp').length,
+             blocked: ev.defaultPrevented,
+             discard: (document.querySelector('#comp [data-discard=comp]') || {}).disabled };
+  });
+  if (clean.rows.length || clean.blocked || clean.discard !== true) {
+    fail(`panel: a freshly rendered panel reports ${clean.rows.length} unsaved `
+       + `change(s) ${JSON.stringify(clean.rows.slice(0, 3))}, beforeunload `
+       + `blocked=${clean.blocked}, Discard disabled=${clean.discard}`);
+  } else {
+    note('panel: a freshly rendered panel is clean and does not block a close');
+  }
+  await saveBtn.click();
+  await page.waitForTimeout(250);
+  if (await page.locator('dialog.confirm[open]').count()) {
+    fail('composition: Save opened a confirm dialog with no changes to confirm');
+    await page.locator('dialog.confirm [data-cfcancel]').click();
+  }
+
+  // --- one edit: dirty, counted, and it blocks a close ------------------------
+  await modelInput.fill(NEW);
+  await page.waitForTimeout(200);
+  const dirty = await page.evaluate(() => {
+    const ev = new Event('beforeunload', { cancelable: true });
+    dispatchEvent(ev);
+    const d = document.querySelector('#comp [data-discard=comp]');
+    return { rows: editRows('comp').length, blocked: ev.defaultPrevented,
+             label: d ? d.textContent : null, disabled: d ? d.disabled : null };
+  });
+  if (dirty.rows !== 1 || !dirty.blocked) {
+    fail(`composition: after one edit dirtyRows()=${dirty.rows} and beforeunload `
+       + `blocked=${dirty.blocked}`);
+  } else if (dirty.disabled || !/1 change\b/.test(dirty.label || '')) {
+    fail(`composition: Discard reads "${dirty.label}" (disabled=${dirty.disabled}) `
+       + `for one unsaved change`);
+  } else {
+    note(`composition: one edit -> dirty, "${dirty.label}", close is guarded`);
+  }
+
+  // --- the dialog lists that change, and Cancel writes nothing ---------------
+  await saveBtn.click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  const listed = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog.confirm tbody tr')]
+      .map((r) => [...r.children].map((c) => c.textContent.trim())));
+  if (await page.locator('dialog.confirm .cflock').count()) {
+    fail('composition: the dialog reports a lock with nothing running');
+  }
+  {
+    const foot = await page.evaluate(() => {
+      const f = document.querySelector('dialog.confirm [data-cfwho]');
+      return { text: f ? f.textContent : null, who: (STATE.viewer || {}).author };
+    });
+    if (foot.who && !(foot.text || '').includes(foot.who)) {
+      fail(`composition: the dialog does not say who the write is recorded as `
+         + `(footer reads ${JSON.stringify(foot.text)}, viewer is ${foot.who})`);
+    }
+  }
+  const wantFrom = target.was === null ? 'not set' : target.was;
+  if (listed.length !== 1) {
+    fail(`composition: the confirm dialog lists ${listed.length} rows for one edit`);
+  } else if (listed[0][0] !== target.id || listed[0][1] !== 'model'
+             || !listed[0][2].includes(wantFrom) || !listed[0][2].includes(NEW)) {
+    fail(`composition: the dialog lists ${JSON.stringify(listed[0])} for `
+       + `${target.id} model ${wantFrom} -> ${NEW}`);
+  } else {
+    note(`composition: the dialog lists exactly "${listed[0].join(' · ')}"`);
+  }
+  await page.locator('dialog.confirm [data-cfcancel]').click();
+  await page.waitForTimeout(250);
+  const afterCancel = await onDisk();
+  const stillDirty = await page.evaluate(() => editRows('comp').length);
+  if (afterCancel !== target.was) {
+    fail(`composition: Cancel wrote anyway — ${target.id}.model is now `
+       + `${JSON.stringify(afterCancel)}`);
+  } else if (stillDirty !== 1) {
+    fail(`composition: Cancel threw the edit away (${stillDirty} unsaved) — it is `
+       + `the confirm that was declined, not the work`);
+  } else {
+    note('composition: Cancel wrote nothing and kept the edit');
+  }
+
+  // --- confirming writes exactly that, and the view re-reads from disk --------
+  // The re-render is proved with a value this form never typed: a SECOND task in
+  // the same phase is changed through the API while the form sits there, and has
+  // to be showing that value once the save comes back. Checking only the field
+  // that was edited proves nothing — the form already displays what you typed,
+  // whether or not it ever re-read anything.
+  const other = await page.evaluate((o) => {
+    const t = ((STATE.composition || {}).tasks || [])
+      .find((x) => x.phaseId === o.pid && x.id !== o.id);
+    return t ? { id: t.id } : null;
+  }, { pid: target.phaseId, id: target.id });
+  const MARK = 'changed-elsewhere';
+  if (other) {
+    await page.evaluate(async (o) => api('PUT', '/api/composition',
+      { meta: {}, phases: {}, tasks: { [o.id]: { model: o.v } } }),
+    { id: other.id, v: MARK });
+    await page.waitForTimeout(200);
+  }
+  await saveBtn.click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+  const saved = await onDisk();
+  const shownFor = (id) => page.evaluate((x) => {
+    const tr = [...document.querySelectorAll('#comp tr.task')]
+      .find((r) => (r.querySelector('.tid') || {}).textContent === x);
+    const i = tr && tr.querySelector('.tmodel input');
+    return i ? i.value : null;
+  }, id);
+  const after = await page.evaluate(() => ({
+    dirty: editRows('comp').length,
+    q: (document.querySelector('#comp input[type=search]') || {}).value,
+    diff: !!document.querySelector('#comp [data-cfdiff]'),
+    toast: (document.querySelector('#toast') || {}).textContent,
+  }));
+  after.shown = await shownFor(target.id);
+  after.elsewhere = other ? await shownFor(other.id) : MARK;
+  if (saved !== NEW) {
+    fail(`composition: confirmed save left ${target.id}.model = ${JSON.stringify(saved)}`);
+  } else if (after.dirty !== 0 || after.shown !== NEW) {
+    fail(`composition: after saving the form still reports ${after.dirty} unsaved `
+       + `change(s) and shows "${after.shown}"`);
+  } else if (after.elsewhere !== MARK) {
+    fail(`composition: ${other.id}.model was set to "${MARK}" while this form was `
+       + `open and the table still shows "${after.elsewhere}" after a save — the `
+       + `view is not re-read from disk, so it shows what you typed rather than `
+       + `what is stored`);
+  } else if (after.q !== target.phaseId) {
+    fail(`composition: the post-save re-render dropped the filter (search is `
+       + `"${after.q}", was "${target.phaseId}") — COMPF is not surviving it`);
+  } else if (after.diff) {
+    fail('composition: the server\'s applied[] disagreed with the dialog on an '
+       + 'uncontested save');
+  } else if (!/^Saved · 1 change/.test((after.toast || '').trim())) {
+    fail(`composition: the save toast reads "${after.toast}"`);
+  } else {
+    note(`composition: confirmed -> "${after.toast.trim()}", filter and open row kept`);
+  }
+
+  // --- the echo earns its keep: a manifest that moved under the form ----------
+  // The one case a confirm dialog makes WORSE without it — the values it listed
+  // were already stale. Driven for real: edit here, write a different value to the
+  // same field through the API, then confirm. The server recomputes `applied`
+  // against what is actually on disk, and the mismatch has to surface.
+  const OTHER = NEW === 'opus' ? 'sonnet' : 'opus';
+  const THIRD = 'haiku-3';
+  await modelInput.fill(THIRD);
+  await page.waitForTimeout(200);
+  await page.evaluate(async (o) => api('PUT', '/api/composition',
+    { meta: {}, phases: {}, tasks: { [o.id]: { model: o.v } } }), { id: target.id, v: OTHER });
+  await page.waitForTimeout(300);
+  await saveBtn.click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+  const warned = await page.evaluate(() => ({
+    diff: (document.querySelector('#comp [data-cfdiff]') || {}).textContent || null,
+    toast: (document.querySelector('#toast') || {}).className,
+  }));
+  if (!warned.diff) {
+    fail(`composition: the manifest moved to "${OTHER}" under a form that listed `
+       + `"${NEW}", and the save reported no disagreement — applied[] is not `
+       + `being compared with what the dialog showed`);
+  } else if (!/warn/.test(warned.toast || '')) {
+    fail(`composition: applied[] disagreed and the toast is "${warned.toast}"`);
+  } else {
+    note('composition: a manifest that moved under the form is reported, not hidden');
+  }
+
+  // --- Discard puts the form back, and only after confirming -----------------
+  const before = await onDisk();
+  await modelInput.fill('discard-me');
+  await page.waitForTimeout(200);
+  await discardBtn.click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(500);
+  const discarded = await page.evaluate((id) => ({
+    dirty: editRows('comp').length,
+    shown: (() => {
+      const tr = [...document.querySelectorAll('#comp tr.task')]
+        .find((r) => (r.querySelector('.tid') || {}).textContent === id);
+      const i = tr && tr.querySelector('.tmodel input');
+      return i ? i.value : null;
+    })(),
+  }), target.id);
+  // Back to what is ON DISK, which is what "discard" means — not back to some
+  // earlier value the form happens to remember.
+  if (discarded.dirty !== 0 || discarded.shown !== (before === null ? '' : before)) {
+    fail(`composition: Discard left ${discarded.dirty} unsaved change(s) and the `
+       + `field reads "${discarded.shown}" for a saved value of `
+       + `${JSON.stringify(before)}`);
+  } else if (await onDisk() !== before) {
+    fail('composition: Discard wrote to the manifest');
+  } else {
+    note(`composition: Discard restored the saved value ("${discarded.shown}")`);
+  }
+
+  // --- the dialog states a lock that is live NOW -----------------------------
+  // The lock is fabricated in the page rather than in the fixture: it lives in a
+  // git dir this generated project does not have. What is under test is that the
+  // dialog reads the 5s POLL's answer — a dialog that opened saying "nothing is
+  // running" because nothing was running when the tab loaded is exactly the
+  // reassurance this flow must not give.
+  await modelInput.fill('lock-probe');
+  await page.waitForTimeout(200);
+  await page.evaluate((pid) => {
+    RUNSTATUS = { index: null,
+      phases: { [pid]: { lock: { hostname: 'other-box', live: true }, claim: null } } };
+  }, target.phaseId);
+  await saveBtn.click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  const lockNote = await page.evaluate(() => {
+    const n = document.querySelector('dialog.confirm .cflock');
+    return n ? n.textContent : null;
+  });
+  await page.locator('dialog.confirm [data-cfcancel]').click();
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { RUNSTATUS = null; renderComp(); });
+  await page.waitForTimeout(300);
+  if (!lockNote || !lockNote.includes(target.phaseId)) {
+    fail(`composition: ${target.phaseId} is locked by another run and the confirm `
+       + `dialog says ${JSON.stringify(lockNote)}`);
+  } else {
+    note(`composition: the dialog states the live lock on ${target.phaseId}`);
+  }
+
+  // --- Settings writes through the same flow ---------------------------------
+  await page.click('.tab[data-t=guards]');
+  await page.waitForSelector('#guards .savebar', { timeout: 10000 });
+  const box = page.locator('#guards input[type=checkbox]').first();
+  if (!(await box.count())) { fail('settings: no boolean field to drive'); return; }
+  const path = await box.getAttribute('id');
+  await box.click();
+  await page.waitForTimeout(200);
+  await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  const cfgRows = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog.confirm tbody tr')]
+      .map((r) => [...r.children].map((c) => c.textContent.trim())));
+  const wantPath = (path || '').replace(/^set-/, '');
+  if (cfgRows.length !== 1 || cfgRows[0][0] !== 'config' || cfgRows[0][1] !== wantPath) {
+    fail(`settings: toggling ${wantPath} listed ${JSON.stringify(cfgRows)}`);
+  } else {
+    note(`settings: the dialog lists "${cfgRows[0].join(' · ')}"`);
+  }
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(700);
+  const cfgSaved = await page.evaluate(async (p) => {
+    const s = await api('GET', '/api/state');
+    const v = p.split('.').reduce((o, k) => (o == null ? o : o[k]), s.config);
+    return { value: v === undefined ? null : v,
+             toast: (document.querySelector('#toast') || {}).textContent,
+             dirty: editRows('guards').length };
+  }, wantPath);
+  if (cfgSaved.dirty !== 0 || !/^Saved · 1 change/.test((cfgSaved.toast || '').trim())) {
+    fail(`settings: after saving, toast="${cfgSaved.toast}" and `
+       + `${cfgSaved.dirty} change(s) still unsaved`);
+  } else {
+    note(`settings: ${wantPath} -> ${JSON.stringify(cfgSaved.value)}, `
+       + `"${cfgSaved.toast.trim()}"`);
+  }
+}
+
 async function shot(page, name, { full = false } = {}) {
   await settle(page);
   if (CHECK) return;
@@ -884,6 +1284,10 @@ async function main() {
       // view. A check that leaves transient UI behind must run where no shutter
       // follows it, not merely be timed to miss one.
       await assertUsageWorks(page);
+      await assertViewerIdentity(page);
+      // Last of all: it writes to the fixture's manifest and its config, so every
+      // check above sees the state it was generated with.
+      await assertConfirmFlowWorks(page);
       // Collected across every tab this run touched, and reported last so the more
       // specific failures above name themselves first.
       if (jsErrors.length) {
