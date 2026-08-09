@@ -24,7 +24,8 @@ HTML, the Markdown, and the printable PDF. It is passed to the renderer only —
 the manifest, so `/audit:report` stays read-only (no lock).
 
 The HTML opens standalone (double-click): in-page text/status filtering, per-phase collapse, a
-**Save as PDF** button (browser print → A4, all phases expanded) and a **Download .md** button — all
+**Save as PDF** button (browser print, all phases expanded, either orientation) and a
+**Download .md** button — all
 self-contained (inline CSS + JS, zero network fetches), publishable as a CI artifact. Never locks,
 never mutates the manifest.
 

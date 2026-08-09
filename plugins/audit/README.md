@@ -393,7 +393,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath> \
 
 - **HTML** — collapsible phase rows (a 40-phase audit opens as ~40 lines, not one endless scroll),
   a phase text search + phase-status chips, a per-phase task-status filter, click-to-sort columns,
-  a **Save as PDF** button (browser print → A4, all phases expanded), and a **Download .md** button.
+  a **Save as PDF** button (browser print, all phases expanded, either orientation), and a
+  **Download .md** button.
   Every manifest value is HTML-escaped; the page fetches nothing.
 - **Markdown** (`audit-report.md`) — renders inline on GitHub / in PRs.
 - **Summary box** — pass `--summary-file` (a 2–4 sentence narrative) or set `meta.reportSummary`;

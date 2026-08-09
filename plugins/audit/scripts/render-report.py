@@ -489,8 +489,17 @@ tr.norows .btn{margin-left:.6rem}
 h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
 .meta{animation-delay:.04s}.overall{animation-delay:.09s}.summary{animation-delay:.14s}
 
-/* ---- colored bits must print --------------------------------------------- */
-.chip,.fill,.rchip,tr.phase>td::before{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* ---- colored bits must print ---------------------------------------------
+   Browsers drop backgrounds on paper by default, which is the right default for
+   decoration and the wrong one for anything whose FILL is the value. The list
+   grew when one pill grammar replaced four: a status chip is now a 12% tint
+   rather than a solid, and the same recipe went on to carry what holds a phase
+   shut, which cost band a task landed in and which way a usage figure moved.
+   Dropped, those print as bare text in a hairline outline.
+   `print-color-adjust` inherits, so naming the pill covers the dot, the bar and
+   any ::before it draws — which is why .chip is here and .chip::before is not. */
+.chip,.fill,.rchip,.heldby,.bandpill,.dl,tr.phase>td::before,
+.rank .track i,.bud .track i{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 
 /* ---- responsive: tablet / mobile ----------------------------------------- */
 /* Wide tables (9 / 7 cols) scroll INSIDE their own frame instead of pushing the
@@ -527,8 +536,18 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   .fill{animation:none;width:var(--w,0)}
 }
 
-/* ---- print: force a light sheet + keep the interactive semantics --------- */
-@page{size:A4;margin:1.4cm}
+/* ---- print: force a light sheet + keep the interactive semantics ---------
+   No `size` here, and that omission is the whole point. `size:A4` does not tell
+   the browser what paper to expect; it tells it what page box the document
+   REQUIRES, and Chrome and Edge respond by greying the print dialog's
+   orientation control out. The report's widest table is nine columns, which is
+   the one thing on the page that genuinely wants landscape — so the stylesheet
+   was locking off the orientation its own layout most needed. Measured, not
+   assumed: `page.pdf({preferCSSPageSize:true, landscape:true})` against the
+   committed example produced seven 595x842 pages, i.e. portrait, every time.
+   The margin stays. That is a request about ink and about the reader's eye;
+   the sheet and which way round it goes belong to whoever holds the printer. */
+@page{margin:1.4cm}
 @media print{
   /* color-scheme comes with the colours. Overriding the tokens alone would print
      a white sheet whose checkboxes, selects and date picker are still painted
@@ -536,17 +555,44 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   :root,:root[data-theme="dark"]{color-scheme:light;
     --bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
     --muted:#374151;--border:#d1d5db}
-  body{max-width:none;margin:0;padding:0;font-size:10.5pt}
+  /* Three lines is the least that still reads as a paragraph: below that a page
+     break strands a line whose sentence began on the sheet before. Set on body
+     because both properties inherit — every block in the document, not the six
+     someone remembered to name. */
+  body{max-width:none;margin:0;padding:0;font-size:10.5pt;orphans:3;widows:3}
   /* Paper has no scroll position to indicate and no controls to press, so the
-     whole shell collapses back to the document it always was underneath. */
-  .topbar,.snav,.toolbar,tr.taskfilter,.nojs{display:none!important}
+     whole shell collapses back to the document it always was underneath. The
+     disclosure triangle goes with them: on a page where every phase is already
+     printed open, an arrow inviting you to open one is a control that lies. */
+  .topbar,.snav,.toolbar,tr.taskfilter,.nojs,.tri{display:none!important}
   .shell{display:block;max-width:none;padding:0}
-  .pmeta{max-width:none}
   .topgrid{display:block}
-  tr.task{display:table-row!important}
-  tr.phase,tr.task{break-inside:avoid}
+  /* Now that BOTH orientations reach this stylesheet they land on opposite sides
+     of the 52rem breakpoint: A4 portrait inside a 1.4cm margin is ~688px, i.e.
+     43rem, and matches the tablet rules; landscape is ~1016px and does not. So
+     portrait paper was quietly being handed the small-screen layout — every
+     table sealed inside an `overflow-x:auto` frame that paper cannot scroll, and
+     the phase prose pinned sticky against a left edge that never moves. A sheet
+     is not a small screen. It is a wide one that has been cut into pages. */
+  .tablewrap{overflow:visible;border:0;border-radius:0;box-shadow:none}
+  table.phases,table.data{min-width:0;box-shadow:none}
+  .pmeta{position:static;max-width:none;white-space:normal}
+  /* Paper prints the plan whole, filtered or not — which is what the Save as PDF
+     button has always promised, and what forcing `tr.task` visible already did
+     for collapsed rows. Left half-done it printed the filtered view's leftovers:
+     task rows under phase headings the filter had hidden, a "3 of 12 match"
+     badge on a page carrying all twelve, and — filtered down to nothing — the
+     empty state announcing that no phase matched, directly above every phase.
+     Each of those is an inline style written by the filter, so each needs
+     `!important` to be taken back here. */
+  tr.phase,tr.task{display:table-row!important;break-inside:avoid}
+  .pmatch,tr.norows{display:none!important}
+  /* A table that spans pages has to carry its column headers onto each of them,
+     or page two of a long plan is a grid of unlabelled cells. */
+  thead{display:table-header-group}
   thead th{position:static!important}
-  table.phases,table.data{box-shadow:none}
+  /* A heading at the foot of a page introduces nothing. */
+  h1,h2,h3,h4,.sub{break-after:avoid;break-inside:avoid}
   a[href]{color:inherit;text-decoration:none}
   .tiles,.uphase,.hm,.cols,.smcell,.rank{break-inside:avoid}
   /* a folded disclosure prints as a stub; force it open so the PDF is whole */
@@ -1300,9 +1346,10 @@ _SCRIPT = r"""<script>
   }
   clearBtns.forEach(function (b) { b.addEventListener('click', clearAll); });
 
-  // Save as PDF — the print stylesheet lays the report out on A4 with every
-  // phase expanded; the browser's print dialog offers "Save as PDF" (no bundled
-  // PDF library, so the file stays small and self-contained).
+  // Save as PDF — the print stylesheet lays the whole plan out with every phase
+  // expanded and leaves the sheet itself to the dialog, which is also where
+  // "Save as PDF" lives (no bundled PDF library, so the file stays small and
+  // self-contained).
   var printBtn = document.getElementById('audit-print');
   if (printBtn) printBtn.addEventListener('click', function () { window.print(); });
 
@@ -2846,7 +2893,9 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     doc_actions = (
         '<div class="toolbar tb-actions">'
         '<button type="button" id="audit-print" class="btn btn-primary" '
-        'title="Print / Save as PDF — all phases expanded, A4">Save as PDF</button>'
+        'title="Print / Save as PDF — the whole plan, every phase expanded. '
+        'Paper size and orientation are yours to pick in the print dialog.">'
+        'Save as PDF</button>'
         '<button type="button" id="audit-dl-md" class="btn">Download .md</button>'
         # Withheld in a fragment: the host owns the theme there and stamps
         # `data-theme` on the same root element this button writes. Two controls
@@ -3821,12 +3870,61 @@ def _selftest():
           "set 130 characters wide",
           'class="topgrid"' in html_out and ".topgrid{" in _CSS
           and "min-width:78rem" in _CSS)
-    check("shell: paper gets the document back - no bars, no nav, no section tools",
-          ".topbar,.snav,.toolbar,tr.taskfilter,.nojs{display:none!important}" in _CSS)
+    check("shell: paper gets the document back - no bars, no nav, no section "
+          "tools, and no disclosure arrow on a row already printed open",
+          ".topbar,.snav,.toolbar,tr.taskfilter,.nojs,.tri{display:none!important}"
+          in _CSS)
     # The no-script banner is screen-only: on paper there is no script to run and
     # no browser to open the file in, so it would be advice about nothing.
     check("shell: the no-script banner never reaches paper",
           ".nojs" in _CSS[_CSS.index("@media print"):])
+
+    # ---- c6: the page belongs to the reader ------------------------------
+    # Everything below is a string pin, and a string pin cannot tell whether a
+    # print rule ever fires. The orientation itself is checked where it can be
+    # measured - tools/check-report-interactive.mjs renders the report to PDF in
+    # both orientations and reads the page box back out.
+    _print = _CSS[_CSS.index("@page"):]
+    check("c6: the stylesheet asks for a margin and does not dictate the sheet - "
+          "`size` greys the print dialog's orientation control out",
+          "@page{margin:1.4cm}" in _CSS and "size:" not in _print[:_print.index("}")])
+    # The one place the reader was ever told a sheet size: the tooltip on the
+    # control that opens the dialog. Scoped to that attribute rather than to the
+    # whole document, which also carries the CSS comment explaining the removal
+    # and a base64 blob in which "A4" turns up by chance.
+    _ptitle = re.search(r'id="audit-print"[^>]*title="([^"]*)"', html_out)
+    check("c6: the button no longer promises a sheet it does not choose - it "
+          "says where the choice lives instead",
+          bool(_ptitle) and "A4" not in _ptitle.group(1)
+          and "orientation" in _ptitle.group(1))
+    check("c6: a table spanning pages carries its column headers onto each one",
+          "thead{display:table-header-group}" in _print)
+    check("c6: no line stranded alone by a page break",
+          "orphans:3;widows:3" in _print)
+    check("c6: and no heading printed at the foot of a page, introducing nothing",
+          "h1,h2,h3,h4,.sub{break-after:avoid;break-inside:avoid}" in _print)
+    # Portrait inside a 1.4cm margin is ~688px == 43rem, so it MATCHES the 52rem
+    # tablet rules while landscape (~1016px) does not. Allowing both orientations
+    # is what made that divergence reachable.
+    check("c6: portrait paper falls inside the tablet breakpoint, so the print "
+          "sheet takes the small-screen scroll frame back off",
+          ".tablewrap{overflow:visible" in _print
+          and "table.phases,table.data{min-width:0" in _print
+          and ".pmeta{position:static" in _print)
+    # Paper prints the plan whole. Everything the screen's filter says about a
+    # narrowed view is false on that page, and every one of those statements is
+    # an inline style, so every one of them needs !important to take back.
+    check("c6: paper prints every phase and every task, not the filtered "
+          "leftovers - task rows under headings the filter hid",
+          "tr.phase,tr.task{display:table-row!important" in _print)
+    check("c6: ...so the match badge and the empty state never reach it - "
+          "'3 of 12 match' beside all twelve, 'no phase matched' above every one",
+          ".pmatch,tr.norows{display:none!important}" in _print)
+    check("c6: the pills that carry meaning in their fill print it - one tinted "
+          "grammar now covers status, risk, holder, cost band and delta",
+          ".chip,.fill,.rchip,.heldby,.bandpill,.dl,tr.phase>td::before,"
+          in _CSS and ".rank .track i,.bud .track i{"
+          "-webkit-print-color-adjust:exact;print-color-adjust:exact}" in _CSS)
 
     # The banner exists because a report is a file people SEND each other, and a
     # common way of opening one - an IDE preview pane - sandboxes inline <script>.
@@ -4238,7 +4336,7 @@ def _selftest():
     check("h8 AI summary box rendered + escaped (from meta.reportSummary)",
           '<div class="summary">' in html_out
           and "closed all criticals &amp; shipped" in html_out)
-    check("h9 PDF (print) + Download .md buttons + embedded md + A4 print CSS",
+    check("h9 PDF (print) + Download .md buttons + embedded md + print CSS",
           'id="audit-print"' in html_out and 'id="audit-dl-md"' in html_out
           and 'window.AUDIT_MD_B64="' in html_out and "@page" in html_out
           and "@media print" in html_out)
