@@ -48,7 +48,13 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   **refuses while an `/audit` run holds a lock** (the index or any phase — see conventions →
   Concurrency lock). Never touches phases/tasks/bugs structure — use `/audit:task`,
   `/audit:bug`, `/audit:run` for that.
-- **Overview** — the live rollup + validation status.
+- **Overview** — the live rollup + validation status, as something you can steer by: task and
+  bug **status strips** that are both the legend and the filter (press one to scope the phase
+  list), search over id / title / area / desired outcome, sort by plan order, progress or
+  status, optional **group by area** from `meta.areas`, each phase row showing its desired
+  outcome and opening that phase in Composition, and a **Ready now** card with the exact
+  `/audit:run <id>` to copy. Bug statuses here are *effective* — a bug materialized into a task
+  reads `Fixed` once that task is done, which is what the counts above them use.
 
 Safety: binds `127.0.0.1` only, requires a per-launch token on every API call, and refuses
 any write whose path escapes the project directory. Ephemeral — it runs until you `stop` it.

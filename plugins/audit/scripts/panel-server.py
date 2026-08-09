@@ -524,6 +524,48 @@ def _areas_of(area):
     return []
 
 
+def _bugs_view(manifest):
+    """The bug rows the Overview lists, one per bug, already resolved.
+
+    `status` here is the EFFECTIVE status — the same value `rollup()` counts in
+    `bugs.byStatus`, computed by the same function — so a reader who clicks the
+    "Fixed 2" pill gets exactly two rows. Deriving it a second time in JavaScript
+    would be a second implementation of the bug<->task rule (a bug materialized
+    into a task reads `fixed` once that task is done), and two implementations
+    that can disagree is precisely how the panel's counts and its lists drift.
+    `reported` keeps what the manifest actually stores, so a bug whose status is
+    inherited from its task can say so instead of looking hand-edited."""
+    _, _, as_, _ = _cores()
+    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
+    task_by_id = {t["id"]: t for p in phases for t in (p.get("tasks") or [])
+                  if isinstance(t, dict) and t.get("id")}
+    task_phase = {t["id"]: p.get("id") for p in phases for t in (p.get("tasks") or [])
+                  if isinstance(t, dict) and t.get("id")}
+    out = []
+    for b in (manifest.get("bugs") or []):
+        if not isinstance(b, dict):
+            continue
+        eff = as_.effective_bug_status(b, task_by_id)
+        out.append({
+            "id": b.get("id"), "title": b.get("title"),
+            "status": eff,
+            "reported": b.get("status"),
+            "severity": b.get("severity"),
+            # `open` and `high` are decided HERE, by the same two rules the rollup's
+            # `open` / `openHighSeverity` counts use — CLOSED_BUG and the
+            # high-or-worse severity set, which knows that critical, blocker, sev1
+            # and p0 all mean high. A regex in the browser would be a third opinion
+            # on the same question, and the "High severity, open" pill would
+            # eventually count a different set than the list it filters to.
+            "open": eff not in as_.CLOSED_BUG,
+            "high": as_._is_high_severity(b.get("severity")),
+            "taskId": b.get("taskId"),
+            "phaseId": task_phase.get(b.get("taskId")),
+            "reportedAt": b.get("reportedAt"),
+        })
+    return out
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     phases_out, tasks_out = [], []
@@ -874,6 +916,7 @@ def build_state(project):
     rollup, m_findings = None, []
     composition = {"meta": {"reviewSkill": None, "buildCommands": None},
                    "phases": [], "tasks": []}
+    bugs = []
     if exists:
         try:
             manifest = _mio.load_manifest(mpath)   # dual-format: single-file OR index+shards
@@ -883,6 +926,7 @@ def build_state(project):
             m_findings, m_warn = vm.validate(manifest)
             rollup = as_.rollup(manifest, m_findings, m_warn)
             composition = _composition_view(manifest)
+            bugs = _bugs_view(manifest)
     return {
         "project": project,
         "manifestPath": os.path.relpath(mpath, project),
@@ -894,6 +938,7 @@ def build_state(project):
         "configWarnings": cfg_warnings,
         "manifestFindings": m_findings,
         "composition": composition,
+        "bugs": bugs,
         "rollup": rollup,
         "runStatus": _run_status(project, config, manifest),
     }
@@ -2009,6 +2054,65 @@ td.tskills{min-width:15rem}
 .comp .chips{gap:.25rem}
 .topbtns{display:flex;gap:var(--sp-1);align-items:center;flex-shrink:0}
 .comp .combo{flex:1 1 8rem;min-width:7rem}
+/* overview: summary strips, phase rows, ready-now
+   The strips are a legend AND the filter — one row of pills that says how the work
+   is distributed and scopes the list below when you press one. Two separate
+   affordances for the same eight numbers is how a reader ends up believing the
+   legend and the list disagree. */
+.ovstrip{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin:.35rem 0 .1rem}
+.ovstrip .ovlbl{font-size:.72rem;color:var(--muted);flex:0 0 auto;min-width:3.2rem}
+.ovpill{cursor:pointer;font:inherit;display:inline-flex;align-items:center;gap:.4em;
+ font-size:.74rem;padding:.28rem .7em;border-radius:var(--pill);
+ background:color-mix(in srgb,var(--st,var(--muted)) 12%,transparent);
+ color:var(--st,var(--muted));
+ border:1px solid color-mix(in srgb,var(--st,var(--muted)) 30%,transparent);
+ transition:all var(--dur) var(--ease)}
+.ovpill:hover{border-color:var(--st,var(--border-strong))}
+.ovpill:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.ovpill[aria-pressed=true]{background:color-mix(in srgb,var(--st,var(--muted)) 26%,transparent);
+ border-color:var(--st,var(--muted));font-weight:640}
+/* Selected state carried by more than hue, as in the report and the composition
+   filters — in greyscale, in forced-colours and on paper the fill says nothing. */
+.ovpill[aria-pressed=true]::before{content:"\2713\a0";font-weight:700}
+.ovpill b{font-variant-numeric:tabular-nums;font-weight:640}
+/* a severity cut, not a status — it carries no data-status, so it sets --st itself */
+.ovpill.hi{--st:var(--err)}
+.ovtools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.6rem 0 .4rem}
+.ovtools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.25rem .75rem}
+.ovtools select{font-size:.8rem;padding:.25rem .5rem}
+.ovtools label.inl{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--muted)}
+.ovgrp{display:flex;align-items:baseline;gap:.5rem;margin:.9rem 0 .1rem;
+ padding-bottom:.25rem;border-bottom:1px solid var(--border)}
+.ovgrp .gname{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent)}
+/* A row is one control: it opens this phase in Composition. A <button> rather than
+   a div with a click handler, so it is reachable by keyboard and announced as
+   something you can press without a hand-written role/tabindex/keydown trio. */
+.ovrow{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;width:100%;text-align:left;
+ font:inherit;color:var(--text);cursor:pointer;background:none;border:1px solid transparent;
+ border-left:3px solid var(--st,var(--border));border-radius:var(--radius);
+ padding:.4rem .5rem;margin:.15rem 0;transition:background var(--dur) var(--ease)}
+.ovrow:hover{background:var(--surface-2)}
+.ovrow:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+.ovrow .pid{font-family:var(--mono);font-size:.8rem;color:var(--muted);flex:0 0 3rem}
+.ovrow .ptitle{flex:1 1 12rem;min-width:8rem}
+.ovout{flex:1 1 100%;font-size:.76rem;color:var(--muted);margin:.1rem 0 0 3.75rem;
+ max-width:80ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ovmatch{font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.ovempty{color:var(--muted);font-size:.85rem;padding:.6rem .2rem}
+/* ready-now: the one thing you can act on without reading anything else */
+.rdy{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:.35rem .2rem;
+ border-bottom:1px solid var(--border)}
+.rdy:last-child{border-bottom:none}
+.rdy .rcmd{font-family:var(--mono);font-size:.78rem;background:var(--surface-2);
+ border:1px solid var(--border);border-radius:var(--radius);padding:.15rem .45rem;
+ white-space:nowrap}
+.rdy .rt{flex:1 1 12rem;min-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sev{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.sev.high{color:var(--err)}
+@media(max-width:48rem){
+ .ovout{margin-left:0}
+ .ovrow .ptitle{flex:1 1 100%}
+}
 
 </style></head><body>
 <div class=top>
@@ -2476,6 +2580,16 @@ function skillChips(getArr,setArr){
    inp.value='';if(close)close();};
  const combo=comboWrap(inp,()=>REG.skills.filter(s=>!(getArr()||[]).includes(s.name)),add,add);
  draw();box.append(chips,combo);return box;}
+// Composition's filter state lives OUT here, not in renderComp's closure. Two
+// reasons, and the second is the one that made it necessary: a re-render (after a
+// save, or a poll) used to drop you back to the unfiltered table, and Overview
+// needs to hand this tab a phase to open. `apply` is published by renderComp so a
+// caller can change the state without re-rendering — re-rendering would throw away
+// whatever is half-typed in the composition form, which is the same mistake the
+// run-status poll was fixed for.
+const COMPF={q:'',status:'',needs:false,open:{},apply:null};
+function openInComp(pid){COMPF.q=pid;COMPF.status='';COMPF.needs=false;COMPF.open[pid]=true;
+ if(COMPF.apply)COMPF.apply();showTab('comp');}
 function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.composition;
  const patch={meta:{},phases:{},tasks:{}};
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill));
@@ -2487,7 +2601,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  meta.append(bc);c.append(meta);
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
  const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills));
- const q=el('input',{type:'search',placeholder:'filter phases & tasks…'});
+ const q=el('input',{type:'search',placeholder:'filter phases & tasks…',value:COMPF.q});
  const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
  const needsBtn=el('button',{class:'filt',type:'button','aria-pressed':'false',title:'only tasks with no skills yet'},'needs skills');
  const expandBtn=el('button',{class:'btn small',type:'button'},'expand all');
@@ -2497,7 +2611,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
    el('thead',{},el('tr',{},el('th',{},'id'),el('th',{},'title'),el('th',{},'status'),el('th',{},'model'),el('th',{},'skills'))),tbody)));
 
- const open={};let phaseFilter='',needsOnly=false;
+ const open=COMPF.open;
  const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
  comp.phases.forEach(ph=>{
   const tasks=byPhase[ph.id]||[];
@@ -2518,7 +2632,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    const tp={};const model=el('input',{value:t.model??'',placeholder:'—'});
    model.oninput=()=>{tp.model=model.value.trim()||null;patch.tasks[t.id]=tp;};
    const getSkills=()=>tp.skills!==undefined?tp.skills:(t.skills||[]);
-   const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(needsOnly)refresh();});
+   const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(COMPF.needs)refresh();});
    const tr=el('tr',{class:'task','data-status':t.status||''});
    tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle',title:t.title||''},t.title||''),
      el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
@@ -2530,30 +2644,36 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  });
  [...new Set(comp.phases.map(p=>p.status).filter(Boolean))].sort().forEach(s=>{
   const b=el('button',{class:'filt',type:'button','data-status':s,'aria-pressed':'false'},label(s));
-  b.onclick=()=>{phaseFilter=phaseFilter===s?'':s;
-   // aria-pressed alongside the class: which filter is on was carried by the
-   // accent fill alone, which a screen reader never sees.
-   [...statusBar.children].forEach(x=>{const on=x.getAttribute('data-status')===phaseFilter;
-    x.classList.toggle('on',on);x.setAttribute('aria-pressed',on?'true':'false');});refresh();};
+  b.onclick=()=>{COMPF.status=COMPF.status===s?'':s;syncFilters();refresh();};
   statusBar.append(b);});
- needsBtn.onclick=()=>{needsOnly=!needsOnly;needsBtn.classList.toggle('on',needsOnly);
-  needsBtn.setAttribute('aria-pressed',needsOnly?'true':'false');refresh();};
+ // aria-pressed alongside the class: which filter is on was carried by the accent
+ // fill alone, which a screen reader never sees. Driven from COMPF rather than
+ // toggled in place, so a filter set from elsewhere (Overview) shows here too.
+ function syncFilters(){
+  [...statusBar.children].forEach(x=>{const on=x.getAttribute('data-status')===COMPF.status;
+   x.classList.toggle('on',on);x.setAttribute('aria-pressed',on?'true':'false');});
+  needsBtn.classList.toggle('on',COMPF.needs);
+  needsBtn.setAttribute('aria-pressed',COMPF.needs?'true':'false');}
+ needsBtn.onclick=()=>{COMPF.needs=!COMPF.needs;syncFilters();refresh();};
  expandBtn.onclick=()=>{const anyClosed=phaseEls.some(P=>!open[P.id]);phaseEls.forEach(P=>open[P.id]=anyClosed);refresh();};
  const hit=(s,term)=>!term||s.toLowerCase().includes(term);
  function refresh(){
-  const term=q.value.trim().toLowerCase();const forced=(term!=='')||needsOnly;let visP=0,visT=0;
+  COMPF.q=q.value;
+  const term=q.value.trim().toLowerCase();const forced=(term!=='')||COMPF.needs;let visP=0,visT=0;
   phaseEls.forEach(P=>{
    const pText=hit(P.id+' '+P.title+' '+P.area,term);let anyT=false;
    P.tasks.forEach(T=>{const tHit=pText||hit(T.id+' '+T.title,term);
-    const needHit=!needsOnly||((T.getSkills()||[]).length===0);T._m=tHit&&needHit;if(T._m)anyT=true;});
-   const showP=(!phaseFilter||P.status===phaseFilter)&&(pText||anyT)&&(!needsOnly||anyT);
+    const needHit=!COMPF.needs||((T.getSkills()||[]).length===0);T._m=tHit&&needHit;if(T._m)anyT=true;});
+   const showP=(!COMPF.status||P.status===COMPF.status)&&(pText||anyT)&&(!COMPF.needs||anyT);
    P.tr.style.display=showP?'':'none';if(showP)visP++;
    const isOpen=showP&&(forced||!!open[P.id]);P.tr.classList.toggle('open',isOpen);
    P.tasks.forEach(T=>{const showT=showP&&isOpen&&T._m;T.tr.style.display=showT?'':'none';if(showT)visT++;});});
-  count.textContent=(term||phaseFilter||needsOnly)?(visP+' / '+phaseEls.length+' phases · '+visT+' tasks')
+  count.textContent=(term||COMPF.status||COMPF.needs)?(visP+' / '+phaseEls.length+' phases · '+visT+' tasks')
     :(phaseEls.length+' phases · '+comp.tasks.length+' tasks');
   expandBtn.textContent=phaseEls.some(P=>!open[P.id])?'expand all':'collapse all';}
- q.addEventListener('input',refresh);refresh();
+ // Published for whoever wants to scope this tab without rebuilding it.
+ COMPF.apply=()=>{q.value=COMPF.q;syncFilters();refresh();};
+ syncFilters();q.addEventListener('input',refresh);refresh();
 
  const save=el('button',{class:'btn primary',onclick:async()=>{
    const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
@@ -2652,7 +2772,44 @@ function startRunPoll(){
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollRunStatus();});
 
 // ---------- Overview ----------
-function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;const card=el('div',{class:'card'});
+// The rollup arrives with tasks.byStatus, bugs.byStatus, areas and ready[] already
+// computed, and this view used to drop all four on the floor: four grey total chips
+// and a flat list of every phase. So the numbers you steer by — what is in
+// progress, what is blocked, which bugs are open, what can start right now — were
+// the numbers the panel had and would not show.
+//
+// The filter state lives OUT here for the same reason COMPF does: the 5s run-status
+// poll repaints this view, so a filter held in the render closure would be wiped by
+// a badge update the reader never asked for, five seconds after they set it.
+const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan'};
+// Nothing-to-see-first: the statuses that need a human come before the ones that
+// do not, in the strips and in the status sort. Plan order is still the default —
+// a plan is written in an order and that order means something.
+const OVORDER=['in_progress','blocked','pending','done'];
+const OVBUGORDER=['open','triaged','in_progress','fixed','wontfix'];
+const ovRank=(o,s)=>{const i=o.indexOf(s);return i<0?o.length:i;};
+const ovAnyFilter=()=>!!(OVF.q.trim()||OVF.ts||OVF.bs);
+function ovPill(status,n,text,on,onclick,tip,cls){
+ return el('button',{class:'ovpill'+(cls?' '+cls:''),type:'button','data-status':status||'',
+  'aria-pressed':on?'true':'false',title:tip||'',onclick:onclick},text,el('b',{},String(n)));}
+// A copy button that fails silently is worse than no copy button: clipboard.write
+// can be refused, and the reader is left believing they have the command.
+function ovCopy(btn,text){
+ const done=()=>{const was=btn.textContent;btn.textContent='Copied';
+  setTimeout(()=>{btn.textContent=was;},1600);};
+ const manual=()=>{const ta=el('textarea',{style:'position:fixed;top:-1000px;opacity:0'});
+  ta.value=text;document.body.append(ta);ta.select();
+  let ok=false;try{ok=document.execCommand('copy');}catch(e){ok=false;}
+  ta.remove();if(ok)done();else toast('could not copy — the command is '+text,'err');};
+ try{navigator.clipboard.writeText(text).then(done,manual);}catch(e){manual();}}
+function renderOver(){const c=$('#over');const r=STATE.rollup;
+ // The poll repaints this view under the reader's hands. Put the caret back where
+ // it was, or typing a five-letter search while a colleague takes a phase lock
+ // loses the last three letters and the focus with them.
+ const act=document.activeElement,keepQ=!!(act&&act.id==='ovq'),
+   caret=keepQ?act.selectionStart:0;
+ c.textContent='';
+ const card=el('div',{class:'card'});
  if(!r){card.append(el('div',{class:'mut'},'No manifest at '+STATE.manifestPath+'. Run /audit:init.'));c.append(card);return;}
  const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)')
    :manifestFindingsBox(r.findings,STATE.manifestFindings||[]);
@@ -2663,8 +2820,66 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
    (dead?'⚠ index lock held by no live run':'⚙ index locked (structural op / id allocation)')
    +(h?' · '+h:'')+(rs.index.startedAt?' · since '+rs.index.startedAt:'')
    +(dead?' · '+(rs.index.liveBasis||''):'')));}
- card.append(el('h2',{},'Phases'));
- r.phases.forEach(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;
+
+ // --- the two strips: legend and filter in one control ------------------------
+ // Per-phase status counts come from the composition (the same manifest), because
+ // the rollup carries done/total per phase and nothing finer — and "which phases
+ // have work in progress" is the question the strip is for.
+ const tasks=(STATE.composition||{}).tasks||[];
+ const pStatus={};
+ tasks.forEach(t=>{const m=pStatus[t.phaseId]=pStatus[t.phaseId]||{};
+  const s=t.status||'';m[s]=(m[s]||0)+1;});
+ const tBy=r.tasks.byStatus||{},bBy=r.bugs.byStatus||{};
+ const tstrip=el('div',{class:'ovstrip'},el('span',{class:'ovlbl'},'Tasks'),
+   el('span',{class:'mut'},r.tasks.total+' total'));
+ Object.keys(tBy).sort((a,b)=>ovRank(OVORDER,a)-ovRank(OVORDER,b)).forEach(s=>{
+  tstrip.append(ovPill(s,tBy[s],label(s),OVF.ts===s,
+    ()=>{OVF.ts=OVF.ts===s?'':s;renderOver();},
+    'show only phases carrying '+label(s).toLowerCase()+' tasks'));});
+ const bstrip=el('div',{class:'ovstrip'},el('span',{class:'ovlbl'},'Bugs'),
+   el('span',{class:'mut'},r.bugs.total+' total · '+r.bugs.open+' open'));
+ Object.keys(bBy).sort((a,b)=>ovRank(OVBUGORDER,a)-ovRank(OVBUGORDER,b)).forEach(s=>{
+  bstrip.append(ovPill(s,bBy[s],label(s),OVF.bs===s,
+    ()=>{OVF.bs=OVF.bs===s?'':s;renderOver();},'show only '+label(s).toLowerCase()+' bugs'));});
+ // Not a status — a severity cut across the open ones. It keeps its own class
+ // rather than borrowing data-status="blocked" for the colour: the machine value
+ // in data-status is what the CSS themes off AND what a reader inspecting the DOM
+ // is told this pill means, and "blocked" would be a plain lie there.
+ if(r.bugs.openHighSeverity)bstrip.append(ovPill('',r.bugs.openHighSeverity,
+   'High severity, open',OVF.bs==='!high',()=>{OVF.bs=OVF.bs==='!high'?'':'!high';renderOver();},
+   'open bugs filed high, critical, blocker, sev1 or p0','hi'));
+ card.append(tstrip,bstrip);
+
+ // --- tools: search, sort, group by area --------------------------------------
+ const qIn=el('input',{type:'search',id:'ovq',value:OVF.q,
+   placeholder:'search phases — id, title, area, outcome…','aria-label':'search phases'});
+ qIn.addEventListener('input',()=>{OVF.q=qIn.value;renderOver();});
+ const sortSel=el('select',{'aria-label':'sort phases',
+   onchange:e=>{OVF.sort=e.target.value;renderOver();}});
+ [['plan','plan order'],['progress','progress'],['status','status']].forEach(([v,t])=>{
+  const o=el('option',{value:v},t);if(OVF.sort===v)o.selected=true;sortSel.append(o);});
+ const tools=el('div',{class:'ovtools'},qIn,el('span',{class:'filtlbl'},'sort:'),sortSel);
+ const areaTags=Object.keys(r.areas||{});
+ if(areaTags.length){
+  const cb=el('input',{type:'checkbox',id:'ovarea'});cb.checked=OVF.byArea;
+  cb.onchange=()=>{OVF.byArea=cb.checked;renderOver();};
+  tools.append(el('label',{class:'inl',for:'ovarea'},cb,'group by area'));}
+ const count=el('span',{class:'count',style:'margin-left:auto'});
+ tools.append(count);
+ if(ovAnyFilter())tools.append(el('button',{class:'btn small',type:'button','data-ovclear':'1',
+   onclick:()=>{OVF.q='';OVF.ts='';OVF.bs='';renderOver();}},'Clear filters'));
+ card.append(el('h2',{},'Phases'),tools);
+
+ // --- phases -------------------------------------------------------------------
+ const term=OVF.q.trim().toLowerCase();
+ const hitP=p=>(!term||((p.id+' '+(p.title||'')+' '+(p.area||[]).join(' ')+' '
+     +(p.desiredOutcome||'')).toLowerCase().includes(term)))
+   &&(!OVF.ts||!!((pStatus[p.id]||{})[OVF.ts]));
+ const ordered=r.phases.filter(hitP);
+ const pct=p=>p.total?100*p.done/p.total:0;
+ if(OVF.sort==='progress')ordered.sort((a,b)=>pct(b)-pct(a));
+ else if(OVF.sort==='status')ordered.sort((a,b)=>ovRank(OVORDER,a.status)-ovRank(OVORDER,b.status));
+ function phaseRow(p){const w=Math.round(pct(p));
   const st=(rs.phases||{})[p.id]||{};let runBadge=null;
   if(st.lock){const h=st.lock.hostname||'?';const dead=st.lock.live===false;
    // "running" is a claim about a process. Say it only when the pid was probed
@@ -2675,15 +2890,93 @@ function renderOver(){const c=$('#over');c.textContent='';const r=STATE.rollup;c
   else if(st.claim){const s=(st.claim.sessionId||'').slice(0,8);
    runBadge=el('span',{class:'badge claim',title:'claimed'+(st.claim.branch?' on '+st.claim.branch:'')},'◷ claimed'+(s?' · '+s:''));}
   const areaBadges=(p.area||[]).map(a=>el('span',{class:'badge area',title:'area'},a));
-  card.append(el('div',{class:'row'},el('span',{class:'mono',style:'flex:0 0 3rem'},p.id),
-   el('span',{style:'flex:1 1 10rem'},p.title||''),el('span',{class:'st','data-status':p.status||''},label(p.status)),
+  // One control, not a row with a handler bolted on: keyboard reachable and
+  // announced as pressable without a hand-written role/tabindex/keydown trio.
+  return el('button',{class:'ovrow',type:'button','data-status':p.status||'','data-phase':p.id,
+    title:'open '+p.id+' in Composition',onclick:()=>openInComp(p.id)},
+   el('span',{class:'pid'},p.id),
+   el('span',{class:'ptitle'},p.title||''),
+   el('span',{class:'st','data-status':p.status||''},label(p.status)),
    areaBadges,runBadge,
-   el('span',{class:'bar'},el('i',{style:'width:'+pct+'%'})),el('span',{class:'mut'},p.done+'/'+p.total)));});
- const t=r.tasks,b=r.bugs;
- card.append(el('h2',{},'Totals'),el('div',{class:'row'},
-   el('span',{class:'chip'},'tasks '+t.total),el('span',{class:'chip'},'bugs '+b.total),
-   el('span',{class:'chip'},'open bugs '+b.open),el('span',{class:'chip'},'ready '+ (r.ready||[]).length)));
- c.append(card);}
+   OVF.ts?el('span',{class:'ovmatch'},((pStatus[p.id]||{})[OVF.ts]||0)+' '+label(OVF.ts).toLowerCase()):null,
+   el('span',{class:'bar'},el('i',{style:'width:'+w+'%'})),
+   el('span',{class:'mut'},p.done+'/'+p.total),
+   // The line the plan is actually about. It was in the rollup all along and the
+   // panel showed the title, which says what the phase is called, not what it is for.
+   p.desiredOutcome?el('span',{class:'ovout',title:p.desiredOutcome},p.desiredOutcome):null);}
+ if(!ordered.length){
+  card.append(el('div',{class:'ovempty'},'No phase matches this filter. ',
+    el('button',{class:'btn small',type:'button','data-ovclear':'1',
+      onclick:()=>{OVF.q='';OVF.ts='';OVF.bs='';renderOver();}},'Clear filters')));}
+ else if(OVF.byArea){
+  // A phase with two tags is listed under both — the same rule the rollup counts
+  // by, so the group headings add up to more than the plan when tags overlap, and
+  // saying so here is cheaper than a reader discovering it by arithmetic.
+  areaTags.sort().forEach(tag=>{
+   const inTag=ordered.filter(p=>(p.area||[]).includes(tag));
+   if(!inTag.length)return;
+   const g=r.areas[tag]||{};
+   card.append(el('div',{class:'ovgrp'},el('span',{class:'gname'},tag),
+     el('span',{class:'mut'},inTag.length+' of '+g.phases+' phases · '+g.done+'/'+g.total+' tasks')));
+   inTag.forEach(p=>card.append(phaseRow(p)));});
+  const untagged=ordered.filter(p=>!(p.area||[]).length);
+  if(untagged.length){card.append(el('div',{class:'ovgrp'},el('span',{class:'gname'},'untagged'),
+    el('span',{class:'mut'},untagged.length+' phases')));
+   untagged.forEach(p=>card.append(phaseRow(p)));}}
+ else ordered.forEach(p=>card.append(phaseRow(p)));
+ count.textContent=ovAnyFilter()?(ordered.length+' / '+r.phases.length+' phases')
+   :(r.phases.length+' phases · '+r.tasks.total+' tasks');
+ c.append(card);
+
+ // --- ready now ----------------------------------------------------------------
+ const tById={};tasks.forEach(t=>{tById[t.id]=t;});
+ // Deliberately NOT scoped by the strips: this is the do-something-now list, and a
+ // filter set to look at what is blocked must not empty the one card that says
+ // where to start.
+ const ready=r.ready||[];
+ const rcard=el('div',{class:'card'});
+ rcard.append(h2h('Ready now',
+   'Tasks whose blockers are all done and whose phase is not gated — the ones /audit:run '
+   +'will accept right now. Copy the command rather than retyping an id.'));
+ if(!ready.length)rcard.append(el('div',{class:'mut'},
+   r.tasks.total?'Nothing is ready: every pending task is waiting on something, or there is nothing left to do.'
+     :'No tasks yet.'));
+ const RSHOW=8;
+ ready.slice(0,RSHOW).forEach(id=>{const t=tById[id]||{};
+  const cmd='/audit:run '+id;
+  rcard.append(el('div',{class:'rdy'},el('code',{class:'rcmd'},cmd),
+    el('span',{class:'rt',title:t.title||''},t.title||''),
+    t.phaseId?el('span',{class:'mut'},t.phaseId):null,
+    el('button',{class:'btn small',type:'button','data-copy':cmd,
+      onclick:e=>ovCopy(e.currentTarget,cmd)},'Copy')));});
+ if(ready.length>RSHOW)rcard.append(el('div',{class:'mut'},
+   '+'+(ready.length-RSHOW)+' more ready — see Composition'));
+ c.append(rcard);
+
+ // --- bugs ---------------------------------------------------------------------
+ const bugs=STATE.bugs||[];
+ if(bugs.length){
+  const bcard=el('div',{class:'card'});
+  bcard.append(h2h('Bugs',
+    'Status here is the EFFECTIVE status the totals above count: a bug materialized '
+    +'into a task reads Fixed once that task is done, so the list and the pills can '
+    +'never disagree.'));
+  const rows=bugs.filter(b=>OVF.bs?(OVF.bs==='!high'?(b.open&&b.high):b.status===OVF.bs):true);
+  if(!rows.length)bcard.append(el('div',{class:'ovempty'},'No bug matches this filter.'));
+  rows.slice(0,20).forEach(b=>{
+   bcard.append(el('div',{class:'rdy'},el('span',{class:'mono'},b.id||''),
+     el('span',{class:'rt',title:b.title||''},b.title||''),
+     b.severity?el('span',{class:'sev'+(b.high?' high':'')},b.severity):null,
+     el('span',{class:'st','data-status':b.status||''},label(b.status)),
+     // A bug whose status came from its task should say where it came from, or it
+     // reads as something somebody typed into the manifest by hand.
+     b.taskId?el('span',{class:'mut',title:'materialized as '+b.taskId
+       +(b.reported&&b.reported!==b.status?' (reported '+label(b.reported).toLowerCase()+')':'')},
+       '→ '+b.taskId):null));});
+  if(rows.length>20)bcard.append(el('div',{class:'mut'},'+'+(rows.length-20)+' more'));
+  c.append(bcard);}
+
+ if(keepQ){const n=$('#ovq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}}
 // ---------- usage ----------
 // ONE filter state. The chart's dimension is DERIVED from it, never stored
 // separately -- an earlier version kept a parallel drill-down object and filtered
@@ -3642,6 +3935,9 @@ def _selftest():
     check("build_state has rollup + composition",
           st["rollup"] is not None and "reviewSkill" in st["composition"]["meta"])
     check("build_state reports manifestPath", bool(st["manifestPath"]))
+    check("build_state carries the bug rows the Overview lists",
+          isinstance(st.get("bugs"), list)
+          and build_state(tmp)["bugs"] == [])   # no manifest -> empty, never absent
 
     # D9 — runStatus ("who's running what"): per-phase lock + claim
     check("build_state has runStatus",
@@ -3925,6 +4221,95 @@ def _selftest():
     check("composition is a compact collapsible filterable table",
           "comptools" in UI_HTML and "table.comp" in UI_HTML and "needs skills" in UI_HTML
           and "tr.phase" in UI_HTML and "class:'tsk'" not in UI_HTML)
+
+    # --- overview (panel c4) ------------------------------------------------
+    # The rollup already carried tasks.byStatus, bugs.byStatus, areas and ready[];
+    # the tab showed four grey total chips and threw the rest away.
+    check("overview: the status strips are the legend AND the filter, one control "
+          "for one set of numbers",
+          "function ovPill" in UI_HTML and ".ovpill{" in UI_HTML
+          and "OVF.ts=OVF.ts===s?'':s" in UI_HTML
+          and "OVF.bs=OVF.bs===s?'':s" in UI_HTML
+          # the four grey totals the strips replace
+          and "'ready '+ (r.ready||[]).length" not in UI_HTML)
+    check("overview: a selected pill is not selected by colour alone",
+          '.ovpill[aria-pressed=true]::before{content:"\\2713\\a0"' in UI_HTML
+          and "'aria-pressed':on?'true':'false'" in UI_HTML)
+    check("overview: high-severity is a severity cut, not a status - it never "
+          "borrows another status's machine value for its colour",
+          "'High severity, open'" in UI_HTML
+          and ".ovpill.hi{--st:var(--err)}" in UI_HTML
+          and "ovPill('blocked'" not in UI_HTML)
+    # A filter held in the render closure is wiped by the 5s run-status poll five
+    # seconds after it is set — the same repaint D9 deliberately kept narrow.
+    check("overview: the filter state is hoisted out of the render, so the poll "
+          "cannot wipe it",
+          "const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan'};" in UI_HTML
+          and UI_HTML.index("const OVF=") < UI_HTML.index("function renderOver"))
+    check("overview: and the caret survives a repaint mid-search",
+          "act.id==='ovq'" in UI_HTML and "n.setSelectionRange(caret,caret)" in UI_HTML)
+    check("overview: a phase row is a real button - keyboard reachable without a "
+          "hand-written role/tabindex/keydown trio",
+          "el('button',{class:'ovrow',type:'button'" in UI_HTML
+          and "role:'button'" not in UI_HTML)
+    check("overview: it opens that phase in Composition, pre-filtered, without "
+          "re-rendering the form someone may be typing in",
+          "function openInComp(pid){COMPF.q=pid;" in UI_HTML
+          and "if(COMPF.apply)COMPF.apply();showTab('comp');" in UI_HTML
+          and "onclick:()=>openInComp(p.id)" in UI_HTML)
+    check("composition's filter state is hoisted too, so it survives a re-render",
+          "const COMPF={q:'',status:'',needs:false,open:{},apply:null};" in UI_HTML
+          and "const open=COMPF.open;" in UI_HTML
+          and "COMPF.apply=()=>{q.value=COMPF.q;syncFilters();refresh();};" in UI_HTML)
+    check("overview: the phase row says what the phase is FOR, not only what it "
+          "is called",
+          "p.desiredOutcome?el('span',{class:'ovout'" in UI_HTML
+          and ".ovout{" in UI_HTML)
+    check("overview: sort and group-by-area consume the rollup's own areas registry",
+          "['plan','plan order'],['progress','progress'],['status','status']" in UI_HTML
+          and "OVF.byArea=cb.checked" in UI_HTML and "r.areas[tag]" in UI_HTML)
+    check("overview: an empty result says so and offers the way back",
+          "No phase matches this filter." in UI_HTML
+          and "'data-ovclear':'1'" in UI_HTML)
+    check("overview: ready-now hands over the command, with a fallback when the "
+          "clipboard refuses",
+          "const cmd='/audit:run '+id;" in UI_HTML and "function ovCopy" in UI_HTML
+          and "document.execCommand('copy')" in UI_HTML
+          and "could not copy — the command is " in UI_HTML)
+
+    # _bugs_view: the bug rows behind the strip. Every derived field is decided in
+    # Python by the SAME functions the rollup counts with.
+    bm = {"phases": [{"id": "P1", "title": "One", "status": "in_progress", "tasks": [
+              {"id": "P1.1", "title": "fix it", "status": "done", "bugId": "BUG-1"},
+              {"id": "P1.2", "title": "later", "status": "pending", "bugId": "BUG-2"}]}],
+          "bugs": [
+              {"id": "BUG-1", "title": "a", "status": "open", "severity": "high",
+               "taskId": "P1.1"},
+              {"id": "BUG-2", "title": "b", "status": "open", "severity": "critical",
+               "taskId": "P1.2"},
+              {"id": "BUG-3", "title": "c", "status": "wontfix", "severity": "high"}]}
+    bv = _bugs_view(bm)
+    by_id = {b["id"]: b for b in bv}
+    check("_bugs_view resolves a bug through its task: fixed when the task is done, "
+          "with the stored value kept so it does not read as hand-edited",
+          by_id["BUG-1"]["status"] == "fixed" and by_id["BUG-1"]["reported"] == "open"
+          and by_id["BUG-2"]["status"] == "open")
+    check("_bugs_view names the phase behind the linked task",
+          by_id["BUG-1"]["phaseId"] == "P1")
+    # A regex in the browser would be a third opinion on 'is this high?' — and the
+    # first spelling it would miss is `critical`, which is the one that matters.
+    _rup = _cores()[2].rollup(bm, [], [])
+    check("_bugs_view's open/high agree with the rollup's counts, by construction",
+          sum(1 for b in bv if b["open"]) == _rup["bugs"]["open"]
+          and sum(1 for b in bv if b["open"] and b["high"])
+          == _rup["bugs"]["openHighSeverity"] == 1
+          and by_id["BUG-2"]["high"] is True)
+    check("the browser is handed those verdicts rather than re-deriving them",
+          "b.open&&b.high" in UI_HTML and "STATE.bugs" in UI_HTML
+          and "severity" not in UI_HTML[UI_HTML.index("const rows=bugs.filter"):
+                                        UI_HTML.index("const rows=bugs.filter") + 120])
+    check("_bugs_view on a manifest with no bugs is an empty list, not an error",
+          _bugs_view({"phases": []}) == [])
 
     # --- usage tab ---------------------------------------------------------
     check("usage tab is registered and has a view container",
