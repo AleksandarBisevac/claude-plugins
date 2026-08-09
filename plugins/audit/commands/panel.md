@@ -55,6 +55,14 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   outcome and opening that phase in Composition, and a **Ready now** card with the exact
   `/audit:run <id>` to copy. Bug statuses here are *effective* — a bug materialized into a task
   reads `Fixed` once that task is done, which is what the counts above them use.
+- **Usage** — what the plan cost, recomputed in the browser on every filter change. KPI tiles
+  carry a sparkline and a trend against the window before (all-time compares the ledger's last
+  30 days with the 30 before them — anchored on the data, so a finished project still shows a
+  trend — and the chip names both periods). Filter by model, author, phase, task, agent or
+  attribution, by free text over ids *and* titles, and by an absolute from/to window that
+  writes the same filter a click on the chart does. **Export CSV** downloads exactly the rows
+  behind the view, with the span and bucket resolution in the filename. Every scope shows as a
+  chip you can take off; `Esc` pops the last one.
 
 Safety: binds `127.0.0.1` only, requires a per-launch token on every API call, and refuses
 any write whose path escapes the project directory. Ephemeral — it runs until you `stop` it.
