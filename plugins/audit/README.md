@@ -34,9 +34,15 @@ toggle** (it follows your OS by default). It's **responsive**, too: on phones an
 tables scroll inside their own frame ([mobile](../../docs/screenshots/mobile.png)). The
 [`examples/`](../../examples/) folder holds the manifest behind it.
 
-| Overview | Expand a phase | Filter by status | Dark mode |
-|---|---|---|---|
-| [![overview](../../docs/screenshots/overview.png)](../../docs/screenshots/overview.png) | [![expanded](../../docs/screenshots/expanded.png)](../../docs/screenshots/expanded.png) | [![filtered](../../docs/screenshots/filtered.png)](../../docs/screenshots/filtered.png) | [![dark mode](../../docs/screenshots/dark.png)](../../docs/screenshots/dark.png) |
+| Overview | Expand a phase | Filter by status | More filters (model + dates) | Dark mode |
+|---|---|---|---|---|
+| [![overview](../../docs/screenshots/overview.png)](../../docs/screenshots/overview.png) | [![expanded](../../docs/screenshots/expanded.png)](../../docs/screenshots/expanded.png) | [![filtered](../../docs/screenshots/filtered.png)](../../docs/screenshots/filtered.png) | [![more filters](../../docs/screenshots/filters.png)](../../docs/screenshots/filters.png) | [![dark mode](../../docs/screenshots/dark.png)](../../docs/screenshots/dark.png) |
+
+Filters are the report's, not a viewer's: text, phase status, per-task **model** and a
+**worked-between** date range whose 7/30-day presets count back from the last day the plan
+recorded work — not from today, so a finished plan does not present three empty windows. A
+filtered view is a link (the state rides in the `#!` fragment), a collapsed phase says how many
+of its tasks matched, and nothing auto-expands. **Save as PDF** prints A4 in either orientation.
 
 ## Control panel
 
@@ -70,21 +76,23 @@ The topbar names the identity a write is recorded under (`viewing as …`, resol
 token ledger resolves a spender — see `usage.authorMode`), and Usage's **my spend** chip filters
 on that same name.
 
-| Settings | Composition (compact/collapsible) | Composition expanded | Dark |
-|---|---|---|---|
-| [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
+| Settings | Composition (compact/collapsible) | Composition expanded | Save shows every change | Dark |
+|---|---|---|---|---|
+| [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![the confirm dialog listing three changes](../../docs/screenshots/panel-confirm.png)](../../docs/screenshots/panel-confirm.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
 
 The **Overview** tab is a live validation + progress rollup you can steer by — status strips that
 are both legend and filter, search, sort, group-by-area, each phase row carrying its desired
 outcome and opening that phase in Composition, and a *Ready now* card with the `/audit:run <id>`
 to copy — and the Composition tab lists the
 **building blocks it discovered** (skills · agents · MCP servers, from this repo + `~/.claude/` +
-installed plugins) — the names that feed the autocomplete. Both scale cleanly (the shots below are
-a 50-phase × 1000-task manifest):
+installed plugins) — the names that feed the autocomplete. The **Usage** tab is the token ledger
+with the filters on top of it (see [Token usage](#token-usage)). All of it scales, and all of it
+works on a phone — the shots below are a 50-phase × 1000-task manifest, and the last one is that
+same panel at 390px:
 
-| Overview (live rollup) | Discovered building blocks |
-|---|---|
-| [![panel overview](../../docs/screenshots/panel-overview.png)](../../docs/screenshots/panel-overview.png) | [![panel building blocks](../../docs/screenshots/panel-blocks.png)](../../docs/screenshots/panel-blocks.png) |
+| Overview (live rollup) | Discovered building blocks | Usage (filters, sparklines, CSV) | On a phone |
+|---|---|---|---|
+| [![panel overview](../../docs/screenshots/panel-overview.png)](../../docs/screenshots/panel-overview.png) | [![panel building blocks](../../docs/screenshots/panel-blocks.png)](../../docs/screenshots/panel-blocks.png) | [![panel usage](../../docs/screenshots/panel-usage.png)](../../docs/screenshots/panel-usage.png) | [![the panel at 390px](../../docs/screenshots/panel-mobile.png)](../../docs/screenshots/panel-mobile.png) |
 
 ## What you get
 
