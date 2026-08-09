@@ -65,7 +65,10 @@ that scales to hundreds of tasks — phases are collapsed by default; expand onl
 |---|---|---|---|
 | [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
 
-The **Overview** tab is a live validation + progress rollup, and the Composition tab lists the
+The **Overview** tab is a live validation + progress rollup you can steer by — status strips that
+are both legend and filter, search, sort, group-by-area, each phase row carrying its desired
+outcome and opening that phase in Composition, and a *Ready now* card with the `/audit:run <id>`
+to copy — and the Composition tab lists the
 **building blocks it discovered** (skills · agents · MCP servers, from this repo + `~/.claude/` +
 installed plugins) — the names that feed the autocomplete. Both scale cleanly (the shots below are
 a 50-phase × 1000-task manifest):

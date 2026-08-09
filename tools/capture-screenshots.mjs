@@ -223,6 +223,160 @@ async function assertThemeMovesNativeControls(page, label, toggleSel) {
   }
 }
 
+/**
+ * Overview is a filter, not a poster — so drive it.
+ *
+ * A panel selftest can only assert that a string is present in the document; it
+ * cannot tell a working view from a dead one, and the panel has already shipped an
+ * inline script with a missing paren while 209/209 string pins passed. Everything
+ * below is asserted against an INDEPENDENT count taken from `STATE` in the page —
+ * the manifest the server sent — rather than against the rendering path's own idea
+ * of what it drew, so a filter that quietly matches everything fails here.
+ *
+ * The strip/pill count is deliberately not asserted to DROP: on a plan whose tasks
+ * all share one status the correct filtered set is every phase, and calling that
+ * "inert" is exactly the false accusation check-report-interactive.mjs made once
+ * (see F3). The oracle is the expected set, computed here; equality holds either way.
+ */
+async function assertOverviewWorks(page) {
+  const facts = await page.evaluate(() => {
+    const rollup = STATE.rollup || {};
+    const tasks = (STATE.composition || {}).tasks || [];
+    const byStatus = {};
+    for (const t of tasks) {
+      (byStatus[t.status] = byStatus[t.status] || new Set()).add(t.phaseId);
+    }
+    return {
+      phases: (rollup.phases || []).length,
+      statuses: Object.fromEntries(
+        Object.entries(byStatus).map(([s, set]) => [s, set.size])),
+      areas: Object.keys(rollup.areas || {}).length,
+      untagged: (rollup.phases || []).filter((p) => !(p.area || []).length).length,
+      ready: (rollup.ready || []).length,
+      outcomes: (rollup.phases || []).filter((p) => p.desiredOutcome).length,
+      firstPhase: (rollup.phases || [])[0] ? (rollup.phases || [])[0].id : null,
+    };
+  });
+  const rows = () => page.locator('#over .ovrow:visible').count();
+
+  const pills = await page.locator('#over .ovpill').count();
+  if (!pills) { fail('overview: no summary pills — the rollup strips did not render'); return; }
+  if (await rows() !== facts.phases) {
+    fail(`overview: ${await rows()} phase rows for ${facts.phases} phases in the rollup`);
+  }
+  if (facts.outcomes && !(await page.locator('#over .ovout').count())) {
+    fail(`overview: ${facts.outcomes} phases carry a desiredOutcome and none is shown`);
+  }
+
+  // A task-status pill scopes the phase list to the phases carrying that status.
+  const [status, expected] = Object.entries(facts.statuses)[0] || [];
+  if (status) {
+    const pill = page.locator(`#over .ovpill[data-status="${status}"]`).first();
+    await pill.click();
+    await page.waitForTimeout(150);
+    const got = await rows();
+    const pressed = await pill.getAttribute('aria-pressed');
+    if (got !== expected) {
+      fail(`overview: filtering to "${status}" shows ${got} phase rows, but ${expected} `
+         + `phases carry a ${status} task`);
+    } else if (pressed !== 'true') {
+      fail(`overview: the "${status}" pill filters but never says it is on `
+         + `(aria-pressed=${pressed})`);
+    } else {
+      note(`overview: "${status}" pill -> ${got}/${facts.phases} phases, aria-pressed set`);
+    }
+    if (!(await page.locator('#over [data-ovclear]').count())) {
+      fail('overview: a filter is on and there is no way back — no Clear filters button');
+    }
+    await page.locator('#over [data-ovclear]').first().click();
+    await page.waitForTimeout(150);
+    if (await rows() !== facts.phases) fail('overview: Clear filters did not restore every phase');
+  }
+
+  // Search reaches the phase's own fields — id, title, area tags and the
+  // desiredOutcome. The expected set is computed from STATE by the same substring
+  // rule rather than assumed to be one row: "P1" is a prefix of P10..P19, and an
+  // assertion of 1 would be testing the fixture's id scheme, not the search.
+  if (facts.firstPhase) {
+    for (const term of [facts.firstPhase, 'zzq-matches-nothing']) {
+      const want = await page.evaluate((t) => (STATE.rollup.phases || []).filter((p) =>
+        (p.id + ' ' + (p.title || '') + ' ' + (p.area || []).join(' ') + ' '
+         + (p.desiredOutcome || '')).toLowerCase().includes(t.toLowerCase())).length, term);
+      await page.fill('#ovq', term);
+      await page.waitForTimeout(250);
+      const got = await rows();
+      if (got !== want) fail(`overview: searching "${term}" shows ${got} phases, ${want} match`);
+      else if (!want && !(await page.locator('#over .ovempty').count())) {
+        fail('overview: a search that matches nothing shows an empty list and no empty state');
+      }
+    }
+    note('overview: search filters phases and says so when nothing matches');
+    await page.fill('#ovq', '');
+    await page.waitForTimeout(250);
+  }
+
+  // Group by area, from the rollup's own registry.
+  if (facts.areas) {
+    await page.check('#ovarea');
+    await page.waitForTimeout(200);
+    const groups = await page.locator('#over .ovgrp').count();
+    const want = facts.areas + (facts.untagged ? 1 : 0);
+    if (groups !== want) fail(`overview: grouping by area drew ${groups} groups, expected ${want}`);
+    else note(`overview: grouped into ${groups} area groups`);
+    await page.uncheck('#ovarea');
+    await page.waitForTimeout(200);
+  }
+
+  // Ready-now is the card you act from: it must carry a real, copyable command.
+  if (facts.ready) {
+    const cmd = await page.locator('#over .rdy .rcmd').first().textContent();
+    if (!/^\/audit:run \S+/.test(cmd || '')) {
+      fail(`overview: ${facts.ready} tasks are ready and the card shows "${cmd}"`);
+    } else {
+      note(`overview: ready-now offers ${cmd}`);
+    }
+  }
+
+  // A phase row is a control: it opens that phase in Composition, pre-filtered.
+  if (facts.firstPhase) {
+    await page.locator('#over .ovrow').first().click();
+    await page.waitForTimeout(300);
+    const landed = await page.evaluate((pid) => {
+      const visible = [...document.querySelectorAll('#comp tr.phase')]
+        .filter((r) => r.offsetParent !== null);
+      // The row whose id cell IS this phase — startsWith would also collect
+      // P10..P19 when the target is P1, and then nothing here is being measured.
+      const mine = visible.filter((r) => {
+        const cell = r.querySelector('.mono');
+        return cell && cell.textContent === pid;
+      });
+      return {
+        hash: location.hash,
+        hidden: document.getElementById('comp').classList.contains('hidden'),
+        q: (document.querySelector('#comp input[type=search]') || {}).value,
+        rows: visible.length,
+        total: document.querySelectorAll('#comp tr.phase').length,
+        // Filtered to it AND opened on it: landing on a collapsed row in a scrolled
+        // table is not "pre-filtered", it is the same table with fewer rows.
+        open: mine.length === 1 && mine[0].classList.contains('open'),
+      };
+    }, facts.firstPhase);
+    if (landed.hidden || landed.hash !== '#/comp') {
+      fail(`overview: clicking a phase row did not open Composition (hash ${landed.hash})`);
+    } else if (landed.q !== facts.firstPhase || landed.rows >= landed.total || !landed.open) {
+      fail(`overview: Composition did not open on ${facts.firstPhase} — search is `
+         + `"${landed.q}", ${landed.rows}/${landed.total} phase rows visible, `
+         + `target row expanded: ${landed.open}`);
+    } else {
+      note(`overview: a phase row opens Composition filtered to ${facts.firstPhase} `
+         + `(${landed.rows}/${landed.total} rows)`);
+    }
+    await page.fill('#comp input[type=search]', '');
+    await page.click('.tab[data-t=over]');
+    await page.waitForTimeout(200);
+  }
+}
+
 async function shot(page, name, { full = false } = {}) {
   await settle(page);
   if (CHECK) return;
@@ -414,6 +568,7 @@ async function main() {
         null, { timeout: 20000 });
       await page.evaluate(() => window.scrollTo(0, 0));
       await shot(page, 'panel-overview', { full: true });
+      await assertOverviewWorks(page);
 
       await page.click('.tab[data-t=usage]');
       await page.waitForTimeout(600);
