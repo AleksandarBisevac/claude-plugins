@@ -299,6 +299,19 @@ jobs:
                    docs/demo-large.html; do
             node tools/check-report-interactive.mjs "$f"
           done
+          # ...and one report none of those three can stand in for: a plan whose
+          # phases ALL share one status. All three above have a mix, so the checker's
+          # one-status path ran nowhere in CI — and it was wrong. It asserted that
+          # clicking a status chip drops rows, which is false by construction when
+          # every phase carries that status, so the tool printed REPORT IS INERT and
+          # exited 1 against a working report on what is simply the normal END STATE
+          # of a plan: everything done. This repo's own manifest is exactly that, so
+          # the case now has a permanent fixture rather than being rediscovered by
+          # whoever next finishes a plan and runs the tool on it.
+          rm -rf /tmp/one-status && mkdir -p /tmp/one-status
+          python plugins/audit/scripts/render-report.py docs/audit/audit-plan.json \
+            --out-dir /tmp/one-status --format html
+          node tools/check-report-interactive.mjs /tmp/one-status/*.html
       - name: JSON Schema validation (ajv, draft 2020-12)
         run: |
           npx --yes ajv-cli validate --spec=draft2020 \
