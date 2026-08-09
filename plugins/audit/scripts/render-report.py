@@ -250,7 +250,17 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
    so they stay reachable while you scroll the table they filter — and stop
    existing once you have scrolled past it. */
 .sectools{position:sticky;top:var(--sticky-2);z-index:var(--z-sectools);padding:.5rem .75rem;margin:0 0 .75rem;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)}
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  transition:box-shadow var(--dur) var(--ease)}
+/* Stuck, this bar is drawn OVER the rows it filters and has to read as a layer
+   rather than as the row it happens to be covering — the same shadow the top bar
+   takes for the same reason. It cannot be a permanent shadow: at rest the bar sits
+   in the flow directly above the table, and a card floating over nothing is a
+   promise about scroll position that the page has not made. There is no CSS
+   selector for "currently stuck", so the class is toggled from the one scroll
+   listener that already runs, by comparing the bar's own top against the sticky
+   offset it computed from --sticky-2 — no sentinel element, no second observer. */
+.sectools.stuck{box-shadow:var(--shadow-sm)}
 @media print{.sectools{display:none!important}}
 #audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
@@ -519,6 +529,32 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   thead th{position:static}
   thead th:first-child,thead th:last-child,
   tbody tr:last-child td:first-child,tbody tr:last-child td:last-child{border-radius:0}
+  /* The More-filters panel comes back INTO the flow, and this is a correctness fix
+     wearing a breakpoint. Out of flow it is hung from its control's right edge at
+     `min-width:32rem` — and min-width beats max-width, so `max-width:calc(100vw -
+     2rem)` never capped anything. Measured on a 390px viewport: a 512px panel
+     spanning x=-353 to x=159, with BOTH date inputs at -225..-100, i.e. entirely
+     off the left of the screen. Not clipped-but-scrollable either — the document's
+     scrollWidth stayed 390, so there was no way to reach them at all. The whole
+     date-range filter was unreachable on a phone.
+     In flow it cannot leave the viewport, and the reason it is out of flow does not
+     apply here: absolute positioning buys a constant --sectools-h so that opening
+     the panel never moves the column headers and anchors under a reader mid-scroll.
+     On a phone the reader has just TAPPED the control, so the bar growing is the
+     answer to what they did — and the ResizeObserver on .sectools re-measures the
+     stack either way, so nothing downstream is left pointing at the old height. */
+  .filterpanel{position:static;min-width:0;max-width:none;flex-basis:100%;
+    margin-top:.5rem;box-shadow:none}
+  /* ...and in flow it takes the bar with it, which the bar cannot stay sticky
+     through. Measured at 390x780: the bar is 156px shut and 481px open — 62% of
+     the screen, pinned, over the very rows it is filtering. Sticky exists to keep
+     controls reachable while the content scrolls; a control that covers the
+     content has stopped doing that. Open, it scrolls away like the block of
+     controls it now is; closed, the rule stops matching and the bar is sticky
+     again, with no state kept anywhere. A browser without `:has()` drops this one
+     rule and keeps the panel fix above — the selector is a lower bar than the
+     `color-mix()` this sheet already paints every status pill with. */
+  .sectools:has(.fdetails[open]){position:static}
 }
 @media (max-width:40rem){
   body{padding:1.5rem .75rem 3rem;font-size:14.5px}
@@ -528,6 +564,34 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   .toolbar{gap:.5rem .5rem}
   #audit-q{flex-basis:100%;order:-1}
   .bar{max-width:52vw}
+  /* A date field is the widest control the panel has and the one with the most to
+     lose from being squeezed: below its intrinsic width the UA elides the picker
+     glyph, then the year. Given the row to itself it is legible and tappable, and
+     the label above it stops reading as a caption for whatever wrapped next to it. */
+  .frow{align-items:stretch}
+  .frow input[type=date]{flex:1 1 100%;padding:.45rem .5rem}
+}
+
+/* ---- motion: a row arriving --------------------------------------------- */
+/* Expanding a phase swaps several rows in at once with no transition at all, so
+   the table simply becomes a different table and the reader has to find their
+   place in it again. A fade says WHICH rows are the new ones.
+   Opacity, and only opacity: a table row cannot be height-animated (`tr` has no
+   independent box to interpolate), and animating the cells' padding instead
+   reflows the whole table on every frame of every expand.
+   `@starting-style` is the entire mechanism — a browser that does not know the
+   at-rule drops it with its block and the rows appear instantly, which is the
+   existing behaviour. That is why the reveal is stated this way rather than as a
+   keyframe animation: this stylesheet has already pinned two blocks at opacity 0
+   forever, when `fadeUp`'s easing token stopped resolving (see @keyframes above).
+   An animation whose failure mode is "invisible" is a bad trade for a fade; a
+   starting style's failure mode is "no fade", and `check-report-interactive.mjs`
+   asserts every revealed row settles at opacity 1 in a real browser.
+   Screen only. Print takes its snapshot when it takes it, and a transition mid-run
+   would put a half-faded row on paper. */
+@media screen and (prefers-reduced-motion:no-preference){
+  tr.task{transition:opacity var(--dur) var(--ease)}
+  @starting-style{tr.task{opacity:0}}
 }
 
 /* ---- reduced motion ------------------------------------------------------ */
@@ -672,9 +736,19 @@ h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
 .rank .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rank .track{height:.5rem;background:var(--surface-2);border-radius:var(--pill);
   overflow:hidden}
-.rank .track i{display:block;height:100%;border-radius:var(--pill)}
+.rank .track i{display:block;height:100%;border-radius:var(--pill);
+  transition:filter var(--dur) var(--ease)}
 .rank .amt{font-size:.72rem;color:var(--muted);white-space:nowrap;
   font-variant-numeric:tabular-nums}
+/* Every rank row carries a tooltip — five figures the row itself has no space for
+   — and nothing about the row said so, so the numbers were there and unfindable.
+   The bar brightens under the pointer: the affordance is on the mark the tooltip
+   is about, and `cursor:help` names what the pointer will get. Deliberately not a
+   background change on the row; these sit three-across in a grid and a full-row
+   tint at that density reads as a selection the reader did not make. */
+.rank{cursor:help}
+.rank:hover .track i{filter:brightness(1.15)}
+.rank:hover .nm{color:var(--text)}
 /* One shared tooltip element, moved on hover. Its content is NOT a second copy of
    the numbers: it is the `title` already on the mark, re-rendered. With JS off the
    browser shows the same text natively, so the file still explains itself from a
@@ -768,7 +842,15 @@ details.more>summary:hover{color:var(--text)}
 .hm th{font-weight:500;color:var(--muted);padding:0 var(--sp-0);text-align:right;
   white-space:nowrap}
 .hm td{padding:0}
-.hm i{display:block;width:20px;height:15px;border-radius:2px;background:var(--hm-0)}
+.hm i{display:block;width:20px;height:15px;border-radius:2px;background:var(--hm-0);
+  cursor:help}
+/* 168 cells, each with a tooltip naming its day, hour and token count, and no cell
+   ever indicated that. An OUTLINE rather than a border or a transform: outlines are
+   drawn outside the box and take no space, so hovering one cell of a 24x7 grid
+   cannot nudge the other 167 — which a border would, on every mouse move across the
+   chart. --text rather than the accent, because the cell underneath is already one
+   of seven accent tints and an eighth would be lost among them. */
+.hm i:hover{outline:2px solid var(--text);outline-offset:1px}
 .hm i[data-l="1"]{background:var(--hm-1)}.hm i[data-l="2"]{background:var(--hm-2)}
 .hm i[data-l="3"]{background:var(--hm-3)}.hm i[data-l="4"]{background:var(--hm-4)}
 .hm i[data-l="5"]{background:var(--hm-5)}.hm i[data-l="6"]{background:var(--hm-6)}
@@ -905,11 +987,32 @@ _SCRIPT = r"""<script>
     });
   }
 
-  // One scroll listener drives both the marker and the bar's elevation, coalesced
-  // to a frame: scroll fires far faster than the screen repaints.
+  // One scroll listener drives the marker and BOTH bars' elevation, coalesced to a
+  // frame: scroll fires far faster than the screen repaints.
   var ticking = false;
+  var sectools = document.querySelector('.sectools');
   function onScroll() {
     if (toolbar) toolbar.classList.toggle('scrolled', (window.scrollY || 0) > 8);
+    // The filter bar is stuck when its own top has reached the offset it is stuck
+    // AT, which the stylesheet computed from --sticky-2 and the browser has already
+    // resolved to pixels. Asking for it rather than recomputing the stack here
+    // keeps one definition of where this bar sits: the CSS. `scrollY > n` would be
+    // wrong the moment anything above the table changes height, which is most of
+    // what the top of this report does.
+    // Three conditions, and the two beyond the obvious one are both states this
+    // bar really reaches. It stops being sticky at all on a narrow screen with the
+    // filter panel open (see the 52rem block), where `top` is `auto` and there is
+    // nothing to be stuck against. And sticky only holds while its section is in
+    // view: scroll past the phases table and the bar goes with it, leaving a top
+    // far ABOVE the stick line — which the first version read as "stuck" and
+    // elevated an element nobody could see.
+    if (sectools) {
+      var cs = getComputedStyle(sectools);
+      var stickAt = parseFloat(cs.top);
+      var sr = sectools.getBoundingClientRect();
+      sectools.classList.toggle('stuck',
+        cs.position === 'sticky' && sr.top <= stickAt + 1 && sr.bottom > stickAt);
+    }
     markSpy();
   }
   window.addEventListener('scroll', function () {
@@ -3925,6 +4028,76 @@ def _selftest():
           ".chip,.fill,.rchip,.heldby,.bandpill,.dl,tr.phase>td::before,"
           in _CSS and ".rank .track i,.bud .track i{"
           "-webkit-print-color-adjust:exact;print-color-adjust:exact}" in _CSS)
+
+    # ---- c7: the polish, and the one control that was unreachable ---------
+    # The headline here is not polish. `.filterpanel` is hung out of flow at
+    # `min-width:32rem`, and MIN-WIDTH BEATS MAX-WIDTH - so the `max-width:calc(
+    # 100vw - 2rem)` written to cap it to the viewport never capped anything.
+    # Measured on a 390px viewport before the fix: a 512px panel spanning x=-353
+    # to x=159, both date inputs at -225..-100, i.e. entirely off the left of the
+    # screen, with document.scrollWidth still 390 - so not even scrollable to.
+    # The whole date-range filter was unreachable on a phone.
+    #
+    # These are string pins and they cannot see any of that: every one of them was
+    # green while the panel was off-screen. The check with teeth is in
+    # tools/check-report-interactive.mjs, which opens the panel at 390x780 and
+    # asserts every control's box lies inside the viewport.
+    _tablet = _CSS[_CSS.index("@media (max-width:52rem)"):]
+    _tablet = _tablet[:_tablet.index("@media (max-width:40rem)")]
+    check("c7: the filter panel comes back into the flow on a small screen, "
+          "where out of flow it hung its date inputs off the side of the page",
+          ".filterpanel{position:static;min-width:0;max-width:none" in _tablet)
+    # In flow the panel's height is the BAR's height, and a sticky bar 62% of the
+    # viewport tall is a control that covers the content it filters.
+    check("c7: ...and the bar stops being sticky while it carries it, rather "
+          "than pinning 62% of a phone screen over the table",
+          ".sectools:has(.fdetails[open]){position:static}" in _tablet)
+    _mobile = _CSS[_CSS.index("@media (max-width:40rem)"):]
+    check("c7: a date field takes the row rather than being squeezed until the "
+          "UA elides its year",
+          ".frow input[type=date]{flex:1 1 100%" in _mobile)
+
+    # Elevation that says "this is stuck", the same statement the top bar makes.
+    # There is no selector for it, so the class is toggled from the ONE scroll
+    # listener that already runs - and the condition is read out of the CSS rather
+    # than recomputed, so where this bar sits has one definition.
+    check("c7: the filter bar reads as a layer once it is stuck, not before",
+          ".sectools.stuck{box-shadow:var(--shadow-sm)}" in _CSS
+          and "transition:box-shadow var(--dur) var(--ease)" in _CSS)
+    check("c7: ...decided from the bar's own resolved sticky offset, not from a "
+          "scrollY threshold that goes wrong the moment anything above it moves",
+          "getComputedStyle(sectools)" in _SCRIPT
+          and "classList.toggle('stuck'" in _SCRIPT)
+    # Two states this bar really reaches and a naive `top <= stickAt` gets wrong:
+    # not sticky at all (narrow + panel open, above), and scrolled past with its
+    # section, where the top is far ABOVE the stick line.
+    check("c7: ...and it is not 'stuck' when it is not sticky, nor when the "
+          "table has scrolled away and taken it with it",
+          "cs.position === 'sticky'" in _SCRIPT and "sr.bottom > stickAt" in _SCRIPT)
+
+    # A table row cannot be height-animated, so the reveal is opacity alone, and
+    # it is a STARTING STYLE rather than a keyframe animation on purpose: an
+    # unsupported at-rule is dropped with its block and the rows simply appear.
+    # This sheet has already pinned two blocks at opacity 0 forever by animating a
+    # reveal (`fadeUp`, when its easing token stopped resolving), which is why
+    # check-report-interactive.mjs asserts every revealed row settles at 1.
+    check("c7: an expanded task row fades in, so the reader can see which rows "
+          "are the new ones",
+          "@starting-style{tr.task{opacity:0}}" in _CSS
+          and "tr.task{transition:opacity var(--dur) var(--ease)}" in _CSS)
+    check("c7: ...on screen only - a transition caught mid-run would put a "
+          "half-faded row on paper",
+          "@media screen and (prefers-reduced-motion:no-preference){" in _CSS)
+
+    # 168 heatmap cells and 11 rank rows, every one of them carrying a tooltip
+    # the mark itself never advertised.
+    check("c7: a heatmap cell says it is hoverable - and with an OUTLINE, which "
+          "takes no space, so hovering one cell cannot nudge the other 167",
+          ".hm i:hover{outline:2px solid var(--text);outline-offset:1px}" in _CSS
+          and "cursor:help" in _CSS)
+    check("c7: a rank row's bar brightens under the pointer, on the mark the "
+          "tooltip is about",
+          ".rank:hover .track i{filter:brightness(1.15)}" in _CSS)
 
     # The banner exists because a report is a file people SEND each other, and a
     # common way of opening one - an IDE preview pane - sandboxes inline <script>.
