@@ -14,6 +14,12 @@
  * assertion names which. Exit 2 = could not run (no browser, bad arguments) —
  * distinct on purpose, so a missing dependency is never read as a passing check.
  *
+ * It also drives the one output nobody opens before shipping. The print rules
+ * are checked under `emulateMedia('print')` and the orientation is read back out
+ * of a generated PDF's page box — a stylesheet can be pinned string by string
+ * and still lay the page out for the wrong medium, or refuse the reader an
+ * orientation, with every pin green.
+ *
  * Opened over `file://`, because that is how people actually open a report: the
  * product's whole sharing story before the Artifact path was "send them the HTML".
  * localStorage and clipboard behave differently on that origin, so testing over
@@ -248,6 +254,101 @@ if (await page.$('#audit-model .fchip')) {
   expect('...and takes the filter fragment out of the URL with it',
     /#!/.test(await page.evaluate(() => location.hash)), false);
 } else notes.push('ok   (this plan records no models — More filters skipped)');
+
+// 7. Paper — the one output nobody looks at before shipping, and the only part
+//    of the report a string pin genuinely cannot check: whether the print rules
+//    FIRE, and which way round the sheet is allowed to be.
+//
+//    The document is left filtered down to nothing on purpose. That is the state
+//    in which the screen and the page disagree most: the screen says no phase
+//    matched, and the page prints every one of them.
+await page.click('#audit-q');
+await page.keyboard.type('zzzznotpresentanywhere', { delay: 5 });
+await page.waitForTimeout(250);
+expect('(setting up the print check) the screen is filtered to nothing',
+  (await state()).phases, 0);
+
+// A4 portrait inside the stylesheet's 1.4cm margin is ~688px, which is INSIDE
+// the 52rem tablet breakpoint — so this is also the width at which the print
+// sheet has to undo the small-screen layout.
+const paperState = async () => {
+  await page.emulateMedia({ media: 'print' });
+  await page.setViewportSize({ width: 688, height: 900 });
+  await page.waitForTimeout(100);
+  const s = await page.evaluate(() => {
+    const vis = (el) => el && getComputedStyle(el).display !== 'none';
+    const g = document.querySelector('table.phases');
+    const rows = [...g.querySelectorAll('tbody tr.phase')];
+    const tasks = [...g.querySelectorAll('tbody tr.task')];
+    return {
+      phases: rows.filter(vis).length,
+      total: rows.length,
+      tasks: tasks.filter(vis).length,
+      totalTasks: tasks.length,
+      norows: vis(document.querySelector('tr.norows')),
+      pmatch: [...document.querySelectorAll('.pmatch')].filter(vis).length,
+      thead: getComputedStyle(g.querySelector('thead')).display,
+      wrapOverflow: getComputedStyle(g.closest('.tablewrap')).overflowX,
+      topbar: vis(document.querySelector('.topbar')),
+    };
+  });
+  await page.emulateMedia({ media: null });
+  await page.setViewportSize({ width: 1512, height: 945 });
+  return s;
+};
+
+const paper = await paperState();
+expect('on paper every phase prints, filtered or not', paper.phases, paper.total);
+expect('...and every task with them', paper.tasks, paper.totalTasks);
+expect('...so the empty state never reaches the page it contradicts', paper.norows, false);
+expect('portrait paper is not treated as a small screen (no scroll frame)', paper.wrapOverflow, 'visible');
+expect('the app shell is gone and the document is back', paper.topbar, false);
+// Restating a default, and worth asserting for what it catches rather than for
+// what it proves: deleting `thead{display:table-header-group}` does NOT turn
+// this red, because that is what a <thead> does anyway. What would is the
+// responsive pattern that rebuilds a table out of blocks — one `thead{display:
+// block}` and page two of a 40-phase plan is unlabelled cells, with the print
+// rule still sitting in the stylesheet looking correct.
+expect('the column headers repeat onto every page of a long table', paper.thead, 'table-header-group');
+
+// The match badge needs a DIFFERENT filter to be checked at all: filtered to
+// nothing there is no visible row to carry one. A partial term leaves the badge
+// on screen — asserted above — and paper prints every task it was counting, so
+// "1 of 2 match" beside both of them is the statement that must not reach it.
+if (partial) {
+  await page.click('#audit-q');
+  await page.keyboard.press('Escape');       // the setup term is still in there
+  await page.waitForTimeout(250);
+  await page.keyboard.type(partial.term, { delay: 5 });
+  await page.waitForTimeout(250);
+  const withBadge = await paperState();
+  expect('a badge counting a filtered subset never reaches a page printing all of it',
+    withBadge.pmatch, 0);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+} else notes.push('ok   (no partly-matching phase in this plan — print badge check skipped)');
+
+// The orientation itself, measured from the PDF page box rather than believed.
+// `size:A4` in the stylesheet is not a hint about paper — Chrome reads it as the
+// page box the document REQUIRES and greys the dialog's orientation control out.
+// With it present this loop produced 595x842 for BOTH calls; the nine-column
+// task table is exactly the thing that wants the other one.
+const box = async (landscape) => {
+  const pdf = await page.pdf({ preferCSSPageSize: true, landscape });
+  const m = /MediaBox\s*\[\s*[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(pdf.toString('latin1'));
+  return m ? { w: Math.round(+m[1]), h: Math.round(+m[2]) } : null;
+};
+const portrait = await box(false);
+const landscape = await box(true);
+if (!portrait || !landscape) {
+  failures.push('FAIL could not read a page box out of the generated PDF');
+} else {
+  expect('printed portrait, the page is taller than it is wide',
+    portrait.h > portrait.w, true);
+  expect(`printed landscape, the reader gets the wider page they asked for `
+    + `(portrait ${portrait.w}x${portrait.h}, landscape ${landscape.w}x${landscape.h})`,
+    landscape.w > landscape.h, true);
+}
 
 if (pageErrors.length) failures.push(`FAIL the page raised ${pageErrors.length} error(s): ${pageErrors.slice(0, 3).join(' | ')}`);
 else notes.push('ok   no page errors');
