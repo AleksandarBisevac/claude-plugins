@@ -203,17 +203,49 @@ if (!partial) {
 }
 
 // 4. A status chip in the toolbar.
-if (await page.$('#audit-phase-status .fchip')) {
+//
+// How many DISTINCT statuses the plan has decides what this step can prove. With
+// two or more, selecting one must leave the others behind, and that row count is
+// the strongest evidence available that the filter really runs. With exactly one,
+// every phase carries it, so selecting it correctly hides NOTHING — and the first
+// version of this step read that as the report being inert. It printed
+// `REPORT IS INERT` and exited 1 against a working report, on what is simply the
+// normal end state of a plan: every phase done. Found by pointing the tool at
+// this repo's own manifest, whose phases are all `done` and which therefore
+// renders exactly one chip.
+//
+// So the count is asserted only where it can move, and the wiring is asserted
+// either way — a chip that reports itself pressed and brings up the way back is a
+// chip that ran the filter. Deliberately not a skip: "one status" is the case
+// where a silently dead chip would be least likely to be noticed by hand.
+const chips = await page.$$('#audit-phase-status .fchip');
+const chipState = () => page.evaluate(() => ({
+  pressed: document.querySelector('#audit-phase-status .fchip').getAttribute('aria-pressed'),
+  clearOffered: !!document.querySelector('.sectools [data-clear]:not([hidden])'),
+}));
+if (chips.length) {
   await page.click('#audit-phase-status .fchip');
   await page.waitForTimeout(250);
   const chip = await state();
-  if (chip.phases === load.total) failures.push('FAIL a status chip filters the phase list: nothing changed');
-  else notes.push(`ok   a status chip filters the phase list: ${chip.phases} of ${load.total}`);
-
+  const on = await chipState();
+  if (chips.length > 1) {
+    if (chip.phases === load.total) {
+      failures.push(`FAIL a status chip filters the phase list: nothing changed, and this plan `
+        + `has ${chips.length} statuses — one of them has to hide the rest`);
+    } else notes.push(`ok   a status chip filters the phase list: ${chip.phases} of ${load.total}`);
+  } else {
+    expect('every phase in this plan shares one status, so its chip hides nothing '
+      + '— and must not', chip.phases, load.total);
+  }
+  expect('a status chip reports itself as on', on.pressed, 'true');
+  expect('...and a filter that is on offers the way back', on.clearOffered, true);
   expect('a status chip does not auto-expand either', chip.tasks, 0);
   await page.click('#audit-phase-status .fchip');   // release it
   await page.waitForTimeout(250);
+  const off = await chipState();
   expect('releasing the chip restores every phase', (await state()).phases, load.total);
+  expect('...and it stops reporting itself as on', off.pressed, 'false');
+  expect('...and the way back goes away with it', off.clearOffered, false);
 } else notes.push('ok   (no status chips in this report — skipped)');
 
 // 6. The More-filters panel: model, and the empty state that offers a way back.
