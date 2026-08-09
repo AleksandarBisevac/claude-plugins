@@ -42,7 +42,7 @@ claude-plugins/                           # this repo (personal, public)
   docs/audit/audit-plan.json              # DOGFOOD manifest: this repo's roadmap, CI-validated
   docs/audit/audit-report.html/.md        # rendered dogfood report (regenerated from the manifest)
   docs/index.html / demo-large.html       # GitHub Pages live demo (rendered reports)
-  docs/screenshots/*.png                  # committed report + panel screenshots (manual capture)
+  docs/screenshots/*.png                  # committed report + panel screenshots (tools/capture-screenshots.mjs)
   docs/examples/azure-pipelines.yml       # CI recipe: validate → gate → publish report artifact
   examples/                               # worked acme-store example (manifest + rendered report)
 .claude-plugin/

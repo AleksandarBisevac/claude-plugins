@@ -30,7 +30,8 @@
  */
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, statSync,
+         writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -48,6 +49,9 @@ const arg = (name, dflt) => {
 const CHECK = argv.includes('--check');
 const OUT = path.resolve(REPO, arg('--out', 'docs/screenshots'));
 const ONLY = arg('--only', 'all');
+
+/** The identity the panel fixture writes as. See where it is installed, below. */
+const DEMO_AUTHOR = 'dev@example.com';
 
 const problems = [];
 const note = (m) => console.log(`  ${m}`);
@@ -85,10 +89,10 @@ function serveDir(dir) {
  * session token, and that print is being removed (it lands in terminal scrollback
  * and CI logs). The pidfile is the durable interface.
  */
-async function startPanel(project) {
+async function startPanel(project, env = {}) {
   const proc = spawn(PY, [path.join(SCRIPTS, 'panel-server.py'),
                           '--project', project, '--no-open'],
-                     { cwd: REPO, stdio: 'ignore' });
+                     { cwd: REPO, stdio: 'ignore', env: { ...process.env, ...env } });
   const pidfile = path.join(project, '.claude', 'audit-panel.json');
   for (let i = 0; i < 100; i++) {
     try {
@@ -758,6 +762,61 @@ async function assertViewerIdentity(page) {
 }
 
 /**
+ * The confirm dialog, with more than one row in it.
+ *
+ * assertConfirmFlowWorks below proves the flow, and it does so with a single edit
+ * because "the dialog lists exactly this one change" is the strongest form of that
+ * assertion. A picture of a one-row dialog, though, does not show what the feature
+ * is for — a list you read before you agree to it. So this makes three edits, takes
+ * the shot and throws them away again through the panel's own Discard, which leaves
+ * the fixture exactly as it was found; the check that follows opens with "a freshly
+ * rendered panel is clean", so anything left behind here is named there rather than
+ * quietly changing what a later assertion measures.
+ *
+ * It carries its own assertion for the same reason the report's filters shot does:
+ * under --check nothing is written, and an unasserted capture step is a step that
+ * can only be wrong in a file nobody diffs.
+ */
+async function captureConfirmDialog(page) {
+  const inputs = page.locator('#comp tr.task .tmodel input');
+  const n = Math.min(3, await inputs.count());
+  if (n < 2) { fail('composition: fewer than two task rows to edit for the confirm shot'); return; }
+  for (let i = 0; i < n; i++) {
+    const box = inputs.nth(i);
+    const was = await box.inputValue();
+    await box.fill(was === 'opus' ? 'sonnet' : 'opus');
+  }
+  await page.waitForTimeout(200);
+  await page.locator('#comp').getByRole('button', { name: 'Save composition' }).click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog.confirm tbody tr')].length);
+  if (rows !== n) {
+    fail(`composition: ${n} edits produced a dialog listing ${rows} row(s)`);
+  } else {
+    note(`composition: ${n} edits -> a dialog listing ${rows} rows`);
+  }
+  // Reaching Save scrolled to it, which is past a thousand task rows: the shot
+  // would show a dialog about P1.1 over a table of P50.x. The dialog is modal and
+  // stays put, so put the rows it is talking about back behind it.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+  await shot(page, 'panel-confirm');
+  await page.locator('dialog.confirm [data-cfcancel]').click();
+  await page.waitForTimeout(200);
+
+  // Discard is itself a confirm — a control that throws work away is not one click.
+  await page.locator('#comp [data-discard=comp]').click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(400);
+  const dirty = await page.evaluate(() => editRows('comp').length);
+  if (dirty !== 0) {
+    fail(`composition: Discard left ${dirty} unsaved change(s) behind the confirm shot`);
+  }
+}
+
+/**
  * Confirm-before-write: the dialog, the discard, the beforeunload guard and the
  * server's echo.
  *
@@ -1073,8 +1132,41 @@ async function assertConfirmFlowWorks(page) {
   }
 }
 
+/**
+ * No shutter photographs a toast.
+ *
+ * The panel's toast is a 2.6-second banner across the bottom of the viewport, and
+ * it has now been committed twice: once across the dark shot (an export saying
+ * "2132 row(s) exported"), and once across Overview ("discarded — the table is back
+ * to the saved manifest", pinned over phase P7 by a capture step added below). Both
+ * times the fix was to move the step that raised it, which fixes the instance and
+ * leaves the trap set for the next person. The rule belongs where every capture
+ * passes: wait for it, and say so if it will not go.
+ */
+async function noToast(page, label) {
+  const showing = await page.evaluate(() => {
+    const t = document.querySelector('#toast');
+    return !!t && t.classList.contains('show');
+  });
+  if (!showing) return;                       // the report has no toast at all
+  try {
+    await page.waitForFunction(() => {
+      const t = document.querySelector('#toast');
+      return !t || !t.classList.contains('show');
+    }, null, { timeout: 6000 });
+    await page.waitForTimeout(300);           // ...and then the fade out
+    note(`${label}: waited for a toast to clear before capturing`);
+  } catch {
+    const text = await page.evaluate(() =>
+      ((document.querySelector('#toast') || {}).textContent || '').trim());
+    fail(`${label}: a toast reading "${text}" is still on screen — this capture `
+       + `would pin a transient banner across a committed screenshot`);
+  }
+}
+
 async function shot(page, name, { full = false } = {}) {
   await settle(page);
+  await noToast(page, name);
   if (CHECK) return;
   mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
@@ -1131,6 +1223,43 @@ async function main() {
       const chip = page.locator('#audit-phase-status button').first();
       if (await chip.count()) { await chip.click(); await page.waitForTimeout(120); }
       await shot(page, 'filtered');
+
+      // The More-filters panel — model chips, the two date inputs and the presets.
+      // Captured with a chip PRESSED, because an open panel over an unfiltered
+      // table is a picture of a control that might do nothing; the on-state is the
+      // subject. The status chip above is released first: two filters at once can
+      // legitimately select no phase at all, and a screenshot of the filters would
+      // then be a screenshot of the empty state. That the table still has rows is
+      // asserted rather than hoped for, since --check runs this path too and a
+      // capture nobody looks at is how the empty-progress-bar hero shipped.
+      if (await chip.count()) { await chip.click(); await page.waitForTimeout(120); }
+      const models = page.locator('#audit-model .fchip');
+      if (await models.count()) {
+        await page.click('.fdetails > summary');
+        await page.waitForTimeout(120);
+        await models.first().click();
+        await page.waitForTimeout(250);
+        const left = await page.evaluate(() => ({
+          phases: [...document.querySelectorAll('tr.phase')]
+            .filter((r) => r.style.display !== 'none').length,
+          panelOpen: !!document.querySelector('.fdetails[open]'),
+          on: (document.querySelector('#audit-model .fchip') || {}).ariaPressed,
+        }));
+        if (!left.panelOpen || left.on !== 'true' || left.phases < 1) {
+          fail(`report: the filters shot would show panel open=${left.panelOpen}, `
+             + `chip pressed=${left.on}, ${left.phases} phase rows — capture it and `
+             + `the README gains a picture of a filter that filtered everything away`);
+        } else {
+          note(`filters: a model chip leaves ${left.phases} phase rows, panel open`);
+        }
+        await shot(page, 'filters');
+        await models.first().click();          // leave the view as it was found
+        await page.click('.fdetails > summary');
+        await page.waitForTimeout(120);
+      } else {
+        fail('report: the example records no per-task model, so there is no More-'
+           + 'filters panel to capture — the filters shot cannot be refreshed');
+      }
       // After the last shot this context takes: the round trip ends where it
       // started, but it also writes localStorage, and nothing below reuses it.
       await assertThemeMovesNativeControls(page, 'report', '#audit-theme');
@@ -1163,7 +1292,19 @@ async function main() {
       py([path.join(SCRIPTS, 'gen-demo-manifest.py'), big, '--phases', '50', '--tasks', '20']);
       py([path.join(SCRIPTS, 'gen-demo-usage.py'), path.join(big, 'audit-plan.json')]);
 
-      panel = await startPanel(big);
+      // The panel names the identity it writes as, in the topbar and again in the
+      // confirm dialog — resolved by usage_ledger.resolve_author, which asks git.
+      // Left alone that is whoever ran the capture, and these PNGs are committed to
+      // a public repository: the first run after the identity pill landed put a
+      // maintainer's personal address in four of them. The fixture is a demo, so it
+      // gets a demo identity, supplied the way git itself supports rather than by
+      // writing to anyone's real config. GIT_CONFIG_NOSYSTEM, not a /dev/null path,
+      // because this also runs on Windows.
+      const gitcfg = path.join(work, 'demo.gitconfig');
+      writeFileSync(gitcfg, `[user]\n\temail = ${DEMO_AUTHOR}\n\tname = Demo Dev\n`);
+      panel = await startPanel(big, {
+        GIT_CONFIG_GLOBAL: gitcfg, GIT_CONFIG_NOSYSTEM: '1',
+      });
       const ctx = await browser.newContext({
         viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'light',
@@ -1187,6 +1328,19 @@ async function main() {
       note(`panel tabs present: ${tabs.join(', ')}`);
       if (!tabs.includes('usage')) {
         fail('panel has no Usage tab — the fixture or the UI is out of date');
+      }
+
+      // Asserted BEFORE the first shutter, not by the identity check further down.
+      // If git ever stops honouring the override the failure is silent and lands in
+      // a committed PNG, and the whole point of doing it in the environment is that
+      // nothing about the product changes — including the part that would notice.
+      const who = await page.evaluate(() => ((STATE || {}).viewer || {}).author || null);
+      if (who !== DEMO_AUTHOR) {
+        fail(`panel: these shots would be captured as ${JSON.stringify(who)} rather `
+           + `than the demo identity "${DEMO_AUTHOR}" — GIT_CONFIG_GLOBAL did not `
+           + `take, and the topbar and confirm dialog name whoever ran this`);
+      } else {
+        note(`panel: capturing as ${DEMO_AUTHOR}`);
       }
 
       // Settings is rendered by that script, from the field table panel-server.py
@@ -1244,6 +1398,11 @@ async function main() {
       }
       await shot(page, 'panel-composition-expanded');
 
+      // Taken here, on the tab it belongs to and with its rows already open, and
+      // deliberately BEFORE the checks that end in a toast: a shutter that follows
+      // one photographs it. It reverts what it typed.
+      await captureConfirmDialog(page);
+
       // The discovered building-blocks table lives in Composition too, below the
       // phase table — not in Overview, which is where a previous reading put it.
       const blocks = page.locator('#comp', { hasText: /Available building blocks/i });
@@ -1278,6 +1437,46 @@ async function main() {
       await page.click('#theme');
       await page.waitForTimeout(300);
       await shot(page, 'panel-dark');
+
+      // The phone. Its own context, so it starts from the theme the OS asks for
+      // rather than the dark one just written to this origin's localStorage, and
+      // its own error handlers, because a layout that only breaks at 390px breaks
+      // in script the same way it breaks in CSS. The report has had a mobile shot
+      // since the app shell landed; the panel's was specified with the shared
+      // theme work and never taken, so until now nothing in the repo showed — or
+      // checked — what this UI does on a phone. 390x844 is the viewport the Usage
+      // bar was measured against when it was made to stop pinning below 34rem.
+      const mobCtx = await browser.newContext({
+        viewport: { width: 390, height: 844 }, deviceScaleFactor: 1,
+        reducedMotion: 'reduce', colorScheme: 'light',
+      });
+      const mob = await mobCtx.newPage();
+      mob.on('pageerror', (e) => jsErrors.push('mobile: ' + String(e.message).split('\n')[0]));
+      mob.on('console', (m) => { if (m.type() === 'error') jsErrors.push('mobile: ' + m.text()); });
+      await mob.goto(panel.url, { waitUntil: 'load' });
+      await mob.waitForSelector('.tab', { timeout: 15000 });
+      await mob.click('.tab[data-t=over]');
+      await mob.waitForFunction(
+        () => { const o = document.querySelector('#over');
+                return o && o.querySelectorAll('.card').length > 0; },
+        null, { timeout: 20000 });
+      await mob.waitForTimeout(300);
+      // The one thing a phone shot must not show, and the one thing a reviewer
+      // scrolling a PNG cannot see: the page itself sliding sideways. Wide tables
+      // are allowed to scroll inside their own frame; the document is not.
+      const overflow = await mob.evaluate(() => {
+        const de = document.documentElement;
+        return { page: de.scrollWidth - de.clientWidth,
+                 body: document.body.scrollWidth - de.clientWidth };
+      });
+      if (overflow.page > 1 || overflow.body > 1) {
+        fail(`panel at 390px scrolls sideways: document overflows by ${overflow.page}px `
+           + `and body by ${overflow.body}px`);
+      } else {
+        note('panel at 390px: no horizontal page overflow');
+      }
+      await shot(mob, 'panel-mobile');
+      await mobCtx.close();
       // Deliberately AFTER the last capture. Driving Usage ends in an export, and an
       // export raises a toast — which the dark shot caught and committed, a banner
       // reading "2132 row(s) exported" pinned across a screenshot of the default
