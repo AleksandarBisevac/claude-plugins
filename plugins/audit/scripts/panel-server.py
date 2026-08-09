@@ -3063,7 +3063,17 @@ const TOP=8;
 const uTok=(n,dp=1)=>{n=n||0;for(const[l,s]of[[1e9,'B'],[1e6,'M'],[1e3,'K']])
  if(Math.abs(n)>=l)return (n/l).toFixed(dp)+s;return String(Math.round(n));};
 const uCost=x=>!x?'$0.00':(Math.abs(x)<0.01?'<$0.01':'$'+x.toFixed(2));
-const uPct=x=>x<1&&x>0?'<1%':x.toFixed(0)+'%';
+const uPct=x=>x==null?'—':x<1&&x>0?'<1%':x.toFixed(0)+'%';
+// A share of nothing is not 0% and it is certainly not 100% — it is undefined, and
+// the honest rendering of undefined is the same em dash a tile with no series
+// already draws. EVERY printed percentage in this tab is computed here, because
+// the idiom it replaces — `||1` on the denominator, written to dodge a divide by
+// zero — answers a question that has no answer: `100*(1-0)/1` made the
+// `attributed` tile read 100% over an empty selection, beside three honest zeros,
+// on the one tile of the four that is coloured by polarity. A denominator may
+// still carry `||1` where the quotient is a bar WIDTH or a sparkline's range —
+// a scale is a drawing decision, not a claim — and nowhere else.
+const uShare=(part,whole)=>whole?100*part/whole:null;
 
 // Colour follows the entity, never its rank in the current view: a slot comes from
 // the entity's spend rank across the WHOLE ledger, so filtering cannot repaint a
@@ -3422,10 +3432,10 @@ function uSpark(vals,label,zero){
  return svg;}
 
 // --- metrics, all recomputed under the current filter --------------------------
-function uCoverage(facts){const by={},tot=facts.reduce((a,f)=>a+f[F.tokens],0)||1;
+function uCoverage(facts){const by={},tot=facts.reduce((a,f)=>a+f[F.tokens],0);
  for(const f of facts)by[f[F.attr]]=(by[f[F.attr]]||0)+f[F.tokens];
  const un=by['unattributed']||0;
- return {attributed:100*(tot-un)/tot,task:100*(by['task']||0)/tot,by,tot};}
+ return {attributed:uShare(tot-un,tot),task:uShare(by['task']||0,tot),by,tot};}
 function uUnit(facts){const M=USAGE.taskMeta||{},cost={};
  for(const f of facts){const t=f[F.task];if(t&&t!=='--')cost[t]=(cost[t]||0)+f[F.cost];}
  const done=Object.keys(cost).filter(t=>(M[t]||{}).status==='done').map(t=>cost[t]);
@@ -3552,7 +3562,7 @@ function uExport(facts){
 // --- render --------------------------------------------------------------------
 function uBars(facts,dim,title){
  const g=uAgg(facts,dim);if(!g.length)return[];
- const grand=g.reduce((a,x)=>a+x[1][0],0)||1;
+ const grand=g.reduce((a,x)=>a+x[1][0],0);
  const limit=SHOWN[dim]||TOP;
  const head=g.slice(0,limit),tail=g.slice(limit);
  const peak=Math.max(...head.map(x=>x[1][0]))||1;
@@ -3574,7 +3584,7 @@ function uBars(facts,dim,title){
    el('span',{class:'uamt'},uTok(v[0])+(USAGE.showCost?' - '+uCost(v[1]):'')));
   bindTip(row,()=>[el('div',{class:'utip-h'},nm),
     tipRow(dim==='model'?uMCol(k):null,'tokens',uTok(v[0],2)),
-    tipRow(null,'share',uPct(100*v[0]/grand)),
+    tipRow(null,'share',uPct(uShare(v[0],grand))),
     USAGE.showCost?tipRow(null,'cost',uCost(v[1])):null,
     tipRow(null,'messages',v[2].toLocaleString()),
     el('div',{class:'utip-f'},active?'click to clear this filter':'click to filter')
@@ -3702,7 +3712,7 @@ const BCOL={
 const BNUM={tokens:1,share:1,cost:1,msgs:1};
 
 function browseRows(dim,facts){
- const g=uAgg(facts,dim),grand=g.reduce((a,x)=>a+x[1][0],0)||1;
+ const g=uAgg(facts,dim),grand=g.reduce((a,x)=>a+x[1][0],0);
  // Which models did this phase/task/person actually use? The aggregate throws
  // that away, and it is the question the ranked bar cannot answer: two phases
  // costing the same can be one opus run and one long haiku grind.
@@ -3714,7 +3724,7 @@ function browseRows(dim,facts){
   // drawing segments in any other sequence puts unvalidated pairs side by side.
   const per=mix[k]||{};
   const models=Object.keys(per).sort((a,b)=>(MSLOTS[a]||99)-(MSLOTS[b]||99))
-    .map(m=>({model:m,tokens:per[m],pct:100*per[m]/(v[0]||1)}));
+    .map(m=>({model:m,tokens:per[m],pct:uShare(per[m],v[0])}));
   const top=[...models].sort((a,b)=>b.tokens-a.tokens)[0];
   return {id:k,
     title:dim==='phase'?(k==='--'?'unattributed':(USAGE.phaseTitles[k]||''))
@@ -3722,7 +3732,7 @@ function browseRows(dim,facts){
     status:meta.status||'',risk:meta.risk||'',
     band:(dim==='task'?bandOf(k):null)||'',
     models:models,dominant:top?top.model:'',
-    tokens:v[0],share:100*v[0]/grand,cost:v[1],msgs:v[2]};});}
+    tokens:v[0],share:uShare(v[0],grand),cost:v[1],msgs:v[2]};});}
 
 // A mini stack plus the dominant model NAMED. Identity is never colour alone, and
 // at this size the segments are far too small to carry inline labels.
@@ -3733,7 +3743,7 @@ function modelCell(r){
    +'background:'+uMCol(m.model)})));
  const cell=el('span',{class:'mcell'},bar,
    el('span',{class:'mdom'},r.dominant.replace(/^claude-/,'')));
- cell.title=r.models.map(m=>m.model+'  '+m.pct.toFixed(0)+'%  '+uTok(m.tokens,2))
+ cell.title=r.models.map(m=>m.model+'  '+uPct(m.pct)+'  '+uTok(m.tokens,2))
    .join('\n');
  return cell;}
 
@@ -3808,7 +3818,8 @@ function openBrowse(dim,title,facts){
       // NOT uPct here: across 241 phases every share is under 1%, and a column
       // where every cell reads "<1%" sorts fine and tells you nothing. This is
       // the precision surface, so it gets the digits.
-      :key==='share'?(r.share<1?r.share.toFixed(2):r.share.toFixed(1))+'%'
+      :key==='share'?(r.share==null?'—'
+        :(r.share<1?r.share.toFixed(2):r.share.toFixed(1))+'%')
       :key==='cost'?uCost(r.cost)
       :key==='msgs'?r.msgs.toLocaleString()
       :String(r[key]||'—'))));}));
@@ -3980,7 +3991,7 @@ function renderUsage(){const c=$('#usage');
  if(unit.perTask!=null)tiles.push(tile('cost per task',uCost(unit.perTask),
    {why:'no daily trend: a task’s cost accrues over every day it ran and is only '
      +'complete when the task is, so there is no per-day cost-per-task to plot'}));
- tiles.push(tile('attributed',cov.attributed.toFixed(0)+'%',
+ tiles.push(tile('attributed',uPct(cov.attributed),
    {key:'attributed',delta:dl&&dl.attributed,pp:true,pol:1,
     series:sp.series.attributed}));
  card.append(el('div',{class:'utiles'},tiles));
@@ -5210,6 +5221,49 @@ def _selftest():
           "range:'time range'" in UI_HTML
           and ":d==='range'?(UF.range==='all'?'all time':'last '+UF.range+' days')"
           in UI_HTML)
+
+    # --- F6: a share of nothing is undefined, not 100% ---------------------
+    # `uCoverage` divided by `tot||1` — the `||1` written to dodge a divide by
+    # zero — so an empty selection returned 100*(1-0)/1 and the `attributed` tile
+    # reported PERFECT coverage of no rows at all, beside three honest zeros, on
+    # the one tile of the four that is coloured by polarity. It was also a second
+    # implementation of `usage_ledger.coverage()`, which has always returned a
+    # sentinel for an empty ledger rather than a number — two copies of one
+    # calculation disagreeing at the boundary neither was tested on.
+    #
+    # The guard is the rule, not the patch: `||1` on a denominator is legitimate
+    # for a bar's WIDTH and a sparkline's RANGE (a scale is a drawing decision,
+    # not a claim) and for `attempts`, where one attempt is the true default. In
+    # any other position it manufactures an answer to a question that has none.
+    _or1 = [l.strip() for l in UI_HTML.splitlines()
+            if "||1" in l and not l.lstrip().startswith("//")
+            and not re.search(r"peak|\(hi-lo\)|attempts", l)]
+    check("no percentage divides by a `||1` denominator — offenders: %r" % _or1,
+          not _or1)
+    check("every printed share goes through one helper that returns null when "
+          "there is nothing to take a share of",
+          "const uShare=(part,whole)=>whole?100*part/whole:null;" in UI_HTML
+          and "return {attributed:uShare(tot-un,tot),task:uShare(by['task']||0,tot)"
+          in UI_HTML
+          and "tipRow(null,'share',uPct(uShare(v[0],grand)))" in UI_HTML
+          and "share:uShare(v[0],grand)" in UI_HTML
+          and "pct:uShare(per[m],v[0])" in UI_HTML)
+    check("and null prints as the same em dash a tile with no series draws, "
+          "rather than as a number",
+          "const uPct=x=>x==null?'—':" in UI_HTML
+          and "tile('attributed',uPct(cov.attributed)" in UI_HTML)
+    # A null reaching .toFixed throws, and in the browse dialog that is the whole
+    # table gone — the share column and the model tooltip are its two readers.
+    check("both readers of a share that can now be null say so instead of "
+          "throwing on .toFixed",
+          "key==='share'?(r.share==null?'—'" in UI_HTML
+          and "m.model+'  '+uPct(m.pct)+'  '+uTok(m.tokens,2)" in UI_HTML)
+    # The other direction of the same rule: a scale is not a claim, and nulling
+    # one would blank every bar and every sparkline in the tab.
+    check("a bar's width and a sparkline's range still floor their denominator, "
+          "because a scale is a drawing decision and not a measurement",
+          "const peak=Math.max(...head.map(x=>x[1][0]))||1;" in UI_HTML
+          and "const rng=(hi-lo)||1;" in UI_HTML)
 
     u = usage_state(proj)
     check("usage_state on a project with no ledger is empty, not an error",
