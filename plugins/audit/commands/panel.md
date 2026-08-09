@@ -48,6 +48,12 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   **refuses while an `/audit` run holds a lock** (the index or any phase — see conventions →
   Concurrency lock). Never touches phases/tasks/bugs structure — use `/audit:task`,
   `/audit:bug`, `/audit:run` for that.
+- **Areas, over the API only (v0.28).** `GET /api/areas` returns the `meta.areas` registry plus
+  every tag the phases actually use — which are registered, which are typos, which roots are
+  missing — and `PUT /api/areas` replaces the registry wholesale through the same writer, lock,
+  validation and change echo as Composition. There is **no form for it yet**; say so rather than
+  sending someone looking for a tab that is not there. Edit `meta.areas` by hand, or let
+  `/audit:init` write it.
 - **Nothing is written without showing you what** — on both Settings and Composition. Save
   opens a dialog listing every change as `P1.2 · model · sonnet → opus`, together with any
   phase that is running elsewhere *right now*; Cancel writes nothing and keeps your edits.

@@ -300,6 +300,47 @@ def check_submodules(rep, project, cfg, manifest, git_root):
         rep.ok("submodules", "no task files inside the %d submodule(s)" % len(paths))
 
 
+def check_areas(rep, project, manifest):
+    """The `meta.areas` registry against the tree it claims to describe (v0.28).
+
+    Two failures, both of which look like nothing at all from inside the manifest:
+    an area pointing at a directory that has been renamed or never existed, and a
+    phase tagged with something the registry does not carry. Neither stops a run —
+    areas are informational — so neither is a FINDING. Both are the shape of thing
+    that is discovered months later, when someone asks why the backend reviewer
+    never ran on the backend phases.
+
+    Silent when the manifest registers no areas. Free-text tagging is the v0.16
+    feature, still legal, still the normal case; a doctor that nagged every
+    single-app repo about a monorepo registry it never asked for would be a doctor
+    people stop running."""
+    if not manifest:
+        return
+    ar = _load("_areas", "_areas.py")
+    reg = ar.registry(manifest)
+    if not reg:
+        return
+    missing = ar.missing_roots(manifest, project)
+    if missing:
+        rep.warn("areas",
+                 "%d registered area(s) point at a directory that is not there: %s"
+                 % (len(missing), ", ".join("%s -> %s" % (t, r)
+                                            for t, r in missing[:3])),
+                 "fix meta.areas[<tag>].root, or drop the area - roots are "
+                 "relative to the project directory, like task.files")
+    unreg = ar.unregistered_tags(manifest)
+    if unreg:
+        rep.warn("areas",
+                 "%d phase tag(s) have no registry entry: %s"
+                 % (len(unreg), ", ".join("%s uses %r" % (p, t)
+                                          for p, t in unreg[:3])),
+                 "add them to meta.areas, or fix the typo - an unregistered tag "
+                 "still groups, but resolves to no reviewer and no skills")
+    if not missing and not unreg:
+        rep.ok("areas", "%d area(s) registered, %d phase tag(s), all resolving"
+               % (len(reg), len(ar.used_tags(manifest))))
+
+
 def check_build_commands(rep, project, manifest):
     """Do the runners named in meta.buildCommands exist?
 
@@ -493,6 +534,7 @@ def diagnose(project):
     manifest_rel, manifest = check_manifest(rep, project, cfg)
     check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel)
     check_submodules(rep, project, cfg, manifest, git_root)
+    check_areas(rep, project, manifest)
     check_build_commands(rep, project, manifest)
     check_hooks_fired(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
@@ -742,6 +784,44 @@ def _selftest():
         rep = diagnose(tmp)
         check("`cd x && runner` is resolved past the cd",
               levels(rep, "buildCommands") == ["OK"], detail(rep, "buildCommands"))
+
+        # areas (v0.28). The registry describes the tree, and nothing inside the
+        # manifest can tell that the tree moved.
+        def with_areas(areas, tags):
+            with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+                json.dump({"meta": {"version": 2, "areas": areas},
+                           "phases": [{"id": "P1", "title": "p", "status": "done",
+                                       "area": tags,
+                                       "tasks": [{"id": "P1.1", "title": "t",
+                                                  "status": "done"}]}]}, fh)
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json"}, fh)
+            return diagnose(tmp)
+
+        os.makedirs(os.path.join(tmp, "services", "api"), exist_ok=True)
+        rep = with_areas({"api": {"root": "services/api"}}, "api")
+        check("areas: a registry whose roots exist and whose tags all resolve is OK",
+              levels(rep, "areas") == ["OK"], detail(rep, "areas"))
+        check("areas: the OK states the counts it is claiming",
+              "1 area(s) registered, 1 phase tag(s)" in detail(rep, "areas"),
+              detail(rep, "areas"))
+        rep = with_areas({"api": {"root": "services/gone"}}, "api")
+        check("areas: a root that is not a directory is a WARNING - the manifest "
+              "cannot see this, and nothing else will ever report it",
+              levels(rep, "areas") == ["WARNING"], detail(rep, "areas"))
+        check("areas: the warning names the tag and the path",
+              "api -> services/gone" in detail(rep, "areas"), detail(rep, "areas"))
+        check("areas: a bad root never fails the exit code (areas are informational)",
+              rep.exit_code() == 0, repr(rep.counts()))
+        rep = with_areas({"api": {"root": "services/api"}}, "apu")
+        check("areas: a tag with no entry is a WARNING naming the phase",
+              levels(rep, "areas") == ["WARNING"]
+              and "P1 uses 'apu'" in detail(rep, "areas"), detail(rep, "areas"))
+        rep = with_areas({}, "anything")
+        check("areas: NO registry means the check says nothing at all - a "
+              "single-app repo is not nagged about a monorepo feature",
+              levels(rep, "areas") == [], repr(levels(rep, "areas")))
 
         # sharded layout: intact, then broken
         gen = _load("gen_demo_manifest", "gen-demo-manifest.py")

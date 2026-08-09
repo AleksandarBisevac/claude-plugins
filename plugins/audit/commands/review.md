@@ -13,3 +13,8 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 Run **Phase sign-off** (orchestrator) for `<phaseId>` — use when tasks are already `done` and you
 want to re-run the review / test gate / runtime boot / merge (e.g. after applying fixes). Then
 follow **Reporting** and release the lock.
+
+The reviewer is **`phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`** — the
+first level that is **present** answers, an explicit `null` **is** an answer (skip review; tests are
+the signer), and with several `area` tags written order decides. `/audit:status --phase <phaseId>`
+prints the resolved skill and the basis it came from; read that rather than re-deriving it.

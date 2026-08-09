@@ -99,7 +99,23 @@ never hardcode branch names, package ids, skills, or build tools here:
   `cd <gitRoot> && …` prefix needed to reach the workspace). Do not add or strip a `cd` of your own.
 - `meta.developmentBranch` — the parent branch audit branches fork from and merge back into (default `main`).
 - `meta.branchPrefix` — prefix for per-phase branches (default `audit`).
-- `meta.reviewSkill` — DEFAULT skill invoked at phase sign-off (default **null** → skip; tests are the signer). A phase can override it with `phase.reviewSkill` (resolved `phase.reviewSkill ?? meta.reviewSkill`).
+- `meta.reviewSkill` — DEFAULT skill invoked at phase sign-off (default **null** → skip; tests are the signer).
+  A phase can override it, and a registered area sits between the two — see `meta.areas` below.
+- `meta.areas` — OPTIONAL registry of the areas a phase's `area` tag can name:
+  `{tag: {root, description, reviewSkill?, skills?}}`. Registration is optional in both directions —
+  a tag with no entry stays legal (the validator warns; nothing refuses), an entry no phase uses is
+  legal too — so a single-app repo writes nothing and behaves exactly as before. `root` is relative
+  to the PROJECT dir, like `task.files`. Registering a tag gives it two resolutions, and **both are
+  stated identically wherever they are used** (here, in Phase sign-off step 1, in the executor spawn,
+  in `review.md` and in `manifest-conventions.md`):
+  - **Review skill** — `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`. The
+    first level that is **present** answers, and an explicit `null` **is** an answer (skip review;
+    tests are the signer) — it does not fall through.
+  - **Executor skills** — each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped,
+    **area first** (house conventions before task specifics).
+  - When a phase carries **several tags**, WRITTEN ORDER decides: the first tag whose area declares
+    the field answers. `/audit:status` prints the resolved reviewer and the basis it came from
+    (`review: backend-review (area api)`), so you never have to re-derive this by hand.
 - `meta.runtimeBoot` — object `{appRootPath, launch, verify}` for a runtime smoke gate (default **null** → skip).
 - `meta.nodePreamble` — shell prefix to run before build gates, e.g. `source ~/.nvm/nvm.sh && nvm use`
   (default **null** → run gates directly). Do NOT pipe it — run it as its own statement, then chain the command.
@@ -258,7 +274,11 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
    system prompt carries the invariants; if that agent type is unavailable (older Claude
    Code), fall back to a general-purpose subagent and restate every rule below inline. In the
    spawn prompt:
-   - Tell it to **first invoke each skill in `task.skills`** via the `Skill` tool (load conventions before coding).
+   - Tell it to **first invoke each resolved skill** via the `Skill` tool (load conventions before coding).
+     Resolve them as **each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped, area
+     first** — house conventions before task specifics, because a subagent that reads the specifics
+     first has already made the decisions the conventions were meant to inform. With no registered
+     area this is exactly `task.skills`, unchanged.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.
@@ -313,8 +333,12 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
 Run only when **all** tasks in the phase are `done`. All review/test work runs on the phase branch.
 
 1. **`reviewResolved`** — compute the phase's changed files (union of `files` across its tasks, cross-checked with
-   the manifest's top-level `fileIndex`). Resolve the review skill as **`phase.reviewSkill ?? meta.reviewSkill`**
-   (a phase may override the default — e.g. a monorepo reviews backend vs mobile phases with different reviewers).
+   the manifest's top-level `fileIndex`). Resolve the review skill as
+   **`phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`** — the first level that is
+   **present** answers, an explicit `null` **is** an answer (skip review), and with several tags written
+   order decides. (A monorepo reviews backend vs mobile phases with different reviewers by registering
+   the area once instead of repeating `reviewSkill` on every phase.) `/audit:status` prints the resolved
+   value and its basis; do not re-derive it from the file if the output is in front of you.
    **If the resolved review skill is set**, spawn the plugin's reviewer agent
    (`subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`) with the diff scope
    (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, and the resolved skill name — it invokes the

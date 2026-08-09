@@ -80,6 +80,7 @@ claude-plugins/                           # this repo (personal, public)
         audit-config.schema.json          # JSON Schema for .claude/audit.config.json (panel validation)
       scripts/
         _manifest_io.py                   # dual-format loader/writer (single-file OR index+shards)
+        _areas.py                         # meta.areas registry + reviewSkill/skills resolution
         validate-manifest.py              # dependency-free referential validator (cycles, links)
         validate-config.py                # validates .claude/audit.config.json against its schema
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
@@ -133,7 +134,10 @@ git-root/submodule/lock), guardrails, readiness rule, concurrency lock, branch-p
 Execute-the-task (executor agent + TDD/regression/gate-only + infra-vs-test failure split +
 per-task commit via `git -C <gitRoot>`), Phase sign-off (reviewer agent, test gate, runtime boot,
 ff/`--no-ff` merge), resume, reporting. **De-coupling:** everything reads `meta.developmentBranch` /
-`branchPrefix` / `gitRoot` / `reviewSkill` (null → skip) / `runtimeBoot` (null → skip) /
+`branchPrefix` / `gitRoot` / `reviewSkill` (null → skip) / `areas` (the monorepo registry a phase's
+`area` tag names; resolution `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`,
+stated identically in `orchestrator.md`, `manifest-conventions.md` and `review.md`) /
+`runtimeBoot` (null → skip) /
 `nodePreamble` / `commit` / `buildCommands` — no hardcoded branch, package id, skill, or build tool.
 Read-only verbs (`status`, `report`) skip the mutating preflight and never lock.
 
@@ -142,9 +146,13 @@ The creation-side commands (invoked namespaced: `/audit:init`, `/audit:task`, `/
 short forms may collide with built-ins like `/init`). All three read
 `reference/manifest-conventions.md` first and revalidate after every mutation:
 - **init** — interview (dimensions/scope/branch/size) → read-only recon (detect
-  `meta.buildCommands`) → parallel read-only explorer subagents (subsystem × dimension,
+  `meta.buildCommands`; detect a **workspace** — pnpm/yarn workspaces, turbo, nx, lerna,
+  `go.work`, a Cargo workspace, a `.sln` — and propose `meta.areas`, skipped entirely when
+  nothing matches so a single-app repo comes out unchanged) → parallel read-only explorer
+  subagents (subsystem × dimension,
   cap 6, strict-JSON findings) → synthesis into phases/tasks (tests.mode by finding kind,
-  model by risk) → Write + validate. Backs up an existing manifest before regenerating.
+  model by risk, `area` tags from the registry) → Write + validate. Backs up an existing
+  manifest before regenerating.
 - **task** — `add "<title>" [--phase <id>]`: target-phase selection (done phases are
   immutable), full new-task template, id allocation, fileIndex maintenance.
 - **bug** — `add` (BUG-<n>, severity/repro/expected/actual) · `list` (read-only) ·

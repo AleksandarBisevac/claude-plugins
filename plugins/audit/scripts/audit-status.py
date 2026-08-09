@@ -43,6 +43,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
+import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
 
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress", "over-budget", "budget-80")
@@ -187,15 +189,11 @@ def _by_status_values(values):
     return out
 
 
-def areas_of(area):
-    """Normalize a phase's `area` (a string partition, a list of cross-cutting tags,
-    or absent) to a list of tag strings — so a phase can belong to several areas
-    (e.g. ['backend', 'security'])."""
-    if isinstance(area, str):
-        return [area] if area else []
-    if isinstance(area, list):
-        return [a for a in area if isinstance(a, str) and a]
-    return []
+# A phase's `area` -> its tags. Re-exported rather than reimplemented: the panel
+# and this file each carried their own copy, and one of them would eventually have
+# learned something the other had not. `_areas` also owns what a tag MEANS now
+# (meta.areas), so normalisation had to move next to the lookup it feeds.
+areas_of = _areas.areas_of
 
 
 def effective_bug_status(bug, task_by_id):
@@ -444,7 +442,7 @@ def render_status(manifest, summary, width=18, only_phase=None):
             rows.append([
                 "%s %s" % (_marker(t.get("status")), tid),
                 _clip(_one_line(t.get("title")), 44),
-                t.get("status") or "?",
+                _theme.label(t.get("status")) or "?",
                 t.get("model") or "-",
                 _clip(", ".join(unmet.get(tid, [])) or "-", 26),
                 _short(t.get("commit")),
@@ -473,13 +471,16 @@ def render_status(manifest, summary, width=18, only_phase=None):
         ph = by_id.get(pe.get("id")) or {}
         head = "  %-4s %-26s %-11s %s %d/%d" % (
             pe.get("id") or "?", _clip(pe.get("title") or "", 26),
-            pe.get("status") or "?", au.bar(pfrac, 12), pdone, ptotal)
+            _theme.label(pe.get("status")) or "?", au.bar(pfrac, 12), pdone, ptotal)
         if ph.get("branch"):
             head += "  %s" % ph["branch"]
         lines.append(head)
         if pe.get("desiredOutcome"):
             lines.append("       desired: %s"
                          % _clip(_one_line(pe["desiredOutcome"]), 88))
+        scope = _scope_line(manifest, ph, pe)
+        if scope:
+            lines.append(scope)
         if pe.get("id") in unmet and ph.get("status") != "done":
             lines.append("       blocked by: %s"
                          % _clip(", ".join(unmet[pe["id"]]), 70))
@@ -515,6 +516,34 @@ def render_status(manifest, summary, width=18, only_phase=None):
     lines += _bug_lines(manifest, summary)
     lines += _resumable_lines(manifest, summary)
     return "\n".join(lines)
+
+
+def _scope_line(manifest, phase, entry):
+    """`area: api, security   review: backend-review (area api)` — or nothing.
+
+    Two facts that were computable and never shown. The area tags existed since
+    v0.16 and appeared only in the report and the panel, so the terminal — the
+    surface an orchestrator run actually watches — could not tell you which part of
+    a monorepo a phase belonged to. And the review skill was resolvable but never
+    resolved: a reader had to check the phase, then the registry, then meta, to
+    learn who signs this phase off.
+
+    The BASIS is printed with the answer. A reviewer chosen three levels away is
+    otherwise a reviewer nobody can explain, and "backend-review" alone gives no
+    hint about which of the three files to edit to change it.
+
+    Nothing is printed when there is nothing to say — no tags and no reviewer is
+    the ordinary single-app repo, and a line saying so on every phase would be
+    this feature charging every project for a monorepo it does not have.
+    """
+    parts = []
+    tags = (entry or {}).get("area") or areas_of((phase or {}).get("area"))
+    if tags:
+        parts.append("area: %s" % _clip(", ".join(tags), 44))
+    skill, basis = _areas.resolve_review_skill(manifest, phase)
+    if skill:
+        parts.append("review: %s (%s)" % (_clip(skill, 40), basis))
+    return "       " + "   ".join(parts) if parts else ""
 
 
 def _one_line(text):
@@ -615,7 +644,8 @@ def _bug_lines(manifest, summary):
         if b.get("taskId") in ready:
             flag = "   its fix is READY: /audit:run %s" % b["taskId"]
         out.append("    %-8s %-11s %-5s %s%s"
-                   % (b.get("id") or "?", eff, b.get("severity") or "-",
+                   % (b.get("id") or "?", _theme.label(eff) or "?",
+                      b.get("severity") or "-",
                       _one_line(b.get("title"))[:44], flag))
     return out
 
@@ -629,8 +659,10 @@ def _resumable_lines(manifest, summary):
                          if isinstance(t, dict) and t.get("status") == "in_progress"]
         if p.get("status") == "in_progress" or running_tasks:
             where = " on %s" % p["branch"] if p.get("branch") else ""
-            return ["", "  RESUMABLE  phase %s is in_progress%s - interrupted? "
-                    "run /audit:resume" % (p.get("id") or "?", where)]
+            return ["", "  RESUMABLE  phase %s is %s%s - interrupted? "
+                    "run /audit:resume"
+                    % (p.get("id") or "?",
+                       (_theme.label("in_progress") or "in progress").lower(), where)]
     return []
 
 
@@ -921,6 +953,17 @@ def _selftest():
           and s["areas"]["security"]["total"] == s["phases"][1]["total"], repr(s["areas"]))
     s0 = summarize(_fixture())
     check("ar4 untagged manifest -> empty areas (back-compat)", s0["areas"] == {})
+    # A repeated tag used to count its phase twice under that one tag, so a phase
+    # that was 1-of-1 done read 2/2 in the per-area totals — a completion figure
+    # over 100% on the one surface a monorepo reader looks at first.
+    m_dup = copy.deepcopy(_fixture())
+    m_dup["phases"][0]["area"] = ["backend", "backend", " backend "]
+    s_dup = summarize(m_dup)
+    check("ar5 a tag repeated on one phase counts once, and matches trimmed",
+          s_dup["phases"][0]["area"] == ["backend"]
+          and s_dup["areas"]["backend"]["phases"] == 1
+          and s_dup["areas"]["backend"]["total"] == s_dup["phases"][0]["total"],
+          repr(s_dup["areas"]))
 
     # (u) usage block — absent unless a ledger exists, so every existing consumer
     # keeps working untouched
@@ -1068,6 +1111,62 @@ def _selftest():
     check("s31 a short list is not annotated as folded",
           "more" not in render_status(_few, rollup(_few, [], []))
           .split("READY NOW")[1].split("BUGS")[0])
+
+    # --- (h) the words a person reads (v0.28) -----------------------------------
+    # `in_progress` is how a status travels; it is not how it should ever arrive.
+    # The report and the panel have humanised statuses since c3/c2 — the terminal,
+    # which is the surface an actual run is watched on, still printed the machine
+    # spelling in three places.
+    _fx_h = copy.deepcopy(_fx)
+    _fx_h["phases"][1]["status"] = "in_progress"
+    _fx_h["phases"][1]["tasks"][0]["status"] = "in_progress"
+    _fx_h["bugs"] = [{"id": "BUG-9", "title": "live", "status": "in_progress",
+                      "severity": "high"}]
+    _txt_h = render_status(_fx_h, rollup(_fx_h, [], []))
+    check("h1 no machine status spelling survives anywhere in the render - "
+          "the phase row, the task table, the bug list and the RESUMABLE line",
+          "in_progress" not in _txt_h, _txt_h)
+    check("h2 ...and the words are actually there, in each of the four places",
+          "In progress" in _txt_h.split("task")[0] or "In progress" in _txt_h,
+          _txt_h)
+    check("h3 the phase row reads as words",
+          re.search(r"P2\s+Next phase\s+In progress", _txt_h) is not None, _txt_h)
+    check("h4 the RESUMABLE line reads as a sentence, not as an identifier",
+          "is in progress" in _txt_h, _txt_h)
+    check("h5 the bug list humanises its own status vocabulary",
+          re.search(r"BUG-9\s+In progress", _txt_h) is not None, _txt_h)
+    check("h6 the markers are unchanged - they are the legend commands/status.md "
+          "documents, and they key off the machine value",
+          "[~] P2.1" in _txt_h and "[x] P1.1" in _txt_h)
+
+    # --- (e) area + effective reviewer (v0.28) ----------------------------------
+    _fx_a = copy.deepcopy(_fx)
+    _fx_a["meta"]["reviewSkill"] = "house-review"
+    _fx_a["meta"]["areas"] = {"api": {"root": "src", "reviewSkill": "backend-review"},
+                              "web": {"root": "web"}}
+    _fx_a["phases"][0]["area"] = ["api", "web"]
+    _fx_a["phases"][1]["area"] = "web"
+    _txt_a = render_status(_fx_a, rollup(_fx_a, [], []))
+    check("e1 a phase prints its area tags, which the terminal never showed at all",
+          "area: api, web" in _txt_a, _txt_a)
+    check("e2 the effective reviewer is resolved, not left to the reader",
+          "review: backend-review (area api)" in _txt_a, _txt_a)
+    check("e3 a phase whose areas answer nothing falls through to meta, and says so",
+          "review: house-review (meta)" in _txt_a, _txt_a)
+    _fx_a2 = copy.deepcopy(_fx_a)
+    _fx_a2["phases"][0]["reviewSkill"] = "phase-review"
+    check("e4 a phase override is named as the phase's own",
+          "review: phase-review (phase)" in
+          render_status(_fx_a2, rollup(_fx_a2, [], [])))
+    check("e5 an ordinary single-app repo pays nothing for this: no tags and no "
+          "reviewer means no line", "area:" not in _txt and "review:" not in _txt)
+    _fx_a3 = copy.deepcopy(_fx)
+    _fx_a3["phases"][0]["area"] = "solo"
+    _txt_a3 = render_status(_fx_a3, rollup(_fx_a3, [], []))
+    check("e6 tags print without a registry - registration is optional",
+          "area: solo" in _txt_a3 and "review:" not in _txt_a3, _txt_a3)
+    check("e7 the scope line stays pure ASCII like the rest of the render",
+          all(ord(c) < 128 for c in _txt_a))
 
     # --- (b) budget as a gate --------------------------------------------------
     def _with_budgets(*phase_rows):

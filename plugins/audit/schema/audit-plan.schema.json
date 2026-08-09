@@ -105,7 +105,14 @@
             "string",
             "null"
           ],
-          "description": "Skill invoked at phase sign-off. null (default) => skip review; tests are the signer."
+          "description": "Skill invoked at phase sign-off. null (default) => skip review; tests are the signer. A phase may override it (phase.reviewSkill), and a registered area may sit between the two — resolved phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill."
+        },
+        "areas": {
+          "type": "object",
+          "description": "Registry of the areas a phase's `area` tag can name — the monorepo half of the plugin. Optional in both directions and back-compatible by construction: a tag with no entry here stays legal (the validator warns; nothing refuses), and an entry no phase uses is legal too. Registering a tag is what gives it properties: a root directory, a description, a default sign-off reviewer and default executor skills. Resolution is phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill for the reviewer, and area skills + task.skills (deduped, area first) for the executor. When a phase carries several tags, WRITTEN ORDER decides — the first tag whose area declares the field answers.",
+          "additionalProperties": {
+            "$ref": "#/$defs/area"
+          }
         },
         "reportSummary": {
           "type": [
@@ -242,6 +249,36 @@
         }
       }
     },
+    "area": {
+      "type": "object",
+      "description": "One registered area (an app, service, package or cross-cutting concern) that a phase's `area` tag can name.",
+      "additionalProperties": true,
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Directory this area lives in, relative to the PROJECT directory — the same origin as task.files and the fileIndex keys, so it carries the meta.gitRoot prefix when the workspace is in a subdirectory. /audit:doctor warns when it is not a directory; an absolute path warns because it cannot resolve in a second clone."
+        },
+        "description": {
+          "type": "string",
+          "description": "One line saying what this area is, for the humans reading status/report/panel."
+        },
+        "reviewSkill": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Default sign-off reviewer for phases tagged with this area, between phase.reviewSkill (wins) and meta.reviewSkill (fallback). Explicit null means 'tests are the signer here' and STOPS the fallback — it is an answer, not a miss."
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Skills every executor subagent working in this area loads BEFORE the task's own — house conventions first, task specifics second. Merged with task.skills and deduped, area first."
+        }
+      }
+    },
     "adoLink": {
       "type": [
         "object",
@@ -367,7 +404,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Free-text app/domain/concern label(s) for grouping & filtering phases in status/report/panel. A single string (a partition, e.g. 'backend') OR a list of tags for cross-cutting concerns (e.g. ['backend', 'security'] — the phase is grouped under EACH). Any vocabulary: backend/mobile/web, devops, security, embedded, data, ml, platform… Informational; the orchestrator does not act on it."
+          "description": "App/domain/concern label(s) for grouping & filtering phases in status/report/panel. A single string (a partition, e.g. 'backend') OR a list of tags for cross-cutting concerns (e.g. ['backend', 'security'] — the phase is grouped under EACH; written order decides which area answers when several could). Any vocabulary: backend/mobile/web, devops, security, embedded, data, ml, platform… Free text stays legal. A tag that also has an entry in meta.areas gains that area's root, default reviewSkill and default executor skills; an unregistered tag is informational only, and the validator warns about it ONLY when the manifest registers areas at all (where it is usually a typo)."
         },
         "review": {
           "$ref": "#/$defs/review"

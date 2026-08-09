@@ -97,9 +97,42 @@ A newly created phase MUST be initialized with: `status: "pending"`,
 `summary: null`, a one-line `desiredOutcome` (what success looks like — `/audit:status`
 shows it, task subagents receive it, and sign-off must address it), and a
 `testGate` derived from `meta.buildCommands` keys. Optionally `reviewSkill` (a phase-specific
-sign-off reviewer, overriding `meta.reviewSkill`) and `area` — a free-text label, or a **list** of
+sign-off reviewer, overriding `meta.reviewSkill`) and `area` — a label, or a **list** of
 labels for cross-cutting concerns (`"backend"` or `["backend","security"]`; any vocabulary —
 devops/security/embedded/data/ml/…) — for grouping/filtering in status/report/panel. Both default to absent.
+
+## Areas (`meta.areas`)
+
+A tag on a phase groups it. Registering that tag in `meta.areas` gives it properties:
+
+```json
+"areas": {
+  "api": {"root": "services/api", "description": "Django service",
+          "reviewSkill": "backend-review", "skills": ["python-conventions"]},
+  "mobile": {"root": "apps/mobile", "description": "Expo app"}
+}
+```
+
+`root` is relative to the **project dir**, the same origin as `task.files` and the `fileIndex`
+keys (so it carries the `meta.gitRoot` prefix when the workspace is in a subdirectory).
+
+**Registration is optional in both directions.** A phase tag with no entry stays legal — free text
+is the v0.16 behaviour and is not deprecated; the validator warns only when the manifest registers
+areas at all, where an unregistered tag is nearly always a typo. An entry no phase uses is legal too.
+
+Two things resolve against it, and they are **stated identically here, in `orchestrator.md`
+(config resolution, the executor spawn, Phase sign-off step 1) and in `review.md`**:
+
+- **Review skill** — `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`. The
+  first level that is **present** answers, and an explicit `null` **is** an answer (skip review;
+  tests are the signer) rather than a fall-through.
+- **Executor skills** — each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped,
+  **area first**.
+
+When a phase carries **several tags**, WRITTEN ORDER decides: the first tag whose area declares the
+field answers. `/audit:status` prints the resolved reviewer with the basis it came from
+(`review: backend-review (area api)`), and `/audit:doctor` warns when a root is not a directory or a
+phase tag has no entry. Never re-derive any of this by hand when the output is in front of you.
 
 ## fileIndex maintenance
 
