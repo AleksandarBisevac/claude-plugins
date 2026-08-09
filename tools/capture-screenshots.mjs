@@ -377,6 +377,217 @@ async function assertOverviewWorks(page) {
   }
 }
 
+/**
+ * Usage is a dashboard you interrogate, so interrogate it.
+ *
+ * Same rule as assertOverviewWorks: every expected value is computed HERE from
+ * `USAGE.facts` — the rows the server sent — and never from the renderer's own
+ * aggregation, so a filter that quietly matches everything fails. The measured
+ * value is read out of the rendered `messages` tile, which is the one KPI printed
+ * as a plain integer: parsing its digits compares an exact number against an exact
+ * number, with no second implementation of the compact token format to drift.
+ */
+async function assertUsageWorks(page) {
+  // Sum msgs over the rows a predicate keeps. `pred` is a function body evaluated
+  // against (f, F) inside the page, so the oracle is written here, in this file.
+  const oracle = (body) => page.evaluate((b) => {
+    const fn = new Function('f', 'F', 'USAGE', 'return (' + b + ')');
+    const rows = USAGE.facts.filter((f) => fn(f, F, USAGE));
+    return { n: rows.length, msgs: rows.reduce((a, f) => a + f[F.msgs], 0) };
+  }, body);
+  // The digits of the rendered `messages` tile.
+  const shownMsgs = () => page.evaluate(() => {
+    const t = [...document.querySelectorAll('#usage .utile')]
+      .find((x) => x.querySelector('.k').textContent === 'messages');
+    return t ? parseInt(t.querySelector('.v').firstChild.textContent
+      .replace(/\D/g, ''), 10) : null;
+  });
+  const compare = async (label, body) => {
+    const want = await oracle(body); const got = await shownMsgs();
+    if (got !== want.msgs) {
+      fail(`usage: ${label} shows ${got} messages, but ${want.n} matching rows `
+         + `carry ${want.msgs}`);
+      return false;
+    }
+    note(`usage: ${label} -> ${want.n} rows, ${want.msgs} messages`);
+    return true;
+  };
+  const clear = async () => {
+    await page.evaluate(() => clearAll());
+    await page.waitForTimeout(200);
+  };
+
+  if (!(await page.locator('#usage .utile').count())) {
+    fail('usage: no KPI tiles — the tab did not render'); return;
+  }
+  await compare('unfiltered', 'true');
+
+  // --- sparklines -----------------------------------------------------------
+  // Drawn, not merely present: a path element with one point, or with a `d` the
+  // browser could not parse, occupies the DOM and paints nothing.
+  const sparks = await page.evaluate(() => [...document.querySelectorAll('#usage .utile')]
+    .map((t) => {
+      const p = t.querySelector('svg.uspark .sl');
+      const b = p && p.getBBox();
+      return { k: t.querySelector('.k').textContent,
+               pts: p ? (p.getAttribute('d').match(/[ML]/g) || []).length : 0,
+               w: b ? b.width : 0, h: b ? b.height : 0,
+               why: (t.querySelector('.utrend') || {}).title || '' };
+    }));
+  const flat = sparks.filter((s) => s.pts && (s.w < 10 || s.h <= 0.5));
+  const missing = sparks.filter((s) => !s.pts);
+  if (flat.length) {
+    fail(`usage: ${flat.map((s) => s.k).join(', ')} draw a sparkline that paints `
+       + `nothing (${flat.map((s) => `${s.w.toFixed(1)}x${s.h.toFixed(1)}px`).join(', ')})`);
+  } else if (sparks.length - missing.length < 3) {
+    fail(`usage: only ${sparks.length - missing.length} of ${sparks.length} tiles `
+       + `drew a sparkline`);
+  } else {
+    note(`usage: ${sparks.length - missing.length}/${sparks.length} tiles sparked `
+       + `(${sparks.filter((s) => s.pts).map((s) => s.pts + 'pt').join(', ')})`);
+  }
+  // A tile with no daily series must say why, not stand there blank.
+  for (const s of missing) {
+    if (s.why.length < 20) {
+      fail(`usage: the "${s.k}" tile has no sparkline and no explanation `
+         + `("${s.why}")`);
+    }
+  }
+
+  // --- the all-time trend chip ---------------------------------------------
+  // This ledger's last day is two months behind the wall clock, which is the
+  // normal state of a finished project. Anchored on today, "the last 30 days" is
+  // empty on both sides and the chip never appears at all; anchored on the data,
+  // it is the last 30 days of the ledger against the 30 before. The expected
+  // percentage is computed here from the facts.
+  const trend = await page.evaluate(() => {
+    const day = (f) => f[F.ts].slice(0, 10);
+    const days = [...new Set(USAGE.facts.map(day))].sort();
+    const anchor = days[days.length - 1];
+    const n = (d) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 864e5;
+    const iso = (x) => new Date(x * 864e5).toISOString().slice(0, 10);
+    const cut = iso(n(anchor) - 29), prev = iso(n(anchor) - 59);
+    const sum = (a, b) => USAGE.facts.filter((f) => day(f) >= a && day(f) < b)
+      .reduce((t, f) => t + f[F.tokens], 0);
+    const now = sum(cut, '9999'), was = sum(prev, cut);
+    const el = document.querySelector('#usage .utile [data-dl="tokens"]');
+    return { want: was ? 100 * (now - was) / was : null,
+             got: el ? parseFloat(el.textContent) : null,
+             title: el ? el.title : '', anchor, cut, prev };
+  });
+  if (trend.want == null) {
+    note('usage: fixture has no prior 30-day window; trend chip correctly absent');
+  } else if (trend.got == null) {
+    fail(`usage: the ledger ends ${trend.anchor} and has a prior window, but no `
+       + `trend chip rendered — the delta is anchored on the wall clock`);
+  } else if (Math.abs(trend.got - trend.want) > 1) {
+    fail(`usage: trend chip reads ${trend.got}%, the facts say `
+       + `${trend.want.toFixed(1)}% (${trend.cut}..${trend.anchor} vs ${trend.prev})`);
+  } else if (!trend.title.includes(trend.cut) || !trend.title.includes(trend.prev)) {
+    fail(`usage: the trend chip does not name the two periods it compared `
+       + `("${trend.title}")`);
+  } else {
+    note(`usage: trend ${trend.got}% vs prior 30d, both windows named`);
+  }
+
+  // --- the new filters ------------------------------------------------------
+  for (const dim of ['agent', 'attr']) {
+    const sel = page.locator(`#usage select[data-uf=${dim}]`);
+    if (!(await sel.count())) { fail(`usage: no ${dim} filter`); continue; }
+    const val = await page.evaluate((d) => {
+      const s = document.querySelector(`#usage select[data-uf=${d}]`);
+      return [...s.options].map((o) => o.value).filter(Boolean)[0] || null;
+    }, dim);
+    if (!val) { note(`usage: ${dim} has one value in this fixture; skipped`); continue; }
+    await sel.selectOption(val);
+    await page.waitForTimeout(250);
+    await compare(`${dim}=${val}`, `f[F.${dim}]===${JSON.stringify(val)}`);
+    // A filter that cannot be taken off is worse than one that was never applied.
+    const chip = page.locator(`#usage .uchip[data-uchip=${dim}]`);
+    if (!(await chip.count())) fail(`usage: ${dim} is filtered and there is no chip to clear it`);
+    else { await chip.click(); await page.waitForTimeout(250); }
+    await compare(`${dim} cleared`, 'true');
+  }
+
+  // Free text reaches the row's own fields AND the titles behind its ids.
+  const term = await page.evaluate(() => (USAGE.facts[0] || [])[F.model] || '');
+  if (term) {
+    await page.fill('#usage #uq', term);
+    await page.waitForTimeout(500);
+    await compare(`search "${term}"`, `[f[F.phase],f[F.task],f[F.model],f[F.author],`
+      + `f[F.agent],f[F.attr],(USAGE.phaseTitles||{})[f[F.phase]]||'',`
+      + `((USAGE.taskMeta||{})[f[F.task]]||{}).title||''].join(' ').toLowerCase()`
+      + `.includes(${JSON.stringify(term.toLowerCase())})`);
+    // Typing is a filter change, and a filter change repaints the whole tab.
+    const focused = await page.evaluate(() => document.activeElement
+      && document.activeElement.id);
+    if (focused !== 'uq') {
+      fail(`usage: the search box lost focus to "${focused}" when its own keystroke `
+         + `repainted the tab`);
+    }
+    await page.fill('#usage #uq', 'zzq-matches-nothing');
+    await page.waitForTimeout(500);
+    if (!(await page.locator('#usage [data-uclear]').count())) {
+      fail('usage: a search that matches nothing leaves no rows and no way back');
+    }
+    await clear();
+  }
+
+  // The date pair writes the chart's own UF.day grammar, and completes a half
+  // pair from the LEDGER's ends rather than from today.
+  const from = await page.evaluate(() => {
+    const d = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
+    return d[Math.floor(d.length / 2)];
+  });
+  if (from) {
+    await page.fill('#usage input[data-uf=from]', from);
+    await page.waitForTimeout(350);
+    await compare(`from ${from}`, `f[F.ts].slice(0,10)>=${JSON.stringify(from)}`);
+    const paired = await page.evaluate(() => ({
+      to: document.querySelector('#usage input[data-uf=to]').value,
+      end: (USAGE.counts || {}).to, day: UF.day }));
+    if (paired.to !== paired.end) {
+      fail(`usage: half a date pair completed to "${paired.to}", but the ledger `
+         + `ends ${paired.end} — the empty end is being filled from the clock`);
+    } else if (paired.day !== `${from}..${paired.end}`) {
+      fail(`usage: the date pair wrote UF.day="${paired.day}", not the `
+         + `"from..to" grammar the chart click writes`);
+    } else {
+      note(`usage: from/to wrote ${paired.day} in the chart's own grammar`);
+    }
+    await clear();
+  }
+
+  // --- CSV ------------------------------------------------------------------
+  // The export is the one control here whose output leaves the browser, so its
+  // row count is checked against the facts and its numbers against a spreadsheet's
+  // requirements: no separators, or every sum over the column is silently wrong.
+  try {
+    const wait = page.waitForEvent('download', { timeout: 15000 });
+    await page.click('#usage [data-ucsv]');
+    const dl = await wait;
+    const text = await readFile(await dl.path(), 'utf8');
+    const lines = text.replace(/^\uFEFF/, '').trim().split('\r\n');
+    const want = (await oracle('true')).n;
+    if (lines.length !== want + 1) {
+      fail(`usage: CSV has ${lines.length - 1} data rows for ${want} facts`);
+    } else if (!/^ts,phase,task,model,author,agent,attr,tokens,costUSD,msgs$/.test(lines[0])) {
+      fail(`usage: CSV header is "${lines[0]}"`);
+    } else if (lines.slice(1, 200).some((l) => /"?\d+,\d{3}[,."]/.test(l))) {
+      fail('usage: CSV numbers carry thousands separators — a spreadsheet reads '
+         + 'those as text and every sum over the column is then wrong');
+    } else if (!/hourly|daily/.test(dl.suggestedFilename())) {
+      fail(`usage: CSV filename "${dl.suggestedFilename()}" does not say what `
+         + `resolution the rows are at`);
+    } else {
+      note(`usage: exported ${lines.length - 1} rows as ${dl.suggestedFilename()}`);
+    }
+  } catch (e) {
+    fail(`usage: Export CSV produced no download (${String(e).split('\n')[0]})`);
+  }
+  await clear();
+}
+
 async function shot(page, name, { full = false } = {}) {
   await settle(page);
   if (CHECK) return;
@@ -471,6 +682,7 @@ async function main() {
       const ctx = await browser.newContext({
         viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'light',
+        acceptDownloads: true,        // the Usage tab's CSV export is driven below
       });
       const page = await ctx.newPage();
       // The panel is ONE inline script. A syntax error anywhere in it kills every
@@ -581,6 +793,12 @@ async function main() {
       await page.click('#theme');
       await page.waitForTimeout(300);
       await shot(page, 'panel-dark');
+      // Deliberately AFTER the last capture. Driving Usage ends in an export, and an
+      // export raises a toast — which the dark shot caught and committed, a banner
+      // reading "2132 row(s) exported" pinned across a screenshot of the default
+      // view. A check that leaves transient UI behind must run where no shutter
+      // follows it, not merely be timed to miss one.
+      await assertUsageWorks(page);
       // Collected across every tab this run touched, and reported last so the more
       // specific failures above name themselves first.
       if (jsErrors.length) {

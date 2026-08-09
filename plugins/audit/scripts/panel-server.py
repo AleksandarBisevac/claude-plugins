@@ -1705,13 +1705,25 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .ufil{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;gap:var(--sp-1);
  align-items:center;margin:0 0 var(--sp-1);padding:var(--sp-1) 0;
  background:var(--surface);border-bottom:1px solid var(--border)}
-.ufil .combo{flex:1 1 11rem;min-width:9rem}
+/* Two rows, not one wrapping heap. Nine controls on one line wrap wherever the
+   viewport happens to break, which puts "to" above its date input as often as
+   beside it. The split is by JOB - who and what on top, when and how far down -
+   so the pairs that read together cannot be separated by a reflow. */
+.ufrow{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;flex:1 1 100%}
+.ufil .combo{flex:1 1 9rem;min-width:7.5rem}
 .ufil input,.ufil select{font:inherit;font-size:.78rem;width:100%;
  padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
  border:1px solid var(--border);background:var(--bg);color:var(--text)}
 .ufil select{flex:0 0 auto;width:auto}
+.ufil .usearch{flex:2 1 12rem;min-width:9rem}
+.ufil input[type=date]{flex:0 0 auto;width:auto}
+/* The four of them are ONE control and wrap as one: a bare "from" stranded at the
+   end of the row above its own input is a label for nothing. */
+.udates{display:flex;align-items:center;gap:var(--sp-1);flex:0 1 auto}
 .ufil input:focus-visible,.ufil select:focus-visible{outline:2px solid var(--ring);
  outline-offset:1px}
+.ufil .filtlbl{font-size:.72rem;color:var(--muted)}
+.ufil .push{margin-left:auto}
 /* active filters: what is scoping the view, and a way out of each */
 .uchips{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;
  margin:0 0 var(--sp-2)}
@@ -1730,10 +1742,31 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
  color:var(--muted)}
 .utile .v{font-size:1.25rem;font-weight:660;letter-spacing:-.02em;
  margin-top:var(--sp-0);display:flex;align-items:baseline;gap:var(--sp-0)}
+/* The sparkline sits under the number at its own intrinsic size, and the row keeps
+   its height whether or not there is one to draw - so a tile without a daily series
+   does not shorten its card and knock the grid out of line. */
+.utrend{height:20px;margin-top:var(--sp-0);display:flex;align-items:center;
+ color:var(--muted);font-size:.7rem}
 .dl{font-size:.68rem;font-weight:600;padding:0 .3rem;border-radius:var(--pill);
- letter-spacing:0}
-.dl.up{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
-.dl.down{color:var(--muted);background:var(--surface-2)}
+ letter-spacing:0;font-variant-numeric:tabular-nums;
+ color:var(--muted);background:var(--surface-2)}
+/* Direction is stated by a glyph before it is stated by a hue: an arrow survives
+   greyscale, forced-colours and paper, and the sign alone is easy to miss at
+   .68rem. Colour is reserved for the ONE metric that has a direction worth
+   judging - attribution coverage. Tokens and dollars going up is not good news or
+   bad news, it is just news, and painting it green said otherwise for four
+   releases. */
+.dl.up::before{content:"\25b2\a0";font-size:.62em;vertical-align:.1em}
+.dl.down::before{content:"\25bc\a0";font-size:.62em;vertical-align:.1em}
+.dl.good{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.dl.bad{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+/* A word-sized graphic: shape only, no axis and no labels. Everything it would
+   need to be read precisely is in the chart directly below it. */
+.uspark{display:block;overflow:visible}
+.uspark .sa{fill:color-mix(in srgb,var(--accent-solid) 16%,transparent);stroke:none}
+.uspark .sl{fill:none;stroke:var(--accent-solid);stroke-width:1.4;
+ stroke-linejoin:round;stroke-linecap:round}
+.uspark .sd{fill:var(--accent-solid)}
 .ucrumb{font-size:.74rem;margin:0 0 var(--sp-1)}
 .lnk{background:none;border:0;color:var(--accent);font:inherit;font-size:.76rem;
  cursor:pointer;padding:0}
@@ -1878,6 +1911,19 @@ table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,t
  .urow{grid-template-columns:1fr;gap:0}
  .urow .bar{display:none}
  .ufil .combo{flex:1 1 100%}
+ /* A date input has an intrinsic width of about 9rem plus the picker glyph. Two of
+    them, two labels and a select do not fit a 360px row, and `flex:0 0 auto` means
+    they do not shrink either - so the pair takes a line of its own and each half
+    takes half of it. Measured at 390px, which is where the report's own filter
+    panel was found hanging off the left edge. */
+ .udates{flex:1 1 100%}
+ .ufil input[type=date]{flex:1 1 calc(50% - 3rem);min-width:0}
+ .ufil .push{margin-left:0}
+ /* And it stops pinning. Nine controls stacked at this width measure 311px, which
+    on an 844px phone is a sticky bar owning 37% of the screen for the whole scroll
+    - the same shape as the report's filter panel covering the table it filtered.
+    Above the breakpoint the bar is two lines and worth pinning; here it is not. */
+ .ufil{position:static}
 }
 /* ---- settings ------------------------------------------------------------
    Four cards over one file. The grouping is the whole point: the config is not a
@@ -2984,9 +3030,16 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
 // land in a permanently empty view whose controls said nothing was filtered. With a
 // single author slot that state cannot be represented at all.
 let USAGE=null;
-const UF={model:'',author:'',phase:'',task:'',day:'',range:'all'};
-const DIMS=['model','author','phase','task','day'];
+const UF={model:'',author:'',phase:'',task:'',agent:'',attr:'',day:'',q:'',range:'all'};
+const DIMS=['model','author','phase','task','agent','attr','day','q'];
+// What a filter is CALLED where it is shown. The internal name is the fact-tuple
+// field, which is the right name in the code and the wrong one on a chip: `attr` is
+// not a word, and `q` is not a dimension anybody typed.
+const DLABEL={q:'text',attr:'attributed to',agent:'agent',day:'date'};
+const fName=d=>DLABEL[d]||d;
+const fVal=d=>d==='day'?UF.day.replace('..',' to '):UF[d];
 let UORDER=[];                 // dimensions in the order they were set (Esc pops)
+let UQT=null;                  // search debounce; the whole tab re-renders per change
 const SHOWN={phase:8,model:8,author:8,task:8};   // ranked-list depth; 'other' pages
 const F={ts:0,phase:1,task:2,model:3,author:4,agent:5,attr:6,tokens:7,cost:8,msgs:9};
 const RISKS=['high','med','low','unrated'];
@@ -3055,17 +3108,55 @@ function clearAll(){DIMS.forEach(d=>UF[d]='');UF.range='all';UORDER=[];
 // their models. Nothing stores "which level am I on".
 function chartDim(){return UF.author?'model':'author';}
 
-function uFiltered(){if(!USAGE)return[];let out=USAGE.facts;
- if(UF.model)out=out.filter(f=>f[F.model]===UF.model);
- if(UF.author)out=out.filter(f=>f[F.author]===UF.author);
- if(UF.phase)out=out.filter(f=>f[F.phase]===UF.phase);
- if(UF.task)out=out.filter(f=>f[F.task]===UF.task);
+// The text index behind the free-text box: everything about a row that a person
+// could plausibly type, including the phase and task TITLES, which is what makes
+// "checkout" find the work rather than only the id you would have to know already.
+// Built once per fact and cached on the row, so the second keystroke rebuilds
+// nothing across 20000 of them.
+function uHay(f){
+ if(f.h===undefined)f.h=[f[F.phase],f[F.task],f[F.model],f[F.author],f[F.agent],
+   f[F.attr],(USAGE.phaseTitles||{})[f[F.phase]]||'',
+   ((USAGE.taskMeta||{})[f[F.task]]||{}).title||''].join(' ').toLowerCase();
+ return f.h;}
+
+// Every filter EXCEPT the date window, in one place. uFiltered() applies it to the
+// window on screen and uDelta() applies it to the window before, and a dimension
+// that existed in only one of them would compare two different populations while
+// the chip said "vs prior 30d". The delta used to re-list its dimensions inline,
+// which is a copy that goes stale the moment a filter is added — as three were
+// here.
+function uMatch(f){
+ return (!UF.model||f[F.model]===UF.model)
+  &&(!UF.author||f[F.author]===UF.author)
+  &&(!UF.phase||f[F.phase]===UF.phase)
+  &&(!UF.task||f[F.task]===UF.task)
+  &&(!UF.agent||f[F.agent]===UF.agent)
+  &&(!UF.attr||f[F.attr]===UF.attr)
+  &&(!UF.q||uHay(f).includes(UF.q.trim().toLowerCase()));}
+
+function uFiltered(){if(!USAGE)return[];let out=USAGE.facts.filter(uMatch);
  if(UF.day){const[a,b]=UF.day.split('..');
   out=b?out.filter(f=>{const d=f[F.ts].slice(0,10);return d>=a&&d<=b;})
        :out.filter(f=>f[F.ts].slice(0,10)===a);}
  if(UF.range!=='all'){const d=new Date(Date.now()-parseInt(UF.range,10)*864e5)
    .toISOString().slice(0,10);out=out.filter(f=>f[F.ts].slice(0,10)>=d);}
  return out;}
+const uAnyFilter=()=>UORDER.length>0||UF.range!=='all';
+
+// The from/to pair writes the SAME `UF.day` grammar the chart's click writes — one
+// ISO day, or 'from..to' for a span — so a date typed here and a bin clicked there
+// produce one filter, one chip and one way out. The pair also READS it, which is
+// what keeps the two inputs showing the window a chart click just applied.
+//
+// Half a pair is completed from the LEDGER's own ends, never from today:
+// "everything from 1 April" on a ledger that stopped in May means April to May, and
+// completing it with the wall clock would silently widen the window past the data
+// every day the project sits idle.
+function uDayPair(){const[a,b]=(UF.day||'').split('..');return [a||'',b||a||''];}
+function uSetDays(from,to){const C=USAGE.counts||{};
+ const a=from||C.from||'',b=to||C.to||'';
+ setF('day',(a||b)?(a===b?a:a+'..'+b):'');}
+
 function uAgg(facts,key){const m=new Map();
  for(const f of facts){const k=f[F[key]]||'--';const s=m.get(k)||[0,0,0];
   s[0]+=f[F.tokens];s[1]+=f[F.cost];s[2]+=f[F.msgs];m.set(k,s);}
@@ -3114,15 +3205,19 @@ function uBin(days){
  for(let a=0;a<span;a+=size)
   bins.push([iso(start+a),iso(start+Math.min(a+size,span)-1)]);
  return{size,bins};}
+// Which bin a day falls in. Extracted because the sparklines bin the same days by
+// the same ladder: two binary searches over one bin list is two chances for the
+// chart and the tile above it to draw the same span at different resolutions.
+function binAt(bins){return d=>{const n=dnum(d);let lo=0,hi=bins.length-1;
+  while(lo<hi){const mid=(lo+hi+1)>>1;dnum(bins[mid][0])<=n?lo=mid:hi=mid-1;}
+  return lo;};}
 
 function uSeries(facts,dim){const per=new Map(),days=new Set();
  for(const f of facts){const d=f[F.ts].slice(0,10),k=f[F[dim]]||'--';
   days.add(d);const m=per.get(k)||new Map();
   m.set(d,(m.get(d)||0)+f[F.tokens]);per.set(k,m);}
  const ds=[...days].sort(),{size,bins}=uBin(ds);
- const at=d=>{const n=dnum(d);let lo=0,hi=bins.length-1;
-  while(lo<hi){const mid=(lo+hi+1)>>1;dnum(bins[mid][0])<=n?lo=mid:hi=mid-1;}
-  return lo;};
+ const at=binAt(bins);
  const idx=new Map(ds.map(d=>[d,at(d)]));
  const roll=m=>{const v=new Array(bins.length).fill(0);
   for(const[d,n]of m)v[idx.get(d)]+=n;return v;};
@@ -3214,6 +3309,63 @@ function mountChart(sr,dim){
    host.__ro=new ResizeObserver(()=>draw());host.__ro.observe(host);}});
  return host;}
 
+// --- sparklines ------------------------------------------------------------------
+// A KPI tile is one number, and one number cannot say whether it is the top of a
+// climb or the bottom of one. The spark is that shape and nothing else: no axis, no
+// labels, no interaction — everything needed to read it precisely is in the chart
+// directly below, and a tile that tried to be a chart would be a worse one.
+//
+// Drawn at its intrinsic pixel size, NOT stretched to the tile, for the reason the
+// main chart is drawn 1:1: a viewBox scaled non-uniformly scales the strokes with
+// it, and at this size a 1.4px line becoming 2px on the verticals is the whole
+// drawing. It bins by the same ladder the chart uses (via uBin/binAt), so the tile
+// and the chart under it can never be showing two different resolutions, and the
+// period it settled on is named in the tile's own tooltip rather than left implied.
+const SPW=76,SPH=20;
+function uDaily(facts){
+ const per=new Map();
+ for(const f of facts){const d=f[F.ts].slice(0,10);
+  const s=per.get(d)||[0,0,0,0];      // tokens, cost, msgs, unattributed tokens
+  s[0]+=f[F.tokens];s[1]+=f[F.cost];s[2]+=f[F.msgs];
+  if(f[F.attr]==='unattributed')s[3]+=f[F.tokens];
+  per.set(d,s);}
+ const ds=[...per.keys()].sort();
+ if(!ds.length)return{period:'day',series:{}};
+ const{size,bins}=uBin(ds),at=binAt(bins);
+ const acc=bins.map(()=>[0,0,0,0]);
+ for(const[d,s]of per){const i=at(d);for(let k=0;k<4;k++)acc[i][k]+=s[k];}
+ return{period:size===1?'day':BINNAME[size],
+   series:{tokens:acc.map(v=>v[0]),cost:acc.map(v=>v[1]),msgs:acc.map(v=>v[2]),
+     // A bucket with no tokens has no coverage to report; carrying 0% would draw a
+     // cliff to the floor on a quiet day and call it a collapse in attribution.
+     attributed:acc.map(v=>v[0]?100*(v[0]-v[3])/v[0]:null)}};}
+
+// `zero` is not decoration, it is the claim the drawing makes. A magnitude is
+// measured from nothing, so its baseline is 0 and the area under it means the
+// quantity. A SHARE is not: attribution moving 96% -> 99% against a 0..100 axis is
+// three pixels of a solid block, which is a sparkline that says nothing while
+// looking like it says something. A share is therefore scaled to its own range and
+// drawn as a line alone — no area, because there is no zero for the area to be
+// measured from, and a filled shape would invite exactly that reading.
+function uSpark(vals,label,zero){
+ // Two points make a line; one makes a claim about a trend from a single sample.
+ // Nulls are gaps (a bucket with no tokens has no share to report) and are dropped
+ // rather than plotted as zero, which would draw a cliff on a quiet day.
+ const v=(vals||[]).filter(x=>x!=null);
+ if(v.length<2)return null;
+ const hi=Math.max(...v),lo=zero?Math.min(0,Math.min(...v)):Math.min(...v);
+ const rng=(hi-lo)||1;
+ const X=i=>SPW*i/(v.length-1),Y=x=>1.5+(SPH-3)*(1-(x-lo)/rng);
+ const d=v.map((x,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(x).toFixed(1)).join('');
+ const svg=svgEl('svg',{class:'uspark',width:SPW,height:SPH,
+   viewBox:'0 0 '+SPW+' '+SPH,role:'img','aria-label':label});
+ if(zero)svg.appendChild(svgEl('path',{class:'sa',
+   d:d+'L'+SPW.toFixed(1)+' '+SPH+'L0 '+SPH+'Z'}));
+ svg.appendChild(svgEl('path',{class:'sl',d:d}));
+ svg.appendChild(svgEl('circle',{class:'sd',cx:SPW,cy:Y(v[v.length-1]).toFixed(1),
+   r:1.7}));
+ return svg;}
+
 // --- metrics, all recomputed under the current filter --------------------------
 function uCoverage(facts){const by={},tot=facts.reduce((a,f)=>a+f[F.tokens],0)||1;
  for(const f of facts)by[f[F.attr]]=(by[f[F.attr]]||0)+f[F.tokens];
@@ -3255,20 +3407,92 @@ function uRouting(facts){const M=USAGE.taskMeta||{},acc={};
  return rows;}
 // vs the window immediately before this one, same length. Null when there is no
 // prior period -- a first-run dashboard must not invent a trend.
+//
+// "All time" has no window, so it gets one: the last 30 days of the LEDGER against
+// the 30 before them, anchored on the last day that has data rather than on the
+// wall clock. Anchoring on today would make the default view of a ledger that
+// stopped two months ago compare an empty window with an empty window and show no
+// trend at all, forever — which is exactly the state a project is in when someone
+// opens the panel to ask what it cost.
+//
+// Both date ranges travel with the number in `basis`, because "+18%" against an
+// unnamed period is not a measurement.
 function uDelta(facts,days){
- if(UF.range==='all'||!days.length)return null;
- const span=parseInt(UF.range,10);
- const cut=new Date(Date.now()-span*864e5).toISOString().slice(0,10);
- const prevCut=new Date(Date.now()-2*span*864e5).toISOString().slice(0,10);
- const base=USAGE.facts.filter(f=>{const d=f[F.ts].slice(0,10);
-  return d>=prevCut&&d<cut
-   &&(!UF.model||f[F.model]===UF.model)&&(!UF.author||f[F.author]===UF.author)
-   &&(!UF.phase||f[F.phase]===UF.phase)&&(!UF.task||f[F.task]===UF.task);});
- if(!base.length)return null;
- const sum=a=>a.reduce((x,f)=>[x[0]+f[F.tokens],x[1]+f[F.cost]],[0,0]);
- const now=sum(facts),was=sum(base);
- return {tokens:was[0]?100*(now[0]-was[0])/was[0]:null,
-         cost:was[1]?100*(now[1]-was[1])/was[1]:null};}
+ if(!days.length)return null;
+ const all=UF.range==='all',span=all?30:parseInt(UF.range,10);
+ const iso=n=>new Date(n*864e5).toISOString().slice(0,10);
+ const anchor=all?days[days.length-1]:iso(Math.floor(Date.now()/864e5));
+ // One boundary convention: the window is [cut, anchor], the one before it is
+ // [prevCut, cut). Under a range preset `cut` is the same cut uFiltered() applies,
+ // so the "now" side is exactly the rows the tiles are counting and `facts` can be
+ // used as-is; under "all time" `facts` is the whole ledger and has to be sliced.
+ const cut=iso(dnum(anchor)-span+(all?1:0)),prevCut=iso(dnum(cut)-span);
+ const day=f=>f[F.ts].slice(0,10);
+ const now=all?facts.filter(f=>day(f)>=cut):facts;
+ const base=USAGE.facts.filter(f=>{const d=day(f);
+  return d>=prevCut&&d<cut&&uMatch(f);});
+ if(!base.length||!now.length)return null;
+ const sum=a=>{let t=0,c=0,m=0,un=0;
+  for(const f of a){t+=f[F.tokens];c+=f[F.cost];m+=f[F.msgs];
+   if(f[F.attr]==='unattributed')un+=f[F.tokens];}
+  return{tokens:t,cost:c,msgs:m,attributed:t?100*(t-un)/t:null};};
+ const A=sum(now),B=sum(base);
+ const pc=(x,y)=>y?100*(x-y)/y:null;
+ return {tokens:pc(A.tokens,B.tokens),cost:pc(A.cost,B.cost),
+         msgs:pc(A.msgs,B.msgs),
+         // A share compared with a share is a difference in POINTS. 90% to 95% is
+         // five points, and calling it +5.6% would be a third number nobody asked
+         // for and the one a reader would misread as the coverage itself.
+         attributed:(A.attributed==null||B.attributed==null)
+           ?null:A.attributed-B.attributed,
+         label:'vs prior '+span+'d',
+         basis:(all?'the ledger’s last '+span+' days':'the last '+span+' days')
+           +' ('+cut+' to '+anchor+') against '+prevCut+' to '+iso(dnum(cut)-1)};}
+
+// --- CSV export ------------------------------------------------------------------
+// The rows behind the view, as a file, because the questions a spreadsheet is for
+// are not the questions a dashboard is for. Numbers go out RAW — no thousands
+// separators, no currency symbol, no locale — since the receiver parses them:
+// '3,230,000' lands in Excel as text and every sum over the column is then wrong
+// and silently so. (The panel's own selftest scans for toLocaleString on the screen
+// side for the same reason, one surface up.)
+function uCsvText(facts){
+ const head=['ts','phase','task','model','author','agent','attr','tokens',
+   'costUSD','msgs'];
+ // RFC 4180: quote anything containing a comma, a quote or a newline, and double
+ // the quotes inside. A task title with a comma in it is not exotic.
+ const q=v=>{const s=v==null?'':String(v);
+  return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+ const out=[head.join(',')];
+ for(const f of facts)out.push([f[F.ts],f[F.phase],f[F.task],f[F.model],
+   f[F.author],f[F.agent],f[F.attr],f[F.tokens],f[F.cost].toFixed(6),f[F.msgs]]
+  .map(q).join(','));
+ return out.join('\r\n')+'\r\n';}
+function uExport(facts){
+ if(!facts.length){toast('nothing to export — no rows match these filters','err');
+  return;}
+ // The name says what the file IS. These are aggregated buckets, not raw ledger
+ // lines, and at 20000 rows the server rolls them from hourly to daily — a file
+ // called usage.csv on someone's disk three weeks later cannot be trusted to be
+ // either. Span, resolution and whether a filter was applied all go in the name.
+ const C=USAGE.counts||{};
+ const name='usage-'+(C.from||'start')+'_'+(C.to||'end')+'-'
+   +(USAGE.rolled?'daily':'hourly')+(uAnyFilter()?'-filtered':'')+'.csv';
+ try{
+  // U+FEFF: without a byte-order mark Excel reads a UTF-8 CSV in the local 8-bit
+  // codepage and turns every non-ASCII author name into mojibake on open. Written
+  // as an escape, never as the character itself — an invisible literal in the
+  // source is unreviewable and ungreppable.
+  const url=URL.createObjectURL(new Blob(['\ufeff'+uCsvText(facts)],
+    {type:'text/csv;charset=utf-8'}));
+  const a=el('a',{href:url,download:name});
+  document.body.append(a);a.click();a.remove();
+  // Revoked late, not immediately: some browsers have not started reading the blob
+  // by the time click() returns, and a revoked URL there is a download that fails
+  // with no error anywhere.
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  toast(facts.length+' row(s) exported to '+name);
+ }catch(e){toast('export failed: '+e,'err');}}
 
 // --- render --------------------------------------------------------------------
 function uBars(facts,dim,title){
@@ -3473,8 +3697,8 @@ function openBrowse(dim,title,facts){
      onclick:()=>BROWSE.close()},'✕'));
  // "All phases" would be a lie while the page is scoped to one author.
  const within=UORDER.length
-   ? el('div',{class:'mut small'},'within: '+UORDER.map(d=>d+' '+
-       (d==='day'?UF.day.replace('..',' to '):UF[d])).join(' · '))
+   ? el('div',{class:'mut small'},'within: '+UORDER.map(d=>fName(d)+' '+fVal(d))
+       .join(' · '))
    : null;
  // State the thresholds, or state why there are none. Either way the reader can
  // check the classification rather than take it on faith.
@@ -3550,8 +3774,16 @@ function openBrowse(dim,title,facts){
  BROWSE.showModal();
  search.focus();}
 
-function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
+function renderUsage(){const c=$('#usage');
+ // Every filter change repaints this whole tab — and a filter change is exactly
+ // what typing in the search box IS. Without this, the third letter of a five
+ // letter search goes into a box that no longer exists, and the caret with it.
+ const act=document.activeElement,keepQ=!!(act&&act.id==='uq'),
+   caret=keepQ?act.selectionStart:0;
+ c.textContent='';tipHide();
  const card=el('div',{class:'card'});
+ const done=()=>{c.append(card);
+  if(keepQ){const n=$('#uq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}};
  if(!USAGE||!USAGE.facts.length){
   card.append(USAGE&&!USAGE.enabled
    ?el('div',{class:'mut'},'Token metering is off — ',
@@ -3562,7 +3794,7 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
    el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
      'ledger: '+((USAGE||{}).ledgerDir||'-'),' · ',
      settingsLink('change where it is written','usage.ledgerDir')));
-  c.append(card);return;}
+  done();return;}
 
  // context line: the shape of the ledger, at zero card weight
  const K=USAGE.counts||{};
@@ -3586,31 +3818,73 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
    settingsLink('rates undated: date them in Settings','usage.pricingAsOf'));
  card.append(ctx);
 
- // filters: typeahead for the high-cardinality dimensions, select for range
+ // filters, on two rows: WHO and WHAT above, WHEN and the way out below.
+ // Typeahead for the dimensions with hundreds of values, a plain select for the
+ // two that have three — a select states its whole domain at a glance, which a
+ // typeahead hides behind a keystroke, and hiding a two-value domain is silly.
  const uniq=dim=>[...new Set(USAGE.facts.map(f=>f[F[dim]]).filter(Boolean))].sort();
  const totalsFor=dim=>{const m=new Map();
   for(const f of USAGE.facts)m.set(f[F[dim]],(m.get(f[F[dim]])||0)+f[F.tokens]);
   return m;};
  const filt=el('div',{class:'ufil'});
- ['model','author','phase'].forEach(dim=>{
+ const r1=el('div',{class:'ufrow'}),r2=el('div',{class:'ufrow'});
+ // Free text is the way in when you do not yet know which dimension the word you
+ // remember belongs to. Debounced, because every change repaints the tab.
+ const qIn=el('input',{type:'search',id:'uq',class:'usearch',value:UF.q,
+   placeholder:'search rows — id, title, model, person, agent…',
+   'aria-label':'search usage rows'});
+ qIn.addEventListener('input',()=>{clearTimeout(UQT);
+   UQT=setTimeout(()=>{if(qIn.value!==UF.q)setF('q',qIn.value);},220);});
+ r1.append(qIn);
+ // `task` joins the typeaheads: it was filterable by clicking a bar or a browse
+ // row and by nothing you could type, which on 1000 tasks means it was filterable
+ // only by the ones already in the top 8.
+ ['model','author','phase','task'].forEach(dim=>{
   const all=uniq(dim),tot=totalsFor(dim);
   const inp=el('input',{type:'search',value:UF[dim],
     placeholder:'all '+dim+'s ('+all.length+')','aria-label':'filter by '+dim,
     onchange:e=>setF(dim,all.includes(e.target.value)?e.target.value:'')});
-  filt.append(comboWrap(inp,()=>all.map(v=>({name:v,
+  r1.append(comboWrap(inp,()=>all.map(v=>({name:v,
     description:uTok(tot.get(v)||0)})),(name,close)=>{close();setF(dim,name);}));});
- filt.append(el('select',{'aria-label':'time range',
+ [['agent','all agents'],['attr','all attributions']].forEach(([dim,none])=>{
+  const vals=uniq(dim);
+  if(!vals.length)return;
+  const sel=el('select',{'aria-label':'filter by '+fName(dim),'data-uf':dim,
+    onchange:e=>setF(dim,e.target.value)});
+  sel.append(el('option',{value:''},none+' ('+vals.length+')'));
+  vals.forEach(v=>{const o=el('option',{value:v},v);
+   if(UF[dim]===v)o.selected=true;sel.append(o);});
+  r2.append(sel);});
+ // An absolute window, in the same UF.day grammar the chart's click writes.
+ const dp=uDayPair();
+ const mkDate=(which,val)=>el('input',{type:'date',value:val,
+   'data-uf':which,'aria-label':which+' date',
+   // The pickers open on the ledger, not on this century. Both ends are also
+   // cross-constrained so the picker cannot offer a `to` before the `from`.
+   min:which==='to'?(dp[0]||K.from||''):(K.from||''),
+   max:which==='from'?(dp[1]||K.to||''):(K.to||''),
+   onchange:e=>{const[a,b]=uDayPair();
+     if(which==='from')uSetDays(e.target.value,b);else uSetDays(a,e.target.value);}});
+ r2.append(el('span',{class:'udates'},
+   el('span',{class:'filtlbl'},'from'),mkDate('from',dp[0]),
+   el('span',{class:'filtlbl'},'to'),mkDate('to',dp[1])));
+ r2.append(el('select',{'aria-label':'time range','data-uf':'range',
    onchange:e=>{UF.range=e.target.value;renderUsage();}},
   [['all','all time'],['7','last 7 days'],['30','last 30 days'],['90','last 90 days']]
    .map(([v,l])=>el('option',Object.assign({value:v},v===UF.range?{selected:'selected'}:{}),l))));
+ r2.append(el('button',{class:'btn small push',type:'button','data-ucsv':'1',
+   title:'Download the rows behind this view as CSV — one row per bucket, phase, '
+     +'task, model, person, agent and attribution, with the filters applied',
+   onclick:()=>uExport(uFiltered())},'Export CSV'));
+ filt.append(r1,r2);
  card.append(filt);
 
  // active-filter chips: what is scoping the view, and a way out of each
- if(UORDER.length||UF.range!=='all'){
+ if(uAnyFilter()){
   const chips=el('div',{class:'uchips'});
   UORDER.forEach(d=>chips.append(el('button',{class:'uchip',title:'remove this filter',
-    onclick:()=>setF(d,'')},el('span',{class:'ck'},d),
-    d==='day'?UF.day.replace('..',' to '):UF[d],el('span',{class:'cx'},'x'))));
+    'data-uchip':d,onclick:()=>setF(d,'')},el('span',{class:'ck'},fName(d)),
+    fVal(d),el('span',{class:'cx'},'x'))));
   chips.append(el('button',{class:'lnk',onclick:clearAll},'clear all'));
   card.append(chips);}
 
@@ -3619,21 +3893,52 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
  const tot=facts.reduce((a,f)=>[a[0]+f[F.tokens],a[1]+f[F.cost],a[2]+f[F.msgs]],[0,0,0]);
  const cov=uCoverage(facts),unit=uUnit(facts),rt=uRetry(facts);
  const dl=uDelta(facts,days);
- const tile=(k,v,d)=>el('div',{class:'utile'},el('div',{class:'k'},k),
-   el('div',{class:'v'},v,d==null?null:el('span',
-     {class:'dl '+(d>=0?'up':'down')},(d>=0?'+':'')+d.toFixed(0)+'%')));
- const tiles=[tile('tokens',uTok(tot[0]),dl&&dl.tokens)];
- if(USAGE.showCost)tiles.push(tile('equivalent cost',uCost(tot[1]),dl&&dl.cost));
- tiles.push(tile('messages',tot[2].toLocaleString()));
- if(unit.perTask!=null)tiles.push(tile('cost per task',uCost(unit.perTask)));
- tiles.push(tile('attributed',cov.attributed.toFixed(0)+'%'));
+ const sp=uDaily(facts);
+ // A tile is three things: the number, how it moved against the window before, and
+ // the shape it moved in. `pp` says the delta is a difference in percentage POINTS
+ // rather than a percentage change; `pol` marks the one metric whose direction is
+ // worth judging, so only that one is coloured.
+ const tile=(k,v,o)=>{o=o||{};
+  const d=o.delta==null?null:o.delta;
+  const box=el('div',{class:'utile'},el('div',{class:'k'},k),
+    el('div',{class:'v'},v,d==null?null:el('span',
+      {class:'dl '+(d>=0?'up':'down')+(o.pol?(d>=0?' good':' bad'):''),
+       'data-dl':o.key||'',title:dl.basis},
+      (d>=0?'+':'')+d.toFixed(o.pp?1:0)+(o.pp?' pts':'%'))));
+  const s=o.series?uSpark(o.series,k+' per '+sp.period+', oldest to newest',!o.pp)
+    :null;
+  box.append(s
+    ? el('div',{class:'utrend',
+        title:k+' per '+sp.period+(o.pp?', scaled to its own range — a share has no'
+          +' zero to draw an area from':', from zero')},s)
+    // Not a blank: a tile with no spark has a reason, and the reason is short
+    // enough to carry. Dropping the row instead would also shorten the card and
+    // pull the tile grid out of line.
+    : el('div',{class:'utrend',title:o.why||'no daily series for this metric'},'—'));
+  return box;};
+ const tiles=[tile('tokens',uTok(tot[0]),
+   {key:'tokens',delta:dl&&dl.tokens,series:sp.series.tokens})];
+ if(USAGE.showCost)tiles.push(tile('equivalent cost',uCost(tot[1]),
+   {key:'cost',delta:dl&&dl.cost,series:sp.series.cost}));
+ tiles.push(tile('messages',tot[2].toLocaleString(),
+   {key:'msgs',delta:dl&&dl.msgs,series:sp.series.msgs}));
+ if(unit.perTask!=null)tiles.push(tile('cost per task',uCost(unit.perTask),
+   {why:'no daily trend: a task’s cost accrues over every day it ran and is only '
+     +'complete when the task is, so there is no per-day cost-per-task to plot'}));
+ tiles.push(tile('attributed',cov.attributed.toFixed(0)+'%',
+   {key:'attributed',delta:dl&&dl.attributed,pp:true,pol:1,
+    series:sp.series.attributed}));
  card.append(el('div',{class:'utiles'},tiles));
+ // Said once, under the row, rather than five times on five chips — and the exact
+ // pair of date ranges is on each chip's own tooltip.
+ if(dl)card.append(el('div',{class:'ucrumb mut small'},
+   'Trend is '+dl.label+': '+dl.basis+'.'));
 
  if(!facts.length){
   card.append(el('div',{class:'mut'},'No rows match these filters.'),
-   el('button',{class:'btn small',style:'margin-top:var(--sp-1)',onclick:clearAll},
-     'Clear filters'));
-  c.append(card);return;}
+   el('button',{class:'btn small','data-uclear':'1',
+     style:'margin-top:var(--sp-1)',onclick:clearAll},'Clear filters'));
+  done();return;}
 
  const dim=chartDim();
  // Slots are handed out to the entities actually drawn, so a hue is never shared.
@@ -3714,7 +4019,7 @@ function renderUsage(){const c=$('#usage');c.textContent='';tipHide();
     +'spent at the other model’s rates, and a different model would not emit '
     +'the same tokens. Both sides use today’s price table.'));}
 
- c.append(card);}
+ done();}
 
 // Esc pops the most recently applied filter -- the fastest way back out of a scope
 // you clicked into by accident.
@@ -3724,6 +4029,12 @@ document.addEventListener('keydown',e=>{
  // A dialog closes itself on Esc. Without this guard that same keypress would
  // ALSO drop a filter - one key, two effects, one of them invisible.
  if(document.querySelector('dialog[open]'))return;
+ // An <input type=search> clears ITSELF on Escape, the same trap the browse
+ // dialog hit. Left alone, one press would empty the box and pop an unrelated
+ // filter; so from inside the box, Escape means "drop the search" and nothing
+ // else, and the state follows the box rather than diverging from it.
+ const a=document.activeElement;
+ if(a&&a.id==='uq'){if(UF.q)setF('q','');return;}
  if(UORDER.length){setF(UORDER[UORDER.length-1],'');}
  else if(UF.range!=='all'){UF.range='all';renderUsage();}});
 boot().catch(e=>toast('load failed: '+e,'err'));
@@ -4669,6 +4980,124 @@ def _selftest():
           "const binKey=b=>b[0]===b[1]?b[0]:b[0]+'..'+b[1]" in UI_HTML
           and "const[a,b]=UF.day.split('..')" in UI_HTML
           and "UF.day.replace('..',' to ')" in UI_HTML)
+
+    # --- usage c5: filters, trends, export ---------------------------------
+    # Derived, not enumerated. A filter added to UF and forgotten in DIMS is a
+    # filter `clear all` cannot clear and Esc cannot pop — it stays on for the rest
+    # of the session with a chip beside it that does nothing. The two lists must be
+    # the same set, so the test compares them rather than restating either.
+    _uf_keys = set(re.findall(r"(\w+):''", re.search(
+        r"const UF=\{(.*?)\};", UI_HTML, re.S).group(1)))
+    _dims = set(re.findall(r"'(\w+)'", re.search(
+        r"const DIMS=\[(.*?)\];", UI_HTML, re.S).group(1)))
+    check("every filter in UF is in DIMS, so clear-all and Esc reach all of them "
+          "(UF-only: %r, DIMS-only: %r)"
+          % (sorted(_uf_keys - _dims), sorted(_dims - _uf_keys)),
+          _uf_keys == _dims and len(_dims) >= 8)
+    # The delta used to re-list model/author/phase/task inline. Adding agent, attr
+    # and free text to uFiltered alone would have left the trend comparing the
+    # whole prior month against a filtered current one, and labelling it "vs prior
+    # 30d" while doing it.
+    _dl = UI_HTML[UI_HTML.index("function uDelta("):
+                  UI_HTML.index("// --- CSV export")]
+    check("one predicate scopes both windows: uFiltered and uDelta share uMatch, "
+          "and the delta re-lists no dimension of its own",
+          "function uMatch(f){" in UI_HTML
+          and "USAGE.facts.filter(uMatch)" in UI_HTML
+          and "&&uMatch(f);" in _dl
+          and "UF.model" not in _dl and "UF.author" not in _dl)
+    check("free text reads titles, not only ids, so a word from the plan finds "
+          "the work",
+          "function uHay(f)" in UI_HTML
+          and "(USAGE.phaseTitles||{})[f[F.phase]]" in UI_HTML
+          and "((USAGE.taskMeta||{})[f[F.task]]||{}).title" in UI_HTML)
+    # A ledger's last day, never today's: the panel's own demo ledger ends in May,
+    # and a wall-clock anchor makes the default view of it compare two empty
+    # windows and show no trend at all, forever.
+    check("all-time still gets a trend, anchored on the ledger's last day",
+          "const all=UF.range==='all',span=all?30:parseInt(UF.range,10)" in UI_HTML
+          and "const anchor=all?days[days.length-1]" in UI_HTML
+          and "label:'vs prior '+span+'d'" in UI_HTML)
+    check("and it carries both date ranges, because a percentage against an "
+          "unnamed period is not a measurement",
+          "basis:(all?'the ledger" in UI_HTML
+          and "') against '+prevCut+' to '+iso(dnum(cut)-1)" in UI_HTML
+          and "'Trend is '+dl.label+': '+dl.basis" in UI_HTML)
+    check("a share moves in POINTS, a magnitude in per cent",
+          "attributed:(A.attributed==null||B.attributed==null)" in _dl
+          and "?null:A.attributed-B.attributed" in _dl
+          and "(o.pp?' pts':'%')" in UI_HTML)
+    # Colour said "spending more is good" for four releases, on the one chip whose
+    # job is to report a direction.
+    check("direction is a glyph before it is a hue, and only the metric with a "
+          "polarity is coloured",
+          '.dl.up::before{content:"\\25b2\\a0"' in UI_HTML
+          and '.dl.down::before{content:"\\25bc\\a0"' in UI_HTML
+          and "(o.pol?(d>=0?' good':' bad'):'')" in UI_HTML
+          and ".dl{" in UI_HTML
+          and "color:var(--muted);background:var(--surface-2)}" in UI_HTML)
+    check("a magnitude spark is drawn from zero with an area, a share is scaled "
+          "to its own range with none",
+          "function uSpark(vals,label,zero)" in UI_HTML
+          and "zero?Math.min(0,Math.min(...v)):Math.min(...v)" in UI_HTML
+          and "if(zero)svg.appendChild(svgEl('path',{class:'sa'" in UI_HTML
+          and "uSpark(o.series,k+' per '+sp.period+', oldest to newest',!o.pp)"
+          in UI_HTML)
+    _spk = UI_HTML[UI_HTML.index("function uSpark("):
+                   UI_HTML.index("// --- metrics,")]
+    check("the spark is drawn 1:1 like the chart, not stretched to the tile "
+          "(a scaled viewBox scales the strokes with it)",
+          "const SPW=76,SPH=20" in UI_HTML
+          and "width:SPW,height:SPH" in _spk
+          and "preserveAspectRatio" not in _spk)
+    check("a tile with no daily series says why instead of drawing a flat line",
+          "no daily trend: a task" in UI_HTML
+          and "title:o.why||'no daily series for this metric'" in UI_HTML)
+    # A quiet day has no share to report. Plotting it as 0% draws a cliff to the
+    # floor and calls it a collapse in attribution.
+    check("an empty bucket is a gap in a share series, never a zero",
+          "attributed:acc.map(v=>v[0]?100*(v[0]-v[3])/v[0]:null)" in UI_HTML
+          and "const v=(vals||[]).filter(x=>x!=null);" in UI_HTML)
+    # The from/to pair and a click on the chart write ONE filter, in one grammar,
+    # with one chip and one way out.
+    check("the date pair reads and writes the same UF.day grammar the chart does",
+          "function uDayPair(){const[a,b]=(UF.day||'').split('..')" in UI_HTML
+          and "setF('day',(a||b)?(a===b?a:a+'..'+b):'')" in UI_HTML)
+    check("half a pair is completed from the ledger's own ends, not from today",
+          "const a=from||C.from||'',b=to||C.to||''" in UI_HTML
+          and "Date.now" not in UI_HTML[UI_HTML.index("function uSetDays"):
+                                        UI_HTML.index("function uAgg")])
+    _csv = UI_HTML[UI_HTML.index("function uCsvText("):
+                   UI_HTML.index("// --- render ---")]
+    check("the CSV ships raw numbers: a separator makes every sum over the "
+          "column wrong, and silently",
+          "toLocaleString" not in _csv
+          and "f[F.cost].toFixed(6)" in _csv and "f[F.tokens]," in _csv)
+    check("and quotes per RFC 4180, so a comma in a title does not shift a column",
+          '/[",\\r\\n]/.test(s)' in _csv
+          and "'\"'+s.replace(/\"/g,'\"\"')+'\"'" in _csv
+          and "out.join('\\r\\n')" in _csv)
+    check("the file names what it is — span, resolution and whether a filter was "
+          "on — so it can still be trusted three weeks later",
+          "'usage-'+(C.from||'start')+'_'+(C.to||'end')+'-'" in _csv
+          and "(USAGE.rolled?'daily':'hourly')" in _csv
+          and "(uAnyFilter()?'-filtered':'')+'.csv'" in _csv)
+    check("the blob URL outlives the click, and an export that cannot run says so "
+          "rather than being a button that does nothing",
+          "setTimeout(()=>URL.revokeObjectURL(url),4000)" in _csv
+          and "toast('export failed: '+e,'err')" in _csv
+          and "nothing to export" in _csv)
+    check("the BOM is an escape, not an invisible character in the source",
+          "['\\ufeff'+uCsvText(facts)]" in _csv
+          and "﻿" not in UI_HTML)
+    # <input type=search> clears itself on Escape - the trap the browse dialog
+    # already hit once. One key, one effect.
+    check("Escape inside the search box drops the search and nothing else",
+          "if(a&&a.id==='uq'){if(UF.q)setF('q','');return;}" in UI_HTML)
+    check("and the box keeps focus and caret when the filter repaints the tab",
+          "keepQ=!!(act&&act.id==='uq')" in UI_HTML
+          and "if(keepQ){const n=$('#uq');" in UI_HTML
+          and "n.setSelectionRange(caret,caret)" in UI_HTML)
 
     u = usage_state(proj)
     check("usage_state on a project with no ledger is empty, not an error",

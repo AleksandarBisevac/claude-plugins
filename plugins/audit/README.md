@@ -608,7 +608,9 @@ author is what makes cross-developer analytics work).
 
 The same data drives a **Usage section in `/audit:report`** (stat tiles, per-phase stacked bars by
 model, a daily trend and a day x hour heatmap) and a **Usage tab in `/audit:panel`** with live
-filtering by model, author, phase and date range.
+filtering by model, author, phase, task, agent, attribution, free text and an absolute date
+window, sparklined KPI tiles with a trend against the previous period, and **Export CSV** of
+exactly the rows behind the current view.
 
 ## Azure DevOps (optional)
 
