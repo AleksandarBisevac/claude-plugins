@@ -350,6 +350,139 @@ if (!portrait || !landscape) {
     landscape.w > landscape.h, true);
 }
 
+// 8. Back to a clean document for the polish checks below — the print block above
+//    deliberately leaves it filtered down to nothing.
+const clearAll = async () => {
+  const btn = await page.$('.sectools [data-clear]:not([hidden])');
+  if (btn) await btn.click();
+  await page.click('#audit-q');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+};
+await clearAll();
+
+// A revealed row settles VISIBLE. This is the one assertion the fade genuinely
+// needs, and it is here rather than in a string pin because the failure it guards
+// is silent and total: this stylesheet has already pinned two blocks at opacity 0
+// forever, when `fadeUp`'s easing token stopped resolving. `@starting-style` has
+// the same shape of accident available to it — one brace out of place and
+// `opacity:0` stops being a starting value and becomes the row's actual style, so
+// every expanded task is invisible while the row counts, the match badges and
+// every string pin in the suite stay exactly as green as they are now.
+await page.click('#audit-expand');
+await page.waitForTimeout(400);        // > --dur (.22s), so the fade has finished
+const revealed = await page.evaluate(() => {
+  const rows = [...document.querySelectorAll('tr.task')].filter((r) => r.offsetParent !== null);
+  return { n: rows.length, faded: rows.filter((r) => +getComputedStyle(r).opacity < 1).length };
+});
+if (revealed.n === 0) failures.push('FAIL expand-all revealed no task rows to check for visibility');
+else expect(`every one of the ${revealed.n} revealed task rows is actually visible`, revealed.faded, 0);
+
+// ...and the reveal is screen-only. A transition caught mid-run by the print
+// snapshot puts a half-faded row on paper, and paper has no second frame.
+await page.emulateMedia({ media: 'print' });
+await page.waitForTimeout(100);
+const printedRow = await page.evaluate(() => {
+  const r = document.querySelector('tr.task');
+  const cs = getComputedStyle(r);
+  return { transition: cs.transitionProperty, opacity: +cs.opacity };
+});
+await page.emulateMedia({ media: null });
+expect('paper does not inherit the row-reveal transition', /opacity/.test(printedRow.transition), false);
+expect('...and prints the row at full opacity', printedRow.opacity, 1);
+await page.click('#audit-expand');
+await page.waitForTimeout(150);
+
+// The filter bar says when it is stuck. No CSS selector reports that, so it is a
+// class toggled from the scroll listener — which means it can silently stop
+// toggling with the rule it drives still sitting in the stylesheet, correct and
+// unreachable. Checked as elevation rather than as a class name: what the reader
+// gets is the shadow.
+const shadowAt = async (y) => {
+  await page.evaluate((to) => window.scrollTo(0, to), y);
+  await page.waitForTimeout(400);      // > --dur, so the box-shadow transition has settled
+  return page.evaluate(() => {
+    const st = document.querySelector('.sectools');
+    const r = st.getBoundingClientRect();
+    return { shadow: getComputedStyle(st).boxShadow !== 'none', top: Math.round(r.top),
+             stickAt: Math.round(parseFloat(getComputedStyle(st).top) || 0) };
+  });
+};
+const atRest = await shadowAt(0);
+expect('at rest the filter bar sits in the flow and casts no shadow', atRest.shadow, false);
+const barY = await page.evaluate(() => window.scrollY + document.querySelector('.sectools').getBoundingClientRect().top);
+const pinned = await shadowAt(barY + 400);
+expect(`stuck against the top bar it reads as a layer over the rows it filters `
+  + `(top ${pinned.top}, sticks at ${pinned.stickAt})`, pinned.shadow, true);
+await page.evaluate(() => window.scrollTo(0, 0));
+await page.waitForTimeout(400);
+
+// 9. A phone. The More-filters panel is hung out of flow at `min-width:32rem`, and
+//    min-width BEATS max-width — so the `max-width:calc(100vw - 2rem)` written to
+//    cap it to the viewport capped nothing. Measured at 390px before the fix: a
+//    512px panel spanning x=-353 to x=159, with both date inputs at -225..-100,
+//    entirely off the left of the screen. document.scrollWidth stayed 390, so
+//    there was no scroll that reached them either: the date filter simply did not
+//    exist on a phone. Every string pin in the suite was green throughout.
+await page.setViewportSize({ width: 390, height: 780 });
+await page.waitForTimeout(250);
+if (await page.$('.fdetails > summary')) {
+  await page.click('.fdetails > summary');
+  await page.waitForTimeout(250);
+  const phone = await page.evaluate(() => {
+    const panel = document.querySelector('.filterpanel');
+    const els = [panel, ...panel.querySelectorAll('input,button')];
+    const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '');
+    return {
+      controls: els.length,
+      offscreen: els.filter((el) => {
+        const b = el.getBoundingClientRect();
+        return b.left < -1 || b.right > window.innerWidth + 1;
+      }).map(name),
+      pageOverflows: document.documentElement.scrollWidth > window.innerWidth,
+    };
+  });
+  expect(`all ${phone.controls} controls of the open filter panel are on screen`,
+    phone.offscreen.join(',') || 'none', 'none');
+  expect('...without pushing the document sideways to get there', phone.pageOverflows, false);
+
+  //    In flow the panel's height IS the bar's height, and the bar is sticky: 156px
+  //    shut, 481px open, on a 780px screen. Pinned, that is 62% of the viewport
+  //    covering the table it filters. Open, it has to scroll away like the block of
+  //    controls it now is.
+  const covered = await page.evaluate(async () => {
+    const st = document.querySelector('.sectools');
+    window.scrollTo(0, window.scrollY + st.getBoundingClientRect().top + 500);
+    await new Promise((r) => setTimeout(r, 300));
+    const b = st.getBoundingClientRect();
+    const vis = Math.max(0, Math.min(b.bottom, window.innerHeight) - Math.max(b.top, 0));
+    return Math.round((vis / window.innerHeight) * 100);
+  });
+  if (covered > 40) {
+    failures.push(`FAIL an open filter panel does not pin itself over the table: ${covered}% of the screen is filter bar`);
+  } else notes.push(`ok   scrolled, the open filter panel gives the table the screen back (${covered}% bar)`);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+} else notes.push('ok   (this plan records no models or dates — phone panel check skipped)');
+
+//    Portrait paper is ~688px, INSIDE the 52rem breakpoint — so every rule added
+//    for a phone above is also a rule about paper. These two are inert there only
+//    because the whole bar is dropped from the printed page; if that ever stops
+//    being true, a filter panel prints in the middle of the plan.
+await page.setViewportSize({ width: 688, height: 900 });
+await page.emulateMedia({ media: 'print' });
+await page.waitForTimeout(150);
+const onPaper = await page.evaluate(() => {
+  const st = document.querySelector('.sectools');
+  const fp = document.querySelector('.filterpanel');
+  const gone = (el) => !el || getComputedStyle(el).display === 'none' || el.offsetParent === null;
+  return { bar: gone(st), panel: gone(fp) };
+});
+await page.emulateMedia({ media: null });
+await page.setViewportSize({ width: 1512, height: 945 });
+expect('the filter bar never reaches portrait paper, where its phone rules also apply', onPaper.bar, true);
+expect('...nor the panel inside it', onPaper.panel, true);
+
 if (pageErrors.length) failures.push(`FAIL the page raised ${pageErrors.length} error(s): ${pageErrors.slice(0, 3).join(' | ')}`);
 else notes.push('ok   no page errors');
 
