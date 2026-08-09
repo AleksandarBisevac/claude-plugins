@@ -390,6 +390,7 @@ commands. All fields are optional except `version`; the orchestrator resolves th
 | `branchPrefix` | Prefix for per-phase branches → `audit/<phaseId>-<slug>`. | `audit` |
 | `gitRoot` | Git repo root relative to the project dir (set when git lives in a subdir). | `.` |
 | `reviewSkill` | Skill run at phase sign-off; `null` → tests are the signer. | `null` |
+| `areas` | Registry of the areas a phase's `area` tag can name — `{tag: {root, description, reviewSkill?, skills?}}`. See below. | — |
 | `runtimeBoot` | `{appRootPath, launch, verify}` smoke gate; `null` → skipped. | `null` |
 | `nodePreamble` | Shell prefix run before build gates (e.g. `nvm use`). | `null` |
 | `commit` | `{type, coauthor}` commit-message conventions. | `{chore, null}` |
@@ -400,6 +401,39 @@ commands. All fields are optional except `version`; the orchestrator resolves th
 
 Per-phase, `desiredOutcome` states what success looks like — `/audit:status` shows it, task
 subagents receive it, and sign-off must address it.
+
+### Monorepo areas — `meta.areas`
+
+A phase's `area` tag groups it in status, report and panel. **Registering** that tag gives it
+properties:
+
+```json
+"areas": {
+  "api":    {"root": "services/api", "description": "Django service",
+             "reviewSkill": "backend-review", "skills": ["python-conventions"]},
+  "mobile": {"root": "apps/mobile",  "description": "Expo app"}
+}
+```
+
+`root` is relative to the project dir, like `task.files`. `/audit:init` proposes a registry when it
+detects a workspace (pnpm/yarn workspaces, turbo, nx, lerna, `go.work`, a Cargo workspace, a `.sln`)
+and tags the phases it generates.
+
+Two things resolve against it:
+
+- **Review skill** — `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`. The
+  first level that is **present** answers; an explicit `null` is an answer (skip review), not a
+  fall-through.
+- **Executor skills** — the area's `skills` first, then `task.skills`, deduped, area first.
+
+With several tags on one phase, **written order decides**. `/audit:status` prints the resolved
+reviewer and where it came from (`review: backend-review (area api)`), and `/audit:doctor` warns
+when a root is not a directory or a phase tag has no entry.
+
+**Registration is optional in both directions and nothing is deprecated by it.** A free-text tag
+with no entry stays legal — the validator warns only in a manifest that registers areas at all,
+where an unregistered tag is nearly always a typo — and a registered area no phase uses is fine
+too. A single-app repo writes none of this and behaves exactly as before.
 
 ## Reports
 

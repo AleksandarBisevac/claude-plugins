@@ -4,6 +4,112 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.28.0] - 2026-08-10
+
+**A tag becomes a thing.** A phase has carried an `area` tag since v0.16 — free text, one string or
+a list, purely a label for grouping. That is enough to *see* a monorepo and not enough to *work* in
+one: the tag could not say where its code lives, who reviews it, or which conventions its subagents
+should load. `meta.areas` is the other half.
+
+### Added
+- **`meta.areas` — the registry a phase's `area` tag can name.**
+
+  ```json
+  "areas": {
+    "api":    {"root": "services/api", "description": "Django service",
+               "reviewSkill": "backend-review", "skills": ["python-conventions"]},
+    "mobile": {"root": "apps/mobile",  "description": "Expo app"}
+  }
+  ```
+
+  Two things resolve against it, and both are stated in exactly one sentence wherever they appear:
+
+  | | Resolution |
+  |---|---|
+  | Review skill | `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill` |
+  | Executor skills | area `skills` (per tag) then `task.skills`, deduped, **area first** |
+
+  The first level that is **present** answers, and an explicit `null` **is** an answer — setting
+  `phase.reviewSkill: null` on one phase of a reviewed project is how you say *not this one*, and
+  falling through to the area would ignore it. When a phase carries several tags, **written order
+  decides**; that rule is arbitrary, so the validator warns whenever it actually breaks a tie
+  between two areas that disagree, naming the winner rather than letting a silent tie-break choose
+  a reviewer nobody can explain. (An area saying `null` — *tests sign this off* — disagrees with an
+  area naming a reviewer, so it counts; the warning prints its values JSON-spelled, since whoever
+  acts on it is editing a JSON file, where `None` is not something they can type.)
+
+  **Registration is optional in both directions and deprecates nothing.** A tag with no entry stays
+  legal — v0.16 free-text tagging is the behaviour you get by writing nothing — and an entry no
+  phase uses is legal too. A single-app repo writes none of this and behaves identically: the
+  validator's unregistered-tag warning fires *only* in a manifest that registers areas at all,
+  which is where an unregistered tag is nearly always a typo of a registered one. A typo'd tag
+  resolves to no area, so the reviewer and the skills the author expected simply never happen —
+  which is the failure this warning exists to make loud.
+
+- **`scripts/_areas.py`** — the registry and the resolution, in one module with its own `--selftest`,
+  imported by the validator, the status renderer, the doctor and the panel. It also owns tag
+  normalisation, which the panel and `audit-status` had each written for themselves.
+- **`/audit:status` shows the effective reviewer, with its basis** — `review: backend-review
+  (area api)` under the phase row, beside `area: api, security`. Both facts were computable and
+  neither was shown: the terminal, which is the surface a run is actually watched on, could not
+  tell you which part of a monorepo a phase belonged to, and a reader had to check three places to
+  learn who signs it off. The basis is printed with the answer because a reviewer chosen three
+  levels away is otherwise unexplainable — and `backend-review` alone gives no hint which of the
+  three files to edit to change it. Nothing is printed when there is nothing to say, so a repo with
+  no tags and no reviewer pays nothing for a monorepo feature it does not use.
+- **`/audit:doctor` checks the registry against the tree** — an area whose `root` is not a
+  directory, and a phase tag with no entry. Both WARNINGS, never findings: areas are informational
+  and must not be able to stop a pipeline. Silent when nothing is registered.
+- **Panel `GET/PUT /api/areas`** — the registry plus every tag the phases actually use, each marked
+  registered or not, with its phases and whether its root exists. `PUT` replaces the registry
+  wholesale (a registry is a set; dropping an area has to be as expressible as adding one) and goes
+  through the one composition writer, so it takes the lock, validates, echoes its change row and is
+  journaled like every other write. `meta` lives on the index, so a registry save touches the index
+  and no shard — asserted by byte-comparing an untouched shard, because rewriting one would
+  manufacture a merge conflict on a branch nobody is on. **There is no form for it yet**; the panel
+  command file says so rather than sending someone looking for a tab that is not there.
+- **`/audit:init` detects a workspace** (pnpm/yarn workspaces, turbo, nx, lerna, `go.work`, a Cargo
+  workspace, a `.sln`), proposes the areas it found as a multi-select, and tags the phases it
+  generates. Capped at 8 with the remainder stated, since a silent cap reads as "that is all of
+  them". When nothing matches, the step is skipped entirely and never mentioned — a single-app repo
+  must come out exactly as it did before.
+
+### Changed
+- **`/audit:status` stopped printing machine spellings.** The phase row, the task table, the bug
+  list and the RESUMABLE line all said `in_progress`. The report and the panel have read as English
+  since v0.24/v0.25 via `_ui_theme.LABELS`; the terminal now uses the same map. The `[x] [~] [!] [ ]`
+  markers are unchanged — they key off the machine value and are the legend `/audit:status`
+  documents.
+
+### Fixed
+- **A repeated area tag counted its phase twice.** `areas_of` did not de-duplicate, so
+  `"area": ["api", "api"]` — or `["api", " api"]`, which no reader can see — made a phase that was
+  1-of-1 done read **2/2** in the per-area rollup, a completion figure above 100% on the one number
+  a monorepo reader looks at first. Tags are now trimmed and de-duplicated in the single
+  implementation both surfaces call.
+
+### Verification
+- **1538 selftest cases across 23 suites** (from 1429 across 22): `_areas` 55 new, `validate-manifest`
+  47→56, `audit-status` 106→120, `audit-doctor` 52→59, `panel-server` 306→330. Plus
+  `capture-screenshots.mjs --check`, `check-report-interactive.mjs` on all three shipped reports,
+  the schema exercised with `ajv` over a registry it must accept and one it must reject, and the
+  doctor over this repo and the example.
+- **24 mutations proven red**, each naming its own defect — including the two that made the
+  difference between a test and a decoration. The written-order case had **two** tags but only one
+  declaring area, so reversing the resolution order left it green: precedence was never tested until
+  a second declaring area was added. And `ar1` asserted "no finding **and** no unknown-key warning"
+  in its label while checking only the findings, so dropping `areas` from `KNOWN_META` — which makes
+  every registry in the world warn as a typo — passed. A third mutation went red with a `KeyError`
+  rather than a named failure, which exits 1 the same way an assertion does; the check now reads its
+  fixture with `.get` so a broken endpoint is reported by the check that noticed it.
+- **The prose is linted, not remembered.** The resolution is executed by `_areas.py` and *obeyed* by
+  a model reading `orchestrator.md`, `manifest-conventions.md`, `review.md` and the README. Two
+  statements of one rule is the drift this repository has already shipped once (`exemptGlobs` and
+  `tddReminder.testGlobs` disagreeing about what a test file is), and prose drift is worse than code
+  drift because nothing runs it. `_areas.rule_drift()` reads those four files and fails the build if
+  any states the rule differently — including the pre-v0.28 two-level wording surviving in one of
+  them, which is precisely how this would rot.
+
 ## [0.27.0] - 2026-08-08
 
 **The lock stops being advice.** v0.26.0 made it *correct* — it can tell a live holder from an

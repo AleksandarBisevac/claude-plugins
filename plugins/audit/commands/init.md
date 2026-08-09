@@ -36,6 +36,9 @@ Merge `$ARGUMENTS` with answers to (ask only what `$ARGUMENTS` doesn't cover):
 4. **Size appetite**: S (1–2 phases, quick wins) / M (3–4) / L (5+, thorough).
 5. **Known pain points** — free text; explorers get these as priority hints.
 
+**Areas (only if step 3.5 detected a workspace).** Ask this AFTER recon, not here — you cannot
+propose areas you have not found yet. See step 3.5.
+
 ## 3. Recon (orchestrator, read-only)
 
 With Bash/Glob/Grep — never reading secrets:
@@ -50,6 +53,41 @@ With Bash/Glob/Grep — never reading secrets:
    (e.g. `"lint": "cd test && npx nx run-many -t lint"`). This keeps each gate self-contained and
    independent of the caller's CWD.
 4. Split the included scope into 2–6 coherent **subsystems** (by directory/domain).
+
+### 3.5 Workspace detection (monorepo areas)
+
+A repo holding several apps or packages wants `meta.areas` — a registry that gives each `area` tag a
+root, a default sign-off reviewer and default executor skills. Detect it mechanically; do not guess
+from directory names alone. Read only these files (all read-only, none is a secret):
+
+| Signal | What to read | Areas it yields |
+|---|---|---|
+| `pnpm-workspace.yaml` | its `packages:` globs | one per matched package dir |
+| `package.json` `workspaces` | array or `{packages: []}` | one per matched package dir |
+| `turbo.json` / `nx.json` / `lerna.json` | presence + the package globs above | confirms a JS monorepo |
+| `go.work` | its `use (...)` entries | one per module dir |
+| `Cargo.toml` with `[workspace]` | its `members` | one per crate dir |
+| `*.sln` | its `Project(...)` lines | one per project dir |
+
+Expand globs with Glob and keep directories that actually exist. Cap the proposal at **8 areas**; if
+there are more, propose the 8 with the most files and say how many were left out — a silent cap
+would read as "that is all of them".
+
+**If nothing matches, skip the rest of this step entirely and never mention areas again.** A
+single-app repo must come out byte-identical to what earlier versions produced: no `meta.areas` key,
+no `area` tags, nothing to explain.
+
+If something matched, ask (AskUserQuestion, multi-select, all detected areas pre-selected):
+
+- **Which of these should the audit track as areas?** — one option per detected workspace, labelled
+  `<tag> — <root>`. Deselecting one is normal: vendored, generated and archived packages are exactly
+  what this list will surface.
+- Then, per selected area, ask only what you cannot detect: an optional **review skill** (default
+  none — `meta.reviewSkill` applies) and optional **area skills** (default none). Offer the skills
+  discovered in `.claude/skills/` and `~/.claude/skills/`; do not invent names.
+
+Derive each `tag` from the package/module name, lowercased, non-alphanumerics collapsed to `-`
+(`@acme/mobile-app` → `mobile-app`). Roots are **project-dir-relative**, like `task.files`.
 
 ## 4. Fan-out (multi-agent)
 
@@ -76,6 +114,9 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    phase a one-line `desiredOutcome` (what success looks like — `/audit:status` displays it and
    sign-off must address it). Respect the
    size appetite; overflow goes to `deferred.items` (with reasons) or `proposals`.
+   **Tag each phase** with the `area` tag(s) whose root(s) its tasks' files fall under — a list when
+   the phase spans two, in the order you want them to resolve (written order decides the reviewer
+   and the skill order). Skip entirely when step 3.5 found no workspace.
 3. **Finding → task** using the conventions doc's new-task template. Rules:
    - Incorrect behavior (bug-like) → `tests.mode: "tdd"`, `expectRedFirst: true`,
      `tests.add` from `suggestedTests` (each must FAIL on current code).
@@ -94,7 +135,8 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 4. **Assemble the manifest**: `$schema` (the plugin schema URL), `meta`
    (`version: 2`, `repo` from `git remote get-url origin` or the directory name,
    `createdISO` from `date -u +%Y-%m-%dT%H:%M:%SZ`, `developmentBranch`, `branchPrefix: "audit"`,
-   `gitRoot` (from step 3.1), `commit`, detected `buildCommands`, defaults elsewhere), `phases`,
+   `gitRoot` (from step 3.1), `commit`, detected `buildCommands`, `areas` (from step 3.5 — omit the
+   key entirely when nothing was detected or the user selected nothing), defaults elsewhere), `phases`,
    top-level `fileIndex` built from every task's `files`, `bugs: []`, `deferred`, `proposals`.
    Task `files` and `fileIndex` keys are **project-dir-relative** (they include the `gitRoot` prefix,
    e.g. `test/src/foo.ts` when `gitRoot` is `test`). When `gitRoot` is not `.`, prefer writing the
@@ -116,4 +158,6 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 Print: per-phase table (`id — title — task count — dimensions covered`), total task count
 by `tests.mode` and `risk`, what was deferred and why, any open questions for the human,
 and the handoff: **next run `/audit:status`, then `/audit:phase P0`**.
+When areas were registered, list them (`tag — root — reviewer`) and say which phases carry which
+tag; `/audit:doctor` will warn about any root that is not a directory.
 Release the concurrency lock if you acquired one in step 1.

@@ -49,9 +49,21 @@ CONFIG_REL = ".claude/audit.config.json"
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the report)
+import _areas               # noqa: E402  (meta.areas registry + shared resolution)
 
 # Fields the composition patch is allowed to touch — the security allow-list.
-_META_KEYS = ("reviewSkill", "buildCommands")
+# `areas` is here so the registry can be written through the ONE write path that
+# takes the lock, validates, journals and patches only the index (meta lives on the
+# index; a registry save must never rewrite a phase shard). /api/areas is a thin
+# front door onto it rather than a second writer.
+_META_KEYS = ("reviewSkill", "buildCommands", "areas")
+# ...of which these have no control on the Composition form: they are written by
+# their own endpoint, so the confirm dialog's client-side change list must NOT
+# enumerate them or it would compute a row for a field nobody can edit there. The
+# selftest derives the client's list from this pair rather than trusting the two
+# to be kept in step by hand.
+_META_API_ONLY = ("areas",)
+_META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 _PHASE_KEYS = ("reviewModel",)
 _TASK_KEYS = ("model", "skills")
 
@@ -549,13 +561,12 @@ def read_config(project):
         return {}
 
 
-def _areas_of(area):
-    """A phase's `area` (string, list, or absent) -> a list of tag strings."""
-    if isinstance(area, str):
-        return [area] if area else []
-    if isinstance(area, list):
-        return [a for a in area if isinstance(a, str) and a]
-    return []
+# A phase's `area` -> its tags. One implementation, in `_areas`, shared with
+# audit-status: this file and that one each had their own copy of the same six
+# lines, and the day one of them learned something (trimming, de-duplication, the
+# registry lookup) the panel and the terminal would have disagreed about which
+# phases are in an area.
+_areas_of = _areas.areas_of
 
 
 def _bugs_view(manifest):
@@ -638,6 +649,93 @@ def _composition_view(manifest):
                  "buildCommands": meta.get("buildCommands")},
         "phases": phases_out, "tasks": tasks_out,
     }
+
+
+def areas_state(project):
+    """`GET /api/areas` — the registry, and every tag the phases actually use.
+
+    Both halves, because the two disagree in both directions and each disagreement
+    is worth seeing: a tag no entry covers resolves to no reviewer and no skills
+    (usually a typo), and a registered area no phase uses is either a plan that has
+    not been written yet or a rename that only got done on one side.
+
+    Every verdict here comes from `_areas` — the same module the validator, the
+    doctor and the status renderer resolve through — so this endpoint cannot
+    develop its own opinion about what is registered.
+    """
+    config = read_config(project)
+    mpath = _manifest_path(project, config)
+    out = {"path": os.path.relpath(mpath, project) if _within(project, mpath)
+           else None,
+           "areas": {}, "tags": [], "findings": [], "warnings": []}
+    if not _within(project, mpath):
+        out["findings"] = ["refused: manifest path escapes project"]
+        return out
+    try:
+        manifest = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out["findings"] = ["cannot read manifest: %s" % exc]
+        return out
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    stored = meta.get("areas")
+    out["areas"] = stored if isinstance(stored, dict) else {}
+    f, w = _areas.validate_registry(stored)
+    out["findings"], out["warnings"] = f, w
+    reg = _areas.registry(manifest)
+    used = {}
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        for tag in _areas.areas_of(ph.get("area")):
+            used.setdefault(tag, []).append(ph.get("id"))
+    for tag in sorted(set(reg) | set(used)):
+        entry = reg.get(tag) or {}
+        root = _areas.root_of(entry)
+        out["tags"].append({
+            "tag": tag,
+            "registered": tag in reg,
+            "phases": used.get(tag, []),
+            "root": root or None,
+            # Resolved here rather than in the browser: the panel already learned
+            # once (c6) that a value it SHOWS and a value the server computes have
+            # to come from one function or the two eventually disagree.
+            "rootExists": bool(root) and os.path.isdir(os.path.join(project, root)),
+            "description": entry.get("description"),
+            "reviewSkill": entry.get("reviewSkill"),
+            "skills": entry.get("skills") if isinstance(entry.get("skills"), list)
+            else [],
+        })
+    return out
+
+
+def write_areas(project, body):
+    """`PUT /api/areas` — replace `meta.areas` wholesale.
+
+    Wholesale because a registry is a set: dropping an area is as ordinary an edit
+    as adding one, and a merge-shaped API gives no way to say "this tag is gone".
+
+    The shape is checked HERE, before anything is written, so the caller gets
+    `meta.areas.api.root: must be a non-empty…` instead of the same fact restated
+    as a manifest validator finding after a lock has been taken. The write itself
+    then goes through `apply_composition`, which is the only writer: it takes the
+    lock, re-validates the assembled document, patches the INDEX alone (meta lives
+    there — a registry save must not touch a phase shard and manufacture a conflict
+    on a branch nobody is on), echoes the change rows and journals them.
+    """
+    if not isinstance(body, dict):
+        return {"ok": False, "findings": ["body must be a JSON object"]}
+    # Accept either {"areas": {...}} or the bare registry, since both readings of
+    # "PUT the areas" are reasonable and guessing wrong costs a confusing 400.
+    areas = body.get("areas") if "areas" in body else body
+    if areas is None:
+        areas = {}
+    findings, warnings = _areas.validate_registry(areas)
+    if findings:
+        return {"ok": False, "findings": findings, "warnings": warnings}
+    res = apply_composition(project, {"meta": {"areas": areas}})
+    if res.get("ok"):
+        res["warnings"] = list(res.get("warnings") or []) + warnings
+    return res
 
 
 # The stylesheet lints live in _ui_theme, beside the tokens they police, so the
@@ -1570,6 +1668,8 @@ def _make_handler(project, token):
                 self._json(200, _run_status(project, cfg, man)); return
             if path == "/api/registry":
                 self._json(200, discover(project)); return
+            if path == "/api/areas":
+                self._json(200, areas_state(project)); return
             if path == "/api/usage":
                 self._json(200, usage_state(project)); return
             if path == "/report":
@@ -1602,6 +1702,8 @@ def _make_handler(project, token):
                 self._json(200, write_config(project, body)); return
             if path == "/api/composition":
                 self._json(200, apply_composition(project, body)); return
+            if path == "/api/areas":
+                self._json(200, write_areas(project, body)); return
             self._json(404, {"error": "not found"})
 
         def do_POST(self):
@@ -2633,8 +2735,11 @@ addEventListener('beforeunload',ev=>{
 const cfNorm=v=>v===undefined?null:v;
 const cfSame=(a,b)=>JSON.stringify(cfNorm(a))===JSON.stringify(cfNorm(b));
 const cfRow=(target,field,from,to)=>({target,field,from:cfNorm(from),to:cfNorm(to)});
-// Field order matches the server's (_META_KEYS, then phases, then tasks by
+// Field order matches the server's (_META_FORM_KEYS, then phases, then tasks by
 // _TASK_KEYS) so the dialog and the echo read as the same list, not two lists.
+// FORM keys, not every writable meta key: `meta.areas` is writable through
+// /api/areas and has no control here, so computing a row for it would be the
+// dialog describing an edit this form cannot make.
 function compChanges(patch){
  const comp=STATE.composition||{meta:{},phases:[],tasks:[]},rows=[];
  for(const k of ['reviewSkill','buildCommands'])
@@ -4921,6 +5026,136 @@ def _selftest():
             _sproj, {"tasks": {"P9.9": {"model": "x"}}})["ok"])
     finally:
         _shutil.rmtree(_sproj, ignore_errors=True)
+
+    # --- v0.28: the areas registry over HTTP ------------------------------------
+    # `meta` lives on the INDEX in a sharded manifest, so a registry save must
+    # touch the index and nothing else. That is the whole reason this goes through
+    # apply_composition rather than writing the file itself: a second writer here
+    # would be a second implementation of the targeted write-back, and the way it
+    # would fail is by rewriting shards on a branch nobody is on.
+    _aproj = tempfile.mkdtemp(prefix="panel-areas-")
+    try:
+        _atomic_write_json(_config_path(_aproj),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+        _am = _manifest_path(_aproj, read_config(_aproj))
+        os.makedirs(os.path.dirname(_am), exist_ok=True)
+        os.makedirs(os.path.join(_aproj, "services", "api"), exist_ok=True)
+        _mio.save_sharded(_am, {
+            "meta": {"version": 3,
+                     "areas": {"api": {"root": "services/api", "description": "d",
+                                       "reviewSkill": "backend-review"},
+                               "unused": {"root": "services/api"}}},
+            "phases": [
+                {"id": "P1", "title": "One", "status": "pending", "area": "api",
+                 "tasks": [{"id": "P1.1", "title": "T1", "status": "pending"}]},
+                {"id": "P2", "title": "Two", "status": "pending", "area": "apu",
+                 "tasks": [{"id": "P2.1", "title": "T2", "status": "pending"}]}]})
+        _aidx = _read_json(_am)
+        _ashard = os.path.join(os.path.dirname(_am), _aidx["phases"][0]["shard"])
+        _ashard_before = open(_ashard, "rb").read()
+
+        _st = areas_state(_aproj)
+        # `.get` and not `[...]`: a missing tag is exactly what a broken version of
+        # this endpoint returns, and a KeyError exits 1 without naming which check
+        # noticed — indistinguishable from a suite that crashed for another reason.
+        _bytag = {t["tag"]: t for t in _st["tags"]}
+        _tag = lambda name: _bytag.get(name) or {}          # noqa: E731
+        check("areas GET returns the registry as stored",
+              set(_st["areas"]) == {"api", "unused"})
+        check("areas GET lists a registered tag with the phases using it",
+              _tag("api").get("registered") and _tag("api").get("phases") == ["P1"])
+        check("areas GET says a root that exists exists",
+              _tag("api").get("rootExists") is True)
+        check("areas GET lists a tag no entry covers - the typo case, which "
+              "resolves to no reviewer and no skills",
+              _tag("apu").get("registered") is False
+              and _tag("apu").get("phases") == ["P2"])
+        check("areas GET also lists a registered area no phase uses - a rename "
+              "done on one side only looks exactly like this",
+              _tag("unused").get("registered")
+              and _tag("unused").get("phases") == [])
+        check("areas GET carries the resolved reviewer of a registered area",
+              _tag("api").get("reviewSkill") == "backend-review")
+
+        _bad = write_areas(_aproj, {"areas": {"api": "services/api"}})
+        check("areas PUT refuses a malformed registry, naming the entry",
+              not _bad["ok"] and any("must be an object" in f
+                                     for f in _bad["findings"]))
+        check("...and a refused PUT wrote nothing",
+              _read_json(_am)["meta"]["areas"].get("api") == {
+                  "root": "services/api", "description": "d",
+                  "reviewSkill": "backend-review"})
+        # The shape is checked BEFORE the manifest is opened, and this is the case
+        # that proves it rather than merely restating the validator: with a
+        # manifest that cannot be parsed at all, the writer can only report the
+        # parse error — so a caller who sent a bad body would be told nothing about
+        # it, fix the manifest, and hit the same wall a second time.
+        _saved = open(_am, "rb").read()
+        with open(_am, "wb") as _fh:
+            _fh.write(b"{ this is not json")
+        _both = write_areas(_aproj, {"areas": {"api": "services/api"}})
+        check("a malformed registry is named even when the manifest itself cannot "
+              "be read - one round trip, both problems",
+              not _both["ok"] and any("must be an object" in f
+                                      for f in _both["findings"]))
+        check("...while a WELL-formed registry over an unreadable manifest reports "
+              "the manifest, so the two failures are never confused",
+              any("cannot parse manifest" in f for f in
+                  write_areas(_aproj, {"areas": {"api": {"root": "x"}}})["findings"]))
+        with open(_am, "wb") as _fh:
+            _fh.write(_saved)
+
+        _res = write_areas(_aproj, {"areas": {"api": {"root": "services/api"},
+                                              "web": {"root": "services/api"}}})
+        check("areas PUT writes through the one composition writer", _res["ok"])
+        check("areas PUT echoes the change as a row the confirm flow can print",
+              [r["field"] for r in _res.get("applied") or []] == ["areas"])
+        check("areas PUT touches the INDEX only - meta lives there, and rewriting "
+              "a phase shard would manufacture a conflict on a branch nobody is on",
+              _res.get("written") == [os.path.relpath(_am, _aproj)]
+              and open(_ashard, "rb").read() == _ashard_before)
+        _after = _read_json(_am)["meta"]["areas"]
+        check("areas PUT replaces the registry wholesale, so dropping an area is "
+              "an ordinary edit rather than something the API cannot express",
+              set(_after) == {"api", "web"})
+        check("...and the dropped area's phase tag now reads unregistered",
+              {t["tag"]: t["registered"] for t in areas_state(_aproj)["tags"]}
+              == {"api": True, "apu": False, "web": True})
+        check("areas PUT accepts the bare registry as well as {areas: ...} - both "
+              "readings of 'PUT the areas' are reasonable",
+              write_areas(_aproj, {"api": {"root": "services/api"}})["ok"])
+        _res = write_areas(_aproj, {"areas": {}})
+        check("areas PUT can empty the registry", _res["ok"]
+              and _read_json(_am)["meta"]["areas"] == {})
+        check("a save that changes nothing still writes nothing",
+              write_areas(_aproj, {"areas": {}}).get("unchanged") is True)
+        _st2 = areas_state(_aproj)
+        check("with no registry the tags list is still the truth about the phases",
+              [t["tag"] for t in _st2["tags"]] == ["api", "apu"]
+              and not any(t["registered"] for t in _st2["tags"]))
+        _res = write_areas(_aproj, {"areas": {"api": {"root": "services/gone"}}})
+        check("a root that is not on disk is written and WARNED about, not "
+              "refused - the doctor reports it; the panel does not veto it",
+              _res["ok"] and not areas_state(_aproj)["tags"][0]["rootExists"])
+    finally:
+        _shutil.rmtree(_aproj, ignore_errors=True)
+
+    check("meta.areas is on the composition allow-list, so it goes through the "
+          "writer that locks, validates and journals", "areas" in _META_KEYS
+          and _reject_unknown({"meta": {"areas": {}}}) is None)
+    check("...and nothing else was let in with it",
+          _reject_unknown({"meta": {"phases": {}}}) is not None)
+    # The confirm dialog computes its rows in the browser and the server recomputes
+    # them from the file; a key on one list and not the other is a mismatch warning
+    # about nothing. Derived, so adding a meta key cannot leave the two out of step.
+    check("the dialog's meta fields are exactly the ones the FORM can edit",
+          "for(const k of %s)" % json.dumps(list(_META_FORM_KEYS)).replace(
+              '"', "'").replace(", ", ",") in UI_HTML,
+          )
+    check("an API-only meta key is deliberately absent from that list - the "
+          "dialog must not describe an edit this form cannot make",
+          all("'%s'" % k not in UI_HTML.split("function compChanges")[1][:400]
+              for k in _META_API_ONLY))
 
     # --- c6: what a save would change, who is making it, and the record of it ---
     # The rows the confirm dialog lists ARE the rows the server echoes as

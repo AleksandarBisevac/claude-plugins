@@ -30,6 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 
 STATUS = ("pending", "in_progress", "blocked", "done")
 TESTS_MODE = ("tdd", "regression", "gate-only")
@@ -49,6 +50,9 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # report rendering (render-report.py): narrative summary box +
               # custom output-file basename. Neither affects orchestration.
               "reportSummary", "reportBasename",
+              # v0.28: the registry a phase's `area` tag can name (_areas.py).
+              # Registration is optional in both directions — see _check_areas.
+              "areas",
               # token metering, read by the COMMANDS (the hooks read their own
               # copy from .claude/audit.config.json — the plugin's standing split):
               # ledgerDir, showCost, pricingAsOf, pricing.
@@ -112,6 +116,74 @@ def _check_claim(phase, pwhere, findings, warnings):
     if phase.get("status") in ("done", "blocked"):
         warnings.append("%s: has a claim but status is %r — a finished/blocked phase should "
                         "release its claim (stale claim)" % (pwhere, phase.get("status")))
+
+
+def _check_area_tag(phase, pwhere, findings):
+    """A phase's `area` must be a tag or a list of them (v0.16 shape, v0.28 meaning).
+
+    Shape only — WHICH tags are legal is not this function's business and is not
+    anybody's: free text stays legal forever. But `area: 3` and `area: {...}`
+    normalise to NO tags at all, so the phase silently leaves every grouping and
+    resolves against no area. Silence is the reason this is worth a finding."""
+    if "area" not in phase:
+        return
+    area = phase.get("area")
+    if area is None or isinstance(area, str):
+        return
+    if not isinstance(area, list):
+        findings.append("%s: area must be a tag or a list of tags, got %s"
+                        % (pwhere, type(area).__name__))
+        return
+    bad = [a for a in area if not isinstance(a, str) or not a.strip()]
+    if bad:
+        findings.append("%s: every area tag must be a non-empty string (%d bad: %r)"
+                        % (pwhere, len(bad), bad[:3]))
+
+
+def _check_areas(manifest, findings, warnings):
+    """The `meta.areas` registry, and the phases that name it (v0.28).
+
+    Three questions, and only the first can invalidate a manifest:
+
+      * is the registry SHAPED like a registry — findings, same as any other
+        wrong type in this file;
+      * does every tag a phase carries have an entry — warnings, and ONLY when
+        the manifest registers areas at all. A project that tags freely and
+        registers nothing is using the v0.16 feature exactly as designed, and
+        warning it would be this validator nagging about a feature not in use.
+        A project that DOES register is one where an unregistered tag is nearly
+        always a typo of a registered one — and a typo'd tag quietly resolves to
+        no area, so the reviewer and the skills the author expected never happen;
+      * do a phase's areas AGREE about its reviewer — a warning naming the
+        winner, because written order decides and a silent tie-break is a
+        reviewer nobody can explain.
+    """
+    meta = manifest.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    if "areas" in meta:
+        f, w = _areas.validate_registry(meta.get("areas"))
+        findings.extend(f)
+        warnings.extend(w)
+    for pid, tag in _areas.unregistered_tags(manifest):
+        warnings.append("phase %s: area tag %r has no entry in meta.areas — it "
+                        "groups and filters, but resolves to no root, no default "
+                        "reviewer and no default skills (typo? free-text tags are "
+                        "legal)" % (pid, tag))
+    for phase in manifest.get("phases") or []:
+        if not isinstance(phase, dict):
+            continue
+        clash = _areas.review_skill_conflicts(manifest, phase)
+        if clash:
+            # json.dumps, not %r: the values came out of a JSON file and go back to
+            # someone editing one, and `None` is not something they can type there.
+            # A null IS one of the disagreeing answers here — an area saying "tests
+            # sign this off" disagrees with an area naming a reviewer.
+            warnings.append(
+                "phase %s: areas %s each set a different reviewSkill — written "
+                "order decides, so %s (from area %s) is the one that runs"
+                % (phase.get("id") or "?",
+                   ", ".join("%s=%s" % (t, json.dumps(s)) for t, s in clash),
+                   json.dumps(clash[0][1]), clash[0][0]))
 
 
 def _strip_line_suffix(entry):
@@ -253,6 +325,8 @@ def validate(manifest):
             # bool is an int subclass in Python — `true` must NOT pass as a version.
             f.append("meta.version: missing or not an integer")
 
+    _check_areas(manifest, f, w)
+
     phases = manifest.get("phases")
     if not isinstance(phases, list):
         f.append("phases: missing or not an array")
@@ -276,6 +350,7 @@ def validate(manifest):
         if phase.get("status") not in STATUS:
             f.append("%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS)))
         _check_claim(phase, pwhere, f, w)
+        _check_area_tag(phase, pwhere, f)
         # A budget of 0 or a negative one is not a budget, and a string is a typo
         # that would silently render as "no budget". Both are worth saying out loud.
         if "budgetUSD" in phase:
@@ -642,6 +717,67 @@ def _selftest():
     results.append(ok6)
     print("%s pp1 per-phase reviewSkill+area: no finding, no unknown-key warning (%s)"
           % ("PASS" if ok6 else "FAIL", "clean" if ok6 else (f6 or noise6)))
+
+    # v0.28 — the meta.areas registry. The shape rules live in _areas.py and are
+    # tested there; what is tested HERE is the wiring, and the one rule that only
+    # exists at this level: a warning must never become a finding, because a
+    # manifest that stops validating over an informational registry would take the
+    # whole pipeline down with it.
+    def with_areas(m, areas, area_tag=None):
+        m["meta"]["areas"] = areas
+        if area_tag is not None:
+            m["phases"][0]["area"] = area_tag
+
+    m_reg = copy.deepcopy(_valid_manifest())
+    with_areas(m_reg, {"api": {"root": "src", "description": "the api",
+                               "reviewSkill": "backend-review",
+                               "skills": ["conv"]}}, "api")
+    f_reg, w_reg = validate(m_reg)
+    # The warning half has to be ASSERTED, not merely mentioned in the label: with
+    # only `findings == []` checked, dropping `areas` from KNOWN_META left this
+    # green while every registry in the world warned as a typo.
+    ok_reg = f_reg == [] and not [x for x in w_reg if "areas" in x]
+    results.append(ok_reg)
+    print("%s ar1 a registered area is clean - no finding, and no unknown-key "
+          "warning for meta.areas itself (%s)"
+          % ("PASS" if ok_reg else "FAIL", "clean" if ok_reg else (f_reg or w_reg)))
+    check("ar2 a malformed registry IS a finding (shape is not informational)",
+          "must be an object",
+          lambda m: with_areas(m, {"api": "src"}, "api"))
+    check("ar3 a tag with no entry warns, and only warns", None,
+          lambda m: with_areas(m, {"api": {"root": "src"}}, "apu"),
+          expect_warning="has no entry in meta.areas")
+    m_free = copy.deepcopy(_valid_manifest())
+    m_free["phases"][0]["area"] = ["anything", "at all"]
+    f_free, w_free = validate(m_free)
+    ok_free = f_free == [] and not any("meta.areas" in x for x in w_free)
+    results.append(ok_free)
+    print("%s ar4 free-text tags with NO registry are silent - the v0.16 feature "
+          "is not deprecated by this one (%s)"
+          % ("PASS" if ok_free else "FAIL", "clean" if ok_free else (f_free or w_free)))
+    check("ar5 two areas disagreeing about the reviewer warns, naming the winner "
+          "written order picked", None,
+          lambda m: with_areas(m, {"a": {"root": "src", "reviewSkill": "ra"},
+                                   "b": {"root": "src", "reviewSkill": "rb"}},
+                               ["a", "b"]),
+          expect_warning='"ra" (from area a) is the one that runs')
+    check("ar5b an area that says 'tests are the signer' DISAGREES with one that "
+          "names a reviewer, and the message is JSON-spelled - a reader who acts "
+          "on it is editing a JSON file, where `None` is not a thing they can type",
+          None,
+          lambda m: with_areas(m, {"a": {"root": "src", "reviewSkill": None},
+                                   "b": {"root": "src", "reviewSkill": "rb"}},
+                               ["a", "b"]),
+          expect_warning='a=null, b="rb"')
+    check("ar6 an area with no root warns rather than failing", None,
+          lambda m: with_areas(m, {"api": {"description": "d"}}, "api"),
+          expect_warning="no 'root'")
+    check("ar7 area as a number is a finding - it would silently belong to no "
+          "group and resolve against no area", "area must be a tag or a list",
+          lambda m: m["phases"][0].update(area=3))
+    check("ar8 an empty tag inside the list is a finding",
+          "every area tag must be a non-empty string",
+          lambda m: m["phases"][0].update(area=["api", ""]))
 
     # --- robustness: validate() must NEVER raise on hostile shapes, and the
     #     wrong-type diagnostics must be actionable (regression guard for the
