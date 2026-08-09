@@ -62,7 +62,11 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   attribution, by free text over ids *and* titles, and by an absolute from/to window that
   writes the same filter a click on the chart does. **Export CSV** downloads exactly the rows
   behind the view, with the span and bucket resolution in the filename. Every scope shows as a
-  chip you can take off; `Esc` pops the last one.
+  chip you can take off; `Esc` pops the last one. The **last 7 / 30 / 90 days** presets mean
+  exactly that — they count back from today, not from the last day recorded — so on a plan that
+  finished months ago they can select nothing. When that happens the tab says which window it
+  asked for, when the ledger actually ends, and offers the all-time view; more generally, an
+  empty result names the one filter emptying it rather than only offering to clear them all.
 
 Safety: binds `127.0.0.1` only, requires a per-launch token on every API call, and refuses
 any write whose path escapes the project directory. Ephemeral — it runs until you `stop` it.
