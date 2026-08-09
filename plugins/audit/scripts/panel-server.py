@@ -1734,6 +1734,11 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .uchip:hover{border-color:var(--accent)}
 .uchip .ck{color:var(--muted)}
 .uchip .cx{color:var(--muted);font-weight:600}
+/* An empty view explains itself, and offers the narrowest way out beside the
+   widest one. Two buttons rather than one: "clear filters" throws away the seven
+   that were fine in order to lift the one that was not. */
+.uempty{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;
+ margin-top:var(--sp-1)}
 .utiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));
  gap:var(--sp-1);margin:0 0 var(--sp-3)}
 .utile{border:1px solid var(--border);border-radius:var(--radius);
@@ -3035,9 +3040,14 @@ const DIMS=['model','author','phase','task','agent','attr','day','q'];
 // What a filter is CALLED where it is shown. The internal name is the fact-tuple
 // field, which is the right name in the code and the wrong one on a chip: `attr` is
 // not a word, and `q` is not a dimension anybody typed.
-const DLABEL={q:'text',attr:'attributed to',agent:'agent',day:'date'};
+// `range` is not in DIMS and never wears a chip, but it is a filter a reader can
+// be asked about by name, so it is named here with the rest rather than spelled
+// out at the one place that asks.
+const DLABEL={q:'text',attr:'attributed to',agent:'agent',day:'date',
+ range:'time range'};
 const fName=d=>DLABEL[d]||d;
-const fVal=d=>d==='day'?UF.day.replace('..',' to '):UF[d];
+const fVal=d=>d==='day'?UF.day.replace('..',' to ')
+ :d==='range'?(UF.range==='all'?'all time':'last '+UF.range+' days'):UF[d];
 let UORDER=[];                 // dimensions in the order they were set (Esc pops)
 let UQT=null;                  // search debounce; the whole tab re-renders per change
 const SHOWN={phase:8,model:8,author:8,task:8};   // ranked-list depth; 'other' pages
@@ -3142,6 +3152,51 @@ function uFiltered(){if(!USAGE)return[];let out=USAGE.facts.filter(uMatch);
    .toISOString().slice(0,10);out=out.filter(f=>f[F.ts].slice(0,10)>=d);}
  return out;}
 const uAnyFilter=()=>UORDER.length>0||UF.range!=='all';
+
+// Why the view is empty. "No rows match these filters" spread over eight controls
+// is a puzzle, and one of the ways to empty this tab cannot be worked out from the
+// screen at all: a range preset counts back from TODAY, so on a ledger whose last
+// row is older than the window it selects nothing — which is the normal state of a
+// FINISHED plan, and exactly when someone opens this tab to ask what it cost. That
+// case is named outright, with both dates, because the reader's own conclusion
+// would otherwise be that the metering never ran.
+//
+// The presets are deliberately NOT re-anchored on the data to make this go away: a
+// control labelled "last 30 days" whose behaviour means "the last 30 days there
+// happens to be data for" is a quieter defect than an empty result, and the label
+// is what makes it one. (The report answers the neighbouring question differently
+// and correctly — its presets measure back from the plan's own last day, and its
+// labels say so.) An empty result that explains itself is the right answer here.
+//
+// Every count comes from uFiltered() with one slot temporarily blank — the same
+// predicate the view itself runs. A second implementation of "what matches" is how
+// an explanation ends up disagreeing with the thing it is explaining.
+function uEmptyWhy(){
+ const C=USAGE.counts||{};
+ const toAll=()=>{UF.range='all';renderUsage();};
+ if(UF.range!=='all'){
+  const cut=new Date(Date.now()-parseInt(UF.range,10)*864e5)
+    .toISOString().slice(0,10);
+  if(C.to&&C.to<cut)return{why:'range-after-ledger',
+   text:'The last '+UF.range+' days begin '+cut+', and the ledger ends '+C.to+
+     ' — it stops before this window. Range presets count back from today, not '+
+     'from the last day recorded.',
+   fix:{key:'range',label:'Show all time',run:toAll}};}
+ // Which single filter is doing it. Naming one and lifting one is the answer to a
+ // question "clear filters" cannot answer: it throws away every filter that was
+ // fine, so the reader learns nothing and has to rebuild the view to find out.
+ for(const d of UORDER.concat(UF.range==='all'?[]:['range'])){
+  const keep=UF[d];UF[d]=d==='range'?'all':'';
+  const n=uFiltered().length;UF[d]=keep;
+  if(!n)continue;
+  return{why:d,
+   text:'No rows match. It is the '+fName(d)+' filter ('+fVal(d)+') doing it: '+
+     n+' row(s) match everything else.',
+   fix:{key:d,label:d==='range'?'Show all time':'Remove the '+fName(d)+' filter',
+     run:d==='range'?toAll:()=>setF(d,'')}};}
+ return{why:'combination',
+  text:'No rows match these filters, and no single one of them explains it — it '+
+    'is the combination that selects nothing.'};}
 
 // The from/to pair writes the SAME `UF.day` grammar the chart's click writes — one
 // ISO day, or 'from..to' for a span — so a date typed here and a bin clicked there
@@ -3935,9 +3990,15 @@ function renderUsage(){const c=$('#usage');
    'Trend is '+dl.label+': '+dl.basis+'.'));
 
  if(!facts.length){
-  card.append(el('div',{class:'mut'},'No rows match these filters.'),
-   el('button',{class:'btn small','data-uclear':'1',
-     style:'margin-top:var(--sp-1)',onclick:clearAll},'Clear filters'));
+  const why=uEmptyWhy();
+  const acts=el('div',{class:'uempty'});
+  if(why.fix)acts.append(el('button',{class:'btn small','data-ufix':why.fix.key,
+    onclick:why.fix.run},why.fix.label));
+  // Kept, and kept second: it is the way out when the diagnosis is "the
+  // combination", and the one control a reader already knows from every other tab.
+  acts.append(el('button',{class:'btn small','data-uclear':'1',
+    onclick:clearAll},'Clear filters'));
+  card.append(el('div',{class:'mut','data-uwhy':why.why},why.text),acts);
   done();return;}
 
  const dim=chartDim();
@@ -5098,6 +5159,57 @@ def _selftest():
           "keepQ=!!(act&&act.id==='uq')" in UI_HTML
           and "if(keepQ){const n=$('#uq');" in UI_HTML
           and "n.setSelectionRange(caret,caret)" in UI_HTML)
+
+    # --- F5: an empty usage view explains itself ---------------------------
+    # The range presets count back from the wall clock, so on a ledger that
+    # stopped in May every preset but 90 selects nothing. That is the normal end
+    # state of a finished plan, and precisely when someone opens this tab to ask
+    # what it cost — and "No rows match these filters" left them with metering
+    # never ran as the only conclusion on offer.
+    _emp = UI_HTML[UI_HTML.index("function uEmptyWhy()"):
+                   UI_HTML.index("function uDayPair()")]
+    check("an empty usage view names its reason in an attribute, not only in "
+          "prose a reader (or a check) has to parse",
+          "const why=uEmptyWhy();" in UI_HTML
+          and "'data-uwhy':why.why" in UI_HTML)
+    check("a preset window beginning after the ledger's last day says so, with "
+          "both dates",
+          "why:'range-after-ledger'" in _emp
+          and "if(C.to&&C.to<cut)" in _emp
+          and "'The last '+UF.range+' days begin '+cut+', and the ledger ends '"
+          "+C.to" in _emp)
+    check("and offers the view that does hold the data, beside the bare "
+          "clear-filters rather than instead of it",
+          "label:'Show all time',run:toAll" in _emp
+          and "'data-ufix':why.fix.key" in UI_HTML
+          and "'data-uclear':'1'" in UI_HTML)
+    # Re-anchoring the presets on the ledger would empty nothing and lie instead:
+    # a control whose label says "today" and whose behaviour means "whenever the
+    # data stopped". The empty state is the fix; the arithmetic was never wrong.
+    check("the presets still measure back from today — the explanation is the "
+          "fix, not a silently re-anchored window",
+          "if(UF.range!=='all'){const d=new Date(Date.now()-parseInt(UF.range,10)"
+          "*864e5)" in UI_HTML)
+    # An explanation computed by a second copy of "what matches" is an explanation
+    # that can contradict the view it is explaining.
+    check("the diagnosis re-runs uFiltered with one slot blanked instead of "
+          "re-implementing the match",
+          "const keep=UF[d];UF[d]=d==='range'?'all':'';" in _emp
+          and "const n=uFiltered().length;UF[d]=keep;" in _emp
+          and "for(const d of UORDER.concat(" in _emp)
+    check("one filter doing the emptying is named, counted and liftable on its "
+          "own — clear-all throws away the ones that were fine",
+          "n+' row(s) match everything else.'" in _emp
+          and "'Remove the '+fName(d)+' filter'" in _emp)
+    check("and where no single filter explains it, the page says so rather than "
+          "blaming one at random",
+          "why:'combination'" in _emp
+          and "is the combination that selects nothing." in _emp)
+    check("`range` carries a human name and a human value like every other "
+          "filter, so it can be named where it is blamed",
+          "range:'time range'" in UI_HTML
+          and ":d==='range'?(UF.range==='all'?'all time':'last '+UF.range+' days')"
+          in UI_HTML)
 
     u = usage_state(proj)
     check("usage_state on a project with no ledger is empty, not an error",

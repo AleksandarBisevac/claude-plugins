@@ -527,8 +527,22 @@ async function assertUsageWorks(page) {
     }
     await page.fill('#usage #uq', 'zzq-matches-nothing');
     await page.waitForTimeout(500);
-    if (!(await page.locator('#usage [data-uclear]').count())) {
+    // A way back is the floor, not the goal: with one filter on, the page can say
+    // which one emptied the view and offer to lift that one alone.
+    const dead = await page.evaluate(() => {
+      const w = document.querySelector('#usage [data-uwhy]');
+      const f = document.querySelector('#usage [data-ufix]');
+      return { why: w && w.getAttribute('data-uwhy'), text: w ? w.textContent : '',
+               fix: f && f.getAttribute('data-ufix'),
+               clear: !!document.querySelector('#usage [data-uclear]') };
+    });
+    if (!dead.clear) {
       fail('usage: a search that matches nothing leaves no rows and no way back');
+    } else if (dead.why !== 'q' || dead.fix !== 'q') {
+      fail(`usage: a search that matches nothing blames "${dead.why}" and offers `
+         + `to lift "${dead.fix}" — the only filter on is the text box`);
+    } else {
+      note(`usage: the dead search names itself ("${dead.text.slice(0, 64)}")`);
     }
     await clear();
   }
@@ -554,6 +568,61 @@ async function assertUsageWorks(page) {
          + `"from..to" grammar the chart click writes`);
     } else {
       note(`usage: from/to wrote ${paired.day} in the chart's own grammar`);
+    }
+    await clear();
+  }
+
+  // --- a range preset that begins after the ledger ends ---------------------
+  // Every preset counts back from the wall clock. On a ledger whose last row is
+  // months old — the normal end state of a finished plan, and exactly when
+  // someone opens this tab to ask what it cost — the window begins after the data
+  // stops and the tab renders empty. Empty is the correct answer; saying nothing
+  // about why is not, because the conclusion left on the table is "metering never
+  // ran". Whether it SHOULD be empty is decided here, from the facts.
+  await clear();
+  {
+    const w = await page.evaluate(() => {
+      const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
+      return { last: days[days.length - 1],
+               cut: new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10),
+               to: (USAGE.counts || {}).to };
+    });
+    await page.selectOption('#usage select[data-uf=range]', '7');
+    await page.waitForTimeout(300);
+    if (w.last >= w.cut) {
+      note(`usage: fixture reaches ${w.last}, inside the last 7 days — the `
+         + `stale-ledger empty state cannot be driven against it`);
+    } else {
+      const got = await page.evaluate(() => {
+        const e = document.querySelector('#usage [data-uwhy]');
+        const f = document.querySelector('#usage [data-ufix=range]');
+        return { why: e && e.getAttribute('data-uwhy'), text: e ? e.textContent : '',
+                 fix: f ? f.textContent : null,
+                 clear: !!document.querySelector('#usage [data-uclear]') };
+      });
+      if (got.why !== 'range-after-ledger') {
+        fail(`usage: "last 7 days" on a ledger ending ${w.last} renders `
+           + `data-uwhy="${got.why}" — the empty view does not say the window `
+           + `begins after the last row ever written`);
+      } else if (!got.text.includes(w.to) || !got.text.includes(w.cut)) {
+        fail(`usage: the empty view names neither the ledger's end (${w.to}) nor `
+           + `the window's start (${w.cut}): "${got.text}"`);
+      } else if (!got.fix || !got.clear) {
+        fail(`usage: the empty view offers fix=${JSON.stringify(got.fix)} `
+           + `clear=${got.clear} — the way to the view that does hold the data `
+           + `is missing`);
+      } else {
+        note(`usage: "last 7 days" starts ${w.cut}, ledger ends ${w.to}; the tab `
+           + `says so and offers "${got.fix}"`);
+        await page.click('#usage [data-ufix=range]');
+        await page.waitForTimeout(300);
+        const back = await page.evaluate(() => UF.range);
+        if (back !== 'all') {
+          fail(`usage: "Show all time" left the range at "${back}"`);
+        } else {
+          await compare('range restored to all time', 'true');
+        }
+      }
     }
     await clear();
   }
