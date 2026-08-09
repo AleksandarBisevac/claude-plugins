@@ -593,6 +593,22 @@ async function assertUsageWorks(page) {
       note(`usage: fixture reaches ${w.last}, inside the last 7 days — the `
          + `stale-ledger empty state cannot be driven against it`);
     } else {
+      // Three honest zeros and one fabricated share: `attributed` divided by a
+      // `||1` denominator and reported 100% coverage of no rows at all — on the
+      // one tile of the four that is coloured by polarity, so the emptiest view
+      // in the tab carried its most confident-looking number.
+      const tiles = await page.evaluate(() => Object.fromEntries(
+        [...document.querySelectorAll('#usage .utile')].map((t) => [
+          t.querySelector('.k').textContent,
+          t.querySelector('.v').firstChild.textContent.trim()])));
+      if (/\d/.test(tiles.attributed || '')) {
+        fail(`usage: over an empty selection the attributed tile reads `
+           + `"${tiles.attributed}" — a share of nothing is undefined, not a `
+           + `number (the others read ${JSON.stringify(tiles)})`);
+      } else {
+        note(`usage: an empty selection reports attributed `
+           + `"${tiles.attributed}", not a manufactured share`);
+      }
       const got = await page.evaluate(() => {
         const e = document.querySelector('#usage [data-uwhy]');
         const f = document.querySelector('#usage [data-ufix=range]');
