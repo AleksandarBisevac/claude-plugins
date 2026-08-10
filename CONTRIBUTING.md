@@ -93,6 +93,27 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   - A new surface that renders a number someone acts on inherits all of this,
     and the pattern to copy is `render-report._usage_context`.
 
+### Adding a new script
+
+Checklist for a new `.py` under `hooks/` or `scripts/`:
+
+- **Name it by role.** An importable helper other files import from takes an
+  underscore prefix (`_deps.py`, `_output.py`); an entry point invoked
+  directly (by a hook, a command, or CI) takes a hyphenated name
+  (`validate-manifest.py`).
+- **Module docstring** stating why the file exists, not just what it does.
+- **`--selftest`** that prints the `N/M cases passed` contract — CI sweeps
+  `hooks/*.py` and `scripts/*.py` and fails a file that has none.
+- **`safe_stdio()` first in `__main__`**, before any other statement — this
+  is AST-enforced by `_output.py`, not a convention.
+- **A layer assignment in `_deps.LAYERS`** — the import-graph lint fails an
+  unplaced file by name.
+- **A tree line and a section in `PLUGIN-BUILD-GUIDE.md`** — the enumeration
+  lint fails a missing one.
+
+Most of this list is enforced by lints, not by review: the checklist is the
+map, the lints are the territory.
+
 ## Release rule
 
 One release = **one commit** that:
@@ -235,3 +256,35 @@ of v0.6.0 it prints "currently in early access" and `eval init` does not
 scaffold — the case schema is not public. Adopt as soon as it opens up:
 priority cases are `/audit:status` on a missing manifest, `run` guards on a
 done task, and the `#no-plan` bypass round-trip.
+
+### Folders under scripts/ declined (2026-08-10): stay flat
+
+Helpers stay flat, namespaced by prefix rather than by directory. Reasons:
+
+- The CI selftest glob (`hooks/*.py scripts/*.py`) and `_output.py`'s own
+  guard are both non-recursive by design — a file in a subdirectory silently
+  stops being tested.
+- Every file stays directly runnable; a folder buys nothing a prefix does not
+  already say.
+- Hooks reach scripts by flat basename paths, and a folder would mean
+  updating every one of those paths for no behavior change.
+
+The structure this would have bought is enforced instead by `_deps.py`'s
+layer lint, which fails an unplaced or wrongly-layered file by name.
+
+**Revisit trigger:** `scripts/` exceeds 40 `.py` files.
+
+### usage_ledger.py split deferred (2026-08-10)
+
+It is the largest file in the plugin (~1,939 lines), but it is well-sectioned
+and read by hooks by path — splitting it now is a path-update exercise with
+no behavior change to show for it.
+
+**Revisit trigger:** the next significant ledger work starts by extracting
+the analytics section (~520 lines) into its own file.
+
+### typing/dataclasses/annotations stay banned (standing since P9.3's AST enforcement)
+
+The 3.8 floor and hooks that must start fast on every tool call rule out the
+import and parse cost of `typing`/`dataclasses`/annotations; enforcement is
+`_output.house_style_violations`, not a style guide someone can forget to read.

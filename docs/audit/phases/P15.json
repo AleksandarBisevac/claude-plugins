@@ -207,7 +207,7 @@
         "technical": "House headers added to 22 files (comment-only, additions-only, counts unchanged), _deps.navigability_violations with _NAV_MIN_LINES=400 and its reason; the lint's first real-tree run found two violators outside the declared scope (_manifest_io, _panel_settings) which the plan gate correctly refused - scope was extended by the orchestrator, both files headered, and the temporary exception list retired to zero. _deps 30 -> 34 cases (exception cases replaced by a clean real-tree assertion); fixture + mutation proofs kept.",
         "descriptive": "Every big file is navigable and a bare one over 400 lines fails the build by name - with zero exceptions left standing."
       },
-      "commit": null,
+      "commit": "24da908",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T22:48:19+02:00",
@@ -224,7 +224,7 @@
     {
       "id": "P15.5",
       "title": "CONTRIBUTING: add-a-script checklist + decision record",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -246,16 +246,22 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CONTRIBUTING gains 'Adding a new script' (six checklist items, closing with which lints enforce them) and three Decision record entries in the section's own format: folders declined with the 40-file revisit trigger, usage_ledger split deferred with its trigger, the typing ban standing with its one-sentence why. 53 insertions, no deletions, no existing heading touched.",
+        "descriptive": "A contributor can now find the map, and the territory is the lints."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T23:28:29+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T23:30:23+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_areas 55/55",
+        "_help 65/65",
+        "_deps 34/34",
+        "sweep green",
+        "validate OK"
+      ]
     }
   ],
   "claim": {
