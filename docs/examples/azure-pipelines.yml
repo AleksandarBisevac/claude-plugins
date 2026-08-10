@@ -1,9 +1,21 @@
 # Azure Pipelines example — gate a build on the audit manifest's state and
 # publish the audit report as a build artifact.
 #
-# The three scripts are dependency-free Python stdlib; they are fetched from a
-# PINNED release tag of the plugin repo (bump the tag deliberately — or vendor
-# the scripts into your repo and skip the curl step entirely).
+# The three scripts (validate-manifest.py, audit-status.py, render-report.py)
+# are fetched standalone from a PINNED release tag of the plugin repo — at
+# that tag each was a single dependency-free Python stdlib file, so curling
+# them one by one is safe and reproducible (bump the tag deliberately — or
+# vendor the scripts into your repo and skip the curl step entirely).
+#
+# That single-file layout is a snapshot of v0.5.0. On current main these
+# scripts have been split into an entry point plus sibling modules (e.g.
+# _manifest_io, _ui_theme, _areas, _loader, _fmt, _report_html,
+# _report_usage, _report_ui), and render-report.py also reads
+# scripts/ui/report.css and scripts/ui/report.js. Cherry-picking single
+# files by curl will not work against main. If you are tracking main
+# instead of a pinned tag, clone or download the whole
+# plugins/audit/scripts/ directory (including its ui/ subfolder) rather
+# than curling individual files.
 #
 # Optional: /audit:sync works headless here too — provide a PAT via the
 # AZURE_DEVOPS_EXT_PAT secret variable (az devops reads it; never echo it).
