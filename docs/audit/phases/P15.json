@@ -12,7 +12,7 @@
   ],
   "baseRef": "842d18ad25269891f0fe8f276b9a740d59b149bb",
   "branch": "audit/p15-structure-enforced",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T23:30:34+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
