@@ -12,7 +12,7 @@
   ],
   "baseRef": "1db398c09c86d70e680f350cffb5659184ef1ff2",
   "branch": "audit/p17-release-v0-32-0",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T23:43:44+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
