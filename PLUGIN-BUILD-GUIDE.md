@@ -81,6 +81,7 @@ claude-plugins/                           # this repo (personal, public)
       scripts/
         _manifest_io.py                   # dual-format loader/writer (single-file OR index+shards)
         _areas.py                         # meta.areas registry + reviewSkill/skills resolution
+        _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         validate-manifest.py              # dependency-free referential validator (cycles, links)
         validate-config.py                # validates .claude/audit.config.json against its schema
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
