@@ -1,7 +1,7 @@
 {
   "id": "P16",
   "title": "F10: the sub-cent rule proven where it renders",
-  "status": "pending",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "Breaking the cost delegation in _report_usage turns at least one of its own cases red by name, exactly as the tokens side already does.",
@@ -10,21 +10,21 @@
     "validate",
     "lint"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "bc954ebf546758aa3226a1db827aa107ee854c37",
+  "branch": "audit/p16-subcent-proof",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "BUG-5/F10 closed with the evidence the entry demanded: the delegation break that was invisible to 49 cases is now named by u42 through the rendered tile, red-first proven.",
   "tasks": [
     {
       "id": "P16.1",
       "title": "sub-cent fixture asserted through the rendered tile",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -46,16 +46,21 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "u42: a 0.004 USD fixture asserted through _usage_tiles' rendered string (the HTML-escaped <$0.01). Full TDD chain on the record: delegation broken -> 49/49 still green (the bug), case added -> 49/50 red by name, delegation restored -> 50/50. render-report 178/178 untouched.",
+        "descriptive": "Breaking the cost delegation now turns a case red by name, exactly like the token side - the rule is proven where it renders."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T23:36:54+02:00",
+      "completedAt": "2026-08-10T23:40:40+02:00",
       "risk": "low",
-      "verifiedBy": [],
+      "verifiedBy": [
+        "_report_usage 50/50 (u42)",
+        "render-report 178/178",
+        "sweep green",
+        "lint green"
+      ],
       "bugId": "BUG-5"
     }
   ]

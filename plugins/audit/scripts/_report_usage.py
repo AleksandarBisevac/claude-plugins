@@ -1067,6 +1067,15 @@ def _selftest():
     # generation stamp - stays in render-report, where the stamp exists.)
     check("u4 pricingAsOf surfaced in HTML, not only once the table has gone stale",
           "rates as of 2026-08-06" in uh)
+    # A sub-cent fixture: real spend, but under a cent. `_fmt_cost` delegates to
+    # _fmt.fmt_cost for this rule (P10.6) — nothing above spends under $0.01, so a
+    # broken delegation (e.g. a raw "$%.2f") would round this to "$0.00" and every
+    # OTHER case here would stay green. Asserted through the rendered tile, the
+    # narrowest renderer that carries a formatted cost, not through _fmt_cost
+    # directly — a call-site regression must fail here even if _fmt.py is fine.
+    _uc = dict(_u, totals=dict(_u["totals"], costUSD=0.004))
+    check("u42 sub-cent spend renders as <$0.01 in the stat tile, never $0.00",
+          "&lt;$0.01" in _usage_tiles(_uc), _usage_tiles(_uc))
     check("u4b the Markdown twin says the same thing",
           "rates as of 2026-08-06" in um)
     _uq = dict(_u, showCost=False)

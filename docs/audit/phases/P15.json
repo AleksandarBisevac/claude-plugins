@@ -249,7 +249,7 @@
         "technical": "CONTRIBUTING gains 'Adding a new script' (six checklist items, closing with which lints enforce them) and three Decision record entries in the section's own format: folders declined with the 40-file revisit trigger, usage_ledger split deferred with its trigger, the typing ban standing with its one-sentence why. 53 insertions, no deletions, no existing heading touched.",
         "descriptive": "A contributor can now find the map, and the territory is the lints."
       },
-      "commit": null,
+      "commit": "0909f32",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T23:28:29+02:00",
