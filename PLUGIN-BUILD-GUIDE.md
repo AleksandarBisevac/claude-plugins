@@ -1,7 +1,7 @@
 # Plugin build & handoff guide
 
 This repository is a **standalone Claude Code plugin** that packages a manifest-driven
-manifest-driven `/audit:*` fix-pipeline plus seven guard hooks and three pinned-tool agents. It was extracted (de-coupled, IP-scrubbed)
+manifest-driven `/audit:*` fix-pipeline plus seven guard hooks and four pinned-tool agents. It was extracted (de-coupled, IP-scrubbed)
 from an internal project's `.claude/` tooling so it can be reused in **any** repo and
 published on a personal marketplace. This single document is self-sufficient: it explains
 every file, why its contents are shaped the way they are, how to finish/publish it, and how
@@ -62,6 +62,7 @@ claude-plugins/                           # this repo (personal, public)
         audit-explorer.md                 # mechanically read-only auditor (no Edit/Write/Bash)
         audit-executor.md                 # task executor (no web tools, no nested agents)
         audit-reviewer.md                 # sign-off reviewer (no edit tools)
+        audit-guide.md                    # answers questions about the plugin (Read/Grep/Glob, haiku)
       hooks/
         hooks.json                        # wires the 9 hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
@@ -242,8 +243,9 @@ per file per session). Needs a git repo; git errors/timeouts (5 s) are silent. C
 `bashWriteCheck.enabled` (default true). `--selftest` (14 cases incl. a real `git init`
 integration case).
 
-### `plugins/audit/agents/` (v0.6.0)
-Three pinned-tool agents the commands spawn via `subagent_type` (with a general-subagent
+### `plugins/audit/agents/` (v0.6.0, a fourth in v0.31.0)
+Four pinned-tool agents, three of which the commands spawn via `subagent_type` (with a
+general-subagent
 fallback for older Claude Code): `audit-explorer` (Glob/Grep/Read — mechanically read-only;
 /audit:init fan-out), `audit-executor` (Read/Edit/Write/Glob/Grep/Bash/Skill — no web tools,
 no nested agents; task execution and review fixes), `audit-reviewer`
@@ -252,6 +254,14 @@ inside the agent so the diff stays out of the orchestrator's context). Tool list
 boundary that does not depend on subagent hook inheritance (#43772); the agent system
 prompts carry the invariants (no commits, no stash, red-first discipline, JSON return
 shapes) while spawn prompts add the per-task specifics.
+
+The fourth, `audit-guide` (Read/Grep/Glob, `model: haiku`), is invoked by a **human**, not by
+the pipeline: it answers questions about the plugin from the plugin's own README, reference
+docs, schemas and SECURITY.md, with a citation per claim. It is deliberately not a skill —
+a skill auto-triggers, and billing a model for a question `/api/help` already answers for
+free is the failure mode this whole feature exists to avoid. `scripts/_help.py` reads its
+frontmatter, so the panel's "Ask audit-guide" hint cannot advertise a tool the agent does not
+hold, and the build fails if it ever gains one that writes.
 
 ### `plugins/audit/hooks/guard-secrets-read.py`
 Read/Grep/Bash secret backstop. Blocks: reading secret file *contents* (`.env`, `credentials*`,

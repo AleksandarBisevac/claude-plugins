@@ -140,7 +140,10 @@ not paper over.
   instead of free-form ones: `audit-explorer` is **mechanically read-only** (no Edit/Write/
   Bash in its tool list — not a prompt request, a hard boundary), `audit-executor` has no
   web tools and no nested agents, `audit-reviewer` can analyze but cannot edit. Commands
-  fall back to general subagents on older Claude Code versions.
+  fall back to general subagents on older Claude Code versions. A fourth, `audit-guide`,
+  is invoked by **you** rather than by the pipeline: it answers questions about the plugin
+  from the plugin's own documents, with a citation per claim. See
+  [Asking it how it works](#asking-it-how-it-works).
 - **Hooks** (all launched via `py-launch.sh`, which resolves `python3` → `python` → `py`;
   the blocking guards fail **loud** — a manual-approval prompt — if no interpreter exists;
   every hook has a 10 s timeout):
@@ -826,6 +829,32 @@ which the orchestrator still reads as a fallback). Task `files` stay project-dir
 the orchestrator strips the prefix when staging. The `/audit:*` commands **preflight** this: if the resolved git root
 isn't a git repo they stop with guidance instead of failing mid-run. Prefer keeping the manifest **inside**
 the git root (e.g. `test/docs/audit/audit-plan.json`) so its status history can be committed.
+
+## Asking it how it works
+
+Two answers, and the cheap one comes first.
+
+**The panel serves its own field documentation.** `GET /api/help` returns every dotted config
+and manifest path with the description the **schema** gives it — extracted at request time from
+`schema/audit-config.schema.json` and `schema/audit-plan.schema.json`, never re-typed, so what
+the panel tells you and what your editor validates against cannot drift apart. Alongside the
+fields it carries four concept pages — how the plan gate grades itself, how an area resolves a
+reviewer, how a capability policy reaches a verdict, what the journal can and cannot prove — and
+each of those derives its rule from the code that executes it (the tier table is
+`_config.plan_gate_mode`'s own answers; the policy page is a worked example run through the
+guard's resolver). It costs nothing to ask and nothing to answer.
+
+**`audit-guide` is the conversational half.** A subagent (`Read`/`Grep`/`Glob`, `model: haiku`)
+that answers questions about this plugin from this plugin's documents — README, `reference/`,
+the schemas, `commands/*.md`, and [SECURITY.md](../../SECURITY.md) — with a file-and-line
+citation for every claim, and "the documents do not say" when they do not. Ask for it by name:
+
+> Use the audit-guide subagent: what does `enforce: true` change, and what stays graded?
+
+It is **mechanically read-only** — no Edit, no Write, no Bash — so it explains the command to
+run and never claims to have run it. And it is deliberately **not** a skill: a skill
+auto-triggers, which would quietly bill a model for questions the panel already answers for
+free. You choose when it is worth a model.
 
 ## Troubleshooting
 

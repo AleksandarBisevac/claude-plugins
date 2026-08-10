@@ -198,6 +198,28 @@ is where a reader actually decides. Not the name.
 what it does, or a name collision appears in the catalog. Both are observable; "the name
 feels generic" is not, and is not a reason to spend a rename.
 
+### In-product help (decided 2026-08-10, v0.31.0): a static endpoint and an agent you invoke, never an auto-triggering skill
+
+Help ships in two halves, and the split is the decision. `GET /api/help` extracts every field
+description from the two schemas at request time and adds four concept pages derived from the
+code that executes each rule — it costs nothing to ask and nothing to answer. `agents/audit-guide.md`
+answers the rest conversationally, from the plugin's own documents, with a citation per claim.
+
+A third option was available and rejected: a skill, which would auto-trigger on "how does the
+audit plugin…" and quietly bill a model for questions the endpoint answers for free. This plugin
+already ships two thin skills, and both exist because a command cannot be reached by describing
+what you want; help has no such problem, because the panel is already open in front of you. **You
+choose when a question is worth a model.**
+
+The guide is an agent rather than a command for the same reason `audit-explorer` is: its tool
+list (`Read`/`Grep`/`Glob`) makes read-only a mechanical fact rather than an instruction. It is
+also, by being in `agents/`, automatically part of the capability policy's REQUIRED set — a
+deny-all policy cannot switch off the thing that explains the policy.
+
+**Revisit trigger:** the drawer ships (panel c8) and people still ask the model things the drawer
+shows — that would mean the static half is not being found, which is a UI problem, not an
+argument for a skill.
+
 ### Plugin evals (evaluated 2026-07, v0.6.0): deferred — feature is early access
 
 `claude plugin eval` (evals/**/case.yaml + graders) is the right tool for

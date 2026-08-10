@@ -459,6 +459,7 @@
         },
         "skills": {
           "type": "array",
+          "description": "Skills the executor subagent loads (via the Skill tool) before writing code for this task. The area's skills load first, then these, deduped — so a house convention cannot be displaced by a task-specific one.",
           "items": {
             "type": "string"
           }

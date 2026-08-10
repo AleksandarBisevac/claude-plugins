@@ -4,6 +4,77 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.31.0] - 2026-08-10
+
+**"What is this field?" cost a model.** Every explanation the plugin could give you lived in a
+document you had to go and find, or in an answer you paid a model to compose — including for
+questions the schemas already answer in writing. This release serves the written answers for
+free, and makes the paid one a deliberate choice rather than the only one.
+
+### Added
+- **`GET /api/help` in the panel — every field, in the schema's own words.** The endpoint returns
+  each dotted config and manifest path with its description **extracted from
+  `schema/audit-config.schema.json` and `schema/audit-plan.schema.json` at request time**, so what
+  the panel says and what your editor validates against cannot drift apart. A description retyped
+  into the UI would be a second thing to keep true, which is the bug this repository has already
+  shipped once (`exemptGlobs` and `tddReminder.testGlobs`, two lists disagreeing about what a test
+  file is). Each field carries its type, enum, and — for config — the default the hooks actually
+  fall back to, flattened out of `_config.DEFAULTS` rather than listed again.
+
+- **Four concept pages alongside the fields, each deriving its rule from the code that runs it.**
+  The plan gate's tier table is `_config.plan_gate_mode`'s own answers to the hook's own three
+  questions; the areas page states `_areas.REVIEW_RULE` — the pinned sentence four documents are
+  already linted against — and resolves a worked example through `resolve_review_skill`; the
+  policy page is a worked example run through `_policy.resolve`, so each verdict and the basis
+  beside it are the guard's words; the journal page's row shape is whatever
+  `audit-journal._normalise` produces. Where the product already states something authoritatively
+  in prose — the four limits of the capability policy, "tamper-evident, not tamper-proof" — a page
+  **names it and cites where it is stated** instead of restating it.
+
+- **`agents/audit-guide.md` — the conversational half, invoked on purpose.** A subagent
+  (`Read`/`Grep`/`Glob`, `model: haiku`, `effort: low`) that answers questions about the plugin
+  from the plugin's own README, `reference/`, schemas, `commands/*.md` and SECURITY.md, with a
+  file-and-line citation per claim and "the documents do not say" when they do not. It is
+  **mechanically read-only** — a fact about its tool list, not a promise in its prompt — so it
+  hands you the command to run and never reports having run it. `scripts/_help.py` reads its
+  frontmatter, so the panel's card cannot advertise a tool the agent does not hold, and the build
+  fails if it ever gains one that writes. Being an agent also makes it **required** by the
+  capability policy, which is read off the agents directory: a deny-all policy cannot switch off
+  the one thing that explains the policy.
+
+- **Deliberately NOT an auto-triggering skill.** A skill fires on what someone types, which would
+  quietly bill a model for questions `/api/help` answers for nothing. The zero-token half is the
+  default and the paid half is a choice you make.
+
+### Changed
+- **`task.skills` gained the schema description it never had**, which is what lets the panel's
+  Composition levers be explained from the schema like every Settings control already is. The
+  coverage check is mechanical in both directions: a control the panel binds with no schema words
+  fails the build, and so does a composition lever whose schema key is renamed.
+- **A doc that enumerates the shipped agents is linted against the directory.** Adding this fourth
+  agent left "three pinned-tool agents" true nowhere and written in two places; `agent_doc_drift`
+  now fails the build on a doc that misses an agent or states a count the directory contradicts.
+
+### Verification
+- **1916 selftest cases across 29 suites** (from 1859 across 28): a new `_help` suite of 50, and
+  `panel-server` 401→408. Plus `capture-screenshots.mjs --check` and
+  `check-report-interactive.mjs` on all three shipped reports.
+- **21 mutations proven red, each naming its own defect** — a config key documented in the form
+  but not the schema, a composition lever with no schema words, the gate table typed out instead
+  of asked of `plan_gate_mode`, the areas page restating the rule in its own words, area
+  precedence quietly reversed, allow evaluated before deny, audit's own components no longer
+  forced allow, a journal row losing a field, a renamed heading breaking a citation, a doc left
+  saying "three", a guide handed an edit tool or an expensive model, the guide agent deleted
+  outright, the `/api/help` route dropped or made writable, a topic missing from the payload, and
+  a payload naming a path on this machine.
+- **One of those mutations changed a check rather than confirming it**: deleting the guide agent
+  reddened four checks by name and then killed the run with a `TypeError`, because three later
+  checks subscripted a card that is legitimately `None` on an install without it. A traceback
+  exits 1 exactly like an assertion does, so the harness requires the expected FAIL line and not
+  merely a non-zero exit — the same trap F3 recorded, one level down.
+
+---
+
 ## [0.30.0] - 2026-08-10
 
 **"Which of these may run here?" had no answer.** A repo could say what its agents must do and

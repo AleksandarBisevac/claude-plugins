@@ -68,6 +68,14 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   validation and change echo as Composition. There is **no form for it yet**; say so rather than
   sending someone looking for a tab that is not there. Edit `meta.areas` by hand, or let
   `/audit:init` write it.
+- **Help, over the API only (v0.31).** `GET /api/help` serves every config and manifest field
+  with the description its **schema** gives it — extracted at request time, so the panel and the
+  file your editor validates cannot say different things — plus four concept pages (how the plan
+  gate grades, how an area resolves a reviewer, how a policy reaches a verdict, what the journal
+  proves) and the `audit-guide` agent's card. There is **no drawer for it yet**; say so rather
+  than sending someone clicking for an ⓘ that is not there. For a question the schema does not
+  answer, ask for the `audit-guide` subagent by name — it reads the plugin's own docs and cites
+  them, and it is read-only.
 - **Nothing is written without showing you what** — on both Settings and Composition. Save
   opens a dialog listing every change as `P1.2 · model · sonnet → opus`, together with any
   phase that is running elsewhere *right now*; Cancel writes nothing and keeps your edits.

@@ -53,6 +53,7 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR i
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the report)
 import _areas               # noqa: E402  (meta.areas registry + shared resolution)
 import _policy              # noqa: E402  (the capability policy + its resolution)
+import _help                # noqa: E402  (schema-sourced field help + concept topics)
 
 # Fields the composition patch is allowed to touch — the security allow-list.
 # `areas` is here so the registry can be written through the ONE write path that
@@ -788,6 +789,25 @@ def journal_state(project, limit=JOURNAL_PAGE):
                          "findings": ["could not read the journal: %s" % exc],
                          "warnings": []}
     return out
+
+
+def help_state():
+    """`GET /api/help` — what every field means, and how the four concepts work.
+
+    Costs nothing to ask and nothing to answer: the field text is EXTRACTED from
+    the two shipped schemas at request time, so the drawer cannot drift from the
+    document a reader is told to trust, and the concept pages derive every
+    executable rule from the code that executes it (`_help` states which). The
+    conversational half — the `audit-guide` agent — is a card in this payload
+    rather than something the panel spawns: a question a static page already
+    answers should not silently bill for a model.
+
+    Project-independent, and deliberately so. It takes no `project` argument
+    because there is nothing here to scope: the live verdicts are `/api/policy`,
+    the live trail is `/api/journal`, and mixing documentation with state would let
+    a reader take a worked example for their own repository.
+    """
+    return _help.payload()
 
 
 def _policy_rules(policy, kind, names):
@@ -1990,6 +2010,8 @@ def _make_handler(project, token):
                 self._json(200, journal_state(project)); return
             if path == "/api/policy":
                 self._json(200, policy_state(project)); return
+            if path == "/api/help":
+                self._json(200, help_state()); return
             if path == "/report":
                 # No path parameter: the location is derived from the project's
                 # own config, so there is nothing here to traverse with.
@@ -6248,6 +6270,47 @@ def _selftest():
               _policy_enforcement(os.path.join(_pproj, "nope"), {})["seen"] is False)
     finally:
         _shutil.rmtree(_pproj, ignore_errors=True)
+
+    # --- v0.31: the help endpoint ------------------------------------------------
+    # The drawer that consumes this lands with panel c8; the endpoint ships now, and
+    # is exercised here rather than left as untested code until it has a caller —
+    # the one thing v0.29's journal call site taught, in the other direction.
+    _help_pay = help_state()
+    # Read the handler's own source, sliced at the method boundaries: counting the
+    # string over the whole file would count this check as a route.
+    _hsrc = _src_of_this_file()
+    _get_src = _hsrc.split("def do_GET")[1].split("def do_PUT")[0]
+    _write_src = _hsrc.split("def do_PUT")[1].split("def _free_port")[0]
+    check("GET /api/help is a route, and only a GET: help is a document, and a "
+          "drawer that could write one would be a second config writer",
+          'if path == "/api/help"' in _get_src and "/api/help" not in _write_src)
+    check("...and it serves _help.payload() rather than a second assembly of the "
+          "same thing", _help_pay == _help.payload())
+    _hcfg = _help_pay["fields"]["config"]
+    _unexplained = [p for p in _settings_paths()
+                    if not (_help.lookup(_hcfg, p) or {}).get("description")]
+    check("every control the Settings form renders can be explained from the "
+          "SCHEMA - the drawer's whole contract, and the reason none of this text "
+          "is retyped here: %r" % (_unexplained,), not _unexplained)
+    _hman = _help_pay["fields"]["manifest"]
+    _uncomp = [k for k, p in _help_pay["composition"].items()
+               if not (_help.lookup(_hman, p) or {}).get("description")]
+    check("...and so can every composition lever, under the panel's own name for "
+          "it: %r" % (_uncomp,), not _uncomp)
+    check("the four concept pages arrive whole, so the drawer has topics and not "
+          "just tooltips",
+          sorted(t["id"] for t in _help_pay["topics"])
+          == ["areas", "gate-tiers", "journal", "policy"]
+          and all(t["title"] and t["paragraphs"] for t in _help_pay["topics"]))
+    check("the guide agent's card rides along with the tools its own file grants, "
+          "so an 'Ask audit-guide' hint cannot offer a capability it does not have",
+          (_help_pay["agent"] or {}).get("name") == "audit-guide"
+          and (_help_pay["agent"] or {}).get("readOnly") is True
+          and (_help_pay["agent"] or {}).get("model") == "haiku")
+    check("the payload is documentation, not state: it names no path on this "
+          "machine, so it cannot be read as a report about this project",
+          _HERE not in json.dumps(_help_pay)
+          and os.path.dirname(_HERE) not in json.dumps(_help_pay))
 
     check("meta.areas is on the composition allow-list, so it goes through the "
           "writer that locks, validates and journals", "areas" in _META_KEYS
