@@ -12,7 +12,7 @@
   ],
   "baseRef": "e84d261",
   "branch": "audit/bf2-crlf-contract",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T22:23:19+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -52,7 +52,7 @@
         "technical": "Root .gitattributes pins plugins/audit/scripts/ui/** to eol=lf with the why written beside it; _cr_violations() guard in both UI modules names a CRLF asset at the reader (real-tree case green, CRLF fixture red-proof load-bearing). Readers keep newline='' - byte fidelity is the point. _panel_ui 23->25, _report_ui 17->19.",
         "descriptive": "A Windows checkout now runs the same bytes as every other platform, and if it ever does not, the selftest names the file instead of failing a pin two files away."
       },
-      "commit": null,
+      "commit": "5698c12",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T22:20:27+02:00",
