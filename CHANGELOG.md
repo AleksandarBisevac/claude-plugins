@@ -88,12 +88,35 @@ should load. `meta.areas` is the other half.
   a monorepo reader looks at first. Tags are now trimmed and de-duplicated in the single
   implementation both surfaces call.
 
+- **A script could be killed by a character it could not spell.** A pipe on Windows is not UTF-8;
+  it is the machine's legacy code page, and Python does not drop an unencodable character, it
+  raises. One selftest case name contained a `✓`, so the Windows CI leg died inside `print` with
+  the run's real result never computed — and the same fault reaches a user, because manifest text
+  is user-supplied: a phase titled with a tick or an emoji would have taken `/audit:status` down
+  with a traceback the moment anyone piped or tee'd it. **`scripts/_output.py`** installs the fix
+  at every entry point under `scripts/`: UTF-8 first, `errors="replace"` second, so a capable
+  consumer gets the real character and an incapable one gets `?` instead of a crash. Adoption is
+  linted, not remembered — `entries_missing_guard()` parses the directory with `ast` and names any
+  `__main__` block that does not install the guard *before it prints*, so a new script that forgets
+  fails in a suite CI already runs. It reasons about what executes rather than where text sits: a
+  `print` inside a `def` is a plan to print, and a textual check would have flagged all fifteen
+  real scripts for code that cannot run first. `hooks/` stays importless on purpose — its product
+  output is `ensure_ascii` JSON — and is covered instead by a second CI pass that runs every suite
+  under `PYTHONIOENCODING=cp1252`, which reproduces the Windows-only failure on every OS.
+
 ### Verification
-- **1538 selftest cases across 23 suites** (from 1429 across 22): `_areas` 55 new, `validate-manifest`
-  47→56, `audit-status` 106→120, `audit-doctor` 52→59, `panel-server` 306→330. Plus
-  `capture-screenshots.mjs --check`, `check-report-interactive.mjs` on all three shipped reports,
-  the schema exercised with `ajv` over a registry it must accept and one it must reject, and the
-  doctor over this repo and the example.
+- **1552 selftest cases across 24 suites** (from 1429 across 22): `_areas` 55 new, `_output` 14 new,
+  `validate-manifest` 47→56, `audit-status` 106→120, `audit-doctor` 52→59, `panel-server` 306→330.
+  Plus `capture-screenshots.mjs --check`, `check-report-interactive.mjs` on all three shipped
+  reports, the schema exercised with `ajv` over a registry it must accept and one it must reject,
+  and the doctor over this repo and the example.
+- **The encoding guard is proven by reproduction, not by reasoning.** `_output`'s selftest runs the
+  same one-line program twice under `PYTHONIOENCODING=cp1252`, differing only in whether the guard
+  is installed: unguarded it must exit non-zero *with a `UnicodeEncodeError`* and print nothing at
+  all — the whole line lost, not just the glyph — and guarded it must exit 0 and still say
+  everything. A third run under UTF-8 asserts the real character survives, so `replace` stays the
+  floor rather than the behaviour. The adoption lint was watched failing for all fifteen scripts
+  before any of them were changed.
 - **24 mutations proven red**, each naming its own defect — including the two that made the
   difference between a test and a decoration. The written-order case had **two** tags but only one
   declaring area, so reversing the resolution order left it green: precedence was never tested until

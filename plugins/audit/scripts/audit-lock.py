@@ -626,6 +626,8 @@ def _selftest():
 
 
 if __name__ == "__main__":
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    safe_stdio()
     if "--selftest" in sys.argv:
         sys.exit(_selftest())
     sys.exit(main(sys.argv[1:]))

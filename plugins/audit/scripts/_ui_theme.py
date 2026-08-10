@@ -523,6 +523,8 @@ def _selftest():
 
 if __name__ == "__main__":
     import sys
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    safe_stdio()
     if "--selftest" in sys.argv[1:]:
         sys.exit(_selftest())
     print(__doc__.strip())
