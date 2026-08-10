@@ -12,7 +12,7 @@
   ],
   "baseRef": "51d2d168761846189c38e2f341472eb4adc9af0b",
   "branch": "audit/bf1-ci-legs",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T22:15:55+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
