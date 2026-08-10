@@ -66,6 +66,11 @@ Config keys (all optional; defaults in DEFAULTS below):
 
 This module also hosts the path/manifest helpers shared by require-plan.py and
 remind-tdd.py (rel_path, matches_exempt, strip_line_suffix, in_progress_*).
+
+Hooks never statically `import` anything from scripts/, this module included: they
+run on every tool call, launched by a process that may not have scripts/ on its
+sys.path, so scripts/-owned features (policy, journal, manifest assembly) are
+loaded by path via `_load_scripts_module` and treated as optional, not required.
 """
 import copy
 import fnmatch
@@ -76,6 +81,7 @@ from pathlib import Path
 
 CONFIG_REL = ".claude/audit.config.json"
 
+# --- defaults -----------------------------------------------------------------
 DEFAULTS = {
     "manifestPath": "docs/audit/audit-plan.json",
     "gitRoot": ".",
@@ -181,6 +187,7 @@ DEFAULTS = {
 }
 
 
+# --- config load --------------------------------------------------------------
 def _load_scripts_module(name, filename):
     """Load a sibling module out of ../scripts by path. None when it cannot be
     loaded — every caller reads that as "the feature this module owns is not
@@ -267,6 +274,7 @@ def load(root):
     return _deep_merge(DEFAULTS, user)
 
 
+# --- git / paths --------------------------------------------------------------
 # Convenience typed getters (defensive; never raise) --------------------------
 def git_root_dir(root, cfg):
     """Absolute path of the git repository root: <project dir>/<cfg.gitRoot>.
@@ -291,6 +299,7 @@ def logs_dir(root, cfg):
     return root / (cfg.get("logsDir") or DEFAULTS["logsDir"])
 
 
+# --- usage / ledger -----------------------------------------------------------
 def usage_cfg(cfg):
     """The merged `usage` block, defaults filled in. Never raises."""
     try:
@@ -324,6 +333,7 @@ def ledger_dir(root, cfg):
                          or DEFAULTS["usage"]["ledgerDir"])
 
 
+# --- journal ------------------------------------------------------------------
 _JOURNAL_LIB = {"tried": False, "mod": None}
 
 
@@ -382,6 +392,7 @@ def in_journal(root, cfg, path):
         return False
 
 
+# --- policy -------------------------------------------------------------------
 def policy_mod():
     """scripts/_policy.py, or None when this install has no policy engine."""
     return _POLICY_MOD
@@ -402,6 +413,7 @@ def policy_cfg(cfg):
         return None
 
 
+# --- areas --------------------------------------------------------------------
 _AREAS_LIB = {"tried": False, "mod": None}
 
 
@@ -466,6 +478,7 @@ def _areas_of_fallback(area):
     return out
 
 
+# --- guard config (edits / secrets / tdd) -------------------------------------
 def token_vars(cfg):
     try:
         tv = (cfg.get("guardEdits") or {}).get("tokenVars")
@@ -527,7 +540,8 @@ def source_exts(cfg):
                     ".java", ".cs", ".kt", ".swift", ".rs"}
 
 
-# Shared path/manifest helpers (require-plan.py + remind-tdd.py) ---------------
+# --- path / manifest helpers --------------------------------------------------
+# Shared by require-plan.py + remind-tdd.py.
 def rel_path(root, file_path):
     """Path of file_path RELATIVE to repo root, posix-style. Falls back gracefully."""
     fp = str(file_path).replace("\\", "/")
@@ -574,6 +588,7 @@ def strip_line_suffix(entry):
     return s.split(":", 1)[0]
 
 
+# --- manifest state -----------------------------------------------------------
 def _load_manifest_assembled(path):
     """Read the manifest as ONE assembled dict, handling BOTH storage layouts —
     the legacy single file and the index+per-phase-shards form. Prefers
@@ -811,6 +826,7 @@ def manifest_state(root, manifest_rel):
     return state
 
 
+# --- plan gate ----------------------------------------------------------------
 def plan_gate_mode(cfg, state):
     """Resolve evidence into "observe" | "warn" | "deny".
 
