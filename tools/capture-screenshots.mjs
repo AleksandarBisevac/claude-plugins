@@ -2329,7 +2329,7 @@ async function main() {
         // first attempt at this shot hid two capability rows behind it. A viewport
         // that fits the view leaves the bar where it really sits, at the end.
         const pctx = await browser.newContext({
-          viewport: { width: 1200, height: 1560 }, deviceScaleFactor: 1,
+          viewport: { width: 1200, height: 1680 }, deviceScaleFactor: 1,
           reducedMotion: 'reduce', colorScheme: 'light',
         });
         const ppage = await pctx.newPage();
