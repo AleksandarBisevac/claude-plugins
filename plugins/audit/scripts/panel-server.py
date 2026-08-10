@@ -458,30 +458,30 @@ def _read_json(path):
 
 # --- discovery / registry -------------------------------------------------------
 def _front_matter(text):
-    """Parse the leading '--- ... ---' block into a flat {key: value} dict.
-    Stdlib only (no YAML dep); good enough for `name` / `description`.
-
-    Unquoting goes through `_help.unquote_scalar`, which is the same function the
-    help payload reads an agent's card with — see the note there. `strip("\"'")`
-    was not that function: it published the escape (`the plugin''s own README`)
-    and ate the apostrophe off an unquoted `'sup`."""
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}
-    fm = {}
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        m = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
-        if m:
-            fm[m.group(1)] = _help.unquote_scalar(m.group(2).strip())
-    return fm
+    """Delegates to `_help.front_matter` -- the one frontmatter parser in the
+    plugin. See that docstring for what it does at the edges (CRLF, indented
+    continuation lines, quoted scalars via `_help.unquote_scalar`, missing
+    closing fence)."""
+    return _help.front_matter(text)
 
 
 def _fm_of(path):
+    """Read up to a byte cap (this scans every skill/agent file in a
+    directory, so keeping the common case cheap matters) and parse. The cap
+    is a deliberate read-size guard, not a truncation of the parse result:
+    if the closing '---' fence is not found within the capped read, the read
+    was cut off mid-block, so fall back to reading the whole file rather than
+    silently parsing (or failing to parse) a truncated block. Correctness
+    over the micro-optimization in that rare case."""
+    cap = 4096
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            return _front_matter(fh.read(4096))
+            head = fh.read(cap)
+            if len(head) >= cap and re.match(r"^---\r?\n", head) and \
+               not re.search(r"\r?\n---\r?\n", head):
+                fh.seek(0)
+                head = fh.read()
+        return _front_matter(head)
     except Exception:
         return {}
 

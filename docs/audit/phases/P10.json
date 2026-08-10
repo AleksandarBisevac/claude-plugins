@@ -195,7 +195,7 @@
     {
       "id": "P10.5",
       "title": "One front-matter parser: _help.front_matter",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -219,21 +219,26 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_help.front_matter(text) is the single parser: full-block regex, CRLF-tolerant, indented continuations skipped, unquote_scalar for scalars, no length cap; _frontmatter(path) is a read+delegate wrapper and the panel's _front_matter delegates. _fm_of keeps its 4096-byte scan cap but re-reads whole when the closing fence is beyond it. _help 59 -> 65 cases; the continuation-skip mutation-proven red.",
+        "descriptive": "The panel's scanner and the help system read front matter through one parser, and the edge cases they used to disagree on are decided and locked."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T18:22:00+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T18:29:00+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_help 65/65 (f4-f9 new)",
+        "panel-server 428/428 no re-pinning",
+        "sweep green",
+        "lint green"
+      ]
     },
     {
       "id": "P10.6",
       "title": "_fmt.py: one token/cost formatter",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -263,9 +268,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T18:29:00+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []

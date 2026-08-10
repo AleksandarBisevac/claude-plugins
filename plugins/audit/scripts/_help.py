@@ -497,18 +497,32 @@ def topics(root=None):
 GUIDE = "audit-guide"
 
 
-def _frontmatter(path):
-    """The `key: value` block between the first two `---` lines, or {}.
+def front_matter(text):
+    """Parse the leading `---\\n ... \\n---\\n` block into a flat {key: value}
+    dict, or {}. The one frontmatter parser in the plugin -- it replaces what
+    used to be two hand-rolled parsers (this module's old `_frontmatter` and
+    `panel-server._front_matter`) that quietly disagreed at the edges. The
+    merge, and what it does at each edge the two disagreed on:
 
-    Deliberately not a YAML parser: the frontmatter this repository writes is flat
-    scalars and one comma list, and a hand-rolled parser that quietly mis-reads
-    something more elaborate would be worse than one that reads exactly what is
-    there."""
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            text = fh.read()
-    except Exception:
-        return {}
+    - CRLF: the fence and the lines inside it may end in `\\r\\n` or `\\n`;
+      both parse the same.
+    - Indented continuation lines (a wrapped value, or YAML block style) are
+      skipped rather than mis-read as a new `key: value` pair -- this is the
+      more correct approximation of the two prior parsers, so it won.
+    - Quoted scalars go through `unquote_scalar`, which undoes a doubled `''`
+      or an escaped `\\"` rather than stripping bare quote characters (see
+      that function's docstring for why the naive strip was wrong).
+    - The block is parsed in full no matter how long it is -- this function
+      takes the whole text; a caller that wants a read-size cap (scanning
+      many files cheaply) applies it before calling and falls back to a full
+      read when the cap would cut through the block itself.
+    - No closing `---` fence, or no leading `---` line at all: returns {}
+      rather than a guess.
+
+    Deliberately not a YAML parser: the frontmatter this repository writes is
+    flat scalars and one comma list, and a hand-rolled parser that quietly
+    mis-reads something more elaborate would be worse than one that reads
+    exactly what is there."""
     match = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", text, re.S)
     if not match:
         return {}
@@ -521,6 +535,18 @@ def _frontmatter(path):
             continue
         out[key.strip()] = unquote_scalar(val.strip())
     return out
+
+
+def _frontmatter(path):
+    """Thin wrapper: read the file (utf-8, best-effort) and delegate to the
+    one frontmatter parser, `front_matter`. See that docstring for the
+    merged edge-case behavior."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except Exception:
+        return {}
+    return front_matter(text)
 
 
 def agent_cards(root=None):
@@ -992,6 +1018,33 @@ def _selftest():
     finally:
         if os.path.exists(_fm):
             os.remove(_fm)
+
+    # front_matter(text): the merged parser's edge cases (the one used to be
+    # two -- _help._frontmatter and panel-server._front_matter -- that quietly
+    # disagreed on these).
+    check("f4 CRLF frontmatter parses the same as LF",
+          front_matter("---\r\nname: x\r\ndescription: y\r\n---\r\nbody\r\n")
+          == {"name": "x", "description": "y"})
+    check("f5 a doubled single-quote inside a quoted scalar is the YAML escape, "
+          "not a new field -- this is unquote_scalar's integration, not just "
+          "its unit behavior",
+          front_matter("---\ndescription: 'the plugin''s own README'\n---\n")
+          == {"description": "the plugin's own README"})
+    check("f6 an indented continuation line is skipped -- even one that looks "
+          "like its own 'key: value' -- and the key after it still parses; "
+          "this is the more-correct behavior of the two prior parsers",
+          front_matter("---\nname: x\n  fake: not-a-field\ndescription: y\n"
+                       "---\n") == {"name": "x", "description": "y"})
+    check("f7 a frontmatter block over 4KB still parses in full -- nothing "
+          "here caps the block itself, only a caller's read of the file",
+          front_matter("---\n" + "".join(
+              "key%03d: value%03d\n" % (i, i) for i in range(400)
+          ) + "---\nbody\n") == dict(
+              ("key%03d" % i, "value%03d" % i) for i in range(400)))
+    check("f8 no closing fence yields {} rather than a partial parse",
+          front_matter("---\nname: x\ndescription: y\n") == {})
+    check("f9 text with no frontmatter fence at all yields {}",
+          front_matter("just a body, no fence\n") == {})
 
     # --- the payload --------------------------------------------------------------
     pay = payload()
