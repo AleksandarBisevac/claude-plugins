@@ -955,6 +955,18 @@ def unit_economics(manifest, rows):
 
 BAND_ORDER = ("typical", "high", "outlier")
 
+# The ONE place the relative basis's shape is stated: the sample gate and the two
+# percentiles cost_bands() reads below. panel.js no longer restates these numbers
+# — panel-server.py serializes this exact dict into the page (__COST_BAND_PARAMS__)
+# so a change here cannot silently leave the panel classifying tasks differently
+# from the report. Keep it JSON-serializable (plain int values only): it crosses
+# the Python/JS boundary as-is via json.dumps.
+COST_BAND_PARAMS = {
+    "gate": MIN_TASKS_FOR_PROJECTION,
+    "percentileHigh": 50,
+    "percentileOutlier": 90,
+}
+
 
 def cost_bands(manifest, rows, cfg=None):
     """Sort tasks into `typical` / `high` / `outlier` by what they cost.
@@ -991,7 +1003,7 @@ def cost_bands(manifest, rows, cfg=None):
 
     out = {"basis": None, "high": None, "outlier": None, "byTask": {},
            "counts": {b: 0 for b in BAND_ORDER}, "sample": 0,
-           "gate": MIN_TASKS_FOR_PROJECTION, "sufficient": False}
+           "gate": COST_BAND_PARAMS["gate"], "sufficient": False}
 
     hi, out_ = band_cfg.get("highUSD"), band_cfg.get("outlierUSD")
     try:
@@ -1005,11 +1017,11 @@ def cost_bands(manifest, rows, cfg=None):
         done = [c for tid, c in cost_by_task.items()
                 if (tasks.get(tid) or {}).get("status") == "done"]
         out["sample"] = len(done)
-        if len(done) < MIN_TASKS_FOR_PROJECTION:
+        if len(done) < COST_BAND_PARAMS["gate"]:
             return out
         out.update(basis="relative", sufficient=True,
-                   high=round(_percentile(done, 50), 4),
-                   outlier=round(_percentile(done, 90), 4))
+                   high=round(_percentile(done, COST_BAND_PARAMS["percentileHigh"]), 4),
+                   outlier=round(_percentile(done, COST_BAND_PARAMS["percentileOutlier"]), 4))
 
     for tid, cost in cost_by_task.items():
         band = ("outlier" if cost > out["outlier"]
@@ -1774,6 +1786,24 @@ def _selftest():
         check("bands: every classified task lands in exactly one band",
               sum(cb["counts"].values()) == len(cb["byTask"])
               and set(cb["byTask"].values()) <= set(BAND_ORDER))
+        # COST_BAND_PARAMS is the ONE place the relative basis's shape is stated —
+        # panel-server.py JSON-dumps this exact dict into the page as
+        # __COST_BAND_PARAMS__, and panel.js reads it back instead of restating the
+        # numbers. Pinned against LITERAL values (not re-derived through the
+        # constant itself) so a skewed boundary here goes red by name instead of
+        # trivially agreeing with itself.
+        check("bands: COST_BAND_PARAMS is exactly {gate:5, high:p50, outlier:p90} "
+              "— the values panel.js's __COST_BAND_PARAMS__ is generated from",
+              COST_BAND_PARAMS == {"gate": 5, "percentileHigh": 50,
+                                    "percentileOutlier": 90})
+        # And cost_bands() actually SOURCES its gate/percentiles from that constant
+        # rather than a second copy of the numbers: recomputing the same run's
+        # thresholds with literal 50/90 must match what cost_bands() returned.
+        check("bands: gate and percentiles used ARE COST_BAND_PARAMS, not a "
+              "restated copy — this is the constant the JS mirror is generated from",
+              cb["gate"] == COST_BAND_PARAMS["gate"] == MIN_TASKS_FOR_PROJECTION
+              and cb["high"] == round(_percentile(_dc, 50), 4)
+              and cb["outlier"] == round(_percentile(_dc, 90), 4))
         cb_few = cost_bands({"phases": [{"id": "P1", "tasks": [
             {"id": "P1.1", "status": "done"}]}]},
             [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 5.0)])

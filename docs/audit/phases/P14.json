@@ -1,7 +1,7 @@
 {
   "id": "P14",
   "title": "refactor: cleanups",
-  "status": "pending",
+  "status": "in_progress",
   "model": "sonnet",
   "blockedBy": [
     "P12",
@@ -13,8 +13,8 @@
     "validate",
     "lint"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "90103357dfca2b99178a4fe85de2c8255657c25a",
+  "branch": "audit/p14-refactor-cleanups",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P14.1",
       "title": "cost_bands parity: shared boundary fixture, both sides assert it",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -51,21 +51,28 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage_ledger.COST_BAND_PARAMS (gate 5, percentiles 50/90) is the single source cost_bands() reads from; panel-server injects it into panel.js via a __COST_BAND_PARAMS__ placeholder (json.dumps of the module constant through the existing loader path) and uBandInfo() reads it instead of restating literals. The comment-presence pin is retired for three logic pins (placeholder-once, JS-reads-placeholder, assembled-carries-the-constant) plus two ledger-side cases; four mutation proofs red by name. usage_ledger 127/127, panel-server 240/240 (238 + 3 new - 1 retired).",
+        "descriptive": "The cost bands have one definition, injected where the browser needs it, and the check that used to prove a comment now proves the logic."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T19:53:16+02:00",
+      "completedAt": "2026-08-10T20:04:36+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "usage_ledger 127/127",
+        "panel-server 240/240",
+        "_panel_ui 23/23",
+        "sweep green",
+        "lint green",
+        "capture-screenshots --check green (bands render)"
+      ]
     },
     {
       "id": "P14.2",
       "title": "audit-status: sectioning + direct _fmt import",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -91,9 +98,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T20:04:36+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []
@@ -168,5 +175,11 @@
       "risk": "low",
       "verifiedBy": []
     }
-  ]
+  ],
+  "claim": {
+    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
+    "host": "MacBook-Pro.local",
+    "branch": "audit/p14-refactor-cleanups",
+    "at": "2026-08-10T19:53:16+02:00"
+  }
 }

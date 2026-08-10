@@ -2441,14 +2441,18 @@ function uBudgets(facts){
  return out;}
 
 // --- cost bands ------------------------------------------------------------------
-// Mirrors cost_bands() in usage_ledger.py; the two must agree or the panel and the
-// report will put the same task in different bands. Same gate, same thresholds,
-// same fallback when the configured pair is malformed.
+// The boundaries are NOT restated here: COST_BAND_PARAMS below is usage_ledger.py's
+// own COST_BAND_PARAMS constant, JSON-dumped into the page at serve time by the
+// substitution chain in panel-server.py. This function still mirrors the SHAPE of
+// cost_bands() — same fallback order, same comparisons — but the gate and the
+// percentile pair it reads cannot drift from Python: they ARE Python's values, not
+// a copy typed a second time.
 //
 // Computed from the WHOLE ledger, never from the filtered view: a task is an
 // outlier relative to the project, not relative to whatever slice you are looking
 // at. Recalibrating per filter would make one of any three tasks an "outlier".
-const BAND_GATE=5, BAND_ORDER=['typical','high','outlier'];
+const COST_BAND_PARAMS=__COST_BAND_PARAMS__;
+const BAND_GATE=COST_BAND_PARAMS.gate, BAND_ORDER=['typical','high','outlier'];
 let BANDS=null;
 function uBandInfo(){
  if(BANDS)return BANDS;
@@ -2464,7 +2468,8 @@ function uBandInfo(){
    return (BANDS={basis:null,sufficient:false,byTask:{},sample,gate:BAND_GATE});
   const pct=p=>done[Math.max(0,Math.min(done.length-1,
     Math.round(p/100*(done.length-1))))];
-  hi=pct(50);ou=pct(90);basis='relative';}
+  hi=pct(COST_BAND_PARAMS.percentileHigh);ou=pct(COST_BAND_PARAMS.percentileOutlier);
+  basis='relative';}
  const byTask={},counts={typical:0,high:0,outlier:0};
  for(const t in cost){const b=cost[t]>ou?'outlier':cost[t]>hi?'high':'typical';
   byTask[t]=b;counts[b]++;}

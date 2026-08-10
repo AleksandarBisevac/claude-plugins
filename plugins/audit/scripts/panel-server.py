@@ -532,6 +532,14 @@ UI_HTML = UI_HTML.replace("__COMP_HELP__", json.dumps(COMPOSITION_HELP, **_JS_JS
 # Loads validate-config, so it runs at import rather than in the string above. The
 # enums are the validator's own tuples — see _cfg_enums.
 UI_HTML = UI_HTML.replace("__CFG_ENUMS__", json.dumps(_cfg_enums(), sort_keys=True))
+# The gate and percentile pair panel.js's cost-band mirror reads: usage_ledger.py's
+# OWN COST_BAND_PARAMS constant, not a copy of its numbers. cost_bands() is computed
+# from this same dict (see usage_ledger.py), so a change to either can no longer
+# leave the panel classifying a task into a different band than the report does —
+# there is exactly one place these numbers are written down.
+_ulmod_for_ui = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
+UI_HTML = UI_HTML.replace("__COST_BAND_PARAMS__",
+                          json.dumps(_ulmod_for_ui.COST_BAND_PARAMS, sort_keys=True))
 
 
 # --- selftest -------------------------------------------------------------------
@@ -1506,15 +1514,32 @@ def _selftest():
           "if(adv.length){" in UI_HTML)
 
     # --- cost bands ---------------------------------------------------------------
-    # The JS reimplements cost_bands(); the two agreeing is a standing obligation,
-    # so the source says which Python function it shadows and pins the same gate.
+    # cost_bands() and panel.js's uBandInfo() used to be held together only by a
+    # comment ("Mirrors cost_bands() in usage_ledger.py") asserted present in the
+    # page — a pin on PROSE, not on the numbers it described. usage_ledger.py now
+    # owns ONE serializable constant (COST_BAND_PARAMS) that cost_bands() itself
+    # reads from, panel-server.py serializes verbatim into the page as
+    # __COST_BAND_PARAMS__, and panel.js reads back instead of restating. These
+    # cases assert the placeholder and the injected value directly — a boundary
+    # can now only drift if this file stops sourcing it from usage_ledger.py.
     _ulmod = _load("audit_usage_ledger_check",
                    os.path.join(_HERE, "usage_ledger.py"))
-    check("bands mirror the Python implementation and pin the SAME gate "
-          "(a drift here puts one task in two different bands)",
-          "const BAND_GATE=5" in UI_HTML
-          and "Mirrors cost_bands() in usage_ledger.py" in UI_HTML
-          and "const BAND_GATE=%d" % _ulmod.MIN_TASKS_FOR_PROJECTION in UI_HTML
+    _raw_tpl = _panel_ui.raw_template(cache=False)
+    check("the cost-band-params placeholder appears exactly once in the raw "
+          "template, before substitution",
+          _raw_tpl.count("__COST_BAND_PARAMS__") == 1)
+    check("panel.js reads the boundaries from the placeholder instead of "
+          "restating the gate/percentiles as literals",
+          "const COST_BAND_PARAMS=__COST_BAND_PARAMS__;" in _raw_tpl
+          and "const BAND_GATE=COST_BAND_PARAMS.gate" in _raw_tpl
+          and "pct(COST_BAND_PARAMS.percentileHigh)" in _raw_tpl
+          and "pct(COST_BAND_PARAMS.percentileOutlier)" in _raw_tpl
+          and "const BAND_GATE=5" not in _raw_tpl)
+    check("the assembled UI_HTML carries usage_ledger's OWN COST_BAND_PARAMS "
+          "(the module constant, not a copy) as the substituted JSON, and the "
+          "placeholder is gone",
+          "__COST_BAND_PARAMS__" not in UI_HTML
+          and json.dumps(_ulmod.COST_BAND_PARAMS, sort_keys=True) in UI_HTML
           and list(_ulmod.BAND_ORDER) == ["typical", "high", "outlier"])
     # A task is an outlier relative to the PROJECT. Recalibrating per filter would
     # make one of any three tasks an outlier the moment you scoped to three.
