@@ -135,6 +135,67 @@ def entries_missing_guard(script_dir=None):
     return missing
 
 
+_HOOKS_DIR = os.path.join(os.path.dirname(_HERE), "hooks")
+
+# The four bans: legal Python 3.8, illegal in this repo, and none of them caught by a
+# version gate (vermin flags syntax the interpreter cannot run at all — every one of
+# these runs fine on 3.8, it is just not this repo's style). Named here once so the
+# checker and its selftest cases both read the same list rather than two lists drifting.
+_BANNED_MODULES = ("typing", "dataclasses")
+
+
+def _house_style_violations_in_tree(tree, name):
+    """(line, what) tuples for one already-parsed module — the part `ast.walk` can see.
+
+    Walks the WHOLE tree, not the straight-line spine `entries_missing_guard` walks:
+    a walrus or a banned import is just as much a style violation buried inside a
+    function body as it is at module level, so nothing here stops at a def boundary.
+    """
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.NamedExpr):
+            found.append((node.lineno, "walrus operator (:=)"))
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "__future__":
+                found.append((node.lineno, "from __future__ import"))
+            elif node.module in _BANNED_MODULES:
+                found.append((node.lineno, "from %s import" % node.module))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in _BANNED_MODULES:
+                    found.append((node.lineno, "import %s" % alias.name))
+    return [(name, line, what) for line, what in found]
+
+
+def house_style_violations(dirs=None):
+    """(filename, line, what) tuples for every banned construct under `dirs`.
+
+    House style, not the 3.8 floor: walrus, `from __future__ import ...`, `typing` and
+    `dataclasses` are all legal on Python 3.8, so vermin's version gate cannot see any
+    of them — they are banned by convention, and conventions drift unless something
+    reads the AST. Scans `scripts/*.py` and `hooks/*.py`, flat and non-recursive, the
+    same directory-listing shape `entries_missing_guard` uses — and for the same reason
+    a file that will not parse is reported as a violation rather than skipped, since a
+    syntax error is a worse thing to pass over in silence than any single banned import.
+    """
+    dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR)
+    violations = []
+    for d in dirs:
+        for name in sorted(os.listdir(d)):
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(d, name)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=name)
+            except (OSError, SyntaxError) as exc:
+                violations.append((name, getattr(exc, "lineno", 0) or 0,
+                                    "file does not parse: %s" % exc))
+                continue
+            violations.extend(_house_style_violations_in_tree(tree, name))
+    return violations
+
+
 def _selftest():
     import subprocess
     import tempfile
@@ -254,6 +315,70 @@ def _selftest():
     real = entries_missing_guard()
     check("f1 every entry point under scripts/ installs the guard before it prints: %r"
           % (real,), not real)
+
+    # --------------------------------------------------------- house-style AST bans
+    # Same shape as the adoption-lint block above: a fixture directory per case, each
+    # proving the checker actually reads the construct rather than merely never having
+    # seen one. A ban whose case never turns red before the implementation exists is a
+    # decoration, not a check.
+    style = tempfile.mkdtemp(prefix="audit-style-")
+    try:
+        with open(os.path.join(style, "walrus.py"), "w", encoding="utf-8") as fh:
+            fh.write("if (n := 3) > 0:\n    print(n)\n")
+        with open(os.path.join(style, "future.py"), "w", encoding="utf-8") as fh:
+            fh.write("from __future__ import annotations\n")
+        with open(os.path.join(style, "typing_import.py"), "w", encoding="utf-8") as fh:
+            fh.write("import typing\n")
+        with open(os.path.join(style, "typing_from.py"), "w", encoding="utf-8") as fh:
+            fh.write("from typing import Optional\n")
+        with open(os.path.join(style, "dataclasses_import.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("import dataclasses\n")
+        with open(os.path.join(style, "dataclasses_from.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("from dataclasses import dataclass\n")
+        with open(os.path.join(style, "clean.py"), "w", encoding="utf-8") as fh:
+            fh.write('def f(n):\n    return n + 1\n')
+        with open(os.path.join(style, "broken.py"), "w", encoding="utf-8") as fh:
+            fh.write("def f(:\n")
+
+        hits = house_style_violations((style,))
+        by_file = {}
+        for fname, line, what in hits:
+            by_file.setdefault(fname, []).append(what)
+
+        check("g1 the walrus operator is named as its own construct, not lumped in "
+              "with everything else", any("walrus" in w for w in
+              by_file.get("walrus.py", [])))
+        check("g2 `from __future__ import ...` is caught even though it is legal "
+              "3.8 syntax a version gate would wave through", any(
+              "__future__" in w for w in by_file.get("future.py", [])))
+        check("g3 `import typing` is caught", any(
+              w == "import typing" for w in by_file.get("typing_import.py", [])))
+        check("g4 `from typing import ...` is caught", any(
+              "typing" in w for w in by_file.get("typing_from.py", [])))
+        check("g5 `import dataclasses` is caught", any(
+              w == "import dataclasses" for w in
+              by_file.get("dataclasses_import.py", [])))
+        check("g6 `from dataclasses import ...` is caught", any(
+              "dataclasses" in w for w in by_file.get("dataclasses_from.py", [])))
+        check("g7 a clean file with none of the four constructs is not named",
+              "clean.py" not in by_file)
+        check("g8 a file that will not parse is reported, not silently skipped - "
+              "same rule entries_missing_guard already follows",
+              "broken.py" in by_file)
+        check("g9 every violation names a line number, so a failure can point at "
+              "its offender rather than just its file",
+              all(isinstance(line, int) and line > 0 for _, line, _ in hits
+                  if _ != "broken.py"))
+    finally:
+        shutil.rmtree(style, ignore_errors=True)
+
+    # The gate this half of the module exists for: scripts/ and hooks/, as they stand,
+    # carry none of the four bans.
+    real_style = house_style_violations()
+    check("g10 neither scripts/ nor hooks/ carries any of the four house-style bans: %r"
+          % (real_style,), not real_style)
 
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:

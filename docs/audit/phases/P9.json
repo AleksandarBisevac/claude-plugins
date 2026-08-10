@@ -53,7 +53,7 @@
         "technical": "Repo-root pyproject.toml carrying only [tool.ruff] (target-version py38, lint.select E9+F, no formatter). ruff surfaced exactly one true finding (F841 dead local in _help.py's _selftest), fixed in place. The vermin leg of the lint gate exposed a gate-definition bug, not a code bug: bare -t=3.8 demands the detected floor equal 3.8 while this tree's floor is 3.7; buildCommands.lint now uses -t=3.8- (3.8 or lower). Lint and sweep gates green.",
         "descriptive": "The repo now has a dev-only ruff configuration, one real lint finding is fixed, and the 3.8-floor gate asserts what it meant to assert."
       },
-      "commit": null,
+      "commit": "c14c018",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T17:34:59+02:00",
