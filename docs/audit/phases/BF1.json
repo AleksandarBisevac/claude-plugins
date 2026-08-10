@@ -1,7 +1,7 @@
 {
   "id": "BF1",
   "title": "CI legs: Windows separators + Linux viewport",
-  "status": "in_progress",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "CI run on main is fully green: j12 passes on Windows because journal_dir returns one normalized spelling everywhere (proven red-first on POSIX via the root-manifest ./ case), and the policy view fits the raised capture viewport on Linux.",
@@ -16,10 +16,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "The first honest CI run over the backlog found both platform assumptions and both are paid: journal_dir normalizes its return (a2b red-first proved the class on POSIX before Windows ever re-ran), and the capture viewport carries Linux-font headroom. Ubuntu legs verified locally-equivalent; the Windows leg's verdict is the re-run's to give.",
   "tasks": [
     {
       "id": "BF1.1",
@@ -50,7 +50,7 @@
         "technical": "Both return branches of journal_dir wrapped in os.path.normpath; red-first case a2b (root-level manifestPath leaves ./ in the path) proven red 51/52 on the unfixed code, then 53/53 green with a2c pinning the default shape. j12's comparison untouched - it was right.",
         "descriptive": "journal_dir answers in one spelling on every platform; the Windows leg's refusal was the comparison doing its job against a two-spelling API."
       },
-      "commit": null,
+      "commit": "1fef95e",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T22:11:47+02:00",
@@ -89,7 +89,7 @@
         "technical": "Policy-context viewport 1560 -> 1680 (sole occurrence); the height guard has Linux-font headroom. --check green locally; PNGs regenerate on the next capture run.",
         "descriptive": "The capture viewport now fits the policy view on Linux too, as the check's own comment prescribed."
       },
-      "commit": null,
+      "commit": "cf19fa7",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T22:11:47+02:00",
@@ -100,11 +100,5 @@
       ],
       "bugId": "BUG-3"
     }
-  ],
-  "claim": {
-    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
-    "host": "MacBook-Pro.local",
-    "branch": "audit/bf1-ci-legs",
-    "at": "2026-08-10T22:11:47+02:00"
-  }
+  ]
 }
