@@ -749,8 +749,6 @@ def _selftest():
             bad += 1
             print("FAIL %s%s" % (name, (" :: %s" % detail) if detail else ""))
 
-    root = plugin_root()
-
     # --- extraction ---------------------------------------------------------------
     cfg = config_fields()
     man = manifest_fields()

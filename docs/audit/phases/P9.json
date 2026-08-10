@@ -1,7 +1,7 @@
 {
   "id": "P9",
   "title": "refactor: dev tooling bootstrap",
-  "status": "pending",
+  "status": "in_progress",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "Every later refactor commit is lint-gated: ruff (E9+F, py38) and vermin guard the 3.8 floor as dev/CI-only tools, and the house-style bans (walrus, typing, dataclasses, __future__) are AST-enforced in _output.py rather than remembered.",
@@ -9,9 +9,15 @@
     "sweep",
     "validate"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "96784b73927de6de48948238b25cc04eb3303105",
+  "branch": "audit/p9-refactor-dev-tooling-bootstrap",
   "mergedAt": null,
+  "claim": {
+    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
+    "host": "MacBook-Pro.local",
+    "branch": "audit/p9-refactor-dev-tooling-bootstrap",
+    "at": "2026-08-10T17:34:59+02:00"
+  },
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -23,13 +29,14 @@
     {
       "id": "P9.1",
       "title": "pyproject.toml with [tool.ruff]: py38, E9+F only, no formatter",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "pyproject.toml"
+        "pyproject.toml",
+        "plugins/audit/scripts/_help.py"
       ],
       "docs": [],
       "description": "Add a repo-root pyproject.toml carrying only [tool.ruff]: target-version py38, lint.select [E9,F]. No formatter: ruff format would churn thousands of aligned selftest labels for zero safety. Fix any true findings it surfaces (expected near zero given selftest coverage).",
@@ -43,14 +50,14 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Repo-root pyproject.toml carrying only [tool.ruff] (target-version py38, lint.select E9+F, no formatter). ruff surfaced exactly one true finding (F841 dead local in _help.py's _selftest), fixed in place. The vermin leg of the lint gate exposed a gate-definition bug, not a code bug: bare -t=3.8 demands the detected floor equal 3.8 while this tree's floor is 3.7; buildCommands.lint now uses -t=3.8- (3.8 or lower). Lint and sweep gates green.",
+        "descriptive": "The repo now has a dev-only ruff configuration, one real lint finding is fixed, and the 3.8-floor gate asserts what it meant to assert."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T17:34:59+02:00",
+      "completedAt": "2026-08-10T17:39:28+02:00",
       "risk": "low",
       "verifiedBy": []
     },
@@ -92,7 +99,7 @@
     {
       "id": "P9.3",
       "title": "House-style AST bans in _output.py, mutation-proven",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -113,16 +120,27 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "house_style_violations() added to _output.py's AST-lint machinery: ast.NamedExpr, from __future__, typing and dataclasses imports banned across scripts/*.py and hooks/*.py (flat listdir, unparseable files reported not skipped, violations named as file+line+construct). Selftest 14 -> 24 cases; each of the four bans individually mutation-proven red then restored (diff-verified).",
+        "descriptive": "The house-style bans are enforced by the build instead of remembered: a walrus, a __future__ import, or a typing/dataclasses import anywhere in scripts/ or hooks/ now fails the selftest by name."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T17:34:59+02:00",
+      "completedAt": "2026-08-10T17:39:28+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "g1 walrus operator named",
+        "g2 from __future__ import caught",
+        "g3 import typing caught",
+        "g4 from typing import caught",
+        "g5 import dataclasses caught",
+        "g6 from dataclasses import caught",
+        "g7 clean file not named",
+        "g8 unparseable file reported not skipped",
+        "g9 every violation carries a line number",
+        "g10 real scripts/+hooks/ trees carry zero house-style violations"
+      ]
     }
   ]
 }
