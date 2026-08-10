@@ -53,12 +53,23 @@ LAUNCHER_INTERPRETERS = ("python3", "python", "py")
 RECENT_DAYS = 7
 
 
+# --- loader ---------------------------------------------------------------------
+# Decision (P14.3 loader tidy): kept, not inlined. Over _loader.load() alone this
+# adds two things every one of the ~15 call sites below would otherwise repeat:
+# (1) a `directory` switch (most callers reach scripts/, three reach ../hooks/,
+# via _HOOKS) instead of each call site building its own os.path.join, and
+# (2) a fixed cache=False — every check re-reads its target fresh, which matters
+# here specifically because _selftest() below runs diagnose() repeatedly against
+# different fixture projects in ONE process and a stale cached module would be
+# indistinguishable from a real regression. It does NOT shape errors: a load
+# failure still propagates uncaught to the caller, same as _loader.load().
 def _load(name, filename, directory=None):
     """Load a sibling module by path (the filenames are hyphenated)."""
     path = os.path.join(directory or _HERE, filename)
     return _loader.load(path, modname=name, cache=False)
 
 
+# --- report ---------------------------------------------------------------------
 class Report(object):
     """Collects results; knows nothing about how they are rendered."""
 
@@ -88,6 +99,7 @@ class Report(object):
         return 1 if self.counts()["FINDING"] else 0
 
 
+# --- checks: environment --------------------------------------------------------
 def check_interpreter(rep):
     """Which interpreter the guard hooks will actually resolve.
 
@@ -134,6 +146,7 @@ def check_git(rep, project, cfg):
     return top
 
 
+# --- checks: config & manifest --------------------------------------------------
 def check_config(rep, project):
     """Config parses, validates, and which plan-gate tier it produces."""
     cfg_mod = _load("_config", "_config.py", _HOOKS)
@@ -297,6 +310,7 @@ def check_submodules(rep, project, cfg, manifest, git_root):
         rep.ok("submodules", "no task files inside the %d submodule(s)" % len(paths))
 
 
+# --- checks: policy & build -----------------------------------------------------
 def check_areas(rep, project, manifest):
     """The `meta.areas` registry against the tree it claims to describe (v0.28).
 
@@ -511,6 +525,7 @@ def _leading_executable(cmd):
     return exe
 
 
+# --- checks: hooks, ledger & trail ----------------------------------------------
 def check_hooks_fired(rep, project, cfg, cfg_mod):
     """Have the hooks ever actually run here?
 
@@ -655,6 +670,7 @@ def check_locks(rep, git_root, project, manifest_rel):
                                        for r in rows)))
 
 
+# --- diagnose / render / cli ----------------------------------------------------
 def diagnose(project):
     """Run every check. Returns a Report."""
     rep = Report()

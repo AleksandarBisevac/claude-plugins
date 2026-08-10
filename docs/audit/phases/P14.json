@@ -97,7 +97,7 @@
         "technical": "audit-status gains house-style section headers and imports _fmt directly (the one formatter since P10.6), dropping the audit-usage indirection for the fmt helpers; audit-usage's aliases stay for other consumers. 120/120 and 59/59 hold; sweep and lint green.",
         "descriptive": "audit-status reads its numbers from the module that owns them and is navigable by section."
       },
-      "commit": null,
+      "commit": "dc1291e",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T20:04:36+02:00",
@@ -113,7 +113,7 @@
     {
       "id": "P14.3",
       "title": "audit-doctor: loader tidy",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -134,21 +134,26 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The local _load wrapper was judged and KEPT: it adds a directory switch for the three ../hooks sites and a deliberate cache=False policy (diagnose() runs repeatedly against different fixtures in one process; a stale cached module reads as a regression). The comment now states that instead of silently delegating. Seven section headers; comment-only diff.",
+        "descriptive": "audit-doctor's indirection says why it exists, and the file is navigable."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T20:16:15+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T20:27:02+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "audit-doctor 77/77",
+        "--project . exit 0",
+        "sweep green",
+        "lint green"
+      ]
     },
     {
       "id": "P14.4",
       "title": "hooks/_config.py: section headers only, no extraction",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -169,16 +174,20 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Eleven section headers mapped onto existing function boundaries with zero reordering; one docstring sentence added stating why hooks never statically import scripts/. The selftest was already grouped (a)-(p), so nothing was added there. 81/81 unchanged; +18/-1 comment-only diff.",
+        "descriptive": "The hooks' config brain is labeled, and its central design rule is written where the code lives."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T20:16:15+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T20:27:02+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_config 81/81 unchanged",
+        "sweep green",
+        "lint green"
+      ]
     }
   ],
   "claim": {
