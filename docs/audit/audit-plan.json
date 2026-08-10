@@ -112,6 +112,11 @@
       "id": "P15",
       "title": "refactor: structure visible and enforced",
       "shard": "phases/P15.json"
+    },
+    {
+      "id": "P16",
+      "title": "F10: the sub-cent rule proven where it renders",
+      "shard": "phases/P16.json"
     }
   ],
   "fileIndex": {
@@ -388,7 +393,8 @@
     ],
     "plugins/audit/scripts/_report_usage.py": [
       "P13.2",
-      "P15.4"
+      "P15.4",
+      "P16.1"
     ],
     "plugins/audit/scripts/audit-doctor.py": [
       "P10.3",
@@ -574,6 +580,26 @@
       "taskId": "BF2.1",
       "fixedIn": null,
       "notes": "Fix the class: eol contract in .gitattributes + a named LF guard beside each reader."
+    },
+    {
+      "id": "BUG-5",
+      "title": "sub-cent cost rule proven one module away from where it renders",
+      "status": "open",
+      "severity": "low",
+      "reportedAt": "2026-08-10T23:36:53+02:00",
+      "reportedBy": "P13.3 mutation pass (recorded as F10 in the private fault ledger)",
+      "description": "Corrupting _report_usage's fmt_cost delegation and rerunning its own selftest stayed green - no fixture in that suite spends under a cent, so the <$0.01 rule is exercised only in _fmt's goldens. The consumer could stop delegating (or mangle the arguments) and its 49 cases would not notice; the parallel fmt_tokens mutation goes red in three cases by name, which is what the cost side should look like.",
+      "repro": [
+        "weaken _fmt.fmt_cost delegation in _report_usage; python3 plugins/audit/scripts/_report_usage.py --selftest stays green"
+      ],
+      "expected": "A sub-cent spend asserted through the rendered tile string in _report_usage's own suite.",
+      "actual": "Delegation-coverage gap; the rule is proven only where it is defined, not where it renders.",
+      "files": [
+        "plugins/audit/scripts/_report_usage.py"
+      ],
+      "taskId": "P16.1",
+      "fixedIn": null,
+      "notes": "The F3/u8 class one level down: green for the wrong reason."
     }
   ],
   "deferred": {
