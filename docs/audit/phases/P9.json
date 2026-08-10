@@ -1,7 +1,7 @@
 {
   "id": "P9",
   "title": "refactor: dev tooling bootstrap",
-  "status": "in_progress",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "Every later refactor commit is lint-gated: ruff (E9+F, py38) and vermin guard the 3.8 floor as dev/CI-only tools, and the house-style bans (walrus, typing, dataclasses, __future__) are AST-enforced in _output.py rather than remembered.",
@@ -12,19 +12,13 @@
   "baseRef": "96784b73927de6de48948238b25cc04eb3303105",
   "branch": "audit/p9-refactor-dev-tooling-bootstrap",
   "mergedAt": null,
-  "claim": {
-    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
-    "host": "MacBook-Pro.local",
-    "branch": "audit/p9-refactor-dev-tooling-bootstrap",
-    "at": "2026-08-10T17:34:59+02:00"
-  },
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "Dev tooling bootstrap landed as three commits: a ruff-only pyproject.toml (E9+F, py38 target, no formatter) whose first run surfaced exactly one true finding, a pinned CI lint job (ruff==0.16.2 + vermin==1.8.0, -t=3.8- so the gate accepts a floor better than promised), and house_style_violations() in _output.py AST-enforcing the four banned constructs with each ban mutation-proven red. The desired outcome holds: every later refactor commit is lint-gated, and the house style is enforced by the build rather than remembered. En route the phase fixed its own lint gate definition (bare -t=3.8 exact-match quirk).",
   "tasks": [
     {
       "id": "P9.1",
@@ -88,7 +82,7 @@
         "technical": "New ubuntu-only lint job in ci.yml between manifests and plugin-validate: setup-python 3.12 (same pin as siblings), pip install ruff==0.16.2 vermin==1.8.0, ruff check plugins/audit tools, vermin -t=3.8- --no-tips --violations over scripts/ and hooks/, with a comment on the trailing-dash semantics. Both commands verified green locally.",
         "descriptive": "CI now lint-gates every commit with pinned ruff and vermin, dev/CI-only, holding the Python 3.8 floor."
       },
-      "commit": null,
+      "commit": "743cf33",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T17:41:00+02:00",
