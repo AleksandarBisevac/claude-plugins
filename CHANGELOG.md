@@ -48,8 +48,27 @@ is the answer, and it is careful to claim only what a tool hook can actually hol
   every discovered skill, agent and MCP server — computed by the same `_policy.resolve` the guard
   calls, because a preview that ran its own matching would eventually disagree with the guard, and
   a denial is the last place a panel should be creative. PUT goes through the one config writer,
-  so it locks, validates, echoes its change rows and journals them. (The switchboard UI that
-  consumes this lands with panel c7.)
+  so it locks, validates, echoes its change rows and journals them.
+
+- **The panel's fifth tab, `Policy` — the switchboard that makes the block readable.** Four words
+  (`{"default":"deny","allow":["code-*"]}`) decide the fate of every skill on the machine, and
+  nobody can hold that cross-product in their head. The tab *is* the cross-product: one row per
+  capability the project can actually reach, carrying **the verdict and the basis** the guard
+  would give it. The browser never matches a pattern itself — an edited row is marked *unsaved*
+  rather than re-judged, and the verdicts are re-read from the server after every save, because
+  two matchers eventually disagree and a denial is the one thing a preview must not invent.
+
+  Three consequences worth naming. A per-row switch can only write an **exact name**, so the
+  block's globs get a table of their own — in resolution order (deny before allow, project before
+  area), each saying what it matches *today* — which is both where a `code-*` is added and the
+  reason a wholesale PUT cannot quietly destroy a rule this form never showed. Area columns say
+  which areas are **live** and which are **dormant**, since an area rule decides nothing until
+  that area has work in progress and decides everything the moment it does. And the state line
+  distinguishes *inert*, *turned off*, *enforcing* and **active but never seen to run here** —
+  read from the marker `guard-capabilities` leaves, because a page full of denials that cannot
+  say whether anything is enforcing them is claiming enforcement nobody has. Audit's own
+  components are shown locked with the reason; the four limits from SECURITY.md sit one click
+  above the table.
 
 - **`/audit:doctor` reports the policy**: inert or enforcing, any capability the *plan itself*
   references that the policy would refuse (a denied review skill otherwise surfaces at phase
@@ -73,10 +92,26 @@ is the answer, and it is careful to claim only what a tool hook can actually hol
   (nine scripts, ten registrations, seven that guard) now agree with the directory.
 
 ### Verification
-- **1831 selftest cases across 28 suites** (from 1692 across 26): `_policy` 60 new,
-  `guard-capabilities` 26 new, `panel-server` 350→373, `audit-doctor` 66→77, `_config` 71→81,
+- **1859 selftest cases across 28 suites** (from 1692 across 26): `_policy` 60 new,
+  `guard-capabilities` 26 new, `panel-server` 350→401, `audit-doctor` 66→77, `_config` 71→81,
   `validate-config` 54→63. Plus `capture-screenshots.mjs --check` and
   `check-report-interactive.mjs` on all three shipped reports.
+- **The switchboard adds 14 live checks**, each measured against an oracle computed from the
+  `POLICY` JSON the page was served rather than from the renderer, and **29 more mutations proven
+  red** — a row that always reads *Allowed*, a basis that stops being printed, a required
+  capability that can be denied, an area column that claims to be live, area rules that vanish
+  from the block, an edit that is not registered as unsaved work, verdicts that are not re-read
+  after a save, enforcement assumed rather than evidenced, and a policy table that pushes the
+  document sideways on a phone. Two of them changed a check rather than confirming it: the
+  malformed-block case died with a traceback instead of a named failure, and the pin on "the draft
+  is the block as written" asked only whether the string appeared *somewhere* — it appears three
+  times, so pointing one of them at the merged block left it green.
+- **The `panel-policy` shot is captured against its own project and its own `HOME`.** This tab
+  lists every skill, subagent and MCP server the project can reach: taken against a real machine
+  the committed PNG would publish whoever captured it's plugin inventory, and the checks would be
+  asserting against a set that differs per machine and is empty on CI. That discovery reached no
+  further than the fixture is asserted **before** the shutter, for the same reason the demo
+  identity is.
 - **The wiring is checked end to end through the launcher**, in CI, beside the plan gate's: the
   selftests call `decide()` directly and so prove nothing about the matcher's payload, the stdin
   contract or the emitted JSON. Five payloads — inert, denied, allowed by rule, audit's own, and

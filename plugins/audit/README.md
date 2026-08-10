@@ -94,6 +94,20 @@ same panel at 390px:
 |---|---|---|---|
 | [![panel overview](../../docs/screenshots/panel-overview.png)](../../docs/screenshots/panel-overview.png) | [![panel building blocks](../../docs/screenshots/panel-blocks.png)](../../docs/screenshots/panel-blocks.png) | [![panel usage](../../docs/screenshots/panel-usage.png)](../../docs/screenshots/panel-usage.png) | [![the panel at 390px](../../docs/screenshots/panel-mobile.png)](../../docs/screenshots/panel-mobile.png) |
 
+The **Policy** tab is the switchboard over [the capability policy](#capability-policy--policy): one row
+per skill, subagent and MCP server this project can reach, each carrying the verdict the guard
+hook would give it *and the reason it gives it* — resolved by the same function the hook calls, so
+the preview cannot disagree with the enforcement. Audit's own components are shown locked, because
+the panel refuses to write a policy denying them; a column per area says which areas are **live**
+(their rules apply) and which are dormant; and the line above the table says whether the policy is
+inert, enforcing, or *active but never seen to run here* — which is what a Claude Code version
+that does not dispatch these matchers looks like, and the one thing a page full of denials must
+not paper over.
+
+| Policy (verdicts, with the reason each one holds) |
+|---|
+| [![the policy switchboard](../../docs/screenshots/panel-policy.png)](../../docs/screenshots/panel-policy.png) |
+
 ## What you get
 
 - **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
@@ -435,7 +449,9 @@ mean "while this area is being worked on".
 
 `/audit:doctor` reports it: whether it is inert, whether the plan references a skill the policy
 would refuse (which would otherwise surface at phase sign-off), and whether the guard has ever
-actually run here.
+actually run here. `/audit:panel` → **Policy** is the same thing as a form: every discovered
+capability with its verdict and the reason for it, the block itself listed in resolution order,
+and the four limits above one click away — see the [control panel](#control-panel).
 
 **What it does not do** — stated in full in [SECURITY.md](../../SECURITY.md): it governs the tool,
 not the knowledge; it holds only while the plugin is enabled; subagents do not inherit parent hooks

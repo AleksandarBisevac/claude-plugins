@@ -1208,6 +1208,294 @@ async function noToast(page, label) {
   }
 }
 
+/* ---- the policy switchboard ------------------------------------------------
+ *
+ * This one gets its own project AND its own HOME, which none of the other panel
+ * shots need. The reason is what the tab shows: every skill, subagent and MCP
+ * server the project can reach — which, run against a real machine, is a list of
+ * whatever the person capturing happens to have installed. That is two problems at
+ * once. The committed PNG would publish somebody's plugin inventory (the same
+ * class of leak as the identity that reached four shots before it was caught, and
+ * just as permanent); and the CHECKS would be asserting against a set that is
+ * different on every machine and empty on a CI runner, where ~/.claude does not
+ * exist. So discovery is given a home of its own, with five skills, two agents and
+ * two MCP servers in it, and the fixture asserts it got exactly those before the
+ * shutter opens.
+ */
+const POL_SKILLS = [
+  ['code-review', 'Reviews a diff for correctness, reuse and test coverage.'],
+  ['code-simplifier', 'Simplifies recently changed code without altering behaviour.'],
+  ['db-migrations', 'Writes and checks database migrations.'],
+  ['release-notes', 'Drafts release notes from the changelog.'],
+  ['shell-runner', 'Runs arbitrary shell commands on the developer machine.'],
+];
+const POL_AGENTS = [
+  ['doc-writer', 'Writes reference documentation from source.'],
+  ['perf-hunter', 'Profiles a workload and reports the hot paths.'],
+];
+// One of audit's own, under the name the Skill tool spells it with, so the table
+// has a REQUIRED row — the one row this panel refuses to let anyone deny.
+const POL_PLUGIN = [
+  ['skills', 'report', 'audit:report', 'Renders the audit report.'],
+  ['agents', 'audit-explorer', 'audit:audit-explorer', 'Read-only subsystem auditor.'],
+];
+const POL_MCP = ['acme-tickets', 'vector-store'];
+
+function writePolicyFixture(work) {
+  const project = path.join(work, 'pol');
+  const home = path.join(work, 'polhome');
+  py([path.join(SCRIPTS, 'gen-demo-manifest.py'), project, '--phases', '6', '--tasks', '3']);
+  for (const [name, description] of POL_SKILLS) {
+    const dir = path.join(home, '.claude', 'skills', name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'SKILL.md'),
+                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
+  }
+  mkdirSync(path.join(home, '.claude', 'agents'), { recursive: true });
+  for (const [name, description] of POL_AGENTS) {
+    writeFileSync(path.join(home, '.claude', 'agents', `${name}.md`),
+                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
+  }
+  for (const [kind, file, name, description] of POL_PLUGIN) {
+    const dir = kind === 'skills'
+      ? path.join(home, '.claude', 'plugins', 'audit', 'skills', file)
+      : path.join(home, '.claude', 'plugins', 'audit', 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, kind === 'skills' ? 'SKILL.md' : `${file}.md`),
+                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
+  }
+  writeFileSync(path.join(project, '.mcp.json'), JSON.stringify(
+    { mcpServers: Object.fromEntries(POL_MCP.map((n) => [n, { command: 'x' }])) }, null, 2));
+  return { project, home };
+}
+
+/** The `policy` block for the fixture, aimed at the area that is actually live. */
+function policyFixtureBlock(liveArea) {
+  return {
+    onViolation: 'deny',
+    skills: {
+      default: 'deny',
+      allow: ['code-*', 'release-notes', 'db-migrations'],
+      deny: ['shell-runner'],
+      // Scoped to the one area with work in progress, so the column that decides
+      // something and the columns that do not are both on screen.
+      areas: liveArea ? { [liveArea]: { deny: ['db-*'] } } : {},
+    },
+    agents: { deny: ['doc-writer'] },
+  };
+}
+
+/**
+ * The switchboard: does it show what the SERVER decided, and does a switch write
+ * what the dialog said it would?
+ *
+ * Every oracle here is computed from `POLICY` — the JSON the page was handed, whose
+ * verdicts come from `_policy.resolve`, the function the guard hook itself calls —
+ * and never from the renderer. A check that reads the verdict out of the same DOM
+ * it is checking proves only that a string was copied.
+ */
+async function assertPolicyWorks(page, statePath) {
+  await page.click('.tab[data-t=policy]');
+  await page.waitForSelector('#policy .card', { timeout: 15000 });
+  await page.waitForTimeout(250);
+
+  // --- a row per discovered capability, with the server's verdict on it -------
+  const table = await page.evaluate(() => ({
+    kind: PF.kind,
+    oracle: (POLICY.resolved[PF.kind] || []).map((r) => ({
+      name: r.name, verdict: r.verdict, basis: r.basis, required: r.required })),
+    rendered: [...document.querySelectorAll('#policy tr[data-pcap]')].map((tr) => ({
+      name: tr.dataset.pcap,
+      verdict: tr.dataset.verdict,
+      word: (tr.querySelector('.pv') || {}).textContent || '',
+      basis: (tr.querySelector('.pbasis') || {}).textContent || '',
+      locked: !!(tr.querySelector('select.prule') || {}).disabled,
+      required: !!tr.querySelector('.badge.req'),
+    })),
+    kindCounts: [...document.querySelectorAll('#policy [data-pk]')].map((b) =>
+      [b.dataset.pk, Number((b.querySelector('b') || {}).textContent || -1),
+       (POLICY.resolved[b.dataset.pk] || []).length]),
+  }));
+  if (table.rendered.length !== table.oracle.length) {
+    fail(`policy: ${table.oracle.length} ${table.kind} resolved by the server, `
+       + `${table.rendered.length} rows rendered`);
+  } else {
+    const byName = Object.fromEntries(table.rendered.map((r) => [r.name, r]));
+    const wrong = table.oracle.filter((o) => {
+      const r = byName[o.name];
+      return !r || r.verdict !== o.verdict
+        || r.word.trim() !== (o.verdict === 'violation' ? 'Violation' : 'Allowed')
+        || r.basis.trim() !== (o.basis || '').trim();
+    });
+    const violations = table.oracle.filter((o) => o.verdict === 'violation').length;
+    if (wrong.length) {
+      fail(`policy: ${wrong.length} row(s) do not show the verdict or the basis the `
+         + `server computed — first: ${JSON.stringify(wrong[0])}`);
+    } else if (!violations || violations === table.oracle.length) {
+      fail(`policy: the fixture resolves ${violations}/${table.oracle.length} to a `
+         + `violation, so this check could not tell the two apart`);
+    } else {
+      note(`policy: ${table.rendered.length} ${table.kind} rows, each carrying the `
+         + `server's verdict and its basis (${violations} violation(s))`);
+    }
+  }
+  const bad = table.kindCounts.filter(([, shown, want]) => shown !== want);
+  if (bad.length) {
+    fail(`policy: the kind pills count ${JSON.stringify(bad)} (shown vs resolved)`);
+  }
+
+  // --- audit's own components cannot be denied here ---------------------------
+  const req = table.rendered.filter((r) => r.required);
+  const wantReq = table.oracle.filter((o) => o.required).length;
+  if (!wantReq) {
+    fail('policy: the fixture discovered none of audit\'s own skills, so the '
+       + '"required" row could not be checked at all');
+  } else if (req.length !== wantReq || req.some((r) => !r.locked)) {
+    fail(`policy: ${wantReq} required capabilit(ies), ${req.length} marked and `
+       + `${req.filter((r) => r.locked).length} actually locked`);
+  } else {
+    note(`policy: ${wantReq} required capabilit(ies) shown locked`);
+  }
+
+  // --- area columns say which of them decides anything today ------------------
+  const cols = await page.evaluate(() => ({
+    oracle: (POLICY.areaInfo || []).map((a) => [a.tag, a.active]),
+    rendered: [...document.querySelectorAll('#policy th.ar')].map((th) =>
+      [th.firstChild.textContent, !th.classList.contains('dormant'),
+       (th.querySelector('.mut') || {}).textContent]),
+  }));
+  const colsOk = cols.oracle.length === cols.rendered.length
+    && cols.oracle.every(([tag, live], i) => cols.rendered[i][0] === tag
+      && cols.rendered[i][1] === live
+      && cols.rendered[i][2] === (live ? 'live' : 'dormant'));
+  if (!cols.oracle.length || !cols.oracle.some(([, live]) => live)
+      || !cols.oracle.some(([, live]) => !live)) {
+    fail(`policy: the fixture's areas are ${JSON.stringify(cols.oracle)} — it needs `
+       + `both a live and a dormant one or the column check proves nothing`);
+  } else if (!colsOk) {
+    fail(`policy: area columns ${JSON.stringify(cols.rendered)} do not match the `
+       + `server's ${JSON.stringify(cols.oracle)}`);
+  } else {
+    note(`policy: ${cols.oracle.length} area columns, each naming whether it is live`);
+  }
+
+  // --- the block as written, including the patterns no switch can express -----
+  const rules = await page.evaluate(() => ({
+    oracle: (POLICY.rules[PF.kind] || []).map((r) =>
+      `${r.scope || 'project'} ${r.list} ${r.pattern}`),
+    rendered: [...document.querySelectorAll('#policy tr[data-prule]')]
+      .map((tr) => tr.dataset.prule),
+  }));
+  if (rules.oracle.join('|') !== rules.rendered.join('|')) {
+    fail(`policy: the rules table shows ${JSON.stringify(rules.rendered)} for a block `
+       + `the server reads as ${JSON.stringify(rules.oracle)}`);
+  } else if (!rules.oracle.some((r) => r.includes('*'))) {
+    fail('policy: the fixture has no glob rule, so "a pattern is visible and '
+       + 'removable" was not actually checked');
+  } else {
+    note(`policy: ${rules.oracle.length} rules listed as written, globs included`);
+  }
+
+  // --- one switch: dirty, counted, guarded, and the dialog says what it will do
+  const subject = await page.evaluate(() => (POLICY.resolved[PF.kind] || [])
+    .find((r) => !r.required && r.verdict === 'allow') || null);
+  if (!subject) { fail('policy: no allowed, non-required row to deny'); return; }
+  await page.selectOption(`#policy tr[data-pcap="${subject.name}"] select.prule`, 'deny');
+  await page.waitForTimeout(200);
+  const dirty = await page.evaluate(() => {
+    const ev = new Event('beforeunload', { cancelable: true });
+    dispatchEvent(ev);
+    const d = document.querySelector('#policy [data-discard=policy]');
+    return { rows: editRows('policy'), blocked: ev.defaultPrevented,
+             label: d ? d.textContent : null, disabled: d ? d.disabled : null,
+             pend: document.querySelectorAll('#policy td.pend').length };
+  });
+  if (dirty.rows.length !== 1 || dirty.rows[0].field !== 'policy.skills.deny'
+      || !dirty.blocked || dirty.disabled || !/1 change\b/.test(dirty.label || '')
+      || dirty.pend !== 1) {
+    fail(`policy: one switch produced ${JSON.stringify(dirty.rows)}, beforeunload `
+       + `blocked=${dirty.blocked}, Discard "${dirty.label}", ${dirty.pend} pending cell(s)`);
+  } else {
+    note(`policy: denying ${subject.name} -> one change row, one pending cell, `
+       + `"${dirty.label}", close guarded`);
+  }
+  await page.locator('#policy [data-psave]').click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  const listed = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog.confirm tbody tr')]
+      .map((r) => [...r.children].map((c) => c.textContent.trim())));
+  if (listed.length !== 1 || listed[0][1] !== 'policy.skills.deny'
+      || !listed[0][2].includes(subject.name)) {
+    fail(`policy: the dialog lists ${JSON.stringify(listed)} for one denial`);
+  } else {
+    note(`policy: the dialog lists "${listed[0].join(' · ')}"`);
+  }
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+
+  // The point of the whole flow: the file changed, and the verdict on screen is
+  // the server's fresh answer about the file — not the client's guess about it.
+  const after = await page.evaluate(async (name) => {
+    const p = await api('GET', '/api/policy');
+    const tr = document.querySelector(`#policy tr[data-pcap="${CSS.escape(name)}"]`);
+    return { stored: ((p.stored || {}).skills || {}).deny || [],
+             verdict: tr ? tr.dataset.verdict : null,
+             basis: tr ? (tr.querySelector('.pbasis') || {}).textContent : null,
+             pend: document.querySelectorAll('#policy td.pend').length,
+             dirty: editRows('policy').length };
+  }, subject.name);
+  if (!after.stored.includes(subject.name)) {
+    fail(`policy: after confirming, policy.skills.deny on disk is `
+       + `${JSON.stringify(after.stored)}`);
+  } else if (after.verdict !== 'violation' || !(after.basis || '').includes('deny')
+             || after.pend || after.dirty) {
+    fail(`policy: after saving, ${subject.name} still reads ${after.verdict} `
+       + `("${after.basis}") with ${after.pend} pending cell(s) and ${after.dirty} `
+       + `unsaved change(s)`);
+  } else {
+    note(`policy: saved -> on disk, re-read, and the row now says violation`);
+  }
+
+  // --- the promise about audit's own components, kept by the server -----------
+  // The switch for a required row is disabled, which is the friendly half. This is
+  // the half that holds when someone writes the rule as a pattern instead.
+  await page.fill('#poladdpat', 'audit:*');
+  await page.evaluate(() => {
+    const sels = document.querySelectorAll('#policy .poladd select');
+    sels[0].value = 'deny'; sels[1].value = '';
+  });
+  await page.locator('#policy [data-poladd]').click();
+  await page.waitForTimeout(200);
+  await page.locator('#policy [data-psave]').click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+  const refused = await page.evaluate(async () => {
+    const p = await api('GET', '/api/policy');
+    return { deny: ((p.stored || {}).skills || {}).deny || [],
+             said: (document.querySelector('#policy .findings-slot .findings.err')
+                    || {}).textContent || '' };
+  });
+  if (refused.deny.includes('audit:*')) {
+    fail('policy: a rule denying audit\'s own components was written to the file');
+  } else if (!/audit/i.test(refused.said)) {
+    fail(`policy: the refusal did not say why — the box reads "${refused.said}"`);
+  } else {
+    note('policy: a deny aimed at audit\'s own components is refused, in the '
+       + 'validator\'s words');
+  }
+  // Put the form back to the file, through the control that does it.
+  await page.locator('#policy [data-discard=policy]').click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(400);
+  const restored = await page.evaluate(() => editRows('policy').length);
+  if (restored !== 0) {
+    fail(`policy: Discard left ${restored} unsaved change(s) behind`);
+  }
+  if (statePath) note(`policy: enforcement marker read from ${statePath}`);
+}
+
 async function shot(page, name, { full = false } = {}) {
   await settle(page);
   await noToast(page, name);
@@ -1231,6 +1519,7 @@ async function main() {
   const work = mkdtempSync(path.join(tmpdir(), 'audit-shots-'));
   const servers = [];
   let panel = null;
+  let polPanel = null;          // the policy fixture's own panel — its own HOME
   const browser = await chromium.launch();
 
   try {
@@ -1370,8 +1659,10 @@ async function main() {
 
       const tabs = await page.$$eval('.tab', (els) => els.map((e) => e.dataset.t));
       note(`panel tabs present: ${tabs.join(', ')}`);
-      if (!tabs.includes('usage')) {
-        fail('panel has no Usage tab — the fixture or the UI is out of date');
+      for (const t of ['guards', 'comp', 'over', 'usage', 'policy']) {
+        if (!tabs.includes(t)) {
+          fail(`panel has no ${t} tab — the fixture or the UI is out of date`);
+        }
       }
 
       // Asserted BEFORE the first shutter, not by the identity check further down.
@@ -1525,7 +1816,47 @@ async function main() {
       } else {
         note('panel at 390px: no horizontal page overflow');
       }
+      // Five views do not fit a 390px strip, and the fifth is the one off the
+      // edge. A scrolling row with no edge treatment reads as a row with four
+      // items — so the strip is asked whether it overflowed, and whether it said
+      // so, against the same measurement the page makes.
+      const strip = await mob.evaluate(() => {
+        const n = document.querySelector('.tabs');
+        return { over: n.scrollWidth > n.clientWidth + 1,
+                 says: n.classList.contains('scrolls'),
+                 masked: getComputedStyle(n).maskImage };
+      });
+      if (strip.over !== strip.says) {
+        fail(`the tab strip at 390px overflows=${strip.over} but marks itself `
+           + `scrollable=${strip.says}`);
+      } else if (strip.over && (!strip.masked || strip.masked === 'none')) {
+        fail('the tab strip at 390px scrolls with no edge to say so — the fifth '
+           + 'view is off screen and nothing suggests it is there');
+      } else {
+        note(`tab strip at 390px: overflows=${strip.over}, edge shown=`
+           + `${strip.masked !== 'none'}`);
+      }
       await shot(mob, 'panel-mobile');
+      // The Policy table is the widest thing this UI draws — a column per area on
+      // top of four fixed ones — and it is drawn against this machine's real
+      // discovery here, which is the biggest table anyone will get. A wide table
+      // may scroll inside its own frame; the document may not.
+      await mob.click('.tab[data-t=policy]');
+      await mob.waitForSelector('#policy .card', { timeout: 15000 });
+      await mob.waitForTimeout(200);
+      const polOverflow = await mob.evaluate(() => {
+        const de = document.documentElement, w = document.querySelector('#poltbl');
+        return { page: de.scrollWidth - de.clientWidth,
+                 body: document.body.scrollWidth - de.clientWidth,
+                 framed: w ? w.scrollWidth > w.clientWidth : null };
+      });
+      if (polOverflow.page > 1 || polOverflow.body > 1) {
+        fail(`the policy table at 390px pushes the document sideways by `
+           + `${polOverflow.page}px — it must scroll inside its own frame`);
+      } else {
+        note(`policy at 390px: no page overflow (table scrolls in its own frame: `
+           + `${polOverflow.framed})`);
+      }
       await mobCtx.close();
       // Deliberately AFTER the last capture. Driving Usage ends in an export, and an
       // export raises a toast — which the dark shot caught and committed, a banner
@@ -1537,6 +1868,124 @@ async function main() {
       // Last of all: it writes to the fixture's manifest and its config, so every
       // check above sees the state it was generated with.
       await assertConfirmFlowWorks(page);
+
+      // ---- the policy switchboard, on a fixture of its own ---------------------
+      // Its own project and its own HOME — see writePolicyFixture for why a tab
+      // that lists everything installed cannot be photographed against a real one.
+      {
+        const fx = writePolicyFixture(work);
+        polPanel = await startPanel(fx.project, {
+          HOME: fx.home, USERPROFILE: fx.home,
+          GIT_CONFIG_GLOBAL: gitcfg, GIT_CONFIG_NOSYSTEM: '1',
+        });
+        polPanel.project = fx.project;
+        // Taller than the other panel contexts, and NOT captured fullPage. The
+        // save bar is `position:sticky; bottom:0`, so a fullPage capture of a page
+        // longer than the viewport paints it across the middle of the table — the
+        // first attempt at this shot hid two capability rows behind it. A viewport
+        // that fits the view leaves the bar where it really sits, at the end.
+        const pctx = await browser.newContext({
+          viewport: { width: 1200, height: 1560 }, deviceScaleFactor: 1,
+          reducedMotion: 'reduce', colorScheme: 'light',
+        });
+        const ppage = await pctx.newPage();
+        ppage.on('pageerror', (e) => jsErrors.push('policy: ' + String(e.message).split('\n')[0]));
+        ppage.on('console', (m) => { if (m.type() === 'error') jsErrors.push('policy: ' + m.text()); });
+        await ppage.goto(polPanel.url, { waitUntil: 'load' });
+        await ppage.waitForSelector('.tab', { timeout: 15000 });
+        await ppage.waitForTimeout(400);
+
+        // Discovery reached exactly the fixture and nothing of this machine's.
+        // Asserted before anything is captured: the failure is silent, and lands
+        // in a committed PNG that lists whatever the person capturing installed.
+        const found = await ppage.evaluate(async () => {
+          const r = await api('GET', '/api/registry');
+          return { skills: r.skills.map((s) => s.name).sort(),
+                   agents: r.agents.map((a) => a.name).sort(),
+                   mcp: (r.mcp || []).slice().sort() };
+        });
+        const want = {
+          skills: [...POL_SKILLS.map(([n]) => n),
+                   ...POL_PLUGIN.filter((p) => p[0] === 'skills').map((p) => p[2])].sort(),
+          agents: [...POL_AGENTS.map(([n]) => n),
+                   ...POL_PLUGIN.filter((p) => p[0] === 'agents').map((p) => p[2])].sort(),
+          mcp: POL_MCP.slice().sort(),
+        };
+        if (JSON.stringify(found) !== JSON.stringify(want)) {
+          fail('policy: discovery reached beyond the fixture — HOME did not take, and '
+             + `this shot would publish it: ${JSON.stringify(found)}`);
+        } else {
+          note(`policy: discovery is the fixture's own (${found.skills.length} skills, `
+             + `${found.agents.length} agents, ${found.mcp.length} MCP)`);
+        }
+
+        // The area rule is aimed at whichever area the generated plan actually has
+        // work in progress in — asked of the server rather than worked out here,
+        // so the fixture cannot disagree with the thing it is a fixture for.
+        const live = await ppage.evaluate(async () =>
+          (await api('GET', '/api/policy')).activeAreas || []);
+        const cfgPath = path.join(fx.project, '.claude', 'audit.config.json');
+        const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+        cfg.policy = policyFixtureBlock(live[0] || null);
+        writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+        await ppage.reload({ waitUntil: 'load' });
+        await ppage.waitForSelector('#policy, .tab', { timeout: 15000 });
+        await ppage.click('.tab[data-t=policy]');
+        await ppage.waitForSelector('#policy .card', { timeout: 15000 });
+
+        // Enforced, or only written down? The marker guard-capabilities leaves is
+        // the only local evidence, and a page full of denials that does not say
+        // which of the two it is would be claiming enforcement nobody has. Both
+        // states are driven, because the honest one is the one nobody would notice
+        // was missing.
+        const seen = JSON.parse(py(['-c',
+          'import importlib.util,json,os,pathlib,sys;'
+          + 'sys.path.insert(0,os.path.join("plugins","audit","hooks"));'
+          + 'import _config;'
+          + 'p=pathlib.Path(sys.argv[1]);'
+          + 'cfg=json.load(open(p/".claude"/"audit.config.json"));'
+          + 's=importlib.util.spec_from_file_location("gc",os.path.join('
+          + '"plugins","audit","hooks","guard-capabilities.py"));'
+          + 'm=importlib.util.module_from_spec(s);s.loader.exec_module(m);'
+          + 'print(json.dumps({"dir":str(_config.state_dir(p,cfg)),"file":m.SEEN_FILE}))',
+          fx.project]));
+        const before = await ppage.evaluate(() =>
+          (document.querySelector('#policy [data-pstate]') || {}).dataset?.pstate);
+        if (before !== 'unproven') {
+          fail(`policy: with no marker on disk the page reports "${before}" rather `
+             + `than saying the guard has never been seen to run here`);
+        }
+        mkdirSync(seen.dir, { recursive: true });
+        writeFileSync(path.join(seen.dir, seen.file), JSON.stringify({ lastRun: 'now' }));
+        await ppage.reload({ waitUntil: 'load' });
+        await ppage.click('.tab[data-t=policy]');
+        await ppage.waitForSelector('#policy .card', { timeout: 15000 });
+        const withMarker = await ppage.evaluate(() =>
+          (document.querySelector('#policy [data-pstate]') || {}).dataset?.pstate);
+        if (withMarker !== 'enforced') {
+          fail(`policy: with the guard's own marker present the page still reports `
+             + `"${withMarker}"`);
+        } else {
+          note(`policy: unproven without the marker, enforced with it (${before} -> `
+             + `${withMarker})`);
+        }
+
+        await ppage.evaluate(() => window.scrollTo(0, 0));
+        // The guard for the overlap above, rather than the instance of it: a view
+        // taller than the viewport puts the sticky save bar over its own content in
+        // the capture. Said here so the next person raises the viewport instead of
+        // shipping a shot with two rows behind a button.
+        const fits = await ppage.evaluate(() =>
+          ({ h: document.documentElement.scrollHeight, v: window.innerHeight }));
+        if (fits.h > fits.v) {
+          fail(`the policy view is ${fits.h}px tall in a ${fits.v}px viewport — the `
+             + `sticky save bar would be captured across the middle of the table`);
+        }
+        await shot(ppage, 'panel-policy');
+        // Everything below writes to the fixture's config, so it runs after.
+        await assertPolicyWorks(ppage, path.join(seen.dir, seen.file));
+        await pctx.close();
+      }
       // Collected across every tab this run touched, and reported last so the more
       // specific failures above name themselves first.
       if (jsErrors.length) {
@@ -1553,6 +2002,11 @@ async function main() {
       try { py([path.join(SCRIPTS, 'panel-server.py'), '--project',
                 path.join(work, 'big'), '--stop']); } catch { /* best effort */ }
       try { panel.proc.kill('SIGTERM'); } catch { /* already gone */ }
+    }
+    if (polPanel) {
+      try { py([path.join(SCRIPTS, 'panel-server.py'), '--project',
+                polPanel.project, '--stop']); } catch { /* best effort */ }
+      try { polPanel.proc.kill('SIGTERM'); } catch { /* already gone */ }
     }
     for (const s of servers) s.close();
     rmSync(work, { recursive: true, force: true });

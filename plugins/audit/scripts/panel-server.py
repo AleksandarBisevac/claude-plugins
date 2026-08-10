@@ -32,6 +32,7 @@ import importlib.util
 import io
 import json
 import os
+import pathlib
 import re
 import secrets
 import signal
@@ -40,6 +41,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -788,6 +790,102 @@ def journal_state(project, limit=JOURNAL_PAGE):
     return out
 
 
+def _policy_rules(policy, kind, names):
+    """Every pattern the block states for `kind`, with what it matches TODAY.
+
+    The switchboard's per-capability switches can only ever write EXACT names, and
+    a policy is not obliged to be written that way: `code-*` is one rule deciding
+    ten rows, and a rule aimed at something nobody has installed decides none. Both
+    are invisible in a table of capabilities, and a form that cannot show a rule
+    cannot be trusted to save one — the PUT replaces the block wholesale, so a rule
+    this UI does not represent is a rule it would quietly destroy.
+
+    Matched by `_policy.matches`, the function the guard itself matches with, so
+    "this pattern covers these three" is the same claim the verdict column makes.
+
+    Deny before allow, and project before area, because that is the order `resolve`
+    reads them in — a list in resolution order can be read top-down as the reason.
+    """
+    out = []
+    kcfg = policy.get(kind) if isinstance(policy.get(kind), dict) else {}
+
+    def add(scope, listname, patterns):
+        # A LIST, not merely something iterable. `"deny": "nope"` is a shape the
+        # validator calls a finding and a hand-edited file can still hold, and
+        # iterating it yields four one-letter rules — a form inventing four rules
+        # the file does not contain, each with its own remove button.
+        if not isinstance(patterns, list):
+            return
+        for pat in patterns:
+            if not isinstance(pat, str) or not pat.strip():
+                continue
+            hits = [n for n in names if _policy.matches(n, [pat])]
+            out.append({"scope": scope, "list": listname, "pattern": pat,
+                        "matches": hits[:6], "n": len(hits)})
+
+    add(None, "deny", kcfg.get("deny"))
+    add(None, "allow", kcfg.get("allow"))
+    areas = kcfg.get("areas") if isinstance(kcfg.get("areas"), dict) else {}
+    for tag in sorted(areas):
+        rule = areas.get(tag)
+        if isinstance(rule, dict):
+            add(tag, "deny", rule.get("deny"))
+            add(tag, "allow", rule.get("allow"))
+    return out
+
+
+def _policy_enforcement(project, config):
+    """Has the guard hook ever actually run here?
+
+    The one question a switchboard full of `deny` verdicts must not leave
+    unanswered. Subagents do not inherit parent hooks on every Claude Code version
+    (anthropics/claude-code#43772), and where that is true the policy is advisory —
+    a page that draws a denial next to a capability while nothing is dispatching
+    the matchers would be claiming enforcement nobody has.
+
+    The evidence is the marker `guard-capabilities.py` writes when it runs with a
+    live policy, read here exactly as `/audit:doctor` reads it: the hook's own
+    `SEEN_FILE` constant and the config's own `state_dir`, never a path spelled out
+    a second time in this file. The age is reported and the judgement is not — how
+    stale is too stale is the doctor's call, and a threshold restated here is a
+    threshold that can disagree with it.
+    """
+    out = {"seen": False, "ageDays": None}
+    try:
+        cfg_mod = _cores()[3]
+        gc_mod = _load("audit_guard_capabilities",
+                       os.path.join(_HERE, "..", "hooks", "guard-capabilities.py"))
+        import pathlib
+        marker = os.path.join(
+            str(cfg_mod.state_dir(pathlib.Path(project), config)), gc_mod.SEEN_FILE)
+        age = (time.time() - os.path.getmtime(marker)) / 86400.0
+        out["seen"] = True
+        out["ageDays"] = round(age, 2)
+    except Exception:
+        pass
+    return out
+
+
+def _policy_areas_view(reg, active, tags):
+    """The area columns: every tag a rule could be aimed at, and whether it is LIVE.
+
+    An area rule only applies while some phase in that area has work in progress
+    (`_config.active_area_tags`, and `_active_area_tags` here) — so a column of
+    denials for a dormant area decides nothing today and will decide everything the
+    moment that phase starts. That is the fact this view exists to carry: the tag,
+    whether it is active, and where the tag came from, since a rule may legitimately
+    be written for a free-text tag the registry never registered.
+    """
+    out = []
+    for tag in tags:
+        entry = reg.get(tag) if isinstance(reg, dict) else None
+        out.append({"tag": tag, "active": tag in (active or []),
+                    "registered": isinstance(entry, dict),
+                    "description": (entry or {}).get("description")
+                    if isinstance(entry, dict) else None})
+    return out
+
+
 def policy_state(project):
     """`GET /api/policy` — the block, and what it RESOLVES TO for what is installed.
 
@@ -834,8 +932,12 @@ def policy_state(project):
         "kinds": list(_policy.KINDS),
         "onViolationChoices": list(_policy.ON_VIOLATION),
         "findings": findings, "warnings": warnings,
-        "resolved": {},
+        # Whether anything is enforcing this at all. Served with the verdicts and
+        # not on a separate endpoint, because it is a qualifier ON the verdicts.
+        "enforcement": _policy_enforcement(project, config),
+        "resolved": {}, "rules": {},
     }
+    out["areaInfo"] = _policy_areas_view(reg, active, out["areas"])
     for kind in _policy.KINDS:
         rows = []
         if kind == "mcp":
@@ -851,6 +953,8 @@ def policy_state(project):
                          "required": bool(_policy.matches(
                              name, _policy.required_patterns(kind)))})
         out["resolved"][kind] = rows
+        out["rules"][kind] = _policy_rules(policy, kind,
+                                           [r["name"] for r in rows])
     return out
 
 
@@ -2168,14 +2272,14 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
    Same split as the report — navigation at the side, actions on top — but the
    two are not the same kind of thing, and the nav reflects that. The report's
    sidebar points INTO one long document and marks where you are. This one
-   switches between four exclusive views, so it is real navigation: `aria-current`
-   on the active view, no scroll-spy, and the four remain four wherever they are
+   switches between five exclusive views, so it is real navigation: `aria-current`
+   on the active view, no scroll-spy, and the five remain five wherever they are
    drawn.
 
    Deliberately NOT collapsible to an icon rail. The rail pattern exists to stop a
-   long nav competing with content for width; with four items it would add a
+   long nav competing with content for width; with five items it would add a
    control and a persisted preference to save 230px on screens that have it to
-   spare, and four hand-drawn icons that mean less than the words they replace. */
+   spare, and five hand-drawn icons that mean less than the words they replace. */
 .top{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
  flex-wrap:nowrap;padding:.6rem 1.25rem;
  background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);
@@ -2188,13 +2292,20 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .tabs .navttl{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
  color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
 @media(max-width:70rem){
- /* One information architecture, two presentations: the same four buttons become
+ /* One information architecture, two presentations: the same five buttons become
     a horizontal strip. Never a second menu. */
  .shell{grid-template-columns:minmax(0,1fr);gap:.75rem;padding-top:.5rem}
  .tabs{position:sticky;top:var(--topbar-h);z-index:var(--z-strip);margin:0 -1.25rem;padding:.4rem 1.25rem;
   background:var(--bg);border-bottom:1px solid var(--border);
   overflow-x:auto;overflow-y:hidden}
  .tabs .navttl{display:none}
+ /* Only when it really does not fit — see tabsOverflow(). A row that scrolls
+    with no edge to say so reads as a row with four items in it, which is what a
+    phone showed the day a fifth was added. The class is set from the measured
+    width rather than from this breakpoint: whether five buttons fit depends on
+    their words, not on the viewport this rule happens to start at. */
+ .tabs.scrolls{mask-image:linear-gradient(to right,#000 calc(100% - 2.5rem),transparent);
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 2.5rem),transparent)}
 }
 h1{font-size:1.35rem;font-weight:680;letter-spacing:-.02em;margin:0}
 h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
@@ -2773,6 +2884,82 @@ td.tskills{min-width:15rem}
  .ovrow .ptitle{flex:1 1 100%}
 }
 
+/* ---- policy switchboard ---------------------------------------------------
+   A wide table by construction: one column per area, and an area can be added
+   without asking this stylesheet. So it scrolls INSIDE its own frame — the
+   document never scrolls sideways, which on a phone is the difference between a
+   table you can read and a page that slides out from under you. */
+.poltblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow:auto;max-height:34rem;margin:.4rem 0}
+table.poltbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.poltbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;
+ color:var(--muted);font-weight:700;padding:.35rem .5rem;
+ border-bottom:1px solid var(--border);white-space:nowrap}
+table.poltbl th.ar{color:var(--accent)}
+table.poltbl th.ar .mut{display:block;font-size:.62rem;letter-spacing:.02em;
+ text-transform:none;font-weight:600}
+table.poltbl th.ar.dormant{color:var(--muted)}
+table.poltbl td{padding:.3rem .5rem;border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.poltbl tbody tr:last-child td{border-bottom:none}
+table.poltbl td.nm{font-family:var(--mono);font-size:.76rem;
+ max-width:22rem;overflow-wrap:anywhere}
+/* A NAME may break anywhere — some of them are long and this column has a width.
+   A badge is a word, and `overflow-wrap:anywhere` inherits, so `required` was
+   being drawn as "req" over "uired" beside audit's own row. */
+table.poltbl td.nm .badge{white-space:nowrap;overflow-wrap:normal}
+table.poltbl td.pend{background:color-mix(in srgb,var(--accent-solid) 10%,transparent)}
+select.prule{font:inherit;font-size:.74rem;padding:.15rem .3rem;
+ border:1px solid var(--border);border-radius:var(--radius);
+ background:var(--surface);color:var(--text)}
+select.prule:disabled{opacity:.55;cursor:not-allowed}
+select.prule[data-set=deny]{border-color:var(--err);color:var(--err)}
+select.prule[data-set=allow]{border-color:var(--ok);color:var(--ok)}
+/* The verdict is a claim, and the basis under it is what makes the claim
+   checkable — the same rule the report's routing advice and the lock verdict
+   follow. It is never colour alone: the word says it too. */
+.pv{display:inline-flex;align-items:center;gap:.3em;font-size:.72rem;font-weight:700;
+ padding:.15rem .5em;border-radius:var(--pill);white-space:nowrap;
+ background:color-mix(in srgb,var(--pvc) 14%,transparent);color:var(--pvc);
+ border:1px solid color-mix(in srgb,var(--pvc) 30%,transparent)}
+.pv.allow{--pvc:var(--ok)}
+.pv.violation{--pvc:var(--err)}
+.pbasis{display:block;color:var(--muted);font-size:.7rem;line-height:1.45;
+ max-width:44ch;margin-top:.15rem}
+.badge.req{background:color-mix(in srgb,var(--accent) 16%,transparent);
+ color:var(--accent);border-color:transparent}
+.badge.stand{background:color-mix(in srgb,var(--warn) 16%,transparent);
+ color:var(--warn);border-color:transparent}
+.badge.pend{background:color-mix(in srgb,var(--accent-solid) 18%,transparent);
+ color:var(--accent);border-color:transparent}
+table.polrules{width:100%;border-collapse:separate;border-spacing:0;font-size:.78rem}
+table.polrules th{text-align:left;font-size:.66rem;text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:700;padding:.3rem .5rem;
+ border-bottom:1px solid var(--border)}
+table.polrules td{padding:.28rem .5rem;border-bottom:1px solid var(--border)}
+table.polrules tbody tr:last-child td{border-bottom:none}
+table.polrules td.pat{font-family:var(--mono);font-size:.76rem}
+table.polrules td.lst{font-weight:700;font-size:.7rem;text-transform:uppercase;
+ letter-spacing:.04em}
+table.polrules td.lst[data-list=deny]{color:var(--err)}
+table.polrules td.lst[data-list=allow]{color:var(--ok)}
+.poladd{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0 0}
+.poladd input{flex:1 1 14rem;min-width:8rem;padding:.25rem .5rem}
+.poladd select{font-size:.8rem;padding:.25rem .5rem}
+/* The four limits. Shut by default because they are read once and remembered,
+   open-able because a switchboard that never states them is selling enforcement
+   it does not have. */
+.polhonest{margin:.6rem 0 0;font-size:.82rem}
+.polhonest summary{cursor:pointer;color:var(--muted);font-size:.78rem}
+.polhonest ol{margin:.5rem 0 0;padding-left:1.2rem;color:var(--muted);
+ font-size:.78rem;line-height:1.55;max-width:76ch}
+.polhonest b{color:var(--text)}
+@media(max-width:48rem){
+ .pbasis{max-width:none}
+ .poltblwrap{max-height:none}
+}
+
 </style></head><body>
 <div class=top>
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
@@ -2789,12 +2976,14 @@ td.tskills{min-width:15rem}
  <button class="tab" data-t=comp>Composition</button>
  <button class="tab" data-t=over>Overview</button>
  <button class="tab" data-t=usage>Usage</button>
+ <button class="tab" data-t=policy>Policy</button>
 </nav>
 <main class=view>
 <div id=guards></div>
 <div id=comp class=hidden></div>
 <div id=over class=hidden></div>
 <div id=usage class=hidden></div>
+<div id=policy class=hidden></div>
 </main>
 </div>
 <div id=toast role=status aria-live=polite></div>
@@ -2861,7 +3050,7 @@ $('#report').onclick=async e=>{const b=e.currentTarget;
 // only the text changes.
 const LABELS=__LABELS__;
 const label=v=>LABELS[v]||(v?String(v).replace(/[_-]+/g,' ').replace(/^./,c=>c.toUpperCase()):'—');
-const TABS=['guards','comp','over','usage'],SCROLL={};
+const TABS=['guards','comp','over','usage','policy'],SCROLL={};
 let CURTAB=null;
 function showTab(t,push){
  if(!TABS.includes(t))t='guards';
@@ -2877,6 +3066,12 @@ function showTab(t,push){
  // After the browser has laid the view out, not before it.
  requestAnimationFrame(()=>window.scrollTo({top:SCROLL[t]||0,behavior:'auto'}));}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.t));
+// Measured, not assumed. Below the shell breakpoint the five views become one
+// horizontal strip, and on a phone the last of them is off the right-hand edge
+// with nothing to suggest it exists.
+function tabsOverflow(){const n=document.querySelector('.tabs');
+ if(n)n.classList.toggle('scrolls',n.scrollWidth>n.clientWidth+1);}
+addEventListener('resize',tabsOverflow);tabsOverflow();
 addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'');
  if(TABS.includes(t)&&t!==CURTAB)showTab(t,false);});
 function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'');
@@ -2936,7 +3131,7 @@ function onViewEdit(id,fn){
 // boolean answers "is something dirty"; three callers need the ROWS — the confirm
 // dialog lists them, Discard says how many are about to be lost, and beforeunload
 // only earns the right to interrupt a close if there really are some.
-const EDITS={guards:null,comp:null};
+const EDITS={guards:null,comp:null,policy:null};
 function editRows(k){try{return (EDITS[k]?EDITS[k]():[])||[];}catch(e){return[];}}
 function dirtyRows(){return Object.keys(EDITS).reduce((a,k)=>a.concat(editRows(k)),[]);}
 addEventListener('beforeunload',ev=>{
@@ -3123,7 +3318,8 @@ function saveOutcome(res,rows,what,slot){
 
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;
- renderViewer();renderSettings();renderComp();renderOver();renderUsage();
+ POLICY=await api('GET','/api/policy').catch(()=>null);PDRAFT=pClone(POLICY&&POLICY.stored);
+ renderViewer();renderSettings();renderComp();renderOver();renderUsage();renderPolicy();
  // Restored last, once every view has content to scroll to.
  showTab(initialTab());
  RUNSTATUS=STATE.runStatus||null;startRunPoll();}
@@ -3946,6 +4142,446 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   c.append(bcard);}
 
  if(keepQ){const n=$('#ovq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}}
+// ---------- capability policy: the switchboard ----------
+// `{"default":"deny","allow":["code-*"]}` is four words that decide the fate of
+// every skill on the machine, and nobody can hold that cross-product in their
+// head. This view IS the cross-product: one row per capability the project can
+// actually reach, the verdict the guard would give it, and the reason.
+//
+// Two rules run through all of it.
+//
+// The verdicts are the SERVER's — computed by `_policy.resolve`, the function the
+// hook itself calls — and are never recomputed here. A second matcher in the
+// browser would eventually disagree with the guard, and disagreeing about a denial
+// is the one thing a preview must not do. The consequence is that a verdict is
+// true of the SAVED policy: an edited row is marked as pending rather than
+// re-judged, and the verdicts are re-read from the server after every save.
+//
+// And the draft is the block AS WRITTEN (`stored`), never the merged one. PUT
+// /api/policy replaces the block wholesale, so anything this form does not
+// represent — a comment key, a pattern nobody clicked — would be destroyed by
+// someone who came to flip one switch. Which is also why the raw rules are a table
+// of their own further down: a rule the form cannot show is a rule it must not be
+// trusted to save.
+let POLICY=null;
+// null means "no policy block on disk, and nothing typed yet". It is not {}: an
+// empty object is a policy someone wrote, and writing one where there was none is
+// a change this view must not make by rendering.
+let PDRAFT=null;
+const PKINDS=['skills','agents','mcp'];
+const PKLABEL={skills:'Skills',agents:'Subagents',mcp:'MCP servers'};
+const PF={kind:'skills',q:'',bad:false};
+// The nodes the last save left behind — the ✓/✗ box and, if the file had moved
+// under the reader, the mismatch warning. A save re-renders the whole view to pick
+// up the server's fresh verdicts, which would otherwise throw away the one part of
+// the page that says what just happened. Consumed once, so an edit made afterwards
+// does not sit under a stale "saved".
+let PNOTE=null;
+const pClone=o=>(o==null?null:JSON.parse(JSON.stringify(o)));
+// Every edit goes through here. It drops the last save's box — that box describes
+// a file this form no longer matches — and redraws.
+function pEdit(fn){PNOTE=null;fn();renderPolicy();}
+function pBlock(){if(PDRAFT===null)PDRAFT={};return PDRAFT;}
+const pKindCfg=(b,k)=>((b||{})[k]||{});
+const pEnabled=()=>((PDRAFT||{}).enabled!==false);
+const pOnViolation=()=>((PDRAFT||{}).onViolation||(POLICY&&POLICY.onViolation)||'deny');
+const pDefault=k=>(pKindCfg(PDRAFT,k).default==='deny'?'deny':'allow');
+// What a violation DOES, in the words the hook uses. Said next to the control that
+// picks it, because "deny" and "warn" are not degrees of the same thing: one
+// refuses the call and one lets it through with a sentence attached.
+const PVIOL={deny:'refuse the call',ask:'ask for approval, per call',
+ warn:'allow it and say so'};
+// Where this row's rule is written, for one scope: '' (nothing), 'allow', 'deny'.
+// EXACT names only, and deliberately so — a glob that happens to match is not this
+// row's rule to move, and silently dropping `code-*` because somebody pressed
+// Default on one skill it covers would change the verdict of every other one. A
+// pattern is edited where it is written, in the rules table below.
+function pRuleOf(block,kind,name,tag){
+ const k=pKindCfg(block,kind);
+ const src=tag?((k.areas||{})[tag]||{}):k;
+ for(const l of ['deny','allow'])if((src[l]||[]).indexOf(name)>=0)return l;
+ return '';}
+function pSetRule(kind,name,tag,val){
+ const b=pBlock(),k=b[kind]=b[kind]||{};
+ let src=k;
+ if(tag){const a=k.areas=k.areas||{};src=a[tag]=a[tag]||{};}
+ ['allow','deny'].forEach(l=>{if(!Array.isArray(src[l]))return;
+  const i=src[l].indexOf(name);if(i>=0)src[l].splice(i,1);});
+ if(val){src[val]=src[val]||[];src[val].push(name);}
+ pPrune();}
+function pAddPattern(kind,list,tag,pattern){
+ const b=pBlock(),k=b[kind]=b[kind]||{};
+ let src=k;
+ if(tag){const a=k.areas=k.areas||{};src=a[tag]=a[tag]||{};}
+ src[list]=src[list]||[];
+ if(src[list].indexOf(pattern)<0)src[list].push(pattern);}
+function pDropPattern(kind,list,tag,pattern){
+ const src=tag?((pKindCfg(PDRAFT,kind).areas||{})[tag]||{}):pKindCfg(PDRAFT,kind);
+ const arr=src[list];if(!Array.isArray(arr))return;
+ const i=arr.indexOf(pattern);if(i>=0)arr.splice(i,1);
+ pPrune();}
+// Emptying a list REMOVES it, and removing the last one removes its container —
+// the same convention Settings writes with, for the same reason: a block listing
+// every default is a block nobody can read, and `"areas":{"web":{"deny":[]}}` is
+// a rule that looks like a rule and is not one.
+function pPrune(){
+ if(!PDRAFT)return;
+ for(const kind of PKINDS){
+  const k=PDRAFT[kind];if(!k||typeof k!=='object')continue;
+  ['allow','deny'].forEach(l=>{if(Array.isArray(k[l])&&!k[l].length)delete k[l];});
+  if(k.areas&&typeof k.areas==='object'){
+   for(const tag of Object.keys(k.areas)){const r=k.areas[tag]||{};
+    ['allow','deny'].forEach(l=>{if(Array.isArray(r[l])&&!r[l].length)delete r[l];});
+    if(!Object.keys(r).length)delete k.areas[tag];}
+   if(!Object.keys(k.areas).length)delete k.areas;}
+  if(!Object.keys(k).length)delete PDRAFT[kind];}}
+// The change rows, computed the same way Settings computes its own: this block is
+// one key of the config, the server writes it through the one config writer, and
+// the echo comes back as `config · policy.skills.deny · … -> …`. So the dialog is
+// fed a whole config with this block swapped in, and cannot describe the save in a
+// vocabulary the server does not answer in.
+function policyChanges(){
+ if(PDRAFT===null)return [];
+ const cfg=JSON.parse(JSON.stringify(STATE.config||{}));
+ cfg.policy=PDRAFT;
+ return configChanges(cfg);}
+// Every pattern in the draft, in the order `resolve` reads them: deny before
+// allow, project before area. Annotated from the server's own matching where the
+// server has seen the pattern — a rule typed a second ago has no match count and
+// says so rather than borrowing the count of the one it replaced.
+function pDraftRules(kind){
+ const out=[],k=pKindCfg(PDRAFT,kind);
+ const push=(scope,list)=>{const src=scope?((k.areas||{})[scope]||{}):k;
+  (src[list]||[]).forEach(p=>out.push({scope:scope||null,list:list,pattern:p}));};
+ push(null,'deny');push(null,'allow');
+ Object.keys(k.areas||{}).sort().forEach(tag=>{push(tag,'deny');push(tag,'allow');});
+ return out;}
+const pRuleKey=r=>JSON.stringify([r.scope||null,r.list,r.pattern]);
+function pServerRules(kind){const m={};
+ ((POLICY.rules||{})[kind]||[]).forEach(r=>{m[pRuleKey(r)]=r;});return m;}
+
+function renderPolicy(){
+ const c=$('#policy');
+ // The whole view redraws on every switch, so put back the two things a redraw
+ // throws away: the caret in whichever box was being typed in, and how far down
+ // the capability table the reader had scrolled.
+ const act=document.activeElement,
+   keepId=act&&act.id&&(act.id==='polq'||act.id==='poladdpat')?act.id:null,
+   caret=keepId?act.selectionStart:0,
+   scrolled=(()=>{const w=$('#poltbl');return w?w.scrollTop:0;})();
+ c.textContent='';
+ if(!POLICY){c.append(el('div',{class:'card'},el('div',{class:'findings warn'},
+   'The capability policy could not be read from this project. Nothing here can be '
+   +'edited until it can.')));return;}
+ EDITS.policy=()=>policyChanges();
+ const pending=policyChanges();
+ const findings=el('div',{class:'findings-slot'});
+ if(PNOTE){findings.append(...PNOTE);PNOTE=null;}
+
+ // --- what is in force, and whether anything is enforcing it ------------------
+ const head=el('div',{class:'card',id:'polhead'});
+ head.append(h2h('Capability policy','Which skills, subagents and MCP tools may be '
+   +'used in this project. Every verdict below is computed by _policy.resolve — the '
+   +'same function guard-capabilities calls — and never by this page.'));
+ const active=POLICY.active,en=pEnabled();
+ if(!en)head.append(el('div',{class:'findings warn','data-pstate':'off'},
+   'Turned off. policy.enabled is false, so nothing below is enforced — the rules '
+   +'stay written down and decide nothing.'));
+ else if(!active)head.append(el('div',{class:'findings ok','data-pstate':'inert'},
+   'Inert — every kind defaults to allow and no deny list has an entry, so there is '
+   +'nothing this policy can refuse. That is how it ships.'));
+ else if(POLICY.enforcement&&POLICY.enforcement.seen)
+  head.append(el('div',{class:'findings ok','data-pstate':'enforced'},
+   'Active, and the guard has run in this project — last seen '
+   +pAgo(POLICY.enforcement.ageDays)+'.'));
+ else head.append(el('div',{class:'findings warn','data-pstate':'unproven'},
+   'Active, but nothing here has ever seen the guard run in this project. On some '
+   +'Claude Code versions Skill / Task / MCP calls are not dispatched to plugin '
+   +'hooks at all, and inside a subagent they may not be inherited '
+   +'(anthropics/claude-code#43772). Until the marker appears, treat these verdicts '
+   +'as documentation rather than enforcement — /audit:doctor says the same.'));
+ // The saved state above describes the FILE, not the form. Say so the moment the
+ // two differ, or a reader edits a switch, reads "inert" underneath it and
+ // concludes the switch did nothing.
+ if(pending.length)head.append(el('div',{class:'findings warn','data-ppend':'1'},
+   'Described above: the policy as SAVED. You have '+pending.length+' unsaved '
+   +'change'+(pending.length===1?'':'s')+' — verdicts are re-read from the server '
+   +'once they are written.'));
+ (POLICY.findings||[]).forEach(f=>head.append(
+   el('div',{class:'findings err','data-pfinding':'1'},'✗ '+f)));
+ (POLICY.warnings||[]).forEach(w=>head.append(el('div',{class:'findings warn'},'! '+w)));
+ const enb=el('input',{type:'checkbox',id:'polenabled'});enb.checked=en;
+ enb.onchange=()=>pEdit(()=>{const b=pBlock();
+   if(enb.checked)delete b.enabled;else b.enabled=false;pPrune();});
+ const ovSel=el('select',{id:'polonviol','aria-label':'what a violation does'});
+ (POLICY.onViolationChoices||['deny']).forEach(v=>{
+   const o=el('option',{value:v},v+' — '+(PVIOL[v]||''));
+   if(pOnViolation()===v)o.selected=true;ovSel.append(o);});
+ // Back to the shipped default is written by REMOVING the key, unless the file
+ // states it — a block that spells out every default is a block nobody can read,
+ // and this one is meant to be read in a pull request.
+ ovSel.onchange=()=>pEdit(()=>{const b=pBlock();
+   if(ovSel.value===(POLICY.onViolation||'deny')&&!(POLICY.stored||{}).onViolation)
+    delete b.onViolation;
+   else b.onViolation=ovSel.value;
+   pPrune();});
+ head.append(el('div',{class:'row'},
+   el('label',{class:'f cbf'},enb,flabel('Policy enabled',
+     'Off writes policy.enabled:false, which is how you keep the rules and stop '
+     +'applying them.')),
+   el('label',{class:'f'},flabel('On a violation','What the hook does when a call '
+     +'breaks a rule. warn is deliberately NOT a permission grant — it lets the '
+     +'call through and says so.'),ovSel)));
+ // Which area rules are deciding anything TODAY. An area rule applies only while
+ // some phase in that area has work in progress, so a column of denials for a
+ // dormant area is inert — and becomes live the moment that phase starts, which is
+ // the surprise this line exists to remove.
+ const live=(POLICY.activeAreas||[]),
+   dormant=(POLICY.areaInfo||[]).filter(a=>!a.active).map(a=>a.tag);
+ if(dormant.length||live.length)head.append(el('div',{class:'mut','data-pdormant':'1'},
+   'Area rules apply only while that area has work in progress. Live now: '
+   +(live.join(', ')||'none')
+   +(dormant.length?(' · dormant: '+dormant.join(', ')):'')));
+ head.append(pHonesty());
+ c.append(head);
+
+ // --- one kind at a time ------------------------------------------------------
+ const card=el('div',{class:'card'});
+ const kstrip=el('div',{class:'ovstrip'},el('span',{class:'ovlbl'},'Kind'));
+ PKINDS.forEach(k=>kstrip.append(el('button',{class:'ovpill',type:'button','data-pk':k,
+   'aria-pressed':PF.kind===k?'true':'false',
+   title:'the '+PKLABEL[k].toLowerCase()+' this project can reach',
+   onclick:()=>{PF.kind=k;PF.q='';PNOTE=null;renderPolicy();}},
+   PKLABEL[k],el('b',{},String(((POLICY.resolved||{})[k]||[]).length)))));
+ card.append(kstrip);
+ const kind=PF.kind,rows=((POLICY.resolved||{})[kind]||[]);
+ const dstrip=el('div',{class:'ovstrip'},el('span',{class:'ovlbl'},'Everything else'),
+   ['allow','deny'].map(v=>el('button',{class:'ovpill'+(v==='deny'?' hi':''),
+     type:'button','data-pdefault':v,'aria-pressed':pDefault(kind)===v?'true':'false',
+     title:v==='deny'
+       ?'nothing runs unless a rule allows it — including anything installed later'
+       :'everything not denied is allowed',
+     onclick:()=>pEdit(()=>{const b=pBlock(),k=b[kind]=b[kind]||{};
+       if(v==='deny')k.default='deny';else delete k.default;pPrune();})},v)));
+ card.append(dstrip);
+ card.append(el('p',{class:'blurb'},pDefault(kind)==='deny'
+   ?('Default deny for '+PKLABEL[kind].toLowerCase()+': nothing runs unless it is '
+     +'allowed below, and anything installed after today starts refused.')
+   :('Default allow for '+PKLABEL[kind].toLowerCase()+': a deny rule is the only '
+     +'thing that can refuse anything. An allow rule here has no effect at all, '
+     +'which is what the validator warns about.')));
+ if(kind==='mcp')card.append(el('p',{class:'blurb'},'What is discoverable is a '
+   +'SERVER; a policy matches whole tool names. Each row therefore stands in for '
+   +'the server as mcp__<server>__* — a rule aimed at one tool of that server will '
+   +'not move it, which is true and better said than quietly averaged.'));
+
+ // --- the capability table ----------------------------------------------------
+ const q=PF.q.trim().toLowerCase();
+ const shown=rows.filter(r=>(!q||(r.name+' '+(r.source||'')).toLowerCase().includes(q))
+   &&(!PF.bad||r.verdict==='violation'));
+ const qIn=el('input',{type:'search',id:'polq',value:PF.q,
+   placeholder:'search '+PKLABEL[kind].toLowerCase()+'…',
+   'aria-label':'search '+PKLABEL[kind].toLowerCase()});
+ qIn.addEventListener('input',()=>{PF.q=qIn.value;renderPolicy();});
+ const bad=el('input',{type:'checkbox',id:'polbad'});bad.checked=PF.bad;
+ bad.onchange=()=>{PF.bad=bad.checked;renderPolicy();};
+ const tools=el('div',{class:'ovtools'},qIn,
+   el('label',{class:'inl',for:'polbad'},bad,'violations only'),
+   el('span',{class:'count',style:'margin-left:auto'},
+     shown.length===rows.length?(rows.length+' discovered')
+       :(shown.length+' / '+rows.length)));
+ if(q||PF.bad)tools.append(el('button',{class:'btn small',type:'button',
+   'data-polclear':'1',onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},
+   'Clear filters'));
+ card.append(tools);
+ const cols=POLICY.areaInfo||[];
+ const head2=el('tr',{},el('th',{},'capability'),el('th',{},'source'),
+   el('th',{},'rule'),
+   cols.map(a=>el('th',{class:'ar'+(a.active?'':' dormant'),
+     title:a.active
+       ?('area '+a.tag+' has work in progress, so its rules apply right now')
+       :('no phase tagged '+a.tag+' has work in progress, so its rules decide '
+         +'nothing until one does')},
+     a.tag,el('span',{class:'mut'},a.active?'live':'dormant'))),
+   el('th',{},'verdict, and why'));
+ const tb=el('tbody');
+ shown.forEach(r=>{
+  const tr=el('tr',{'data-pcap':r.name,'data-verdict':r.verdict});
+  tr.append(el('td',{class:'nm'},r.name,
+    r.required?el('span',{class:'badge req',title:'shipped by audit itself — the '
+      +'panel refuses to write a policy denying it, and the guard would allow it '
+      +'anyway. Not unremovable: disabling the plugin removes it, visibly.'},
+      'required'):null,
+    r.standIn?el('span',{class:'badge stand',title:'stands in for every tool of '
+      +'this server'},'server'):null));
+  tr.append(el('td',{},r.source?el('span',{class:'src badge'},r.source):null));
+  tr.append(pCell(kind,r,null));
+  cols.forEach(a=>tr.append(pCell(kind,r,a.tag)));
+  tr.append(el('td',{class:'vd'},
+    el('span',{class:'pv '+r.verdict},r.verdict==='violation'?'Violation':'Allowed'),
+    el('span',{class:'pbasis'},r.basis||'')));
+  tb.append(tr);});
+ if(!shown.length)card.append(el('div',{class:'ovempty','data-polempty':'1'},
+   rows.length?'No '+PKLABEL[kind].toLowerCase()+' match this filter. '
+     :'Nothing of this kind was discovered for this project. A rule can still be '
+      +'written for it below — it will apply the day something matches it.',
+   rows.length?el('button',{class:'btn small',type:'button','data-polclear':'1',
+     onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},'Clear filters'):null));
+ else card.append(el('div',{class:'poltblwrap',id:'poltbl'},
+   el('table',{class:'poltbl'},el('thead',{},head2),tb)));
+
+ // --- the block as written ----------------------------------------------------
+ card.append(el('h3',{class:'sub2'},flabel('Rules as written',
+   'The block for this kind, in the order the guard reads it: deny before allow, '
+   +'project before area. The switches above write exact names here; a pattern can '
+   +'only be written and removed here.')));
+ const srv=pServerRules(kind),drafted=pDraftRules(kind);
+ if(!drafted.length)card.append(el('div',{class:'mut','data-polnorules':'1'},
+   'No rules for '+PKLABEL[kind].toLowerCase()+'. With the default at '
+   +pDefault(kind)+', that means '
+   +(pDefault(kind)==='deny'?'nothing of this kind may run.':'everything may run.')));
+ else{
+  const rtb=el('tbody');
+  drafted.forEach(r=>{
+   const hit=srv[pRuleKey(r)];
+   rtb.append(el('tr',{'data-prule':(r.scope||'project')+' '+r.list+' '+r.pattern},
+     el('td',{},r.scope
+       ?el('span',{class:'badge area',title:'applies only while this area has work '
+         +'in progress'},r.scope)
+       :el('span',{class:'mut'},'project')),
+     el('td',{class:'lst','data-list':r.list},r.list),
+     el('td',{class:'pat'},r.pattern),
+     el('td',{class:'mut',title:hit&&hit.matches&&hit.matches.length
+       ?hit.matches.join(', ')+(hit.n>hit.matches.length
+         ?(' +'+(hit.n-hit.matches.length)+' more'):''):''},
+       hit?(hit.n?(hit.n+' installed'):'nothing installed matches it today')
+         :'not saved yet'),
+     el('td',{},el('button',{class:'btn small',type:'button',
+       'aria-label':'remove '+r.list+' rule '+r.pattern,
+       onclick:()=>pEdit(()=>pDropPattern(kind,r.list,r.scope,r.pattern))},'×'))));});
+  card.append(el('table',{class:'polrules'},
+    el('thead',{},el('tr',{},el('th',{},'scope'),el('th',{},'list'),
+      el('th',{},'pattern'),el('th',{},'matches now'),el('th',{}))),rtb));}
+ card.append(pAddRow(kind));
+ c.append(card);
+
+ // --- save --------------------------------------------------------------------
+ const save=el('button',{class:'btn primary','data-psave':'1',onclick:async()=>{
+   const chg=policyChanges();
+   if(!chg.length){toast('nothing to save — the policy is unchanged');return;}
+   if(!await confirmChanges({title:'Save capability policy',rows:chg,scope:'policy',
+     verb:'Save '+chg.length+' change'+(chg.length===1?'':'s'),
+     note:'writes .claude/audit.config.json'}))return;
+   const res=await api('PUT','/api/policy',{policy:PDRAFT||{}});
+   findings.replaceChildren(findingsBox(res));
+   saveOutcome(res,chg,'the config',findings);
+   if(!res.ok)return;
+   const cfg=JSON.parse(JSON.stringify(STATE.config||{}));
+   cfg.policy=PDRAFT||{};STATE.config=cfg;
+   // Re-read rather than assume: every verdict on this page is the server's, and
+   // the only way they become true of what was just written is to ask again. The
+   // box that says what happened is carried across the redraw, not re-derived.
+   POLICY=await api('GET','/api/policy').catch(()=>POLICY);
+   PDRAFT=pClone(POLICY&&POLICY.stored);
+   PNOTE=[...findings.childNodes];
+   renderPolicy();
+ }},'Save policy');
+ const discard=el('button',{class:'btn small','data-discard':'policy',type:'button',
+   onclick:async()=>{
+   const chg=policyChanges();
+   if(!chg.length)return;
+   if(!await confirmChanges({title:'Discard unsaved policy changes',rows:chg,danger:1,
+     lock:false,verb:'Discard '+chg.length+' change'+(chg.length===1?'':'s'),
+     note:'nothing is written; the form goes back to the saved block'}))return;
+   pEdit(()=>{PDRAFT=pClone(POLICY&&POLICY.stored);});
+   toast('discarded — the form is back to the saved policy');}},
+   pending.length?('Discard '+pending.length+' change'+(pending.length===1?'':'s'))
+     :'Discard');
+ discard.disabled=!pending.length;
+ c.append(el('div',{class:'savebar'},save,discard,
+   el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));
+
+ if(keepId){const n=document.getElementById(keepId);
+  if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
+ if(scrolled){const w=$('#poltbl');if(w)w.scrollTop=scrolled;}}
+
+// How long ago, in words. The panel never decides whether that is TOO long: how
+// stale a marker may be is /audit:doctor's judgement, and a second threshold here
+// is a threshold that can disagree with it.
+function pAgo(days){
+ if(days==null)return 'at an unknown time';
+ if(days<1/24)return 'within the hour';
+ if(days<1)return 'today';
+ return Math.round(days)+' day(s) ago';}
+
+// One switch, for one capability, in one scope.
+function pCell(kind,r,tag){
+ const cur=pRuleOf(PDRAFT,kind,r.name,tag),
+   was=pRuleOf(POLICY.stored,kind,r.name,tag),
+   moved=cur!==was;
+ const sel=el('select',{class:'prule','data-set':cur||null,
+   'data-prule':r.name+(tag?('@'+tag):''),
+   'aria-label':(tag?('rule for area '+tag+', '):'project rule for ')+r.name});
+ [['','—'],['allow','allow'],['deny','deny']].forEach(([v,t])=>{
+  const o=el('option',{value:v},t);if(cur===v)o.selected=true;sel.append(o);});
+ if(r.required){
+  // The one promise this panel makes about its own components, kept mechanically:
+  // the control cannot be moved at all. The server refuses such a policy too — the
+  // validator calls it a FINDING — so this is the friendly half of a rule that is
+  // enforced somewhere it cannot be edited around.
+  sel.disabled=true;
+  sel.title='required by audit — the panel refuses to write a policy denying it';}
+ else sel.onchange=()=>pEdit(()=>pSetRule(kind,r.name,tag,sel.value));
+ return el('td',{class:moved?'pend':null},sel,
+   moved?el('span',{class:'badge pend',title:'unsaved: '
+     +(was?('was '+was):'no rule')+' → '+(cur||'no rule')},'unsaved'):null);}
+
+// Writing a pattern, which is the half the per-row switches cannot do.
+function pAddRow(kind){
+ const pat=el('input',{id:'poladdpat',placeholder:'pattern…  e.g.  code-*',
+   'aria-label':'pattern to add'});
+ const lst=el('select',{'aria-label':'which list'},
+   el('option',{value:'deny'},'deny'),el('option',{value:'allow'},'allow'));
+ const scope=el('select',{'aria-label':'scope'},el('option',{value:''},'project'),
+   (POLICY.areaInfo||[]).map(a=>el('option',{value:a.tag},
+     'area '+a.tag+(a.active?'':' (dormant)'))));
+ const add=()=>{const p=pat.value.trim();if(!p)return;
+   pEdit(()=>{pAddPattern(kind,lst.value,scope.value||null,p);pat.value='';});};
+ pat.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();add();}});
+ return el('div',{},
+   el('div',{class:'poladd'},pat,lst,scope,
+     el('button',{class:'btn small',type:'button','data-poladd':'1',onclick:add},
+       'Add rule')),
+   el('p',{class:'blurb'},'Shell-style globs, matched case-sensitively against the '
+     +'whole name: code-* covers code-review and code-simplifier, and matches '
+     +'nothing else. Deny beats allow, and one live area’s deny is enough. A '
+     +'rule aimed at audit’s own components is refused when you save — with '
+     +'the validator’s own words, because it would not take effect.'));}
+
+// The four limits, from SECURITY.md, in the place someone is most likely to
+// believe the opposite: a page full of verdicts looks like enforcement. Shut by
+// default — read once, remembered — and never removed, because a switchboard that
+// does not state them is selling something it cannot deliver.
+function pHonesty(){
+ const d=el('details',{class:'polhonest','data-polhonest':'1'});
+ d.append(el('summary',{},'What this cannot hold — four limits'));
+ d.append(el('ol',{},
+  el('li',{},el('b',{},'Subagent hooks are not inherited on every version'),
+    ' (anthropics/claude-code#43772). Inside a subagent the policy may never be '
+    +'consulted. The only local evidence is the marker the guard leaves when it '
+    +'runs, which is what the line above reports.'),
+  el('li',{},el('b',{},'It denies the tool, not the knowledge.'),
+    ' Denying a skill stops the Skill call. It does not unread a document the '
+    +'model already has, and it does not stop the same work being done by hand.'),
+  el('li',{},el('b',{},'Your own switch outranks it.'),
+    ' Anyone can disable a plugin, and a disabled plugin’s hooks do not run — '
+    +'which is why audit’s own components are not deniable here. The honest '
+    +'claim is not "unremovable", it is "not removable quietly".'),
+  el('li',{},el('b',{},'Hooks cannot gate hooks.'),
+    ' Another plugin’s hooks run in the same session and nothing here can '
+    +'refuse them. This panel inventories what is installed; it never claims to '
+    +'enforce against it.')));
+ return d;}
 // ---------- usage ----------
 // ONE filter state. The chart's dimension is DERIVED from it, never stored
 // separately -- an earlier version kept a parallel drill-down object and filtered
@@ -5511,6 +6147,105 @@ def _selftest():
               and all(r["standIn"] and r["name"].startswith("mcp__")
                       and r["name"].endswith("__*")
                       for r in _ps["resolved"]["mcp"]))
+
+        # --- panel c7: what the switchboard needs beyond the verdicts ----------
+        # The switches on that form can only write EXACT names. Everything else a
+        # policy may legally contain — a glob, a rule for something nobody has
+        # installed, a rule for a dormant area — is invisible to them, and the PUT
+        # replaces the block WHOLESALE. A rule the form cannot show is therefore a
+        # rule it would silently destroy, which is why the raw block travels too.
+        _rules = _ps["rules"]["agents"]
+        check("every pattern in the block is reported, in the order resolve reads "
+              "them: deny before allow, project before area",
+              [(r["scope"], r["list"], r["pattern"]) for r in _rules]
+              == [("api", "allow", "code-*"), ("web", "allow", "never-*")])
+        # Counted against `_policy.matches` over the rows this endpoint served, not
+        # against a number written here: the machine running this has its own agents
+        # installed, and "code-* matches exactly one" would be a claim about the
+        # laptop — true here, false on CI, and vacuous either way.
+        _codes = [r["name"] for r in _rows if _policy.matches(r["name"], ["code-*"])]
+        check("...and each says what it matches TODAY, through the same matcher the "
+              "guard matches with",
+              "code-reviewer" in _codes
+              and [r["n"] for r in _rules if r["pattern"] == "code-*"]
+              == [len(_codes)])
+        check("deny is listed before allow within a scope, because that is the "
+              "order the verdict is decided in",
+              [(r["list"], r["pattern"]) for r in _policy_rules(
+                  {"skills": {"allow": ["a"], "deny": ["d"]}}, "skills", [])]
+              == [("deny", "d"), ("allow", "a")])
+        # A rule that matches nothing is the one a table of capabilities cannot
+        # show at all, and the one most likely to be a typo. Dropping it here would
+        # be the form quietly deleting it on the next save.
+        check("a pattern matching nothing installed is still listed, and says it "
+              "matches nothing rather than being left out",
+              [r["n"] for r in _rules if r["pattern"] == "never-*"] == [0])
+        _many = _policy_rules({"skills": {"deny": ["a*"]}}, "skills",
+                              ["a%d" % i for i in range(9)])
+        check("a pattern covering more names than fit is capped for display while "
+              "the count stays true - a truncated list read as the total would "
+              "understate what one rule decides",
+              _many[0]["n"] == 9 and len(_many[0]["matches"]) == 6)
+        check("a blank or non-string pattern is skipped rather than rendered as an "
+              "empty rule nobody can remove",
+              _policy_rules({"skills": {"deny": ["  ", "", 7, "real"]}},
+                            "skills", []) == [
+                  {"scope": None, "list": "deny", "pattern": "real",
+                   "matches": [], "n": 0}])
+        # Called through a wrapper so the failure is a named FAIL and not a
+        # traceback: this endpoint feeds a form, a form's job is to survive a file
+        # somebody hand-edited, and an assertion that dies while proving that
+        # reports the wrong thing twice over — nothing about the defect, and a
+        # crash that looks like one.
+        def _rules_safe(pol, kind, names):
+            try:
+                return _policy_rules(pol, kind, names)
+            except Exception as exc:                 # noqa: BLE001 - that is the check
+                return "raised %s" % type(exc).__name__
+        check("a malformed kind block yields no rules instead of raising",
+              _rules_safe({"skills": "nonsense"}, "skills", ["x"]) == []
+              and _rules_safe({}, "skills", ["x"]) == []
+              and _rules_safe({"skills": {"deny": "nope"}}, "skills", ["x"]) == [])
+
+        # Every area a rule can be aimed at, and whether it decides anything today.
+        _ainfo = {a["tag"]: a for a in _ps["areaInfo"]}
+        check("the area columns cover every tag a rule could name, and mark which "
+              "are live - an area rule is inert until that area has work in "
+              "progress, and a column that does not say so is a trap",
+              sorted(_ainfo) == _ps["areas"]
+              and _ainfo["api"]["active"] is True
+              and _ainfo["web"]["active"] is False)
+        check("...and say which of them the registry actually knows, since a rule "
+              "may legitimately be written for a free-text tag",
+              _ainfo["api"]["registered"] is True
+              and _ainfo["web"]["registered"] is False)
+
+        # Whether anything is enforcing any of this. A page full of `deny` verdicts
+        # that cannot say whether the hook has ever run would be claiming
+        # enforcement nobody has - the doctor's warning, on the surface that shows
+        # the denials.
+        check("with no marker, enforcement is reported as never seen rather than "
+              "assumed",
+              _ps["enforcement"] == {"seen": False, "ageDays": None})
+        _sd = str(_cores()[3].state_dir(pathlib.Path(_pproj), read_config(_pproj)))
+        os.makedirs(_sd, exist_ok=True)
+        _gc = _load("audit_guard_capabilities_t",
+                    os.path.join(_HERE, "..", "hooks", "guard-capabilities.py"))
+        with open(os.path.join(_sd, _gc.SEEN_FILE), "w", encoding="utf-8") as _fh:
+            _fh.write("{}")
+        _pe = _policy_enforcement(_pproj, read_config(_pproj))
+        check("with the guard's own marker present it is reported as seen, with an "
+              "age and no verdict about whether that age is too old - how stale is "
+              "too stale is /audit:doctor's judgement, and a second threshold here "
+              "is one that can disagree with it",
+              _pe["seen"] is True and _pe["ageDays"] is not None
+              and _pe["ageDays"] < 1 and set(_pe) == {"seen", "ageDays"})
+        check("...and it is found at the path the hook writes: the config's own "
+              "state_dir and the hook's own SEEN_FILE, neither spelled out twice",
+              os.path.isfile(os.path.join(_sd, _gc.SEEN_FILE))
+              and _gc.SEEN_FILE == "capability-guard.json")
+        check("an unreadable project reports never-seen rather than raising",
+              _policy_enforcement(os.path.join(_pproj, "nope"), {})["seen"] is False)
     finally:
         _shutil.rmtree(_pproj, ignore_errors=True)
 
@@ -5879,9 +6614,13 @@ def _selftest():
     check("UI has project placeholder", "__AUDIT_PROJECT__" in UI_HTML)
     check("UI token injected as a quoted JS string",
           'const TOKEN="abc123"' in UI_HTML.replace("__AUDIT_TOKEN__", _js("abc123")))
+    # `list:` alone was the spelling here, and it is not a datalist — it matched
+    # `{scope, list: 'deny', pattern}` in the policy view, which is a field name.
+    # A native datalist needs the ATTRIBUTE, which in this file's `el()` calls is
+    # always `list:'…'`, and the element it points at.
     check("UI uses the custom combobox, not a native datalist",
           "function comboWrap(" in UI_HTML and "combo-menu" in UI_HTML
-          and "<datalist" not in UI_HTML and "list:" not in UI_HTML)
+          and "<datalist" not in UI_HTML and "list:'" not in UI_HTML)
     check("UI labels carry info hints", "function hint(" in UI_HTML and "data-tip" in UI_HTML)
     # --- Settings: the whole config, named by what it does ---------------------
     # The claim this tab makes is "here is the configuration". It was not true: the
@@ -5900,9 +6639,9 @@ def _selftest():
     # exemption, and it is stated rather than silently subtracted. It is not a
     # setting with a value; it is a rule set whose meaning is the verdict it
     # produces for each installed capability, which is what /api/policy serves and
-    # what the switchboard renders. A generic text box over it would be a JSON
-    # editor wearing a label. The exemption is pinned below: it must name a key the
-    # validator actually knows, or it would silently excuse nothing.
+    # what the **Policy tab** renders, switch by switch. A generic text box over it
+    # would be a JSON editor wearing a label. The exemption is pinned below: it must
+    # name a key the validator actually knows, or it would silently excuse nothing.
     _settings_exempt = {"policy"}
     _expected = {k for k in _vc.KNOWN_ROOT
                  if k not in _containers and k not in _settings_exempt}
@@ -6164,10 +6903,12 @@ def _selftest():
     check("no author resolved -> a way to the setting that decides it, not a blank",
           "settingsLink(v.mode==='none'?'not recorded':'unknown','usage.authorMode')"
           in UI_HTML)
-    check("unsaved work is registered per surface, and both surfaces register",
-          "const EDITS={guards:null,comp:null};" in UI_HTML
+    check("unsaved work is registered per surface, and every writable surface "
+          "registers — a surface that forgets is one beforeunload cannot protect",
+          "const EDITS={guards:null,comp:null,policy:null};" in UI_HTML
           and "EDITS.comp=()=>compChanges(patch);" in UI_HTML
-          and "EDITS.guards=()=>configChanges(cfg);" in UI_HTML)
+          and "EDITS.guards=()=>configChanges(cfg);" in UI_HTML
+          and "EDITS.policy=()=>policyChanges();" in UI_HTML)
     check("beforeunload interrupts a close only when there is something to lose",
           "addEventListener('beforeunload',ev=>{" in UI_HTML
           and "if(!dirtyRows().length)return;" in UI_HTML)
@@ -6204,10 +6945,11 @@ def _selftest():
           "STATE=await api('GET','/api/state');renderComp();renderOver();" in UI_HTML)
     check("an unparseable buildCommands box cannot be confirmed as something else",
           "if(bcBad){toast('meta.buildCommands is not valid JSON" in UI_HTML)
-    check("Discard exists on both surfaces, counts what it would throw away, and "
-          "is dead while there is nothing to throw",
-          UI_HTML.count("'data-discard':'") == 2
-          and UI_HTML.count("discard.disabled=!n;") == 2)
+    check("Discard exists on every writable surface, counts what it would throw "
+          "away, and is dead while there is nothing to throw",
+          UI_HTML.count("'data-discard':'") == 3
+          and UI_HTML.count("discard.disabled=!n;") == 2
+          and "discard.disabled=!pending.length;" in UI_HTML)
     check("Usage: my-spend filters on the very string the topbar shows",
           "const me=((STATE||{}).viewer||{}).author;" in UI_HTML
           and "onclick:()=>setF('author',on?'':me)},'my spend')" in UI_HTML
@@ -6296,6 +7038,84 @@ def _selftest():
     check("and arriving there says which field you were sent to, rather than "
           "scrolling somewhere silently",
           "t.classList.add('flash')" in UI_HTML and ".flash{outline:" in UI_HTML)
+
+    # --- c7: the policy switchboard ------------------------------------------
+    # String pins, and they cannot tell a working panel from a dead one — the
+    # inline script is one <script>, so a missing paren kills every view while
+    # every `'…' in UI_HTML` here still passes. The behaviour is driven for real
+    # in tools/capture-screenshots.mjs (assertPolicyWorks), against a fixture with
+    # its own HOME; these guard the constructs those checks depend on.
+    check("the policy tab is registered, routable and has a view container",
+          "data-t=policy>Policy<" in UI_HTML and "<div id=policy" in UI_HTML
+          and "const TABS=['guards','comp','over','usage','policy']" in UI_HTML)
+    check("the verdicts shown are the SERVER's — the browser is handed them and "
+          "never matches a pattern itself, because two matchers eventually "
+          "disagree about a denial",
+          "POLICY.resolved" in UI_HTML and "r.verdict" in UI_HTML
+          and "fnmatch" not in UI_HTML
+          and "function pResolve" not in UI_HTML)
+    check("...so an edited row is marked pending rather than re-judged, and the "
+          "verdicts are re-read from the server after a save",
+          "moved?el('span',{class:'badge pend'" in UI_HTML
+          and "POLICY=await api('GET','/api/policy')" in UI_HTML)
+    # EVERY assignment, not one of them. The first version of this pin asked
+    # whether the string appeared at all — and it appears three times (boot, save,
+    # discard), so a mutation that pointed one of them at the merged block left it
+    # green. A wholesale PUT built from defaults would write every default into the
+    # file the first time anyone pressed Save.
+    _pdraft = re.findall(r"PDRAFT=pClone\(([^)]*)\)", UI_HTML)
+    check("the draft is the block AS WRITTEN, not the merged one - and that is "
+          "true of every place the draft is set, not merely somewhere",
+          _pdraft == ["POLICY&&POLICY.stored"] * 3
+          and "pRuleOf(POLICY.stored,kind,r.name,tag)" in UI_HTML)
+    check("a switch moves an EXACT name only, so a glob covering ten rows is not "
+          "silently dropped by pressing Default on one of them",
+          "for(const l of ['deny','allow'])if((src[l]||[]).indexOf(name)>=0)"
+          in UI_HTML
+          and "function pDraftRules(" in UI_HTML and "'data-prule'" in UI_HTML)
+    check("...and every pattern in the block is therefore listed and removable, "
+          "with what the server says it matches today",
+          "'not saved yet'" in UI_HTML and "'nothing installed matches it today'"
+          in UI_HTML and "'data-poladd':'1'" in UI_HTML)
+    check("audit's own components cannot be denied from here, and the row says why",
+          "sel.disabled=true;" in UI_HTML
+          and "required by audit — the panel refuses to write a policy denying it"
+          in UI_HTML)
+    check("every verdict carries the basis that makes it true, as the report's "
+          "routing advice and the lock verdict do",
+          "el('span',{class:'pbasis'},r.basis||'')" in UI_HTML
+          and ".pbasis{" in UI_HTML)
+    check("the page says whether anything is ENFORCING this, in four states, and "
+          "never implies enforcement from a policy alone",
+          UI_HTML.count("'data-pstate':'") == 4
+          and "anthropics/claude-code#43772" in UI_HTML
+          and "'data-pstate':'unproven'" in UI_HTML)
+    check("the four limits are on the surface that most invites believing the "
+          "opposite, and they are the ones SECURITY.md states",
+          "What this cannot hold — four limits" in UI_HTML
+          and "It denies the tool, not the knowledge." in UI_HTML
+          and "Hooks cannot gate hooks." in UI_HTML
+          and "not removable quietly" in UI_HTML)
+    check("area columns come from the server's own view of them and say which are "
+          "deciding anything today",
+          "POLICY.areaInfo" in UI_HTML and "a.active?'live':'dormant'" in UI_HTML)
+    check("emptying a list removes it, and the container with it - the same "
+          "convention Settings writes the config with",
+          "function pPrune(" in UI_HTML
+          and "if(Array.isArray(k[l])&&!k[l].length)delete k[l];" in UI_HTML
+          and "if(!Object.keys(k.areas).length)delete k.areas;" in UI_HTML)
+    check("a save goes through the one confirm flow, writes through the one policy "
+          "endpoint, and describes itself in the vocabulary the server echoes",
+          "confirmChanges({title:'Save capability policy'" in UI_HTML
+          and UI_HTML.count("'/api/policy'") == 3
+          and "function policyChanges(){" in UI_HTML
+          and "return configChanges(cfg);}" in UI_HTML)
+    check("the box saying what a save did survives the redraw that follows it, "
+          "instead of being wiped by the re-read it triggers",
+          "PNOTE=[...findings.childNodes];" in UI_HTML
+          and "if(PNOTE){findings.append(...PNOTE);PNOTE=null;}" in UI_HTML)
+    check("the widest table this UI draws scrolls inside its own frame",
+          ".poltblwrap{" in UI_HTML and "overflow:auto" in UI_HTML)
     check("_declared_as_of separates a project's own value from the default",
           _declared_as_of({"usage": {"pricingAsOf": "2026-01-02"}}) is True
           and _declared_as_of({"usage": {"showCost": True}}) is False
