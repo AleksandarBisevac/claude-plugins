@@ -14,7 +14,7 @@
   ],
   "baseRef": "12b0b7f0c532c1180ea4b9ccb0c1b85cfe730b23",
   "branch": "audit/p10-refactor-shared-infra-dedup",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T18:39:30+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
