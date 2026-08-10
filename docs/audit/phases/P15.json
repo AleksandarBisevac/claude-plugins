@@ -1,0 +1,236 @@
+{
+  "id": "P15",
+  "title": "refactor: structure visible and enforced",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "The module structure is written in one place, generated into the guide, and breaks the build when violated: _deps.py holds the layer table and lints the real import graph (no cycles, no upward edges, no unassigned file, hooks import nothing from scripts); the guide's module map is generator output under a drift lint; every script has a tree entry and a section, enforced; every big file is navigable by headers, enforced; CONTRIBUTING carries the add-a-script checklist and the decision record (folders declined with a revisit trigger at 40+ files, usage_ledger split deferred with its trigger, typing ban rationale).",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P15.1",
+      "title": "_deps.py: the layer table and the import-graph lint",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/_deps.py"
+      ],
+      "docs": [],
+      "description": "New flat module in house style (safe_stdio, N/M selftest). LAYERS as data: L0 _output,_ui_theme,_loader,_fmt,_manifest_io / L1 _areas,_policy,usage_ledger / L2 _help / L3 _panel_settings,_panel_ui,_panel_discovery,_report_html,_report_ui / L4 _panel_state,_report_usage / L5 _panel_write / L6 the twelve entry points - derive the true edges from real imports first and adjust the table to reality, the inventory is the starting truth. AST-walk scripts/*.py flat (mirror _output's scanners): sibling import edges. Assert: acyclic; every edge points to a strictly lower layer; every .py is assigned a layer (a new file without one is a named red - the folder without folders); hooks/*.py carry no static import of any scripts module. Selftest: green on the real tree + named fixture cases (cycle, upward edge, unassigned file, hook importing scripts), each mutation-proven.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "_deps: real tree acyclic + layered + fully assigned; fixture cases each named"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P15.2",
+      "title": "generated module map + drift lint in the guide",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P15.1"
+      ],
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "docs": [],
+      "description": "_deps.py --render emits a deterministic module map (layers + edges, stable sort, one format). PLUGIN-BUILD-GUIDE gains a new 'Module map' section whose fenced block must equal the generator's output byte-for-byte - a drift case in _deps' selftest reads the .md (the rule_drift pattern). The regeneration command is written beside the block. New headings are allowed; existing headings untouched.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "map drift: the guide's fenced block equals _deps --render output"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "validate",
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P15.3",
+      "title": "guide completeness + enumeration lint",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P15.2"
+      ],
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "docs": [],
+      "description": "The guide's tree gains the 16 missing scripts files at the neighbors' granularity; section 2 gains short sections for the 20 scripts files without one (2-4 sentences, derived from each module's docstring, pointing at it rather than duplicating it) and meter-usage.py on the hooks side. The stale 'all fourteen' count at ~:477 stops asserting a number. Lint in _deps' selftest: every .py under scripts/ and hooks/ must appear in the tree AND have a section heading - a missing file is a named red. Existing headings untouched; the new sections are new headings, which the drift lints allow.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "enumeration lint: every script/hook present in tree + sectioned, missing one named red"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "validate",
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P15.4",
+      "title": "section headers everywhere + navigability lint",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P15.3"
+      ],
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_report_usage.py",
+        "plugins/audit/scripts/_areas.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/_panel_ui.py",
+        "plugins/audit/scripts/_report_ui.py",
+        "plugins/audit/scripts/render-report.py",
+        "plugins/audit/scripts/_policy.py",
+        "plugins/audit/scripts/validate-manifest.py",
+        "plugins/audit/scripts/validate-config.py",
+        "plugins/audit/scripts/gen-demo-manifest.py",
+        "plugins/audit/scripts/gen-demo-usage.py",
+        "plugins/audit/scripts/migrate-manifest.py",
+        "plugins/audit/scripts/_fmt.py",
+        "plugins/audit/scripts/_report_html.py",
+        "plugins/audit/scripts/_loader.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/guard-edits.py",
+        "plugins/audit/hooks/guard-capabilities.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/detect-plan-skip.py"
+      ],
+      "docs": [],
+      "description": "Comment-only diffs: house-style '# --- x ---' headers for the 5 files with none (_report_usage 1365, _areas, _output, _panel_ui, _report_ui) and meaningful non-selftest sections for the big selftest-only files (render-report 1611, _policy 726, validate-manifest 850, validate-config, gen-demo-*, migrate-manifest, _fmt, _report_html, _loader) and the six hooks without one. Then the lint in _deps' selftest: every .py over 400 lines carries at least 2 non-selftest section headers; threshold a named constant with its reason; mutation-proven.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "navigability lint: >400-line file without 2 non-selftest headers is a named red"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P15.5",
+      "title": "CONTRIBUTING: add-a-script checklist + decision record",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P15.4"
+      ],
+      "files": [
+        "CONTRIBUTING.md"
+      ],
+      "docs": [],
+      "description": "A new 'Adding a new script' subsection: naming (underscore helper / hyphenated entry point), docstring, --selftest with the N/M contract, safe_stdio first, a layer in _deps.LAYERS, tree entry + section in the guide - noting which of these the lints enforce (the checklist is a map, the lints are the territory). Decision record entries: folders declined (CI glob, direct runnability, hook paths) with revisit trigger 'scripts/ exceeds 40 .py files'; usage_ledger split deferred with trigger 'next significant ledger work starts by extracting the analytics section'; typing/dataclasses stay banned (AST-enforced since P9.3) with the one-sentence why. Existing headings untouched.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "validate"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}
