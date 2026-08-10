@@ -795,9 +795,14 @@ def _selftest():
     # config paths, and every one of them must be documented by the schema. A new
     # setting that reaches the form without reaching the schema fails here.
     try:
-        _panel = _loader.load(os.path.join(_HERE, "panel-server.py"),
-                               modname="audit_panel_help")
-        bound = set(_panel._settings_paths())
+        # Local import, not module-level: _panel_settings is what actually owns
+        # _settings_paths() (P12.1, moved out of panel-server.py). A module-level
+        # import here would put _help.py's import above _panel_settings while
+        # panel-server.py (which imports both _help and _panel_settings) sits
+        # above _help.py too — a local import confined to this one selftest case
+        # carries no cycle risk either way.
+        import _panel_settings
+        bound = set(_panel_settings._settings_paths())
     except Exception as exc:                                # pragma: no cover
         bound = set()
         print("     (panel unavailable: %s)" % exc)

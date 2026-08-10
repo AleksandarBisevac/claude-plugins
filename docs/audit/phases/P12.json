@@ -1,7 +1,7 @@
 {
   "id": "P12",
   "title": "refactor: panel-server Python split",
-  "status": "pending",
+  "status": "in_progress",
   "model": "sonnet",
   "blockedBy": [
     "P11"
@@ -13,8 +13,8 @@
     "lint",
     "shots"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "11151288802c501ca42a54ab3706f400bd448aa6",
+  "branch": "audit/p12-refactor-panel-server-split",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P12.1",
       "title": "_panel_settings.py: form schema + key allow-lists",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -50,21 +50,28 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "FIELD_HELP/COMPOSITION_HELP/SETTINGS_GROUPS, the five write allow-list key sets, _settings_paths and _cfg_enums moved to _panel_settings.py (453 lines); panel-server aliases them so the substitution chain and write path are untouched. _help's s8/s9 coverage now imports _panel_settings locally instead of loading the whole server by path. Case arithmetic: panel 428 = 391 + 37 moved; _panel_settings carries 41 (37 verbatim + 4 new isolation cases); combined 432 >= 428.",
+        "descriptive": "The settings schema owns itself now, with its own coverage selftest, and help reads it from the module that owns it."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T18:31:20+02:00",
+      "completedAt": "2026-08-10T18:39:33+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_panel_settings 41/41",
+        "panel-server 391/391",
+        "_help 65/65 s8+s9",
+        "sweep green",
+        "lint green",
+        "capture-screenshots --check green"
+      ]
     },
     {
       "id": "P12.2",
       "title": "_panel_discovery.py: skills/agents/MCP discovery",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -92,9 +99,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T18:39:33+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []
@@ -103,7 +110,7 @@
       "id": "P12.3",
       "title": "_panel_state.py: the read side",
       "status": "pending",
-      "model": "sonnet",
+      "model": "opus",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [
@@ -141,7 +148,7 @@
       "id": "P12.4",
       "title": "_panel_write.py: locks, diffs, journal, writes",
       "status": "pending",
-      "model": "sonnet",
+      "model": "opus",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [
@@ -211,5 +218,11 @@
       "risk": "low",
       "verifiedBy": []
     }
-  ]
+  ],
+  "claim": {
+    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
+    "host": "MacBook-Pro.local",
+    "branch": "audit/p12-refactor-panel-server-split",
+    "at": "2026-08-10T18:31:20+02:00"
+  }
 }
