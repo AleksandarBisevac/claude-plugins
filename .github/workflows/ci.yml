@@ -418,6 +418,26 @@ jobs:
             -s plugins/audit/schema/audit-plan.schema.json \
             -d examples/acme-store/audit-plan.json
 
+  lint:
+    name: lint (ruff + vermin 3.8 floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install pinned lint tools (dev/CI-only, not a runtime dependency)
+        run: pip install ruff==0.16.2 vermin==1.8.0
+      - name: ruff (E9+F, py38 target from pyproject.toml)
+        run: ruff check plugins/audit tools
+      - name: vermin holds the 3.8 floor
+        run: |
+          # -t=3.8- carries the trailing dash on purpose: it means "3.8 or lower",
+          # i.e. "detected floor must not exceed 3.8". A bare -t=3.8 instead demands
+          # the detected floor EQUAL 3.8 — this tree's detected floor is 3.7, so the
+          # bare flag fails on code that is already fully compatible.
+          vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks
+
   plugin-validate:
     name: claude plugin validate
     runs-on: ubuntu-latest

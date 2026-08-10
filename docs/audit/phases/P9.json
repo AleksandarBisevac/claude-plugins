@@ -64,7 +64,7 @@
     {
       "id": "P9.2",
       "title": "CI lint job: pinned ruff + vermin as the 3.8-floor gate",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -85,14 +85,14 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "New ubuntu-only lint job in ci.yml between manifests and plugin-validate: setup-python 3.12 (same pin as siblings), pip install ruff==0.16.2 vermin==1.8.0, ruff check plugins/audit tools, vermin -t=3.8- --no-tips --violations over scripts/ and hooks/, with a comment on the trailing-dash semantics. Both commands verified green locally.",
+        "descriptive": "CI now lint-gates every commit with pinned ruff and vermin, dev/CI-only, holding the Python 3.8 floor."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T17:41:00+02:00",
+      "completedAt": "2026-08-10T17:44:00+02:00",
       "risk": "low",
       "verifiedBy": []
     },
@@ -123,7 +123,7 @@
         "technical": "house_style_violations() added to _output.py's AST-lint machinery: ast.NamedExpr, from __future__, typing and dataclasses imports banned across scripts/*.py and hooks/*.py (flat listdir, unparseable files reported not skipped, violations named as file+line+construct). Selftest 14 -> 24 cases; each of the four bans individually mutation-proven red then restored (diff-verified).",
         "descriptive": "The house-style bans are enforced by the build instead of remembered: a walrus, a __future__ import, or a typing/dataclasses import anywhere in scripts/ or hooks/ now fails the selftest by name."
       },
-      "commit": null,
+      "commit": "2b191a4",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T17:34:59+02:00",
