@@ -15,7 +15,7 @@
   ],
   "baseRef": "e0359947d04e72da9d806926769a551236104fee",
   "branch": "audit/p11-refactor-ui-asset-extraction",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T18:30:42+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
