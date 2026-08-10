@@ -307,6 +307,80 @@ def render(script_dir=None, layers=None):
     return "\n".join(lines) + "\n"
 
 
+_GUIDE_HEADING = "## 1a. Module map (generated)"
+# _HERE is plugins/audit/scripts; the guide lives at the repo root, three levels up
+# (scripts -> audit -> plugins -> repo root) - same anchor `_help._AGENT_DOCS` uses
+# from `plugins/audit` (two levels up from there).
+_GUIDE_REL_PATH = os.path.join("..", "..", "..", "PLUGIN-BUILD-GUIDE.md")
+
+
+def _guide_path(guide_path=None):
+    if guide_path is not None:
+        return guide_path
+    return os.path.join(_HERE, _GUIDE_REL_PATH)
+
+
+def _fenced_block_after(text, heading):
+    """The content of the first fenced code block after `heading`, or None.
+
+    `None` distinguishes "no such heading" from "heading present, no fence" -
+    `map_drift` needs to tell those two apart and name each one differently.
+    Returns `(block_text, "missing fence")` is NOT the shape; callers get either
+    a string (the block content, without the fence lines) or `None`.
+    """
+    idx = text.find(heading)
+    if idx == -1:
+        return None
+    rest = text[idx + len(heading):]
+    fence_start = rest.find("```")
+    if fence_start == -1:
+        return None
+    after_open = rest[fence_start + 3:]
+    nl = after_open.find("\n")
+    if nl == -1:
+        return None
+    after_open = after_open[nl + 1:]
+    fence_end = after_open.find("```")
+    if fence_end == -1:
+        return None
+    return after_open[:fence_end]
+
+
+def map_drift(guide_path=None):
+    """[(guide-relative-path, problem), ...] - the guide's module map against
+    the REAL `render()` output, the same "a doc block must match the code's own
+    statement" pattern `_areas.rule_drift()` uses for the reviewSkill rule.
+
+    Three named ways this drifts: the heading itself has gone missing (the
+    section was renamed or deleted), the heading survives but nothing under it
+    is a fenced block any more, or a fence is there but its content is stale -
+    one byte different from what `render()` says right now is still drift.
+    """
+    path = _guide_path(guide_path)
+    rel = "PLUGIN-BUILD-GUIDE.md" if guide_path is None else path
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        return [(rel, "unreadable: %s" % exc)]
+
+    if _GUIDE_HEADING not in text:
+        return [(rel, "heading %r not found in the guide" % _GUIDE_HEADING)]
+
+    block = _fenced_block_after(text, _GUIDE_HEADING)
+    if block is None:
+        return [(rel, "heading %r found but no fenced code block follows it"
+                  % _GUIDE_HEADING)]
+
+    expected = render()
+    if block != expected:
+        return [(rel, "the guide's module map fence does not match "
+                  "`_deps.py --render` output byte-for-byte (stale - "
+                  "regenerate with `python3 plugins/audit/scripts/"
+                  "_deps.py --render`)")]
+    return []
+
+
 def _selftest():
     import shutil
     import tempfile
@@ -434,6 +508,80 @@ def _selftest():
                       for v in hook_hits))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # --------------------------------------------------- map_drift: guide vs --render output
+    check("g1 the shipped guide's module map fence matches `_deps.py --render` "
+          "byte-for-byte right now - the house 'a doc block must match the code's own "
+          "statement' pattern `_areas.rule_drift()` uses, applied to this generated "
+          "block: %r" % (map_drift(),), not map_drift())
+
+    guide_tmp = tempfile.mkdtemp(prefix="audit-deps-guide-")
+    try:
+        real_render = render()
+
+        stale_path = os.path.join(guide_tmp, "stale.md")
+        with open(stale_path, "w", encoding="utf-8") as fh:
+            fh.write("intro\n\n" + _GUIDE_HEADING + "\n\nsome text\n\n```\n"
+                      + real_render[:-2] + "X\n```\n\nmore text\n")  # one byte changed
+        stale_hits = map_drift(stale_path)
+        check("g2 a fenced block one byte off from the real `render()` output is named "
+              "as stale, not silently accepted: %r" % (stale_hits,),
+              len(stale_hits) == 1 and stale_hits[0][0] == stale_path
+              and "does not match" in stale_hits[0][1])
+
+        no_heading_path = os.path.join(guide_tmp, "no_heading.md")
+        with open(no_heading_path, "w", encoding="utf-8") as fh:
+            fh.write("intro\n\n## something else entirely\n\n```\n" + real_render + "```\n")
+        no_heading_hits = map_drift(no_heading_path)
+        check("g3 a guide missing the module-map heading entirely is named, not "
+              "mistaken for a match: %r" % (no_heading_hits,),
+              len(no_heading_hits) == 1
+              and "heading" in no_heading_hits[0][1]
+              and "not found" in no_heading_hits[0][1])
+
+        no_fence_path = os.path.join(guide_tmp, "no_fence.md")
+        with open(no_fence_path, "w", encoding="utf-8") as fh:
+            fh.write("intro\n\n" + _GUIDE_HEADING + "\n\nno fence follows this heading "
+                      "at all, just prose.\n")
+        no_fence_hits = map_drift(no_fence_path)
+        check("g4 a guide with the heading but no fenced block after it is named as "
+              "missing the fence, distinctly from a stale-content mismatch: %r"
+              % (no_fence_hits,),
+              len(no_fence_hits) == 1
+              and "no fenced code block" in no_fence_hits[0][1])
+
+        missing_path = os.path.join(guide_tmp, "does_not_exist.md")
+        missing_hits = map_drift(missing_path)
+        check("g5 an unreadable guide path is named as unreadable, not crashed on: %r"
+              % (missing_hits,),
+              len(missing_hits) == 1 and "unreadable" in missing_hits[0][1])
+
+        # ---- mutation proof: a weakened comparison must MISS the g2 stale fixture ----
+        # Same idea as m1/m2 below: a version of the comparison that only checks the
+        # block is non-empty (instead of comparing it to `render()`) would let g2's
+        # one-byte-off fixture through clean - proving g2 is testing something real.
+        def _weakened_map_drift(guide_path):
+            path = _guide_path(guide_path)
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+            if _GUIDE_HEADING not in text:
+                return [(path, "heading not found")]
+            block = _fenced_block_after(text, _GUIDE_HEADING)
+            if block is None:
+                return [(path, "no fenced code block")]
+            return [] if block else [(path, "empty block")]  # never compares to render()
+
+        weak_stale_hits = _weakened_map_drift(stale_path)
+        check("g6 mutation proof: with the byte-for-byte comparison to `render()` "
+              "removed, the SAME one-byte-stale fixture g2 catches is missed entirely "
+              "(red proves g2 is testing something real): %r" % (weak_stale_hits,),
+              not weak_stale_hits)
+        real_stale_hits = map_drift(stale_path)
+        check("g7 mutation proof: the real, unweakened map_drift() still catches it - "
+              "nothing was left mutated behind",
+              real_stale_hits and "does not match" in real_stale_hits[0][1])
+    finally:
+        shutil.rmtree(guide_tmp, ignore_errors=True)
 
     # ------------------------------------------------------- mutation proof: upward edge
     # Same idea _fmt.py's own selftest proves with a hand-mutated formatter: a weakened

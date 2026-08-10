@@ -65,7 +65,7 @@
     {
       "id": "P15.2",
       "title": "generated module map + drift lint in the guide",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -91,21 +91,27 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Guide gains '## 1a. Module map (generated)' with the regen command and the current --render output (8 layers, 83 edges); _deps.map_drift() compares the fence byte-for-byte per the rule_drift pattern, naming stale/missing-heading/missing-fence. 18 -> 25 cases; one-byte round-trip proven red then restored.",
+        "descriptive": "The map in the guide is the code's own statement, and a byte of drift fails the build by name."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T22:35:36+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T22:40:08+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_deps 25/25",
+        "round-trip red on one byte",
+        "_areas 55/55 + _help 65/65",
+        "sweep green",
+        "lint green"
+      ]
     },
     {
       "id": "P15.3",
       "title": "guide completeness + enumeration lint",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -135,9 +141,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T22:40:08+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []
