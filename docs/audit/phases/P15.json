@@ -1,7 +1,7 @@
 {
   "id": "P15",
   "title": "refactor: structure visible and enforced",
-  "status": "in_progress",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "The module structure is written in one place, generated into the guide, and breaks the build when violated: _deps.py holds the layer table and lints the real import graph (no cycles, no upward edges, no unassigned file, hooks import nothing from scripts); the guide's module map is generator output under a drift lint; every script has a tree entry and a section, enforced; every big file is navigable by headers, enforced; CONTRIBUTING carries the add-a-script checklist and the decision record (folders declined with a revisit trigger at 40+ files, usage_ledger split deferred with its trigger, typing ban rationale).",
@@ -16,10 +16,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "The structure is written down, generated, and enforced: _deps.py holds the 8-layer table over 83 real edges and fails cycles, upward imports, unplaced files and new hooks-to-scripts dependencies by name (its first run found the one real exception, F11, and the nav lint found two violators the task scope had missed - both fixed, zero exceptions shipped); the guide's module map is generator output under a byte drift lint; the guide enumerates all 40 files under an enumeration lint; every big file is navigable under a 400-line/2-header lint; CONTRIBUTING carries the checklist and three recorded decisions with revisit triggers. Desired outcome met in full.",
   "tasks": [
     {
       "id": "P15.1",
@@ -263,11 +263,5 @@
         "validate OK"
       ]
     }
-  ],
-  "claim": {
-    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
-    "host": "MacBook-Pro.local",
-    "branch": "audit/p15-structure-enforced",
-    "at": "2026-08-10T22:27:24+02:00"
-  }
+  ]
 }
