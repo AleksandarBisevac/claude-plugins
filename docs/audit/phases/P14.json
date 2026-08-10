@@ -1,7 +1,7 @@
 {
   "id": "P14",
   "title": "refactor: cleanups",
-  "status": "in_progress",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [
     "P12",
@@ -19,10 +19,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "The honesty debts are paid: the cost bands have one injected definition (COST_BAND_PARAMS) and the comment-presence pin is retired for three mutation-proven logic pins; audit-status imports _fmt directly; audit-doctor's loader wrapper was judged and kept with its reasons written down (directory switch + deliberate cache=False); hooks/_config gained eleven section headers, zero imports, and the one docstring sentence stating why hooks stay importless. Desired outcome met in full. One executor stall was resumed against verified tree state; the plan gate correctly refused an out-of-scope edit mid-phase, which is the gate working.",
   "tasks": [
     {
       "id": "P14.1",
@@ -137,7 +137,7 @@
         "technical": "The local _load wrapper was judged and KEPT: it adds a directory switch for the three ../hooks sites and a deliberate cache=False policy (diagnose() runs repeatedly against different fixtures in one process; a stale cached module reads as a regression). The comment now states that instead of silently delegating. Seven section headers; comment-only diff.",
         "descriptive": "audit-doctor's indirection says why it exists, and the file is navigable."
       },
-      "commit": null,
+      "commit": "73a2218",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T20:16:15+02:00",
@@ -177,7 +177,7 @@
         "technical": "Eleven section headers mapped onto existing function boundaries with zero reordering; one docstring sentence added stating why hooks never statically import scripts/. The selftest was already grouped (a)-(p), so nothing was added there. 81/81 unchanged; +18/-1 comment-only diff.",
         "descriptive": "The hooks' config brain is labeled, and its central design rule is written where the code lives."
       },
-      "commit": null,
+      "commit": "f8caf46",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T20:16:15+02:00",
@@ -189,11 +189,5 @@
         "lint green"
       ]
     }
-  ],
-  "claim": {
-    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
-    "host": "MacBook-Pro.local",
-    "branch": "audit/p14-refactor-cleanups",
-    "at": "2026-08-10T19:53:16+02:00"
-  }
+  ]
 }
