@@ -90,8 +90,11 @@ claude-plugins/                           # this repo (personal, public)
         validate-config.py                # validates .claude/audit.config.json against its schema
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
         render-report.py                  # self-contained HTML+MD report (CI artifact)
+        _report_ui.py                     # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
         migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
+        _panel_ui.py                      # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
+        ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
         audit-journal.py                  # append-only hash-chained audit trail (append/verify/show)
       templates/
         audit.config.example.json         # per-repo hook config template
@@ -380,15 +383,20 @@ Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero networ
 phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's rollup
 (single source of truth). Every manifest string is HTML-escaped — manifest content is
 untrusted — and only http(s) URLs render as links (`javascript:` degrades to text).
+The report's CSS/JS live as real files under `scripts/ui/report.{css,js}`; `_report_ui.py`
+reads them at import with explicit utf-8 and assembles the same `_CSS`/`_SCRIPT` constants
+byte-identically — the rendered report page stays a single self-contained file regardless.
 `--selftest` (includes XSS cases).
 
 ### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel-server.py` (v0.13.0–v0.14.0)
 `/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
 `panel.md` dispatches on its argument — bare = open (launched detached via `nohup … &`), `stop`,
 `status`, `--port <n>` — and `panel-server.py` is a single dependency-free Python-stdlib HTTP
-server (the UI's HTML/CSS/JS is embedded inline as a string; it reuses the plugin's pure cores —
-`validate-manifest.py`, `validate-config.py`, `audit-status.py`, `hooks/_config.py` — via
-importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
+server (the UI's HTML/CSS/JS lives as real files under `scripts/ui/panel.{html,css,js}`;
+`_panel_ui.py` reads them at import with explicit utf-8 and assembles the same `UI_HTML` constant
+byte-identically — the served page is still one self-contained HTML file, the source just is not.
+It reuses the plugin's pure cores — `validate-manifest.py`, `validate-config.py`,
+`audit-status.py`, `hooks/_config.py` — via importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
 on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
 `.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned). Four tabs:
 **Settings** (a form over the WHOLE of `.claude/audit.config.json` in four groups, described

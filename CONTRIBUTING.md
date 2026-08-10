@@ -56,6 +56,13 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   rather than listing them, and fails a file that has none. Adding a file and
   remembering to register it were once two separate acts, and one suite went
   unrun for two releases as a result.
+- **All `.py` under `hooks/` and `scripts/` stays flat, one directory deep.**
+  The CI selftest glob above and `_output.py`'s own guard are non-recursive by
+  design — a `.py` file dropped into a subdirectory silently stops being
+  tested. `scripts/ui/` is the one exception, and it holds only non-Python
+  assets (HTML/CSS/JS read at import by `_panel_ui.py`/`_report_ui.py`);
+  each carries a selftest that pins `scripts/ui/` as containing no `.py`
+  files, so the exception cannot quietly grow one.
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
 - Every command that mutates the manifest must revalidate
