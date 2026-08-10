@@ -27,20 +27,15 @@ Exit: Ctrl-C stops the server. --selftest returns 0/1.
 """
 import argparse
 import atexit
-import contextlib
-import io
 import json
 import os
-import pathlib
 import re
 import secrets
 import signal
 import socket
-import subprocess
 import sys
 import tempfile
 import threading
-import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -53,10 +48,10 @@ import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the repo
 import _areas               # noqa: E402  (meta.areas registry + shared resolution)
 import _policy              # noqa: E402  (the capability policy + its resolution)
 import _help                # noqa: E402  (schema-sourced field help + concept topics)
-import _loader               # noqa: E402  (the one path-importlib loader for scripts/)
 import _panel_ui             # noqa: E402  (UI_HTML's markup/CSS/JS, off disk as real files)
 import _panel_settings       # noqa: E402  (settings-form schema + write allow-lists)
 import _panel_discovery      # noqa: E402  (skills/agents/MCP registry scan)
+import _panel_state          # noqa: E402  (the read-side payloads: state/areas/policy/journal/usage)
 
 # The settings-form schema and the write-path allow-lists are settings-shape
 # knowledge, not server plumbing — they live in _panel_settings.py (P12.1).
@@ -88,6 +83,49 @@ discover = _panel_discovery.discover
 _local_plugin_bases = _panel_discovery._local_plugin_bases
 _mcp_names = _panel_discovery._mcp_names
 
+# The panel's READ side -- every payload `GET /api/*` answers with, plus the path
+# safety, viewer identity, core-module loading and lock detection those payloads
+# rest on -- lives in _panel_state.py (P12.3). Aliased here so every downstream
+# reference in this file (the GET routes, the write path's own use of `_cores`,
+# `_within`, `read_config`, `_manifest_path`, `_read_json` and `_journalmod`, and
+# the selftest below) keeps working unchanged. See that module's docstring for why
+# each shared name moved rather than being duplicated.
+_load = _panel_state._load
+_cores = _panel_state._cores
+_defaults = _panel_state._defaults
+_within = _panel_state._within
+_config_path = _panel_state._config_path
+_declared_as_of = _panel_state._declared_as_of
+_manifest_path = _panel_state._manifest_path
+_viewer = _panel_state._viewer
+_read_json = _panel_state._read_json
+read_config = _panel_state.read_config
+_areas_of = _panel_state._areas_of
+_bugs_view = _panel_state._bugs_view
+_skills_of = _panel_state._skills_of
+_composition_view = _panel_state._composition_view
+areas_state = _panel_state.areas_state
+_JOURNAL = _panel_state._JOURNAL
+_journalmod = _panel_state._journalmod
+JOURNAL_PAGE = _panel_state.JOURNAL_PAGE
+journal_state = _panel_state.journal_state
+help_state = _panel_state.help_state
+help_field = _panel_state.help_field
+_policy_rules = _panel_state._policy_rules
+_policy_enforcement = _panel_state._policy_enforcement
+_policy_areas_view = _panel_state._policy_areas_view
+policy_state = _panel_state.policy_state
+_active_area_tags = _panel_state._active_area_tags
+_audit_lock_dir = _panel_state._audit_lock_dir
+_audit_lock_held = _panel_state._audit_lock_held
+_lockmod = _panel_state._lockmod
+_lock_info = _panel_state._lock_info
+_run_status = _panel_state._run_status
+usage_state = _panel_state.usage_state
+report_paths = _panel_state.report_paths
+render_report = _panel_state.render_report
+build_state = _panel_state.build_state
+
 
 def _src_of_this_file():
     """This module's own source — for the selftests that must assert a server-side
@@ -96,539 +134,11 @@ def _src_of_this_file():
         return fh.read()
 
 
-# --- lazy import of the plugin's own pure cores (hyphenated filenames) ----------
-def _load(modname, path):
-    """Thin per-call wrapper: callers here pass an explicit modname (the file is
-    hyphenated and not otherwise importable). Delegates to `_loader`, the one
-    shared path-importlib loader — see its docstring for the caching policy."""
-    return _loader.load(path, modname=modname)
-
-
-_VM = _VC = _AS = _CFG = None
-
-
-def _cores():
-    """Load (once) validate-manifest, validate-config, audit-status, _config."""
-    global _VM, _VC, _AS, _CFG
-    if _VM is None:
-        _VM = _loader.load_script("validate-manifest.py",
-                                   modname="audit_validate_manifest")
-        _VC = _loader.load_script("validate-config.py",
-                                   modname="audit_validate_config")
-        _AS = _loader.load_script("audit-status.py", modname="audit_status")
-        _CFG = _loader.load_hooks_config(modname="audit__config")
-    return _VM, _VC, _AS, _CFG
-
-
-def _defaults():
-    return _cores()[3].DEFAULTS
-
-
-# --- path safety ----------------------------------------------------------------
-def _within(project, path):
-    """True iff `path` resolves inside `project` (no ../ escape, no symlink out)."""
-    proj = os.path.realpath(project)
-    tgt = os.path.realpath(path)
-    return tgt == proj or tgt.startswith(proj + os.sep)
-
-
-def _config_path(project):
-    return os.path.join(project, CONFIG_REL)
-
-
-def _declared_as_of(config):
-    """Did the PROJECT set `usage.pricingAsOf`, or is the effective value a default?
-
-    `usage_cfg()` merges `DEFAULTS`, so `ucfg["pricingAsOf"]` is almost never absent
-    — it falls back to the default table's date. Rendering that as the rate basis
-    would present a date this project never chose as though it had, which is the
-    manufactured basis `render-report._usage_context` refuses for the same reason.
-    The panel needs the raw config to tell the two apart, so it reports the fact
-    separately rather than making the client guess from a value that is always set.
-    """
-    block = (config or {}).get("usage")
-    return isinstance(block, dict) and isinstance(block.get("pricingAsOf"), str) \
-        and bool(block["pricingAsOf"].strip())
-
-
-def _manifest_path(project, config):
-    mp = (config or {}).get("manifestPath") or _defaults()["manifestPath"]
-    return os.path.normpath(os.path.join(project, mp))
-
-
-# --- who is looking at this panel -------------------------------------------------
-_VIEWER_CACHE = {}
-
-
-def _viewer(project, config):
-    """Who is driving the panel: `{author, mode}`.
-
-    Resolved by `usage_ledger.resolve_author` — the SAME function, reading the same
-    `usage.authorMode` — rather than by asking git here. The two names have to be
-    one string: the Usage tab offers a "my spend" filter that compares this value
-    with the `author` column the ledger writes, and a second implementation would
-    produce a filter that matches nothing on any project where the two disagreed
-    (mode `hash`, say, or a repo-local `user.email`).
-
-    `mode: none` is a real answer, not a failure: it means this project chose not
-    to record who spent what, and the panel says so rather than inventing a name.
-
-    Cached per (project, mode) because resolve_author shells out to git and
-    build_state runs on every /api/state.
-    """
-    _, _, _, cfg_mod = _cores()
-    mode = str((cfg_mod.usage_cfg(config) or {}).get("authorMode") or "email")
-    key = (os.path.realpath(project), mode)
-    if key not in _VIEWER_CACHE:
-        author = None
-        try:
-            ul = _loader.load_script("usage_ledger.py", modname="audit_usage_ledger")
-            author = ul.resolve_author(project, mode)
-        except Exception:
-            author = None
-        _VIEWER_CACHE[key] = {"author": author, "mode": mode}
-    return _VIEWER_CACHE[key]
-
-
 def _atomic_write_json(path, obj):
     """Thin delegation to the plugin's ONE atomic-JSON-write implementation
     (_manifest_io.atomic_write_json) — ensure_ascii=False keeps this module's
     existing byte shape unchanged."""
     _mio.atomic_write_json(path, obj, ensure_ascii=False, indent=2)
-
-
-def _read_json(path):
-    """Thin delegation to the plugin's ONE JSON reader (_manifest_io.read_json)."""
-    return _mio.read_json(path)
-
-
-# --- state (read) ---------------------------------------------------------------
-def read_config(project):
-    try:
-        obj = _read_json(_config_path(project))
-        return obj if isinstance(obj, dict) else {}
-    except Exception:
-        return {}
-
-
-# A phase's `area` -> its tags. One implementation, in `_areas`, shared with
-# audit-status: this file and that one each had their own copy of the same six
-# lines, and the day one of them learned something (trimming, de-duplication, the
-# registry lookup) the panel and the terminal would have disagreed about which
-# phases are in an area.
-_areas_of = _areas.areas_of
-
-
-def _bugs_view(manifest):
-    """The bug rows the Overview lists, one per bug, already resolved.
-
-    `status` here is the EFFECTIVE status — the same value `rollup()` counts in
-    `bugs.byStatus`, computed by the same function — so a reader who clicks the
-    "Fixed 2" pill gets exactly two rows. Deriving it a second time in JavaScript
-    would be a second implementation of the bug<->task rule (a bug materialized
-    into a task reads `fixed` once that task is done), and two implementations
-    that can disagree is precisely how the panel's counts and its lists drift.
-    `reported` keeps what the manifest actually stores, so a bug whose status is
-    inherited from its task can say so instead of looking hand-edited."""
-    _, _, as_, _ = _cores()
-    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
-    task_by_id = {t["id"]: t for p in phases for t in (p.get("tasks") or [])
-                  if isinstance(t, dict) and t.get("id")}
-    task_phase = {t["id"]: p.get("id") for p in phases for t in (p.get("tasks") or [])
-                  if isinstance(t, dict) and t.get("id")}
-    out = []
-    for b in (manifest.get("bugs") or []):
-        if not isinstance(b, dict):
-            continue
-        eff = as_.effective_bug_status(b, task_by_id)
-        out.append({
-            "id": b.get("id"), "title": b.get("title"),
-            "status": eff,
-            "reported": b.get("status"),
-            "severity": b.get("severity"),
-            # `open` and `high` are decided HERE, by the same two rules the rollup's
-            # `open` / `openHighSeverity` counts use — CLOSED_BUG and the
-            # high-or-worse severity set, which knows that critical, blocker, sev1
-            # and p0 all mean high. A regex in the browser would be a third opinion
-            # on the same question, and the "High severity, open" pill would
-            # eventually count a different set than the list it filters to.
-            "open": eff not in as_.CLOSED_BUG,
-            "high": as_._is_high_severity(b.get("severity")),
-            "taskId": b.get("taskId"),
-            "phaseId": task_phase.get(b.get("taskId")),
-            "reportedAt": b.get("reportedAt"),
-        })
-    return out
-
-
-def _skills_of(task):
-    """A task's skills as the panel SHOWS them: a list, always.
-
-    Absent and `null` both render as an empty chip row, so this is the value the
-    reader is looking at — which is what a change row has to be written against.
-    Reading the raw `None` here instead would be a truer reading of the file and a
-    false mismatch against the form: adding one skill would make the client say
-    `[] -> [a]` and the server `null -> [a]`, and the panel would warn about a
-    disagreement that is only a normalisation.
-    """
-    v = (task or {}).get("skills")
-    return v if isinstance(v, list) else []
-
-
-def _composition_view(manifest):
-    meta = manifest.get("meta") or {}
-    phases_out, tasks_out = [], []
-    for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        review = ph.get("review") if isinstance(ph.get("review"), dict) else {}
-        phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
-                           "status": ph.get("status"), "reviewModel": review.get("model"),
-                           "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill")})
-        for t in (ph.get("tasks") or []):
-            if not isinstance(t, dict):
-                continue
-            tasks_out.append({
-                "id": t.get("id"), "title": t.get("title"),
-                "phaseId": ph.get("id"), "status": t.get("status"),
-                "model": t.get("model"),
-                "skills": _skills_of(t),
-            })
-    return {
-        "meta": {"reviewSkill": meta.get("reviewSkill"),
-                 "buildCommands": meta.get("buildCommands")},
-        "phases": phases_out, "tasks": tasks_out,
-    }
-
-
-def areas_state(project):
-    """`GET /api/areas` — the registry, and every tag the phases actually use.
-
-    Both halves, because the two disagree in both directions and each disagreement
-    is worth seeing: a tag no entry covers resolves to no reviewer and no skills
-    (usually a typo), and a registered area no phase uses is either a plan that has
-    not been written yet or a rename that only got done on one side.
-
-    Every verdict here comes from `_areas` — the same module the validator, the
-    doctor and the status renderer resolve through — so this endpoint cannot
-    develop its own opinion about what is registered.
-    """
-    config = read_config(project)
-    mpath = _manifest_path(project, config)
-    out = {"path": os.path.relpath(mpath, project) if _within(project, mpath)
-           else None,
-           "areas": {}, "tags": [], "findings": [], "warnings": []}
-    if not _within(project, mpath):
-        out["findings"] = ["refused: manifest path escapes project"]
-        return out
-    try:
-        manifest = _mio.load_manifest(mpath)
-    except Exception as exc:
-        out["findings"] = ["cannot read manifest: %s" % exc]
-        return out
-    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
-    stored = meta.get("areas")
-    out["areas"] = stored if isinstance(stored, dict) else {}
-    f, w = _areas.validate_registry(stored)
-    out["findings"], out["warnings"] = f, w
-    reg = _areas.registry(manifest)
-    used = {}
-    for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        for tag in _areas.areas_of(ph.get("area")):
-            used.setdefault(tag, []).append(ph.get("id"))
-    for tag in sorted(set(reg) | set(used)):
-        entry = reg.get(tag) or {}
-        root = _areas.root_of(entry)
-        out["tags"].append({
-            "tag": tag,
-            "registered": tag in reg,
-            "phases": used.get(tag, []),
-            "root": root or None,
-            # Resolved here rather than in the browser: the panel already learned
-            # once (c6) that a value it SHOWS and a value the server computes have
-            # to come from one function or the two eventually disagree.
-            "rootExists": bool(root) and os.path.isdir(os.path.join(project, root)),
-            "description": entry.get("description"),
-            "reviewSkill": entry.get("reviewSkill"),
-            "skills": entry.get("skills") if isinstance(entry.get("skills"), list)
-            else [],
-        })
-    return out
-
-
-JOURNAL_PAGE = 200
-
-
-def journal_state(project, limit=JOURNAL_PAGE):
-    """`GET /api/journal` — the recent rows, and whether the chain still holds.
-
-    Both halves in one response, because either alone misleads. A list of rows with
-    no verdict invites the reader to trust it; a verdict with no rows is a claim
-    about something they cannot see. The verdict comes from `audit-journal.verify`
-    — the same function the doctor and the CLI call — so the panel cannot develop
-    its own opinion about what counts as intact.
-
-    Read-only, and it stays that way: the journal is written by the writers it
-    records, never by a request for it.
-    """
-    out = {"enabled": True, "dir": None, "rows": [], "verify": None,
-           "available": False}
-    mod = _journalmod()
-    if mod is None:
-        # This install has no journal module at all (pre-0.29). Reported rather
-        # than 404'd: "there is no journal here" is an answer.
-        return out
-    config = read_config(project)
-    out["enabled"] = bool(mod.enabled(config))
-    try:
-        res = mod.verify(project, config)
-        out["available"] = True
-        out["verify"] = {k: res[k] for k in
-                         ("ok", "exists", "rows", "findings", "warnings")}
-        out["dir"] = (os.path.relpath(res["dir"], project)
-                      if _within(project, res["dir"]) else None)
-        rows = mod.read_all(project, config)
-        out["rows"] = list(reversed(rows[-limit:]))     # newest first
-        out["truncated"] = len(rows) > limit
-    except Exception as exc:
-        out["verify"] = {"ok": False, "exists": False, "rows": 0,
-                         "findings": ["could not read the journal: %s" % exc],
-                         "warnings": []}
-    return out
-
-
-def help_state():
-    """`GET /api/help` — what every field means, and how the four concepts work.
-
-    Costs nothing to ask and nothing to answer: the field text is EXTRACTED from
-    the two shipped schemas at request time, so the drawer cannot drift from the
-    document a reader is told to trust, and the concept pages derive every
-    executable rule from the code that executes it (`_help` states which). The
-    conversational half — the `audit-guide` agent — is a card in this payload
-    rather than something the panel spawns: a question a static page already
-    answers should not silently bill for a model.
-
-    Project-independent, and deliberately so. It takes no `project` argument
-    because there is nothing here to scope: the live verdicts are `/api/policy`,
-    the live trail is `/api/journal`, and mixing documentation with state would let
-    a reader take a worked example for their own repository.
-    """
-    return _help.payload()
-
-
-def help_field(path, doc):
-    """`GET /api/help?path=usage.pricing.opus.in&doc=config` — one field.
-
-    The drawer holds a path into a DOCUMENT and the help table is keyed by SHAPES,
-    and exactly one thing in this product knows how to get from one to the other:
-    `_help.entry_for`. Asking it over HTTP costs a localhost round trip and buys
-    the guarantee the policy tab already has — the browser is handed an answer, not
-    the machinery to compute one, so a second implementation cannot drift into
-    disagreeing with the first.
-
-    `found:false` rather than a 404: "nothing documents this path" is an answer the
-    drawer can render, and a 404 would be indistinguishable from a panel talking to
-    an install with no help endpoint at all.
-    """
-    res = _help.entry_for(path, doc)
-    if res is None:
-        return {"found": False, "path": path, "doc": doc}
-    out = dict(res)
-    out["found"] = True
-    return out
-
-
-def _policy_rules(policy, kind, names):
-    """Every pattern the block states for `kind`, with what it matches TODAY.
-
-    The switchboard's per-capability switches can only ever write EXACT names, and
-    a policy is not obliged to be written that way: `code-*` is one rule deciding
-    ten rows, and a rule aimed at something nobody has installed decides none. Both
-    are invisible in a table of capabilities, and a form that cannot show a rule
-    cannot be trusted to save one — the PUT replaces the block wholesale, so a rule
-    this UI does not represent is a rule it would quietly destroy.
-
-    Matched by `_policy.matches`, the function the guard itself matches with, so
-    "this pattern covers these three" is the same claim the verdict column makes.
-
-    Deny before allow, and project before area, because that is the order `resolve`
-    reads them in — a list in resolution order can be read top-down as the reason.
-    """
-    out = []
-    kcfg = policy.get(kind) if isinstance(policy.get(kind), dict) else {}
-
-    def add(scope, listname, patterns):
-        # A LIST, not merely something iterable. `"deny": "nope"` is a shape the
-        # validator calls a finding and a hand-edited file can still hold, and
-        # iterating it yields four one-letter rules — a form inventing four rules
-        # the file does not contain, each with its own remove button.
-        if not isinstance(patterns, list):
-            return
-        for pat in patterns:
-            if not isinstance(pat, str) or not pat.strip():
-                continue
-            hits = [n for n in names if _policy.matches(n, [pat])]
-            out.append({"scope": scope, "list": listname, "pattern": pat,
-                        "matches": hits[:6], "n": len(hits)})
-
-    add(None, "deny", kcfg.get("deny"))
-    add(None, "allow", kcfg.get("allow"))
-    areas = kcfg.get("areas") if isinstance(kcfg.get("areas"), dict) else {}
-    for tag in sorted(areas):
-        rule = areas.get(tag)
-        if isinstance(rule, dict):
-            add(tag, "deny", rule.get("deny"))
-            add(tag, "allow", rule.get("allow"))
-    return out
-
-
-def _policy_enforcement(project, config):
-    """Has the guard hook ever actually run here?
-
-    The one question a switchboard full of `deny` verdicts must not leave
-    unanswered. Subagents do not inherit parent hooks on every Claude Code version
-    (anthropics/claude-code#43772), and where that is true the policy is advisory —
-    a page that draws a denial next to a capability while nothing is dispatching
-    the matchers would be claiming enforcement nobody has.
-
-    The evidence is the marker `guard-capabilities.py` writes when it runs with a
-    live policy, read here exactly as `/audit:doctor` reads it: the hook's own
-    `SEEN_FILE` constant and the config's own `state_dir`, never a path spelled out
-    a second time in this file. The age is reported and the judgement is not — how
-    stale is too stale is the doctor's call, and a threshold restated here is a
-    threshold that can disagree with it.
-    """
-    out = {"seen": False, "ageDays": None}
-    try:
-        cfg_mod = _cores()[3]
-        gc_mod = _load("audit_guard_capabilities",
-                       os.path.join(_HERE, "..", "hooks", "guard-capabilities.py"))
-        import pathlib
-        marker = os.path.join(
-            str(cfg_mod.state_dir(pathlib.Path(project), config)), gc_mod.SEEN_FILE)
-        age = (time.time() - os.path.getmtime(marker)) / 86400.0
-        out["seen"] = True
-        out["ageDays"] = round(age, 2)
-    except Exception:
-        pass
-    return out
-
-
-def _policy_areas_view(reg, active, tags):
-    """The area columns: every tag a rule could be aimed at, and whether it is LIVE.
-
-    An area rule only applies while some phase in that area has work in progress
-    (`_config.active_area_tags`, and `_active_area_tags` here) — so a column of
-    denials for a dormant area decides nothing today and will decide everything the
-    moment that phase starts. That is the fact this view exists to carry: the tag,
-    whether it is active, and where the tag came from, since a rule may legitimately
-    be written for a free-text tag the registry never registered.
-    """
-    out = []
-    for tag in tags:
-        entry = reg.get(tag) if isinstance(reg, dict) else None
-        out.append({"tag": tag, "active": tag in (active or []),
-                    "registered": isinstance(entry, dict),
-                    "description": (entry or {}).get("description")
-                    if isinstance(entry, dict) else None})
-    return out
-
-
-def policy_state(project):
-    """`GET /api/policy` — the block, and what it RESOLVES TO for what is installed.
-
-    The block alone is unreadable as governance: `{"default": "deny", "allow":
-    ["code-*"]}` is four words that decide the fate of every skill on the machine,
-    and nobody can hold the cross-product in their head. So the verdict for each
-    discovered capability is computed here, by `_policy.resolve` — the same function
-    the guard hook calls — and shipped alongside. A preview that ran its own
-    matching would eventually disagree with the guard, and disagreeing about a
-    denial is the one place a panel must not be creative.
-
-    Every verdict carries its `basis` for the same reason the hook's refusal does.
-
-    MCP is the one kind whose rows are STAND-INS: what is discoverable is a server
-    name, while a policy matches whole tool names, so the row for server `github` is
-    evaluated as `mcp__github__*` and says so via `standIn`. A rule aimed at one
-    tool of that server therefore does not move the server's row — which is true,
-    and better said than quietly averaged.
-    """
-    config = read_config(project)
-    policy = _policy.policy_cfg(config)
-    findings, warnings = _policy.validate_policy(config.get("policy"))
-    mpath = _manifest_path(project, config)
-    try:
-        manifest = _mio.load_manifest_safe(mpath)
-    except Exception:
-        manifest = {}
-    active = _active_area_tags(manifest)
-    reg = _areas.registry(manifest)
-    found = discover(project)
-    out = {
-        "policy": policy,
-        "stored": config.get("policy") if isinstance(config.get("policy"), dict)
-        else None,
-        "active": _policy.is_active(policy),
-        "onViolation": policy.get("onViolation"),
-        "activeAreas": active,
-        # Registered, used, or live — the same union `areas_state` reports, because
-        # a rule can legitimately be written for a tag the registry does not carry
-        # (free-text tagging is still legal) and a switchboard that offered only
-        # registered areas would silently hide the rules aimed at the others.
-        "areas": sorted(set(reg) | set(_areas.used_tags(manifest)) | set(active)),
-        "required": _policy.required_names(),
-        "kinds": list(_policy.KINDS),
-        "onViolationChoices": list(_policy.ON_VIOLATION),
-        "findings": findings, "warnings": warnings,
-        # Whether anything is enforcing this at all. Served with the verdicts and
-        # not on a separate endpoint, because it is a qualifier ON the verdicts.
-        "enforcement": _policy_enforcement(project, config),
-        "resolved": {}, "rules": {},
-    }
-    out["areaInfo"] = _policy_areas_view(reg, active, out["areas"])
-    for kind in _policy.KINDS:
-        rows = []
-        if kind == "mcp":
-            names = [("mcp__%s__*" % s, s, True) for s in (found.get("mcp") or [])]
-        else:
-            names = [(e.get("name"), e.get("source"), False)
-                     for e in (found.get(kind) or []) if e.get("name")]
-        for name, source, stand_in in names:
-            v = _policy.resolve(policy, kind, name, active_tags=active)
-            rows.append({"name": name, "source": source, "standIn": stand_in,
-                         "verdict": v["verdict"], "basis": v["basis"],
-                         "rule": v["rule"], "area": v["area"],
-                         "required": bool(_policy.matches(
-                             name, _policy.required_patterns(kind)))})
-        out["resolved"][kind] = rows
-        out["rules"][kind] = _policy_rules(policy, kind,
-                                           [r["name"] for r in rows])
-    return out
-
-
-def _active_area_tags(manifest):
-    """The area tags of phases with work in progress — what scopes an area rule.
-
-    The same question `_config.active_area_tags` answers for the hook, asked of a
-    manifest already in hand rather than re-read from disk. Both walk the ASSEMBLED
-    document and both use `_areas.areas_of`, so the panel's preview and the guard's
-    decision cannot disagree about which areas are live.
-    """
-    tags = []
-    for phase in (manifest or {}).get("phases") or []:
-        if not isinstance(phase, dict):
-            continue
-        running = phase.get("status") == "in_progress" or any(
-            isinstance(t, dict) and t.get("status") == "in_progress"
-            for t in (phase.get("tasks") or []))
-        if not running:
-            continue
-        for tag in _areas.areas_of(phase.get("area")):
-            if tag not in tags:
-                tags.append(tag)
-    return tags
 
 
 def write_policy(project, body):
@@ -700,345 +210,6 @@ _undeclared_css_vars = _theme.undeclared_css_vars
 _theme_asymmetric_vars = _theme.theme_asymmetric_vars
 _themes_missing_color_scheme = _theme.themes_missing_color_scheme
 _mangled_css_escapes = _theme.mangled_css_escapes
-
-
-# --- concurrency-lock detection (locks live in the shared git dir, not the tree) --
-_LOCKDIR_CACHE = {}
-
-
-def _audit_lock_dir(project, config):
-    """The shared audit-locks dir: $(git -C <gitRoot> rev-parse --git-common-dir)/audit-locks
-    — where the orchestrator now keeps its index + per-phase locks (out of the working tree,
-    shared across worktrees). None when this isn't a git repo (caller falls back to the legacy
-    working-tree lock). Cached per git-root: build_state runs per request; the git dir never moves."""
-    git_root = os.path.realpath(os.path.join(project, (config or {}).get("gitRoot") or "."))
-    if git_root in _LOCKDIR_CACHE:
-        return _LOCKDIR_CACHE[git_root]
-    lockdir = None
-    try:
-        out = subprocess.run(["git", "-C", git_root, "rev-parse", "--git-common-dir"],
-                             capture_output=True, text=True, timeout=5)
-        if out.returncode == 0 and out.stdout.strip():
-            gd = out.stdout.strip()
-            if not os.path.isabs(gd):
-                gd = os.path.join(git_root, gd)
-            lockdir = os.path.join(os.path.realpath(gd), "audit-locks")
-    except Exception:
-        lockdir = None
-    _LOCKDIR_CACHE[git_root] = lockdir
-    return lockdir
-
-
-def _audit_lock_held(project, config):
-    """True iff any /audit run holds a lock — the index lock OR any per-phase-shard lock.
-    Checks the shared git-dir lock dir, falling back to the legacy working-tree lock, so the
-    panel's 'locked' signal (and its composition-write refusal) keeps working in both layouts."""
-    lockdir = _audit_lock_dir(project, config)
-    if lockdir and os.path.isdir(lockdir):
-        try:
-            for name in os.listdir(lockdir):
-                if name == "index.lock" or (name.startswith("phase-") and name.endswith(".lock")):
-                    return True
-        except Exception:
-            pass
-    return os.path.exists(_manifest_path(project, config) + ".lock")   # legacy fallback
-
-
-def _lockmod():
-    """audit-lock.py, loaded by path. None if it cannot be loaded — the panel
-    then shows the lock without a liveness verdict rather than showing nothing."""
-    try:
-        return _loader.load_script("audit-lock.py", modname="audit_lock")
-    except Exception:
-        return None
-
-
-def _lock_info(lockdir):
-    """Read the shared audit-locks dir into {'index': info|None, 'phases': {pid: info}}.
-
-    Each info is the lock file's `{hostname, startedAt, note}` (or {} if unreadable),
-    plus `live` and `liveBasis` from audit-lock.py. The panel used to badge every
-    lock file "running", which is a claim about a process it had not checked — an
-    abandoned lock and a working one looked identical, and the badge was most
-    confident exactly when it was most likely wrong.
-    """
-    out = {"index": None, "phases": {}}
-    if not (lockdir and os.path.isdir(lockdir)):
-        return out
-    try:
-        names = os.listdir(lockdir)
-    except Exception:
-        return out
-    lock = _lockmod()
-    for name in names:
-        if not name.endswith(".lock"):
-            continue
-        path = os.path.join(lockdir, name)
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                info = json.load(fh)
-        except Exception:
-            info = {}
-        if not isinstance(info, dict):
-            info = {}
-        if lock is not None:
-            try:
-                info["live"], info["liveBasis"] = lock.judge(info, path)
-            except Exception:
-                pass
-        if name == "index.lock":
-            out["index"] = info
-        elif name.startswith("phase-"):
-            out["phases"][name[len("phase-"):-len(".lock")]] = info
-    return out
-
-
-def _run_status(project, config, manifest):
-    """Per-phase live run status for the panel ('who's running what'): which phase is
-    locked (and by whom) and which carries an optimistic claim. Combines the shared
-    git-dir phase locks with each phase's `claim` from the manifest."""
-    locks = _lock_info(_audit_lock_dir(project, config))
-    phases = {}
-    if isinstance(manifest, dict):
-        for p in manifest.get("phases", []) or []:
-            if isinstance(p, dict) and p.get("id"):
-                claim = p.get("claim")
-                phases[p["id"]] = {
-                    "lock": locks["phases"].get(p["id"]),
-                    "claim": claim if isinstance(claim, dict) else None}
-    for pid, info in locks["phases"].items():          # locks for phases not in the manifest
-        phases.setdefault(pid, {"lock": info, "claim": None})
-    return {"index": locks["index"], "phases": phases}
-
-
-_MAX_FACTS = 20000
-
-
-def usage_state(project):
-    """Payload for the Usage tab.
-
-    Ships FACTS rather than finished tables — compact positional arrays the browser
-    re-aggregates on every filter change, so switching model/author/phase/range is
-    instant and never round-trips. Beyond _MAX_FACTS hourly rows the facts are rolled
-    up to daily first, which keeps the payload bounded on a long-lived ledger; the
-    response says so via `rolled` rather than silently truncating.
-
-    Read-only: no lock, no writes, nothing that can collide with a running phase."""
-    _, _, _, cfg_mod = _cores()
-    config = read_config(project)
-    ucfg = cfg_mod.usage_cfg(config)
-    ledger_dir = str(cfg_mod.ledger_dir(project, config))
-    empty = {"enabled": bool(ucfg.get("enabled", True)), "ledgerDir": ledger_dir,
-             "showCost": bool(ucfg.get("showCost", True)),
-             "pricingAsOf": ucfg.get("pricingAsOf"),
-             "pricingAsOfDeclared": _declared_as_of(config),
-             "facts": [], "fields": [],
-             # Every key the populated branch returns must appear here too: the
-             # client reads this shape on a repo with no ledger yet, and a missing
-             # key there is an `undefined` that only shows up on a fresh install.
-             "phaseTitles": {}, "taskMeta": {}, "phaseBudgets": {},
-             "routingAdvice": [], "bands": ucfg.get("bands") or {},
-             "counts": {"phases": 0, "tasks": 0, "models": 0, "authors": 0,
-                        "sessions": 0, "days": 0, "from": None, "to": None},
-             "rolled": False, "totalRows": 0}
-    try:
-        ul = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
-        rows = ul.read_ledger(ledger_dir)
-    except Exception:
-        return empty
-    if not rows:
-        return empty
-
-    # Orientation counts for the context line. Computed over the WHOLE ledger on
-    # purpose — they describe the shape of the data you are looking at, not the
-    # current filter — and `sessionId` deliberately never enters `facts`, where it
-    # would multiply row cardinality for a number shown once.
-    days = sorted({(r.get("ts") or "")[:10] for r in rows} - {""})
-    counts = {
-        "phases": len({r.get("phaseId") for r in rows if r.get("phaseId")}),
-        "tasks": len({r.get("taskId") for r in rows if r.get("taskId")}),
-        "models": len({r.get("model") for r in rows if r.get("model")}),
-        "authors": len({r.get("author") for r in rows if r.get("author")}),
-        "sessions": len({r.get("sessionId") for r in rows if r.get("sessionId")}),
-        "days": len(days),
-        "from": days[0] if days else None,
-        "to": days[-1] if days else None,
-    }
-
-    rolled = len(rows) > _MAX_FACTS
-    facts, seen = {}, 0
-    for r in rows:
-        seen += 1
-        ts = r.get("ts") or ""
-        key = (ts[:10] if rolled else ts, r.get("phaseId") or "--",
-               r.get("taskId") or "--", r.get("model") or "unknown",
-               r.get("author") or "unknown", r.get("agentType") or "orchestrator",
-               r.get("attr") or "unattributed")
-        slot = facts.get(key)
-        if slot is None:
-            slot = facts[key] = [0, 0.0, 0]
-        slot[0] += sum(int(r.get(k) or 0) for k in ul.TOKEN_KEYS)
-        slot[1] += float(r.get("costUSD") or 0.0)
-        slot[2] += int(r.get("msgs") or 0)
-
-    # Ship the small slice of manifest the analytics need — task status, risk and
-    # attempts — so EVERY panel recomputes client-side under the current filter. The
-    # alternative (server-computed metrics) would leave half the tab silently
-    # ignoring the filter bar, which is worse than a slightly larger payload.
-    titles, task_meta, budgets = {}, {}, {}
-    mpath = _manifest_path(project, config)
-    try:
-        for ph in (_mio.load_manifest_safe(mpath).get("phases") or []):
-            if not isinstance(ph, dict):
-                continue
-            if ph.get("id"):
-                titles[ph["id"]] = ph.get("title") or ""
-                # Same rule the validator enforces: 0, negative, boolean and
-                # non-numeric all mean "no budget", never a budget of zero.
-                b = ph.get("budgetUSD")
-                if isinstance(b, (int, float)) and not isinstance(b, bool) and b > 0:
-                    budgets[ph["id"]] = float(b)
-            for t in (ph.get("tasks") or []):
-                if isinstance(t, dict) and t.get("id"):
-                    task_meta[t["id"]] = {
-                        "status": t.get("status"), "risk": t.get("risk") or "unrated",
-                        "attempts": t.get("attempts") or 1,
-                        "title": t.get("title") or ""}
-    except Exception:
-        titles, task_meta, budgets = {}, {}, {}
-
-    # Needs the assembled manifest and the per-tier counts, so it cannot be done
-    # on the client. Fail-soft: no advice is the normal outcome anyway.
-    try:
-        advice = ul.routing(_mio.load_manifest_safe(mpath), rows,
-                            ucfg.get("pricing")).get("advice") or []
-    except Exception:
-        advice = []
-
-    return {
-        "enabled": bool(ucfg.get("enabled", True)),
-        "ledgerDir": ledger_dir,
-        "showCost": bool(ucfg.get("showCost", True)),
-        "pricingAsOf": ucfg.get("pricingAsOf"),
-        "pricingAsOfDeclared": _declared_as_of(config),
-        "fields": ["ts", "phase", "task", "model", "author", "agent", "attr",
-                   "tokens", "cost", "msgs"],
-        "facts": [list(k) + [v[0], round(v[1], 6), v[2]]
-                  for k, v in sorted(facts.items())],
-        "phaseTitles": titles,
-        "taskMeta": task_meta,
-        "phaseBudgets": budgets,
-        # Server-computed, unlike every other metric here: the counterfactual
-        # re-prices the per-tier token counts, and `facts` are already aggregated
-        # to [tokens, cost, msgs]. Shipping the breakdown to do it client-side
-        # would multiply the payload to serve one paragraph. So this is a
-        # statement about the PROJECT, and the panel labels it as such.
-        "routingAdvice": advice,
-        "bands": ucfg.get("bands") or {},
-        "counts": counts,
-        "rolled": rolled,
-        "totalRows": seen,
-    }
-
-
-def report_paths(project):
-    """(manifest, out_dir, html_path) for this project's report, or None.
-
-    The output location is DERIVED, never taken from the request: there is no path
-    parameter to traverse with. Both ends are re-checked against the project root
-    anyway, because a manifestPath in config could point outside it."""
-    config = read_config(project)
-    mpath = _manifest_path(project, config)
-    if not (os.path.isfile(mpath) and _within(project, mpath)):
-        return None
-    out_dir = os.path.dirname(os.path.abspath(mpath))
-    if not _within(project, out_dir):
-        return None
-    try:
-        rr = _load("audit_render_report", os.path.join(_HERE, "render-report.py"))
-        manifest = _mio.load_manifest_safe(mpath)
-        # `_report_basename` takes META, not the manifest — it reads
-        # `reportBasename` off the mapping it is handed. Passed the whole manifest
-        # it found no such key and always answered "audit-report", so on every
-        # project that sets meta.reportBasename (the shipped example does) the
-        # panel rendered the report correctly and then looked for it under the
-        # wrong name: "wrote 2 files" followed by a 404.
-        base = rr._report_basename(manifest.get("meta"), None)
-    except Exception:
-        base = "audit-report"
-    return mpath, out_dir, os.path.join(out_dir, base + ".html")
-
-
-def render_report(project):
-    """Write the standalone HTML report (and its Markdown twin) for this project.
-
-    Calls render-report.py's own `main` rather than shelling out: same code path
-    the CLI takes, no interpreter discovery, and it works the same on Windows."""
-    paths = report_paths(project)
-    if not paths:
-        return {"ok": False,
-                "findings": ["no manifest to report on (or its path escapes the "
-                             "project) — run /audit:init first"]}
-    mpath, out_dir, html_path = paths
-    try:
-        rr = _load("audit_render_report", os.path.join(_HERE, "render-report.py"))
-    except Exception as exc:
-        return {"ok": False, "findings": ["cannot load the renderer: %s" % exc]}
-    buf = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(buf):
-            code = rr.main([mpath, "--out-dir", out_dir, "--format", "both"])
-    except Exception as exc:
-        return {"ok": False, "findings": ["render failed: %s" % exc]}
-    if code != 0:
-        return {"ok": False,
-                "findings": ["renderer exited %s — run /audit:report for detail"
-                             % code]}
-    written = [ln[len("wrote "):] for ln in buf.getvalue().splitlines()
-               if ln.startswith("wrote ")]
-    return {"ok": True, "files": written,
-            # Served back through this origin: a browser will not follow a file://
-            # link from an http:// page, so handing over a filesystem path would
-            # produce a button that silently does nothing.
-            "href": "/report", "exists": os.path.isfile(html_path)}
-
-
-def build_state(project):
-    vm, vc, as_, _ = _cores()
-    config = read_config(project)
-    cfg_findings, cfg_warnings = vc.validate_config(config)
-    mpath = _manifest_path(project, config)
-    manifest, exists = None, os.path.isfile(mpath)
-    rollup, m_findings = None, []
-    composition = {"meta": {"reviewSkill": None, "buildCommands": None},
-                   "phases": [], "tasks": []}
-    bugs = []
-    if exists:
-        try:
-            manifest = _mio.load_manifest(mpath)   # dual-format: single-file OR index+shards
-        except Exception as exc:
-            m_findings = ["cannot parse manifest: %s" % exc]
-        if isinstance(manifest, dict):
-            m_findings, m_warn = vm.validate(manifest)
-            rollup = as_.rollup(manifest, m_findings, m_warn)
-            composition = _composition_view(manifest)
-            bugs = _bugs_view(manifest)
-    return {
-        "project": project,
-        "manifestPath": os.path.relpath(mpath, project),
-        "manifestExists": exists,
-        "manifestLocked": _audit_lock_held(project, config),
-        "viewer": _viewer(project, config),
-        "config": config,
-        "defaults": _defaults(),
-        "configFindings": cfg_findings,
-        "configWarnings": cfg_warnings,
-        "manifestFindings": m_findings,
-        "composition": composition,
-        "bugs": bugs,
-        "rollup": rollup,
-        "runStatus": _run_status(project, config, manifest),
-    }
 
 
 # --- write locking ---------------------------------------------------------------
@@ -1251,25 +422,6 @@ def _fmt_change(row):
         return json.dumps(v, sort_keys=True)
     return "%s %s: %s -> %s" % (row.get("target"), row.get("field"),
                                 side(row.get("from")), side(row.get("to")))
-
-
-_JOURNAL = {"tried": False, "mod": None}
-
-
-def _journalmod():
-    """`audit-journal.py`, loaded by path — or None, which is the normal answer
-    today: the module ships with v0.29 and this call site ships before it, on
-    purpose, so that the release which adds the journal does not also have to reach
-    back into every writer. Loaded once; a missing file is not retried per save."""
-    if not _JOURNAL["tried"]:
-        _JOURNAL["tried"] = True
-        path = os.path.join(_HERE, "audit-journal.py")
-        if os.path.isfile(path):
-            try:
-                _JOURNAL["mod"] = _loader.load(path, modname="audit_journal")
-            except Exception:
-                _JOURNAL["mod"] = None
-    return _JOURNAL["mod"]
 
 
 def _journal(project, config, action, target, rows):
@@ -2080,6 +1232,8 @@ def _selftest():
         _shutil.rmtree(_sproj, ignore_errors=True)
 
     # --- v0.28: the areas registry over HTTP ------------------------------------
+    # The GET cases (registry as stored, tags a phase uses, the typo case) moved to
+    # _panel_state.py (P12.3); the WRITE path is what is exercised here.
     # `meta` lives on the INDEX in a sharded manifest, so a registry save must
     # touch the index and nothing else. That is the whole reason this goes through
     # apply_composition rather than writing the file itself: a second writer here
@@ -2105,29 +1259,6 @@ def _selftest():
         _aidx = _read_json(_am)
         _ashard = os.path.join(os.path.dirname(_am), _aidx["phases"][0]["shard"])
         _ashard_before = open(_ashard, "rb").read()
-
-        _st = areas_state(_aproj)
-        # `.get` and not `[...]`: a missing tag is exactly what a broken version of
-        # this endpoint returns, and a KeyError exits 1 without naming which check
-        # noticed — indistinguishable from a suite that crashed for another reason.
-        _bytag = {t["tag"]: t for t in _st["tags"]}
-        _tag = lambda name: _bytag.get(name) or {}          # noqa: E731
-        check("areas GET returns the registry as stored",
-              set(_st["areas"]) == {"api", "unused"})
-        check("areas GET lists a registered tag with the phases using it",
-              _tag("api").get("registered") and _tag("api").get("phases") == ["P1"])
-        check("areas GET says a root that exists exists",
-              _tag("api").get("rootExists") is True)
-        check("areas GET lists a tag no entry covers - the typo case, which "
-              "resolves to no reviewer and no skills",
-              _tag("apu").get("registered") is False
-              and _tag("apu").get("phases") == ["P2"])
-        check("areas GET also lists a registered area no phase uses - a rename "
-              "done on one side only looks exactly like this",
-              _tag("unused").get("registered")
-              and _tag("unused").get("phases") == [])
-        check("areas GET carries the resolved reviewer of a registered area",
-              _tag("api").get("reviewSkill") == "backend-review")
 
         _bad = write_areas(_aproj, {"areas": {"api": "services/api"}})
         check("areas PUT refuses a malformed registry, naming the entry",
@@ -2193,6 +1324,8 @@ def _selftest():
         _shutil.rmtree(_aproj, ignore_errors=True)
 
     # --- v0.30: the capability policy ------------------------------------------
+    # The rule-listing cases that are a pure function of the block, and the
+    # enforcement-marker cases, moved to _panel_state.py (P12.3).
     # The resolution lives in _policy and is exercised there. What is checked here
     # is that this endpoint SHOWS what the guard hook will DO — same function, same
     # active areas — and that the one writer refuses what the validator refuses.
@@ -2364,43 +1497,12 @@ def _selftest():
               "code-reviewer" in _codes
               and [r["n"] for r in _rules if r["pattern"] == "code-*"]
               == [len(_codes)])
-        check("deny is listed before allow within a scope, because that is the "
-              "order the verdict is decided in",
-              [(r["list"], r["pattern"]) for r in _policy_rules(
-                  {"skills": {"allow": ["a"], "deny": ["d"]}}, "skills", [])]
-              == [("deny", "d"), ("allow", "a")])
         # A rule that matches nothing is the one a table of capabilities cannot
         # show at all, and the one most likely to be a typo. Dropping it here would
         # be the form quietly deleting it on the next save.
         check("a pattern matching nothing installed is still listed, and says it "
               "matches nothing rather than being left out",
               [r["n"] for r in _rules if r["pattern"] == "never-*"] == [0])
-        _many = _policy_rules({"skills": {"deny": ["a*"]}}, "skills",
-                              ["a%d" % i for i in range(9)])
-        check("a pattern covering more names than fit is capped for display while "
-              "the count stays true - a truncated list read as the total would "
-              "understate what one rule decides",
-              _many[0]["n"] == 9 and len(_many[0]["matches"]) == 6)
-        check("a blank or non-string pattern is skipped rather than rendered as an "
-              "empty rule nobody can remove",
-              _policy_rules({"skills": {"deny": ["  ", "", 7, "real"]}},
-                            "skills", []) == [
-                  {"scope": None, "list": "deny", "pattern": "real",
-                   "matches": [], "n": 0}])
-        # Called through a wrapper so the failure is a named FAIL and not a
-        # traceback: this endpoint feeds a form, a form's job is to survive a file
-        # somebody hand-edited, and an assertion that dies while proving that
-        # reports the wrong thing twice over — nothing about the defect, and a
-        # crash that looks like one.
-        def _rules_safe(pol, kind, names):
-            try:
-                return _policy_rules(pol, kind, names)
-            except Exception as exc:                 # noqa: BLE001 - that is the check
-                return "raised %s" % type(exc).__name__
-        check("a malformed kind block yields no rules instead of raising",
-              _rules_safe({"skills": "nonsense"}, "skills", ["x"]) == []
-              and _rules_safe({}, "skills", ["x"]) == []
-              and _rules_safe({"skills": {"deny": "nope"}}, "skills", ["x"]) == [])
 
         # Every area a rule can be aimed at, and whether it decides anything today.
         _ainfo = {a["tag"]: a for a in _ps["areaInfo"]}
@@ -2415,32 +1517,6 @@ def _selftest():
               _ainfo["api"]["registered"] is True
               and _ainfo["web"]["registered"] is False)
 
-        # Whether anything is enforcing any of this. A page full of `deny` verdicts
-        # that cannot say whether the hook has ever run would be claiming
-        # enforcement nobody has - the doctor's warning, on the surface that shows
-        # the denials.
-        check("with no marker, enforcement is reported as never seen rather than "
-              "assumed",
-              _ps["enforcement"] == {"seen": False, "ageDays": None})
-        _sd = str(_cores()[3].state_dir(pathlib.Path(_pproj), read_config(_pproj)))
-        os.makedirs(_sd, exist_ok=True)
-        _gc = _load("audit_guard_capabilities_t",
-                    os.path.join(_HERE, "..", "hooks", "guard-capabilities.py"))
-        with open(os.path.join(_sd, _gc.SEEN_FILE), "w", encoding="utf-8") as _fh:
-            _fh.write("{}")
-        _pe = _policy_enforcement(_pproj, read_config(_pproj))
-        check("with the guard's own marker present it is reported as seen, with an "
-              "age and no verdict about whether that age is too old - how stale is "
-              "too stale is /audit:doctor's judgement, and a second threshold here "
-              "is one that can disagree with it",
-              _pe["seen"] is True and _pe["ageDays"] is not None
-              and _pe["ageDays"] < 1 and set(_pe) == {"seen", "ageDays"})
-        check("...and it is found at the path the hook writes: the config's own "
-              "state_dir and the hook's own SEEN_FILE, neither spelled out twice",
-              os.path.isfile(os.path.join(_sd, _gc.SEEN_FILE))
-              and _gc.SEEN_FILE == "capability-guard.json")
-        check("an unreadable project reports never-seen rather than raising",
-              _policy_enforcement(os.path.join(_pproj, "nope"), {})["seen"] is False)
     finally:
         _shutil.rmtree(_pproj, ignore_errors=True)
 
@@ -2762,40 +1838,10 @@ def _selftest():
     # D9 — runStatus ("who's running what"): per-phase lock + claim
     check("build_state has runStatus",
           isinstance(st.get("runStatus"), dict) and "phases" in st["runStatus"])
-    ld = os.path.join(tmp, "audit-locks")
-    os.makedirs(ld)
-    _atomic_write_json(os.path.join(ld, "index.lock"), {"hostname": "hi", "startedAt": "t"})
-    _atomic_write_json(os.path.join(ld, "phase-P1.lock"), {"hostname": "hp", "startedAt": "t2"})
-    li = _lock_info(ld)
-    check("_lock_info reads the index lock", (li["index"] or {}).get("hostname") == "hi")
-    check("_lock_info reads a phase lock", (li["phases"].get("P1") or {}).get("hostname") == "hp")
-
-    # C1 — the badge says "running", which is a claim about a live process.
-    import platform as _pf
-    import subprocess as _sp
-    import time as _t
-    _here = _pf.node()
-    _old = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(_t.time() - 95 * 60))
-    _atomic_write_json(os.path.join(ld, "phase-P2.lock"),
-                       {"hostname": _here, "pid": os.getpid(), "startedAt": _old})
-    _d = _sp.Popen([sys.executable, "-c", "pass"]); _d.wait()
-    _atomic_write_json(os.path.join(ld, "phase-P3.lock"),
-                       {"hostname": _here, "pid": _d.pid,
-                        "startedAt": _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())})
-    li = _lock_info(ld)
-    check("lock verdict: a 95-min-old run with a live pid is live",
-          li["phases"]["P2"].get("live") is True)
-    check("lock verdict: a 1-min-old run whose pid is gone is not",
-          li["phases"]["P3"].get("live") is False)
-    check("lock verdict: each carries the basis behind it",
-          bool(li["phases"]["P2"].get("liveBasis"))
-          and bool(li["phases"]["P3"].get("liveBasis")))
-    check("lock verdict: a pid-less lock gets one too (age fallback)",
-          li["phases"]["P1"].get("live") is not None)
+    # _lock_info's own cases (what a lock file says, and whether the run behind it
+    # is alive) moved to _panel_state.py (P12.3).
     check("the UI badges an abandoned lock differently from a running one",
           "no live run" in UI_HTML and ".badge.held" in UI_HTML)
-    os.remove(os.path.join(ld, "phase-P2.lock"))
-    os.remove(os.path.join(ld, "phase-P3.lock"))
     m2 = _read_json(mpath)
     m2["phases"][0]["claim"] = {"sessionId": "sess-abcd1234", "host": "h", "branch": "audit/p1"}
     _atomic_write_json(mpath, m2)
@@ -2838,9 +1884,6 @@ def _selftest():
           st3["rollup"]["phases"][0].get("area") == ["backend", "security"]
           and "backend" in (st3["rollup"].get("areas") or {})
           and "security" in (st3["rollup"].get("areas") or {}))
-    check("_areas_of normalizes string/list/absent",
-          _areas_of("x") == ["x"] and _areas_of(["a", "b"]) == ["a", "b"]
-          and _areas_of(None) == [])
     check("UI renders area badges (per tag) + area-searchable composition",
           ".badge.area" in UI_HTML and "P.area" in UI_HTML
           and "(p.area||[]).map" in UI_HTML)
@@ -3167,38 +2210,13 @@ def _selftest():
           and "could not copy — the command is " in UI_HTML)
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
-    # Python by the SAME functions the rollup counts with.
-    bm = {"phases": [{"id": "P1", "title": "One", "status": "in_progress", "tasks": [
-              {"id": "P1.1", "title": "fix it", "status": "done", "bugId": "BUG-1"},
-              {"id": "P1.2", "title": "later", "status": "pending", "bugId": "BUG-2"}]}],
-          "bugs": [
-              {"id": "BUG-1", "title": "a", "status": "open", "severity": "high",
-               "taskId": "P1.1"},
-              {"id": "BUG-2", "title": "b", "status": "open", "severity": "critical",
-               "taskId": "P1.2"},
-              {"id": "BUG-3", "title": "c", "status": "wontfix", "severity": "high"}]}
-    bv = _bugs_view(bm)
-    by_id = {b["id"]: b for b in bv}
-    check("_bugs_view resolves a bug through its task: fixed when the task is done, "
-          "with the stored value kept so it does not read as hand-edited",
-          by_id["BUG-1"]["status"] == "fixed" and by_id["BUG-1"]["reported"] == "open"
-          and by_id["BUG-2"]["status"] == "open")
-    check("_bugs_view names the phase behind the linked task",
-          by_id["BUG-1"]["phaseId"] == "P1")
-    # A regex in the browser would be a third opinion on 'is this high?' — and the
-    # first spelling it would miss is `critical`, which is the one that matters.
-    _rup = _cores()[2].rollup(bm, [], [])
-    check("_bugs_view's open/high agree with the rollup's counts, by construction",
-          sum(1 for b in bv if b["open"]) == _rup["bugs"]["open"]
-          and sum(1 for b in bv if b["open"] and b["high"])
-          == _rup["bugs"]["openHighSeverity"] == 1
-          and by_id["BUG-2"]["high"] is True)
+    # Python by the SAME functions the rollup counts with — pinned in
+    # _panel_state.py (P12.3). What stays here is the other half of that claim:
+    # the browser being handed the verdicts rather than deriving its own.
     check("the browser is handed those verdicts rather than re-deriving them",
           "b.open&&b.high" in UI_HTML and "STATE.bugs" in UI_HTML
           and "severity" not in UI_HTML[UI_HTML.index("const rows=bugs.filter"):
                                         UI_HTML.index("const rows=bugs.filter") + 120])
-    check("_bugs_view on a manifest with no bugs is an empty list, not an error",
-          _bugs_view({"phases": []}) == [])
 
     # --- usage tab ---------------------------------------------------------
     check("usage tab is registered and has a view container",
@@ -3410,12 +2428,6 @@ def _selftest():
                         "---\n")["description"] == "the plugin's own README"
           and _front_matter("---\nname: don't\n---\n")["name"] == "don't")
 
-    check("_declared_as_of separates a project's own value from the default",
-          _declared_as_of({"usage": {"pricingAsOf": "2026-01-02"}}) is True
-          and _declared_as_of({"usage": {"showCost": True}}) is False
-          and _declared_as_of({}) is False
-          and _declared_as_of({"usage": {"pricingAsOf": "   "}}) is False
-          and _declared_as_of({"usage": {"pricingAsOf": 20260102}}) is False)
     # UI_HTML carries the stylesheet AND the JS that writes inline styles, which
     # is where an undeclared token actually hides.
     _css = UI_HTML[UI_HTML.index("<style>"):UI_HTML.index("</style>")]
@@ -3606,36 +2618,9 @@ def _selftest():
 
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
-    # from the project's own config, so there is nothing to traverse with.
-    _rp = tempfile.mkdtemp(prefix="panel-report-")
-    try:
-        os.makedirs(os.path.join(_rp, "docs", "audit"), exist_ok=True)
-        with open(os.path.join(_rp, "docs", "audit", "audit-plan.json"), "w",
-                  encoding="utf-8") as fh:
-            json.dump({"meta": {"version": 2, "repo": "x"}, "phases": [
-                {"id": "P1", "title": "A", "status": "done", "tasks": [
-                    {"id": "P1.1", "title": "t", "status": "done"}]}]}, fh)
-        check("no report exists before it is rendered",
-              os.path.isfile(report_paths(_rp)[2]) is False)
-        _res = render_report(_rp)
-        check("export writes the html and its markdown twin, and reports both",
-              _res["ok"] and len(_res["files"]) == 2
-              and any(f.endswith(".html") for f in _res["files"])
-              and any(f.endswith(".md") for f in _res["files"]))
-        check("everything it writes stays inside the project",
-              all(_within(_rp, f) for f in _res["files"]))
-        check("it hands back an in-origin href, not a filesystem path — a browser "
-              "will not follow file:// from an http:// page",
-              _res["href"] == "/report" and _res["exists"] is True)
-    finally:
-        _sh.rmtree(_rp, ignore_errors=True)
-    _np = tempfile.mkdtemp(prefix="panel-noreport-")
-    try:
-        check("a project with no manifest refuses instead of raising",
-              report_paths(_np) is None
-              and render_report(_np)["ok"] is False)
-    finally:
-        _sh.rmtree(_np, ignore_errors=True)
+    # from the project's own config, so there is nothing to traverse with. The
+    # cases that RENDER a report moved to _panel_state.py (P12.3); what stays is
+    # the route that reaches it and the button that opens it.
     check("the export route derives its path and takes no parameter",
           'if path == "/api/report"' in _src and 'if path == "/report"' in _src
           and "paths = report_paths(project)" in _src)
@@ -3658,10 +2643,6 @@ def _selftest():
     # --- routing advice -----------------------------------------------------------
     # The only server-computed metric in the tab: the counterfactual re-prices the
     # per-tier token counts, which `facts` no longer carry.
-    check("routing advice is shipped from the server and fails soft",
-          '"routingAdvice": advice' in _src
-          and "ul.routing(_mio.load_manifest_safe(mpath), rows," in _src
-          and "advice = []" in _src)
     check("advice says it does NOT follow the filters, unlike everything else",
           "does not follow the filters above." in UI_HTML
           and "const adv=USAGE.routingAdvice||[];" in UI_HTML)
@@ -3951,70 +2932,8 @@ def _selftest():
           "const peak=Math.max(...head.map(x=>x[1][0]))||1;" in UI_HTML
           and "const rng=(hi-lo)||1;" in UI_HTML)
 
-    u = usage_state(proj)
-    check("usage_state on a project with no ledger is empty, not an error",
-          u["facts"] == [] and u["totalRows"] == 0 and "ledgerDir" in u)
-    led = os.path.join(proj, ".claude", "usage")
-    os.makedirs(led, exist_ok=True)
-    with open(os.path.join(led, "2026-08.jsonl"), "w", encoding="utf-8") as fh:
-        for i, (model, author) in enumerate(
-                (("claude-opus-5", "a@x.io"), ("claude-haiku-4-5", "b@x.io"))):
-            fh.write(json.dumps({
-                "ts": "2026-08-0%dT1%d" % (i + 1, i), "sessionId": "s%d" % i,
-                "phaseId": "P1", "taskId": "P1.%d" % (i + 1), "attr": "task",
-                "model": model, "author": author, "agentType": "audit-executor",
-                "msgs": 2, "in": 5, "out": 100, "cacheW5m": 0, "cacheW1h": 0,
-                "cacheR": 50, "costUSD": 0.25}) + "\n")
-        fh.write("{ torn line\n")
-    u = usage_state(proj)
-    check("usage_state reads the ledger into positional facts",
-          len(u["facts"]) == 2 and u["fields"][0] == "ts"
-          and len(u["facts"][0]) == len(u["fields"]))
-    check("usage_state tolerates a torn ledger line", u["totalRows"] == 2)
-    check("usage_state carries phase titles for labelling",
-          isinstance(u["phaseTitles"], dict))
-    check("usage_state does not roll up a small ledger", u["rolled"] is False)
-    check("usage facts carry no prompt content — only dimensions and counts",
-          all(len(f) == 10 for f in u["facts"]))
-    _saved = globals()["_MAX_FACTS"]
-    try:
-        globals()["_MAX_FACTS"] = 1
-        ru = usage_state(proj)
-        check("oversized ledger rolls hourly facts up to daily, and says so",
-              ru["rolled"] is True and all(len(f[0]) == 10 for f in ru["facts"]))
-    finally:
-        globals()["_MAX_FACTS"] = _saved
-    _cfg_path = os.path.join(proj, ".claude", "audit.config.json")
-    _prev_cfg = (open(_cfg_path, encoding="utf-8").read()
-                 if os.path.isfile(_cfg_path) else None)
-    try:
-        with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"enabled": False, "showCost": False}}, fh)
-        du = usage_state(proj)
-        check("usage_state reports metering off so the tab can explain itself",
-              du["enabled"] is False and du["showCost"] is False)
-        # The empty branch's own comment requires it: every key the populated
-        # branch returns must appear here too, or a fresh install reads undefined.
-        check("the no-ledger shape carries pricingAsOfDeclared as well, so a "
-              "fresh install does not read undefined",
-              "pricingAsOfDeclared" in du and du["pricingAsOfDeclared"] is False)
-        with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"pricingAsOf": "2026-01-02"}}, fh)
-        check("a declared date is reported as declared, and travels with it",
-              usage_state(proj)["pricingAsOfDeclared"] is True
-              and usage_state(proj)["pricingAsOf"] == "2026-01-02")
-        with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"showCost": True}}, fh)
-        _dd = usage_state(proj)
-        check("an undeclared one still carries the merged default as the VALUE, "
-              "flagged as undeclared - the client decides, the server does not lie",
-              _dd["pricingAsOfDeclared"] is False and _dd["pricingAsOf"])
-    finally:
-        if _prev_cfg is None:
-            os.remove(_cfg_path)
-        else:
-            with open(_cfg_path, "w", encoding="utf-8") as fh:
-                fh.write(_prev_cfg)
+    # usage_state's own cases (facts, the roll-up cap, the declared rate basis)
+    # moved to _panel_state.py (P12.3); everything above is the tab that reads it.
 
     # lifecycle: pidfile + stop/status (no socket needed)
     check("_pid_alive on this process is True", _pid_alive(os.getpid()))
