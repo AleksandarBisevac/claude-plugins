@@ -1,7 +1,7 @@
 {
   "id": "P13",
   "title": "refactor: render-report Python split",
-  "status": "pending",
+  "status": "in_progress",
   "model": "sonnet",
   "blockedBy": [
     "P11"
@@ -14,8 +14,8 @@
     "shots",
     "interactive"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "8d46c0308b47d8af6c28b16c6eae1f9fcdc98cfb",
+  "branch": "audit/p13-refactor-render-report-split",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -28,7 +28,7 @@
     {
       "id": "P13.1",
       "title": "_report_html.py: escaping, chips, cells, filter panel",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -50,22 +50,29 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Seventeen fragment builders + _RISK_LEVELS moved to _report_html.py (448 lines, stdlib + _ui_theme only); render-report aliases every name and drops its now-unused import html. The 227 existing cases were all whole-document integration pins and stayed; 51 new unit cases cover the moved functions directly (escaping, URL safety, chip grammar, bar math). 227 + 51 = 278 >= 227. Acme-store re-render byte-identical to HEAD apart from the wall-clock stamp.",
+        "descriptive": "The report's HTML fragments live at the bottom of their own graph with direct unit coverage, and shipped reports render exactly as before."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T19:18:59+02:00",
+      "completedAt": "2026-08-10T19:25:05+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_report_html 51/51",
+        "render-report 227/227",
+        "sweep green",
+        "lint green",
+        "check-report-interactive 47/47",
+        "acme re-render byte-identical minus timestamp"
+      ]
     },
     {
       "id": "P13.2",
       "title": "_report_usage.py: usage loading + visualization",
-      "status": "pending",
-      "model": "sonnet",
+      "status": "in_progress",
+      "model": "opus",
       "skills": [],
       "blockedBy": [],
       "dependsOn": [
@@ -93,9 +100,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T19:25:05+02:00",
       "completedAt": null,
       "risk": "med",
       "verifiedBy": []
@@ -174,5 +181,11 @@
       "risk": "low",
       "verifiedBy": []
     }
-  ]
+  ],
+  "claim": {
+    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
+    "host": "MacBook-Pro.local",
+    "branch": "audit/p13-refactor-render-report-split",
+    "at": "2026-08-10T19:18:59+02:00"
+  }
 }

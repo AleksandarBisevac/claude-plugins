@@ -21,7 +21,6 @@ own directory) and prints the paths. `basename` is `--basename` › the manifest
 Exit codes: 0 ok · 2 usage error / unreadable manifest.
 """
 import base64
-import html
 import json
 import os
 import re
@@ -36,6 +35,7 @@ import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the pane
 import _loader                # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _fmt                   # noqa: E402  (the one token/cost formatter)
 import _report_ui             # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
+import _report_html           # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 
 
 def _plugin_version():
@@ -60,7 +60,7 @@ def _plugin_version():
 # keyed off the `data-status` / `data-risk` attributes the markup carries — so a
 # single token set themes every status/risk consistently in both light and dark.
 # Risk chips render only for these levels:
-_RISK_LEVELS = ("low", "med", "high")
+_RISK_LEVELS = _report_html._RISK_LEVELS
 
 _CSS = _report_ui.CSS
 
@@ -74,248 +74,27 @@ def _load_status_lib():
                                 cache=False)
 
 
-def e(value):
-    """Escape ANY manifest value for HTML context."""
-    return html.escape(str(value if value is not None else ""), quote=True)
-
-
-def _safe_url(url):
-    """Return the url only when it is plain http(s) — else None (render as text)."""
-    u = str(url or "")
-    return u if u.startswith(("https://", "http://")) else None
-
-
-def _report_basename(meta, cli_value):
-    """Resolve the report file basename: --basename › meta.reportBasename ›
-    'audit-report'. Sanitized to a bare filename ([A-Za-z0-9-_], no path
-    separators / extension) so it can't escape --out-dir or break the download."""
-    raw = cli_value if cli_value else (
-        meta.get("reportBasename") if isinstance(meta, dict) else None)
-    name = os.path.basename(str(raw or "").strip())          # drop any dir parts
-    for ext in (".html", ".md"):                             # tolerate a given ext
-        if name.lower().endswith(ext):
-            name = name[: -len(ext)]
-    name = "".join(c for c in name if c.isalnum() or c in "-_")
-    return name or "audit-report"
-
-
-def _tasks_by_id(manifest):
-    return {t["id"]: t for p in (manifest.get("phases") or []) if isinstance(p, dict)
-            for t in (p.get("tasks") or []) if isinstance(t, dict) and t.get("id")}
-
-
-def _areas_of(area):
-    """A phase's `area` (string, list, or absent) -> a list of tag strings."""
-    if isinstance(area, str):
-        return [area] if area else []
-    if isinstance(area, list):
-        return [a for a in area if isinstance(a, str) and a]
-    return []
-
-
-def _bug_view(b, task_by_id):
-    """Derived (status, fixedIn) for a bug — mirrors audit-status.effective_bug_status:
-    a bug materialized into a done task reads as fixed (fixedIn = that task's commit),
-    since the orchestrator never writes bugs[] during a run. Stored fixedIn/wontfix win."""
-    stored = b.get("status")
-    fixed_in = b.get("fixedIn")
-    if stored != "wontfix":
-        t = task_by_id.get(b.get("taskId"))
-        if isinstance(t, dict) and t.get("status") == "done":
-            return "fixed", (fixed_in or t.get("commit") or "—")
-    return stored, (fixed_in or "—")
-
-
-def _chip_buttons(statuses, attr, cls, humanize=True):
-    """Toggle buttons for a set of values — machine value in `attr`, words shown.
-
-    `aria-pressed` is what makes a toggle's state readable; without it "which
-    filter is on" is carried by colour alone.
-
-    `humanize` is off for values that are IDENTIFIERS rather than vocabulary. A
-    status is a word this product chose and should read as English; a model name
-    is a string someone types into a manifest and reads back out of a bill, and
-    running it through label() gave a chip reading "Opus" beside a table cell
-    reading `opus` — two spellings of one value, in one table.
-    """
-    return "".join(
-        '<button type="button" class="%s" %s="%s" aria-pressed="false">%s</button>'
-        % (cls, attr, e(s), e(_theme.label(s) if humanize else s))
-        for s in statuses)
-
-
-def _chip(status):
-    """A status badge: machine value in the attribute, words in the text.
-
-    `in_progress` is a key — it sorts, compares and survives serialization — and
-    it was being shown to people as-is, in the one place they look to find out how
-    the work is going. The attribute keeps the key (the CSS themes off it and the
-    filters compare it), the text says what it means.
-    """
-    return '<span class="chip" data-status="%s">%s</span>' % (
-        e(status), e(_theme.label(status)))
-
-
-def _ado_cell(item):
-    ado = item.get("ado") if isinstance(item.get("ado"), dict) else None
-    if not ado or ado.get("id") is None:
-        return '<span class="muted">—</span>'
-    label = "#%s" % e(ado.get("id"))
-    url = _safe_url(ado.get("url"))
-    if url:
-        return '<a href="%s">%s</a>' % (e(url), label)
-    return label
-
-
-def _outcome_text(task):
-    """One-line outcome (descriptive, else technical), truncated — for the table."""
-    o = task.get("outcome") if isinstance(task.get("outcome"), dict) else {}
-    txt = str(o.get("descriptive") or o.get("technical") or "").strip()
-    return (txt[:70].rstrip() + "…") if len(txt) > 70 else txt
-
-
-def _short_date(iso):
-    """ISO timestamp -> its date part ('2026-06-28T10:00:00Z' -> '2026-06-28')."""
-    s = str(iso or "")
-    return s.split("T", 1)[0] if "T" in s else s
-
-
-def _timing_cell(task):
-    """Compact completion date for the table, with the full started/completed
-    timestamps on hover. Done -> completed date; started-but-not-done -> the
-    started date (muted); neither -> em dash."""
-    started, completed = task.get("startedAt"), task.get("completedAt")
-    tip = e("started %s · completed %s" % (started or "—", completed or "—"))
-    if completed:
-        return '<span title="%s">%s</span>' % (tip, e(_short_date(completed)))
-    if started:
-        return ('<span class="muted" title="%s">started %s</span>'
-                % (tip, e(_short_date(started))))
-    return '<span class="muted">—</span>'
-
-
-def _filter_attrs(task):
-    """The data a task row is filtered BY, in attributes rather than in its text.
-
-    Model and dates are filtered on, and the text search already reads the row's
-    rendered text — but neither of those is reliable to read back out of it. The
-    model may not be a rendered column at all (`_present_columns` drops it when no
-    task has one), and the `done` cell shows a date that is sometimes prefixed
-    with the word "started". A filter reading its own attributes compares the
-    manifest's values, not the table's prose.
-
-    Dates are cut to their date part on purpose: ISO-8601 dates compare correctly
-    as STRINGS while they are the same length and shape, so the whole range test
-    in the script is `d >= from && d <= to` with no Date parsing per row. Whole
-    timestamps would break that against a bare `<input type=date>` value.
-
-    Emitted only when present — an absent value is an absent attribute, so the
-    script's `getAttribute(...) || ''` sees the same thing either way and the
-    markup does not carry a row of empty strings for a plan that tracks neither.
-    """
-    out = []
-    if task.get("model"):
-        out.append(' data-model="%s"' % e(task["model"]))
-    for attr, key in (("data-started", "startedAt"), ("data-completed", "completedAt")):
-        if task.get(key):
-            out.append(' %s="%s"' % (attr, e(_short_date(task[key]))))
-    return "".join(out)
-
-
-def _filter_panel(manifest):
-    """The model and date controls, server-rendered, or "" when the plan has neither.
-
-    Everything here is emitted from the manifest rather than built by the script,
-    which is the rule the status chips already follow: built in JS, a filter UI is
-    missing from every printed page and every reader that runs no script, and
-    "the filters are gone" is indistinguishable from "the filters are broken".
-
-    The date inputs carry the plan's own range as `min`/`max`, so the picker opens
-    on the months the work actually happened in rather than on this century.
-    """
-    models, dates = set(), []
-    for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        for t in (ph.get("tasks") or []):
-            if not isinstance(t, dict):
-                continue
-            if t.get("model"):
-                models.add(str(t["model"]))
-            for key in ("startedAt", "completedAt"):
-                if t.get(key):
-                    dates.append(_short_date(t[key]))
-    if not models and not dates:
-        return ""
-
-    rows = []
-    if models:
-        rows.append('<div class="frow"><span class="tbl">Model:</span>'
-                    '<span id="audit-model">%s</span></div>'
-                    % _chip_buttons(sorted(models), "data-m", "fchip",
-                                    humanize=False))
-    if dates:
-        span = ' min="%s" max="%s"' % (e(min(dates)), e(max(dates)))
-        # The presets are relative to the LAST DAY IN THE DATA, not to today.
-        # "Last 30 days" measured against the wall clock answers a different
-        # question every morning, and would make the committed example — which CI
-        # byte-compares against docs/index.html — a file that cannot stay equal to
-        # itself. The script derives the dates from the rows; these carry only the
-        # span, so the arithmetic has one home.
-        rows.append(
-            '<div class="frow"><span class="tbl">Worked between:</span>'
-            '<input type="date" id="audit-from" aria-label="Show tasks worked on '
-            'or after this date"%s>'
-            '<span class="tbl">and</span>'
-            '<input type="date" id="audit-to" aria-label="Show tasks worked on or '
-            'before this date"%s></div>' % (span, span))
-        rows.append(
-            '<div class="frow"><span class="tbl">Last:</span><span id="audit-presets">'
-            '<button type="button" class="fchip" data-days="7" aria-pressed="false">'
-            '7 days</button>'
-            '<button type="button" class="fchip" data-days="30" aria-pressed="false">'
-            '30 days</button>'
-            '<button type="button" class="fchip" data-days="all" aria-pressed="false">'
-            'All</button></span></div>')
-        # Says which "last 30 days" this is. Without it a reader compares the
-        # dates against their own calendar, finds them stale, and concludes the
-        # report is out of date rather than that it is measuring the work.
-        rows.append('<p class="fnote">Counted back from %s, the last day this '
-                    "plan recorded work — not from today.</p>" % e(max(dates)))
-    return ('<details class="fdetails"><summary aria-label="More filters">'
-            'More filters<span class="fcount" id="audit-fcount"></span></summary>'
-            '<div class="filterpanel">%s</div></details>' % "".join(rows))
-
-
-def _risk_chip(risk):
-    """Tinted risk chip (low/med/high); em dash for null/unknown. Colored by the
-    CSS theme token selected via data-risk (see _CSS)."""
-    r = str(risk or "").lower()
-    if r not in _RISK_LEVELS:
-        return '<span class="muted">—</span>'
-    return '<span class="rchip" data-risk="%s">%s</span>' % (r, e(r))
-
-
-def _phase_meta_div(phase):
-    """Muted sub-line for a phase group-row: desired outcome, branch, merge
-    timestamp, and (once signed off) the summary — all escaped."""
-    bits = []
-    if phase.get("desiredOutcome"):
-        bits.append("Desired: " + e(phase["desiredOutcome"]))
-    if phase.get("branch"):
-        bits.append("branch " + e(phase["branch"]))
-    if phase.get("mergedAt"):
-        bits.append("merged " + e(phase["mergedAt"]))
-    if phase.get("summary"):
-        bits.append(e(phase["summary"]))
-    return ('<div class="pmeta muted">%s</div>' % " · ".join(bits)) if bits else ""
-
-
-def _bar(done, total):
-    # Fill width is a CSS var so the stylesheet can animate 0 -> --w on load.
-    pct = int(round(100.0 * done / total)) if total else 0
-    return ('<span class="bar"><span class="fill" style="--w:%d%%"></span></span> '
-            '<span class="muted">%d/%d</span>' % (pct, done, total))
+# HTML fragment builders (escaping, chips, cells, filter panel) live in
+# _report_html.py (P13.1) — bottom of the report's module graph, imported by
+# nothing upward. Aliased here so render_html/render_md and this file's own
+# selftest keep referring to these names unchanged.
+e = _report_html.e
+_safe_url = _report_html._safe_url
+_report_basename = _report_html._report_basename
+_tasks_by_id = _report_html._tasks_by_id
+_areas_of = _report_html._areas_of
+_bug_view = _report_html._bug_view
+_chip_buttons = _report_html._chip_buttons
+_chip = _report_html._chip
+_ado_cell = _report_html._ado_cell
+_outcome_text = _report_html._outcome_text
+_short_date = _report_html._short_date
+_timing_cell = _report_html._timing_cell
+_filter_attrs = _report_html._filter_attrs
+_filter_panel = _report_html._filter_panel
+_risk_chip = _report_html._risk_chip
+_phase_meta_div = _report_html._phase_meta_div
+_bar = _report_html._bar
 
 
 # The stylesheet lints live beside the stylesheet they police, in _ui_theme,
