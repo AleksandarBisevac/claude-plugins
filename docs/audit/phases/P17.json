@@ -1,0 +1,64 @@
+{
+  "id": "P17",
+  "title": "release v0.32.0",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "One release commit carries the bump to 0.32.0, the finalized CHANGELOG section and the regenerated shipped reports; the annotated tag v0.32.0 lands on that commit only after CI is green on it.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P17.1",
+      "title": "bump + CHANGELOG + regenerated artifacts, tag after green CI",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "CHANGELOG.md",
+        "plugins/audit/.claude-plugin/plugin.json",
+        "docs/index.html",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md"
+      ],
+      "docs": [],
+      "description": "Release ritual, orchestrator-executed (executors never touch git and a release is git): plugin.json 0.31.0 -> 0.32.0 (the only place the version lives), CHANGELOG [0.32.0] in the house prose voice covering P9-P16 + BF1/BF2 + F8, shipped reports regenerated via examples/report.sh so the stamp matches, full battery, one commit, push, green CI, then the annotated tag - the first since v0.9.0, per the recorded decision.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "validate",
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    }
+  ]
+}
