@@ -44,6 +44,18 @@ def _read(name):
         return fh.read()
 
 
+def _cr_violations(assets):
+    """Given [(name, text), ...], return the names whose text carries a "\\r".
+
+    The two ui/ assets are read with newline="" on purpose (see module
+    docstring) — no line-ending translation happens on the read, so a CRLF
+    checkout (e.g. windows-latest CI with autocrlf rewriting the repo) shows
+    up here as a literal "\\r" in the loaded text. This is a pure function of
+    the given (name, text) pairs — no filesystem access — so a test can feed
+    it fixture content directly, without touching the module's own _UI_DIR."""
+    return [name for name, text in assets if "\r" in text]
+
+
 def _css(cache=True):
     """The plain-CSS part of `_CSS` (without the TOKEN_CSS prefix)."""
     global _css_cache
@@ -130,6 +142,23 @@ def _selftest():
     # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
     ui_pyfiles = [f for f in os.listdir(_UI_DIR) if f.endswith(".py")]
     check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
+
+    # --- LF contract: none of the loaded ui/ assets (nor the assembled CSS/ ----
+    # SCRIPT) carry a "\r" — a CRLF checkout (e.g. windows-latest CI without a
+    # .gitattributes eol=lf pin) would shift every cross-line selftest pin.
+    real_assets = [("report.css", css_file), ("report.js", js_file),
+                   ("CSS", CSS), ("SCRIPT", SCRIPT)]
+    real_cr = _cr_violations(real_assets)
+    check("no \\r (CRLF) in any loaded ui/ asset or the assembled CSS/SCRIPT "
+          "(found in: %r)" % (real_cr,), not real_cr)
+
+    # --- fixture red-proof: a CRLF asset IS named by the same helper ------------
+    fixture_assets = [("report.css", "body { color: red; }\r\n"),
+                       ("report.js", "console.log(1);\n")]
+    fixture_cr = _cr_violations(fixture_assets)
+    check("fixture proof: a CRLF report.css is named by the CR check "
+          "(got %r, want ['report.css'])" % (fixture_cr,),
+          fixture_cr == ["report.css"])
 
     # --- caching: repeat calls return the identical cached string ---------------
     a = _css()

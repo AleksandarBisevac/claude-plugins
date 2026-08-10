@@ -1,0 +1,9 @@
+# plugins/audit/scripts/ui/* are byte-precise build inputs: _panel_ui.py and
+# _report_ui.py load them with io.open(..., encoding="utf-8", newline="") —
+# deliberately no newline translation, because the assembled UI_HTML/_CSS/
+# _SCRIPT byte-identity proofs in each module's --selftest depend on the
+# exact bytes on disk. A CRLF checkout (e.g. windows-latest CI with
+# core.autocrlf rewriting the repo) silently shifts every selftest pin that
+# spans a line boundary. Pin these assets to LF so every checkout, on every
+# platform, hands the readers the same bytes.
+plugins/audit/scripts/ui/** text eol=lf

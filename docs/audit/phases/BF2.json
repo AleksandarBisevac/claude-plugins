@@ -1,7 +1,7 @@
 {
   "id": "BF2",
   "title": "CRLF: the assets' eol is a contract",
-  "status": "pending",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "A Windows checkout runs the same bytes as every other platform: scripts/ui/* pinned LF in .gitattributes, and each UI module's selftest names a CRLF asset directly instead of letting a distant cross-line pin discover it.",
@@ -10,21 +10,21 @@
     "validate",
     "lint"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "e84d261",
+  "branch": "audit/bf2-crlf-contract",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "The eol of the ui/ assets is a written contract (.gitattributes eol=lf) with a guard beside each reader, red-proven via a CRLF fixture. The Windows leg's two distant pin failures trace to this one class; the readers' newline='' stays because the byte-identity proofs stand on it.",
   "tasks": [
     {
       "id": "BF2.1",
       "title": ".gitattributes LF contract for scripts/ui + LF guard cases",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -49,16 +49,24 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root .gitattributes pins plugins/audit/scripts/ui/** to eol=lf with the why written beside it; _cr_violations() guard in both UI modules names a CRLF asset at the reader (real-tree case green, CRLF fixture red-proof load-bearing). Readers keep newline='' - byte fidelity is the point. _panel_ui 23->25, _report_ui 17->19.",
+        "descriptive": "A Windows checkout now runs the same bytes as every other platform, and if it ever does not, the selftest names the file instead of failing a pin two files away."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T22:20:27+02:00",
+      "completedAt": "2026-08-10T22:23:13+02:00",
       "risk": "low",
-      "verifiedBy": [],
+      "verifiedBy": [
+        "_panel_ui 25/25 (CRLF fixture red-proof)",
+        "_report_ui 19/19",
+        "panel-server 240/240",
+        "render-report 178/178",
+        "sweep green",
+        "lint green",
+        "git check-attr eol: lf on both probes"
+      ],
       "bugId": "BUG-4"
     }
   ]
