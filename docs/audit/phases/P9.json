@@ -11,7 +11,7 @@
   ],
   "baseRef": "96784b73927de6de48948238b25cc04eb3303105",
   "branch": "audit/p9-refactor-dev-tooling-bootstrap",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T17:46:30+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
