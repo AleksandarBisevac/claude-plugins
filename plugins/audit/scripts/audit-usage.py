@@ -37,7 +37,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, _HERE)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
-import _fmt  # noqa: E402  (the one token/cost formatter; audit-status accesses these by attribute)
+import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
 
 
 def _load(name, filename):
@@ -52,9 +52,10 @@ DEFAULT_LEDGER = os.path.join(".claude", "usage")
 
 # --- formatting -----------------------------------------------------------------
 # Thin re-exports of _fmt.py (the one token/cost formatter — see its docstring for
-# the difference table between this CLI's shapes and render-report's). Kept as
-# module-level attributes (not a `from _fmt import *`) because audit-status.py's
-# importlib loader reaches these by attribute: `au.fmt_tokens(...)`.
+# the difference table between this CLI's shapes and render-report's). audit-status.py
+# now imports _fmt directly for these (P14.2) rather than reaching them through this
+# module's loader; these wrappers stay as this CLI's own call shape (and in case any
+# other consumer still loads this module for them).
 def fmt_tokens(n):
     """Compact, right-alignable token counts (CLI shape: always one decimal)."""
     return _fmt.fmt_tokens(n)

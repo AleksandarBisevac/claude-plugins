@@ -45,7 +45,9 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR i
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6 — no indirection needed)
 
+# --- config / loading -----------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress", "over-budget", "budget-80")
 # Neither budget condition is in the default gate. Spend is a signal, not a defect:
@@ -137,6 +139,7 @@ def submodule_conflicts(manifest, submodule_paths, git_root=""):
     return out
 
 
+# --- gate rollup ----------------------------------------------------------------
 def ready_tasks(manifest):
     """Task ids ready to run — mirrors /audit's readiness rule: status pending,
     own blockedBy satisfied, own dependsOn all done, phase blockedBy satisfied
@@ -211,6 +214,7 @@ def effective_bug_status(bug, task_by_id):
     return stored
 
 
+# --- usage summary --------------------------------------------------------------
 def usage_summary(manifest, manifest_path, project_dir=None):
     """Compact token-usage block for the rollup, or None when there is no ledger.
 
@@ -405,7 +409,7 @@ def render_status(manifest, summary, width=18, only_phase=None):
 
     usage = summary.get("usage")
     if usage:
-        lines.append("  " + _usage_line(au, summary, usage))
+        lines.append("  " + _usage_line(summary, usage))
         lines += _budget_lines(au, summary, usage)
 
     unmet = unmet_refs(manifest)
@@ -558,22 +562,22 @@ def _clip(text, limit):
     return cut.rstrip(" ,;:") + "..."
 
 
-def _usage_line(au, summary, usage):
+def _usage_line(summary, usage):
     """`usage: <tokens> tok - ~$<cost> equiv - this phase <tokens>`.
 
     The cost clause is dropped when `showCost` is false, because naming dollars
     would leak exactly what that setting exists to hide. The phase clause is
     dropped when nothing is running, because there is no phase to attribute to."""
     totals = usage.get("totals") or {}
-    parts = ["usage: %s tok" % au.fmt_tokens(totals.get("tokens"))]
+    parts = ["usage: %s tok" % _fmt.fmt_tokens(totals.get("tokens"))]
     if usage.get("showCost"):
-        parts.append("~%s equiv" % au.fmt_cost(totals.get("costUSD")))
+        parts.append("~%s equiv" % _fmt.fmt_cost(totals.get("costUSD")))
     running = [p.get("id") for p in summary["phases"]
                if p.get("status") == "in_progress"]
     if running:
         per = (usage.get("byPhase") or {}).get(running[0]) or {}
         if per:
-            parts.append("this phase %s" % au.fmt_tokens(per.get("tokens")))
+            parts.append("this phase %s" % _fmt.fmt_tokens(per.get("tokens")))
     # The rate table behind this cost AND behind the budget lines under it, which
     # is why it belongs here rather than only in the report: those percentages are
     # what the preflight budget check acts on, and a number that can stop a phase
@@ -610,7 +614,7 @@ def _budget_lines(au, summary, usage):
             flag = "  WARN"
         out.append("  budget %-5s %s %3.0f%%  %s of %s%s"
                    % (p.get("id") or "?", au.bar(pct / 100.0, 12), pct,
-                      au.fmt_cost(p.get("spent")), au.fmt_cost(p.get("budget")),
+                      _fmt.fmt_cost(p.get("spent")), _fmt.fmt_cost(p.get("budget")),
                       flag))
     unbudgeted = len(budgets.get("phases") or []) - len(rows)
     if unbudgeted:
@@ -661,15 +665,18 @@ def _resumable_lines(manifest, summary):
 
 
 def _load_usage_fmt():
-    """audit-usage.py's formatting primitives — bar/table/fmt_tokens/fmt_cost.
-
-    Imported rather than reimplemented: they carry rules this output must not
-    contradict, chiefly that real spend never renders as `$0.00`. Its `render()` is
-    deliberately NOT reused — that one reads flags off an argparse Namespace."""
+    """audit-usage.py's `bar()` — the share-bar renderer, which has no home in
+    _fmt.py (that module holds only the token/cost/int formatters shared with
+    render-report.py; `bar` is audit-usage's own CLI shape). fmt_tokens/fmt_cost
+    are imported directly from _fmt (see the top-of-file import) since P10.6 made
+    it the one copy; this loader stays only for what _fmt does not carry. Its
+    `render()` is deliberately NOT reused — that one reads flags off an argparse
+    Namespace."""
     return _loader.load_script("audit-usage.py", modname="audit_usage_fmt",
                                 cache=False)
 
 
+# --- gate evaluation ------------------------------------------------------------
 def evaluate_gate(summary, conditions):
     """Return the list of FAILED condition names."""
     failed = []
@@ -699,13 +706,12 @@ def _budget_detail(summary, threshold_pct):
 
     "2 phase(s) over budget" sends the reader hunting; the whole point of tying spend
     to the plan is that it can say WHICH phase and by how much."""
-    au = _load_usage_fmt()
     rows = budget_breaches(summary, threshold_pct)
     if not rows:
         return "no phase past %.0f%%" % threshold_pct
     parts = ["%s at %.0f%% (%s of %s)"
              % (p.get("id"), p.get("pct") or 0,
-                au.fmt_cost(p.get("spent")), au.fmt_cost(p.get("budget")))
+                _fmt.fmt_cost(p.get("spent")), _fmt.fmt_cost(p.get("budget")))
              for p in sorted(rows, key=lambda x: -(x.get("pct") or 0))[:3]]
     more = "" if len(rows) <= 3 else ", +%d more" % (len(rows) - 3)
     return "; ".join(parts) + more
