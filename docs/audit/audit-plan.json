@@ -153,6 +153,9 @@
     "examples/acme-store/acme-store-audit.html": [
       "P13.3"
     ],
+    "examples/acme-store/acme-store-audit.md": [
+      "P13.3"
+    ],
     "plugins/audit/.claude-plugin/plugin.json": [
       "P1.8",
       "P2.6"

@@ -589,8 +589,6 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     return body.replace("@@NAV@@", nav).replace("@@TOOLBAR@@", doc_actions)
 
 
-
-
 def render_md(manifest, summary, usage=None):
     """Markdown twin of render_html. Only Markdown metacharacters (pipes,
     newlines) are escaped here — raw HTML inside manifest strings is passed
