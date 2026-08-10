@@ -31,11 +31,18 @@ never raise use `load_manifest_safe` (returns {} on any error).
 """
 import json
 import os
+import tempfile
 
 
-def _read_json(path):
+def read_json(path):
+    """Parse a JSON file. Raises like open()/json.load on a missing/invalid file."""
     with open(path, "r", encoding="utf-8") as fh:
         return json.load(fh)
+
+
+# Back-compat private alias — other modules in this file (and historically,
+# callers that reached in directly) use the underscore name.
+_read_json = read_json
 
 
 def is_sharded(data):
@@ -150,12 +157,36 @@ def split_manifest(manifest, shard_rel_dir="phases"):
     return index, shards
 
 
+def atomic_write_json(path, obj, ensure_ascii=True, indent=2):
+    """Write `obj` as JSON to `path` atomically: a unique temp file (mkstemp, in
+    the SAME directory as `path` so os.replace stays on one filesystem) is
+    written and fsync'd via close, then swapped into place with os.replace. The
+    parent directory is created if missing. On any failure the temp file is
+    removed (never left behind) and the exception propagates.
+
+    This is the ONE atomic-JSON-write implementation for the audit plugin —
+    used directly by `save_sharded` (ensure_ascii=True, this module's historic
+    byte shape) and by panel-server.py's thin delegation (ensure_ascii=False,
+    to keep its existing bytes unchanged).
+    """
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh, indent=indent, ensure_ascii=ensure_ascii)
+            fh.write("\n")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 def _atomic_write_json(path, data):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    """Back-compat private alias — preserves this module's historic byte shape
+    (ensure_ascii=True, indent=2) for `save_sharded` and any other in-file
+    caller."""
+    atomic_write_json(path, data, ensure_ascii=True, indent=2)
 
 
 def save_sharded(index_path, manifest, shard_rel_dir="phases"):
@@ -292,6 +323,84 @@ def _selftest():
         check("writer: round-trip equals original (modulo meta.version)", reloaded == expect)
         check("writer: split shard count == phase count",
               len(split_manifest(legacy)[1]) == len(legacy["phases"]))
+
+        # 7. atomic_write_json: a write failure (unserializable object) leaves NO
+        #    temp file behind in the target directory.
+        fail_dir = os.path.join(tmp, "fail-write")
+        os.makedirs(fail_dir)
+        fail_path = os.path.join(fail_dir, "bad.json")
+
+        class _Unserializable(object):
+            pass
+
+        write_raised = False
+        try:
+            atomic_write_json(fail_path, {"bad": _Unserializable()})
+        except TypeError:
+            write_raised = True
+        check("atomic_write_json: unserializable object raises", write_raised)
+        check("atomic_write_json: failed write leaves target dir empty",
+              os.listdir(fail_dir) == [])
+
+        # 8. atomic_write_json uses mkstemp (a unique temp name in the target dir),
+        #    NOT a fixed `path + ".tmp"` — two writers to the same path never collide.
+        mk_dir = os.path.join(tmp, "mkstemp-check")
+        os.makedirs(mk_dir)
+        mk_path = os.path.join(mk_dir, "shared.json")
+        seen_tmp_names = []
+        _orig_mkstemp = tempfile.mkstemp
+
+        def _spying_mkstemp(*a, **kw):
+            fd, name = _orig_mkstemp(*a, **kw)
+            seen_tmp_names.append(name)
+            return fd, name
+
+        tempfile.mkstemp = _spying_mkstemp
+        try:
+            atomic_write_json(mk_path, {"n": 1})
+            atomic_write_json(mk_path, {"n": 2})
+        finally:
+            tempfile.mkstemp = _orig_mkstemp
+        check("atomic_write_json: two writes use mkstemp (two temp names recorded)",
+              len(seen_tmp_names) == 2)
+        check("atomic_write_json: temp names are unique (no fixed collision path)",
+              seen_tmp_names[0] != seen_tmp_names[1])
+        check("atomic_write_json: neither temp name is the naive `path + '.tmp'`",
+              (mk_path + ".tmp") not in seen_tmp_names)
+        check("atomic_write_json: no leftover temp files after either write",
+              sorted(os.listdir(mk_dir)) == ["shared.json"])
+
+        # 9. byte stability: atomic_write_json(ensure_ascii=True) and (ensure_ascii=False)
+        #    each produce the SAME bytes as the historic hand-rolled writers they replace
+        #    (this module's old `path + ".tmp"` writer used ensure_ascii=True default;
+        #    panel-server.py's writer used ensure_ascii=False) — both indent=2 + trailing "\n".
+        ref = {"title": "café", "n": 1, "list": [1, 2, 3]}
+        bdir = os.path.join(tmp, "bytes-check")
+        os.makedirs(bdir)
+
+        ascii_path = os.path.join(bdir, "ascii.json")
+        atomic_write_json(ascii_path, ref, ensure_ascii=True, indent=2)
+        with open(ascii_path, "r", encoding="utf-8") as fh:
+            ascii_bytes = fh.read()
+        expect_ascii = json.dumps(ref, indent=2, ensure_ascii=True) + "\n"
+        check("byte stability: ensure_ascii=True matches historic shape",
+              ascii_bytes == expect_ascii)
+        check("byte stability: ensure_ascii=True escapes non-ASCII (\\u00e9)",
+              "\\u00e9" in ascii_bytes and "café" not in ascii_bytes)
+
+        nonascii_path = os.path.join(bdir, "nonascii.json")
+        atomic_write_json(nonascii_path, ref, ensure_ascii=False, indent=2)
+        with open(nonascii_path, "r", encoding="utf-8") as fh:
+            nonascii_bytes = fh.read()
+        expect_nonascii = json.dumps(ref, indent=2, ensure_ascii=False) + "\n"
+        check("byte stability: ensure_ascii=False matches panel's historic shape",
+              nonascii_bytes == expect_nonascii)
+        check("byte stability: ensure_ascii=False keeps literal UTF-8 (café)",
+              "café" in nonascii_bytes)
+
+        # 10. read_json round-trip
+        check("read_json: round-trips atomic_write_json output",
+              read_json(ascii_path) == ref)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

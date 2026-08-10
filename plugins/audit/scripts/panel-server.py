@@ -445,21 +445,15 @@ def _viewer(project, config):
 
 
 def _atomic_write_json(path, obj):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(obj, fh, indent=2, ensure_ascii=False)
-            fh.write("\n")
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    """Thin delegation to the plugin's ONE atomic-JSON-write implementation
+    (_manifest_io.atomic_write_json) — ensure_ascii=False keeps this module's
+    existing byte shape unchanged."""
+    _mio.atomic_write_json(path, obj, ensure_ascii=False, indent=2)
 
 
 def _read_json(path):
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+    """Thin delegation to the plugin's ONE JSON reader (_manifest_io.read_json)."""
+    return _mio.read_json(path)
 
 
 # --- discovery / registry -------------------------------------------------------
