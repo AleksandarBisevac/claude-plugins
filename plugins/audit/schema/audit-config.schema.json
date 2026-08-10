@@ -5,6 +5,63 @@
   "description": "Layer 1 of the plugin's extensibility model. Every key is optional; omitted keys fall back to the defaults in hooks/_config.py DEFAULTS. Unknown keys are tolerated (forward-compat) but reported as warnings by validate-config.py.",
   "type": "object",
   "additionalProperties": true,
+  "$defs": {
+    "policyKind": {
+      "type": "object",
+      "description": "One capability kind's rules.",
+      "additionalProperties": true,
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny"
+          ],
+          "description": "The verdict for anything no rule matches. Default 'allow'. Set 'deny' for the deny-all-then-permit shape, and list what you permit in `allow`."
+        },
+        "allow": {
+          "type": "array",
+          "description": "Name patterns that are permitted. Has no effect while `default` is 'allow' - everything not denied is already allowed.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "deny": {
+          "type": "array",
+          "description": "Name patterns that are refused. Deny beats allow. A pattern matching one of audit's own commands/skills/agents does not take effect and is reported as a finding rather than silently ignored.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "areas": {
+          "type": "object",
+          "description": "Rules scoped to a `meta.areas` tag, in force only while a phase tagged with it has work in_progress. Any active area's `deny` wins; several active areas UNION their `allow` lists (documented fail-open).",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "deny": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "properties": {
     "manifestPath": {
       "type": "string",
@@ -256,6 +313,38 @@
               }
             }
           }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "description": "Which skills, subagents and MCP tools may be used in this project (hooks/guard-capabilities.py + scripts/_policy.py). Shipped INERT: every kind defaults to 'allow' with empty lists, which cannot refuse anything, so a repo that writes nothing behaves as it did before 0.30.0. Resolution order: audit's own commands/skills/agents are always allowed -> a `deny` match (project-wide, or in any area with work in progress) -> an `allow` match (several active areas UNION their allow lists) -> `default`. Patterns are case-sensitive fnmatch globs against the name the tool call uses: the Skill tool's `skill`, the Task/Agent tool's `subagent_type`, or the whole MCP tool name (so 'mcp__github__*' names a server). Governs the tool, not the knowledge; only while the plugin is enabled; may be advisory inside a subagent (anthropics/claude-code#43772 - /audit:doctor warns when the hook has never fired). See SECURITY.md.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enforce the policy. Default true - which changes nothing on its own, since the shipped block allows everything."
+        },
+        "onViolation": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "warn"
+          ],
+          "description": "What a violation does: 'deny' (default) refuses the tool call, 'ask' prompts for manual approval per call, 'warn' lets it through with a message. 'warn' is deliberately not a permissionDecision - an advisory must not grant anything."
+        },
+        "skills": {
+          "$ref": "#/$defs/policyKind",
+          "description": "Rules matched against the Skill tool's `skill` argument, e.g. 'dataviz' or 'audit:next'."
+        },
+        "agents": {
+          "$ref": "#/$defs/policyKind",
+          "description": "Rules matched against the Task/Agent tool's `subagent_type`. A call that names none is the general-purpose agent, and is matched as 'general-purpose'."
+        },
+        "mcp": {
+          "$ref": "#/$defs/policyKind",
+          "description": "Rules matched against the whole MCP tool name, e.g. 'mcp__github__get_issue'; 'mcp__github__*' is how a whole server is named."
         }
       }
     },

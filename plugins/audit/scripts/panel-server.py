@@ -50,6 +50,7 @@ sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the report)
 import _areas               # noqa: E402  (meta.areas registry + shared resolution)
+import _policy              # noqa: E402  (the capability policy + its resolution)
 
 # Fields the composition patch is allowed to touch — the security allow-list.
 # `areas` is here so the registry can be written through the ONE write path that
@@ -315,6 +316,13 @@ SETTINGS_GROUPS = (
         ),
     },
 )
+
+
+def _src_of_this_file():
+    """This module's own source — for the selftests that must assert a server-side
+    construct (a route, a call order) rather than a rendered string."""
+    with open(__file__, encoding="utf-8") as fh:
+        return fh.read()
 
 
 def _settings_paths():
@@ -778,6 +786,128 @@ def journal_state(project, limit=JOURNAL_PAGE):
                          "findings": ["could not read the journal: %s" % exc],
                          "warnings": []}
     return out
+
+
+def policy_state(project):
+    """`GET /api/policy` — the block, and what it RESOLVES TO for what is installed.
+
+    The block alone is unreadable as governance: `{"default": "deny", "allow":
+    ["code-*"]}` is four words that decide the fate of every skill on the machine,
+    and nobody can hold the cross-product in their head. So the verdict for each
+    discovered capability is computed here, by `_policy.resolve` — the same function
+    the guard hook calls — and shipped alongside. A preview that ran its own
+    matching would eventually disagree with the guard, and disagreeing about a
+    denial is the one place a panel must not be creative.
+
+    Every verdict carries its `basis` for the same reason the hook's refusal does.
+
+    MCP is the one kind whose rows are STAND-INS: what is discoverable is a server
+    name, while a policy matches whole tool names, so the row for server `github` is
+    evaluated as `mcp__github__*` and says so via `standIn`. A rule aimed at one
+    tool of that server therefore does not move the server's row — which is true,
+    and better said than quietly averaged.
+    """
+    config = read_config(project)
+    policy = _policy.policy_cfg(config)
+    findings, warnings = _policy.validate_policy(config.get("policy"))
+    mpath = _manifest_path(project, config)
+    try:
+        manifest = _mio.load_manifest_safe(mpath)
+    except Exception:
+        manifest = {}
+    active = _active_area_tags(manifest)
+    reg = _areas.registry(manifest)
+    found = discover(project)
+    out = {
+        "policy": policy,
+        "stored": config.get("policy") if isinstance(config.get("policy"), dict)
+        else None,
+        "active": _policy.is_active(policy),
+        "onViolation": policy.get("onViolation"),
+        "activeAreas": active,
+        # Registered, used, or live — the same union `areas_state` reports, because
+        # a rule can legitimately be written for a tag the registry does not carry
+        # (free-text tagging is still legal) and a switchboard that offered only
+        # registered areas would silently hide the rules aimed at the others.
+        "areas": sorted(set(reg) | set(_areas.used_tags(manifest)) | set(active)),
+        "required": _policy.required_names(),
+        "kinds": list(_policy.KINDS),
+        "onViolationChoices": list(_policy.ON_VIOLATION),
+        "findings": findings, "warnings": warnings,
+        "resolved": {},
+    }
+    for kind in _policy.KINDS:
+        rows = []
+        if kind == "mcp":
+            names = [("mcp__%s__*" % s, s, True) for s in (found.get("mcp") or [])]
+        else:
+            names = [(e.get("name"), e.get("source"), False)
+                     for e in (found.get(kind) or []) if e.get("name")]
+        for name, source, stand_in in names:
+            v = _policy.resolve(policy, kind, name, active_tags=active)
+            rows.append({"name": name, "source": source, "standIn": stand_in,
+                         "verdict": v["verdict"], "basis": v["basis"],
+                         "rule": v["rule"], "area": v["area"],
+                         "required": bool(_policy.matches(
+                             name, _policy.required_patterns(kind)))})
+        out["resolved"][kind] = rows
+    return out
+
+
+def _active_area_tags(manifest):
+    """The area tags of phases with work in progress — what scopes an area rule.
+
+    The same question `_config.active_area_tags` answers for the hook, asked of a
+    manifest already in hand rather than re-read from disk. Both walk the ASSEMBLED
+    document and both use `_areas.areas_of`, so the panel's preview and the guard's
+    decision cannot disagree about which areas are live.
+    """
+    tags = []
+    for phase in (manifest or {}).get("phases") or []:
+        if not isinstance(phase, dict):
+            continue
+        running = phase.get("status") == "in_progress" or any(
+            isinstance(t, dict) and t.get("status") == "in_progress"
+            for t in (phase.get("tasks") or []))
+        if not running:
+            continue
+        for tag in _areas.areas_of(phase.get("area")):
+            if tag not in tags:
+                tags.append(tag)
+    return tags
+
+
+def write_policy(project, body):
+    """`PUT /api/policy` — replace the `policy` block wholesale.
+
+    Wholesale for the same reason the registry is: a policy is a set of rules, and
+    removing one is as ordinary an edit as adding one.
+
+    Checked HERE before anything is written, so the caller gets
+    `policy.skills.default: must be 'allow' or 'deny'` rather than the same fact
+    restated across a whole-config validation. The write itself then goes through
+    `write_config` — the one config writer — which validates the WHOLE file again,
+    takes the lock, writes atomically and journals the change rows. That is also
+    what makes the refusal below mechanical rather than a second rule living here:
+    a policy denying audit's own components is a validator FINDING, so the write
+    path already refuses it, and this check exists to say so in the policy's own
+    words before the file is even assembled.
+    """
+    if not isinstance(body, dict):
+        return {"ok": False, "findings": ["body must be a JSON object"]}
+    policy = body.get("policy") if "policy" in body else body
+    if policy is None:
+        policy = {}
+    findings, warnings = _policy.validate_policy(policy)
+    if findings:
+        return {"ok": False, "findings": findings, "warnings": warnings}
+    config = read_config(project)
+    updated = dict(config)
+    updated["policy"] = policy
+    res = write_config(project, updated)
+    if res.get("ok"):
+        res["warnings"] = list(res.get("warnings") or []) + warnings
+    return res
 
 
 def write_areas(project, body):
@@ -1754,6 +1884,8 @@ def _make_handler(project, token):
                 self._json(200, usage_state(project)); return
             if path == "/api/journal":
                 self._json(200, journal_state(project)); return
+            if path == "/api/policy":
+                self._json(200, policy_state(project)); return
             if path == "/report":
                 # No path parameter: the location is derived from the project's
                 # own config, so there is nothing here to traverse with.
@@ -1786,6 +1918,8 @@ def _make_handler(project, token):
                 self._json(200, apply_composition(project, body)); return
             if path == "/api/areas":
                 self._json(200, write_areas(project, body)); return
+            if path == "/api/policy":
+                self._json(200, write_policy(project, body)); return
             self._json(404, {"error": "not found"})
 
         def do_POST(self):
@@ -5227,6 +5361,159 @@ def _selftest():
     finally:
         _shutil.rmtree(_aproj, ignore_errors=True)
 
+    # --- v0.30: the capability policy ------------------------------------------
+    # The resolution lives in _policy and is exercised there. What is checked here
+    # is that this endpoint SHOWS what the guard hook will DO — same function, same
+    # active areas — and that the one writer refuses what the validator refuses.
+    _pproj = tempfile.mkdtemp(prefix="panel-policy-")
+    try:
+        os.makedirs(os.path.join(_pproj, ".claude"), exist_ok=True)
+        # The capabilities this fixture resolves verdicts for are CREATED here,
+        # project-local, rather than whatever `discover` happens to find on the
+        # machine. A check that names `code-reviewer` because this laptop has one
+        # installed is a check about the laptop: green here, absent on CI, and
+        # silently vacuous either way.
+        os.makedirs(os.path.join(_pproj, ".claude", "agents"), exist_ok=True)
+        for _name in ("code-reviewer", "random-agent", "audit-executor"):
+            with open(os.path.join(_pproj, ".claude", "agents", _name + ".md"),
+                      "w", encoding="utf-8") as _fh:
+                _fh.write("---\nname: %s\ndescription: fixture\n---\n" % _name)
+        _atomic_write_json(os.path.join(_pproj, ".mcp.json"),
+                           {"mcpServers": {"prod-db": {"command": "x"}}})
+        _atomic_write_json(_config_path(_pproj),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+        _pm = _manifest_path(_pproj, read_config(_pproj))
+        os.makedirs(os.path.dirname(_pm), exist_ok=True)
+        _atomic_write_json(_pm, {
+            "meta": {"version": 2, "areas": {"api": {"root": "."}}},
+            "phases": [
+                {"id": "P1", "title": "One", "status": "in_progress", "area": "api",
+                 "tasks": [{"id": "P1.1", "title": "T1", "status": "pending"}]},
+                {"id": "P2", "title": "Two", "status": "pending", "area": "web",
+                 "tasks": [{"id": "P2.1", "title": "T2", "status": "pending"}]}]})
+
+        _ps = policy_state(_pproj)
+        check("policy GET reports the shipped block as inert, so a repo that never "
+              "opted in is not shown a governance surface that governs nothing",
+              _ps["active"] is False and _ps["stored"] is None
+              and _ps["policy"]["skills"]["default"] == "allow")
+        check("policy GET resolves a verdict for every kind, even inert",
+              set(_ps["resolved"]) == set(_policy.KINDS))
+        check("policy GET reports the ACTIVE areas, which is what scopes an area "
+              "rule - and only the phases with work in progress count",
+              _ps["activeAreas"] == ["api"] and "web" in _ps["areas"])
+
+        _bad = write_policy(_pproj, {"skills": {"default": "denied"}})
+        check("policy PUT refuses a misspelled default in the policy's own words",
+              not _bad["ok"] and any("policy.skills.default" in f
+                                     for f in _bad["findings"]))
+        check("...and a refused PUT wrote nothing",
+              read_config(_pproj).get("policy") is None)
+        # The policy is checked BEFORE the config is assembled, and this is the case
+        # that proves it rather than restating the validator: with an unrelated
+        # finding already in the file, a writer that only validated the assembled
+        # config would answer with both — and the caller, who sent a policy, would
+        # be told about a threshold they did not touch.
+        _atomic_write_json(_config_path(_pproj),
+                           {"manifestPath": "docs/audit/audit-plan.json",
+                            "trivialLineThreshold": 0})
+        _only = write_policy(_pproj, {"skills": {"default": "denied"}})
+        check("a bad policy is reported ALONE, even when the config it would join "
+              "already has a finding of its own",
+              not _only["ok"]
+              and all(f.startswith("policy.") for f in _only["findings"]),
+              )
+        _atomic_write_json(_config_path(_pproj),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+        _req = write_policy(_pproj, {"agents": {"deny": ["audit:*"]}})
+        check("policy PUT refuses a policy denying audit's own components - the "
+              "line would not take effect, so saving it would leave a file that "
+              "says something untrue",
+              not _req["ok"] and any("not deniable" in f for f in _req["findings"]))
+        check("...and that refusal is the VALIDATOR's, so the panel and the CLI "
+              "cannot disagree about what is saveable",
+              any("not deniable" in f for f in
+                  _cores()[1].validate_config({"policy": {"agents": {
+                      "deny": ["audit:*"]}}})[0]))
+
+        _res = write_policy(_pproj, {"skills": {"default": "deny",
+                                                "allow": ["dataviz"]}})
+        check("policy PUT writes through the one config writer", _res["ok"])
+        check("...which echoes the change as rows the confirm flow can print",
+              any(r["field"].startswith("policy.")
+                  for r in _res.get("applied") or []),
+              )
+        check("...and reports the journal outcome like every other save",
+              "journaled" in _res)
+        check("the block landed in the config file itself",
+              read_config(_pproj)["policy"]["skills"]["default"] == "deny")
+        check("a save that changes nothing writes nothing",
+              write_policy(_pproj, {"skills": {"default": "deny",
+                                               "allow": ["dataviz"]}}
+                           ).get("unchanged") is True)
+        check("policy PUT accepts {policy: ...} as well as the bare block",
+              write_policy(_pproj, {"policy": {"skills": {"default": "allow"}}})["ok"])
+        check("policy PUT can empty the block back to inert",
+              write_policy(_pproj, {})["ok"]
+              and policy_state(_pproj)["active"] is False)
+
+        # The preview IS the guard's answer. Asserted against _policy.resolve rather
+        # than against a second expectation written here: a check whose oracle is a
+        # copy of the thing under test proves only that two copies agree.
+        # `deny: ["*"]` would be refused by the writer — it matches audit's own
+        # names — so the deny-everything shape is written the way the validator
+        # accepts it: a default of deny, which `resolve` reaches only after the
+        # required check has already let audit's own through.
+        write_policy(_pproj, {"skills": {"default": "deny", "allow": ["dataviz"]},
+                              "agents": {"default": "deny",
+                                         "areas": {"api": {"allow": ["code-*"]},
+                                                   "web": {"allow": ["never-*"]}}}})
+        _ps = policy_state(_pproj)
+        _pol = _policy.policy_cfg(read_config(_pproj))
+        _rows = _ps["resolved"]["agents"]
+        # `.get`, not `[...]`: a row that is missing is exactly what a broken
+        # endpoint returns, and a KeyError exits 1 without naming which check
+        # noticed — indistinguishable from a suite that crashed for another reason.
+        _by_pre = lambda rows: {r["name"]: r for r in rows}       # noqa: E731
+        check("every resolved row is exactly what the guard hook would decide, "
+              "including the basis it would print",
+              bool(_rows) and all(
+                  r["verdict"] == _policy.resolve(
+                      _pol, "agents", r["name"], active_tags=["api"])["verdict"]
+                  and r["basis"] == _policy.resolve(
+                      _pol, "agents", r["name"], active_tags=["api"])["basis"]
+                  for r in _rows))
+        check("audit's own agent is marked required and allowed through a policy "
+              "that denies everything - and it is the FIXTURE's copy, not one this "
+              "machine happens to have installed",
+              (_by_pre(_rows).get("audit-executor") or {}).get("required") is True
+              and (_by_pre(_rows).get("audit-executor") or {}).get("verdict")
+              == "allow")
+        check("somebody else's agent under the same policy resolves to a violation",
+              (_by_pre(_rows).get("random-agent") or {}).get("verdict")
+              == "violation")
+        # The preview must apply the ACTIVE areas, not merely the project-wide
+        # rules: `api` has a phase in progress and `web` does not, so one area's
+        # allow list is in force and the other's is not. Resolved with no active
+        # areas at all, every one of these rows would read "violation".
+        _by = _by_pre(_rows)
+        check("an area's allow list is applied because that area has work in "
+              "progress, and the row says which area answered",
+              (_by.get("code-reviewer") or {}).get("verdict") == "allow"
+              and (_by.get("code-reviewer") or {}).get("area") == "api",
+              )
+        check("...while an area with nothing running grants nothing",
+              all(r["area"] != "web" for r in _rows))
+        check("an MCP row is a STAND-IN for the whole server and says so, since "
+              "what is discoverable is a server name and a policy matches tool "
+              "names - and there IS a row, so this is not vacuously true",
+              "mcp__prod-db__*" in [r["name"] for r in _ps["resolved"]["mcp"]]
+              and all(r["standIn"] and r["name"].startswith("mcp__")
+                      and r["name"].endswith("__*")
+                      for r in _ps["resolved"]["mcp"]))
+    finally:
+        _shutil.rmtree(_pproj, ignore_errors=True)
+
     check("meta.areas is on the composition allow-list, so it goes through the "
           "writer that locks, validates and journals", "areas" in _META_KEYS
           and _reject_unknown({"meta": {"areas": {}}}) is None)
@@ -5609,9 +5896,25 @@ def _selftest():
     _containers = {"secretPatterns": _vc.KNOWN_SECRET, "guardEdits": _vc.KNOWN_GUARD,
                    "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
                    "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL}
-    _expected = {k for k in _vc.KNOWN_ROOT if k not in _containers}
+    # `policy` is a root key with no control on this form, on purpose — the one
+    # exemption, and it is stated rather than silently subtracted. It is not a
+    # setting with a value; it is a rule set whose meaning is the verdict it
+    # produces for each installed capability, which is what /api/policy serves and
+    # what the switchboard renders. A generic text box over it would be a JSON
+    # editor wearing a label. The exemption is pinned below: it must name a key the
+    # validator actually knows, or it would silently excuse nothing.
+    _settings_exempt = {"policy"}
+    _expected = {k for k in _vc.KNOWN_ROOT
+                 if k not in _containers and k not in _settings_exempt}
     for _parent, _keys in _containers.items():
         _expected |= {"%s.%s" % (_parent, k) for k in _keys}
+    check("the Settings exemption names a real config key - an exemption for a key "
+          "the validator has never heard of excuses nothing and hides the next one",
+          _settings_exempt <= _vc.KNOWN_ROOT)
+    check("...and the exempt key is served by its own endpoint instead, so it is "
+          "not simply missing from the panel",
+          all('if path == "/api/%s"' % k in _src_of_this_file()
+              for k in _settings_exempt))
     # The container map above IS hand-kept — there is no machine link from a
     # top-level key to the set of keys inside it — so the one thing it can get
     # wrong is naming a container the validator has never heard of. Then the
@@ -6185,8 +6488,7 @@ def _selftest():
 
     # This module's own source, for the handful of checks that must assert a
     # server-side construct rather than a rendered string.
-    with open(__file__, encoding="utf-8") as _fh:
-        _src = _fh.read()
+    _src = _src_of_this_file()
 
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived

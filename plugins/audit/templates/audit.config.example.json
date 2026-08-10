@@ -77,6 +77,29 @@
     "enabled": true,
     "dir": null
   },
+  "//policy": "Which skills, subagents and MCP tools may be used here (guard-capabilities.py). Shipped INERT and left that way below: every kind defaults to 'allow' with empty lists, which cannot refuse anything. To use it, either name what you refuse (\"deny\": [\"mcp__prod-db__*\"]) or flip a kind to \"default\": \"deny\" and list what you permit in \"allow\". Patterns are case-sensitive globs against the name the call uses: the Skill tool's `skill`, the Task/Agent tool's `subagent_type` (a call naming none is 'general-purpose'), or the whole MCP tool name. `areas` scopes a rule to a meta.areas tag, in force only while a phase carrying it has work in_progress. onViolation: deny (refuse the call) | ask (prompt per call) | warn (allow it and say so). audit's own commands, skills and agents stay allowed whatever you write - disabling the plugin is how you remove those, and a deny aimed at them is reported rather than silently ignored.",
+  "policy": {
+    "enabled": true,
+    "onViolation": "deny",
+    "skills": {
+      "default": "allow",
+      "allow": [],
+      "deny": [],
+      "areas": {}
+    },
+    "agents": {
+      "default": "allow",
+      "allow": [],
+      "deny": [],
+      "areas": {}
+    },
+    "mcp": {
+      "default": "allow",
+      "allow": [],
+      "deny": [],
+      "areas": {}
+    }
+  },
   "//usage": "Token metering (meter-usage.py + /audit:usage). Rates are USD per MILLION tokens and live here on purpose: a price change is a one-line edit in your repo, not a plugin release. Cost is priced and stored when a row is written, so editing this table never rewrites history. Only list the models you actually run - anything unlisted resolves by longest name prefix, then '_default'. authorMode: email|name|hash|none. The ledger records counts, model ids, timestamps, branch and author - never prompt content.",
   "usage": {
     "enabled": true,

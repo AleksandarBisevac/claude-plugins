@@ -341,6 +341,92 @@ def check_areas(rep, project, manifest):
                % (len(reg), len(ar.used_tags(manifest))))
 
 
+def check_policy(rep, project, cfg, cfg_mod, manifest):
+    """The capability policy against the plan it governs, and against reality (v0.30).
+
+    Deliberately does NOT re-report a policy that denies audit's own components:
+    `validate_config` calls that a finding and `check_config` above has already
+    printed it. Two rows for one defect is the same "second place status lives"
+    problem one size down.
+
+    What is left is the pair of questions only this check can ask:
+
+      * Does the plan reference a capability the policy would refuse? A review
+        skill that is denied does not fail at save time or at validation time — it
+        fails at the moment a phase reaches sign-off, which is the worst possible
+        moment to discover it. Resolved through `_areas`, so the name checked is
+        the effective one, and against each phase's OWN tags, so an area-scoped
+        rule is judged as it will actually apply.
+      * Has the guard hook ever run here? Subagents do not inherit parent hooks on
+        every Claude Code version (anthropics/claude-code#43772). Where that is
+        true the policy is advisory rather than enforced, and the only honest local
+        evidence is the marker guard-capabilities.py leaves when it runs with a
+        live policy. Absent, it says so instead of implying enforcement nobody has.
+    """
+    pol = _load("_policy", "_policy.py")
+    policy = pol.policy_cfg(cfg)
+    if not pol.is_active(policy):
+        rep.ok("policy",
+               "inert - every skill, subagent and MCP tool is allowed"
+               + (" (policy.enabled is false)"
+                  if (cfg.get("policy") or {}).get("enabled") is False else ""))
+        return
+
+    refused = []
+    if manifest:
+        ar = _load("_areas", "_areas.py")
+        for phase in (manifest.get("phases") or []):
+            if not isinstance(phase, dict):
+                continue
+            tags = ar.areas_of(phase.get("area"))
+            pid = phase.get("id") or "?"
+            skill, _basis = ar.resolve_review_skill(manifest, phase)
+            wanted = [("%s review skill" % pid, skill)] if skill else []
+            for task in (phase.get("tasks") or []):
+                if not isinstance(task, dict):
+                    continue
+                for name in ar.resolve_skills(manifest, phase, task):
+                    wanted.append(("%s skill" % (task.get("id") or pid), name))
+            for where, name in wanted:
+                v = pol.resolve(policy, "skills", name, active_tags=tags)
+                if v["verdict"] == "violation":
+                    refused.append("%s %r (%s)" % (where, name, v["basis"]))
+    if refused:
+        rep.warn("policy",
+                 "%d capability reference(s) in the manifest would be refused: %s"
+                 % (len(refused), "; ".join(refused[:3])),
+                 "allow them in policy, or change what the plan asks for - a denied "
+                 "review skill fails at phase sign-off, not before")
+
+    try:
+        gc_mod = _load("guard_capabilities", "guard-capabilities.py", _HOOKS)
+        marker = os.path.join(str(cfg_mod.state_dir(pathlib.Path(project), cfg)),
+                              gc_mod.SEEN_FILE)
+        age_days = (time.time() - os.path.getmtime(marker)) / 86400.0
+    except Exception:
+        age_days = None
+    if age_days is None or age_days > RECENT_DAYS:
+        rep.warn("policy",
+                 "the policy is active, but guard-capabilities has not run here%s - "
+                 "your Claude Code version may not dispatch Skill/Task/MCP matchers "
+                 "to plugin hooks, and inside a subagent it may not inherit them at "
+                 "all (anthropics/claude-code#43772). The policy is then advisory"
+                 % ("" if age_days is None else " for %.0f days" % age_days),
+                 "use a skill or subagent in this project and re-run; if the marker "
+                 "still does not appear, treat the policy as documentation and "
+                 "enforce with Claude Code permission rules instead")
+    elif not refused:
+        # `age_days` cannot be None on this branch today, and the "%.1f" that used
+        # to assume it still crashed under a mutation — which is how it was found.
+        # A diagnostic that dies computing its own OK line reports the wrong thing
+        # twice over: nothing about the policy, and a traceback that looks like the
+        # defect. It states what it knows instead.
+        when = ("%.1f day(s) ago" % age_days if age_days is not None
+                else "at a time this check could not read")
+        rep.ok("policy", "active and enforcing (onViolation: %s); the guard last "
+                         "ran %s" % (policy.get("onViolation"), when))
+
+
 def check_build_commands(rep, project, manifest):
     """Do the runners named in meta.buildCommands exist?
 
@@ -582,6 +668,7 @@ def diagnose(project):
     check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel)
     check_submodules(rep, project, cfg, manifest, git_root)
     check_areas(rep, project, manifest)
+    check_policy(rep, project, cfg, cfg_mod, manifest)
     check_build_commands(rep, project, manifest)
     check_hooks_fired(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
@@ -870,6 +957,103 @@ def _selftest():
         check("areas: NO registry means the check says nothing at all - a "
               "single-app repo is not nagged about a monorepo feature",
               levels(rep, "areas") == [], repr(levels(rep, "areas")))
+
+        # --- the capability policy (v0.30) ------------------------------------
+        # The resolution is exercised in _policy.py's selftest; what is checked
+        # here is the two things only a doctor standing in the repo can see.
+        def with_policy(policy, phases=None, seen=None):
+            with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+                json.dump({"meta": {"version": 2, "reviewSkill": "house-review"},
+                           "phases": phases or [
+                               {"id": "P1", "title": "p", "status": "done",
+                                "tasks": [{"id": "P1.1", "title": "t",
+                                           "status": "done"}]}]}, fh)
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json", "policy": policy}, fh)
+            marker = os.path.join(tmp, ".claude", "state", "capability-guard.json")
+            if seen is None:
+                if os.path.exists(marker):
+                    os.unlink(marker)
+            else:
+                os.makedirs(os.path.dirname(marker), exist_ok=True)
+                with open(marker, "w", encoding="utf-8") as fh:
+                    json.dump({"lastRun": "x"}, fh)
+                os.utime(marker, (time.time() - seen, time.time() - seen))
+            return diagnose(tmp)
+
+        rep = with_policy({})
+        check("policy: an empty block is inert, and the row says so rather than "
+              "implying an enforcement nobody has",
+              levels(rep, "policy") == ["OK"]
+              and "inert" in detail(rep, "policy"), detail(rep, "policy"))
+        rep = with_policy({"enabled": False, "skills": {"deny": ["x"]}})
+        check("policy: switched off reads as inert and names the switch",
+              levels(rep, "policy") == ["OK"]
+              and "policy.enabled is false" in detail(rep, "policy"),
+              detail(rep, "policy"))
+        rep = with_policy({"skills": {"deny": ["nothing-uses-this"]}}, seen=60)
+        check("policy: an active policy with a fresh marker is OK and states the "
+              "violation mode it will use",
+              levels(rep, "policy") == ["OK"]
+              and "onViolation: deny" in detail(rep, "policy"),
+              detail(rep, "policy"))
+        rep = with_policy({"skills": {"deny": ["nothing-uses-this"]}})
+        check("policy: an active policy the hook has never enforced is a WARNING - "
+              "subagent hook inheritance is not guaranteed, and silence there "
+              "would claim an enforcement the repo may not be getting",
+              levels(rep, "policy") == ["WARNING"]
+              and "advisory" in detail(rep, "policy"), detail(rep, "policy"))
+        check("policy: ...and it names the upstream issue rather than hand-waving",
+              "43772" in detail(rep, "policy"), detail(rep, "policy"))
+        check("policy: a never-fired hook is never a FINDING - nothing is broken",
+              rep.exit_code() == 0, repr(rep.counts()))
+        rep = with_policy({"skills": {"deny": ["house-review"]}}, seen=60)
+        check("policy: a review skill the plan depends on and the policy refuses "
+              "is a WARNING - it would otherwise surface at phase sign-off, which "
+              "is the worst moment to find out",
+              "WARNING" in levels(rep, "policy")
+              and "review skill 'house-review'" in detail(rep, "policy"),
+              detail(rep, "policy"))
+        rep = with_policy(
+            {"skills": {"default": "deny", "allow": ["house-review"]}},
+            phases=[{"id": "P1", "title": "p", "status": "done",
+                     "tasks": [{"id": "P1.1", "title": "t", "status": "done",
+                                "skills": ["python-conv"]}]}], seen=60)
+        check("policy: a task's own skill is checked too, named by task id",
+              "P1.1 skill 'python-conv'" in detail(rep, "policy"),
+              detail(rep, "policy"))
+        rep = with_policy(
+            {"skills": {"default": "allow",
+                        "areas": {"api": {"deny": ["house-review"]}}}},
+            phases=[{"id": "P1", "title": "p", "status": "done", "area": "web",
+                     "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}],
+            seen=60)
+        check("policy: an area rule is judged against the phase's OWN tags, so a "
+              "rule for another area is not reported against this one",
+              levels(rep, "policy") == ["OK"], detail(rep, "policy"))
+        rep = with_policy(
+            {"skills": {"default": "allow",
+                        "areas": {"api": {"deny": ["house-review"]}}}},
+            phases=[{"id": "P1", "title": "p", "status": "done", "area": "api",
+                     "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}],
+            seen=60)
+        check("policy: ...and IS reported against the phase that carries the tag",
+              "WARNING" in levels(rep, "policy")
+              and "areas.api.deny" in detail(rep, "policy"), detail(rep, "policy"))
+        # A policy that denies audit's own components is a config FINDING, reported
+        # by check_config. This row must not restate it: two rows for one defect is
+        # the second-place-status problem one size down.
+        rep = with_policy({"agents": {"deny": ["audit:*"]}}, seen=60)
+        check("policy: denying audit's own components is reported ONCE, by the "
+              "config check that already validates the file",
+              levels(rep, "config") == ["FINDING"]
+              and "not deniable" in detail(rep, "config")
+              and not any("not deniable" in r["detail"] for r in rep.rows
+                          if r["check"] == "policy"), detail(rep, "policy"))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json"}, fh)
 
         # --- the audit trail (v0.29) ------------------------------------------
         # Graded the way the journal itself grades: a broken chain is the only

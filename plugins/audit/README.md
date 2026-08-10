@@ -6,7 +6,7 @@
 
 A **manifest-driven, model-aware, test-driven** audit/fix pipeline for any repo — with
 task + bug tracking, multi-agent manifest generation, and guard hooks (plan-first,
-secret-safety, token-logging, TDD nudge). The pipeline logic is generic; everything
+secret-safety, token-logging, capability policy, TDD nudge). The pipeline logic is generic; everything
 project-specific is supplied by a small per-repo config file.
 
 ## TL;DR
@@ -118,7 +118,7 @@ same panel at 390px:
   artifact, or to a link with `--share`. See [Reports](#reports).
 - **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
   composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
-- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, and whether the audit trail still holds. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
+- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
 - **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
@@ -149,6 +149,13 @@ same panel at 390px:
     (`sed -i`, `tee`, `>` redirects) that bypass the plan gate.
   - `guard-edits.py` (PreToolUse: edits) — blocks token-logging, project-defined banned
     patterns, edits of the installed plugin's own files, and bypass-state forgery.
+  - `guard-capabilities.py` (PreToolUse: Skill/Task/Agent/`mcp__*`) — enforces the
+    project's **capability policy**: which skills, subagents and MCP tools may be used
+    here, optionally scoped to the monorepo areas currently being worked on. Inert
+    until a rule is written, and every refusal names the rule that produced it.
+    `onViolation` chooses `deny` / `ask` / `warn`. See
+    [Capability policy](#capability-policy--policy) — and its four honest limits in
+    [SECURITY.md](../../SECURITY.md).
   - `guard-bash-writes.py` (PostToolUse: Bash + edits) — **non-blocking** git-status diff
     check: when a shell command modifies a source file that no tool edit and no
     `in_progress` task accounts for, the model is told — in-band — that it just sidestepped
@@ -197,7 +204,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
 | `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day] [--phase <id>] [--author <who>] [--since 7d] [--json] [--backfill]` | **Token spend, attributed** — per phase, task, model, author and time window, with cache economics, cost-per-task and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
-| `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, and whether the audit trail still holds. Read-only; exits 1 on findings so CI can use it. |
+| `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
@@ -383,11 +390,59 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `usage.pricing` | Model id → `{in, out, cacheW5m, cacheW1h, cacheR}` in currency per **million** tokens | shipped table |
 | `journal.enabled` | Record every manifest / config write in the tamper-evident audit trail | `true` |
 | `journal.dir` | Where the trail's monthly per-writer `.jsonl` files live; unset → beside the manifest, so one commit carries both the change and the record of it | unset |
+| `policy.enabled` | Enforce the capability policy below | `true` (and inert — the shipped rules allow everything) |
+| `policy.onViolation` | What a violation does: `deny` \| `ask` \| `warn` | `deny` |
+| `policy.{skills,agents,mcp}` | Per kind: `{default: "allow"\|"deny", allow: [pattern], deny: [pattern], areas: {tag: {allow, deny}}}` | `default: "allow"`, no rules |
 
 Every key above has a control in the panel's **Settings** tab, grouped into *Paths & gate*,
 *Write guards*, *TDD reminder*, *Usage & pricing* and *Audit trail* — the coverage is asserted by
 `panel-server.py --selftest` against `validate-config.py`'s own key sets, so a key documented
-here and unreachable there is a build failure rather than a discovery.
+here and unreachable there is a build failure rather than a discovery. `policy` is the one
+deliberate exception: it is not a value with a box but a rule set whose meaning is the verdict it
+produces for each installed capability, so it has its own endpoint (`/api/policy`, which serves
+those verdicts) rather than a generic text field. The exemption is pinned by the same selftest.
+
+### Capability policy — `policy`
+
+Which **skills, subagents and MCP tools** may be used in this repository. Shipped inert: every
+kind defaults to `allow` with no rules, which cannot refuse anything, so a repo that writes
+nothing behaves exactly as it did before 0.30.0.
+
+```json
+"policy": {
+  "onViolation": "deny",
+  "agents": {"default": "deny", "allow": ["audit:*", "code-reviewer"]},
+  "mcp":    {"deny": ["mcp__prod-db__*"]},
+  "skills": {"areas": {"api": {"deny": ["deploy-*"]}}}
+}
+```
+
+Patterns are case-sensitive globs against the name the call uses: the Skill tool's `skill`
+(`dataviz`, `audit:next`), the Task/Agent tool's `subagent_type` (a call naming none is
+`general-purpose`), or the **whole** MCP tool name — so `mcp__github__*` is how you name a server.
+
+Resolution, in order — and every verdict prints the rule that produced it:
+
+1. **audit's own** commands, skills and agents are allowed whatever the policy says.
+2. **deny** wins over allow — project-wide, or from any area with work in progress.
+3. **allow** — project-wide, or from any active area (several active areas *union* their allow
+   lists: the more permissive answer, deliberately).
+4. **default** for the kind.
+
+`areas` rules are scoped to a `meta.areas` tag and are in force **only while a phase carrying that
+tag has work `in_progress`** — a hook sees a tool name, not a directory, so "in this area" can only
+mean "while this area is being worked on".
+
+`/audit:doctor` reports it: whether it is inert, whether the plan references a skill the policy
+would refuse (which would otherwise surface at phase sign-off), and whether the guard has ever
+actually run here.
+
+**What it does not do** — stated in full in [SECURITY.md](../../SECURITY.md): it governs the tool,
+not the knowledge; it holds only while the plugin is enabled; subagents do not inherit parent hooks
+on every Claude Code version, so inside one it may be advisory; and hooks cannot gate hooks. The
+plugin's own components are not deniable through its own policy — a rule aimed at them is reported
+as a finding rather than silently ignored, because *not removable quietly* is a claim this can
+keep and *unremovable* is not.
 
 ### The manifest's `meta` block
 

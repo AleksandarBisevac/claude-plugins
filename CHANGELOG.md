@@ -4,6 +4,103 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.30.0] - 2026-08-10
+
+**"Which of these may run here?" had no answer.** A repo could say what its agents must do and
+what they must not edit; it could not say which skills, subagents and MCP servers exist for them
+at all. Every capability installed on the machine was available in every project — including the
+production database server that has no business being reachable from a refactor. The policy block
+is the answer, and it is careful to claim only what a tool hook can actually hold.
+
+### Added
+- **`policy` in `.claude/audit.config.json` — which skills, subagents and MCP tools may be used
+  in this repository**, enforced by a new PreToolUse hook `hooks/guard-capabilities.py`
+  (matcher `Skill|Task|Agent|mcp__.*`).
+
+  ```json
+  "policy": {
+    "onViolation": "deny",
+    "agents": {"default": "deny", "allow": ["audit:*", "code-reviewer"]},
+    "mcp":    {"deny": ["mcp__prod-db__*"]},
+    "skills": {"areas": {"api": {"deny": ["deploy-*"]}}}
+  }
+  ```
+
+  **Shipped inert**: every kind defaults to `allow` with no rules, which cannot refuse anything,
+  and `_policy.is_active` says so — the hook returns on it before it even reads a manifest. A repo
+  that writes nothing behaves exactly as it did before this release.
+
+  Resolution, once, in `scripts/_policy.py`: **required** (audit's own commands, skills and
+  agents) → **deny** (project-wide, or any area with work in progress) → **allow** (project-wide,
+  or any active area) → **default**. Every verdict carries the rule that produced it, because a
+  refusal nobody can explain is a refusal they will switch off.
+
+  `areas` rules are scoped to a `meta.areas` tag and in force **only while a phase carrying it has
+  work `in_progress`** — a hook sees a tool name, not a directory, so "in this area" can only mean
+  "while this area is being worked on". Several active areas **union** their allow lists (the more
+  permissive answer, documented) while any one's deny wins.
+
+- **`onViolation`: `deny` | `ask` | `warn`.** `warn` is a `systemMessage`, deliberately **not** a
+  `permissionDecision: "allow"` — that value does not mean "carry on", it means "skip the
+  permission system", so an advisory written that way would silently grant more than it found.
+
+- **`GET/PUT /api/policy` in the panel.** GET serves the block **and what it resolves to** for
+  every discovered skill, agent and MCP server — computed by the same `_policy.resolve` the guard
+  calls, because a preview that ran its own matching would eventually disagree with the guard, and
+  a denial is the last place a panel should be creative. PUT goes through the one config writer,
+  so it locks, validates, echoes its change rows and journals them. (The switchboard UI that
+  consumes this lands with panel c7.)
+
+- **`/audit:doctor` reports the policy**: inert or enforcing, any capability the *plan itself*
+  references that the policy would refuse (a denied review skill otherwise surfaces at phase
+  sign-off, which is the worst possible moment), and whether the guard has **ever actually run
+  here** — the honest local evidence for the subagent-inheritance gap below.
+
+### Changed
+- **The plugin's own components are not deniable through its own policy.** A rule matching one of
+  audit's commands, skills or agents does not take effect, and is now a validator **FINDING**
+  rather than a line that quietly does nothing — so the panel and `/audit` preflight both refuse a
+  file that claims an enforcement nobody is getting. The claim this makes is *not removable
+  quietly*, never "unremovable": removing them means disabling the plugin, which is visible in
+  `/plugin` and to the doctor. The required set is **read off the plugin's own directory**
+  (`commands/*.md`, `skills/*/`, `agents/*.md`) rather than typed out, so it cannot drift from
+  what ships.
+- **SECURITY.md states four limits in full**: subagents do not inherit parent hooks on every
+  Claude Code version (anthropics/claude-code#43772), so a policy may be advisory inside one; it
+  governs the tool, not the knowledge; the user's own switch outranks it; and hooks cannot gate
+  hooks. Its fail-mode table also gained the two rows it had been missing — `guard-capabilities`
+  and `journal-writes`, which shipped in 0.29.0 without one — and the three counts it prints
+  (nine scripts, ten registrations, seven that guard) now agree with the directory.
+
+### Verification
+- **1831 selftest cases across 28 suites** (from 1692 across 26): `_policy` 60 new,
+  `guard-capabilities` 26 new, `panel-server` 350→373, `audit-doctor` 66→77, `_config` 71→81,
+  `validate-config` 54→63. Plus `capture-screenshots.mjs --check` and
+  `check-report-interactive.mjs` on all three shipped reports.
+- **The wiring is checked end to end through the launcher**, in CI, beside the plan gate's: the
+  selftests call `decide()` directly and so prove nothing about the matcher's payload, the stdin
+  contract or the emitted JSON. Five payloads — inert, denied, allowed by rule, audit's own, and
+  `warn` — go through `py-launch.sh` and are asserted on what comes back.
+- **29 mutations proven red, each naming its own defect** — a lost required exemption, allow
+  consulted before deny, area rules that ignore which areas are live, an intersection where the
+  union is documented, a marker written on the inert path, an unthrottled marker, a refusal that
+  stops naming its rule, a doctor that stops noticing the guard never fired, a preview resolved
+  without the active areas, and a policy PUT that bypasses the one config writer.
+- **Three of those mutations changed a check rather than confirming it.** The case-sensitivity
+  case could not fail on this machine at all: `fnmatch.fnmatch` normalises case through
+  `os.path.normcase`, which is the identity everywhere except Windows — so the wrong function
+  passed on macOS and would have reddened only the Windows leg, i.e. somebody else's build. It is
+  now pinned at the call site as well, with the needle assembled at runtime so the check does not
+  contain the string it forbids. The `onViolation` fallback existed in two places (the sanitiser
+  and the hook), so no single mutation could flip it — the hook's copy is gone, and the case now
+  proves it reads the sanitised value. And the doctor's own OK line crashed with a `TypeError`
+  under mutation instead of failing an assertion (the F3 trap): a diagnostic that dies computing
+  its own output reports the wrong thing twice.
+- **The panel's policy fixture creates the capabilities it resolves verdicts for**, project-local,
+  instead of trusting `discover()` to find something on the machine. The first version named
+  `code-reviewer` because this laptop has one installed — green here, absent on CI, and silently
+  vacuous either way.
+
 ## [0.29.0] - 2026-08-10
 
 **Who changed the plan?** Nothing could answer that. The panel wrote the manifest, `/audit` wrote

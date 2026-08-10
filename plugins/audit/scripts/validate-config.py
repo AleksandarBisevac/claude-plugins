@@ -23,14 +23,18 @@ source of truth for the hooks themselves; this validator only guards the file's
 shape and is intentionally permissive (unknown keys are warnings, not findings).
 """
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _policy  # noqa: E402  (the policy block's shape + the resolution it feeds)
 
 # Mirror of hooks/_config.py DEFAULTS key set (source of truth for the hooks).
 KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "trivialLineThreshold",
     "stateDir", "logsDir", "bypassKeyword", "secretPatterns", "guardEdits",
-    "bashWriteCheck", "tddReminder", "usage", "journal",
+    "bashWriteCheck", "tddReminder", "usage", "journal", "policy",
 }
 KNOWN_SECRET = {"extra"}
 KNOWN_GUARD = {"tokenVars", "customRules"}
@@ -51,6 +55,13 @@ KNOWN_BANDS = {"highUSD", "outlierUSD"}
 # so a repo that moves its plan takes the record of it along. Same shape as
 # usage.bands: a null here is an answer, not a missing value.
 KNOWN_JOURNAL = {"enabled", "dir"}
+# Not a fourth statement of the policy block's shape: `_policy` owns it, and every
+# surface that needs the key set (this validator, the panel's Settings coverage
+# check) reads THIS name, which is that module's.
+KNOWN_POLICY = _policy.KNOWN_POLICY
+KNOWN_POLICY_KIND = _policy.KNOWN_KIND
+POLICY_KINDS = _policy.KINDS
+ON_VIOLATION = _policy.ON_VIOLATION
 # All three are implemented by remind-tdd.py and covered by its selftests;
 # "warn-always" was documented in four places and rejected here, so setting the
 # documented value made the config invalid and the panel refuse to save it.
@@ -203,6 +214,13 @@ def validate_config(obj):
             _check_pricing(us.get("pricing"), findings, warnings)
 
     _check_journal(obj.get("journal"), findings, warnings)
+
+    # Delegated whole: the module that resolves a policy decides what a malformed
+    # one is. A copy of those rules here would be free to call legal what the guard
+    # hook refuses, which is the one disagreement a config validator must not have.
+    pf, pw = _policy.validate_policy(obj.get("policy"))
+    findings.extend(pf)
+    warnings.extend(pw)
 
     return findings, warnings
 
@@ -485,6 +503,39 @@ def _selftest():
     f, w = validate_config({"journal": {"enabledd": True}})
     check("a misspelled journal key -> warning only",
           not f and any("journal" in x for x in w))
+
+    # --- policy ---------------------------------------------------------------
+    # The rules themselves are exercised in _policy.py's own selftest; what is
+    # checked here is that this validator DELEGATES to it — a copy of the rules in
+    # this file could call legal what the guard hook refuses.
+    f, w = validate_config({"policy": {"enabled": True, "onViolation": "ask",
+                                       "agents": {"default": "deny",
+                                                  "allow": ["code-*"]}}})
+    check("a documented policy block validates clean", not f and not w)
+    f, w = validate_config({})
+    check("no policy block is still a clean config", not f and not w)
+    check("policy is a known root key, so writing one produces no unknown-key "
+          "warning", "policy" in KNOWN_ROOT)
+    f, _ = validate_config({"policy": {"onViolation": "block"}})
+    check("an onViolation outside the enum -> finding",
+          any("onViolation" in x for x in f))
+    f, _ = validate_config({"policy": {"skills": {"default": "denied"}}})
+    check("a misspelled default -> finding (it would silently ALLOW)",
+          any("policy.skills.default" in x for x in f))
+    f, _ = validate_config({"policy": {"mcp": {"deny": "mcp__prod__*"}}})
+    check("a bare string where a pattern list goes -> finding",
+          any("policy.mcp.deny" in x for x in f))
+    f, _ = validate_config({"policy": {"agents": {"deny": ["audit:*"]}}})
+    check("denying audit's own components -> finding, so the panel refuses to save "
+          "a policy whose line does not take effect",
+          any("not deniable" in x for x in f))
+    _, w = validate_config({"policy": {"skills": {"typo": []}}})
+    check("an unknown policy key -> warning only", any("unknown" in x for x in w))
+    check("the key sets ARE _policy's, not a copy - a fourth statement of this "
+          "shape is the drift the delegation exists to prevent",
+          KNOWN_POLICY is _policy.KNOWN_POLICY
+          and KNOWN_POLICY_KIND is _policy.KNOWN_KIND
+          and POLICY_KINDS is _policy.KINDS)
 
     f, w = validate_config([])
     check("non-object root -> finding", len(f) == 1 and not w)

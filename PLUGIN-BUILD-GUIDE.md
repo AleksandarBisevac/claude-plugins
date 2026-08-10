@@ -1,7 +1,7 @@
 # Plugin build & handoff guide
 
 This repository is a **standalone Claude Code plugin** that packages a manifest-driven
-manifest-driven `/audit:*` fix-pipeline plus six guard hooks and three pinned-tool agents. It was extracted (de-coupled, IP-scrubbed)
+manifest-driven `/audit:*` fix-pipeline plus seven guard hooks and three pinned-tool agents. It was extracted (de-coupled, IP-scrubbed)
 from an internal project's `.claude/` tooling so it can be reused in **any** repo and
 published on a personal marketplace. This single document is self-sufficient: it explains
 every file, why its contents are shaped the way they are, how to finish/publish it, and how
@@ -63,13 +63,14 @@ claude-plugins/                           # this repo (personal, public)
         audit-executor.md                 # task executor (no web tools, no nested agents)
         audit-reviewer.md                 # sign-off reviewer (no edit tools)
       hooks/
-        hooks.json                        # wires the 7 hooks to events (${CLAUDE_PLUGIN_ROOT})
+        hooks.json                        # wires the 9 hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
         _config.py                        # shared config loader + path/manifest helpers
         require-plan.py                   # plan-first gate, graded on evidence (observe/warn/deny; Pre decides, Post commits state)
         detect-plan-skip.py               # arms the plan-first bypass + config-error warning + state GC
         guard-secrets-read.py             # blocks secret reads (direct+indirect) + shell source writes
         guard-edits.py                    # token-logging ban, custom rules, self-edit/forgery block
+        guard-capabilities.py             # capability policy: which skills/subagents/MCP tools may run here
         guard-bash-writes.py              # PostToolUse git-status diff check (unplanned shell writes)
         remind-tdd.py                     # non-blocking TDD nudge (PostToolUse)
         journal-writes.py                 # PostToolUse: records manifest/config writes in the audit trail
@@ -82,6 +83,7 @@ claude-plugins/                           # this repo (personal, public)
       scripts/
         _manifest_io.py                   # dual-format loader/writer (single-file OR index+shards)
         _areas.py                         # meta.areas registry + reviewSkill/skills resolution
+        _policy.py                        # capability policy: shape, validation, required -> deny -> allow -> default
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         validate-manifest.py              # dependency-free referential validator (cycles, links)
         validate-config.py                # validates .claude/audit.config.json against its schema
@@ -174,6 +176,7 @@ Maps events → scripts, every entry running through
 `sh "${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh" <script> <ask|open>` with a 10 s timeout:
 - PreToolUse `Read|Grep|Bash` → `guard-secrets-read.py` (fail mode **ask**)
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
+- PreToolUse `Skill|Task|Agent|mcp__.*` → `guard-capabilities.py` (fail mode **ask**)
 - PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
 - PostToolUse `Bash` → `guard-bash-writes.py` (the diff check; **open**)
 - UserPromptSubmit → `detect-plan-skip.py` (**open**)
@@ -293,6 +296,24 @@ cannot be written must not break the write it was recording. A hook rather than 
 instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly
 like a covered-up one. Config `journal.enabled`. `--selftest` (30 cases, incl. an end-to-end
 append + verify).
+
+### `plugins/audit/hooks/guard-capabilities.py` (v0.30.0)
+PreToolUse (`Skill|Task|Agent|mcp__.*`) enforcer for the `policy` config block: which skills,
+subagents and MCP tools may be used in this repo, optionally scoped to the monorepo areas with
+work in progress. The rule itself is NOT here — `scripts/_policy.py` owns the resolution, the
+panel previews it and the doctor checks it through the same function — so this file is the
+enforcement half only. Inert by default and short-circuits before reading a manifest; every
+refusal names the rule that produced it. `onViolation` picks deny / ask / warn, and warn is a
+`systemMessage` rather than a `permissionDecision`, which would bypass the permission system.
+Leaves a throttled marker in `stateDir` so `/audit:doctor` can say whether the matchers ever
+reach it (subagent hook inheritance is not guaranteed). `--selftest` (26 cases).
+
+### `plugins/audit/scripts/_policy.py` (v0.30.0)
+The policy block's shape, defaults, validation and resolution — required → deny → allow →
+default, with area rules scoped to phases in progress. The required set (audit's own commands,
+skills and agents, which no policy can deny) is read off the plugin's own directory rather than
+listed. `validate-config.py` delegates to `validate_policy` here; `panel-server.py` and
+`audit-doctor.py` call `resolve` here. `--selftest` (60 cases).
 
 ### `plugins/audit/scripts/audit-journal.py` (v0.29.0)
 The trail itself: `append(project, entry) -> bool` plus `append | verify | show` on the CLI.

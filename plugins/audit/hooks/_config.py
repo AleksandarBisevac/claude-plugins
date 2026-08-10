@@ -56,6 +56,13 @@ Config keys (all optional; defaults in DEFAULTS below):
         bands (obj: highUSD / outlierUSD, both null = calibrate from the project)
   journal                 obj   — the tamper-evident audit trail (audit-journal.py,
         journal-writes.py): enabled (bool), dir (str or null = beside the manifest)
+  policy                  obj   — which skills, subagents and MCP tools may be used
+        here (guard-capabilities.py): enabled (bool), onViolation
+        ("deny"|"ask"|"warn"), and one block per kind (skills/agents/mcp) of
+        {default: "allow"|"deny", allow: [pattern], deny: [pattern],
+        areas: {tag: {allow, deny}}}. The shape, the defaults and the resolution
+        all live in scripts/_policy.py — see DEFAULTS below for why they are not
+        restated here.
 
 This module also hosts the path/manifest helpers shared by require-plan.py and
 remind-tdd.py (rel_path, matches_exempt, strip_line_suffix, in_progress_*).
@@ -172,6 +179,36 @@ DEFAULTS = {
     # copy of it the hooks read, and its selftest pins the two together.
     "journal": {"enabled": True, "dir": None},
 }
+
+
+def _load_scripts_module(name, filename):
+    """Load a sibling module out of ../scripts by path. None when it cannot be
+    loaded — every caller reads that as "the feature this module owns is not
+    installed" rather than raising into a hook."""
+    try:
+        import importlib.util
+        scripts_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+        spec = importlib.util.spec_from_file_location(
+            name, os.path.join(scripts_dir, filename))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+# The capability policy's defaults are NOT written out here. scripts/_policy.py owns
+# the block — its shape, its resolution order and what "inert" means — and a second
+# copy of the shipped values in this file is the drift this repository has already
+# shipped once (`exemptGlobs` and `tddReminder.testGlobs` disagreeing about what a
+# test file is). So DEFAULTS carries that module's own dict, and `policy_cfg` below
+# delegates rather than merging by hand. If the module is missing there is no policy
+# engine at all, and the key is simply absent — which every reader treats as "allow",
+# the same fail-open the rest of this file uses.
+_POLICY_MOD = _load_scripts_module("audit_policy", "_policy.py")
+if _POLICY_MOD is not None:
+    DEFAULTS["policy"] = copy.deepcopy(_POLICY_MOD.DEFAULTS)
 
 
 def repo_root(data):
@@ -299,17 +336,8 @@ def _load_journal_lib():
     nothing can write one."""
     if not _JOURNAL_LIB["tried"]:
         _JOURNAL_LIB["tried"] = True
-        try:
-            import importlib.util
-            scripts_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
-            spec = importlib.util.spec_from_file_location(
-                "audit_journal", os.path.join(scripts_dir, "audit-journal.py"))
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            _JOURNAL_LIB["mod"] = mod
-        except Exception:
-            _JOURNAL_LIB["mod"] = None
+        _JOURNAL_LIB["mod"] = _load_scripts_module("audit_journal",
+                                                   "audit-journal.py")
     return _JOURNAL_LIB["mod"]
 
 
@@ -352,6 +380,90 @@ def in_journal(root, cfg, path):
         return target == d or target.startswith(d + os.sep)
     except Exception:
         return False
+
+
+def policy_mod():
+    """scripts/_policy.py, or None when this install has no policy engine."""
+    return _POLICY_MOD
+
+
+def policy_cfg(cfg):
+    """The merged `policy` block, or None when there is no policy engine here.
+
+    Delegates to `_policy.policy_cfg` for the same reason `journal_dir` delegates
+    to audit-journal: the module that resolves a policy owns what an absent key
+    means, and a second merge in this file would be free to disagree with it.
+    """
+    if _POLICY_MOD is None:
+        return None
+    try:
+        return _POLICY_MOD.policy_cfg(cfg or {})
+    except Exception:
+        return None
+
+
+_AREAS_LIB = {"tried": False, "mod": None}
+
+
+def _areas_lib():
+    """scripts/_areas.py, loaded once — the same caching `_load_journal_lib` uses,
+    and for the plainer reason: this sits behind a blocking guard, and executing a
+    module per tool call to normalise a list of tags is work nobody asked for."""
+    if not _AREAS_LIB["tried"]:
+        _AREAS_LIB["tried"] = True
+        _AREAS_LIB["mod"] = _load_scripts_module("audit_areas", "_areas.py")
+    return _AREAS_LIB["mod"]
+
+
+def active_area_tags(root, manifest_rel):
+    """The `meta.areas` tags of phases with work in progress, in manifest order.
+
+    This is what scopes a per-area policy rule. A hook is handed a tool name and
+    nothing else — no directory, no file — so "this rule applies to the API area"
+    can only mean "while the API area is being worked on". The evidence is the same
+    one the plan gate grades itself on: a phase (or one of its tasks) is
+    `in_progress`.
+
+    Reads the ASSEMBLED manifest, which is load-bearing under the sharded layout —
+    the index stubs carry no status, so a raw read would report nothing running and
+    every area rule would be silently inert. Empty list on any error, which resolves
+    to the policy without its area rules: fail-open, like everything else here.
+    """
+    tags = []
+    try:
+        manifest = _load_manifest_assembled(Path(root) / manifest_rel)
+        if not isinstance(manifest, dict):
+            return tags
+        areas = _areas_lib()
+        for phase in manifest.get("phases") or []:
+            if not isinstance(phase, dict):
+                continue
+            running = phase.get("status") == "in_progress" or any(
+                isinstance(t, dict) and t.get("status") == "in_progress"
+                for t in (phase.get("tasks") or []))
+            if not running:
+                continue
+            of = areas.areas_of if areas is not None else _areas_of_fallback
+            for tag in of(phase.get("area")):
+                if tag not in tags:
+                    tags.append(tag)
+    except Exception:
+        return tags
+    return tags
+
+
+def _areas_of_fallback(area):
+    """`_areas.areas_of` when scripts/_areas.py cannot be loaded. Deliberately the
+    same normalisation (trim, drop empties, dedupe) and nothing more — the module
+    is the source of truth and this exists only so a missing file degrades to a
+    plain reading of the tag rather than to no tags at all."""
+    raw = [area] if isinstance(area, str) else (area if isinstance(area, list) else [])
+    out = []
+    for tag in raw:
+        t = tag.strip() if isinstance(tag, str) else ""
+        if t and t not in out:
+            out.append(t)
+    return out
 
 
 def token_vars(cfg):
@@ -489,17 +601,7 @@ def _load_lock_lib():
     """Load scripts/audit-lock.py by path — same pattern as _load_manifest_assembled
     and meter-usage's ledger load. None if it cannot be loaded; every caller treats
     that as "no verdict" and allows."""
-    try:
-        import importlib.util
-        scripts_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
-        spec = importlib.util.spec_from_file_location(
-            "audit_lock", os.path.join(scripts_dir, "audit-lock.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
-    except Exception:
-        return None
+    return _load_scripts_module("audit_lock", "audit-lock.py")
 
 
 def governing_lock(manifest_rel, rel):
@@ -988,6 +1090,80 @@ def _selftest() -> int:
               and str(jd) == _jmod.journal_dir(str(tmp_j), cfg_j))
     finally:
         shutil.rmtree(tmp_j, ignore_errors=True)
+
+    # (p) the capability policy — the block itself lives in scripts/_policy.py and
+    # is exercised there; what this file owns is the delegation and the one piece of
+    # evidence a hook cannot get from the config alone: which areas are active.
+    tmp_p = Path(tempfile.mkdtemp(prefix="config-policy-"))
+    try:
+        _pol = policy_mod()
+        check("p1 the policy engine ships and is reachable from the hooks",
+              _pol is not None)
+        check("p2 DEFAULTS carries the engine's own block rather than a copy of it "
+              "- one statement of what ships inert",
+              _pol is not None and DEFAULTS.get("policy") == _pol.DEFAULTS)
+        check("p3 the shipped default is inert, so the guard hook returns before "
+              "it reads anything",
+              _pol is not None and not _pol.is_active(policy_cfg({})))
+        check("p4 a project's block merges through the engine, not by hand",
+              policy_cfg({"policy": {"skills": {"default": "deny"}}})["skills"]
+              == {"default": "deny", "allow": [], "deny": [], "areas": {}})
+        _p = load(tmp_p)
+        _p["policy"]["skills"]["deny"].append("MUTATED")
+        check("p5 a loaded policy does not alias DEFAULTS",
+              "MUTATED" not in DEFAULTS["policy"]["skills"]["deny"]
+              and "MUTATED" not in (_pol.DEFAULTS["skills"]["deny"] if _pol else []))
+
+        rel = "docs/audit/audit-plan.json"
+
+        def write_plan(phases, sharded=False):
+            d = tmp_p / "docs" / "audit"
+            if d.exists():
+                shutil.rmtree(d)
+            d.mkdir(parents=True, exist_ok=True)
+            if not sharded:
+                (d / "audit-plan.json").write_text(
+                    json.dumps({"meta": {"version": 2}, "phases": phases}),
+                    encoding="utf-8")
+                return
+            idx = {"meta": {"version": 3}, "phases": []}
+            (d / "phases").mkdir(exist_ok=True)
+            for ph in phases:
+                idx["phases"].append({"id": ph["id"], "title": ph.get("title", ""),
+                                      "shard": "phases/%s.json" % ph["id"]})
+                (d / "phases" / ("%s.json" % ph["id"])).write_text(
+                    json.dumps(ph), encoding="utf-8")
+            (d / "audit-plan.json").write_text(json.dumps(idx), encoding="utf-8")
+
+        check("p6 no manifest -> no active areas, and no raise",
+              active_area_tags(tmp_p, rel) == []
+              and active_area_tags(None, None) == [])
+        write_plan([{"id": "P1", "title": "a", "status": "done", "area": "api",
+                     "tasks": [{"id": "P1.1", "status": "done"}]},
+                    {"id": "P2", "title": "b", "status": "in_progress",
+                     "area": ["web", "web"],
+                     "tasks": [{"id": "P2.1", "status": "pending"}]}])
+        check("p7 only the phases with work in progress count, deduped by the same "
+              "normaliser the rest of the plugin uses",
+              active_area_tags(tmp_p, rel) == ["web"],
+              repr(active_area_tags(tmp_p, rel)))
+        write_plan([{"id": "P1", "title": "a", "status": "pending", "area": "api",
+                     "tasks": [{"id": "P1.1", "status": "in_progress"}]}])
+        check("p8 a running TASK under a pending phase makes its area active - the "
+              "same evidence the plan gate grades on",
+              active_area_tags(tmp_p, rel) == ["api"])
+        write_plan([{"id": "P1", "title": "a", "status": "in_progress",
+                     "area": "api", "tasks": [{"id": "P1.1", "status": "pending"}]}],
+                   sharded=True)
+        check("p9 sharded layout: the areas are read from the ASSEMBLED manifest, "
+              "or the index stubs' missing status would make every area rule "
+              "silently inert", active_area_tags(tmp_p, rel) == ["api"])
+        write_plan([{"id": "P1", "title": "a", "status": "in_progress",
+                     "tasks": [{"id": "P1.1", "status": "pending"}]}])
+        check("p10 an untagged running phase activates nothing",
+              active_area_tags(tmp_p, rel) == [])
+    finally:
+        shutil.rmtree(tmp_p, ignore_errors=True)
 
     # (g) governing_lock — which of the two tiers covers a given write. This is the
     # map the enforcement rests on, so a path that should be governed and isn't

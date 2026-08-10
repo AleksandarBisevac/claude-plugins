@@ -16,27 +16,30 @@ always-on first line.
 
 ## Fail modes (by design)
 
-All **seven** hook scripts launch through `hooks/py-launch.sh`, which resolves
+All **nine** hook scripts launch through `hooks/py-launch.sh`, which resolves
 `python3` → `python` → `py`. The fail mode when **no interpreter exists** is
 hardcoded per hook in `hooks/hooks.json` — it cannot live in
 `.claude/audit.config.json` because reading that config requires Python
 (chicken-and-egg).
 
-The table has **eight rows for seven scripts**: `require-plan` is registered
+The table has **ten rows for nine scripts**: `require-plan` is registered
 twice, once on `PreToolUse` to decide and once on `PostToolUse` to commit that
 decision, and the two registrations fail differently — which is the whole reason
 this table is per-registration rather than per-script. Elsewhere you may see
-"six guard hooks": that is the six that guard, excluding `meter-usage`, which
-only records. Three defensible counts, so each one now says what it counts.
+"seven guard hooks": that is the seven that guard, excluding `meter-usage` and
+`journal-writes`, which only record. Three defensible counts, so each one now says
+what it counts.
 
 | Hook | Event | No interpreter | On internal error |
 |---|---|---|---|
 | `guard-secrets-read` | PreToolUse Read/Grep/Bash | **ask** (manual approval prompt, loud) | allow (fail-open) |
 | `guard-edits` | PreToolUse edits | **ask** | allow |
 | `require-plan` | PreToolUse edits | **ask** | allow |
+| `guard-capabilities` | PreToolUse Skill/Task/Agent/MCP | **ask** | allow |
 | `require-plan` (state commit) | PostToolUse edits | silent | no-op |
 | `guard-bash-writes` | PostToolUse Bash + edits | silent | no-op |
 | `remind-tdd` | PostToolUse edits | silent | no-op |
+| `journal-writes` | PostToolUse edits | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd | silent | no-op |
 
@@ -164,6 +167,45 @@ accident visible. If your threat model includes an adversary with write access t
 the repository and a motive to cover their tracks, the honest answer is that this
 raises the cost and does not close the door — commit the journal, and let the
 review of the commit be what closes it.
+
+## The capability policy: what it can and cannot hold
+
+Since 0.30.0 a project can say which skills, subagents and MCP tools may be used
+in it (`policy` in `.claude/audit.config.json`, enforced by
+`hooks/guard-capabilities.py`). It ships **inert** — every kind defaults to
+`allow` with no deny rules — so it changes nothing until someone writes a rule.
+
+It is worth being exact about the reach, because a guard whose limits are
+unstated gets relied on for things it cannot do. **Four flags, all of them
+consequences of running as a plugin hook rather than as the platform:**
+
+1. **Subagent hooks are not inherited on every version**
+   (anthropics/claude-code#43772). Inside a subagent the policy may simply not be
+   consulted, which makes it advisory there rather than enforced. There is no way
+   for the plugin to detect this per call, so it reports the only local evidence
+   it has: `guard-capabilities` leaves a marker when it runs with a live policy,
+   and `/audit:doctor` **warns** when an active policy has no marker.
+2. **It denies the tool, not the knowledge.** Denying a skill stops the Skill
+   tool call. It does not unread a document the model has already been given, and
+   it does not stop the same work being done by hand. This is a control over
+   *invocation*, which is the only thing a tool hook can see.
+3. **The user's own switch outranks it.** Claude Code lets anyone disable a
+   plugin — by design — and a disabled plugin's hooks do not run. So the plugin's
+   own components (its commands, skills and agents) are **not** deniable through
+   its own policy: a rule aimed at them does not take effect, and is reported as
+   a validation finding rather than silently ignored. The honest claim is not
+   "unremovable" — it is "not removable *quietly*", since removing them means
+   disabling the plugin, which is visible in `/plugin` and to `/audit:doctor`.
+4. **Hooks cannot gate hooks.** Another plugin's hooks run in the same session
+   and nothing here can refuse them. The panel inventories what is installed;
+   it never claims to enforce against it.
+
+Everything uncertain resolves to *allow*, in keeping with the fail-open posture
+above: no policy engine, a malformed block, an unreadable manifest and an
+internal error all permit the call. `onViolation` chooses what a real violation
+does — `deny` (refuse), `ask` (manual approval per call) or `warn` (allow it and
+say so). `warn` is deliberately **not** a `permissionDecision: "allow"`, which
+would bypass the permission system entirely: an advisory must not grant anything.
 
 Blocking uses the canonical PreToolUse JSON protocol
 (`permissionDecision: "deny"` + reason, exit 0). Internal errors fail **open**

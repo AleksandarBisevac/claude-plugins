@@ -144,6 +144,54 @@ jobs:
           printf '{"enforce":true}' > "$proj/.claude/audit.config.json"
           fire enforced | grep -q '"permissionDecision": *"deny"'
           echo "OK: observe / warn / deny / enforce all behave through the launcher"
+      - name: Capability policy decides, end to end through the launcher
+        shell: bash
+        run: |
+          set -e
+          # Same reason as the step above: the selftests call decide() directly, so
+          # nothing in them proves the launcher, the stdin contract, the matcher's
+          # payload shape or the emitted JSON. A policy that resolves perfectly and
+          # is never dispatched is exactly the failure this feature has to be honest
+          # about, so its own wiring is checked rather than assumed.
+          proj=$(mktemp -d)
+          mkdir -p "$proj/.claude"
+
+          cap() {
+            printf '{"tool_name":"%s","tool_input":%s,"cwd":"%s","hook_event_name":"PreToolUse"}' \
+              "$1" "$2" "$proj" \
+              | env CLAUDE_PROJECT_DIR="$proj" sh plugins/audit/hooks/py-launch.sh \
+                  guard-capabilities.py ask
+          }
+
+          # 1. no config -> the shipped policy is inert, so the hook says nothing.
+          out=$(cap Skill '{"skill":"dataviz"}')
+          if [ -n "$out" ]; then echo "expected silence when inert, got: $out"; exit 1; fi
+
+          # 2. a real rule -> the canonical deny JSON, carrying its basis.
+          printf '{"policy":{"skills":{"default":"deny","allow":["safe-*"]}}}' \
+            > "$proj/.claude/audit.config.json"
+          out=$(cap Skill '{"skill":"dataviz"}')
+          echo "$out" | grep -q '"permissionDecision": *"deny"'
+          echo "$out" | grep -q 'policy.skills.default is deny'
+
+          # 3. ...and the allow list is what lets one through.
+          out=$(cap Skill '{"skill":"safe-thing"}')
+          if [ -n "$out" ]; then echo "an allowed skill must be silent, got: $out"; exit 1; fi
+
+          # 4. audit's own components survive a policy that denies everything else.
+          out=$(cap Skill '{"skill":"audit:next"}')
+          if [ -n "$out" ]; then echo "audit's own must pass, got: $out"; exit 1; fi
+
+          # 5. warn is a systemMessage and NEVER a permissionDecision - an advisory
+          #    written as `allow` would bypass the permission system entirely.
+          printf '{"policy":{"onViolation":"warn","mcp":{"deny":["mcp__prod-db__*"]}}}' \
+            > "$proj/.claude/audit.config.json"
+          out=$(cap mcp__prod-db__query '{}')
+          echo "$out" | grep -q '"systemMessage"'
+          if echo "$out" | grep -q 'permissionDecision'; then
+            echo "warn must not emit a permissionDecision, got: $out"; exit 1
+          fi
+          echo "OK: inert / deny / allow / required / warn all behave through the launcher"
 
   manifests:
     name: manifest validation
