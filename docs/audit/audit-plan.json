@@ -97,6 +97,11 @@
       "id": "P14",
       "title": "refactor: cleanups",
       "shard": "phases/P14.json"
+    },
+    {
+      "id": "BF1",
+      "title": "CI legs: Windows separators + Linux viewport",
+      "shard": "phases/BF1.json"
     }
   ],
   "fileIndex": {
@@ -238,7 +243,8 @@
       "P1.1",
       "P4.2",
       "P5.1",
-      "P14.4"
+      "P14.4",
+      "BF1.1"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -337,6 +343,9 @@
       "P10.3",
       "P14.3"
     ],
+    "plugins/audit/scripts/audit-journal.py": [
+      "BF1.1"
+    ],
     "plugins/audit/scripts/audit-status.py": [
       "P3.2",
       "P6.1",
@@ -415,6 +424,9 @@
     ],
     "pyproject.toml": [
       "P9.1"
+    ],
+    "tools/capture-screenshots.mjs": [
+      "BF1.2"
     ]
   },
   "bugs": [
@@ -441,6 +453,46 @@
       "taskId": "P1.7",
       "fixedIn": "27859f9",
       "notes": "Found by adopting claude plugin validate as a release gate; the gate is now enforced in CI."
+    },
+    {
+      "id": "BUG-2",
+      "title": "journal_dir returns mixed path separators; j12 red on Windows",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-08-10T22:11:27+02:00",
+      "reportedBy": "CI run 31427419994 (first Windows leg over the v0.29+ backlog)",
+      "description": "scripts/audit-journal.py journal_dir() joins the project root with config-derived forward-slash components (os.path.dirname of manifestPath), returning e.g. C:\\tmp\\x\\docs/audit\\journal on Windows. hooks/_config.py j12 compares str(Path(answer)) == answer, which fails on the separator spelling alone. Same path, two spellings; also yields proj/./journal on POSIX when the manifest sits at the project root.",
+      "repro": [
+        "python plugins/audit/hooks/_config.py --selftest  (on Windows: FAIL j12, 80/81)"
+      ],
+      "expected": "journal_dir returns one normalized spelling on every platform.",
+      "actual": "Mixed separators on Windows; a redundant ./ segment on POSIX with a root manifest.",
+      "files": [
+        "plugins/audit/scripts/audit-journal.py"
+      ],
+      "taskId": "BF1.1",
+      "fixedIn": null,
+      "notes": "Fix the class: normalize at the API, not at the comparison."
+    },
+    {
+      "id": "BUG-3",
+      "title": "panel policy view exceeds the 1560px capture viewport on Linux",
+      "status": "open",
+      "severity": "low",
+      "reportedAt": "2026-08-10T22:11:27+02:00",
+      "reportedBy": "CI run 31427419994 (manifest validation job)",
+      "description": "capture-screenshots.mjs --check: the policy view renders 1590px tall in a 1560px viewport on ubuntu (Linux font metrics run taller than macOS), so the sticky save bar would cover table rows in a capture. The check's own comment prescribes the fix: raise the viewport.",
+      "repro": [
+        "node tools/capture-screenshots.mjs --check  (on ubuntu: FAIL the policy view is 1590px tall...)"
+      ],
+      "expected": "The policy view fits the capture viewport on every CI platform.",
+      "actual": "1590px > 1560px on ubuntu; passes on macOS.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "taskId": "BF1.2",
+      "fixedIn": null,
+      "notes": "Viewport is the lever the check names; 1680 leaves margin."
     }
   ],
   "deferred": {

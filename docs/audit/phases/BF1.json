@@ -1,0 +1,97 @@
+{
+  "id": "BF1",
+  "title": "CI legs: Windows separators + Linux viewport",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "CI run on main is fully green: j12 passes on Windows because journal_dir returns one normalized spelling everywhere (proven red-first on POSIX via the root-manifest ./ case), and the policy view fits the raised capture viewport on Linux.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "BF1.1",
+      "title": "journal_dir normalizes its return (red-first via root-manifest ./ case)",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/audit-journal.py"
+      ],
+      "docs": [],
+      "description": "scripts/audit-journal.py journal_dir(): wrap both returns in os.path.normpath. TDD: FIRST add the selftest case asserting journal_dir(project, {'manifestPath':'audit.json'}) == os.path.normpath(that) - it is RED on current code (proj/./journal), proving the bug on any platform; then fix; then a second case pinning the default-manifest shape. j12 in hooks/_config.py is untouched - the comparison was right, the API was wrong.",
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "journal_dir output equals its own normpath (root manifest, ./ case, red-first)",
+          "default manifest path shape pinned post-normalization"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "sweep",
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": [],
+      "bugId": "BUG-2"
+    },
+    {
+      "id": "BF1.2",
+      "title": "raise the capture viewport so the policy view fits on Linux",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "docs": [],
+      "description": "capture-screenshots.mjs: the policy context viewport height 1560 -> 1680 (Linux renders the policy view 1590px; the check's own comment says raise the viewport rather than ship a shot with rows behind the save bar). Verify --check locally; committed PNGs regenerate on the next shots run, not here.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "shots"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": [],
+      "bugId": "BUG-3"
+    }
+  ]
+}
