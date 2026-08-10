@@ -1,0 +1,32 @@
+<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>audit · control panel</title>
+<style>/*@CSS@*/</style></head><body>
+<div class=top>
+ <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
+ <div class=topbtns>
+  <span class=who id=who hidden></span>
+  <button class="btn small" id=helpbtn title="what every field means, and how the four concepts work — served from this plugin's own schemas, no model involved">Help</button>
+  <button class="btn small" id=report title="render the standalone HTML report (it carries Save-as-PDF)">Export report</button>
+  <button class="btn small" id=theme title="light/dark">☾</button>
+ </div>
+</div>
+<div class=shell>
+<nav class=tabs aria-label="Panel sections">
+ <p class=navttl>Sections</p>
+ <button class="tab on" data-t=guards aria-current="true">Settings</button>
+ <button class="tab" data-t=comp>Composition</button>
+ <button class="tab" data-t=over>Overview</button>
+ <button class="tab" data-t=usage>Usage</button>
+ <button class="tab" data-t=policy>Policy</button>
+</nav>
+<main class=view>
+<div id=guards></div>
+<div id=comp class=hidden></div>
+<div id=over class=hidden></div>
+<div id=usage class=hidden></div>
+<div id=policy class=hidden></div>
+</main>
+</div>
+<div id=toast role=status aria-live=polite></div>
+<script>/*@JS@*/</script></body></html>

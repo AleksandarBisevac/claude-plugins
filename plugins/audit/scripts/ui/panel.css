@@ -1,0 +1,823 @@
+
+/*__THEME_TOKENS__*/
+/* Panel-only roles. The shared tokens carry the product's colour; these three
+   name jobs the report has no equivalent of — a validated field, a warning on a
+   config value, a refused write — so they live here rather than pushing
+   panel-shaped vocabulary into the shared layer. */
+:root{--ok:#15803d;--warn:#b45309;--err:#dc2626}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+ --ok:#34d399;--warn:#fbbf24;--err:#f87171}}
+:root[data-theme=dark]{--ok:#34d399;--warn:#fbbf24;--err:#f87171}
+*{box-sizing:border-box}
+/* Reserve the scrollbar always: Guards is short and Overview is long, and
+   without this the whole centred shell jumps sideways between them. */
+html{background:var(--bg);scrollbar-gutter:stable}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
+ margin:0;padding:0;-webkit-font-smoothing:antialiased}
+
+/* ---- app shell -----------------------------------------------------------
+   Same split as the report — navigation at the side, actions on top — but the
+   two are not the same kind of thing, and the nav reflects that. The report's
+   sidebar points INTO one long document and marks where you are. This one
+   switches between five exclusive views, so it is real navigation: `aria-current`
+   on the active view, no scroll-spy, and the five remain five wherever they are
+   drawn.
+
+   Deliberately NOT collapsible to an icon rail. The rail pattern exists to stop a
+   long nav competing with content for width; with five items it would add a
+   control and a persisted preference to save 230px on screens that have it to
+   spare, and five hand-drawn icons that mean less than the words they replace. */
+.top{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
+ flex-wrap:nowrap;padding:.6rem 1.25rem;
+ background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);
+ border-bottom:1px solid var(--border)}
+.top>div:first-child{min-width:0;margin-right:auto;max-width:min(52%,34rem)}
+.shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
+ max-width:92rem;margin:0 auto;padding:1.25rem 1.25rem 4rem;align-items:start}
+.view{min-width:0}
+.tabs{position:sticky;top:calc(var(--topbar-h) + var(--sp-1))}
+.tabs .navttl{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
+ color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
+@media(max-width:70rem){
+ /* One information architecture, two presentations: the same five buttons become
+    a horizontal strip. Never a second menu. */
+ .shell{grid-template-columns:minmax(0,1fr);gap:.75rem;padding-top:.5rem}
+ .tabs{position:sticky;top:var(--topbar-h);z-index:var(--z-strip);margin:0 -1.25rem;padding:.4rem 1.25rem;
+  background:var(--bg);border-bottom:1px solid var(--border);
+  overflow-x:auto;overflow-y:hidden}
+ .tabs .navttl{display:none}
+ /* Only when it really does not fit — see tabsOverflow(). A row that scrolls
+    with no edge to say so reads as a row with four items in it, which is what a
+    phone showed the day a fifth was added. The class is set from the measured
+    width rather than from this breakpoint: whether five buttons fit depends on
+    their words, not on the viewport this rule happens to start at. */
+ .tabs.scrolls{mask-image:linear-gradient(to right,#000 calc(100% - 2.5rem),transparent);
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 2.5rem),transparent)}
+}
+h1{font-size:1.35rem;font-weight:680;letter-spacing:-.02em;margin:0}
+h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+ font-weight:700;margin:1.5rem 0 .5rem}
+/* The JSON key beside a human heading. `text-transform:none` is the whole point:
+   it sits inside an uppercased h2, and a config key is case-sensitive — uppercased
+   it would be a string you cannot paste back into the file. */
+.k2{font-family:var(--mono);font-size:.72rem;text-transform:none;letter-spacing:0;
+ font-weight:500;color:var(--muted);opacity:.8;margin-left:.45rem;
+ background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:.02rem .3rem}
+/* One line, middle-elided, full path in the tooltip. `word-break:break-all` wrapped
+   a long project path across two lines and pushed the header controls down — and it
+   broke at an arbitrary character, so neither the root nor the project name stayed
+   readable. A path's two ends are the informative parts; the middle is what to drop. */
+.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:.25rem 0 0;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(56ch,100%)}
+.tabs{display:flex;flex-direction:column;gap:.15rem;margin:0}
+.tab{cursor:pointer;font:inherit;font-size:.87rem;text-align:left;padding:.42rem .65rem;
+ border-radius:var(--radius);border:1px solid transparent;border-left:2px solid transparent;
+ background:transparent;color:var(--muted);transition:all var(--dur) var(--ease)}
+@media(max-width:70rem){
+ .tabs{flex-direction:row;gap:.25rem;white-space:nowrap}
+ .tab{border-left:none;border-bottom:2px solid transparent;
+  border-radius:var(--radius) var(--radius) 0 0}
+}
+.tab:hover{border-color:var(--border-strong)}
+.tab.on{background:var(--surface-2);color:var(--text);font-weight:600;
+ border-left-color:var(--accent)}
+@media(max-width:70rem){.tab.on{border-left-color:transparent;border-bottom-color:var(--accent)}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+ box-shadow:var(--shadow-sm);padding:1rem 1rem;margin:.75rem 0}
+.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
+label.f{display:flex;flex-direction:column;gap:.25rem;flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
+input,textarea,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);
+ border-radius:var(--radius);padding:.5rem .75rem;font-size:.9rem}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:vertical}
+.mono{font-family:var(--mono)}
+.btn{cursor:pointer;font:inherit;font-size:.85rem;padding:.5rem 1rem;border-radius:var(--pill);
+ border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
+.btn:hover{border-color:var(--border-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.btn.small{font-size:.75rem;padding:.25rem .5rem}
+.badge{font-size:.68rem;font-weight:700;padding:.25rem .5em;border-radius:var(--pill);
+ background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+.badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
+/* A lock whose holder is gone is not green: nothing is running, and nothing is
+   wrong yet either — it is the state the human has to resolve. */
+.badge.held{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
+.badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
+.badge.area{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent;text-transform:uppercase;letter-spacing:.03em}
+.chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.25rem .5em;border-radius:var(--pill);
+ background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
+.chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
+.tag{display:inline-block;font-size:.66rem;padding:.25rem .45em;border-radius:var(--pill);
+ border:1px solid var(--border);color:var(--muted);margin-left:.25rem}
+.listwrap{display:flex;flex-direction:column;gap:.25rem}
+.pill-in{display:flex;gap:.25rem;flex-wrap:wrap;align-items:center;border:1px solid var(--border);
+ border-radius:var(--radius);padding:.25rem .5rem;background:var(--bg)}
+.pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:.25rem .25rem}
+.mut{color:var(--muted);font-size:.82rem}
+.bar{height:.5rem;border-radius:var(--pill);background:var(--surface-2);overflow:hidden;flex:1 1 8rem;min-width:6rem}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr;gap:.5rem}
+/* usage tab */
+.uctx{font-size:.74rem;color:var(--muted);margin:0 0 var(--sp-2)}
+.ufil{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;gap:var(--sp-1);
+ align-items:center;margin:0 0 var(--sp-1);padding:var(--sp-1) 0;
+ background:var(--surface);border-bottom:1px solid var(--border)}
+/* Two rows, not one wrapping heap. Nine controls on one line wrap wherever the
+   viewport happens to break, which puts "to" above its date input as often as
+   beside it. The split is by JOB - who and what on top, when and how far down -
+   so the pairs that read together cannot be separated by a reflow. */
+.ufrow{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;flex:1 1 100%}
+.ufil .combo{flex:1 1 9rem;min-width:7.5rem}
+.ufil input,.ufil select{font:inherit;font-size:.78rem;width:100%;
+ padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
+ border:1px solid var(--border);background:var(--bg);color:var(--text)}
+.ufil select{flex:0 0 auto;width:auto}
+.ufil .usearch{flex:2 1 12rem;min-width:9rem}
+.ufil input[type=date]{flex:0 0 auto;width:auto}
+/* The four of them are ONE control and wrap as one: a bare "from" stranded at the
+   end of the row above its own input is a label for nothing. */
+.udates{display:flex;align-items:center;gap:var(--sp-1);flex:0 1 auto}
+.ufil input:focus-visible,.ufil select:focus-visible{outline:2px solid var(--ring);
+ outline-offset:1px}
+.ufil .filtlbl{font-size:.72rem;color:var(--muted)}
+.ufil .push{margin-left:auto}
+/* active filters: what is scoping the view, and a way out of each */
+.uchips{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;
+ margin:0 0 var(--sp-2)}
+.uchip{display:inline-flex;align-items:center;gap:var(--sp-0);font:inherit;
+ font-size:.72rem;padding:var(--sp-0) var(--sp-1);border-radius:var(--pill);
+ border:1px solid var(--border-strong);background:var(--surface-2);
+ color:var(--text);cursor:pointer}
+.uchip:hover{border-color:var(--accent)}
+.uchip .ck{color:var(--muted)}
+.uchip .cx{color:var(--muted);font-weight:600}
+/* An empty view explains itself, and offers the narrowest way out beside the
+   widest one. Two buttons rather than one: "clear filters" throws away the seven
+   that were fine in order to lift the one that was not. */
+.uempty{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;
+ margin-top:var(--sp-1)}
+.utiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));
+ gap:var(--sp-1);margin:0 0 var(--sp-3)}
+.utile{border:1px solid var(--border);border-radius:var(--radius);
+ padding:var(--sp-1) var(--sp-2);background:var(--bg)}
+.utile .k{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.07em;
+ color:var(--muted)}
+.utile .v{font-size:1.25rem;font-weight:660;letter-spacing:-.02em;
+ margin-top:var(--sp-0);display:flex;align-items:baseline;gap:var(--sp-0)}
+/* The sparkline sits under the number at its own intrinsic size, and the row keeps
+   its height whether or not there is one to draw - so a tile without a daily series
+   does not shorten its card and knock the grid out of line. */
+.utrend{height:20px;margin-top:var(--sp-0);display:flex;align-items:center;
+ color:var(--muted);font-size:.7rem}
+.dl{font-size:.68rem;font-weight:600;padding:0 .3rem;border-radius:var(--pill);
+ letter-spacing:0;font-variant-numeric:tabular-nums;
+ color:var(--muted);background:var(--surface-2)}
+/* Direction is stated by a glyph before it is stated by a hue: an arrow survives
+   greyscale, forced-colours and paper, and the sign alone is easy to miss at
+   .68rem. Colour is reserved for the ONE metric that has a direction worth
+   judging - attribution coverage. Tokens and dollars going up is not good news or
+   bad news, it is just news, and painting it green said otherwise for four
+   releases. */
+.dl.up::before{content:"\25b2\a0";font-size:.62em;vertical-align:.1em}
+.dl.down::before{content:"\25bc\a0";font-size:.62em;vertical-align:.1em}
+.dl.good{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.dl.bad{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+/* A word-sized graphic: shape only, no axis and no labels. Everything it would
+   need to be read precisely is in the chart directly below it. */
+.uspark{display:block;overflow:visible}
+.uspark .sa{fill:color-mix(in srgb,var(--accent-solid) 16%,transparent);stroke:none}
+.uspark .sl{fill:none;stroke:var(--accent-solid);stroke-width:1.4;
+ stroke-linejoin:round;stroke-linecap:round}
+.uspark .sd{fill:var(--accent-solid)}
+.ucrumb{font-size:.74rem;margin:0 0 var(--sp-1)}
+.lnk{background:none;border:0;color:var(--accent);font:inherit;font-size:.76rem;
+ cursor:pointer;padding:0}
+.lnk:hover{text-decoration:underline}
+/* The slot reserves the chart's height so the card does not jump between the first
+   paint and the measured redraw one frame later. */
+.chartslot{display:block;width:100%;height:190px;margin:var(--sp-0) 0 var(--sp-1)}
+.uchart{width:100%;height:190px;display:block}
+.uchart.pick{cursor:crosshair}
+.uchart .g{stroke:var(--border);stroke-width:1;fill:none}
+/* 10px, not 8px: the viewBox is now 1:1 with device pixels, so this is the real
+   rendered size. The old 8px only looked bigger because it was being stretched. */
+.uchart .ax{fill:var(--muted);font-size:10px;font-family:var(--sans)}
+.uchart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;
+ pointer-events:none}
+.uchart .lnhit{fill:none;stroke:transparent;stroke-width:12;
+ stroke-linejoin:round;stroke-linecap:round;cursor:pointer}
+.uchart .dot{stroke:var(--surface);stroke-width:2}
+.uchart .cross{stroke:var(--border-strong);stroke-width:1;stroke-dasharray:none}
+.uchart .cross.hidden{display:none}
+.ulegend{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-3);font-size:.75rem;
+ margin:0 0 var(--sp-2)}
+.ulegend b{display:inline-flex;align-items:center;gap:var(--sp-0);font-weight:500}
+.ulegend b.pick{cursor:pointer}
+.ulegend b.pick:hover{text-decoration:underline}
+.ulegend i{width:.6rem;height:.6rem;border-radius:3px;display:inline-block}
+.urow{display:grid;grid-template-columns:minmax(8rem,20rem) minmax(4rem,1fr) auto;
+ gap:var(--sp-2);align-items:center;margin:var(--sp-0) 0;font-size:.8rem;
+ padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
+ border:1px solid transparent}
+.urow.pick{cursor:pointer}
+.urow.pick:hover{background:var(--surface-2)}
+.urow.on{border-color:var(--accent);background:var(--surface-2)}
+.urow.tail .unm{font-style:italic}
+.unm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uamt{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;
+ font-size:.75rem}
+.ufact{font-size:.82rem;margin:var(--sp-0) 0}
+.small{font-size:.75rem}
+.utbl{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:var(--sp-1)}
+.utbl th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:500;
+ padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
+.utbl td{padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
+.utbl tr:last-child td{border-bottom:0}
+/* The one recommendation in the tab — marked so it reads as advice, not as
+   another measurement. */
+.advice{border-left:3px solid var(--warn);background:var(--surface-2);
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);margin:var(--sp-1) 0;
+ font-size:.82rem}
+.advice code{font-size:.95em}
+/* Budget burn-down. Shares the ranked-row grid so the two read as one family. */
+.bud{display:grid;grid-template-columns:minmax(8rem,20rem) minmax(4rem,1fr) 3rem auto;
+ align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0;font-size:.8rem}
+.bud .bar{height:.5rem;background:var(--surface-2);border-radius:var(--pill);
+ overflow:hidden}
+.bud .bar i{display:block;height:100%;border-radius:var(--pill);background:var(--ok)}
+.bud.over .bar i{background:var(--err)}
+.bud .bpct{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.bud.over .bpct{color:var(--err);font-weight:640}
+.bud.total{border-top:1px solid var(--border);padding-top:var(--sp-1);
+ margin-top:var(--sp-1)}
+/* The total has no bar; an empty track would paint a grey rail that reads as a
+   phase sitting at zero, which is the one thing this block must never imply. */
+.bud.total .bar{background:none}
+@media (max-width:34rem){.bud{grid-template-columns:1fr auto}.bud .bar{display:none}}
+/* Controls under each ranked list. Expanding costs one click; collapsing must too. */
+.uctl{display:flex;align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0 var(--sp-2);
+ font-size:.76rem}
+/* Browse dialog. Native <dialog>, so the focus trap, the backdrop and Esc are the
+   platform's rather than ours. */
+dialog.browse{width:min(56rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
+ padding:0;border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden}
+dialog.browse::backdrop{background:rgb(0 0 0 / .45)}
+dialog.browse>*{padding:0 var(--sp-3)}
+.bhead{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);
+ padding-top:var(--sp-2)}
+.bhead h2,.bhead h3{margin:0;font-size:1rem;font-weight:640}
+.bx{border:none;background:none;color:var(--muted);cursor:pointer;font-size:1rem;
+ line-height:1;padding:var(--sp-0)}
+.bx:hover{color:var(--text)}
+.btblwrap{max-height:min(60vh,28rem);overflow:auto;border-top:1px solid var(--border);
+ padding:0}
+table.btbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.btbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.btbl th.pick{cursor:pointer;user-select:none}
+table.btbl th.pick:hover{color:var(--text)}
+table.btbl th.on{color:var(--text)}
+.sarrow{margin-left:.25em}
+table.btbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);
+ vertical-align:middle}
+/* A wrapping title turns a scannable table into a wall: one long task name pushes
+   every other row four lines tall. Truncate, and keep the full text on hover. */
+table.btbl td.t{max-width:20rem;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+table.btbl .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Model mix: a stack the eye reads for proportion, and the dominant model in text
+   so identity never rests on colour alone. */
+.mcell{display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap}
+.mstack{display:inline-flex;width:3.4rem;height:.5rem;border-radius:var(--pill);
+ overflow:hidden;flex:0 0 auto;background:var(--surface-2)}
+.mstack i{display:block;height:100%}
+.mstack i+i{box-shadow:-1px 0 0 var(--surface)}
+.mdom{color:var(--muted);font-size:.92em}
+/* Cost band. Status colours are reserved and never travel alone, so the pill
+   carries the word — and the task's own status sits in the next column wearing
+   the same palette, which makes the label load-bearing rather than decorative. */
+.bandpill{display:inline-block;padding:.05rem .45rem;border-radius:var(--pill);
+ font-size:.72rem;font-weight:600;white-space:nowrap;border:1px solid transparent}
+.b-typical{color:var(--ok);background:color-mix(in srgb,var(--ok) 13%,transparent)}
+.b-high{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.b-outlier{color:var(--err);background:color-mix(in srgb,var(--err) 14%,transparent)}
+table.btbl tbody tr.pick{cursor:pointer}
+table.btbl tbody tr.pick:hover td{background:var(--surface-2)}
+table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,transparent)}
+.bfoot{padding-top:var(--sp-1);padding-bottom:var(--sp-2)}
+@media (max-width:34rem){
+ dialog.browse{width:calc(100vw - 1rem)}
+ .btblwrap{overflow-x:auto}
+}
+/* Who the panel thinks you are. A pill rather than plain text: it is a fact about
+   the session, not a heading, and it sits beside the two controls that act on the
+   project. Elided rather than wrapped — an email address is long, and the topbar is
+   nowrap, so an un-capped name would push the buttons off the edge. */
+.who{display:inline-flex;align-items:center;gap:.35rem;font-size:.74rem;
+ color:var(--muted);background:var(--surface-2);border:1px solid var(--border);
+ border-radius:var(--pill);padding:.15rem .6rem;max-width:16rem;min-width:0}
+.who b{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+.who .wk{white-space:nowrap}
+.who[hidden]{display:none}
+@media(max-width:60rem){.who{max-width:10rem}.who .wk{display:none}}
+@media(max-width:34rem){.who{display:none}}
+/* Confirm-before-write. Same native <dialog> the browse table uses, for the same
+   reasons — focus trap, backdrop and Esc are the platform's — and deliberately the
+   same visual object, because both are "here is the data, decide". */
+dialog.confirm{width:min(42rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
+ padding:0;border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden}
+dialog.confirm::backdrop{background:rgb(0 0 0 / .45)}
+dialog.confirm>*{padding:0 var(--sp-3)}
+.cflist{max-height:min(50vh,22rem);overflow:auto;border-top:1px solid var(--border);
+ padding:0}
+table.cftbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.cftbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.cftbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.cftbl td.tgt{font-family:var(--mono);white-space:nowrap}
+table.cftbl td.fld{color:var(--muted);white-space:nowrap}
+/* Old on the left, new on the right, and the arrow between them is text — a glyph
+   drawn in CSS would vanish in the copy of this dialog nobody can take. */
+.cfv{font-family:var(--mono);font-size:.76rem;word-break:break-word}
+.cfv.was{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+.cfv.unset{font-style:italic;text-decoration:none}
+.cfarr{color:var(--muted);padding:0 .35rem}
+.cffoot{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;
+ padding-top:var(--sp-2);padding-bottom:var(--sp-2)}
+.cffoot .push{margin-left:auto}
+/* A lock is a live fact about somebody else's run, so it is stated inside the
+   dialog rather than only guessed at from the last page load. */
+.cflock{margin:var(--sp-1) 0 0;font-size:.76rem}
+@media (max-width:34rem){dialog.confirm{width:calc(100vw - 1rem)}
+ .cflist{overflow-x:auto}}
+/* ---- the help drawer -----------------------------------------------------
+   A third native <dialog>, for the third time and the same reasons: Esc, the
+   backdrop, the focus trap and — the one that matters most here — returning focus
+   to the control you opened it from, so a keyboard reader who asks what a field
+   means lands back on that field. It is a side sheet rather than a centred box
+   because it is READ AGAINST the form: the setting you are asking about stays on
+   screen beside its own explanation. */
+/* `max-width` is restated because the UA sheet sets `calc(100% - 2px - 2em)` on
+   every dialog — a sensible cap for a centred box and 36px of nothing down the
+   side of a sheet that is supposed to reach the edge. Measured at 390px, where it
+   made a "full width" drawer 339px wide, hanging 36px off the left. */
+dialog.drawer{margin:0 0 0 auto;height:100dvh;max-height:100dvh;
+ width:min(31rem,100%);max-width:100%;
+ padding:0;border:none;border-left:1px solid var(--border-strong);border-radius:0;
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden;flex-direction:column}
+/* `display` on `[open]` ONLY, and this is not a nicety. The UA sheet hides a shut
+   dialog with `dialog:not([open]){display:none}` — an author rule of equal
+   specificity beats it, so `dialog.drawer{display:flex}` un-hides the drawer the
+   moment it is closed. A shut dialog is `position:absolute` at its static
+   position, which is the end of <body>: every view then carried a dead 100dvh
+   block below the fold, and the Overview screenshot grew 900px with the drawer
+   printed across the bottom of it. Found by a picture; it would not have shown up
+   in any viewport-sized shot. */
+dialog.drawer[open]{display:flex}
+dialog.drawer::backdrop{background:rgb(0 0 0 / .45)}
+@media (prefers-reduced-motion:no-preference){
+ dialog.drawer[open]{animation:dslide var(--dur) var(--ease)}
+ @keyframes dslide{from{transform:translateX(1.5rem);opacity:.4}}}
+.dhead{display:flex;align-items:center;gap:var(--sp-1);padding:var(--sp-2) var(--sp-3);
+ border-bottom:1px solid var(--border);background:var(--surface-2);flex:0 0 auto}
+/* The panel's h2 rule uppercases, which is a card heading's job and not a field
+   label's: this one is the words beside the control you just pressed, and shouting
+   them back reads as a different string from the one you clicked. */
+.dhead h2{margin:0;font-size:.95rem;flex:1 1 auto;word-break:break-word;
+ text-transform:none;letter-spacing:0}
+.dbody{flex:1 1 auto;overflow:auto;padding:var(--sp-2) var(--sp-3) var(--sp-4)}
+.dsec{margin:0 0 var(--sp-3)}
+.dsec>h3{margin:0 0 var(--sp-1);font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:700}
+.dsec p{margin:0 0 var(--sp-1);font-size:.84rem;line-height:1.6;max-width:64ch}
+.dsec p:last-child{margin-bottom:0}
+.dsec code{font-family:var(--mono);font-size:.78rem;background:var(--surface-2);
+ border-radius:4px;padding:0 .2rem;word-break:break-word}
+/* The dotted path, big enough to read and selectable — someone editing the JSON by
+   hand came here for exactly this string. */
+.dpath{font-family:var(--mono);font-size:.78rem;color:var(--text);
+ background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
+ padding:.3rem .45rem;display:block;word-break:break-all;user-select:all}
+.dfacts{display:grid;grid-template-columns:auto 1fr;gap:.2rem var(--sp-2);
+ font-size:.8rem;margin:var(--sp-1) 0 0}
+.dfacts dt{color:var(--muted)}
+.dfacts dd{margin:0;font-family:var(--mono);font-size:.76rem;word-break:break-word}
+.dlist{display:flex;flex-direction:column;gap:var(--sp-1);margin:0;padding:0;
+ list-style:none}
+/* A topic is a destination, so it looks like one: a full-width target with its own
+   summary under the title, not a link buried in a sentence. */
+.dtopic{display:block;width:100%;text-align:left;cursor:pointer;font:inherit;
+ background:var(--bg);color:var(--text);border:1px solid var(--border);
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);
+ transition:border-color var(--dur) var(--ease)}
+.dtopic:hover,.dtopic:focus-visible{border-color:var(--accent)}
+.dtopic b{display:block;font-size:.85rem}
+.dtopic span{display:block;color:var(--muted);font-size:.76rem;line-height:1.5;
+ margin-top:.15rem}
+.dtblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+table.dtbl{border-collapse:collapse;width:100%;font-size:.76rem}
+table.dtbl th{text-align:left;background:var(--surface-2);color:var(--muted);
+ font-size:var(--t-label);text-transform:uppercase;letter-spacing:.05em;
+ padding:.3rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.dtbl td{padding:.3rem .5rem;border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.dtbl tbody tr:last-child td{border-bottom:none}
+.dcap{color:var(--muted);font-size:.74rem;margin:.35rem 0 0}
+.dsrc{font-family:var(--mono);font-size:.74rem;color:var(--muted);
+ display:flex;flex-wrap:wrap;gap:.25rem .75rem}
+/* The paid half of the help, and the drawer never spends it for you. */
+.dagent{border-top:1px solid var(--border);padding:var(--sp-2) var(--sp-3);
+ background:var(--surface-2);flex:0 0 auto;font-size:.78rem;color:var(--muted);
+ max-height:60vh;overflow:auto}
+.dagent summary{cursor:pointer;color:var(--text)}
+.dagent p{margin:var(--sp-1) 0 0}
+.dagent b{color:var(--text)}
+.dagent code{font-family:var(--mono);background:var(--bg);border-radius:4px;
+ padding:0 .2rem}
+.dagent .dtools{display:flex;gap:.25rem;flex-wrap:wrap;margin:.35rem 0 0}
+.dmiss{font-style:italic}
+/* The ⓘ opens this. It is a real button when it does — a focusable span with a
+   click handler is a control screen readers announce as text. */
+button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);cursor:help}
+/* `width:100%` is NOT restated here: `min(31rem,100%)` above already collapses to
+   the screen below 31rem, and a mutation deleting a rule that changes nothing is a
+   mutation that goes green — which is how a redundant rule gets mistaken for the
+   one doing the work. All this breakpoint owes is the edge that has nothing on the
+   other side of it. */
+@media (max-width:34rem){dialog.drawer{border-left:none}}
+/* one shared tooltip element, moved on hover */
+.utip{position:fixed;z-index:60;pointer-events:none;background:var(--surface);
+ border:1px solid var(--border-strong);border-radius:var(--radius);
+ box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-2);font-size:.74rem;
+ max-width:18rem;color:var(--text)}
+.utip.hidden{display:none}
+.utip-h{font-weight:600;margin-bottom:var(--sp-0);word-break:break-word}
+.utip-r{display:flex;align-items:center;gap:var(--sp-0);
+ font-variant-numeric:tabular-nums;line-height:1.5}
+.utip-r i{width:.55rem;height:.55rem;border-radius:2px;flex:0 0 auto}
+.utip-k{color:var(--muted);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+.utip-v{font-weight:600}
+.utip-f{color:var(--muted);font-size:.68rem;margin-top:var(--sp-0);
+ border-top:1px solid var(--border);padding-top:var(--sp-0)}
+@media (max-width:34rem){
+ .urow{grid-template-columns:1fr;gap:0}
+ .urow .bar{display:none}
+ .ufil .combo{flex:1 1 100%}
+ /* A date input has an intrinsic width of about 9rem plus the picker glyph. Two of
+    them, two labels and a select do not fit a 360px row, and `flex:0 0 auto` means
+    they do not shrink either - so the pair takes a line of its own and each half
+    takes half of it. Measured at 390px, which is where the report's own filter
+    panel was found hanging off the left edge. */
+ .udates{flex:1 1 100%}
+ .ufil input[type=date]{flex:1 1 calc(50% - 3rem);min-width:0}
+ .ufil .push{margin-left:0}
+ /* And it stops pinning. Nine controls stacked at this width measure 311px, which
+    on an 844px phone is a sticky bar owning 37% of the screen for the whole scroll
+    - the same shape as the report's filter panel covering the table it filtered.
+    Above the breakpoint the bar is two lines and worth pinning; here it is not. */
+ .ufil{position:static}
+}
+/* ---- settings ------------------------------------------------------------
+   Four cards over one file. The grouping is the whole point: the config is not a
+   flat bag of keys, it is four decisions (where things are, what may be refused,
+   how loud the nudge is, what a token costs), and a reader looking for one of
+   them should not have to read the other three. */
+.blurb{color:var(--muted);font-size:.8rem;margin:.15rem 0 .75rem;max-width:62ch}
+/* Bottoms, not centres. A label that wraps to two lines is centred against
+   single-line siblings and drags its input half a line down, so one long field name
+   knocks a whole row out of alignment. */
+#guards .row{align-items:end}
+.sub2{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;
+ color:var(--muted);font-weight:700;margin:1.25rem 0 .4rem}
+.sub2 .lbl{gap:.35rem}
+label.f.wide{flex:1 1 100%}
+/* A checkbox and its words are one line, and the words are not a column header —
+   until the line is wider than the phone holding it. `flex:0 0 auto` said the row
+   may never shrink, so on a 390px screen "Always deny edits outside the plan" plus
+   its `enforce` chip reached 447px and took the whole DOCUMENT sideways with it
+   (F8). Shrinking is now allowed and `min-width:0` lets it actually happen: without
+   it a flex item's floor is its content's min-content width, which for a row of
+   inline-flex words is the whole row. `baseline` rather than `center` for the same
+   reason: once the label can be two lines, centring puts the box between them,
+   beside neither. On a row that still fits — every row on a desktop — the two are
+   the same picture. */
+label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;flex:0 1 auto;min-width:0}
+label.f.cbf input{margin:0}
+/* Reachable from any of the four cards. A form this long with the Save at the
+   bottom is a form people leave without saving. */
+.savebar{position:sticky;bottom:0;z-index:var(--z-strip);display:flex;gap:.75rem;
+ align-items:center;flex-wrap:wrap;margin:.75rem 0 0;padding:.75rem 1rem;
+ background:color-mix(in srgb,var(--surface) 92%,transparent);
+ backdrop-filter:blur(10px);border:1px solid var(--border);
+ border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
+.savebar .findings-slot{flex:1 1 100%}
+/* Defaults that are ACTIVE, drawn as what they are: real, and not yours yet. */
+.ghost{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;margin-top:.4rem}
+.chip.ghosted{border-style:dashed;color:var(--muted);background:transparent}
+/* A value this browser's regex engine will not accept. Never green for the
+   opposite case: Python's engine is the one that decides, on save. */
+.chip.bad{border-color:var(--err);color:var(--err)}
+input.bad{border-color:var(--err)}
+.ferr{color:var(--err);font-size:.74rem;margin:-.1rem 0 .35rem}
+.rule.rulehead{text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;
+ margin-bottom:.15rem}
+@media(max-width:40rem){.rule.rulehead{display:none}}
+.ptblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow-x:auto;-webkit-overflow-scrolling:touch;max-height:24rem;overflow-y:auto}
+table.ptbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.ptbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:.4rem .5rem;white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.ptbl th.n,table.ptbl td.n{text-align:right}
+table.ptbl td{padding:.25rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.ptbl td input{width:6rem;padding:.2rem .4rem;font-size:.78rem;text-align:right;
+ font-variant-numeric:tabular-nums}
+table.ptbl tbody tr:last-child td{border-bottom:none}
+/* Arriving from a link in another tab: say WHICH field you were sent to, briefly.
+   Scrolling to it silently leaves the reader hunting for what changed. */
+.flash{outline:2px solid var(--accent);outline-offset:3px;border-radius:var(--radius)}
+@media (prefers-reduced-motion:no-preference){
+ .flash{transition:outline-color var(--dur) var(--ease)}}
+.tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .75rem;background:var(--bg)}
+.tsk .h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
+.dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block;background:var(--muted)}
+.rule{display:grid;grid-template-columns:1fr 1fr 1.3fr auto;gap:.5rem;margin:.25rem 0}
+@media(max-width:40rem){.rule{grid-template-columns:1fr}}
+#toast{position:fixed;left:50%;bottom:1.3rem;transform:translateX(-50%);z-index:50;
+ background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);
+ border-radius:var(--pill);padding:.5rem 1rem;font-size:.85rem;opacity:0;transition:opacity var(--dur);pointer-events:none}
+#toast.show{opacity:1}#toast.err{border-color:var(--err);color:var(--err)}#toast.ok{border-color:var(--ok)}
+#toast.warn{border-color:var(--warn);color:var(--warn)}
+.findings{margin:.5rem 0 0;padding:.5rem .75rem;border-radius:var(--radius);font-size:.82rem}
+.findings.err{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+.findings.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.findings.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+/* Grouped findings. One manifest mistake repeated across 300 phases is ONE thing
+   to fix, so it reads as one row with a count — not 300 rows of the same
+   sentence. The raw list stays one click away. */
+.fgrp{margin:var(--sp-1) 0 0;padding:0;list-style:none;display:grid;gap:var(--sp-0)}
+.fgrp li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-1);
+ align-items:baseline}
+.fgrp .fn{font-variant-numeric:tabular-nums;font-weight:700;opacity:.85}
+.fgrp .feg{opacity:.72;font-size:.94em;overflow-wrap:anywhere}
+.fall{margin-top:var(--sp-1)}
+.fall>summary{cursor:pointer;opacity:.8}
+.fall ol{margin:var(--sp-1) 0 0;padding-left:1.4rem;max-height:16rem;overflow:auto;
+ display:grid;gap:2px}
+.src{font-size:.66rem}.hidden{display:none}
+/* info hints on labels.
+   Wrapping, because a label is a sentence: the words, the JSON key beside them and
+   the ⓘ are three items on one line only while one line is wide enough. An
+   inline-flex that cannot wrap has no narrow layout at all — it is exactly as wide
+   as its content wherever it is put, which is how a 390px screen ended up with a
+   447px row (F8). `min-width:0` for the same reason it is on the row above. */
+.lbl{display:inline-flex;align-items:center;gap:.25rem;flex-wrap:wrap;min-width:0}
+.hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
+ border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
+ position:relative;flex:0 0 auto;text-transform:none}
+.hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
+.hint::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + .4rem);z-index:60;width:17rem;max-width:72vw;
+ background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
+ box-shadow:var(--shadow-md);padding:.5rem .5rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
+ white-space:normal;display:none;pointer-events:none}
+.hint:hover::after,.hint:focus::after{display:block}
+/* ...but a hint with no words has nothing to draw. `content:attr(data-tip)` on a
+   missing attribute is the empty string, which is an empty bubble rather than no
+   bubble. */
+.hint:not([data-tip]):hover::after,.hint:not([data-tip]):focus::after{display:none}
+/* Two fixes for one bug. A 17rem bubble anchored left overflows the viewport for
+   any hint in the right half of a wide layout, and an absolutely-positioned box
+   counts toward scrollable overflow even while hidden — so the page carried 34px
+   of sideways scroll before anyone hovered anything. `visibility:hidden` was not
+   enough for that; `display:none` is, at the cost of the fade, which is a fair
+   trade for a tooltip that appears under the cursor anyway. And when it IS shown
+   it flips to the right edge if it would not fit. The old guard
+   (`overflow-x:hidden` under 48rem) hid the symptom, and only on phones. */
+.hint.flip::after{left:auto;right:0}
+/* custom autocomplete combobox (replaces native datalist) */
+.combo{position:relative;flex:1 1 18rem}
+.combo>input{width:100%}
+.combo-menu{position:absolute;left:0;right:0;top:calc(100% + .25rem);z-index:40;background:var(--surface);
+ border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;overflow:auto;padding:.25rem}
+.combo-it{display:flex;align-items:center;gap:.5rem;padding:.5rem .5rem;border-radius:6px;cursor:pointer}
+.combo-it:hover,.combo-it.active{background:var(--surface-2)}
+.combo-n{font-size:.82rem;flex:0 0 auto}
+.combo-d{color:var(--muted);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+.chipwrap{display:flex;flex-direction:column;gap:.5rem;flex:1 1 auto}
+.chips{display:flex;gap:.25rem;flex-wrap:wrap}
+/* discovered building-blocks: subtabs + one table */
+.subtabs{display:flex;gap:.25rem;margin:.5rem 0 .5rem;flex-wrap:wrap}
+.subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:.25rem .75rem;border-radius:var(--pill);
+ border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
+.subtab:hover{border-color:var(--border-strong)}
+.subtab.on{background:var(--surface-2);color:var(--text);border-color:var(--border-strong)}
+.regtblwrap{max-height:22rem;overflow:auto;border:1px solid var(--border);border-radius:var(--radius)}
+table.regtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
+table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);text-align:left;
+ font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:.5rem .75rem;border-bottom:1px solid var(--border)}
+table.regtbl td{padding:.5rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
+table.regtbl tbody tr:hover td{background:var(--surface-2)}
+table.regtbl td.d{color:var(--muted)}
+/* status -> --st (reuses the theme-aware ok/warn/err/muted tokens) */
+[data-status="done"],[data-status="fixed"]{--st:var(--ok)}
+[data-status="in_progress"],[data-status="triaged"]{--st:var(--warn)}
+[data-status="blocked"],[data-status="open"]{--st:var(--err)}
+[data-status="pending"],[data-status="wontfix"]{--st:var(--muted)}
+.st{display:inline-block;font-size:.66rem;font-weight:600;padding:.25rem .5em;border-radius:var(--pill);
+ background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
+ border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}
+/* composition: filter toolbar + one compact collapsible table */
+.comptools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.25rem 0 .5rem}
+.comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.25rem .75rem}
+.filtlbl{font-size:.72rem;color:var(--muted)}
+.filt{cursor:pointer;font:inherit;font-size:.75rem;padding:.25rem .75rem;border-radius:var(--pill);
+ border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
+.filt:hover{border-color:var(--border-strong)}
+.filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+/* State carried by more than hue, as in the report. */
+.filt.on::before{content:"\2713\a0";font-weight:700}
+.count{font-size:.73rem;color:var(--muted);font-variant-numeric:tabular-nums}
+/* A wide data table scrolls inside its own box at EVERY width, not only on a
+   phone. The old rule was scoped to 48rem because the page was a 64rem column
+   that the table happened to fit; widening the shell exposed that the guard was
+   tied to the viewport rather than to the table being wider than its container.
+   Same rule the report follows: text wraps to the reader, data tables scroll. */
+.comptblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.comp{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
+table.comp th,table.comp td{padding:.5rem .5rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+table.comp thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);
+ font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}
+table.comp tbody tr:last-child td{border-bottom:none}
+tr.phase{cursor:pointer}
+tr.phase>td{background:var(--surface-2);border-top:1px solid var(--border-strong);
+ border-left:3px solid var(--st,var(--muted))}
+.phtd{display:flex;align-items:center;gap:.5rem}
+tr.phase:hover>td{filter:brightness(1.05)}
+.tri{display:inline-block;width:.9em;color:var(--muted);transition:transform var(--dur) var(--ease)}
+.tri::before{content:"\25B6";font-size:.68em}
+tr.phase.open .tri{transform:rotate(90deg)}
+tr.task>td{background:var(--surface)}
+tr.task:hover>td{background:var(--surface-2)}
+tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding-left:1.5rem;
+ border-left:3px solid var(--st,var(--border))}
+td.ttitle{max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td.tmodel input{width:6.5rem;padding:.25rem .5rem;font-size:.8rem}
+td.tskills{min-width:15rem}
+.comp-review{display:flex;align-items:center;gap:.25rem;margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
+.comp-review input{width:8rem;padding:.25rem .5rem;font-size:.78rem}
+.comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.25rem}
+.comp .chips{gap:.25rem}
+.topbtns{display:flex;gap:var(--sp-1);align-items:center;flex-shrink:0}
+.comp .combo{flex:1 1 8rem;min-width:7rem}
+/* overview: summary strips, phase rows, ready-now
+   The strips are a legend AND the filter — one row of pills that says how the work
+   is distributed and scopes the list below when you press one. Two separate
+   affordances for the same eight numbers is how a reader ends up believing the
+   legend and the list disagree. */
+.ovstrip{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin:.35rem 0 .1rem}
+.ovstrip .ovlbl{font-size:.72rem;color:var(--muted);flex:0 0 auto;min-width:3.2rem}
+.ovpill{cursor:pointer;font:inherit;display:inline-flex;align-items:center;gap:.4em;
+ font-size:.74rem;padding:.28rem .7em;border-radius:var(--pill);
+ background:color-mix(in srgb,var(--st,var(--muted)) 12%,transparent);
+ color:var(--st,var(--muted));
+ border:1px solid color-mix(in srgb,var(--st,var(--muted)) 30%,transparent);
+ transition:all var(--dur) var(--ease)}
+.ovpill:hover{border-color:var(--st,var(--border-strong))}
+.ovpill:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.ovpill[aria-pressed=true]{background:color-mix(in srgb,var(--st,var(--muted)) 26%,transparent);
+ border-color:var(--st,var(--muted));font-weight:640}
+/* Selected state carried by more than hue, as in the report and the composition
+   filters — in greyscale, in forced-colours and on paper the fill says nothing. */
+.ovpill[aria-pressed=true]::before{content:"\2713\a0";font-weight:700}
+.ovpill b{font-variant-numeric:tabular-nums;font-weight:640}
+/* a severity cut, not a status — it carries no data-status, so it sets --st itself */
+.ovpill.hi{--st:var(--err)}
+.ovtools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.6rem 0 .4rem}
+.ovtools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.25rem .75rem}
+.ovtools select{font-size:.8rem;padding:.25rem .5rem}
+.ovtools label.inl{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--muted)}
+.ovgrp{display:flex;align-items:baseline;gap:.5rem;margin:.9rem 0 .1rem;
+ padding-bottom:.25rem;border-bottom:1px solid var(--border)}
+.ovgrp .gname{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent)}
+/* A row is one control: it opens this phase in Composition. A <button> rather than
+   a div with a click handler, so it is reachable by keyboard and announced as
+   something you can press without a hand-written role/tabindex/keydown trio. */
+.ovrow{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;width:100%;text-align:left;
+ font:inherit;color:var(--text);cursor:pointer;background:none;border:1px solid transparent;
+ border-left:3px solid var(--st,var(--border));border-radius:var(--radius);
+ padding:.4rem .5rem;margin:.15rem 0;transition:background var(--dur) var(--ease)}
+.ovrow:hover{background:var(--surface-2)}
+.ovrow:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+.ovrow .pid{font-family:var(--mono);font-size:.8rem;color:var(--muted);flex:0 0 3rem}
+.ovrow .ptitle{flex:1 1 12rem;min-width:8rem}
+.ovout{flex:1 1 100%;font-size:.76rem;color:var(--muted);margin:.1rem 0 0 3.75rem;
+ max-width:80ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ovmatch{font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.ovempty{color:var(--muted);font-size:.85rem;padding:.6rem .2rem}
+/* ready-now: the one thing you can act on without reading anything else */
+.rdy{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:.35rem .2rem;
+ border-bottom:1px solid var(--border)}
+.rdy:last-child{border-bottom:none}
+.rdy .rcmd{font-family:var(--mono);font-size:.78rem;background:var(--surface-2);
+ border:1px solid var(--border);border-radius:var(--radius);padding:.15rem .45rem;
+ white-space:nowrap}
+.rdy .rt{flex:1 1 12rem;min-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sev{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.sev.high{color:var(--err)}
+@media(max-width:48rem){
+ .ovout{margin-left:0}
+ .ovrow .ptitle{flex:1 1 100%}
+}
+
+/* ---- policy switchboard ---------------------------------------------------
+   A wide table by construction: one column per area, and an area can be added
+   without asking this stylesheet. So it scrolls INSIDE its own frame — the
+   document never scrolls sideways, which on a phone is the difference between a
+   table you can read and a page that slides out from under you. */
+.poltblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow:auto;max-height:34rem;margin:.4rem 0}
+table.poltbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.poltbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;
+ color:var(--muted);font-weight:700;padding:.35rem .5rem;
+ border-bottom:1px solid var(--border);white-space:nowrap}
+table.poltbl th.ar{color:var(--accent)}
+table.poltbl th.ar .mut{display:block;font-size:.62rem;letter-spacing:.02em;
+ text-transform:none;font-weight:600}
+table.poltbl th.ar.dormant{color:var(--muted)}
+table.poltbl td{padding:.3rem .5rem;border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.poltbl tbody tr:last-child td{border-bottom:none}
+table.poltbl td.nm{font-family:var(--mono);font-size:.76rem;
+ max-width:22rem;overflow-wrap:anywhere}
+/* A NAME may break anywhere — some of them are long and this column has a width.
+   A badge is a word, and `overflow-wrap:anywhere` inherits, so `required` was
+   being drawn as "req" over "uired" beside audit's own row. */
+table.poltbl td.nm .badge{white-space:nowrap;overflow-wrap:normal}
+table.poltbl td.pend{background:color-mix(in srgb,var(--accent-solid) 10%,transparent)}
+select.prule{font:inherit;font-size:.74rem;padding:.15rem .3rem;
+ border:1px solid var(--border);border-radius:var(--radius);
+ background:var(--surface);color:var(--text)}
+select.prule:disabled{opacity:.55;cursor:not-allowed}
+select.prule[data-set=deny]{border-color:var(--err);color:var(--err)}
+select.prule[data-set=allow]{border-color:var(--ok);color:var(--ok)}
+/* The verdict is a claim, and the basis under it is what makes the claim
+   checkable — the same rule the report's routing advice and the lock verdict
+   follow. It is never colour alone: the word says it too. */
+.pv{display:inline-flex;align-items:center;gap:.3em;font-size:.72rem;font-weight:700;
+ padding:.15rem .5em;border-radius:var(--pill);white-space:nowrap;
+ background:color-mix(in srgb,var(--pvc) 14%,transparent);color:var(--pvc);
+ border:1px solid color-mix(in srgb,var(--pvc) 30%,transparent)}
+.pv.allow{--pvc:var(--ok)}
+.pv.violation{--pvc:var(--err)}
+.pbasis{display:block;color:var(--muted);font-size:.7rem;line-height:1.45;
+ max-width:44ch;margin-top:.15rem}
+.badge.req{background:color-mix(in srgb,var(--accent) 16%,transparent);
+ color:var(--accent);border-color:transparent}
+.badge.stand{background:color-mix(in srgb,var(--warn) 16%,transparent);
+ color:var(--warn);border-color:transparent}
+.badge.pend{background:color-mix(in srgb,var(--accent-solid) 18%,transparent);
+ color:var(--accent);border-color:transparent}
+table.polrules{width:100%;border-collapse:separate;border-spacing:0;font-size:.78rem}
+table.polrules th{text-align:left;font-size:.66rem;text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:700;padding:.3rem .5rem;
+ border-bottom:1px solid var(--border)}
+table.polrules td{padding:.28rem .5rem;border-bottom:1px solid var(--border)}
+table.polrules tbody tr:last-child td{border-bottom:none}
+table.polrules td.pat{font-family:var(--mono);font-size:.76rem}
+table.polrules td.lst{font-weight:700;font-size:.7rem;text-transform:uppercase;
+ letter-spacing:.04em}
+table.polrules td.lst[data-list=deny]{color:var(--err)}
+table.polrules td.lst[data-list=allow]{color:var(--ok)}
+.poladd{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0 0}
+.poladd input{flex:1 1 14rem;min-width:8rem;padding:.25rem .5rem}
+.poladd select{font-size:.8rem;padding:.25rem .5rem}
+/* The four limits. Shut by default because they are read once and remembered,
+   open-able because a switchboard that never states them is selling enforcement
+   it does not have. */
+.polhonest{margin:.6rem 0 0;font-size:.82rem}
+.polhonest summary{cursor:pointer;color:var(--muted);font-size:.78rem}
+.polhonest ol{margin:.5rem 0 0;padding-left:1.2rem;color:var(--muted);
+ font-size:.78rem;line-height:1.55;max-width:76ch}
+.polhonest b{color:var(--text)}
+@media(max-width:48rem){
+ .pbasis{max-width:none}
+ .poltblwrap{max-height:none}
+}
+

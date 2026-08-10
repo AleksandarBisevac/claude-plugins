@@ -1,7 +1,7 @@
 {
   "id": "P11",
   "title": "refactor: UI asset extraction",
-  "status": "pending",
+  "status": "in_progress",
   "model": "sonnet",
   "blockedBy": [
     "P10"
@@ -13,8 +13,8 @@
     "lint",
     "shots"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "e0359947d04e72da9d806926769a551236104fee",
+  "branch": "audit/p11-refactor-ui-asset-extraction",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P11.1",
       "title": "Panel: ui/panel.{html,css,js} + _panel_ui.raw_template()",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -53,21 +53,28 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "UI_HTML's 3,765-line r-string split programmatically at the <style>/<script> seams into ui/panel.{html,css,js} (31/823/2913 lines); _panel_ui.raw_template() reassembles at import (utf-8, module-global cache) and panel-server assigns UI_HTML from it with the .replace() chain untouched. Post-substitution UI_HTML proven byte-identical old-vs-new via importlib (244588 == 244588). panel-server 8287 -> 4521 lines; 23 new _panel_ui cases incl. mutation-proven exactly-once markers; scripts/ui pinned .py-free.",
+        "descriptive": "The panel's CSS and JS are real files now, assembled byte-identically at import - every pin passed untouched and the served page is unchanged."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T18:10:29+02:00",
+      "completedAt": "2026-08-10T18:17:18+02:00",
       "risk": "med",
-      "verifiedBy": []
+      "verifiedBy": [
+        "byte-identity 244588==244588",
+        "_panel_ui 23/23",
+        "panel-server 428/428",
+        "sweep green",
+        "lint green",
+        "capture-screenshots --check green"
+      ]
     },
     {
       "id": "P11.2",
       "title": "Report: ui/report.{css,js} + _report_ui",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -99,9 +106,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T18:17:18+02:00",
       "completedAt": null,
       "risk": "med",
       "verifiedBy": []
@@ -144,5 +151,11 @@
       "risk": "low",
       "verifiedBy": []
     }
-  ]
+  ],
+  "claim": {
+    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
+    "host": "MacBook-Pro.local",
+    "branch": "audit/p11-refactor-ui-asset-extraction",
+    "at": "2026-08-10T18:10:29+02:00"
+  }
 }
