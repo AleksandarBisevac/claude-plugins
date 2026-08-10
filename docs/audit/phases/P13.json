@@ -71,7 +71,7 @@
     {
       "id": "P13.2",
       "title": "_report_usage.py: usage loading + visualization",
-      "status": "in_progress",
+      "status": "done",
       "model": "opus",
       "skills": [],
       "blockedBy": [],
@@ -96,21 +96,29 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The whole usage region (ledger load, every chart builder, _usage_section and the markdown twin _usage_md) moved to _report_usage.py (1365 lines); render-report 2803 -> 1613 with 33 aliases. 227 = 178 + 49 moved; borderline calls documented (composition pins stayed; u4's siblings assert off _usage_section directly; u27's source scan now reads both files by path so the rule keeps covering the file it left). Byte-identity proven on acme-store with the stamp normalized inside AUDIT_MD_B64 as well. Real find en route: u8 was green off the stylesheet's variable declarations rather than the markup - re-aimed at _phase_stacks exact segments and proven red under reversed model order.",
+        "descriptive": "Every usage chart and its markdown twin live in their own module with their own cases, one of which turned out to have been a decoration and now bites."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T19:25:05+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T19:34:36+02:00",
       "risk": "med",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_report_usage 49/49",
+        "render-report 178/178",
+        "_report_html 51/51",
+        "sweep green",
+        "lint green",
+        "check-report-interactive green + id=usage present",
+        "acme byte-identity (158574 == 158574, stamp-normalized)"
+      ]
     },
     {
       "id": "P13.3",
       "title": "Slim render-report.py + regenerate shipped reports",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -139,9 +147,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T19:34:36+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []
