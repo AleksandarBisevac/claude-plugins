@@ -60,6 +60,7 @@ if _HERE not in sys.path:
 
 import _areas                                    # noqa: E402  (the areas rule)
 import _policy                                   # noqa: E402  (the policy verdicts)
+import _loader                                   # noqa: E402  (the one path-importlib loader)
 
 # The schemas ARE the field documentation; these are the only two there are.
 SCHEMAS = {
@@ -248,21 +249,11 @@ def lookup(table, path):
 # --- defaults --------------------------------------------------------------------
 def _config_mod():
     """hooks/_config.py — hyphen-free, but a directory away."""
-    import importlib.util
-    path = os.path.join(os.path.dirname(_HERE), "hooks", "_config.py")
-    spec = importlib.util.spec_from_file_location("audit__config_help", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _loader.load_hooks_config(modname="audit__config_help")
 
 
 def _journal_mod():
-    import importlib.util
-    path = os.path.join(_HERE, "audit-journal.py")
-    spec = importlib.util.spec_from_file_location("audit_journal_help", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _loader.load_script("audit-journal.py", modname="audit_journal_help")
 
 
 def _showable(value):
@@ -777,12 +768,9 @@ def _selftest():
     # THE point of extracting rather than restating: the panel binds controls to
     # config paths, and every one of them must be documented by the schema. A new
     # setting that reaches the form without reaching the schema fails here.
-    import importlib.util as _ilu
-    _spec = _ilu.spec_from_file_location("audit_panel_help",
-                                         os.path.join(_HERE, "panel-server.py"))
-    _panel = _ilu.module_from_spec(_spec)
     try:
-        _spec.loader.exec_module(_panel)
+        _panel = _loader.load(os.path.join(_HERE, "panel-server.py"),
+                               modname="audit_panel_help")
         bound = set(_panel._settings_paths())
     except Exception as exc:                                # pragma: no cover
         bound = set()

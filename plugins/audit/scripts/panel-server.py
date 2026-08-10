@@ -28,7 +28,6 @@ Exit: Ctrl-C stops the server. --selftest returns 0/1.
 import argparse
 import atexit
 import contextlib
-import importlib.util
 import io
 import json
 import os
@@ -54,6 +53,7 @@ import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the repo
 import _areas               # noqa: E402  (meta.areas registry + shared resolution)
 import _policy              # noqa: E402  (the capability policy + its resolution)
 import _help                # noqa: E402  (schema-sourced field help + concept topics)
+import _loader               # noqa: E402  (the one path-importlib loader for scripts/)
 
 # Fields the composition patch is allowed to touch — the security allow-list.
 # `areas` is here so the registry can be written through the ONE write path that
@@ -352,10 +352,10 @@ def _cfg_enums():
 
 # --- lazy import of the plugin's own pure cores (hyphenated filenames) ----------
 def _load(modname, path):
-    spec = importlib.util.spec_from_file_location(modname, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Thin per-call wrapper: callers here pass an explicit modname (the file is
+    hyphenated and not otherwise importable). Delegates to `_loader`, the one
+    shared path-importlib loader — see its docstring for the caching policy."""
+    return _loader.load(path, modname=modname)
 
 
 _VM = _VC = _AS = _CFG = None
@@ -365,13 +365,12 @@ def _cores():
     """Load (once) validate-manifest, validate-config, audit-status, _config."""
     global _VM, _VC, _AS, _CFG
     if _VM is None:
-        _VM = _load("audit_validate_manifest",
-                    os.path.join(_HERE, "validate-manifest.py"))
-        _VC = _load("audit_validate_config",
-                    os.path.join(_HERE, "validate-config.py"))
-        _AS = _load("audit_status", os.path.join(_HERE, "audit-status.py"))
-        _CFG = _load("audit__config",
-                     os.path.join(_HERE, "..", "hooks", "_config.py"))
+        _VM = _loader.load_script("validate-manifest.py",
+                                   modname="audit_validate_manifest")
+        _VC = _loader.load_script("validate-config.py",
+                                   modname="audit_validate_config")
+        _AS = _loader.load_script("audit-status.py", modname="audit_status")
+        _CFG = _loader.load_hooks_config(modname="audit__config")
     return _VM, _VC, _AS, _CFG
 
 
@@ -437,7 +436,7 @@ def _viewer(project, config):
     if key not in _VIEWER_CACHE:
         author = None
         try:
-            ul = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
+            ul = _loader.load_script("usage_ledger.py", modname="audit_usage_ledger")
             author = ul.resolve_author(project, mode)
         except Exception:
             author = None
@@ -1149,13 +1148,7 @@ def _lockmod():
     """audit-lock.py, loaded by path. None if it cannot be loaded — the panel
     then shows the lock without a liveness verdict rather than showing nothing."""
     try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "audit_lock", os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                       "audit-lock.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
+        return _loader.load_script("audit-lock.py", modname="audit_lock")
     except Exception:
         return None
 
@@ -1673,7 +1666,7 @@ def _journalmod():
         path = os.path.join(_HERE, "audit-journal.py")
         if os.path.isfile(path):
             try:
-                _JOURNAL["mod"] = _load("audit_journal", path)
+                _JOURNAL["mod"] = _loader.load(path, modname="audit_journal")
             except Exception:
                 _JOURNAL["mod"] = None
     return _JOURNAL["mod"]

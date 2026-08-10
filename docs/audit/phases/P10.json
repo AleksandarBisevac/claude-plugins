@@ -63,7 +63,7 @@
     {
       "id": "P10.2",
       "title": "Migrate loader call sites: panel-server + _help",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -85,16 +85,21 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Every hand-rolled spec_from_file_location triplet in panel-server.py (5 sites: _load/_cores, _lockmod, _journalmod, _viewer's ledger load) and _help.py (3 sites: _config_mod, _journal_mod, the s8 panel load) now delegates to _loader, soft-fail semantics preserved at each call site; panel's _load kept as a one-line wrapper so its other internal callers ride the shared loader. 19 insertions / 38 deletions; import importlib.util gone from both files.",
+        "descriptive": "panel-server and _help load siblings through the one shared loader instead of eight private copies, with zero behavior change."
       },
       "commit": null,
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T17:54:00+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T18:05:00+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "panel-server selftest 428/428",
+        "_help selftest 59/59",
+        "_loader 11/11",
+        "lint green"
+      ]
     },
     {
       "id": "P10.3",
@@ -130,7 +135,7 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T17:54:00+02:00",
       "completedAt": null,
