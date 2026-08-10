@@ -221,6 +221,10 @@ SETTINGS_GROUPS = (
     {
         "id": "paths",
         "title": "Paths & gate",
+        # The concept page this card's decisions belong to, opened from the ⓘ on
+        # its heading. Only two of the five have one: a group without a page gets
+        # no hint rather than one that goes nowhere.
+        "topic": "gate-tiers",
         "blurb": "Where the plugin looks for things, and how hard the plan-first gate "
                  "pushes. Paths are relative to this project directory. Leave a field "
                  "empty to use the default shown inside it — nothing is written for a "
@@ -303,6 +307,7 @@ SETTINGS_GROUPS = (
     {
         "id": "journal",
         "title": "Audit trail",
+        "topic": "journal",
         # No backticks in a blurb: it is rendered as text, not as markdown, and the
         # other four say their command names plainly for the same reason.
         "blurb": "An append-only, hash-chained record of every change to the plan "
@@ -461,7 +466,12 @@ def _read_json(path):
 # --- discovery / registry -------------------------------------------------------
 def _front_matter(text):
     """Parse the leading '--- ... ---' block into a flat {key: value} dict.
-    Stdlib only (no YAML dep); good enough for `name` / `description`."""
+    Stdlib only (no YAML dep); good enough for `name` / `description`.
+
+    Unquoting goes through `_help.unquote_scalar`, which is the same function the
+    help payload reads an agent's card with — see the note there. `strip("\"'")`
+    was not that function: it published the escape (`the plugin''s own README`)
+    and ate the apostrophe off an unquoted `'sup`."""
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
@@ -471,8 +481,7 @@ def _front_matter(text):
             break
         m = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
         if m:
-            val = m.group(2).strip().strip("\"'")
-            fm[m.group(1)] = val
+            fm[m.group(1)] = _help.unquote_scalar(m.group(2).strip())
     return fm
 
 
@@ -808,6 +817,28 @@ def help_state():
     a reader take a worked example for their own repository.
     """
     return _help.payload()
+
+
+def help_field(path, doc):
+    """`GET /api/help?path=usage.pricing.opus.in&doc=config` — one field.
+
+    The drawer holds a path into a DOCUMENT and the help table is keyed by SHAPES,
+    and exactly one thing in this product knows how to get from one to the other:
+    `_help.entry_for`. Asking it over HTTP costs a localhost round trip and buys
+    the guarantee the policy tab already has — the browser is handed an answer, not
+    the machinery to compute one, so a second implementation cannot drift into
+    disagreeing with the first.
+
+    `found:false` rather than a 404: "nothing documents this path" is an answer the
+    drawer can render, and a 404 would be indistinguishable from a panel talking to
+    an install with no help endpoint at all.
+    """
+    res = _help.entry_for(path, doc)
+    if res is None:
+        return {"found": False, "path": path, "doc": doc}
+    out = dict(res)
+    out["found"] = True
+    return out
 
 
 def _policy_rules(policy, kind, names):
@@ -2011,6 +2042,12 @@ def _make_handler(project, token):
             if path == "/api/policy":
                 self._json(200, policy_state(project)); return
             if path == "/api/help":
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(self.path).query)
+                want = (q.get("path") or [""])[0]
+                if want:
+                    self._json(200, help_field(
+                        want, (q.get("doc") or ["config"])[0])); return
                 self._json(200, help_state()); return
             if path == "/report":
                 # No path parameter: the location is derived from the project's
@@ -2637,6 +2674,102 @@ table.cftbl td.fld{color:var(--muted);white-space:nowrap}
 .cflock{margin:var(--sp-1) 0 0;font-size:.76rem}
 @media (max-width:34rem){dialog.confirm{width:calc(100vw - 1rem)}
  .cflist{overflow-x:auto}}
+/* ---- the help drawer -----------------------------------------------------
+   A third native <dialog>, for the third time and the same reasons: Esc, the
+   backdrop, the focus trap and — the one that matters most here — returning focus
+   to the control you opened it from, so a keyboard reader who asks what a field
+   means lands back on that field. It is a side sheet rather than a centred box
+   because it is READ AGAINST the form: the setting you are asking about stays on
+   screen beside its own explanation. */
+/* `max-width` is restated because the UA sheet sets `calc(100% - 2px - 2em)` on
+   every dialog — a sensible cap for a centred box and 36px of nothing down the
+   side of a sheet that is supposed to reach the edge. Measured at 390px, where it
+   made a "full width" drawer 339px wide, hanging 36px off the left. */
+dialog.drawer{margin:0 0 0 auto;height:100dvh;max-height:100dvh;
+ width:min(31rem,100%);max-width:100%;
+ padding:0;border:none;border-left:1px solid var(--border-strong);border-radius:0;
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden;flex-direction:column}
+/* `display` on `[open]` ONLY, and this is not a nicety. The UA sheet hides a shut
+   dialog with `dialog:not([open]){display:none}` — an author rule of equal
+   specificity beats it, so `dialog.drawer{display:flex}` un-hides the drawer the
+   moment it is closed. A shut dialog is `position:absolute` at its static
+   position, which is the end of <body>: every view then carried a dead 100dvh
+   block below the fold, and the Overview screenshot grew 900px with the drawer
+   printed across the bottom of it. Found by a picture; it would not have shown up
+   in any viewport-sized shot. */
+dialog.drawer[open]{display:flex}
+dialog.drawer::backdrop{background:rgb(0 0 0 / .45)}
+@media (prefers-reduced-motion:no-preference){
+ dialog.drawer[open]{animation:dslide var(--dur) var(--ease)}
+ @keyframes dslide{from{transform:translateX(1.5rem);opacity:.4}}}
+.dhead{display:flex;align-items:center;gap:var(--sp-1);padding:var(--sp-2) var(--sp-3);
+ border-bottom:1px solid var(--border);background:var(--surface-2);flex:0 0 auto}
+/* The panel's h2 rule uppercases, which is a card heading's job and not a field
+   label's: this one is the words beside the control you just pressed, and shouting
+   them back reads as a different string from the one you clicked. */
+.dhead h2{margin:0;font-size:.95rem;flex:1 1 auto;word-break:break-word;
+ text-transform:none;letter-spacing:0}
+.dbody{flex:1 1 auto;overflow:auto;padding:var(--sp-2) var(--sp-3) var(--sp-4)}
+.dsec{margin:0 0 var(--sp-3)}
+.dsec>h3{margin:0 0 var(--sp-1);font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:700}
+.dsec p{margin:0 0 var(--sp-1);font-size:.84rem;line-height:1.6;max-width:64ch}
+.dsec p:last-child{margin-bottom:0}
+.dsec code{font-family:var(--mono);font-size:.78rem;background:var(--surface-2);
+ border-radius:4px;padding:0 .2rem;word-break:break-word}
+/* The dotted path, big enough to read and selectable — someone editing the JSON by
+   hand came here for exactly this string. */
+.dpath{font-family:var(--mono);font-size:.78rem;color:var(--text);
+ background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
+ padding:.3rem .45rem;display:block;word-break:break-all;user-select:all}
+.dfacts{display:grid;grid-template-columns:auto 1fr;gap:.2rem var(--sp-2);
+ font-size:.8rem;margin:var(--sp-1) 0 0}
+.dfacts dt{color:var(--muted)}
+.dfacts dd{margin:0;font-family:var(--mono);font-size:.76rem;word-break:break-word}
+.dlist{display:flex;flex-direction:column;gap:var(--sp-1);margin:0;padding:0;
+ list-style:none}
+/* A topic is a destination, so it looks like one: a full-width target with its own
+   summary under the title, not a link buried in a sentence. */
+.dtopic{display:block;width:100%;text-align:left;cursor:pointer;font:inherit;
+ background:var(--bg);color:var(--text);border:1px solid var(--border);
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);
+ transition:border-color var(--dur) var(--ease)}
+.dtopic:hover,.dtopic:focus-visible{border-color:var(--accent)}
+.dtopic b{display:block;font-size:.85rem}
+.dtopic span{display:block;color:var(--muted);font-size:.76rem;line-height:1.5;
+ margin-top:.15rem}
+.dtblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+table.dtbl{border-collapse:collapse;width:100%;font-size:.76rem}
+table.dtbl th{text-align:left;background:var(--surface-2);color:var(--muted);
+ font-size:var(--t-label);text-transform:uppercase;letter-spacing:.05em;
+ padding:.3rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.dtbl td{padding:.3rem .5rem;border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.dtbl tbody tr:last-child td{border-bottom:none}
+.dcap{color:var(--muted);font-size:.74rem;margin:.35rem 0 0}
+.dsrc{font-family:var(--mono);font-size:.74rem;color:var(--muted);
+ display:flex;flex-wrap:wrap;gap:.25rem .75rem}
+/* The paid half of the help, and the drawer never spends it for you. */
+.dagent{border-top:1px solid var(--border);padding:var(--sp-2) var(--sp-3);
+ background:var(--surface-2);flex:0 0 auto;font-size:.78rem;color:var(--muted);
+ max-height:60vh;overflow:auto}
+.dagent summary{cursor:pointer;color:var(--text)}
+.dagent p{margin:var(--sp-1) 0 0}
+.dagent b{color:var(--text)}
+.dagent code{font-family:var(--mono);background:var(--bg);border-radius:4px;
+ padding:0 .2rem}
+.dagent .dtools{display:flex;gap:.25rem;flex-wrap:wrap;margin:.35rem 0 0}
+.dmiss{font-style:italic}
+/* The ⓘ opens this. It is a real button when it does — a focusable span with a
+   click handler is a control screen readers announce as text. */
+button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);cursor:help}
+/* `width:100%` is NOT restated here: `min(31rem,100%)` above already collapses to
+   the screen below 31rem, and a mutation deleting a rule that changes nothing is a
+   mutation that goes green — which is how a redundant rule gets mistaken for the
+   one doing the work. All this breakpoint owes is the edge that has nothing on the
+   other side of it. */
+@media (max-width:34rem){dialog.drawer{border-left:none}}
 /* one shared tooltip element, moved on hover */
 .utip{position:fixed;z-index:60;pointer-events:none;background:var(--surface);
  border:1px solid var(--border-strong);border-radius:var(--radius);
@@ -2761,6 +2894,10 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
  box-shadow:var(--shadow-md);padding:.5rem .5rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
  white-space:normal;display:none;pointer-events:none}
 .hint:hover::after,.hint:focus::after{display:block}
+/* ...but a hint with no words has nothing to draw. `content:attr(data-tip)` on a
+   missing attribute is the empty string, which is an empty bubble rather than no
+   bubble. */
+.hint:not([data-tip]):hover::after,.hint:not([data-tip]):focus::after{display:none}
 /* Two fixes for one bug. A 17rem bubble anchored left overflows the viewport for
    any hint in the right half of a wide layout, and an absolutely-positioned box
    counts toward scrollable overflow even while hidden — so the page carried 34px
@@ -2987,6 +3124,7 @@ table.polrules td.lst[data-list=allow]{color:var(--ok)}
  <div><h1>audit · control panel</h1><p class=sub id=proj></p></div>
  <div class=topbtns>
   <span class=who id=who hidden></span>
+  <button class="btn small" id=helpbtn title="what every field means, and how the four concepts work — served from this plugin's own schemas, no model involved">Help</button>
   <button class="btn small" id=report title="render the standalone HTML report (it carries Save-as-PDF)">Export report</button>
   <button class="btn small" id=theme title="light/dark">☾</button>
  </div>
@@ -3352,16 +3490,35 @@ async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/
 // nothing said so. HELP is keyed by dotted config path; MDESC covers the manifest
 // levers the Composition tab edits, which are not config paths.
 const SETTINGS=__SETTINGS__, HELP=__FIELD_HELP__, MDESC=__COMP_HELP__, ENUMS=__CFG_ENUMS__;
-function hint(t){if(!t)return null;
- const h=el('span',{class:'hint',tabindex:'0','data-tip':t},'i');
+// Two depths, one control. Hovering says what this box is for in the panel's own
+// words; pressing it opens the drawer, which adds what the SCHEMA says, the type,
+// the enum, the default the hooks fall back to and the concept page behind it.
+// `ref` decides whether there is a second depth at all — a hint on something the
+// schemas do not document (a policy switch, a discovered capability) stays a
+// tooltip rather than becoming a button that opens an empty page.
+function hint(t,ref){if(!t&&!ref)return null;
+ // No `data-tip` at all when there is no tooltip, rather than an empty one: the
+ // bubble's content IS that attribute, so an empty string draws an empty box on
+ // hover. Two fields hit this the moment the ⓘ stopped needing tooltip text to
+ // exist — the cost-band pair, which has a schema entry and no microcopy.
+ const h=el(ref?'button':'span',{class:'hint','data-tip':t||null},'i');
+ // A <span tabindex=0> inside a <label> is not interactive content, so a click on
+ // it also toggled the checkbox it was explaining. A real button is, which is what
+ // stops that — and it is what a screen reader announces as something to press.
+ if(ref){h.type='button';h.setAttribute('aria-label','What is '+hRefName(ref)+'?');
+  // What this ⓘ is about, on the element itself: the live checks address one
+  // field's hint rather than counting their way to it through a label's words.
+  h.setAttribute('data-hint',ref.path||ref.comp||('topic:'+ref.topic));
+  h.onclick=ev=>{ev.preventDefault();ev.stopPropagation();openHelp(ref);};}
+ else h.tabIndex=0;
  // Measured at open time, not guessed from a breakpoint: whether the bubble fits
  // depends on where this particular hint sits, which CSS cannot ask.
  const place=()=>{const r=h.getBoundingClientRect();
   h.classList.toggle('flip',r.left+272>document.documentElement.clientWidth-8);};
  h.addEventListener('mouseenter',place);h.addEventListener('focus',place);
  return h;}
-function flabel(text,tip){return el('span',{class:'lbl'},text,hint(tip));}
-function h2h(text,tip){return el('h2',{},text,hint(tip));}
+function flabel(text,tip,ref){return el('span',{class:'lbl'},text,hint(tip,ref));}
+function h2h(text,tip,ref){return el('h2',{},text,hint(tip,ref));}
 // Heading in the reader's words, with the JSON key beside it for whoever is
 // editing .claude/audit.config.json by hand. Both audiences are real and they
 // want different strings: "guardEdits.tokenVars" tells you nothing about what the
@@ -3370,7 +3527,198 @@ function h2h(text,tip){return el('h2',{},text,hint(tip));}
 // camelCase key is not merely shouted, it is WRONG: config keys are
 // case-sensitive, so copying it out of here would produce a setting that silently
 // does nothing.
-function klabel(text,key,tip){return el('span',{class:'lbl'},text,el('code',{class:'k2'},key),hint(tip));}
+// The key is also the path the drawer looks the field up under, so every control in
+// this form gets its reference entry without a second list saying which ones have
+// one. A path the schema does not describe fails _help's own coverage selftest, so
+// "the drawer opens on nothing" is a build failure rather than a dead ⓘ.
+function klabel(text,key,tip){return el('span',{class:'lbl'},text,el('code',{class:'k2'},key),
+ hint(tip,{path:key,doc:'config',label:text}));}
+
+// ---------- the help drawer ----------
+// What every field means, and how the four concepts work, answered from the
+// plugin's own schemas and code — see scripts/_help.py and GET /api/help. Two
+// rules hold this together and both are the reason it is worth having:
+//
+//   Nothing here is retyped. Field text is EXTRACTED from the two shipped schemas
+//   at request time and concept pages DERIVE every executable rule from the
+//   function that executes it, so this drawer cannot drift from the document your
+//   editor validates against. A sentence written into this file would be a second
+//   thing to keep true.
+//
+//   And no path is resolved here. `usage.pricing.opus.in` is a path into a
+//   document; the help table is keyed by shapes (`usage.pricing.<name>.in`).
+//   `_help.entry_for` is the one thing that knows the difference and it is asked
+//   over HTTP — the same bargain the Policy tab strikes with verdicts.
+let HELPDOC=null,HDLG=null,HVIEW=null;
+const HCACHE=new Map(),HSTACK=[];
+const hRefName=r=>r.label||r.path||(r.topic?'this':'')||'this';
+async function helpDoc(){if(!HELPDOC)HELPDOC=await api('GET','/api/help');return HELPDOC;}
+async function helpField(path,doc){const k=doc+'|'+path;
+ if(!HCACHE.has(k))HCACHE.set(k,await api('GET','/api/help?doc='+encodeURIComponent(doc)
+   +'&path='+encodeURIComponent(path)));
+ return HCACHE.get(k);}
+// Backticks are the only markup the topics use, and they use it for identifiers.
+// An unbalanced pair renders verbatim rather than guessing which half was code —
+// a mis-parsed identifier is worse than an un-styled one.
+function hcode(s){const parts=String(s==null?'':s).split('`');
+ if(parts.length%2===0)return [String(s)];
+ return parts.map((x,i)=>i%2?el('code',{},x):x).filter(x=>x!=='');}
+function hsec(title,...kids){return el('div',{class:'dsec'},
+  title?el('h3',{},title):null,kids.flat().filter(Boolean));}
+function helpDrawer(){
+ if(!HDLG){HDLG=el('dialog',{class:'drawer','aria-label':'Help'});
+  HDLG.addEventListener('click',ev=>{if(ev.target===HDLG)HDLG.close();});
+  // The stack is per-opening. Left standing, a back button would offer to return
+  // to a field somebody read ten minutes ago on another tab.
+  HDLG.addEventListener('close',()=>{HSTACK.length=0;HVIEW=null;});
+  document.body.append(HDLG);}
+ return HDLG;}
+
+// The paid half, named on every view because it is the answer when this drawer is
+// not. It is not started from here and the card says so: a question the panel
+// already answers for nothing should not quietly bill for a model. `agent:null` is
+// an install without the guide — draw nothing rather than a hint pointing at it.
+function hAgentCard(doc){const a=doc&&doc.agent;if(!a)return null;
+ // Shut, for the same reason the policy tab's four limits are: it is read once and
+ // remembered, and left open it is a permanent 250px footer over the page someone
+ // came here to read — which on the concept pages cut the table off.
+ const box=el('details',{class:'dagent','data-hagent':a.name});
+ box.append(el('summary',{},el('b',{},'Not answered here? Ask '),
+   el('code',{},a.qualified||a.name)));
+ if(a.description)box.append(el('p',{},a.description));
+ box.append(el('p',{},'Ask for it by name in a Claude Code session. ',
+   el('b',{},'This panel will not start it for you'),
+   ' — everything above is already written down, and spending a model on it would '
+   +'be paying for a page you are looking at.'));
+ box.append(el('div',{class:'dtools'},
+   el('span',{class:'badge'},'read-only: '+(a.tools||[]).join(' · ')),
+   a.model?el('span',{class:'badge'},'model '+a.model):null,
+   a.effort?el('span',{class:'badge'},'effort '+a.effort):null));
+ return box;}
+
+// --- the three views -------------------------------------------------------
+function hIndexView(doc){
+ const body=el('div',{class:'dbody'});
+ body.append(hsec(null,el('p',{},'Every field below is described by the plugin’s '
+   +'own schemas, and every rule on a concept page is read from the code that runs '
+   +'it. Nothing here was asked of a model, and none of it is about this project '
+   +'in particular — for what is true HERE, see the Policy tab’s verdicts and '
+   +'the audit trail.')));
+ const list=el('ul',{class:'dlist'});
+ (doc.topics||[]).forEach(t=>list.append(el('li',{},
+   el('button',{class:'dtopic',type:'button','data-htopic':t.id,
+     onclick:()=>hShow({kind:'topic',id:t.id},true)},
+     el('b',{},t.title),el('span',{},t.summary)))));
+ body.append(hsec('How it works',list));
+ body.append(hsec('Every field',el('p',{},'Press the ',
+   el('code',{},'i'),' beside any setting or lever for what it means, what it '
+   +'accepts and what it falls back to when you leave it empty.')));
+ return {title:'Help',body};}
+
+function hTopicView(doc,id){
+ const t=(doc.topics||[]).find(x=>x.id===id);
+ const body=el('div',{class:'dbody'});
+ if(!t){body.append(el('p',{class:'dmiss'},'No page with that name.'));
+  return {title:'Help',body};}
+ body.append(hsec(null,el('p',{class:'mut'},hcode(t.summary))));
+ body.append(hsec(null,(t.paragraphs||[]).map(p=>el('p',{},hcode(p)))));
+ if(t.table){const tb=el('tbody');
+  (t.table.rows||[]).forEach(r=>tb.append(el('tr',{},
+    (r||[]).map(cell=>el('td',{},hcode(cell))))));
+  body.append(hsec(null,
+    el('div',{class:'dtblwrap'},el('table',{class:'dtbl','data-htable':id},
+      el('thead',{},el('tr',{},(t.table.columns||[]).map(c=>el('th',{},c)))),tb)),
+    t.table.caption?el('p',{class:'dcap'},hcode(t.table.caption)):null));}
+ if((t.sources||[]).length)body.append(hsec('Stated in full in',
+   el('div',{class:'dsrc'},t.sources.map(s=>el('span',{},s)))));
+ return {title:t.title,body};}
+
+async function hFieldView(doc,ref){
+ const body=el('div',{class:'dbody'});
+ // A composition lever is not a config path; _help ships the map from the panel's
+ // own name for it (`taskModel`) to the manifest path that documents it, so this
+ // file does not carry a second one.
+ const path=ref.path||(doc.composition||{})[ref.comp],
+   which=ref.doc||(ref.comp?'manifest':'config');
+ if(!path){body.append(el('p',{class:'dmiss'},'Nothing documents this control.'));
+  return {title:ref.label||'Help',body};}
+ const res=await helpField(path,which),e=(res&&res.entry)||null;
+ body.append(hsec(null,el('code',{class:'dpath','data-hpath':path},path)));
+ if(!res||!res.found){
+  body.append(hsec(null,el('p',{class:'dmiss'},'The '+which+' schema has no entry '
+    +'for this path, so there is nothing to show. That is a gap in the schema '
+    +'rather than a setting without a meaning.')));
+  return {title:ref.label||path,body};}
+ // The schema's words first, because they are the ones your editor shows you and
+ // the ones the file is validated against. Cited under the paragraph rather than
+ // paraphrased into it.
+ body.append(hsec('What it means',el('p',{},hcode(e.description||'')),
+   el('div',{class:'dsrc'},
+     el('span',{},((doc.schemas||{})[which])||(which+' schema')),
+     res.key&&res.key!==path?el('span',{},'documented as '+res.key):null)));
+ const facts=el('dl',{class:'dfacts','data-hfacts':'1'});
+ const fact=(k,v)=>{facts.append(el('dt',{},k),el('dd',{},v));};
+ if(e.type)fact('Type',Array.isArray(e.type)?e.type.join(' or '):String(e.type));
+ if(e.enum)fact('One of',e.enum.join(', '));
+ // The default is the value the HOOKS fall back to, flattened out of
+ // _config.DEFAULTS rather than read off a sentence about it — which is what makes
+ // "leave it empty and you get this" a fact rather than a promise.
+ if('default' in e)fact('Default',hVal(e.default));
+ if(e.minimum!=null)fact('At least',String(e.minimum));
+ if(e.maximum!=null)fact('At most',String(e.maximum));
+ if(facts.childNodes.length)body.append(hsec('Accepts',facts));
+ // Second, and labelled as the panel's own: this is the microcopy beside the
+ // control, which says what THIS FORM does about the setting (it refuses a regex
+ // that will not compile; your list replaces the defaults). It is a different
+ // claim about a different thing, so it gets its own heading instead of being run
+ // together with the schema's sentence as if the two were one voice.
+ const note=ref.comp?MDESC[ref.comp]:HELP[path];
+ if(note)body.append(hsec('In this panel',el('p',{},note)));
+ if(e.topic){const t=(doc.topics||[]).find(x=>x.id===e.topic);
+  if(t)body.append(hsec('How this works',el('button',{class:'dtopic',type:'button',
+    'data-htopic':t.id,onclick:()=>hShow({kind:'topic',id:t.id},true)},
+    el('b',{},t.title),el('span',{},t.summary))));}
+ return {title:ref.label||path,body};}
+
+function hVal(v){return v===null?'null':(Array.isArray(v)
+  ?(v.length?v.join(', '):'(empty list)')
+  :(v===''?'(empty text)':String(v)));}
+
+async function hShow(view,push){
+ const d=helpDrawer();
+ if(push&&HVIEW)HSTACK.push(HVIEW);
+ HVIEW=view;
+ if(!d.open)d.showModal();
+ let doc;
+ try{doc=await helpDoc();}
+ catch(err){d.textContent='';
+  d.append(el('div',{class:'dhead'},el('h2',{},'Help'),
+    el('button',{class:'bx','aria-label':'close help',type:'button',
+      onclick:()=>d.close()},'×')),
+    el('div',{class:'dbody'},el('div',{class:'findings err'},
+      'The help endpoint did not answer: '+err)));
+  return;}
+ const v=view.kind==='topic'?hTopicView(doc,view.id)
+   :view.kind==='field'?await hFieldView(doc,view.ref)
+   :hIndexView(doc);
+ // Opened before the awaits so the press has an effect at once, and filled in ONE
+ // go afterwards rather than staged — measured at 10 ms to build the payload and
+ // 1 ms per field after that, so there is nothing to stage, and a header painted
+ // early would only be the previous field's title for those 10 ms.
+ d.textContent='';
+ const head=el('div',{class:'dhead'});
+ if(HSTACK.length)head.append(el('button',{class:'btn small','data-hback':'1',
+   type:'button',onclick:()=>{const prev=HSTACK.pop();hShow(prev,false);}},'←'));
+ head.append(el('h2',{},v.title),el('button',{class:'bx','aria-label':'close help',
+   type:'button',onclick:()=>d.close()},'×'));
+ d.append(head,v.body,hAgentCard(doc));
+ v.body.scrollTop=0;}
+
+function openHelp(ref){
+ if(ref&&ref.topic)return hShow({kind:'topic',id:ref.topic},false);
+ return hShow({kind:'field',ref:ref||{}},false);}
+function openHelpIndex(){return hShow({kind:'index'},false);}
+$('#helpbtn').onclick=()=>openHelpIndex();
 // A custom autocomplete: menu opens directly under the input, limited height,
 // clear items (name + source + description), keyboard + click select.
 function comboWrap(inp,itemsFn,onChoose,onEnterFree){
@@ -3493,7 +3841,7 @@ function renderSettings(){const c=$('#guards');c.textContent='';
   'usage.pricing':()=>pricingField(cfg,d)};
  for(const grp of SETTINGS){
   const card=el('div',{class:'card',id:'setgrp-'+grp.id});
-  card.append(el('h2',{},grp.title));
+  card.append(h2h(grp.title,null,grp.topic?{topic:grp.topic}:null));
   if(grp.blurb)card.append(el('p',{class:'blurb'},grp.blurb));
   // Ordinary fields flow into a shared row; a custom one gets its own heading and
   // closes the row before it. The row is APPENDED and replaced, never cloned —
@@ -3743,9 +4091,11 @@ function openInComp(pid){COMPF.q=pid;COMPF.status='';COMPF.needs=false;COMPF.ope
  if(COMPF.apply)COMPF.apply();showTab('comp');}
 function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.composition;
  const patch={meta:{},phases:{},tasks:{}};
- const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill));
+ const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,
+   {comp:'reviewSkill',label:'Phase sign-off review skill'}));
  meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,v=>patch.meta.reviewSkill=v)));
- meta.append(h2h('meta.buildCommands (JSON)',MDESC.buildCommands));
+ meta.append(h2h('meta.buildCommands (JSON)',MDESC.buildCommands,
+   {comp:'buildCommands',label:'Build commands'}));
  const bc=el('textarea',{});bc.value=comp.meta.buildCommands?JSON.stringify(comp.meta.buildCommands,null,2):'';
  let bcBad=false;
  bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;
@@ -3753,7 +4103,8 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
   catch(e){bcBad=true;bc.style.borderColor='var(--err)';}};
  meta.append(bc);c.append(meta);
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
- const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills));
+ const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills,
+   {comp:'taskSkills',label:'Task skills'}));
  const q=el('input',{type:'search',placeholder:'filter phases & tasks…',value:COMPF.q});
  const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
  const needsBtn=el('button',{class:'filt',type:'button','aria-pressed':'false',title:'only tasks with no skills yet'},'needs skills');
@@ -3762,7 +4113,11 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  tcard.append(el('div',{class:'comptools'},q,el('span',{class:'filtlbl'},'phase:'),statusBar,needsBtn,expandBtn,count));
  const tbody=el('tbody');
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
-   el('thead',{},el('tr',{},el('th',{},'id'),el('th',{},'title'),el('th',{},'status'),el('th',{},'model'),el('th',{},'skills'))),tbody)));
+   // The two editable columns carry the reference for the whole column. A ⓘ per
+   // row would be a thousand of them saying one thing.
+   el('thead',{},el('tr',{},el('th',{},'id'),el('th',{},'title'),el('th',{},'status'),
+     el('th',{},flabel('model',MDESC.taskModel,{comp:'taskModel',label:'Task model'})),
+     el('th',{},flabel('skills',MDESC.taskSkills,{comp:'taskSkills',label:'Task skills'})))),tbody)));
 
  const open=COMPF.open;
  const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
@@ -3777,7 +4132,8 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
     (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
     el('span',{class:'st','data-status':ph.status||''},label(ph.status)),
     el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
-    el('span',{class:'comp-review'},flabel('review',MDESC.phaseReviewModel),rev))));
+    el('span',{class:'comp-review'},flabel('review',MDESC.phaseReviewModel,
+      {comp:'phaseReviewModel',label:'Phase review model'}),rev))));
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
   tbody.append(pr);
   const taskEls=[];
@@ -4304,7 +4660,8 @@ function renderPolicy(){
  const head=el('div',{class:'card',id:'polhead'});
  head.append(h2h('Capability policy','Which skills, subagents and MCP tools may be '
    +'used in this project. Every verdict below is computed by _policy.resolve — the '
-   +'same function guard-capabilities calls — and never by this page.'));
+   +'same function guard-capabilities calls — and never by this page.',
+   {topic:'policy'}));
  const active=POLICY.active,en=pEnabled();
  if(!en)head.append(el('div',{class:'findings warn','data-pstate':'off'},
    'Turned off. policy.enabled is false, so nothing below is enforced — the rules '
@@ -7179,6 +7536,109 @@ def _selftest():
           and "if(PNOTE){findings.append(...PNOTE);PNOTE=null;}" in UI_HTML)
     check("the widest table this UI draws scrolls inside its own frame",
           ".poltblwrap{" in UI_HTML and "overflow:auto" in UI_HTML)
+    # --- c8: the help drawer --------------------------------------------------
+    # Same warning as c7's block, one release later: these are string pins over a
+    # single inline script, and they cannot tell a working drawer from a dead
+    # page. The drawer is DRIVEN in tools/capture-screenshots.mjs
+    # (assertHelpDrawerWorks), every oracle computed from the /api/help payload
+    # rather than from the drawer's own output; these guard the constructs those
+    # checks stand on, and the server side they talk to.
+    check("the drawer is a native <dialog>, for the focus trap, Esc, the backdrop "
+          "and - the one that matters here - handing focus back to the field",
+          "el('dialog',{class:'drawer'" in UI_HTML
+          and "dialog.drawer{" in UI_HTML
+          and "d.showModal()" in UI_HTML)
+    check("the ⓘ that opens it is a real BUTTON. A focusable span inside a <label> "
+          "is not interactive content, so pressing it also toggled the checkbox "
+          "it was explaining, and a screen reader announced it as text",
+          "el(ref?'button':'span',{class:'hint'" in UI_HTML
+          and "h.type='button'" in UI_HTML)
+    check("...and every Settings control gets one from the key it is already "
+          "labelled with, rather than from a second list of which fields have help",
+          "hint(tip,{path:key,doc:'config',label:text})" in UI_HTML)
+    check("no path is resolved in the browser: `usage.pricing.opus.in` is a path "
+          "into a DOCUMENT and the table is keyed by shapes, and exactly one thing "
+          "knows the difference",
+          "'/api/help?doc='" in UI_HTML
+          and "normalise_path" not in UI_HTML
+          and "'.<name>.'" not in UI_HTML
+          and "function hNormalise" not in UI_HTML)
+    check("...which the endpoint answers with the shape that resolved it, so the "
+          "drawer can say a second pricing row is not a second field",
+          _help.entry_for("usage.pricing.opus.in", "config")["key"]
+          == "usage.pricing.<name>.in")
+    check("a path nothing documents is found:false rather than a 404 - 'nothing "
+          "describes this' is an answer, a 404 is indistinguishable from an "
+          "install with no help endpoint at all",
+          help_field("nothing.like.this", "config") ==
+          {"found": False, "path": "nothing.like.this", "doc": "config"}
+          and help_field("enforce", "config").get("found") is True)
+    check("...and the document is one of the two shipped schemas, never a path "
+          "someone put in a query string",
+          help_field("enforce", "../../../etc/passwd").get("found") is False)
+    # `.get`, not `[...]`: a response that stopped carrying the key is exactly what
+    # these two are about, and a check that dies subscripting it exits 1 with a
+    # traceback instead of a named failure — which is how a mutation goes red for
+    # the wrong reason and proves nothing (F3, one level down).
+    # The point of extracting rather than restating, asserted where it would
+    # actually be broken: not one word of a concept page is in this file. A
+    # sentence copied here would render identically and be a second thing to keep
+    # true — which is the bug `_help` exists to avoid, reappearing in its consumer.
+    _typed = [t["id"] for t in _help.topics()
+              if t["title"] in UI_HTML or t["summary"] in UI_HTML
+              or any(p in UI_HTML for p in t["paragraphs"])]
+    check("no concept page is retyped into the UI - the drawer renders what the "
+          "payload serves, and there is nowhere else for it to come from: %r"
+          % _typed, not _typed)
+    check("a field's concept page is the one the PAYLOAD links it to",
+          "e.topic" in UI_HTML and "x.id===e.topic" in UI_HTML)
+    check("the guide card is drawn from the payload's agent and not at all when "
+          "there is none - a hint offering an agent this install does not ship is "
+          "a dead end", "const a=doc&&doc.agent;if(!a)return null;" in UI_HTML
+          and "(a.tools||[]).join(' · ')" in UI_HTML)
+    check("...and it names the agent rather than offering to spend one: the whole "
+          "point of the zero-token half is that it is the default",
+          "This panel will not start it for you" in UI_HTML
+          and "'/api/task'" not in UI_HTML and "spawnAgent" not in UI_HTML)
+    check("the index is reachable from the topbar, not only from a field",
+          "id=helpbtn" in UI_HTML and "$('#helpbtn').onclick=()=>openHelpIndex()"
+          in UI_HTML)
+    check("a group heading that has a concept page opens it; the three that have "
+          "none draw no hint at all",
+          "grp.topic?{topic:grp.topic}:null" in UI_HTML
+          and [g["id"] for g in SETTINGS_GROUPS if g.get("topic")]
+          == ["paths", "journal"]
+          and {g["topic"] for g in SETTINGS_GROUPS if g.get("topic")}
+          <= {t["id"] for t in _help.topics()})
+    check("the composition levers are explained through _help's own map from the "
+          "panel's name for a lever to the manifest path that documents it",
+          not [k for k in ("reviewSkill", "buildCommands", "taskModel",
+                           "taskSkills", "phaseReviewModel")
+               if ("{comp:'%s'" % k) not in UI_HTML]
+          and "(doc.composition||{})[ref.comp]" in UI_HTML
+          and set(COMPOSITION_HELP) == set(_help.COMPOSITION_PATHS))
+    check("backticks are the topics' only markup, and an unbalanced pair renders "
+          "verbatim rather than guessing which half was code",
+          "if(parts.length%2===0)return [String(s)];" in UI_HTML)
+    # The drawer prints these one after the other under two headings. Byte-equal
+    # is not two voices, it is the same sentence twice — and it is the shape of
+    # the duplication this whole endpoint exists to avoid.
+    _cfgfields = _help.config_fields()
+    _dupe = [p for p, t in FIELD_HELP.items()
+             if (_help.lookup(_cfgfields, p) or {}).get("description") == t]
+    check("no panel note is word-for-word the schema's own sentence: %r" % _dupe,
+          not _dupe)
+    _undoc = [p for p in FIELD_HELP
+              if not (_help.lookup(_cfgfields, p) or {}).get("description")]
+    check("...and every note is beside a field the schema describes, so the "
+          "drawer never opens on a note with nothing to cite: %r" % _undoc,
+          not _undoc)
+    check("a quoted frontmatter value is unquoted by the one function that knows "
+          "how, so the panel does not publish the escape either",
+          _front_matter("---\nname: x\ndescription: 'the plugin''s own README'\n"
+                        "---\n")["description"] == "the plugin's own README"
+          and _front_matter("---\nname: don't\n---\n")["name"] == "don't")
+
     check("_declared_as_of separates a project's own value from the default",
           _declared_as_of({"usage": {"pricingAsOf": "2026-01-02"}}) is True
           and _declared_as_of({"usage": {"showCost": True}}) is False

@@ -39,6 +39,12 @@ the build if that agent ever gains one that writes.
 Consumers: `panel-server.py` (`GET /api/help`, and the help drawer that consumes
 it), and the selftests below, which are the reason none of this is untested code
 while the drawer is still being built.
+
+ONE PATH RESOLVER, AND IT IS THIS ONE. A drawer holds a path into a DOCUMENT
+(`usage.pricing.opus.in`); the table it looks that up in is keyed by SHAPES
+(`usage.pricing.<name>.in`). `entry_for()` is what the panel asks, over HTTP, so
+the browser never grows a second implementation of that normalisation — the same
+reason the policy switchboard is handed verdicts rather than patterns to match.
 """
 import json
 import os
@@ -182,6 +188,28 @@ def config_fields(root=None):
 
 def manifest_fields(root=None):
     return fields(load_schema("manifest", root))
+
+
+def unquote_scalar(val):
+    """A quoted frontmatter value, with the quoting undone — including the escape.
+
+    Shared with `panel-server._front_matter` rather than written twice: both read
+    the same `---` blocks off the same files, and the panel discovered this the
+    expensive way. Stripping the quotes and stopping there renders the guide
+    agent's own description as *"the plugin''s own README"* on the one surface
+    built to explain the plugin — YAML escapes a quote inside a quoted scalar by
+    doubling it (`\\"` in a double-quoted one), and a stripper that does not know
+    that publishes the escape.
+
+    Balanced quotes only. `don't` is a value, not a mis-quoted one, and the old
+    `strip("\\"'")` ate the apostrophe off `'sup` for the same reason it kept
+    `''`."""
+    val = str(val)
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+        quote, val = val[0], val[1:-1]
+        val = val.replace(quote * 2, quote) if quote == "'" \
+            else val.replace("\\" + quote, quote)
+    return val
 
 
 def normalise_path(path):
@@ -500,10 +528,7 @@ def _frontmatter(path):
         key, sep, val = line.partition(":")
         if not sep:
             continue
-        val = val.strip()
-        if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
-            val = val[1:-1]
-        out[key.strip()] = val
+        out[key.strip()] = unquote_scalar(val.strip())
     return out
 
 
@@ -644,13 +669,16 @@ def source_drift(root=None):
 
 
 # --- the payload -----------------------------------------------------------------
-def payload(root=None):
-    """Everything `GET /api/help` serves: the fields, the topics, the agent.
+DOCS = ("config", "manifest")
 
-    Project-independent on purpose. This is documentation, not state — the live
-    verdicts belong to `/api/policy`, the live trail to `/api/journal`, and a help
-    drawer that quietly mixed the two would let a reader believe a worked example
-    was their own repository."""
+
+def tables(root=None):
+    """`{"config": {…}, "manifest": {…}}` — every field, ready to serve.
+
+    The enrichment (a config field's default, either field's concept page) lives
+    here rather than inside `payload()` so a single-path lookup answers with
+    exactly what the whole payload would have said about that path. Two builders
+    would be two answers, and the drawer shows one right after the other."""
     root = plugin_root(root)
     cfg = config_fields(root)
     man = manifest_fields(root)
@@ -665,8 +693,40 @@ def payload(root=None):
         topic = topic_of(path)
         if topic:
             entry["topic"] = topic
+    return {"config": cfg, "manifest": man}
+
+
+def entry_for(path, doc="config", root=None):
+    """One field, resolved the way a reader ASKED for it.
+
+    `{doc, path, key, entry}` — `path` as it was asked, `key` as the schema spells
+    the shape that answered it, because "documented as `usage.pricing.<name>.in`"
+    is the sentence that tells someone their second pricing row is not a second
+    field. None when nothing documents it: a drawer that opens on an empty page is
+    worse than one that says it has no entry for this."""
+    if doc not in DOCS:
+        return None
+    table = tables(root)[doc]
+    entry = lookup(table, path)
+    if entry is None:
+        return None
+    # Identity, not equality: `lookup` hands back the table's own object, and two
+    # different keys can carry word-for-word identical entries.
+    key = next((k for k, v in table.items() if v is entry), None)
+    return {"doc": doc, "path": path, "key": key, "entry": entry}
+
+
+def payload(root=None):
+    """Everything `GET /api/help` serves: the fields, the topics, the agent.
+
+    Project-independent on purpose. This is documentation, not state — the live
+    verdicts belong to `/api/policy`, the live trail to `/api/journal`, and a help
+    drawer that quietly mixed the two would let a reader believe a worked example
+    was their own repository."""
+    root = plugin_root(root)
+    tbl = tables(root)
     return {
-        "fields": {"config": cfg, "manifest": man},
+        "fields": tbl,
         "composition": dict(COMPOSITION_PATHS),
         "topics": topics(root),
         "agent": guide_card(root),
@@ -752,6 +812,42 @@ def _selftest():
           cfg["guardEdits.customRules[].message"])
     check("l3 an unknown path is None rather than a guess",
           lookup(cfg, "nothing.like.this") is None)
+
+    # `entry_for` is the ONE resolver, reachable over HTTP. The drawer asks it
+    # instead of carrying a second copy of normalise_path in the browser.
+    e1 = entry_for("usage.pricing.claude-opus-4.in", "config")
+    check("e1 a concrete document path resolves, and says which SHAPE answered - "
+          "'your second pricing row is not a second field' is the sentence",
+          e1 and e1["path"] == "usage.pricing.claude-opus-4.in"
+          and e1["key"] == "usage.pricing.<name>.in"
+          and e1["entry"]["description"], repr(e1))
+    e2 = entry_for("phases[].tasks[].model", "manifest")
+    check("e2 the manifest table is reachable under its own name",
+          e2 and e2["doc"] == "manifest" and "Model tier" in
+          e2["entry"]["description"], repr(e2))
+    check("e3 an exact path answers as itself, not as some shape it resembles",
+          (entry_for("journal.dir") or {}).get("key") == "journal.dir")
+    check("e4 the enrichment is the payload's own - a lookup and the full payload "
+          "cannot describe one field differently",
+          entry_for("trivialLineThreshold")["entry"] ==
+          payload()["fields"]["config"]["trivialLineThreshold"])
+    check("e5 an unknown path and an unknown document are both None, so the "
+          "drawer says it has no entry rather than opening on nothing",
+          entry_for("nothing.like.this") is None
+          and entry_for("enforce", "../../etc/passwd") is None)
+
+    # --- quoted frontmatter ---------------------------------------------------------
+    check("q1 a doubled quote inside a single-quoted scalar is the ESCAPE, not "
+          "two characters - the guide's own description carries one, and the "
+          "drawer would print \"the plugin''s own README\"",
+          unquote_scalar("'the plugin''s own README'") == "the plugin's own README")
+    check("q2 ...and a backslash-escaped quote in a double-quoted one",
+          unquote_scalar('"say \\"hi\\""') == 'say "hi"')
+    check("q3 an unquoted apostrophe is a character, not a quote to strip",
+          unquote_scalar("don't") == "don't" and unquote_scalar("'sup") == "'sup")
+    check("q4 the shipped guide's card is clean - this is the string the drawer "
+          "renders", "''" not in (guide_card() or {}).get("description", ""),
+          repr((guide_card() or {}).get("description", ""))[:120])
 
     # --- defaults -----------------------------------------------------------------
     dflt = config_defaults()

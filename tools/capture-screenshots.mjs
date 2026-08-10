@@ -801,7 +801,7 @@ async function captureConfirmDialog(page) {
   // stays put, so put the rows it is talking about back behind it.
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(200);
-  await shot(page, 'panel-confirm');
+  await shot(page, 'panel-confirm', { dialog: true });
   await page.locator('dialog.confirm [data-cfcancel]').click();
   await page.waitForTimeout(200);
 
@@ -1208,6 +1208,289 @@ async function noToast(page, label) {
   }
 }
 
+/* ---- the help drawer -------------------------------------------------------
+ *
+ * Every oracle here is `GET /api/help` — the payload itself, fetched inside the
+ * page — and never the drawer's own output. That is the only way this proves
+ * anything: the whole claim of the feature is that what you read came out of the
+ * shipped schemas and out of the code that runs the rule, so a check that compared
+ * the drawer with the drawer would be green for a page that invented every word.
+ */
+async function assertHelpDrawerWorks(page, declared) {
+  const doc = await page.evaluate(() => api('GET', '/api/help'));
+
+  // --- no ⓘ opens on an empty page -------------------------------------------
+  // Through the real endpoint, path by path, the way the drawer asks. `_help`
+  // asserts the same coverage against its own table; this asserts the HTTP route
+  // that stands between that table and the reader.
+  const unresolved = await page.evaluate(async (paths) => {
+    const out = [];
+    for (const p of paths) {
+      const r = await api('GET', `/api/help?doc=config&path=${encodeURIComponent(p)}`);
+      if (!r.found || !(r.entry || {}).description) out.push(p);
+    }
+    return out;
+  }, declared);
+  if (unresolved.length) {
+    fail(`help: ${unresolved.length} setting(s) the form binds a ⓘ to resolve to no `
+       + `description — the drawer opens on an empty page for: `
+       + `${unresolved.slice(0, 5).join(', ')}`);
+  } else {
+    note(`help: all ${declared.length} bound settings resolve to schema words`);
+  }
+
+  // --- and no ⓘ promises a tooltip it does not have ---------------------------
+  // The bubble's content IS the attribute, so an empty one is an empty box under
+  // the cursor. Two fields reached that state the moment a ⓘ stopped needing
+  // tooltip text in order to exist.
+  const blankTips = await page.evaluate(() =>
+    [...document.querySelectorAll('.hint')]
+      .filter((h) => h.hasAttribute('data-tip') && !h.getAttribute('data-tip').trim())
+      .map((h) => h.dataset.hint || '(no ref)'));
+  if (blankTips.length) {
+    fail(`help: ${blankTips.length} hint(s) carry an empty data-tip and draw an `
+       + `empty bubble on hover: ${blankTips.slice(0, 4).join(', ')}`);
+  } else {
+    note('help: no hint draws an empty tooltip');
+  }
+
+  // --- one field, opened the way a reader opens it ----------------------------
+  // Whichever tab the run left behind, this one is about Settings. Selected
+  // rather than assumed: `#guards` is merely hidden on the other four, and a
+  // click on a hidden button is a 30-second Playwright timeout whose stack reads
+  // exactly like a dead panel (F7's lesson, in this harness).
+  await page.click('.tab[data-t=guards]');
+  await page.waitForTimeout(200);
+  const opener = page.locator('#guards [data-hint="enforce"]').first();
+  if (!(await opener.count()) || !(await opener.isVisible())) {
+    fail('help: the "enforce" setting has no ⓘ that can be pressed — every '
+       + 'Settings control is supposed to carry one');
+    return;
+  }
+  await opener.click();
+  await page.waitForSelector('dialog.drawer[open]', { timeout: 10000 });
+  await page.waitForTimeout(150);
+  const field = await page.evaluate(() => {
+    const d = document.querySelector('dialog.drawer');
+    const sec = [...d.querySelectorAll('.dsec')].map((s) => ({
+      h: (s.querySelector('h3') || {}).textContent || '',
+      t: s.textContent || '',
+    }));
+    const facts = [...d.querySelectorAll('.dfacts dt')].map((dt, i) => [
+      dt.textContent, d.querySelectorAll('.dfacts dd')[i].textContent]);
+    return {
+      path: (d.querySelector('[data-hpath]') || {}).textContent,
+      means: (sec.find((s) => s.h === 'What it means') || {}).t || '',
+      panel: (sec.find((s) => s.h === 'In this panel') || {}).t || '',
+      facts,
+      topic: (d.querySelector('[data-htopic]') || {}).dataset?.htopic || null,
+      sources: [...d.querySelectorAll('.dsrc span')].map((s) => s.textContent),
+    };
+  });
+  const want = doc.fields.config.enforce;
+  if (field.path !== 'enforce' || !field.means.includes(want.description)) {
+    fail(`help: the drawer for "enforce" does not carry the schema's own sentence `
+       + `(path=${JSON.stringify(field.path)}, shown=${JSON.stringify(
+         field.means.slice(0, 80))})`);
+  } else {
+    note('help: the enforce drawer quotes the schema verbatim');
+  }
+  // The default is the value the HOOKS fall back to. A drawer that showed a
+  // different one would be worse than one that showed none, because "leave it
+  // empty and you get this" is the whole reason it is there.
+  const dflt = field.facts.find(([k]) => k === 'Default');
+  if (!dflt || dflt[1] !== String(want.default)) {
+    fail(`help: the drawer says the default of enforce is ${JSON.stringify(dflt)}, `
+       + `the payload says ${JSON.stringify(want.default)}`);
+  } else if (!field.sources.some((s) => s === doc.schemas.config)) {
+    fail(`help: the description is not attributed to ${doc.schemas.config} — a `
+       + `quotation with no source is just prose`);
+  } else {
+    note(`help: type/default/citation shown (default ${dflt[1]}, `
+       + `from ${doc.schemas.config})`);
+  }
+  // The panel's own microcopy is the OTHER voice, and it is labelled as such
+  // rather than run together with the schema's sentence.
+  const microcopy = await page.evaluate(() => HELP.enforce);
+  if (!field.panel.includes(microcopy)) {
+    fail('help: the drawer drops the panel\'s own note for enforce, which is the '
+       + 'half that says what this form does about the setting');
+  }
+
+  // --- the concept page behind the field --------------------------------------
+  if (field.topic !== want.topic) {
+    fail(`help: the enforce drawer offers topic ${JSON.stringify(field.topic)}, the `
+       + `payload links it to ${JSON.stringify(want.topic)}`);
+  } else {
+    await page.click(`dialog.drawer [data-htopic="${want.topic}"]`);
+    await page.waitForSelector(`dialog.drawer [data-htable="${want.topic}"]`,
+      { timeout: 10000 });
+    const shown = await page.evaluate(() => {
+      const t = document.querySelector('dialog.drawer table.dtbl');
+      return [...t.querySelectorAll('tbody tr')].map((r) =>
+        [...r.querySelectorAll('td')].map((td) => td.textContent));
+    });
+    const oracle = doc.topics.find((t) => t.id === want.topic).table.rows;
+    // The tier column, cell for cell. These are plan_gate_mode's own answers to
+    // the hook's own three questions — a page that typed them out would read
+    // identically and be a claim about nothing.
+    const same = shown.length === oracle.length
+      && shown.every((r, i) => r.join('|') === oracle[i].join('|'));
+    if (!same) {
+      fail(`help: the ${want.topic} page draws ${shown.length} rows that do not `
+         + `match the ${oracle.length} the payload computed: `
+         + `${JSON.stringify(shown.slice(0, 2))}`);
+    } else {
+      note(`help: the ${want.topic} page is the payload's own ${oracle.length} rows`);
+    }
+    // Back returns to the field, not to the index: a reader who drilled in to
+    // check how the gate grades is still asking about `enforce`.
+    await page.click('dialog.drawer [data-hback]');
+    await page.waitForTimeout(200);
+    const back = await page.evaluate(() =>
+      (document.querySelector('dialog.drawer [data-hpath]') || {}).textContent);
+    if (back !== 'enforce') {
+      fail(`help: going back from the topic landed on ${JSON.stringify(back)} `
+         + `rather than the field it was opened from`);
+    } else {
+      note('help: back returns to the field the topic was reached from');
+    }
+  }
+
+  // --- the paid half, described and not spent ---------------------------------
+  const agent = await page.evaluate(() => {
+    const a = document.querySelector('dialog.drawer [data-hagent]');
+    // The BADGE, not the card's whole text. The agent's own description happens
+    // to name its three tools in prose, so a card whose badge advertised an edit
+    // tool still contained the string "Grep" and the first version of this check
+    // passed against exactly that mutation.
+    return a ? { name: a.dataset.hagent, text: a.textContent,
+                 tools: (a.querySelector('.dtools .badge') || {}).textContent || '',
+                 buttons: a.querySelectorAll('button').length } : null;
+  });
+  if (!doc.agent) {
+    if (agent) fail('help: a guide card is drawn although the payload ships none');
+  } else if (!agent || agent.name !== doc.agent.name) {
+    fail(`help: the drawer does not name the ${doc.agent.name} agent`);
+  } else if (!doc.agent.tools.every((t) => agent.tools.includes(t))
+             || agent.tools.split('·').length !== doc.agent.tools.length) {
+    fail(`help: the guide card does not name the tools the agent actually holds `
+       + `(${doc.agent.tools.join(', ')}) — a card that advertises more is the one `
+       + `thing reading it off the file was meant to prevent`);
+  } else if (agent.buttons) {
+    fail(`help: the guide card carries ${agent.buttons} button(s). It documents an `
+       + `agent you invoke yourself; a control here would spend a model on a `
+       + `question this drawer just answered`);
+  } else if (agent.text.includes("''")) {
+    fail('help: the guide card prints a YAML escape (the plugin\'\'s own README) — '
+       + 'the frontmatter quote was stripped without being unescaped');
+  } else {
+    note(`help: the guide card names ${doc.agent.tools.join('/')}, model `
+       + `${doc.agent.model}, and offers no way to spend one`);
+  }
+
+  // --- Esc, and where the focus lands -----------------------------------------
+  // `box` is the other half, and it is the half no viewport-sized screenshot can
+  // show: a shut dialog must occupy NOTHING. The UA hides one with
+  // `dialog:not([open]){display:none}`, and an author `display` of equal
+  // specificity beats it — which left a 100dvh block laid out at the end of
+  // <body> once the drawer had been opened, and printed it across the bottom of
+  // the full-page Overview shot. Asserted as the element's own rendered size
+  // rather than as a page height, because by now this page has opened and closed
+  // the drawer several times and a "before" measurement is already polluted.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const closed = await page.evaluate(() => {
+    const d = document.querySelector('dialog.drawer'),
+      r = d.getBoundingClientRect();
+    return { open: !!document.querySelector('dialog.drawer[open]'),
+             box: Math.round(r.width) + 'x' + Math.round(r.height),
+             display: getComputedStyle(d).display,
+             focus: (document.activeElement && document.activeElement.dataset
+               ? document.activeElement.dataset.hint : null) || null };
+  });
+  if (closed.box !== '0x0' || closed.display !== 'none') {
+    fail(`help: a closed drawer still renders (${closed.box}, display:`
+       + `${closed.display}) — it is laid out at the end of the document, which `
+       + `nothing but a full-page capture would ever show`);
+  } else {
+    note('help: a closed drawer occupies nothing');
+  }
+  if (closed.open || closed.focus !== 'enforce') {
+    fail(`help: after Esc the drawer is open=${closed.open} and focus is on `
+       + `${JSON.stringify(closed.focus)} — a keyboard reader who asked what a `
+       + `field means has to find their way back to it`);
+  } else {
+    note('help: Esc closes and hands focus back to the ⓘ that opened it');
+  }
+
+  // --- a path into a DOCUMENT, resolved by the server --------------------------
+  // `usage.pricing.<model>.in` is the case the browser must not try to work out
+  // for itself. Driven through the real drawer rather than the endpoint alone, so
+  // what is proven is the path a reader takes.
+  await page.evaluate(() =>
+    openHelp({ path: 'usage.pricing.claude-opus-4-1.in', doc: 'config',
+               label: 'input rate' }));
+  await page.waitForSelector('dialog.drawer[open] [data-hpath]', { timeout: 10000 });
+  await page.waitForTimeout(150);
+  const concrete = await page.evaluate(() => {
+    const d = document.querySelector('dialog.drawer');
+    return { path: (d.querySelector('[data-hpath]') || {}).textContent,
+             srcs: [...d.querySelectorAll('.dsrc span')].map((s) => s.textContent),
+             means: d.textContent };
+  });
+  const shape = doc.fields.config['usage.pricing.<name>.in'];
+  if (concrete.path !== 'usage.pricing.claude-opus-4-1.in'
+      || !concrete.srcs.some((s) => s === 'documented as usage.pricing.<name>.in')
+      || !concrete.means.includes(shape.description)) {
+    fail('help: a concrete pricing path did not resolve onto the shape that '
+       + `documents it: ${JSON.stringify(concrete.srcs)}`);
+  } else {
+    note('help: usage.pricing.<model>.in resolves server-side onto its shape');
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+
+  // --- the index lists every page the payload ships ---------------------------
+  await page.click('#helpbtn');
+  await page.waitForSelector('dialog.drawer[open] [data-htopic]', { timeout: 10000 });
+  const index = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog.drawer [data-htopic]')]
+      .map((b) => [b.dataset.htopic, (b.querySelector('b') || {}).textContent]));
+  const wantTopics = doc.topics.map((t) => [t.id, t.title]);
+  if (JSON.stringify(index) !== JSON.stringify(wantTopics)) {
+    fail(`help: the index lists ${JSON.stringify(index.map((x) => x[0]))} but the `
+       + `payload ships ${JSON.stringify(wantTopics.map((x) => x[0]))}`);
+  } else {
+    note(`help: the index is the payload's own ${index.length} concept pages`);
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+
+  // --- a composition lever is documented by the MANIFEST schema ---------------
+  await page.click('.tab[data-t=comp]');
+  await page.waitForSelector('#comp table', { timeout: 15000 });
+  await page.click('#comp [data-hint="taskModel"]');
+  await page.waitForSelector('dialog.drawer[open] [data-hpath]', { timeout: 10000 });
+  const lever = await page.evaluate(() => {
+    const d = document.querySelector('dialog.drawer');
+    return { path: (d.querySelector('[data-hpath]') || {}).textContent,
+             text: d.textContent };
+  });
+  const leverPath = doc.composition.taskModel;
+  if (lever.path !== leverPath
+      || !lever.text.includes(doc.fields.manifest[leverPath].description)) {
+    fail(`help: the task model lever opened on ${JSON.stringify(lever.path)} rather `
+       + `than ${leverPath}, or without the manifest schema's words`);
+  } else {
+    note(`help: the task model lever is explained from ${leverPath}`);
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  await page.click('.tab[data-t=guards]');
+  await page.waitForTimeout(200);
+}
+
 /* ---- the policy switchboard ------------------------------------------------
  *
  * This one gets its own project AND its own HOME, which none of the other panel
@@ -1496,9 +1779,30 @@ async function assertPolicyWorks(page, statePath) {
   if (statePath) note(`policy: enforcement marker read from ${statePath}`);
 }
 
-async function shot(page, name, { full = false } = {}) {
+/**
+ * An open dialog is the toast lesson with a longer memory.
+ *
+ * A toast clears itself in 2.6 seconds; a `<dialog>` left open stays open, and the
+ * next shutter photographs it. It is worse than a toast, too: the panel's dialogs
+ * are modal, so on a `fullPage` capture the top layer lands at the bottom of a
+ * 5900px image with the rest of the page dimmed behind it — which is exactly how
+ * the help drawer arrived in the middle of the Overview screenshot. Declared per
+ * shot rather than tidied up per step, so the shot that WANTS one says so and
+ * every other shot is guarded by default.
+ */
+async function noDialog(page, name) {
+  const open = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog[open]')]
+      .map((d) => d.className || '(unclassed)'));
+  if (!open.length) return;
+  fail(`${name}: a <dialog> is still open (${open.join(', ')}) — this capture `
+     + `would show it over the view it is supposed to be a picture of`);
+}
+
+async function shot(page, name, { full = false, dialog = false } = {}) {
   await settle(page);
   await noToast(page, name);
+  if (!dialog) await noDialog(page, name);
   if (CHECK) return;
   mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
@@ -1706,6 +2010,22 @@ async function main() {
 
       await shot(page, 'panel-guards');
 
+      // The help drawer, over the form it explains — which is the point of a side
+      // sheet rather than a centred dialog, and the reason it is photographed here
+      // rather than on a page of its own. `exemptGlobs` is the field it is opened
+      // on because that one shows every part doing a different job at once: the
+      // schema's sentence, the eight globs you get for free (the DEFAULT, read off
+      // what the hooks fall back to), a panel note that adds what the schema does
+      // not say (globs are matched against the bare name too), and the concept
+      // page behind it. The checks below drive `enforce` instead — a boolean
+      // default is a crisper oracle than a list — and the two need not agree.
+      await page.click('#guards [data-hint="exemptGlobs"]');
+      await page.waitForSelector('dialog.drawer[open]', { timeout: 10000 });
+      await page.waitForTimeout(250);
+      await shot(page, 'panel-help', { dialog: true });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+
       // Composition — the tab that carries the "usable at 50 x 20" claim.
       await page.click('.tab[data-t=comp]');
       await page.waitForSelector('#comp table', { timeout: 15000 });
@@ -1837,6 +2157,52 @@ async function main() {
            + `${strip.masked !== 'none'}`);
       }
       await shot(mob, 'panel-mobile');
+      // The drawer on a phone. A 31rem side sheet on a 390px screen hangs off the
+      // edge, so it goes full width below the breakpoint — measured rather than
+      // trusted to the media query, because the UA sheet caps every dialog at
+      // `calc(100% - 2px - 2em)` and quietly made the first version 339px wide.
+      //
+      // The page-level overflow is measured as a DELTA across opening it, not as
+      // an absolute. Settings and Usage already overflow at this width without any
+      // drawer (76px and 67px, the same at HEAD) — a real defect, recorded as F8 —
+      // and a check that asserted zero here would be red for somebody else's bug,
+      // which proves nothing about this one.
+      await mob.click('.tab[data-t=guards]');
+      await mob.waitForSelector('#guards [data-hint="enforce"]', { timeout: 15000 });
+      const before390 = await mob.evaluate(() =>
+        document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      await mob.click('#guards [data-hint="enforce"]');
+      await mob.waitForSelector('dialog.drawer[open]', { timeout: 10000 });
+      await mob.waitForTimeout(250);
+      const sheet = await mob.evaluate(() => {
+        const d = document.querySelector('dialog.drawer'),
+          r = d.getBoundingClientRect(), de = document.documentElement,
+          b = d.querySelector('.dbody');
+        // Against the document's own content width, not the raw viewport: this
+        // panel reserves a scrollbar gutter (`scrollbar-gutter:stable`), so the
+        // width every full-bleed thing on the page gets is 15px short of
+        // `clientWidth` and always will be.
+        return { w: Math.round(r.width), vw: document.body.clientWidth,
+                 screen: de.clientWidth, left: Math.round(r.left),
+                 over: de.scrollWidth - de.clientWidth,
+                 body: b.scrollWidth - b.clientWidth };
+      });
+      if (sheet.left < 0 || sheet.w < sheet.vw - 1 || sheet.w > sheet.screen + 1) {
+        fail(`help drawer at 390px: ${sheet.w}px wide at x=${sheet.left} in a `
+           + `${sheet.vw}px content area — below 34rem it is supposed to be the `
+           + `screen`);
+      } else if (sheet.over > before390 + 1) {
+        fail(`help drawer at 390px: opening it added `
+           + `${sheet.over - before390}px of sideways page scroll`);
+      } else if (sheet.body > 1) {
+        fail(`help drawer at 390px: its own body scrolls sideways by ${sheet.body}px `
+           + `— a description is text, and text wraps`);
+      } else {
+        note(`help drawer at 390px: full width (${sheet.w}/${sheet.vw}), adds no `
+           + `sideways scroll and none of its own`);
+      }
+      await mob.keyboard.press('Escape');
+      await mob.waitForTimeout(150);
       // The Policy table is the widest thing this UI draws — a column per area on
       // top of four fixed ones — and it is drawn against this machine's real
       // discovery here, which is the biggest table anyone will get. A wide table
@@ -1865,6 +2231,9 @@ async function main() {
       // follows it, not merely be timed to miss one.
       await assertUsageWorks(page);
       await assertViewerIdentity(page);
+      // Reads only, but it opens a modal over every tab it visits, so it runs
+      // where no shutter follows it — the same rule the toast waiter enforces.
+      await assertHelpDrawerWorks(page, declared);
       // Last of all: it writes to the fixture's manifest and its config, so every
       // check above sees the state it was generated with.
       await assertConfirmFlowWorks(page);

@@ -108,6 +108,15 @@ not paper over.
 |---|
 | [![the policy switchboard](../../docs/screenshots/panel-policy.png)](../../docs/screenshots/panel-policy.png) |
 
+Every ⓘ in the panel — and the **Help** button in the topbar — opens the **help drawer**: the
+field's dotted path, what it accepts, the default the hooks really fall back to, and the concept
+page behind it, read against the form rather than instead of it. All of it is
+[served by the panel itself](#asking-it-how-it-works), and none of it costs a token.
+
+| Help drawer (schema words, the real default, the page behind it) |
+|---|
+| [![the help drawer](../../docs/screenshots/panel-help.png)](../../docs/screenshots/panel-help.png) |
+
 ## What you get
 
 - **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
@@ -843,6 +852,13 @@ reviewer, how a capability policy reaches a verdict, what the journal can and ca
 each of those derives its rule from the code that executes it (the tier table is
 `_config.plan_gate_mode`'s own answers; the policy page is a worked example run through the
 guard's resolver). It costs nothing to ask and nothing to answer.
+
+In the panel that is the **ⓘ beside every field** and the **Help** button in the topbar; the
+drawer opens beside the form so the control and its explanation are on screen together, and a
+field that belongs to one of the four pages offers it. A path into your own document
+(`usage.pricing.claude-opus-4-1.in`) is resolved onto the shape that documents it
+(`usage.pricing.<name>.in`) **by the server** — the browser is handed an answer rather than the
+machinery to compute one, so a second matcher cannot drift into disagreeing with the first.
 
 **`audit-guide` is the conversational half.** A subagent (`Read`/`Grep`/`Glob`, `model: haiku`)
 that answers questions about this plugin from this plugin's documents — README, `reference/`,

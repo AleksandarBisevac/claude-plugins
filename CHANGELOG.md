@@ -46,6 +46,37 @@ free, and makes the paid one a deliberate choice rather than the only one.
   quietly bill a model for questions `/api/help` answers for nothing. The zero-token half is the
   default and the paid half is a choice you make.
 
+- **The panel's help drawer — the surface all of that was built for.** Every ⓘ in Settings and on
+  the composition levers, plus a **Help** button in the topbar, opens a side sheet carrying the
+  field's dotted path, the schema's own sentence *with the file it came from cited under it*, the
+  type and allowed values, the default the hooks really fall back to, and the concept page behind
+  it. A side sheet rather than a centred dialog because it is read **against** the form: the
+  control you asked about stays on screen beside its own explanation. Three decisions are worth
+  naming. **Not one word of a concept page is in the UI** — a selftest fails the build if a topic's
+  title, summary or any paragraph ever appears in `panel-server.py`, because a sentence copied
+  there would render identically and be a second thing to keep true. **No path is resolved in the
+  browser**: `usage.pricing.claude-opus-4-1.in` is a path into your document and the help table is
+  keyed by shapes, so `GET /api/help?path=…` answers through `_help.entry_for` and echoes back
+  which shape resolved it — the same bargain the Policy tab strikes with verdicts, and the reason
+  a second matcher cannot drift into disagreeing with the first. And the schema's words and the
+  panel's own microcopy are shown **as two labelled voices, never merged**: one describes the key
+  your editor validates, the other says what this form does about it (it refuses a regex that will
+  not compile; your list replaces the defaults).
+
+- **The ⓘ is now a real button.** It was a `<span tabindex=0>` — not interactive content, so
+  inside a `<label>` a click on it also toggled the checkbox it was explaining, and a screen reader
+  announced it as text.
+
+- **A shut `<dialog>` is laid out unless you are careful, and this one was not.** The UA sheet
+  hides a closed dialog with `dialog:not([open]){display:none}`; an author rule of equal
+  specificity beats it, so `dialog.drawer{display:flex}` un-hid the drawer the moment it closed —
+  and a shut dialog sits `position:absolute` at its static position, the end of `<body>`. Every
+  view carried a dead 100dvh block below the fold once help had been opened once. The only place
+  it was ever visible was the full-page Overview screenshot, which grew 900px with the drawer
+  printed across the bottom of it; `display` now lives on `[open]`, a check requires a closed
+  drawer to measure `0x0`, and the capture tool refuses to take any shot while an undeclared
+  dialog is open — the toast rule, for something that does not clear itself after 2.6 seconds.
+
 ### Changed
 - **`task.skills` gained the schema description it never had**, which is what lets the panel's
   Composition levers be explained from the schema like every Settings control already is. The
@@ -55,23 +86,44 @@ free, and makes the paid one a deliberate choice rather than the only one.
   agent left "three pinned-tool agents" true nowhere and written in two places; `agent_doc_drift`
   now fails the build on a doc that misses an agent or states a count the directory contradicts.
 
+### Fixed
+- **A quoted frontmatter value is unquoted by the one function that knows how.** Both readers of
+  the plugin's `---` blocks stripped the quotes and stopped there, so the guide agent's own
+  description rendered as *"the plugin''s own README"* — YAML escapes a quote inside a quoted
+  scalar by doubling it — on the one surface built to explain the plugin. The same stripper ate
+  the apostrophe off an unquoted `'sup`. `_help.unquote_scalar` is now both of them.
+
 ### Verification
-- **1916 selftest cases across 29 suites** (from 1859 across 28): a new `_help` suite of 50, and
-  `panel-server` 401→408. Plus `capture-screenshots.mjs --check` and
-  `check-report-interactive.mjs` on all three shipped reports.
-- **21 mutations proven red, each naming its own defect** — a config key documented in the form
+- **1943 selftest cases across 29 suites** (from 1859 across 28): a new `_help` suite of 59, and
+  `panel-server` 401→426. Plus **13 new live checks** in `capture-screenshots.mjs` and a new
+  `panel-help` screenshot, every oracle computed from the `/api/help` payload rather than from the
+  drawer's own output — a check that compared the drawer with the drawer would be green for a page
+  that invented every word — and `check-report-interactive.mjs` on all three shipped reports.
+- **60 mutations proven red, each naming its own defect** — a config key documented in the form
   but not the schema, a composition lever with no schema words, the gate table typed out instead
   of asked of `plan_gate_mode`, the areas page restating the rule in its own words, area
   precedence quietly reversed, allow evaluated before deny, audit's own components no longer
   forced allow, a journal row losing a field, a renamed heading breaking a citation, a doc left
   saying "three", a guide handed an edit tool or an expensive model, the guide agent deleted
   outright, the `/api/help` route dropped or made writable, a topic missing from the payload, and
-  a payload naming a path on this machine.
-- **One of those mutations changed a check rather than confirming it**: deleting the guide agent
+  a payload naming a path on this machine. For the drawer: a concept page retyped into the UI, a
+  panel note become the schema's own sentence word for word, the browser growing its own path
+  normaliser or truncating a path instead of asking, the ⓘ back to a `<span>`, the default typed
+  out instead of read, a description shown with no source under it, a concept table drawn short,
+  Back going to the index instead of the field, a card advertising a tool the agent does not
+  hold, a card gaining a control that would spend a model, and the frontmatter escape published.
+- **Six of those mutations changed a check rather than confirming it.** Deleting the guide agent
   reddened four checks by name and then killed the run with a `TypeError`, because three later
-  checks subscripted a card that is legitimately `None` on an install without it. A traceback
-  exits 1 exactly like an assertion does, so the harness requires the expected FAIL line and not
-  merely a non-zero exit — the same trap F3 recorded, one level down.
+  checks subscripted a card that is legitimately `None` on an install without it — and the same
+  trap caught `/api/help?path=`'s own checks, which read `["found"]` off a response whose missing
+  key was the thing under test. A traceback exits 1 exactly like an assertion does, so the harness
+  requires the expected FAIL line and not merely a non-zero exit (F3, one level down). The other
+  three were checks that could not fail: the guide card's tools were asserted against the card's
+  whole text, and the agent's own description names its three tools in prose, so a badge reading
+  "Read · Edit" still passed; `width:100%` in the drawer's mobile breakpoint was redundant beside
+  `min(31rem,100%)`, so deleting it changed nothing and it is gone rather than left looking load-
+  bearing; and turning the dialog into a `<div>` reddened the focus check by timing out before it
+  ran, and leaving the drawer open to prove the shot guard died on the NEXT tab click instead, because a modal intercepts it — both are mutations going red for the wrong reason, and both had to be re-aimed before the check could be trusted.
 
 ---
 
