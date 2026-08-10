@@ -1,0 +1,65 @@
+{
+  "id": "BF2",
+  "title": "CRLF: the assets' eol is a contract",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "A Windows checkout runs the same bytes as every other platform: scripts/ui/* pinned LF in .gitattributes, and each UI module's selftest names a CRLF asset directly instead of letting a distant cross-line pin discover it.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "BF2.1",
+      "title": ".gitattributes LF contract for scripts/ui + LF guard cases",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        ".gitattributes",
+        "plugins/audit/scripts/_panel_ui.py",
+        "plugins/audit/scripts/_report_ui.py"
+      ],
+      "docs": [],
+      "description": "New .gitattributes: 'plugins/audit/scripts/ui/** text eol=lf' (the assets are byte-read inputs; their eol is part of the build). Guard beside each reader: a selftest case in _panel_ui and _report_ui asserting no '\\r' in any loaded asset, red-first proven via a CRLF fixture, so a future CRLF checkout is named at the reader instead of failing a distant pin. Readers keep newline='' - byte fidelity is the point.",
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "assets carry LF only: CRLF fixture named red-first in _panel_ui",
+          "assets carry LF only: CRLF fixture named red-first in _report_ui"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "sweep",
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": [],
+      "bugId": "BUG-4"
+    }
+  ]
+}

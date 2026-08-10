@@ -102,12 +102,20 @@
       "id": "BF1",
       "title": "CI legs: Windows separators + Linux viewport",
       "shard": "phases/BF1.json"
+    },
+    {
+      "id": "BF2",
+      "title": "CRLF: the assets' eol is a contract",
+      "shard": "phases/BF2.json"
     }
   ],
   "fileIndex": {
     ".claude-plugin/marketplace.json": [
       "P1.8",
       "P2.6"
+    ],
+    ".gitattributes": [
+      "BF2.1"
     ],
     ".github/workflows/ci.yml": [
       "P2.5",
@@ -325,7 +333,8 @@
     ],
     "plugins/audit/scripts/_panel_ui.py": [
       "P11.1",
-      "P11.3"
+      "P11.3",
+      "BF2.1"
     ],
     "plugins/audit/scripts/_panel_write.py": [
       "P12.4"
@@ -334,7 +343,8 @@
       "P13.1"
     ],
     "plugins/audit/scripts/_report_ui.py": [
-      "P11.2"
+      "P11.2",
+      "BF2.1"
     ],
     "plugins/audit/scripts/_report_usage.py": [
       "P13.2"
@@ -493,6 +503,28 @@
       "taskId": "BF1.2",
       "fixedIn": null,
       "notes": "Viewport is the lever the check names; 1680 leaves margin."
+    },
+    {
+      "id": "BUG-4",
+      "title": "ui/ assets CRLF-converted on Windows checkout; cross-line pins fail",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-08-10T22:20:18+02:00",
+      "reportedBy": "CI run 31428171362 (Windows leg, after BF1 fixed j12)",
+      "description": "scripts/ui/* are byte-precise build inputs read with newline='' (deliberate: the assembled UI_HTML/_CSS/_SCRIPT byte-identity depends on exact bytes). With no .gitattributes, windows-latest checkout (autocrlf) rewrites them to CRLF, so every selftest pin that spans a line boundary fails (panel-server: 'four sections are ONE list', 'wide data table scrolls'; render-report would fail the same way - the sweep stops at the first red).",
+      "repro": [
+        "fresh checkout with core.autocrlf=true; python plugins/audit/scripts/panel-server.py --selftest"
+      ],
+      "expected": "Assets reach every platform LF, and a CRLF asset is named by a selftest, not discovered via a distant pin.",
+      "actual": "CRLF assets on Windows; two cross-line pins red; the real cause two files away from the failure.",
+      "files": [
+        ".gitattributes",
+        "plugins/audit/scripts/_panel_ui.py",
+        "plugins/audit/scripts/_report_ui.py"
+      ],
+      "taskId": "BF2.1",
+      "fixedIn": null,
+      "notes": "Fix the class: eol contract in .gitattributes + a named LF guard beside each reader."
     }
   ],
   "deferred": {
