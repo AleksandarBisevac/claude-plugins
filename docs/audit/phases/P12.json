@@ -1,7 +1,7 @@
 {
   "id": "P12",
   "title": "refactor: panel-server Python split",
-  "status": "in_progress",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [
     "P11"
@@ -19,10 +19,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "panel-server.py fell 8,287 (pre-P11) -> 4,521 (post-extraction) -> 1,818 lines: the settings schema (_panel_settings, 41 cases), discovery (_panel_discovery, 11), the read side (_panel_state, 48) and the write path (_panel_write, 108) each own themselves, with the server keeping the handler, lifecycle, UI assembly and 238 integration cases. Case count grew 428 -> 469 across the family; four break/confirm/restore proofs show the moved suites still bite; memo identity (cores, journal) is shared rather than copied and pinned from both sides. The desired outcome (~1,700 target) reads 1,818 - the number documents, it does not drive. One executor was cut mid-stream by an API error and resumed against verified tree state.",
   "tasks": [
     {
       "id": "P12.1",
@@ -204,7 +204,7 @@
     {
       "id": "P12.5",
       "title": "Slim panel-server.py: handler, lifecycle, assembly, integration selftest",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -226,22 +226,22 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Verification pass, zero net edits: ruff found no F401, every function has a live caller, every alias line is pinned by the split modules' own isolation cases, the do_GET/do_PUT/_free_port slice markers are unique, and the route coverage enumerates every served route. Four mutation proofs (allow-list key, discovery labeling, lock verdict, change-row field) each went red by name and were restored to an empty diff. Case accounting: 238+41+11+48+108+23 = 469 >= 451 pre-phase.",
+        "descriptive": "panel-server.py is already exactly its post-split scope; the four new suites were proven to still catch real regressions, and nothing needed to move."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T19:10:11+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T19:18:42+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "469 cases across 6 panel-family suites (>= 451 baseline)",
+        "4 mutation proofs red-then-restored",
+        "sweep green",
+        "lint green",
+        "capture-screenshots --check green"
+      ]
     }
-  ],
-  "claim": {
-    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
-    "host": "MacBook-Pro.local",
-    "branch": "audit/p12-refactor-panel-server-split",
-    "at": "2026-08-10T18:31:20+02:00"
-  }
+  ]
 }
