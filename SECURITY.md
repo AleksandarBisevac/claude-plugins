@@ -123,6 +123,48 @@ straight answer:
   root; there is no path parameter on the route to traverse with. The rendered
   file is served back through the panel's token-guarded origin.
 
+## The audit trail: tamper-evident, not tamper-proof
+
+Since 0.29.0 every edit-tool write to the manifest or to
+`.claude/audit.config.json` appends a row to an append-only, hash-chained journal
+(`scripts/audit-journal.py`, written by the `journal-writes` hook and by the
+panel's own saves). Each row carries who, when, what changed, a hash of the
+document the write left behind, and the hash of the row before it.
+
+The claim it makes is narrower than "an audit log", and the difference is the
+point:
+
+- **What `audit-journal.py verify` detects.** A row **edited** after it was
+  written (it no longer hashes to its own contents), a row **deleted** or
+  **reordered** (the chain breaks at that point), a file **renamed** into another
+  writer's slot (the first row's anchor is derived from the file's own name), a
+  **torn tail** from an interrupted write, and **out-of-band drift** — a manifest
+  or config that changed with no row to explain it.
+- **What it cannot detect.** A forger who rewrites the *whole* file, recomputing
+  every hash forward, produces a chain that verifies. There is no way around this:
+  a tamper-**proof** log needs a secret the tamperer cannot read, and there is
+  nowhere on a user's own machine to keep one from that same user. Deleting the
+  journal, or a file of it, is the same class of act — and deliberately loud
+  rather than silent: `verify` sees the rows go missing and the file's history is
+  in git.
+- **What it never sees.** Shell writes (`sed -i`, `>`) do not reach a tool matcher,
+  so nothing records them — they surface instead as out-of-band drift, and
+  `guard-bash-writes` reports a shell write *into the journal directory* after the
+  fact. Anything written while the plugin is disabled is invisible for the same
+  reason every other guard is: the user's own switch outranks it.
+- **What it records.** The same shape as the ledger's dimensions — the change
+  itself (`P1.2 · model · sonnet -> opus`), the resolved author under
+  `usage.authorMode`, the session id, the host, and hashes. Never file contents,
+  never prompt text.
+- Hand edits to the journal are refused by `guard-edits.py`. `journal.enabled:
+  false` turns the whole thing off.
+
+So it is a smoke detector, not a vault: it makes a quiet change loud, and an
+accident visible. If your threat model includes an adversary with write access to
+the repository and a motive to cover their tracks, the honest answer is that this
+raises the cost and does not close the door — commit the journal, and let the
+review of the commit be what closes it.
+
 Blocking uses the canonical PreToolUse JSON protocol
 (`permissionDecision: "deny"` + reason, exit 0). Internal errors fail **open**
 deliberately: a buggy guard must never brick legitimate work — but that means a

@@ -1130,6 +1130,50 @@ async function assertConfirmFlowWorks(page) {
     note(`settings: ${wantPath} -> ${JSON.stringify(cfgSaved.value)}, `
        + `"${cfgSaved.toast.trim()}"`);
   }
+
+  // --- and every one of those saves is now in the journal (v0.29) ------------
+  // The saves above are the fixture: this asks whether the record of them exists,
+  // holds together, and says the right thing. The oracle is what this file just
+  // DID — the config path it toggled and the task it edited — never the panel's
+  // own rendering of it. Before v0.29 the call site was there and the module was
+  // not, so every save reported `journaled:false` and nothing said so out loud;
+  // that is exactly the state this proves is over.
+  const jr = await page.evaluate(async () => api('GET', '/api/journal'));
+  if (!jr.available || !jr.verify) {
+    fail('journal: /api/journal reports no journal on an install that ships one');
+  } else if (!jr.verify.ok) {
+    fail(`journal: the chain the panel itself wrote does not verify: `
+       + `${JSON.stringify(jr.verify.findings)}`);
+  } else if (!jr.rows.length) {
+    fail('journal: the panel saved the config and the composition and the journal '
+       + 'is empty — the writes are not being recorded');
+  } else {
+    const acts = jr.rows.map((r) => r.action);
+    const newest = jr.rows[0];
+    if (!acts.includes('config.write') || !acts.includes('composition.write')) {
+      fail(`journal: rows are [${[...new Set(acts)].join(', ')}] — both a config `
+         + `save and a composition save happened above`);
+    } else if (newest.action !== 'config.write'
+               || !(newest.summary || '').includes(wantPath)) {
+      fail(`journal: the newest row is ${JSON.stringify(newest.action)} / `
+         + `${JSON.stringify(newest.summary)}; the last save was ${wantPath}`);
+    } else if (!(newest.hash && newest.prev && newest.stateHash)) {
+      fail(`journal: a row with no chain on it: ${JSON.stringify(newest)}`);
+    } else if ((newest.actor || {}).via !== 'panel'
+               || (newest.actor || {}).author !== (await page.evaluate(
+                 () => (STATE.viewer || {}).author))) {
+      fail(`journal: the row's actor is ${JSON.stringify(newest.actor)}, and the `
+         + `panel is showing ${JSON.stringify(await page.evaluate(
+              () => (STATE.viewer || {}).author))}`);
+    } else if (!/· logged/.test((cfgSaved.toast || ''))) {
+      fail(`journal: the row was written and the toast never said so `
+         + `("${cfgSaved.toast}") — a save that IS logged has to say it, or the `
+         + `clause only ever appears when something is wrong`);
+    } else {
+      note(`journal: ${jr.verify.rows} row(s) chain cleanly; newest is `
+         + `"${newest.summary}" by ${newest.actor.author || 'unknown'}`);
+    }
+  }
 }
 
 /**
@@ -1351,16 +1395,22 @@ async function main() {
                                       '--settings-paths']));
       const rendered = await page.evaluate((paths) => ({
         cards: [...document.querySelectorAll('#guards > .card')].map((c) => c.id),
+        // The expected cards come from the group table Python injected, not from a
+        // number written here: a count in this file goes stale the first time a
+        // group is added, and then reads as "the script is dead" (it was 4 until
+        // the audit trail became the fifth).
+        want: SETTINGS.map((g) => 'setgrp-' + g.id),
         missing: paths.filter((p) => !document.getElementById('set-' + p)),
       }), declared);
-      if (rendered.cards.length !== 4) {
-        fail(`Settings rendered ${rendered.cards.length} group cards, expected 4 `
-           + `(the script may not be running at all)`);
+      if (rendered.cards.join(',') !== rendered.want.join(',')) {
+        fail(`Settings rendered cards [${rendered.cards.join(', ')}], expected `
+           + `[${rendered.want.join(', ')}] (the script may not be running at all)`);
       } else if (rendered.missing.length) {
         fail(`Settings declares ${declared.length} config paths but rendered no `
            + `control for: ${rendered.missing.join(', ')}`);
       } else {
-        note(`settings: 4 groups, ${declared.length}/${declared.length} controls rendered`);
+        note(`settings: ${rendered.cards.length} groups, `
+           + `${declared.length}/${declared.length} controls rendered`);
       }
 
       await shot(page, 'panel-guards');

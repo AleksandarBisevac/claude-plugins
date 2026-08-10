@@ -43,6 +43,22 @@ WARN_TEMPLATE = (
     "notice; the change itself was NOT reverted."
 )
 
+# The journal is append-only, and guard-edits refuses an EDIT to it. A shell write
+# is the same act through the door that cannot be locked, so it is reported the
+# moment it is seen — including the case where nothing was hidden and a script
+# simply wrote there, because "the audit trail changed and the plugin did not do
+# it" is worth one line either way. `verify` is named rather than described: it is
+# the command that says whether the chain still holds.
+JOURNAL_TEMPLATE = (
+    "[bash-write-guard] That shell command wrote into the append-only audit "
+    "journal: %s. The journal records who changed the plan and the config; it is "
+    "written by the plugin (panel saves, the journal-writes hook, "
+    "`audit-journal.py append`) and never by hand, and an edit tool would have "
+    "been REFUSED here. This is a non-blocking notice; the change was NOT "
+    "reverted. Run `audit-journal.py verify` to see whether the chain still holds, "
+    "and tell the human what wrote there."
+)
+
 # Same fact as require-plan's lock denial, delivered late because a shell write
 # cannot be intercepted before it lands. Worded as what already happened, not as
 # what to avoid — there is no avoiding it by the time this runs.
@@ -155,8 +171,15 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
     in_prog = None
     suspicious = []
     locked = []
+    journalled = []
     for rel in new:
         if rel in state["toolEdited"] or rel in state["warned"]:
+            continue
+        # Checked before the exempt globs: the journal lives beside the manifest,
+        # so `docs/audit/**` — which is exempt from the plan gate on purpose —
+        # would otherwise swallow a write into the audit trail without a word.
+        if _config.in_journal(root, cfg, rel):
+            journalled.append(rel)
             continue
         # A shell write to a manifest path is out of the PLAN gate's scope (.json
         # is not a source extension) but squarely inside the LOCK's. require-plan
@@ -182,19 +205,26 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
             continue
         suspicious.append(rel)
 
+    # Every class that fired gets said, rather than the first one winning: a
+    # command that wrote into a locked shard AND into the journal did two separate
+    # things, and reporting one of them would leave the other to be found later by
+    # someone with no idea what caused it.
+    parts = []
     if locked:
         state["warned"].extend(r for r, _ in locked)
-        _save_state(sd, session_id, state)
-        return ("warn", LOCKED_TEMPLATE % "; ".join(
+        parts.append(LOCKED_TEMPLATE % "; ".join(
             "%s (%s lock, held by %s — %s)" % (r, c["lock"], c["holder"], c["basis"])
             for r, c in locked))
-
+    if journalled:
+        state["warned"].extend(journalled)
+        parts.append(JOURNAL_TEMPLATE % ", ".join(journalled))
     if suspicious:
         state["warned"].extend(suspicious)
-        _save_state(sd, session_id, state)
-        return ("warn", WARN_TEMPLATE % ", ".join(suspicious))
+        parts.append(WARN_TEMPLATE % ", ".join(suspicious))
 
     _save_state(sd, session_id, state)
+    if parts:
+        return ("warn", "\n".join(parts))
     return ("silent", "no unplanned source writes")
 
 
@@ -303,6 +333,48 @@ def _selftest() -> int:
                                   {"bashWriteCheck": {"enabled": False}})
     check("e2 disabled config silent", "silent",
           payload("Bash", sid="bw-e2"), dirty=["src/x.ts"], use_cfg=cfg_off)
+
+    # (j) the append-only journal. guard-edits REFUSES an edit tool here; a shell
+    # write is the same act through the door that cannot be locked, so the only
+    # honest thing left is to say it happened.
+    try:
+        verdict, detail = decide(payload("Bash", sid="bw-j1"), cfg=cfg,
+                                 state_dir=sd,
+                                 dirty=["docs/audit/journal/2026-08.a.jsonl"])
+        ok = verdict == "warn" and "append-only audit journal" in detail \
+            and "audit-journal.py verify" in detail
+    except Exception:
+        ok = False
+    results.append(ok)
+    print("%s j1 a shell write into the journal warns, and names the command that "
+          "checks the chain" % ("PASS" if ok else "FAIL"))
+    # The journal lives under docs/audit/, which is EXEMPT from the plan gate on
+    # purpose — so a check that ran after the exempt globs would see nothing at all.
+    ok = _config.matches_exempt("docs/audit/journal/2026-08.a.jsonl",
+                                _config.DEFAULTS["exemptGlobs"])
+    results.append(ok)
+    print("%s j2 (and it really is inside an exempt path, which is what makes the "
+          "order load-bearing)" % ("PASS" if ok else "FAIL"))
+    check("j3 the same file again is silent - one warning per file per session",
+          "silent", payload("Bash", sid="bw-j1"),
+          dirty=["docs/audit/journal/2026-08.a.jsonl"])
+    # Two classes at once are two facts, and reporting one would leave the other
+    # to be found later by someone with no idea what caused it.
+    try:
+        verdict, detail = decide(payload("Bash", sid="bw-j4"), cfg=cfg,
+                                 state_dir=sd,
+                                 dirty=["docs/audit/journal/2026-08.a.jsonl",
+                                        "src/two-at-once.py"])
+        ok = verdict == "warn" and "audit journal" in detail \
+            and "src/two-at-once.py" in detail
+    except Exception:
+        ok = False
+    results.append(ok)
+    print("%s j4 a journal write and an unplanned source write are both reported"
+          % ("PASS" if ok else "FAIL"))
+    check("j5 a neighbour whose name merely starts the same is ordinary work",
+          "silent", payload("Bash", sid="bw-j5"),
+          dirty=["docs/audit/journal-notes/why.md"])
 
     # (f) REAL git integration: init a repo, dirty it, no `dirty` injection
     s = "bw-f"

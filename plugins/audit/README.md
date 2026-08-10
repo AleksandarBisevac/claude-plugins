@@ -57,7 +57,7 @@ background process:
   `npm run panel` / `npm run panel:stop` is the shortcut.
 
 Its **Settings** tab is a form over the whole of `.claude/audit.config.json` — paths & gate,
-write guards, TDD reminder, usage & pricing — schema-validated, every field named by what it
+write guards, TDD reminder, usage & pricing, audit trail — schema-validated, every field named by what it
 does with its JSON key and an ⓘ hint beside it, and every field left empty simply absent from
 the file. It also **wires composition** — `meta.reviewSkill`, per-task `skills`/`model`, per-phase review
 model, `meta.buildCommands` — from **an autocomplete populated by the skills & agents actually
@@ -118,7 +118,7 @@ same panel at 390px:
   artifact, or to a link with `--share`. See [Reports](#reports).
 - **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
   composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
-- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, and the usage ledger. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
+- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, and whether the audit trail still holds. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
 - **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
@@ -155,12 +155,22 @@ same panel at 390px:
     the plan gate (the statically-undecidable residual of the PreToolUse checks).
   - `remind-tdd.py` (PostToolUse: edits) — **non-blocking** nudge when source
     changes with no test touched in the session; throttled, manifest-aware, configurable.
+  - `journal-writes.py` (PostToolUse: edits) — appends one hash-chained row to the
+    **audit trail** for every edit-tool write to the manifest or to
+    `.claude/audit.config.json`: who, when, what, and the state it left behind.
+    Silent, never blocking. It is a hook rather than an instruction because a model
+    that forgets to log a change leaves a gap indistinguishable from one somebody
+    hid. See [Audit trail](#audit-trail).
   - Stale session state (incl. forgotten armed bypasses) is garbage-collected after 7 days.
 - **`schema/audit-plan.schema.json`** — a JSON Schema (draft 2020-12) for the manifest, so
   editors and CI validate it — plus `scripts/validate-manifest.py`, a dependency-free
   referential validator (unique ids, dependency **cycles**, reciprocal bug↔task links,
   bidirectional fileIndex, typo warnings; exit 0 valid / 1 findings / 2 unreadable) the
   commands run after every manifest mutation.
+- **Audit trail** — `scripts/audit-journal.py`: an append-only, hash-chained record of every
+  write to the plan and to the config, `verify`-able from the CLI, from `/audit:doctor` and
+  from CI. **Tamper-evident, not tamper-proof**, and it says so in every place it is
+  described. See [Audit trail](#audit-trail).
 - **`templates/`** — a config example and a starter manifest.
 - **`skills/`** — two **thin** skills, `audit-codebase` and `audit-spend`. They exist so that
   "audit this codebase" and "what did that cost" reach the plugin at all: skills auto-trigger
@@ -187,7 +197,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
 | `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day] [--phase <id>] [--author <who>] [--since 7d] [--json] [--backfill]` | **Token spend, attributed** — per phase, task, model, author and time window, with cache economics, cost-per-task and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
-| `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, and the usage ledger. Read-only; exits 1 on findings so CI can use it. |
+| `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, and whether the audit trail still holds. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
@@ -371,9 +381,11 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `usage.currency` / `pricingAsOf` | Currency label, and the date the rate table was accurate (undated until you set it) | `USD` / the shipped table's date |
 | `usage.bands` | `{highUSD, outlierUSD}` absolute cost bands; both unset → calibrate from this project's own completed tasks | both unset |
 | `usage.pricing` | Model id → `{in, out, cacheW5m, cacheW1h, cacheR}` in currency per **million** tokens | shipped table |
+| `journal.enabled` | Record every manifest / config write in the tamper-evident audit trail | `true` |
+| `journal.dir` | Where the trail's monthly per-writer `.jsonl` files live; unset → beside the manifest, so one commit carries both the change and the record of it | unset |
 
 Every key above has a control in the panel's **Settings** tab, grouped into *Paths & gate*,
-*Write guards*, *TDD reminder* and *Usage & pricing* — the coverage is asserted by
+*Write guards*, *TDD reminder*, *Usage & pricing* and *Audit trail* — the coverage is asserted by
 `panel-server.py --selftest` against `validate-config.py`'s own key sets, so a key documented
 here and unreachable there is a build failure rather than a discovery.
 
@@ -662,6 +674,46 @@ model, a daily trend and a day x hour heatmap) and a **Usage tab in `/audit:pane
 filtering by model, author, phase, task, agent, attribution, free text and an absolute date
 window, sparklined KPI tiles with a trend against the previous period, and **Export CSV** of
 exactly the rows behind the current view.
+
+## Audit trail
+
+Who changed the plan, when, and to what. Every edit-tool write to the manifest (index or
+phase shard) and to `.claude/audit.config.json` appends one row to an append-only,
+hash-chained journal — the `journal-writes.py` hook records tool writes, panel saves record
+their own, and each row carries the change, the person, the session, how the write arrived,
+and a hash of the document it left behind.
+
+```
+docs/audit/journal/2026-08.<writerId>.jsonl        # one file per writer per month
+{"v":1,"ts":"2026-08-10T09:12:44Z","actor":{"author":"dev@example.com","via":"panel",…},
+ "action":"composition.write","target":"docs/audit/audit-plan.json",
+ "summary":"1 change(s): P1.2 model: sonnet -> opus","stateHash":"sha256:…",
+ "prev":"<the row before this one>","hash":"<this row>"}
+```
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-journal.py" verify   # 0 intact · 1 broken
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-journal.py" show --limit 20
+```
+
+`verify` catches an **edited**, **deleted** or **reordered** row (the chain breaks at that
+point), a file **renamed** into another writer's slot (the first row's `prev` is derived from
+the file's own name), a **torn tail** from an interrupted write, and **out-of-band drift** —
+a manifest that moved with no row to explain it, which is what a shell write or a `git
+checkout` looks like from here. `/audit:doctor` runs the same check; a broken chain is its
+only journal FINDING, because it is the only one that cannot happen by accident.
+
+**Tamper-evident, not tamper-proof**, and the difference is the whole honest claim: with no
+secret key — and there is nowhere on your own machine to keep one you cannot read — a forger
+who rewrites every hash forward produces a chain that verifies. Deleting the file is the same
+class of act, and is loud rather than silent. It is a smoke detector, not a vault. See
+[SECURITY.md](../../SECURITY.md#the-audit-trail-tamper-evident-not-tamper-proof).
+
+The journal lives beside the manifest so the same commit carries the change and the record of
+it (the orchestrator stages it with each task commit), and one file per writer means two
+sessions in two worktrees never conflict on it. Edits to it are refused by `guard-edits.py`;
+a shell write into it cannot be refused, so `guard-bash-writes.py` reports it after the fact.
+Turn it off with `journal.enabled: false`.
 
 ## Azure DevOps (optional)
 

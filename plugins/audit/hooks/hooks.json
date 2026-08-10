@@ -45,6 +45,11 @@
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" guard-bash-writes.py open",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" journal-writes.py open",
+            "timeout": 10
           }
         ]
       },

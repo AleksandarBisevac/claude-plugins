@@ -63,7 +63,7 @@ claude-plugins/                           # this repo (personal, public)
         audit-executor.md                 # task executor (no web tools, no nested agents)
         audit-reviewer.md                 # sign-off reviewer (no edit tools)
       hooks/
-        hooks.json                        # wires the 6 hooks to events (${CLAUDE_PLUGIN_ROOT})
+        hooks.json                        # wires the 7 hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
         _config.py                        # shared config loader + path/manifest helpers
         require-plan.py                   # plan-first gate, graded on evidence (observe/warn/deny; Pre decides, Post commits state)
@@ -72,6 +72,7 @@ claude-plugins/                           # this repo (personal, public)
         guard-edits.py                    # token-logging ban, custom rules, self-edit/forgery block
         guard-bash-writes.py              # PostToolUse git-status diff check (unplanned shell writes)
         remind-tdd.py                     # non-blocking TDD nudge (PostToolUse)
+        journal-writes.py                 # PostToolUse: records manifest/config writes in the audit trail
       reference/
         orchestrator.md                   # shared execution logic (preflight, lock, Execute-the-task, sign-off)
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
@@ -88,6 +89,7 @@ claude-plugins/                           # this repo (personal, public)
         render-report.py                  # self-contained HTML+MD report (CI artifact)
         migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
+        audit-journal.py                  # append-only hash-chained audit trail (append/verify/show)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -172,7 +174,7 @@ Maps events → scripts, every entry running through
 `sh "${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh" <script> <ask|open>` with a 10 s timeout:
 - PreToolUse `Read|Grep|Bash` → `guard-secrets-read.py` (fail mode **ask**)
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
-- PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits; all **open**)
+- PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
 - PostToolUse `Bash` → `guard-bash-writes.py` (the diff check; **open**)
 - UserPromptSubmit → `detect-plan-skip.py` (**open**)
 
@@ -281,6 +283,27 @@ stream — that ordering is the whole mechanism). Throttled (once per file + glo
 `throttleMinutes` gap) and manifest-aware: silent when the file is covered by an
 `in_progress` `gate-only` task (`inProgressPolicy`: skip-gate-only | skip-all | warn-always).
 All tunables under config `tddReminder`. `--selftest`.
+
+### `plugins/audit/hooks/journal-writes.py` (v0.29.0)
+PostToolUse (Edit|Write|MultiEdit|NotebookEdit) recorder: every edit-tool write to the
+manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
+audit trail via `scripts/audit-journal.py`. NO stdout at all — a recorder that talks turns
+every manifest edit into transcript — and every failure is silent, because a journal that
+cannot be written must not break the write it was recording. A hook rather than an
+instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly
+like a covered-up one. Config `journal.enabled`. `--selftest` (30 cases, incl. an end-to-end
+append + verify).
+
+### `plugins/audit/scripts/audit-journal.py` (v0.29.0)
+The trail itself: `append(project, entry) -> bool` plus `append | verify | show` on the CLI.
+One file per writer per month (`<journal dir>/<YYYY-MM>.<writerId>.jsonl`, default beside the
+manifest) so parallel worktrees never conflict; each row carries `{v, ts, actor, action,
+target, summary, stateHash, prev, hash}`, sha256 over canonical JSON, with the first row's
+`prev` derived from the file's own base name so a file cannot be renamed into another
+writer's slot. `verify` reports an edited / deleted / reordered row as a FINDING (exit 1) and
+a torn tail or out-of-band drift as a WARNING (exit 0). **Tamper-evident, not tamper-proof** —
+stated in the module, the README, the panel's own Settings card and SECURITY.md, because a
+forger who rewrites the whole file still verifies. `append()` never raises. `--selftest`.
 
 ### `plugins/audit/reference/manifest-conventions.md`
 Shared conventions every command reads first (lives OUTSIDE `commands/` so it can't register

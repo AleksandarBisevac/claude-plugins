@@ -491,6 +491,53 @@ def check_ledger(rep, project, cfg, manifest_rel):
     rep.ok("usage ledger", "%d ledger file(s) in %s" % (len(files), ledger_dir))
 
 
+def check_journal(rep, project, cfg, cfg_mod):
+    """Does the audit trail still hold together? (v0.29)
+
+    Delegates to `audit-journal.verify` rather than re-deriving the verdict — the
+    same rule `check_locks` follows below, and for the same reason: a diagnostic
+    with its own opinion about whether a chain is intact is a second implementation
+    that can disagree with the one that matters.
+
+    The grading is the honest one. A BROKEN chain is a FINDING: a row was edited,
+    deleted or reordered, and that is not something that happens by accident.
+    Everything else is a WARNING at most — a torn tail is a crash, and out-of-band
+    drift means a document moved without an edit tool touching it, which is normal
+    for a git checkout and only suspicious in context. An empty journal is neither:
+    it is what every repo looks like before its first recorded write."""
+    if not cfg_mod.journal_enabled(cfg):
+        rep.ok("journal", "audit trail disabled in config (journal.enabled false)")
+        return
+    try:
+        jr = _load("audit_journal", "audit-journal.py")
+        res = jr.verify(project)
+    except Exception as exc:
+        rep.warn("journal", "could not read the journal: %s" % exc,
+                 "run `audit-journal.py verify` by hand to see why")
+        return
+    where = os.path.relpath(res.get("dir") or project, project)
+    if not res.get("exists"):
+        rep.ok("journal", "no writes recorded yet (%s does not exist)" % where)
+        return
+    if res.get("findings"):
+        rep.finding("journal",
+                    "the chain does not hold: %s" % "; ".join(res["findings"][:3]),
+                    "run `audit-journal.py verify` for the full list; the journal "
+                    "is append-only and a broken chain means a row was edited, "
+                    "deleted or reordered")
+        return
+    if res.get("warnings"):
+        rep.warn("journal",
+                 "%d row(s) in %s chain cleanly, with %d warning(s): %s"
+                 % (res.get("rows", 0), where, len(res["warnings"]),
+                    "; ".join(res["warnings"][:2])),
+                 "out-of-band drift is a document that changed with no row to "
+                 "explain it - a git checkout, a script, or a shell write")
+        return
+    rep.ok("journal", "%d row(s) in %d file(s) under %s, chain intact"
+           % (res.get("rows", 0), len(res.get("files") or []), where))
+
+
 def check_locks(rep, git_root, project, manifest_rel):
     """A held lock is why a command refuses; a stale one is why it refuses wrongly.
 
@@ -538,6 +585,7 @@ def diagnose(project):
     check_build_commands(rep, project, manifest)
     check_hooks_fired(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
+    check_journal(rep, project, cfg, cfg_mod)
     check_locks(rep, git_root, project, manifest_rel)
     return rep
 
@@ -822,6 +870,69 @@ def _selftest():
         check("areas: NO registry means the check says nothing at all - a "
               "single-app repo is not nagged about a monorepo feature",
               levels(rep, "areas") == [], repr(levels(rep, "areas")))
+
+        # --- the audit trail (v0.29) ------------------------------------------
+        # Graded the way the journal itself grades: a broken chain is the only
+        # thing that can fail a doctor run, because it is the only one that cannot
+        # happen by accident.
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json",
+                       "journal": {"dir": "trail"}}, fh)
+        with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "p", "status": "done", "tasks": [
+                    {"id": "P1.1", "title": "t", "status": "done"}]}]}, fh)
+        rep = diagnose(tmp)
+        check("journal: a repo that has recorded nothing yet is OK, not a warning "
+              "- that is what every repo looks like before its first write",
+              levels(rep, "journal") == ["OK"]
+              and "no writes recorded yet" in detail(rep, "journal"),
+              detail(rep, "journal"))
+        jr = _load("audit_journal", "audit-journal.py")
+        for i in range(2):
+            jr.append(tmp, {"action": "manifest.edit", "target": "plan.json",
+                            "summary": "row %d" % i,
+                            "actor": {"sessionId": "doc", "via": "hook"}})
+        rep = diagnose(tmp)
+        check("journal: an intact chain is OK and counts its rows",
+              levels(rep, "journal") == ["OK"] and "2 row(s)" in detail(rep, "journal"),
+              detail(rep, "journal"))
+        check("journal: an intact chain never affects the exit code",
+              rep.exit_code() == 0, repr(rep.counts()))
+        # Out-of-band drift: the plan moved with no row to explain it. A warning,
+        # because a git checkout does exactly this and is nobody's tampering.
+        with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": []}, fh)
+        rep = diagnose(tmp)
+        check("journal: a document that changed with no row to explain it is a "
+              "WARNING, and the exit code stays 0",
+              levels(rep, "journal") == ["WARNING"] and rep.exit_code() == 0,
+              detail(rep, "journal"))
+        # A tampered row: this one IS a finding.
+        _jf = jr.journal_files(jr.journal_dir(tmp))[0]
+        _rows, _ = jr.read_file(_jf)
+        _rows[0]["summary"] = "nothing happened"
+        with open(_jf, "w", encoding="utf-8") as fh:
+            for _r in _rows:
+                fh.write(jr.canonical(_r) + "\n")
+        rep = diagnose(tmp)
+        check("journal: an edited row is a FINDING and fails the run",
+              levels(rep, "journal") == ["FINDING"] and rep.exit_code() == 1,
+              detail(rep, "journal"))
+        check("journal: the finding says what was wrong, not just that something was",
+              "edited after it was written" in detail(rep, "journal"),
+              detail(rep, "journal"))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json",
+                       "journal": {"dir": "trail", "enabled": False}}, fh)
+        rep = diagnose(tmp)
+        check("journal: switched off, it says so and stops looking - a broken "
+              "chain in a disabled journal is not this run's business",
+              levels(rep, "journal") == ["OK"]
+              and "disabled" in detail(rep, "journal"), detail(rep, "journal"))
+        os.remove(os.path.join(tmp, "plan.json"))
 
         # sharded layout: intact, then broken
         gen = _load("gen_demo_manifest", "gen-demo-manifest.py")

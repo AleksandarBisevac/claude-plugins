@@ -72,6 +72,11 @@
     "throttleMinutes": 10,
     "inProgressPolicy": "skip-gate-only"
   },
+  "//journal": "The audit trail (audit-journal.py + the journal-writes hook): every edit-tool write to the manifest or to this config appends a hash-chained row recording who, when, what and the state it left behind. Tamper-EVIDENT, not tamper-proof - `audit-journal.py verify` names an edited, deleted or reordered row, and warns when a document changed with no row to explain it. Leave dir null to keep it beside the manifest, where the same commit carries both.",
+  "journal": {
+    "enabled": true,
+    "dir": null
+  },
   "//usage": "Token metering (meter-usage.py + /audit:usage). Rates are USD per MILLION tokens and live here on purpose: a price change is a one-line edit in your repo, not a plugin release. Cost is priced and stored when a row is written, so editing this table never rewrites history. Only list the models you actually run - anything unlisted resolves by longest name prefix, then '_default'. authorMode: email|name|hash|none. The ledger records counts, model ids, timestamps, branch and author - never prompt content.",
   "usage": {
     "enabled": true,

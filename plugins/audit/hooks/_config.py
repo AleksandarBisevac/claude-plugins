@@ -54,6 +54,8 @@ Config keys (all optional; defaults in DEFAULTS below):
         showCost (bool), backfillOnFirstRun (bool), maxScanBytes (int),
         currency (str), pricingAsOf (str), pricing (obj: model -> USD per MTok),
         bands (obj: highUSD / outlierUSD, both null = calibrate from the project)
+  journal                 obj   — the tamper-evident audit trail (audit-journal.py,
+        journal-writes.py): enabled (bool), dir (str or null = beside the manifest)
 
 This module also hosts the path/manifest helpers shared by require-plan.py and
 remind-tdd.py (rel_path, matches_exempt, strip_line_suffix, in_progress_*).
@@ -163,6 +165,12 @@ DEFAULTS = {
             "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
         },
     },
+    # The audit trail. `dir` is null on purpose rather than a literal path: the
+    # journal belongs beside the manifest, so it travels with a repo that moved its
+    # plan and is committed by the same commit that carries the change it records.
+    # scripts/audit-journal.py owns the resolution; journal_dir() below is the one
+    # copy of it the hooks read, and its selftest pins the two together.
+    "journal": {"enabled": True, "dir": None},
 }
 
 
@@ -277,6 +285,73 @@ def ledger_dir(root, cfg):
     cursor would re-scan from offset 0 and double-count."""
     return Path(root) / (usage_cfg(cfg).get("ledgerDir")
                          or DEFAULTS["usage"]["ledgerDir"])
+
+
+_JOURNAL_LIB = {"tried": False, "mod": None}
+
+
+def _load_journal_lib():
+    """scripts/audit-journal.py, loaded by path and cached — the same pattern as
+    _load_lock_lib, and for the same reason: the journal's own module owns where a
+    journal lives and what a row means, and a second copy of that rule in here is
+    two implementations that can disagree. None when it cannot be loaded, which
+    every caller reads as "there is no journal", because without that module
+    nothing can write one."""
+    if not _JOURNAL_LIB["tried"]:
+        _JOURNAL_LIB["tried"] = True
+        try:
+            import importlib.util
+            scripts_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+            spec = importlib.util.spec_from_file_location(
+                "audit_journal", os.path.join(scripts_dir, "audit-journal.py"))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _JOURNAL_LIB["mod"] = mod
+        except Exception:
+            _JOURNAL_LIB["mod"] = None
+    return _JOURNAL_LIB["mod"]
+
+
+def journal_enabled(cfg):
+    """`journal.enabled`, default true (a non-bool is ignored, not trusted)."""
+    try:
+        block = (cfg or {}).get("journal")
+        if isinstance(block, dict) and isinstance(block.get("enabled"), bool):
+            return block["enabled"]
+    except Exception:
+        pass
+    return bool(DEFAULTS["journal"]["enabled"])
+
+
+def journal_dir(root, cfg):
+    """Absolute path of the journal directory, or None when there can be no
+    journal (the module is unavailable). `journal.dir` when set, else
+    `<manifest dir>/journal`."""
+    mod = _load_journal_lib()
+    if mod is None:
+        return None
+    try:
+        return Path(mod.journal_dir(str(root), cfg or {}))
+    except Exception:
+        return None
+
+
+def in_journal(root, cfg, path):
+    """True when `path` (absolute or project-relative) is inside the journal.
+
+    The journal is append-only: it is written by the plugin, never by hand, and
+    this is what the edit guards ask before refusing a write to it."""
+    try:
+        d = journal_dir(root, cfg)
+        if d is None:
+            return False
+        target = path if os.path.isabs(str(path)) else os.path.join(str(root), str(path))
+        target = os.path.realpath(target)
+        d = os.path.realpath(str(d))
+        return target == d or target.startswith(d + os.sep)
+    except Exception:
+        return False
 
 
 def token_vars(cfg):
@@ -860,6 +935,59 @@ def _selftest() -> int:
               plan_gate_mode(None, None) == "observe")
     finally:
         shutil.rmtree(tmp_f, ignore_errors=True)
+
+    # (j) the journal — where it lives, and what counts as being inside it.
+    # Resolved by delegating to scripts/audit-journal.py rather than re-deriving:
+    # the module that owns the format owns its location, and the guards below refuse
+    # hand edits to whatever it answers.
+    tmp_j = Path(tempfile.mkdtemp(prefix="config-journal-"))
+    try:
+        cfg_j = _deep_merge(DEFAULTS, {})
+        check("j1 journal.enabled defaults true", journal_enabled({}) is True
+              and DEFAULTS["journal"]["enabled"] is True)
+        check("j2 an explicit false is honoured",
+              journal_enabled({"journal": {"enabled": False}}) is False)
+        check("j3 a non-bool is ignored rather than trusted (the `enforce` rule)",
+              journal_enabled({"journal": {"enabled": "no"}}) is True)
+        jd = journal_dir(tmp_j, cfg_j)
+        check("j4 the journal sits beside the manifest by default",
+              jd is not None and str(jd) == str(
+                  tmp_j / "docs" / "audit" / "journal"), repr(jd))
+        check("j5 journal.dir moves it",
+              str(journal_dir(tmp_j, _deep_merge(
+                  DEFAULTS, {"journal": {"dir": "trail"}}))) == str(tmp_j / "trail"))
+        check("j6 a moved manifest takes the journal with it",
+              str(journal_dir(tmp_j, _deep_merge(
+                  DEFAULTS, {"manifestPath": "plan/audit.json"})))
+              == str(tmp_j / "plan" / "journal"))
+        check("j7 a path inside the journal is recognised, absolute or relative",
+              in_journal(tmp_j, cfg_j, "docs/audit/journal/2026-08.a.jsonl")
+              and in_journal(tmp_j, cfg_j,
+                             str(tmp_j / "docs" / "audit" / "journal" / "x.jsonl")))
+        check("j8 the manifest beside it is NOT inside it",
+              not in_journal(tmp_j, cfg_j, "docs/audit/audit-plan.json")
+              and not in_journal(tmp_j, cfg_j, "src/app.py"))
+        check("j9 a sibling directory whose name merely starts the same is outside",
+              not in_journal(tmp_j, cfg_j, "docs/audit/journal-notes/x.md"))
+        # The guards ask THIS question, not `journal_dir`, so it has to read the
+        # project's own setting rather than the default: a repo that moved its
+        # journal would otherwise have the old location protected and the real one
+        # wide open.
+        _moved = _deep_merge(DEFAULTS, {"journal": {"dir": "trail"}})
+        check("j10 a moved journal is protected where it actually is",
+              in_journal(tmp_j, _moved, "trail/2026-08.a.jsonl")
+              and not in_journal(tmp_j, _moved,
+                                 "docs/audit/journal/2026-08.a.jsonl"))
+        check("j11 garbage in, False out", not in_journal(tmp_j, cfg_j, "")
+              and not in_journal(None, None, None))
+        # The delegation itself: this must be the journal module's answer, not a
+        # second copy of the rule that can drift from it.
+        _jmod = _load_journal_lib()
+        check("j12 the answer comes from audit-journal.py itself",
+              _jmod is not None
+              and str(jd) == _jmod.journal_dir(str(tmp_j), cfg_j))
+    finally:
+        shutil.rmtree(tmp_j, ignore_errors=True)
 
     # (g) governing_lock — which of the two tiers covers a given write. This is the
     # map the enforcement rests on, so a path that should be governed and isn't

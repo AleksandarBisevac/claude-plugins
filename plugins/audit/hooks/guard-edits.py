@@ -32,6 +32,12 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
      the plan-first opt-out without a user prompt. Those files may only be
      created by detect-plan-skip.py (i.e. by the USER typing the keyword).
 
+  5. Journal edits — the audit trail under `journal.dir` (default: beside the
+     manifest) is APPEND-ONLY and written by the plugin, never by hand. An edit
+     there is either the accident this catches or the tamper `audit-journal.py
+     verify` is built to name; refusing it costs nothing, because nothing
+     legitimate writes those files with an edit tool.
+
 Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 "permissionDecisionReason": ...}} on stdout and exits 0 — the canonical
 PreToolUse protocol (the exit-2 + stderr channel is deprecated).
@@ -152,6 +158,16 @@ def decide(data: dict, *, cfg=None):
                     "A bypass may only be armed by the USER including the bypass "
                     "keyword in their prompt." % rel)
 
+        # 5. the append-only audit trail
+        if _config.in_journal(root, cfg, path):
+            return ("block",
+                    "The audit journal is append-only: %s\n"
+                    "It is written by the plugin (panel saves, the journal-writes "
+                    "hook, audit-journal.py append) and never by hand — an edit "
+                    "here is what `audit-journal.py verify` exists to detect. To "
+                    "record something, append a row; to stop recording, set "
+                    "journal.enabled false." % rel)
+
     if not text:
         return ("allow", "no text")
 
@@ -223,7 +239,7 @@ def _selftest() -> int:
         }
     })
 
-    def check(name, expected, tool, path, text, *, cwd=tmp):
+    def check(name, expected, tool, path, text, *, cwd=tmp, cfg=cfg):
         ti = {"file_path": path, "content": text}
         if tool == "NotebookEdit":
             ti = {"notebook_path": path, "new_source": text}
@@ -291,6 +307,27 @@ def _selftest() -> int:
           ".claude/state/plan-bypass-abc.json", "{}")
     check("f2 other state files allowed", "allow", "Write",
           ".claude/state/tdd-reminder-abc.json", "{}")
+
+    # the append-only journal. Blocked with empty content too: the point is the
+    # PATH, and a truncation to nothing is the most destructive edit of all.
+    check("j1 editing a journal file blocked", "block", "Edit",
+          "docs/audit/journal/2026-08.abc.jsonl", '{"v":1}')
+    check("j2 truncating one is blocked as well", "block", "Write",
+          "docs/audit/journal/2026-08.abc.jsonl", "")
+    check("j3 a notebook path under the journal is no different", "block",
+          "NotebookEdit", "docs/audit/journal/x.ipynb", "print(1)")
+    # ...and the guard is about that directory alone. A neighbour whose name
+    # merely starts the same way is ordinary work.
+    check("j4 the manifest beside it is not the journal", "allow", "Write",
+          "docs/audit/audit-plan.json", '{"meta":{"version":3}}')
+    check("j5 a sibling directory with a similar name is not the journal",
+          "allow", "Write", "docs/audit/journal-notes/why.md", "notes")
+    check("j6 and a journal moved by config is protected where it actually is",
+          "block", "Write", "trail/2026-08.abc.jsonl", "{}",
+          cfg=_config._deep_merge(cfg, {"journal": {"dir": "trail"}}))
+    check("j7 ...which means the default location is then no longer special",
+          "allow", "Write", "docs/audit/journal/2026-08.abc.jsonl", "{}",
+          cfg=_config._deep_merge(cfg, {"journal": {"dir": "trail"}}))
 
     # deny payload is canonical PreToolUse JSON
     blob = json.loads(json.dumps(_deny_payload("why")))

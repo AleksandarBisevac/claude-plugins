@@ -30,7 +30,7 @@ import sys
 KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "trivialLineThreshold",
     "stateDir", "logsDir", "bypassKeyword", "secretPatterns", "guardEdits",
-    "bashWriteCheck", "tddReminder", "usage",
+    "bashWriteCheck", "tddReminder", "usage", "journal",
 }
 KNOWN_SECRET = {"extra"}
 KNOWN_GUARD = {"tokenVars", "customRules"}
@@ -47,6 +47,10 @@ KNOWN_USAGE = {"enabled", "ledgerDir", "authorMode", "showCost",
                "bands", "pricing"}
 KNOWN_RATE = {"in", "out", "cacheW5m", "cacheW1h", "cacheR"}
 KNOWN_BANDS = {"highUSD", "outlierUSD"}
+# `dir` is null by default and that is MEANINGFUL — it means "beside the manifest",
+# so a repo that moves its plan takes the record of it along. Same shape as
+# usage.bands: a null here is an answer, not a missing value.
+KNOWN_JOURNAL = {"enabled", "dir"}
 # All three are implemented by remind-tdd.py and covered by its selftests;
 # "warn-always" was documented in four places and rejected here, so setting the
 # documented value made the config invalid and the panel refuse to save it.
@@ -198,7 +202,34 @@ def validate_config(obj):
             _check_bands(us.get("bands"), findings, warnings)
             _check_pricing(us.get("pricing"), findings, warnings)
 
+    _check_journal(obj.get("journal"), findings, warnings)
+
     return findings, warnings
+
+
+def _check_journal(journal, findings, warnings):
+    """The audit trail's two settings.
+
+    An empty `dir` is a FINDING rather than a shrug: the string is joined onto the
+    project path, so `""` would put the journal — and the guard that refuses hand
+    edits to it — at the repository root, which is not what anyone typing an empty
+    box meant. `null` is different and is the default: beside the manifest."""
+    if journal is None:
+        return
+    if not isinstance(journal, dict):
+        findings.append("journal must be an object")
+        return
+    for k in _real_keys(journal):
+        if k not in KNOWN_JOURNAL:
+            warnings.append("unknown journal key %r" % k)
+    if "enabled" in journal and not isinstance(journal["enabled"], bool):
+        findings.append("journal.enabled must be true or false (a bool, not a "
+                        "string)")
+    if journal.get("dir") is not None:
+        d = journal["dir"]
+        if not isinstance(d, str) or not d.strip():
+            findings.append("journal.dir must be a non-empty string, or null to "
+                            "keep the journal beside the manifest")
 
 
 def _check_bands(bands, findings, warnings):
@@ -431,6 +462,29 @@ def _selftest():
     f, w = validate_config({"usage": {"bands": {"highUSD": 5, "outlierUSD": 5}}})
     check("high == outlier is legal (the runtime's own predicate is high <= outlier)",
           not f and not w)
+
+    # --- journal --------------------------------------------------------------
+    f, w = validate_config({"journal": {"enabled": True, "dir": "docs/audit/journal"}})
+    check("the documented journal pair validates clean", not f and not w)
+    f, w = validate_config({"journal": {"enabled": False}})
+    check("turning the journal off is a legal config", not f and not w)
+    f, w = validate_config({"journal": {"dir": None}})
+    check("a null dir is the default, not a missing value - it means beside the "
+          "manifest", not f and not w)
+    f, w = validate_config({"journal": {"enabled": "true"}})
+    check("a string `enabled` is a finding, not a silent truthy",
+          any("journal.enabled" in x for x in f))
+    f, w = validate_config({"journal": {"dir": ""}})
+    check("an EMPTY dir is a finding - it would put the journal, and the guard "
+          "that protects it, at the repository root",
+          any("journal.dir" in x for x in f))
+    f, w = validate_config({"journal": {"dir": 3}})
+    check("a non-string dir is a finding", any("journal.dir" in x for x in f))
+    f, w = validate_config({"journal": []})
+    check("non-object journal -> finding", any("journal must be" in x for x in f))
+    f, w = validate_config({"journal": {"enabledd": True}})
+    check("a misspelled journal key -> warning only",
+          not f and any("journal" in x for x in w))
 
     f, w = validate_config([])
     check("non-object root -> finding", len(f) == 1 and not w)

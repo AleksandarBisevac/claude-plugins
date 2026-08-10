@@ -310,6 +310,11 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
           git repo is a subdir), it cannot be committed — proceed without it (the preflight already
           warned that status history isn't versioned in that layout). **Do NOT stage the index** — a
           task commit changes only its own phase's shard.
+        - **Stage the journal directory too** (`journal.dir`, default `<manifest dir>/journal`) if it
+          exists inside `<gitRoot>`: the audit trail records the manifest writes this commit is
+          carrying, and a record committed a week later cannot be checked against the change it
+          describes. One file per writer per month, so parallel phases never conflict on it. If
+          `journal.enabled` is false there is nothing there and nothing to stage.
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
         - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit the phase's manifest file again).
@@ -361,6 +366,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       the summary must state how the phase met — or didn't meet — it). **Clear `phase.claim`** if set —
       the run is finishing, release the claim. (All these are shard writes in the sharded layout.)
    b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor).
+      Stage the journal directory here too, for the same reason as the task commits.
    c. **Merge into `meta.developmentBranch`**: `git switch <developmentBranch>`; `git merge --ff-only <branch>`.
       **If ff-merge fails** (the development branch advanced during the phase — the normal case on team
       repos), ask the human (AskUserQuestion) to choose:

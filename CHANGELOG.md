@@ -4,6 +4,101 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.29.0] - 2026-08-10
+
+**Who changed the plan?** Nothing could answer that. The panel wrote the manifest, `/audit` wrote
+it, a hand edit wrote it, and the only evidence afterwards was `git log` — which says nothing at
+all about a manifest nobody committed, and nothing ever about the config, which most repos
+gitignore. Two questions had no answer: *who moved this task to done*, and *has anything been
+changed behind the pipeline's back*. The audit trail is the answer to both, and it is careful
+about which one it can actually settle.
+
+### Added
+- **`scripts/audit-journal.py` — an append-only, hash-chained record of every write to the plan
+  and the config.** `append(project, entry) -> bool` for the writers, `append | verify | show` on
+  the CLI.
+
+  ```
+  docs/audit/journal/2026-08.<writerId>.jsonl        # one file per writer per month
+  {"v":1,"ts":"2026-08-10T09:12:44Z","actor":{"author":"dev@example.com","via":"panel",…},
+   "action":"composition.write","target":"docs/audit/audit-plan.json",
+   "summary":"1 change(s): P1.2 model: sonnet -> opus","stateHash":"sha256:…",
+   "prev":"<the row before this one>","hash":"<this row>"}
+  ```
+
+  `verify` names an **edited** row (it no longer hashes to its own contents), a **deleted** or
+  **reordered** one (the chain breaks there), a file **renamed** into another writer's slot (the
+  first row's anchor is derived from the file's own base name — without that, a whole file could be
+  copied over another writer's and verify perfectly), a **torn tail** from an interrupted write,
+  and **out-of-band drift**: a document that moved with no row to explain it. The first three are
+  FINDINGS and exit 1; the last two are warnings, because a crash and a `git checkout` are not
+  tampering.
+
+  **Tamper-evident, not tamper-proof**, said in every place the feature is described — the module,
+  the README, SECURITY.md, the panel's own Settings card — because the limit is real: with no
+  secret key, and nowhere on a user's machine to keep one from that same user, a forger who
+  rewrites the whole file forward produces a chain that verifies. It is a smoke detector, not a
+  vault. A feature that overstated this would be worse than none.
+
+- **`hooks/journal-writes.py` (PostToolUse) records manifest and config writes mechanically.** A
+  hook rather than an instruction in the orchestrator prose, and that is the whole design: a model
+  that forgets to log a change leaves a gap indistinguishable from one somebody hid, so the record
+  cannot be as reliable as compliance. It has **no stdout at all** — a recorder that talks turns
+  every manifest edit into a line of transcript nobody asked for — and every failure is silent,
+  because a journal that cannot be written must never break the write it was recording.
+- **The panel's journal call site, which shipped in v0.28 against a stub, is now real.** A save
+  says `Saved · 1 change · logged`, and `GET /api/journal` serves the recent rows **with the
+  verdict beside them**: a list with no verdict invites trust, and a verdict with no list is a
+  claim about something you cannot see.
+- **`/audit:doctor` checks the chain**, delegating to `verify` rather than re-deriving it. A broken
+  chain is its only journal FINDING — it is the only one that cannot happen by accident.
+- **Config `journal.{enabled, dir}`**, with a control for each in a new **Audit trail** card in the
+  panel's Settings tab (the coverage selftest derives its expectations from `validate-config`'s own
+  key sets, so a documented key with no control is a build failure). `dir` unset means *beside the
+  manifest*, which is what lets one commit carry both the change and the record of it — the
+  orchestrator now stages the journal with each task commit and at sign-off.
+
+### Changed
+- **The journal is a third protected path.** `guard-edits.py` refuses an edit tool anywhere inside
+  it — nothing legitimate writes those files by hand, and an edit there is either the accident this
+  catches or the tamper `verify` is built to name. A shell write cannot be refused after the fact,
+  so `guard-bash-writes.py` reports it instead, and the check runs **before** the exempt globs:
+  the journal lives under `docs/audit/**`, which is exempt from the plan gate on purpose, so a
+  check placed after them would have seen nothing at all. That hook now also reports **every**
+  class that fired rather than the first — a command that wrote into a locked shard and into the
+  journal did two separate things.
+- **A boolean in a change row is spelled `true`, not `True`.** `_fmt_change` renders the confirm
+  dialog's rows and now the journal's summaries; every value except a plain string goes through
+  JSON. Found the moment the journal made it visible: the dialog said `enforce · not set → true`
+  and the row beside it said `(unset) -> True`, which is not something the reader — who is holding
+  a JSON file — can type. Same reason the areas validator spells its values in JSON.
+
+### Verification
+- **1692 selftest cases across 26 suites** (from 1552 across 24): `audit-journal` 51 new,
+  `journal-writes` 30 new, `panel-server` 330→350, `_config` 59→71, `guard-edits` 18→25,
+  `validate-config` 46→54, `audit-doctor` 59→66, `guard-bash-writes` 16→21. Plus
+  `capture-screenshots.mjs --check` and `check-report-interactive.mjs` on all three shipped
+  reports.
+- **The panel's half is proven end to end in a browser**, not by a string pinned in the HTML: the
+  `--check` run saves the config through the real confirm flow, then reads `/api/journal` and
+  requires the chain to verify, the newest row to name the setting this check itself just changed,
+  the actor to match the identity the topbar is showing, and the toast to have said `· logged`. The
+  oracle is what the check DID, never the panel's own rendering of it.
+- **35 mutations proven red, each naming its own defect** — 30 in the suites and 5 through the
+  browser. Four of them changed a check rather than confirming it. `append()`'s "never raises"
+  cases died with a *traceback* instead of a named failure, which exits 1 the same way an assertion
+  does and proves nothing (the F3 trap, one level down); they now catch and report. The panel's
+  `/api/journal` case passed against a **hardcoded** `ok: true`, so it now requires the verdict to
+  count the rows the reader can see. `in_journal` was only ever asked about the default location,
+  so a guard reading the wrong directory stayed green in `_config`'s own suite. And the Settings
+  coverage check derived its expectations from a container map that could name a key the validator
+  has never heard of — with `journal` dropped from `KNOWN_ROOT` it went on agreeing with itself
+  about a key the hooks ignore.
+- The screenshot harness stopped counting Settings cards with a number written in the check file.
+  It was `4`, the audit trail makes it five, and a stale count there does not read as "a group was
+  added" — it reads as "the script is not running at all". The expected cards now come from the
+  group table Python injects.
+
 ## [0.28.0] - 2026-08-10
 
 **A tag becomes a thing.** A phase has carried an `area` tag since v0.16 — free text, one string or

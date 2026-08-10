@@ -179,6 +179,19 @@ FIELD_HELP = {
         "outlier. Leave both empty and the bands calibrate from this project's own "
         "completed tasks (median and p90), which needs no guess to mean something. "
         "Set both to band by a real budget instead.",
+    "journal.enabled":
+        "Record every write to the plan and to this config in an append-only, "
+        "hash-chained journal: who, when, what changed, and the state it left "
+        "behind. Panel saves and edit-tool writes are recorded; shell writes cannot "
+        "be, and show up instead as a document that changed with no row to explain "
+        "it. Tamper-EVIDENT, not tamper-proof - `audit-journal.py verify` names an "
+        "edited, deleted or reordered row, but nothing here can stop someone "
+        "rewriting the whole file.",
+    "journal.dir":
+        "Where the monthly per-writer .jsonl files live. Empty keeps them beside "
+        "the manifest, which is what lets one commit carry both the change and the "
+        "record of it. One file per writer, so two sessions in two worktrees never "
+        "conflict.",
     "usage.pricing":
         "Rates in this project's currency per MILLION tokens. Lookup is exact match, "
         "then longest matching prefix — so a dated model id resolves to its family — "
@@ -281,6 +294,24 @@ SETTINGS_GROUPS = (
             {"path": "usage.bands", "label": "Cost bands", "kind": "custom"},
             {"path": "usage.pricing", "label": "Rates per million tokens",
              "kind": "custom"},
+        ),
+    },
+    {
+        "id": "journal",
+        "title": "Audit trail",
+        # No backticks in a blurb: it is rendered as text, not as markdown, and the
+        # other four say their command names plainly for the same reason.
+        "blurb": "An append-only, hash-chained record of every change to the plan "
+                 "and to these settings. Tamper-EVIDENT, not tamper-proof: editing, "
+                 "deleting or reordering a row breaks the chain and audit-journal.py "
+                 "verify names it - but with no secret key to keep on your own "
+                 "machine, nothing here can stop someone rewriting the whole file. "
+                 "It is a smoke detector, not a vault.",
+        "fields": (
+            {"path": "journal.enabled", "label": "Record plan and config writes",
+             "kind": "bool"},
+            {"path": "journal.dir", "label": "Where the record is kept",
+             "kind": "text", "placeholder": "beside the manifest"},
         ),
     },
 )
@@ -705,6 +736,47 @@ def areas_state(project):
             "skills": entry.get("skills") if isinstance(entry.get("skills"), list)
             else [],
         })
+    return out
+
+
+JOURNAL_PAGE = 200
+
+
+def journal_state(project, limit=JOURNAL_PAGE):
+    """`GET /api/journal` — the recent rows, and whether the chain still holds.
+
+    Both halves in one response, because either alone misleads. A list of rows with
+    no verdict invites the reader to trust it; a verdict with no rows is a claim
+    about something they cannot see. The verdict comes from `audit-journal.verify`
+    — the same function the doctor and the CLI call — so the panel cannot develop
+    its own opinion about what counts as intact.
+
+    Read-only, and it stays that way: the journal is written by the writers it
+    records, never by a request for it.
+    """
+    out = {"enabled": True, "dir": None, "rows": [], "verify": None,
+           "available": False}
+    mod = _journalmod()
+    if mod is None:
+        # This install has no journal module at all (pre-0.29). Reported rather
+        # than 404'd: "there is no journal here" is an answer.
+        return out
+    config = read_config(project)
+    out["enabled"] = bool(mod.enabled(config))
+    try:
+        res = mod.verify(project, config)
+        out["available"] = True
+        out["verify"] = {k: res[k] for k in
+                         ("ok", "exists", "rows", "findings", "warnings")}
+        out["dir"] = (os.path.relpath(res["dir"], project)
+                      if _within(project, res["dir"]) else None)
+        rows = mod.read_all(project, config)
+        out["rows"] = list(reversed(rows[-limit:]))     # newest first
+        out["truncated"] = len(rows) > limit
+    except Exception as exc:
+        out["verify"] = {"ok": False, "exists": False, "rows": 0,
+                         "findings": ["could not read the journal: %s" % exc],
+                         "warnings": []}
     return out
 
 
@@ -1284,13 +1356,21 @@ def _composition_changes(manifest, patch):
 
 
 def _fmt_change(row):
-    """One row as the panel prints it, for the journal's one-line summary."""
+    """One row as the panel prints it, for the journal's one-line summary.
+
+    Every value except a plain string is JSON-spelled, which matters for exactly
+    one type and was wrong for it until the journal made it visible: `str(True)` is
+    `True`, and the dialog beside it says `true`. Whoever reads this line is
+    holding a JSON file, where `True` is not something they can type — the same
+    reason the areas validator spells its values in JSON rather than in Python.
+    Strings stay bare, because quoting every model name would be noise.
+    """
     def side(v):
         if v is None:
             return "(unset)"
-        if isinstance(v, (list, dict)):
-            return json.dumps(v, sort_keys=True)
-        return str(v)
+        if isinstance(v, str):
+            return v
+        return json.dumps(v, sort_keys=True)
     return "%s %s: %s -> %s" % (row.get("target"), row.get("field"),
                                 side(row.get("from")), side(row.get("to")))
 
@@ -1672,6 +1752,8 @@ def _make_handler(project, token):
                 self._json(200, areas_state(project)); return
             if path == "/api/usage":
                 self._json(200, usage_state(project)); return
+            if path == "/api/journal":
+                self._json(200, journal_state(project)); return
             if path == "/report":
                 # No path parameter: the location is derived from the project's
                 # own config, so there is nothing here to traverse with.
@@ -3112,8 +3194,13 @@ function scalarField(cfg,d,f,tip){
   ed.id=fieldId(f.path);ed.tabIndex=-1;
   return el('label',{class:'f wide'},klabel(f.label,f.path,tip),ed);}
  else{const t=f.kind==='date'?'date':(f.kind==='int'||f.kind==='number')?'number':'text';
+  // The placeholder is the DEFAULT, so an empty box says what leaving it empty
+  // gets you. Some defaults are null and mean something anyway ("beside the
+  // manifest"), and an empty box beside an empty placeholder says nothing at all —
+  // so a field may supply that sentence itself.
   inp=el('input',Object.assign({type:t,id:fieldId(f.path),value:cur??'',
-    placeholder:def==null?'':String(def)},f.min!=null?{min:String(f.min)}:{}));}
+    placeholder:def==null?(f.placeholder||''):String(def)},
+    f.min!=null?{min:String(f.min)}:{}));}
  inp.oninput=inp.onchange=()=>{const v=inp.value;
   if(v===''){delPath(cfg,f.path);return;}
   if(f.kind==='int')setPath(cfg,f.path,parseInt(v,10));
@@ -5230,13 +5317,25 @@ def _selftest():
               {"target": "config", "field": "trivialLineThreshold",
                "from": 40, "to": 41}])
 
-    # --- the journal call site, exercised before the journal exists -------------
-    # audit-journal.py ships with v0.29 and this call site ships now. Without the
-    # stub below the whole path would be untested code until that release, which is
-    # the one thing a fail-soft call site must not be: it fails silently by design.
-    check("no journal on this install -> journaled false, and it says WHY",
-          _journal(proj, read_config(proj), "config.write", "x", [])
-          == {"journaled": False, "journaledWhy": "unavailable"})
+    # --- the journal call site ---------------------------------------------------
+    # This call site shipped in v0.28, one release BEFORE audit-journal.py, and was
+    # exercised against the stubs below so it would not be untested code in the
+    # meantime. The module is here now, so the last case in this block is the real
+    # thing end to end — but the stubs stay: they are the only way to reach the two
+    # fail-soft branches, and "the journal is absent" is still what an older
+    # install looks like.
+    _saved_j0 = dict(_JOURNAL)
+    try:
+        _JOURNAL.update({"tried": True, "mod": None})
+        check("no journal on this install -> journaled false, and it says WHY",
+              _journal(proj, read_config(proj), "config.write", "x", [])
+              == {"journaled": False, "journaledWhy": "unavailable"})
+    finally:
+        _JOURNAL.clear()
+        _JOURNAL.update(_saved_j0)
+    check("...and on THIS install there is one, so the load resolves to the "
+          "module rather than to None (the case above is a simulation now)",
+          _journalmod() is not None and hasattr(_journalmod(), "append"))
 
     class _JStub(object):
         rows = []
@@ -5289,11 +5388,89 @@ def _selftest():
         _JOURNAL.clear()
         _JOURNAL.update(_saved_j)
 
+    # --- ...and the same path with the REAL module behind it (v0.29) ------------
+    # The stubs above prove the call site. They cannot prove that a save produces a
+    # row anyone can verify, which is the only claim this feature actually makes —
+    # so this drives the panel's own writer, then asks audit-journal.py, not the
+    # panel, whether the chain holds.
+    _jmod = _journalmod()
+    _before = len(_jmod.read_all(proj, read_config(proj)))
+    res = apply_composition(proj, {"tasks": {"P1.1": {"model": "haiku"}}})
+    _after = _jmod.read_all(proj, read_config(proj))
+    check("a real composition save appends a real row and says it was logged",
+          res.get("journaled") is True and len(_after) == _before + 1)
+    _row = _after[-1] if _after else {}
+    check("the row names the change in the same words the dialog showed",
+          "P1.1 model:" in (_row.get("summary") or "")
+          and "haiku" in (_row.get("summary") or ""))
+    check("...and it names the panel as the writer, with the viewer as the author",
+          (_row.get("actor") or {}).get("via") == "panel"
+          and (_row.get("actor") or {}).get("author")
+          == _viewer(proj, read_config(proj)).get("author"))
+    check("the row records the manifest as it stood after the write - which is "
+          "what makes a later change with no row to explain it visible",
+          bool(_row.get("stateHash")))
+    _jv = _jmod.verify(proj, read_config(proj))
+    check("the chain the panel wrote verifies",
+          _jv["ok"] and not _jv["findings"])
+    _jst = journal_state(proj)
+    check("GET /api/journal reports the rows newest first, with the verdict beside "
+          "them - a list with no verdict invites trust, a verdict with no list is "
+          "a claim about something you cannot see",
+          _jst["available"] and _jst["verify"]["ok"]
+          and _jst["rows"] and _jst["rows"][0].get("hash") == _row.get("hash"))
+    check("...and the verdict counts the rows the reader actually sees - a "
+          "hardcoded `ok` beside a list nobody checked is the failure this "
+          "endpoint exists to avoid",
+          _jst["verify"]["rows"] == len(_after) and _jst["verify"]["exists"])
+    check("...and it says where the journal is, relative to the project",
+          isinstance(_jst["dir"], str) and not os.path.isabs(_jst["dir"]))
+    _saved_j2 = dict(_JOURNAL)
+    try:
+        _JOURNAL.update({"tried": True, "mod": None})
+        _jst0 = journal_state(proj)
+        check("an install with no journal module answers `not available` rather "
+              "than 404 - there being no journal here is an answer",
+              _jst0["available"] is False and _jst0["rows"] == []
+              and _jst0["verify"] is None)
+    finally:
+        _JOURNAL.clear()
+        _JOURNAL.update(_saved_j2)
+    # A config save is journalled too, under its own action.
+    _cfg_j = read_config(proj)
+    write_config(proj, dict(_cfg_j, trivialLineThreshold=43))
+    _acts = [r.get("action") for r in _jmod.read_all(proj, read_config(proj))]
+    check("a config save is recorded under its own action - the rules changing is "
+          "not the same event as the plan changing",
+          "config.write" in _acts and "composition.write" in _acts)
+    # Off means off, on both surfaces.
+    write_config(proj, dict(read_config(proj), journal={"enabled": False}))
+    _n_off = len(_jmod.read_all(proj, read_config(proj)))
+    res = apply_composition(proj, {"tasks": {"P1.1": {"model": "sonnet"}}})
+    check("with journal.enabled false a save still succeeds, writes no row, and "
+          "does NOT claim to have been logged",
+          res["ok"] and res.get("journaled") is False
+          and len(_jmod.read_all(proj, read_config(proj))) == _n_off)
+    write_config(proj, dict(read_config(proj), journal={"enabled": True}))
+
     check("a change renders the same way for the journal as for the dialog",
           _fmt_change({"target": "P1.2", "field": "model",
                        "from": None, "to": "opus"}) == "P1.2 model: (unset) -> opus"
           and _fmt_change({"target": "P1.2", "field": "skills",
                            "from": [], "to": ["a"]}) == 'P1.2 skills: [] -> ["a"]')
+    check("...including a boolean, which the browser spells `true` and str() "
+          "spells `True` - a value nobody can type into the JSON file they are "
+          "being told about",
+          _fmt_change({"target": "config", "field": "enforce",
+                       "from": False, "to": True})
+          == "config enforce: false -> true")
+    check("a number is not quoted and a string is not JSON-escaped - the line is "
+          "prose about a JSON file, not JSON",
+          _fmt_change({"target": "config", "field": "trivialLineThreshold",
+                       "from": 40, "to": 41})
+          == "config trivialLineThreshold: 40 -> 41"
+          and "\"opus\"" not in _fmt_change({"target": "t", "field": "model",
+                                             "from": "a", "to": "opus"}))
 
     # --- who is looking --------------------------------------------------------
     _vw = _viewer(proj, read_config(proj))
@@ -5431,10 +5608,18 @@ def _selftest():
     _vc = _cores()[1]
     _containers = {"secretPatterns": _vc.KNOWN_SECRET, "guardEdits": _vc.KNOWN_GUARD,
                    "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
-                   "usage": _vc.KNOWN_USAGE}
+                   "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL}
     _expected = {k for k in _vc.KNOWN_ROOT if k not in _containers}
     for _parent, _keys in _containers.items():
         _expected |= {"%s.%s" % (_parent, k) for k in _keys}
+    # The container map above IS hand-kept — there is no machine link from a
+    # top-level key to the set of keys inside it — so the one thing it can get
+    # wrong is naming a container the validator has never heard of. Then the
+    # derived set would keep expecting `journal.*` after `journal` was dropped from
+    # KNOWN_ROOT, and this whole check would agree with itself about a key the
+    # hooks ignore.
+    check("every container the form groups is a real top-level key",
+          set(_containers) <= _vc.KNOWN_ROOT)
     _bound = set(_settings_paths())
     check("Settings binds a control to EVERY key the validator accepts - the "
           "missing ones were the whole usage block and most of tddReminder",
@@ -5456,10 +5641,22 @@ def _selftest():
                   % (_f["path"], _f["label"]),
                   bool(_f["label"]) and _f["label"] != _f["path"]
                   and not _f["label"][0].islower())
-    check("the four groups are the four decisions the config makes, not one list",
+    check("the groups are the decisions the config makes, not one list",
           tuple(g["id"] for g in SETTINGS_GROUPS)
-          == ("paths", "guards", "tdd", "usage")
+          == ("paths", "guards", "tdd", "usage", "journal")
           and all(g["blurb"] for g in SETTINGS_GROUPS))
+    check("the audit trail's card states the limit of the claim, where someone "
+          "deciding whether to rely on it will read it",
+          "not tamper-proof" in dict(
+              (g["id"], g["blurb"]) for g in SETTINGS_GROUPS)["journal"])
+    check("no blurb writes markdown - they are rendered as text, so a backtick "
+          "reaches the screen as a backtick",
+          not any("`" in g["blurb"] or "**" in g["blurb"]
+                  for g in SETTINGS_GROUPS))
+    check("a field whose default is null can still say what empty means - an "
+          "empty box beside an empty placeholder says nothing at all",
+          "placeholder:def==null?(f.placeholder||''):String(def)" in UI_HTML
+          and "beside the manifest" in UI_HTML)
     check("the form's shape, its help and its enums are injected from Python - "
           "the JS literal they replaced is what let the two drift",
           "const DESC={" not in UI_HTML
