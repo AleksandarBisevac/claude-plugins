@@ -1,7 +1,7 @@
 {
   "id": "P17",
   "title": "release v0.32.0",
-  "status": "pending",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "One release commit carries the bump to 0.32.0, the finalized CHANGELOG section and the regenerated shipped reports; the annotated tag v0.32.0 lands on that commit only after CI is green on it.",
@@ -10,21 +10,21 @@
     "validate",
     "lint"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "1db398c09c86d70e680f350cffb5659184ef1ff2",
+  "branch": "audit/p17-release-v0-32-0",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "v0.32.0 released as one commit + one annotated tag (the first since v0.9.0, per the recorded decision): the P9-P16 refactor arc, the dev-only lint gate, the enforced module structure, and the five bug fixes the first honest CI runs surfaced.",
   "tasks": [
     {
       "id": "P17.1",
       "title": "bump + CHANGELOG + regenerated artifacts, tag after green CI",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -49,16 +49,23 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugin.json 0.31.0 -> 0.32.0; CHANGELOG [0.32.0] in the house voice (refactor P9-P16, dev lint gate, _deps enforcement, F8/BUG-2..5 fixes); shipped reports regenerated via examples/report.sh with the 0.32.0 stamp, cmp holds. Full battery green locally incl. claude plugin validate; the annotated tag follows the green CI on this commit.",
+        "descriptive": "The release is one commit whose artifacts tell the truth about their own version, tagged only after CI agrees."
       },
-      "commit": null,
-      "attempts": 0,
+      "commit": "a253cc4",
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T23:41:58+02:00",
+      "completedAt": "2026-08-10T23:43:44+02:00",
       "risk": "med",
-      "verifiedBy": []
+      "verifiedBy": [
+        "sweep 2173/40 green",
+        "validate OK",
+        "lint green",
+        "interactive green",
+        "cmp OK",
+        "plugin validate OK"
+      ]
     }
   ]
 }
