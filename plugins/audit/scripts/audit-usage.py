@@ -37,6 +37,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, _HERE)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _fmt  # noqa: E402  (the one token/cost formatter; audit-status accesses these by attribute)
 
 
 def _load(name, filename):
@@ -50,26 +51,21 @@ DEFAULT_LEDGER = os.path.join(".claude", "usage")
 
 
 # --- formatting -----------------------------------------------------------------
+# Thin re-exports of _fmt.py (the one token/cost formatter — see its docstring for
+# the difference table between this CLI's shapes and render-report's). Kept as
+# module-level attributes (not a `from _fmt import *`) because audit-status.py's
+# importlib loader reaches these by attribute: `au.fmt_tokens(...)`.
 def fmt_tokens(n):
-    """Compact, right-alignable token counts."""
-    n = int(n or 0)
-    for limit, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
-        if abs(n) >= limit:
-            return "%.1f%s" % (n / float(limit), suffix)
-    return str(n)
+    """Compact, right-alignable token counts (CLI shape: always one decimal)."""
+    return _fmt.fmt_tokens(n)
 
 
 def fmt_cost(x, show=True):
-    if not show:
-        return ""
-    x = float(x or 0.0)
-    if x and abs(x) < 0.01:
-        return "<$0.01"          # never render real spend as $0.00
-    return "$%.2f" % x
+    return _fmt.fmt_cost(x, show=show)
 
 
 def fmt_int(n):
-    return "{:,}".format(int(n or 0))
+    return _fmt.fmt_int(n)
 
 
 def bar(fraction, width=18):

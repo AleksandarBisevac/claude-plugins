@@ -238,7 +238,7 @@
     {
       "id": "P10.6",
       "title": "_fmt.py: one token/cost formatter",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -264,16 +264,23 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_fmt.py unifies the three magnitude-table formatters; goldens frozen from the pre-change implementations prove byte-identity (audit-usage's fixed one-decimal shape is _fmt's dp=1; the <$0.01 rule shared; show=False is CLI-only). audit-usage keeps module-level names as thin wrappers so audit-status's attribute access is untouched; render-report delegates with matching parameters. 36 _fmt cases, the <$0.01 branch mutation-proven red.",
+        "descriptive": "Token and cost formatting is one module instead of three drifting copies, proven byte-identical to both prior shapes."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T18:29:00+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T18:36:00+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_fmt 36/36",
+        "audit-usage 59/59",
+        "audit-status 120/120",
+        "render-report 227/227",
+        "sweep green",
+        "lint green"
+      ]
     }
   ],
   "claim": {

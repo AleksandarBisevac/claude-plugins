@@ -34,6 +34,7 @@ sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the panel)
 import _loader                # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _fmt                   # noqa: E402  (the one token/cost formatter)
 
 
 def _plugin_version():
@@ -2040,19 +2041,16 @@ def _fmt_tokens(n, dp=1):
 
     Countables (messages, sessions, tasks) are NOT magnitudes and keep their
     thousand separators: `47,625` messages is a number you can act on, `47.6K`
-    throws away the thing that made it a count."""
-    n = int(n or 0)
-    for limit, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
-        if abs(n) >= limit:
-            return "%.*f%s" % (dp, n / float(limit), suffix)
-    return str(n)
+    throws away the thing that made it a count.
+
+    Delegates to _fmt.py (the one token/cost formatter); this wrapper exists
+    only to keep this file's own default (`dp=1`) as its own default rather
+    than relying on _fmt's `dp=None` sentinel."""
+    return _fmt.fmt_tokens(n, dp=dp)
 
 
 def _fmt_cost(x):
-    x = float(x or 0.0)
-    if x and abs(x) < 0.01:
-        return "<$0.01"
-    return "$%.2f" % x
+    return _fmt.fmt_cost(x)
 
 
 def _model_slots(models):
