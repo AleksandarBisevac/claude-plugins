@@ -1,7 +1,7 @@
 {
   "id": "BF1",
   "title": "CI legs: Windows separators + Linux viewport",
-  "status": "pending",
+  "status": "in_progress",
   "model": "sonnet",
   "blockedBy": [],
   "desiredOutcome": "CI run on main is fully green: j12 passes on Windows because journal_dir returns one normalized spelling everywhere (proven red-first on POSIX via the root-manifest ./ case), and the policy view fits the raised capture viewport on Linux.",
@@ -10,8 +10,8 @@
     "validate",
     "lint"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "51d2d168761846189c38e2f341472eb4adc9af0b",
+  "branch": "audit/bf1-ci-legs",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -24,7 +24,7 @@
     {
       "id": "BF1.1",
       "title": "journal_dir normalizes its return (red-first via root-manifest ./ case)",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -47,22 +47,27 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Both return branches of journal_dir wrapped in os.path.normpath; red-first case a2b (root-level manifestPath leaves ./ in the path) proven red 51/52 on the unfixed code, then 53/53 green with a2c pinning the default shape. j12's comparison untouched - it was right.",
+        "descriptive": "journal_dir answers in one spelling on every platform; the Windows leg's refusal was the comparison doing its job against a two-spelling API."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T22:11:47+02:00",
+      "completedAt": "2026-08-10T22:15:33+02:00",
       "risk": "low",
-      "verifiedBy": [],
+      "verifiedBy": [
+        "audit-journal 53/53 (a2b red-first, a2c)",
+        "hooks/_config 81/81 (j12)",
+        "sweep green",
+        "lint green"
+      ],
       "bugId": "BUG-2"
     },
     {
       "id": "BF1.2",
       "title": "raise the capture viewport so the policy view fits on Linux",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -81,17 +86,25 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Policy-context viewport 1560 -> 1680 (sole occurrence); the height guard has Linux-font headroom. --check green locally; PNGs regenerate on the next capture run.",
+        "descriptive": "The capture viewport now fits the policy view on Linux too, as the check's own comment prescribed."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T22:11:47+02:00",
+      "completedAt": "2026-08-10T22:15:33+02:00",
       "risk": "low",
-      "verifiedBy": [],
+      "verifiedBy": [
+        "capture-screenshots --check green (macOS); ubuntu is CI's word"
+      ],
       "bugId": "BUG-3"
     }
-  ]
+  ],
+  "claim": {
+    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
+    "host": "MacBook-Pro.local",
+    "branch": "audit/bf1-ci-legs",
+    "at": "2026-08-10T22:11:47+02:00"
+  }
 }

@@ -134,10 +134,10 @@ def journal_dir(project, config=None):
     block = (config or {}).get("journal")
     rel = block.get("dir") if isinstance(block, dict) else None
     if isinstance(rel, str) and rel.strip():
-        return os.path.join(project, rel.strip())
+        return os.path.normpath(os.path.join(project, rel.strip()))
     manifest = (config or {}).get("manifestPath") or DEFAULT_MANIFEST
-    return os.path.join(project, os.path.dirname(str(manifest)) or ".",
-                        DEFAULT_DIRNAME)
+    return os.path.normpath(os.path.join(project, os.path.dirname(str(manifest)) or ".",
+                        DEFAULT_DIRNAME))
 
 
 def in_journal(project, path, config=None):
@@ -575,6 +575,14 @@ def _selftest():
         check("a2 journal.dir overrides it",
               journal_dir(proj, {"journal": {"dir": "audit-trail"}})
               == os.path.join(proj, "audit-trail"))
+        check("a2b a root-level manifestPath does not leave a `./` segment in the "
+              "returned path (BUG-2: mixed separators on Windows, `proj/./journal` "
+              "on POSIX)",
+              journal_dir(proj, {"manifestPath": "audit.json"})
+              == os.path.normpath(os.path.join(proj, DEFAULT_DIRNAME)))
+        check("a2c the default-manifest shape is normalized too",
+              journal_dir(proj, cfg)
+              == os.path.normpath(os.path.join(proj, "docs", "audit", "journal")))
         check("a3 enabled by default, and an explicit false is honoured",
               enabled({}) is True and enabled({"journal": {"enabled": False}}) is False)
         check("a4 a non-bool `enabled` is ignored rather than trusted "
