@@ -15,7 +15,7 @@
   ],
   "baseRef": "11151288802c501ca42a54ab3706f400bd448aa6",
   "branch": "audit/p12-refactor-panel-server-split",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T19:18:42+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
