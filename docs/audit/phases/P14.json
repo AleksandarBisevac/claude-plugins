@@ -15,7 +15,7 @@
   ],
   "baseRef": "90103357dfca2b99178a4fe85de2c8255657c25a",
   "branch": "audit/p14-refactor-cleanups",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T20:27:27+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
