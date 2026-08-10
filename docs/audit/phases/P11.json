@@ -1,7 +1,7 @@
 {
   "id": "P11",
   "title": "refactor: UI asset extraction",
-  "status": "in_progress",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [
     "P10"
@@ -19,10 +19,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "The 5,340 embedded CSS/JS lines are real files under scripts/ui/ - panel.html/css/js and report.css/js - assembled at import by _panel_ui and _report_ui into the exact same constants, proven byte-identical old-vs-new (UI_HTML 244588; _CSS 61698; _SCRIPT 37708). panel-server.py fell 8287 -> 4521 lines and render-report.py 4587 -> 3024 before any Python split. Every existing pin passed untouched, both Playwright checks green, scripts/ui pinned .py-free from both modules, and the docs plus CONTRIBUTING now state the layout invariant. The desired outcome holds verbatim. One trap found and dodged: extracting a non-raw literal from source text captures pre-escape bytes; the report extractor reads the evaluated AST constant instead.",
   "tasks": [
     {
       "id": "P11.1",
@@ -151,7 +151,7 @@
         "technical": "Both extraction modules already pinned scripts/ui .py-free (no code change needed). PLUGIN-BUILD-GUIDE's tree and two per-file prose sections now describe assembly-at-import; CONTRIBUTING gains the flat-layout hard rule with the scripts/ui exception; plugin README needed nothing - its self-containment claims are about the served page and remain true. No headings touched; drift lints green.",
         "descriptive": "The docs describe the new layout truthfully, and the flat-Python invariant is a written contributor rule instead of an accident."
       },
-      "commit": null,
+      "commit": "36f53d7",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T18:26:27+02:00",
@@ -164,11 +164,5 @@
         "validate OK"
       ]
     }
-  ],
-  "claim": {
-    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
-    "host": "MacBook-Pro.local",
-    "branch": "audit/p11-refactor-ui-asset-extraction",
-    "at": "2026-08-10T18:10:29+02:00"
-  }
+  ]
 }
