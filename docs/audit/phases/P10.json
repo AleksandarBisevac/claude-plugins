@@ -1,7 +1,7 @@
 {
   "id": "P10",
   "title": "refactor: shared-infra dedup",
-  "status": "pending",
+  "status": "in_progress",
   "model": "sonnet",
   "blockedBy": [
     "P9"
@@ -12,8 +12,8 @@
     "validate",
     "lint"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "12b0b7f0c532c1180ea4b9ccb0c1b85cfe730b23",
+  "branch": "audit/p10-refactor-shared-infra-dedup",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -26,7 +26,7 @@
     {
       "id": "P10.1",
       "title": "_loader.py: one path-importlib loader, one caching policy",
-      "status": "pending",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -47,21 +47,23 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_loader.py: load(path, modname=None, cache=True) via spec_from_file_location, one process-wide cache keyed by realpath, no sys.modules registration, failures propagate and are never cached; load_script() and load_hooks_config() cover the two common shapes. Docstring records the 5 prior caching policies consolidated and why hooks/ keeps its own copies. 11 selftest cases; the cache policy mutation-proven red (3 cases).",
+        "descriptive": "scripts/ has one path-importlib loader with one caching policy - the seed that replaces 14 ad-hoc copies."
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-08-10T17:48:00+02:00",
+      "completedAt": "2026-08-10T17:54:00+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_loader selftest 11 cases: identity, isolation, realpath dedup, no sys.modules pollution, error propagation without cache poisoning"
+      ]
     },
     {
       "id": "P10.2",
       "title": "Migrate loader call sites: panel-server + _help",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -87,9 +89,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T17:54:00+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []
@@ -97,7 +99,7 @@
     {
       "id": "P10.3",
       "title": "Migrate loader call sites: the seven remaining scripts",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -128,9 +130,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T17:54:00+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []
@@ -252,5 +254,11 @@
       "risk": "low",
       "verifiedBy": []
     }
-  ]
+  ],
+  "claim": {
+    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
+    "host": "MacBook-Pro.local",
+    "branch": "audit/p10-refactor-shared-infra-dedup",
+    "at": "2026-08-10T17:48:00+02:00"
+  }
 }
