@@ -39,6 +39,7 @@ import, which is the drift this checker exists to catch.
 
 import ast
 import os
+import re
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -381,6 +382,93 @@ def map_drift(guide_path=None):
     return []
 
 
+_TREE_HEADING = "## 1. Directory tree"
+_SECTION2_HEADING = "## 2. File-by-file logic"
+
+
+def _section_text(text, heading):
+    """The text between `heading` and the next top-or-second-level `##` heading
+    (or end of file), NOT including `heading` itself.
+
+    Returns None if `heading` is not found - the same "distinguish missing from
+    empty" shape `_fenced_block_after` uses, for the same reason: a caller needs
+    to tell "no such section" from "section present but empty" apart.
+    """
+    idx = text.find(heading)
+    if idx == -1:
+        return None
+    rest = text[idx + len(heading):]
+    nxt = rest.find("\n## ")
+    return rest if nxt == -1 else rest[:nxt]
+
+
+def _real_source_files(script_dir=None, hooks_dir=None):
+    """Sorted `(basename_with_ext, kind)` for every hooks/*.py and scripts/*.py file.
+
+    `kind` is `"scripts"` or `"hooks"` - callers need it only for readable
+    violation messages, not for the matching rule itself (a filename is a
+    filename regardless of which directory it lives in).
+    """
+    script_dir = script_dir or _HERE
+    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
+    out = []
+    for fname in sorted(os.listdir(script_dir)):
+        if fname.endswith(".py"):
+            out.append((fname, "scripts"))
+    if os.path.isdir(hooks_dir):
+        for fname in sorted(os.listdir(hooks_dir)):
+            if fname.endswith(".py"):
+                out.append((fname, "hooks"))
+    return out
+
+
+def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
+    """[(filename, problem), ...] - every scripts/hooks .py file the guide's
+    enumeration sections have gone out of step with.
+
+    Two things are checked, and each names its own violation:
+
+      * TREE COVERAGE. Every real `hooks/*.py` and `scripts/*.py` basename must
+        appear as a literal substring somewhere in the fenced code block under
+        "## 1. Directory tree" - the tree is meant to be a full inventory (one
+        line per file, at the neighbors' granularity), so a file absent from it
+        is a file the tree no longer lists at all.
+
+      * SECTION-2 COVERAGE. Every real file must have its basename appear in at
+        least one `### ` heading line under "## 2. File-by-file logic" (up to
+        the next `## ` heading). The match rule is deliberately pragmatic, not
+        "one heading per file": several files legitimately share a single
+        heading today (`_manifest_io.py` + `migrate-manifest.py` +
+        `commands/migrate.md` share one heading, `render-report.py` +
+        `_report_ui.py`'s split is folded into render-report's own heading) -
+        "the filename appears in SOME ### heading" is the rule this function
+        enforces, stated here because that is the only place it needs to be.
+
+    A missing heading OR missing tree entry is reported once per file, in
+    `_real_source_files()` order (scripts before hooks, each alphabetical).
+    """
+    path = _guide_path(guide_path)
+    rel = "PLUGIN-BUILD-GUIDE.md" if guide_path is None else path
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        return [(rel, "unreadable: %s" % exc)]
+
+    tree_block = _fenced_block_after(text, _TREE_HEADING)
+    section2 = _section_text(text, _SECTION2_HEADING)
+    headings = re.findall(r"^### .*$", section2, re.M) if section2 is not None else []
+
+    violations = []
+    for fname, _kind in _real_source_files(script_dir, hooks_dir):
+        if tree_block is None or fname not in tree_block:
+            violations.append((fname, "missing from the '%s' tree" % _TREE_HEADING))
+        if not any(fname in h for h in headings):
+            violations.append((fname, "no '### ' heading in '%s' mentions it"
+                                % _SECTION2_HEADING))
+    return violations
+
+
 def _selftest():
     import shutil
     import tempfile
@@ -616,6 +704,91 @@ def _selftest():
               any("not strictly downward" in v[1] for v in real_hits))
     finally:
         shutil.rmtree(mut_dir, ignore_errors=True)
+
+    # ------------------------------------------ guide_enumeration: real guide + fixtures
+    check("e1 the real, shipped guide names no scripts/hooks .py file missing from "
+          "either the directory tree or a section-2 heading right now: %r"
+          % (guide_enumeration(),), not guide_enumeration())
+
+    enum_tmp = tempfile.mkdtemp(prefix="audit-deps-enum-")
+    try:
+        hk_dir = os.path.join(enum_tmp, "hooks")  # empty; no hooks fixtures needed here
+        os.makedirs(hk_dir)
+
+        src_a = os.path.join(enum_tmp, "scripts_a")
+        os.makedirs(src_a)
+        with open(os.path.join(src_a, "present.py"), "w", encoding="utf-8") as fh:
+            fh.write("pass\n")
+        with open(os.path.join(src_a, "no_section.py"), "w", encoding="utf-8") as fh:
+            fh.write("pass\n")
+
+        complete_guide = os.path.join(enum_tmp, "complete.md")
+        with open(complete_guide, "w", encoding="utf-8") as fh:
+            fh.write(
+                "intro\n\n" + _TREE_HEADING + "\n\n```\n"
+                "  present.py    # a file\n"
+                "  no_section.py # another file\n"
+                "```\n\n" + _SECTION2_HEADING + "\n\n"
+                "### `present.py`\nprose.\n\n"
+                "## 3. Next section\nnot part of section 2.\n"
+            )
+        complete_hits = guide_enumeration(complete_guide, script_dir=src_a,
+                                           hooks_dir=hk_dir)
+        check("e2 a file present in the tree but absent from every section-2 heading "
+              "is named as missing its section, and ONLY that: %r" % (complete_hits,),
+              complete_hits == [("no_section.py",
+                                  "no '### ' heading in '%s' mentions it"
+                                  % _SECTION2_HEADING)])
+
+        src_b = os.path.join(enum_tmp, "scripts_b")
+        os.makedirs(src_b)
+        with open(os.path.join(src_b, "present.py"), "w", encoding="utf-8") as fh:
+            fh.write("pass\n")
+        with open(os.path.join(src_b, "no_tree.py"), "w", encoding="utf-8") as fh:
+            fh.write("pass\n")
+
+        no_tree_guide = os.path.join(enum_tmp, "no_tree.md")
+        with open(no_tree_guide, "w", encoding="utf-8") as fh:
+            fh.write(
+                "intro\n\n" + _TREE_HEADING + "\n\n```\n"
+                "  present.py    # a file\n"
+                "```\n\n" + _SECTION2_HEADING + "\n\n"
+                "### `present.py`\nprose.\n\n"
+                "### `no_tree.py`\nprose.\n\n"
+                "## 3. Next section\nnot part of section 2.\n"
+            )
+        no_tree_hits = guide_enumeration(no_tree_guide, script_dir=src_b,
+                                          hooks_dir=hk_dir)
+        check("e3 a file present in every section-2 heading but absent from the tree "
+              "is named as missing from the tree, and ONLY that: %r" % (no_tree_hits,),
+              no_tree_hits == [("no_tree.py",
+                                 "missing from the '%s' tree" % _TREE_HEADING)])
+
+        # ---- mutation proof: a weakened check must MISS the e3 tree-only fixture ----
+        def _weakened_guide_enumeration(guide_path):
+            with open(guide_path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+            section2 = _section_text(text, _SECTION2_HEADING)
+            headings = (re.findall(r"^### .*$", section2, re.M)
+                        if section2 is not None else [])
+            found = []
+            for fname, _kind in _real_source_files(src_b, hk_dir):
+                if not any(fname in h for h in headings):  # tree check dropped entirely
+                    found.append((fname, "no section heading"))
+            return found
+
+        weak_hits = _weakened_guide_enumeration(no_tree_guide)
+        check("e4 mutation proof: with the tree-coverage check removed, the SAME "
+              "tree-missing fixture e3 catches is missed entirely (red proves e3 is "
+              "testing something real): %r" % (weak_hits,),
+              not any(f == "no_tree.py" for f, _ in weak_hits))
+        real_hits_again = guide_enumeration(no_tree_guide, script_dir=src_b,
+                                             hooks_dir=hk_dir)
+        check("e5 mutation proof: the real, unweakened guide_enumeration() still "
+              "catches it - nothing was left mutated behind",
+              any(f == "no_tree.py" for f, _ in real_hits_again))
+    finally:
+        shutil.rmtree(enum_tmp, ignore_errors=True)
 
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:

@@ -75,6 +75,7 @@ claude-plugins/                           # this repo (personal, public)
         guard-bash-writes.py              # PostToolUse git-status diff check (unplanned shell writes)
         remind-tdd.py                     # non-blocking TDD nudge (PostToolUse)
         journal-writes.py                 # PostToolUse: records manifest/config writes in the audit trail
+        meter-usage.py                    # Stop/SubagentStop/SessionEnd: tails the transcript into the usage ledger
       reference/
         orchestrator.md                   # shared execution logic (preflight, lock, Execute-the-task, sign-off)
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
@@ -86,14 +87,31 @@ claude-plugins/                           # this repo (personal, public)
         _areas.py                         # meta.areas registry + reviewSkill/skills resolution
         _policy.py                        # capability policy: shape, validation, required -> deny -> allow -> default
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
+        _fmt.py                           # the one token/cost formatter, shared by usage + report + status
+        _loader.py                        # the one way scripts/ loads a sibling script as a library, one cache policy
+        _ui_theme.py                      # shared visual tokens (colour/spacing/type/labels) for report + panel
+        _deps.py                          # the module layer table, checked against the real import graph every run
+        usage_ledger.py                   # token-usage metering core: transcript scan, dedup, attribution
         validate-manifest.py              # dependency-free referential validator (cycles, links)
         validate-config.py                # validates .claude/audit.config.json against its schema
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
+        audit-doctor.py                   # /audit:doctor: read-only "is this working?" diagnostics
+        audit-lock.py                     # the /audit concurrency lock as an executable acquire/release/status
+        audit-usage.py                    # /audit:usage: token spend, attributed
         render-report.py                  # self-contained HTML+MD report (CI artifact)
         _report_ui.py                     # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
+        _report_html.py                   # HTML fragment builders for the report: escaping, chips, table cells
+        _report_usage.py                  # the report's Usage section: ledger load + every chart over it
         migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
         _panel_ui.py                      # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
+        _panel_discovery.py               # discovers skills/agents/MCP servers this project can reach
+        _panel_settings.py                # the Settings form's schema + the write-path key allow-lists
+        _panel_state.py                   # the panel's READ side: everything GET /api/* answers with
+        _panel_write.py                   # the panel's WRITE side: everything PUT /api/* actually does
+        _help.py                          # zero-token self-description: schema field help + how-it-works topics
+        gen-demo-manifest.py              # synthetic LARGE manifest fixture for demos/screenshots/CI
+        gen-demo-usage.py                 # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
         audit-journal.py                  # append-only hash-chained audit trail (append/verify/show)
       templates/
@@ -379,12 +397,86 @@ refusal names the rule that produced it. `onViolation` picks deny / ask / warn, 
 Leaves a throttled marker in `stateDir` so `/audit:doctor` can say whether the matchers ever
 reach it (subagent hook inheritance is not guaranteed). `--selftest` (26 cases).
 
+### `plugins/audit/hooks/meter-usage.py`
+Stop / SubagentStop / SessionEnd hook that turns transcript JSONL into usage-ledger rows.
+Claude Code hands hooks a `transcript_path` but no token counts, so this tails that file
+(plus the session's subagent transcripts) from a saved byte offset, attributes each message
+to a phase/task, and appends aggregated rows — never blocking, and driven by file offsets so
+it stays correct regardless of which of the three events fired. Config lives under
+`.claude/audit.config.json` -> `usage` (enabled/ledgerDir/authorMode/backfillOnFirstRun/
+maxScanBytes/pricing); the mechanics (dedup, attribution precedence) live in `usage_ledger.py`.
+
+### `plugins/audit/scripts/_areas.py`
+The `meta.areas` registry and everything that resolves against it. A phase's `area` tag (free
+text, since v0.16) is only a grouping label; this module is where a tag becomes a thing with
+properties — a `root`, a `description`, a `reviewSkill`, `skills` — and it implements, once, the
+two precedence rules every surface quotes identically: `phase.reviewSkill ?? areas[tag]
+.reviewSkill ?? meta.reviewSkill` for the review skill, and area-skills-then-task-skills
+(deduped, area first) for the executor. Registration stays optional in both directions;
+`review_skill_conflicts()` finds the case where a multi-tag phase's areas disagree, so a
+tie-break decided by write order stays visible instead of silent.
+
 ### `plugins/audit/scripts/_policy.py` (v0.30.0)
 The policy block's shape, defaults, validation and resolution — required → deny → allow →
 default, with area rules scoped to phases in progress. The required set (audit's own commands,
 skills and agents, which no policy can deny) is read off the plugin's own directory rather than
 listed. `validate-config.py` delegates to `validate_policy` here; `panel-server.py` and
 `audit-doctor.py` call `resolve` here. `--selftest` (60 cases).
+
+### `plugins/audit/scripts/_output.py`
+The one `safe_stdio()` guard against `UnicodeEncodeError` on a redirected Windows stream
+(a piped/teed/captured stdout falls back to the legacy code page; an unprintable glyph then
+raises instead of printing). Every `scripts/` entry point calls it as its first statement,
+enforced rather than remembered — `entries_missing_guard()` reads the directory and names any
+`__main__` block that skips it. `hooks/` deliberately does not import this module: its only
+output is `json.dumps` (ASCII by construction) plus its own selftest.
+
+### `plugins/audit/scripts/_fmt.py`
+The one token/cost/count formatter, unifying three copies that had drifted (`audit-usage.py`,
+`render-report.py`, and `audit-status.py`'s importlib re-use of `audit-usage`'s). `fmt_tokens`/
+`_fmt_tokens` share the same magnitude table (`B`/`M`/`K`) with a `dp` precision knob for the
+report's label-vs-tooltip need; `fmt_cost`/`_fmt_cost` share the "never render real spend as
+$0.00" rounding rule; `fmt_int` is the thousands-grouped form for countables that should never
+be compacted. Golden values from both call sites were frozen into the selftest before either
+was touched.
+
+### `plugins/audit/scripts/_loader.py`
+The one way `scripts/` loads a sibling script as a library, replacing roughly fourteen
+hand-rolled `importlib` copies that had drifted into five different caching policies.
+`load(path, cache=True)` keeps a single process-wide memo keyed by the realpath, so two
+different spellings of the same file share a cache entry; `cache=False` gets a fresh module
+object for a selftest that mutates its target. Failures are never swallowed here — a missing
+file or an import-time exception propagates, and a caller that wants a soft-fail catches it
+itself. `hooks/` keeps its own two loader copies rather than importing this module, since hooks
+must not depend on `scripts/` being on the launcher's path.
+
+### `plugins/audit/scripts/_ui_theme.py`
+The shared visual system — colour tokens (light + both dark forms), spacing, type, motion and
+status-label vocabulary — imported by both the report renderer and the control panel so the two
+surfaces read as one product instead of two hand-kept copies that had already drifted (a 1rem
+gap between their nav-column widths, one example). `label()` maps a machine value like
+`in_progress` to the words a person reads, with a graceful fallback for anything unknown. The
+CSS lint helpers that police the stylesheet live alongside it.
+
+### `plugins/audit/scripts/_deps.py` (P15.1)
+The module import-layer table, checked against the real graph instead of trusted as prose:
+`LAYERS` groups every `scripts/*.py` basename so a file may import a sibling only in a strictly
+LOWER layer, and hooks/ may import nothing from scripts/ at all. `import_graph()` reads the real
+edges via `ast` (not a regex — a nested or selftest-only import is still a real edge);
+`layer_violations()` and `map_drift()` compare that graph and this guide's own module map /
+directory tree / file-by-file sections against the truth, so the guide cannot silently drift
+out from under the code it documents. One known pre-existing exception (`hooks/_config.py`'s
+guarded `import _manifest_io`) is named rather than papered over. `--selftest`.
+
+### `plugins/audit/scripts/usage_ledger.py`
+The token-usage metering core `meter-usage.py` and `audit-usage.py --backfill` both call.
+Claude Code hands hooks a `transcript_path`, not token counts, so this reads the transcript
+JSONL directly — `message.usage` alongside `message.model`/`timestamp`/`gitBranch`/`sessionId`,
+plus each subagent's sibling `subagents/agent-<id>.jsonl` + `.meta.json`. The one correctness
+trap it exists to close: a single `message.usage` block repeats across every transcript entry
+sharing a `message.id`, so naive summation overcounts spend by roughly 2.4x — this module dedups
+by `message.id` within and across scans. Attribution runs task -> phase -> window ->
+unattributed, highest precision first, nothing ever dropped.
 
 ### `plugins/audit/scripts/audit-journal.py` (v0.29.0)
 The trail itself: `append(project, entry) -> bool` plus `append | verify | show` on the CLI.
@@ -396,6 +488,25 @@ writer's slot. `verify` reports an edited / deleted / reordered row as a FINDING
 a torn tail or out-of-band drift as a WARNING (exit 0). **Tamper-evident, not tamper-proof** —
 stated in the module, the README, the panel's own Settings card and SECURITY.md, because a
 forger who rewrites the whole file still verifies. `append()` never raises. `--selftest`.
+
+### `plugins/audit/scripts/gen-demo-manifest.py`
+Generates the synthetic LARGE manifest fixture behind `docs/demo-large.html` and the panel
+screenshots, on demand instead of committing it — the same flags always produce the same
+bytes, so CI builds it, captures from it, and discards it, and nothing drifts the way the
+uncommitted original did. `gen-demo-manifest.py <out-dir> [--phases 50] [--tasks 20] [--seed
+11] [--single-file]` deliberately carries every state a reader can filter on (all phase/task
+statuses, `blockedBy`, `dependsOn`, budgets over/under, `area` tags, a full bug lifecycle),
+deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
+phase never contains an unfinished task). `--selftest`.
+
+### `plugins/audit/scripts/gen-demo-usage.py`
+Generates a synthetic usage ledger consistent with a real manifest — task/phase ids that exist,
+timestamps inside each task's own `startedAt`/`completedAt` window — so the report's Usage
+section (and its screenshots) show something worth looking at instead of the empty state a
+manifest with no spend produces. `gen-demo-usage.py <manifest> [--out-dir DIR] [--seed N]
+[--authors a,b,c] [--adhoc-days N]` is deterministic (fixed seed, no unseeded random) and maps
+a manifest's illustrative model tier to the concrete ledger model id the runtime actually
+records. `--selftest` pins determinism and referential integrity against the manifest.
 
 ### `plugins/audit/reference/manifest-conventions.md`
 Shared conventions every command reads first (lives OUTSIDE `commands/` so it can't register
@@ -422,6 +533,31 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
 .
 
+### `plugins/audit/scripts/audit-doctor.py`
+`/audit:doctor`'s "is this working?" diagnostics — every check reuses an existing
+implementation (`validate-config.validate_config`, `validate-manifest.validate`,
+`audit-status.submodule_conflicts`, `usage_ledger.find_ledger_dir`) rather than
+reimplementing it, so a rule never means one thing here and another at the gate. It is
+read-only by construction: it never writes, never takes a lock, and for `buildCommands`
+resolves whether the named executable exists rather than running it. Output classes match the
+rest of the plugin (OK/WARNING/FINDING); exit 0 healthy, 1 findings, 2 usage error.
+
+### `plugins/audit/scripts/audit-lock.py`
+The `/audit` concurrency lock as an executable decision instead of orchestrator prose:
+`acquire <name>`, `release <name>`, `status`, over the two tiers the orchestrator uses
+(`index`, `phase-<id>`). Liveness, not age, decides a stale lock — a holder that is still
+running is refused (exit 3); a holder that is not alive can be seized with `--takeover`
+(exit 4) — because the old "older than 60 minutes = crashed" rule was wrong in both
+directions. `--session`/`--pid` override the identity written into the lock for testing.
+
+### `plugins/audit/scripts/audit-usage.py`
+`/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
+drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model
+to reformat a JSON rollup. With `--by phase|task|model|author|agent|day|hour|session|branch|
+attr` it prints one focused table; without it, the full dashboard. `--backfill` re-reads every
+transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
+path that rewrites (and therefore locks) rather than only appending.
+
 ### `plugins/audit/scripts/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
 `load_manifest` reads BOTH the legacy single file and the v3 index+shards form into the same assembled
@@ -446,6 +582,33 @@ reads them at import with explicit utf-8 and assembles the same `_CSS`/`_SCRIPT`
 byte-identically — the rendered report page stays a single self-contained file regardless.
 `--selftest` (includes XSS cases).
 
+### `plugins/audit/scripts/_report_ui.py`
+The report's CSS and inline JS, off disk as real files under `scripts/ui/report.{css,js}`,
+mirroring `_panel_ui.py`'s split so both surfaces follow one convention. `render-report.py`
+used to carry `_CSS`/`_SCRIPT` as raw-string literals (plain CSS plus `_ui_theme.TOKEN_CSS`,
+and a whole `<script>...</script>` block) that no editor highlighted and no linter looked at;
+this module reads the real files at import with explicit utf-8 and reassembles the same two
+constants byte-identically, so the rendered report page stays one self-contained file even
+though its source no longer is.
+
+### `plugins/audit/scripts/_report_html.py`
+Pure HTML fragment builders moved out of `render-report.py`: escaping, chips/badges, table
+cells and the filter panel, over already-computed values only — no layout decisions, no usage
+data, no whole-document assembly (that stays in `render_html`/`render_md`, which call these
+dozens of times and glue the fragments together). Every manifest value is untrusted JSON, so
+each fragment routes through `e()` before it reaches the page, and `_safe_url` is the one gate
+a URL passes before it may become an `href`. `render-report.py` keeps thin aliases so its
+existing call sites and selftest are unchanged.
+
+### `plugins/audit/scripts/_report_usage.py`
+The report's Usage section, moved out of `render-report.py` as its largest single block:
+`_usage_section` builds the HTML, `_usage_md` the Markdown twin, both off the dict
+`load_usage()` reads from the usage ledger — tiles, trend, ranked lists, budgets, small
+multiples, phase stacks, economics, routing and a heatmap as private fragment builders over
+already-computed numbers. Two rules shape it: restraint on first paint (one dominant chart plus
+three ranked lists, the rest behind disclosure), and every number states its basis (rate date,
+attribution coverage, sample size) or it does not render. Formatting delegates to `_fmt.py`.
+
 ### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel-server.py` (v0.13.0–v0.14.0)
 `/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
 `panel.md` dispatches on its argument — bare = open (launched detached via `nohup … &`), `stop`,
@@ -466,6 +629,61 @@ tasks · per-task skills/model + per-phase review model, scaling to ~50×20, plu
 (the live rollup + validation banner). Writes **only** config + composition fields — never
 structural manifest CRUD, and never while a `/audit` run holds `<manifestPath>.lock` — validating
 before each atomic save. `--selftest` covers the front-matter parser, discovery, and the server.
+
+### `plugins/audit/scripts/_panel_ui.py`
+The panel's markup/CSS/JS, off disk as real files under `scripts/ui/panel.{html,css,js}`.
+`panel-server.py` used to carry the whole page as one raw-string literal (~820 lines of CSS,
+~28 of body markup, ~2,913 of JS, none of it Python — no editor highlighted it, no linter
+looked at it). `raw_template()` reads the three files and splices css/js back into two
+insertion markers in the HTML, returning the exact string `panel-server.py`'s own
+`.replace()` substitution chain (theme tokens, labels, settings, field help, config enums)
+still runs on — byte-for-byte, before per-request values like the audit token are filled in.
+
+### `plugins/audit/scripts/_panel_discovery.py`
+Read-only discovery of which skills, agents and MCP servers this project can actually reach —
+project-local, user-global, installed plugins and this repo's own plugins tree — walking the
+same places Claude Code itself looks, so the panel's composition pickers offer real building
+blocks instead of free-typed names that may not exist. Front-matter parsing delegates to
+`_help.front_matter` rather than reimplementing it. `panel-server.py` keeps thin aliases
+(`discover = _panel_discovery.discover`, etc.) so its `/api/registry` route and existing
+selftest fixtures keep working unchanged.
+
+### `plugins/audit/scripts/_panel_settings.py`
+Settings-shape knowledge moved out of `panel-server.py`: `FIELD_HELP`/`COMPOSITION_HELP`/
+`SETTINGS_GROUPS` describe the whole Settings form once in Python rather than by hand (the
+reason it exists — the `usage.*` block and most `tddReminder.*` keys had drifted out of a form
+meant to make the config legible); `_META_KEYS`/`_META_API_ONLY`/`_META_FORM_KEYS`/
+`_PHASE_KEYS`/`_TASK_KEYS` are the write path's security allow-list; `_settings_paths()`/
+`_cfg_enums()` read the form's own bindings and the enum choices off `validate-config.py`
+rather than a hand-kept copy. Sits at the bottom of the panel's import graph — must never
+import `_help` or `panel-server`.
+
+### `plugins/audit/scripts/_panel_state.py`
+The panel's READ side, moved out of `panel-server.py`: given a project directory it reads the
+config, the manifest (either layout), the usage ledger, the audit locks, the journal and the
+capability policy, and returns the JSON payloads the UI renders (`build_state`, `areas_state`,
+`policy_state`, `journal_state`, `usage_state`, `help_state`). Nothing here writes. It sits
+above `_loader`/`_manifest_io`/`_help`/`_areas`/`_policy`/`_panel_settings`/`_panel_discovery`
+and below `panel-server` — a selftest case asserts it never imports `panel-server` back.
+
+### `plugins/audit/scripts/_panel_write.py`
+The panel's WRITE side, moved out of `panel-server.py`: the whole path from a request body to
+bytes on disk and a journal row — the write lock (`_acquire_write_lock`/`_release_write_lock`),
+the change-preview machinery (`_flat_paths`, `_config_changes`, `_composition_changes`), and the
+four writers (`write_config`, `apply_composition`, `write_policy`, `write_areas`). Sits above
+`_panel_state` and below `panel-server`, forming the DAG `_panel_state -> _panel_write ->
+panel-server`; a selftest case asserts it never imports `panel-server` back.
+
+### `plugins/audit/scripts/_help.py`
+The zero-token half of "what does this field mean" and "how does this actually work", backing
+`/api/help` and the panel's help drawer. Field descriptions are extracted from
+`schema/audit-config.schema.json`/`schema/audit-plan.schema.json` via `fields()`, never
+restated by hand — a second copy of that prose is a second thing to drift, which this repo has
+already shipped once. Topics are derived from the executable rule where one exists (the plan
+gate's tiers from `_config.plan_gate_mode`, area resolution from `_areas`' own pinned sentences,
+policy precedence from a worked `_policy.resolve` example) and are pointers, not restatements,
+where the rule lives only in prose. `guide_card()` reads `agents/audit-guide.md`'s frontmatter
+so the panel cannot advertise a tool that agent does not hold.
 
 ### `plugins/audit/scripts/validate-config.py`
 Structural validator for `.claude/audit.config.json`, dependency-free, mirroring `hooks/_config.py`
@@ -532,7 +750,8 @@ CI (`.github/workflows/ci.yml`) runs 1–2 plus `claude plugin validate` on
 ubuntu + windows for every push/PR. Locally:
 
 ```bash
-# 1. Hooks + scripts pass their own selftests (all fourteen, stdlib only)
+# 1. Hooks + scripts pass their own selftests (every hook and script carries its own
+#    selftest; CI sweeps the directories — stdlib only)
 for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
   python3 "$f" --selftest || exit 1
 done
