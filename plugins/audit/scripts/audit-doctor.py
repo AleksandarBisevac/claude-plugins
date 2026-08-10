@@ -30,7 +30,6 @@ Output classes match the rest of the plugin:
 Exit: 0 healthy (warnings allowed) · 1 findings · 2 usage error.
 """
 import argparse
-import importlib.util
 import json
 import os
 import pathlib
@@ -43,6 +42,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _HOOKS = os.path.join(os.path.dirname(_HERE), "hooks")
 sys.path.insert(0, _HERE)
 sys.path.insert(0, _HOOKS)
+import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 # The interpreters py-launch.sh tries, in its order. Kept in sync deliberately:
 # what matters is the interpreter the HOOKS will find, not the one running this.
@@ -56,10 +56,7 @@ RECENT_DAYS = 7
 def _load(name, filename, directory=None):
     """Load a sibling module by path (the filenames are hyphenated)."""
     path = os.path.join(directory or _HERE, filename)
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return _loader.load(path, modname=name, cache=False)
 
 
 class Report(object):

@@ -88,7 +88,7 @@
         "technical": "Every hand-rolled spec_from_file_location triplet in panel-server.py (5 sites: _load/_cores, _lockmod, _journalmod, _viewer's ledger load) and _help.py (3 sites: _config_mod, _journal_mod, the s8 panel load) now delegates to _loader, soft-fail semantics preserved at each call site; panel's _load kept as a one-line wrapper so its other internal callers ride the shared loader. 19 insertions / 38 deletions; import importlib.util gone from both files.",
         "descriptive": "panel-server and _help load siblings through the one shared loader instead of eight private copies, with zero behavior change."
       },
-      "commit": null,
+      "commit": "4b190c7",
       "attempts": 2,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T17:54:00+02:00",
@@ -104,7 +104,7 @@
     {
       "id": "P10.3",
       "title": "Migrate loader call sites: the seven remaining scripts",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -131,21 +131,26 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "All 15 hand-rolled spec_from_file_location sites across audit-status, audit-usage, render-report, audit-doctor, gen-demo-manifest, gen-demo-usage and migrate-manifest now call _loader; fresh-reload sites migrated with cache=False to preserve exact semantics, single-shot sites use the default cache; every soft-fail wrapper kept at its call site. import importlib.util gone from all seven. grep confirms zero remaining hand-rolled sites.",
+        "descriptive": "The last seven scripts with private importlib boilerplate now go through the single shared loader, behavior unchanged."
       },
       "commit": null,
       "attempts": 2,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T17:54:00+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T18:14:00+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "seven per-file selftests green (120+59+227+77+38+19+11 cases)",
+        "_loader 11/11",
+        "lint green",
+        "full sweep green"
+      ]
     },
     {
       "id": "P10.4",
       "title": "One atomic JSON writer: mkstemp semantics into _manifest_io",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -174,9 +179,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T18:14:00+02:00",
       "completedAt": null,
       "risk": "med",
       "verifiedBy": []

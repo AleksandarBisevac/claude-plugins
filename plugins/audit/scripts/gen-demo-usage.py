@@ -34,24 +34,17 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
+import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 
 def _load_ledger_lib():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return _loader.load_script("usage_ledger.py", modname="usage_ledger",
+                                cache=False)
 
 
 def _load_manifest_io():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "_manifest_io", os.path.join(_HERE, "_manifest_io.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return _loader.load_script("_manifest_io.py", modname="_manifest_io",
+                                cache=False)
 
 
 # Manifest tier -> the concrete model id a transcript would record.

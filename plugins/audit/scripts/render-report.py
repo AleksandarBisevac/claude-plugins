@@ -22,7 +22,6 @@ Exit codes: 0 ok · 2 usage error / unreadable manifest.
 """
 import base64
 import html
-import importlib.util
 import json
 import os
 import re
@@ -34,6 +33,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the panel)
+import _loader                # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 
 def _plugin_version():
@@ -1632,11 +1632,8 @@ _SCRIPT = r"""<script>
 
 
 def _load_status_lib():
-    spec = importlib.util.spec_from_file_location(
-        "audit_status", os.path.join(_HERE, "audit-status.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _loader.load_script("audit-status.py", modname="audit_status",
+                                cache=False)
 
 
 def e(value):
@@ -1905,10 +1902,8 @@ def _pricing_stale(as_of, until, max_days=90):
     trusted. Compared against the LEDGER's last day, not the wall clock, so a
     committed example does not rot into a warning on its own."""
     try:
-        spec = importlib.util.spec_from_file_location(
-            "usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
-        ul = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(ul)
+        ul = _loader.load_script("usage_ledger.py", modname="usage_ledger",
+                                  cache=False)
         t_as_of = ul.parse_ts((as_of or "") + "T00:00:00Z")
         t_until = ul.parse_ts((until or "") + "T00:00:00Z")
         if t_as_of is None or t_until is None:
@@ -1927,10 +1922,8 @@ def load_usage(manifest, manifest_path, project_dir=None):
     being carried through a JSON payload nobody reads. Returns None when there is
     no ledger — the section then renders as nothing at all."""
     try:
-        spec = importlib.util.spec_from_file_location(
-            "usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
-        ul = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(ul)
+        ul = _loader.load_script("usage_ledger.py", modname="usage_ledger",
+                                  cache=False)
     except Exception:
         return None
 

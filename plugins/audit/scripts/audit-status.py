@@ -33,7 +33,6 @@ and a phase at 105% may be entirely justified. Opt in when a budget is a commitm
 Exit codes: 0 pass · 1 gate failed · 2 usage error / unreadable manifest
 (matching validate-manifest.py's convention).
 """
-import importlib.util
 import json
 import os
 import re
@@ -45,6 +44,7 @@ sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
+import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress", "over-budget", "budget-80")
@@ -80,11 +80,8 @@ def _is_high_severity(severity):
 
 def _load_validator():
     """Import validate-manifest.py (hyphenated filename) as a library."""
-    spec = importlib.util.spec_from_file_location(
-        "validate_manifest", os.path.join(_HERE, "validate-manifest.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _loader.load_script("validate-manifest.py", modname="validate_manifest",
+                                cache=False)
 
 
 # --- submodule conflict detection (preflight guard) -----------------------------
@@ -222,11 +219,8 @@ def usage_summary(manifest, manifest_path, project_dir=None):
     unreadable ledger simply means no usage key, and every consumer treats that as
     "metering not in use" rather than an error."""
     try:
-        spec = importlib.util.spec_from_file_location(
-            "usage_ledger", os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                         "usage_ledger.py"))
-        ul = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(ul)
+        ul = _loader.load_script("usage_ledger.py", modname="usage_ledger",
+                                  cache=False)
     except Exception:
         return None
 
@@ -672,13 +666,8 @@ def _load_usage_fmt():
     Imported rather than reimplemented: they carry rules this output must not
     contradict, chiefly that real spend never renders as `$0.00`. Its `render()` is
     deliberately NOT reused — that one reads flags off an argparse Namespace."""
-    import importlib.util
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "audit-usage.py")
-    spec = importlib.util.spec_from_file_location("audit_usage_fmt", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _loader.load_script("audit-usage.py", modname="audit_usage_fmt",
+                                cache=False)
 
 
 def evaluate_gate(summary, conditions):

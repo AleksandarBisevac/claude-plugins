@@ -38,6 +38,7 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
+import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 # No wall-clock anywhere: every timestamp is derived from this.
 BASE = datetime.datetime(2026, 4, 1, 9, 0, 0)
@@ -61,12 +62,7 @@ TITLE_NOUNS = ("the checkout payload", "the session cookie", "the product query"
 
 
 def _load_manifest_io():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "_manifest_io", os.path.join(_HERE, "_manifest_io.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return _loader.load_script("_manifest_io.py", modname="_manifest_io")
 
 
 def _iso(dt):
@@ -352,7 +348,6 @@ def main(argv):
 
 # --- selftest -------------------------------------------------------------------
 def _selftest():
-    import importlib.util
     import shutil
     import tempfile
     cases = []
@@ -456,10 +451,7 @@ def _selftest():
         check("the config points manifestPath at the generated manifest "
               "(without it the panel reports 'no manifest')",
               cfg.get("manifestPath") == "audit-plan.json", repr(cfg))
-        spec_vc = importlib.util.spec_from_file_location(
-            "validate_config", os.path.join(_HERE, "validate-config.py"))
-        vc = importlib.util.module_from_spec(spec_vc)
-        spec_vc.loader.exec_module(vc)
+        vc = _loader.load_script("validate-config.py", modname="validate_config")
         cf, cw = vc.validate_config(cfg)
         check("the generated config passes the plugin's config validator",
               not cf and not cw, "; ".join((cf + cw)[:3]))
@@ -474,11 +466,7 @@ def _selftest():
               [p["status"] for p in back["phases"]]
               == [p["status"] for p in m["phases"]])
 
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "validate_manifest", os.path.join(_HERE, "validate-manifest.py"))
-        vm = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(vm)
+        vm = _loader.load_script("validate-manifest.py", modname="validate_manifest")
         findings, warnings = vm.validate(back)
         check("the plugin's own validator reports no findings", not findings,
               "; ".join(findings[:3]))

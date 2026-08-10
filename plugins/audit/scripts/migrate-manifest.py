@@ -33,15 +33,11 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402
+import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 
 def _load_validator():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "validate_manifest", os.path.join(_HERE, "validate-manifest.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _loader.load_script("validate-manifest.py", modname="validate_manifest")
 
 
 def _utc_stamp():

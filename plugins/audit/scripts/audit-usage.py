@@ -27,7 +27,6 @@ the ONLY path that rewrites (and therefore locks); the metering hook only append
 Exit codes: 0 ok - 2 usage error / unreadable ledger.
 """
 import argparse
-import importlib.util
 import json
 import os
 import re
@@ -36,12 +35,12 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+sys.path.insert(0, _HERE)
+import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+
 
 def _load(name, filename):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(_HERE, filename))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return _loader.load_script(filename, modname=name)
 
 
 ul = _load("usage_ledger", "usage_ledger.py")
@@ -473,12 +472,7 @@ def _jsonl_in(base):
 
 def _lockmod():
     """audit-lock.py, loaded by path (hyphenated filename)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    spec = importlib.util.spec_from_file_location(
-        "audit_lock", os.path.join(here, "audit-lock.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _loader.load_script("audit-lock.py", modname="audit_lock", cache=False)
 
 
 def acquire_lock(ledger_dir, project):
