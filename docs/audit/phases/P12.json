@@ -159,7 +159,7 @@
     {
       "id": "P12.4",
       "title": "_panel_write.py: locks, diffs, journal, writes",
-      "status": "in_progress",
+      "status": "done",
       "model": "opus",
       "skills": [],
       "blockedBy": [],
@@ -183,21 +183,28 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The write path moved verbatim to _panel_write.py (1377 lines): atomic writer wrapper (kept - ensure_ascii=False is the panel's byte shape and seven inlines are seven drifts), write_policy/areas/config, the lock trio, change-row helpers, _journal and the composition writers. Journal memo reached through _panel_state by identity - no third dict - pinned from both sides. panel-server 2965 -> 1818 lines with 17 aliases. Arithmetic: 341 = 238 + 103; _panel_write 108; combined 346 >= 341.",
+        "descriptive": "Locks, diffs, journal and the four writers live in their own module with the 103 cases that pin them."
       },
       "commit": null,
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T18:56:34+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T19:10:11+02:00",
       "risk": "med",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_panel_write 108/108",
+        "panel-server 238/238",
+        "_panel_state 48/48",
+        "sweep green",
+        "lint green",
+        "capture-screenshots --check green (save/confirm/journal flows)"
+      ]
     },
     {
       "id": "P12.5",
       "title": "Slim panel-server.py: handler, lifecycle, assembly, integration selftest",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -223,9 +230,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T19:10:11+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []
