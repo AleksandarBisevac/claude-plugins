@@ -20,7 +20,11 @@
       "validate": "python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json",
       "plugin-validate": "claude plugin validate . && claude plugin validate plugins/audit",
       "gate": "python3 plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate",
-      "report": "python3 plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+      "report": "python3 plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
+      "sweep": "for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do python3 \"$f\" --selftest >/dev/null || { echo \"FAIL $f\"; exit 1; }; done",
+      "lint": "ruff check plugins/audit tools && vermin -t=3.8 --no-tips --violations plugins/audit/scripts plugins/audit/hooks",
+      "shots": "node tools/capture-screenshots.mjs --check",
+      "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
     }
   },
   "phases": [
@@ -63,6 +67,36 @@
       "id": "P8",
       "title": "v0.8.0 live shakedown + progress/dry-run/report/readability",
       "shard": "phases/P8.json"
+    },
+    {
+      "id": "P9",
+      "title": "refactor: dev tooling bootstrap",
+      "shard": "phases/P9.json"
+    },
+    {
+      "id": "P10",
+      "title": "refactor: shared-infra dedup",
+      "shard": "phases/P10.json"
+    },
+    {
+      "id": "P11",
+      "title": "refactor: UI asset extraction",
+      "shard": "phases/P11.json"
+    },
+    {
+      "id": "P12",
+      "title": "refactor: panel-server Python split",
+      "shard": "phases/P12.json"
+    },
+    {
+      "id": "P13",
+      "title": "refactor: render-report Python split",
+      "shard": "phases/P13.json"
+    },
+    {
+      "id": "P14",
+      "title": "refactor: cleanups",
+      "shard": "phases/P14.json"
     }
   ],
   "fileIndex": {
@@ -72,7 +106,8 @@
     ],
     ".github/workflows/ci.yml": [
       "P2.5",
-      "P4.4"
+      "P4.4",
+      "P9.2"
     ],
     ".gitignore": [
       "P4.4"
@@ -86,13 +121,15 @@
     ],
     "CONTRIBUTING.md": [
       "P2.2",
-      "P4.4"
+      "P4.4",
+      "P11.3"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
       "P4.4",
       "P6.1",
-      "P7.2"
+      "P7.2",
+      "P11.3"
     ],
     "README.md": [
       "P2.3",
@@ -107,7 +144,14 @@
       "P2.7"
     ],
     "docs/examples/azure-pipelines.yml": [
-      "P3.2"
+      "P3.2",
+      "P13.4"
+    ],
+    "docs/index.html": [
+      "P13.3"
+    ],
+    "examples/acme-store/acme-store-audit.html": [
+      "P13.3"
     ],
     "plugins/audit/.claude-plugin/plugin.json": [
       "P1.8",
@@ -190,7 +234,8 @@
     "plugins/audit/hooks/_config.py": [
       "P1.1",
       "P4.2",
-      "P5.1"
+      "P5.1",
+      "P14.4"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -242,13 +287,113 @@
       "P5.2",
       "P7.2"
     ],
+    "plugins/audit/scripts/_fmt.py": [
+      "P10.6"
+    ],
+    "plugins/audit/scripts/_help.py": [
+      "P10.2",
+      "P10.5",
+      "P12.1"
+    ],
+    "plugins/audit/scripts/_loader.py": [
+      "P10.1"
+    ],
+    "plugins/audit/scripts/_manifest_io.py": [
+      "P10.4"
+    ],
+    "plugins/audit/scripts/_output.py": [
+      "P9.3"
+    ],
+    "plugins/audit/scripts/_panel_discovery.py": [
+      "P12.2"
+    ],
+    "plugins/audit/scripts/_panel_settings.py": [
+      "P12.1"
+    ],
+    "plugins/audit/scripts/_panel_state.py": [
+      "P12.3"
+    ],
+    "plugins/audit/scripts/_panel_ui.py": [
+      "P11.1",
+      "P11.3"
+    ],
+    "plugins/audit/scripts/_panel_write.py": [
+      "P12.4"
+    ],
+    "plugins/audit/scripts/_report_html.py": [
+      "P13.1"
+    ],
+    "plugins/audit/scripts/_report_ui.py": [
+      "P11.2"
+    ],
+    "plugins/audit/scripts/_report_usage.py": [
+      "P13.2"
+    ],
+    "plugins/audit/scripts/audit-doctor.py": [
+      "P10.3",
+      "P14.3"
+    ],
     "plugins/audit/scripts/audit-status.py": [
       "P3.2",
-      "P6.1"
+      "P6.1",
+      "P10.3",
+      "P10.6",
+      "P14.2"
+    ],
+    "plugins/audit/scripts/audit-usage.py": [
+      "P10.3",
+      "P10.6",
+      "P14.2"
+    ],
+    "plugins/audit/scripts/gen-demo-manifest.py": [
+      "P10.3"
+    ],
+    "plugins/audit/scripts/gen-demo-usage.py": [
+      "P10.3"
+    ],
+    "plugins/audit/scripts/migrate-manifest.py": [
+      "P10.3"
+    ],
+    "plugins/audit/scripts/panel-server.py": [
+      "P10.2",
+      "P10.4",
+      "P10.5",
+      "P11.1",
+      "P12.1",
+      "P12.2",
+      "P12.3",
+      "P12.4",
+      "P12.5",
+      "P14.1"
     ],
     "plugins/audit/scripts/render-report.py": [
       "P3.3",
-      "P8.3"
+      "P8.3",
+      "P10.3",
+      "P10.6",
+      "P11.2",
+      "P13.1",
+      "P13.2",
+      "P13.3"
+    ],
+    "plugins/audit/scripts/ui/panel.css": [
+      "P11.1"
+    ],
+    "plugins/audit/scripts/ui/panel.html": [
+      "P11.1"
+    ],
+    "plugins/audit/scripts/ui/panel.js": [
+      "P11.1",
+      "P14.1"
+    ],
+    "plugins/audit/scripts/ui/report.css": [
+      "P11.2"
+    ],
+    "plugins/audit/scripts/ui/report.js": [
+      "P11.2"
+    ],
+    "plugins/audit/scripts/usage_ledger.py": [
+      "P14.1"
     ],
     "plugins/audit/scripts/validate-manifest.py": [
       "P1.5",
@@ -263,6 +408,9 @@
       "P1.2",
       "P4.2",
       "P5.1"
+    ],
+    "pyproject.toml": [
+      "P9.1"
     ]
   },
   "bugs": [

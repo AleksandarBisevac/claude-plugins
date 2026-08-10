@@ -1,0 +1,128 @@
+{
+  "id": "P9",
+  "title": "refactor: dev tooling bootstrap",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "Every later refactor commit is lint-gated: ruff (E9+F, py38) and vermin guard the 3.8 floor as dev/CI-only tools, and the house-style bans (walrus, typing, dataclasses, __future__) are AST-enforced in _output.py rather than remembered.",
+  "testGate": [
+    "sweep",
+    "validate"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P9.1",
+      "title": "pyproject.toml with [tool.ruff]: py38, E9+F only, no formatter",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "pyproject.toml"
+      ],
+      "docs": [],
+      "description": "Add a repo-root pyproject.toml carrying only [tool.ruff]: target-version py38, lint.select [E9,F]. No formatter: ruff format would churn thousands of aligned selftest labels for zero safety. Fix any true findings it surfaces (expected near zero given selftest coverage).",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P9.2",
+      "title": "CI lint job: pinned ruff + vermin as the 3.8-floor gate",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P9.1"
+      ],
+      "files": [
+        ".github/workflows/ci.yml"
+      ],
+      "docs": [],
+      "description": "One new ubuntu job (~20s): pip install pinned ruff+vermin; ruff check plugins/audit tools; vermin -t=3.8 --no-tips --violations over scripts/ and hooks/. vermin is the actual floor gate: ruff parses with a modern grammar and target-version mostly steers UP-rules, so it will not reliably reject 3.9+ syntax.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "lint"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P9.3",
+      "title": "House-style AST bans in _output.py, mutation-proven",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/_output.py"
+      ],
+      "docs": [],
+      "description": "Extend the existing AST lint machinery with bans version gates cannot catch: ast.NamedExpr (walrus is legal 3.8 but banned by style), from __future__, import typing, import dataclasses, across scripts/ and hooks/. Mutation-proven like the existing entry-guard cases: a fixture containing a walrus must be named; removing the ban must fail the case.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "walrus/typing/dataclasses/__future__ bans fire on a named fixture and go green on the tree"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

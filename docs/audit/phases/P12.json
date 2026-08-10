@@ -1,0 +1,215 @@
+{
+  "id": "P12",
+  "title": "refactor: panel-server Python split",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [
+    "P11"
+  ],
+  "desiredOutcome": "panel-server.py drops from ~4,500 post-P11 lines to ~1,700: settings schema, discovery, read-side state and the write path live in four flat _panel_*.py modules, each carrying the selftest cases that pin it; panel-server keeps the HTTP handler, lifecycle, UI assembly and the integration selftest. Total selftest case count never decreases.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint",
+    "shots"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P12.1",
+      "title": "_panel_settings.py: form schema + key allow-lists",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/_panel_settings.py",
+        "plugins/audit/scripts/panel-server.py",
+        "plugins/audit/scripts/_help.py"
+      ],
+      "docs": [],
+      "description": "Move lines 75-352 (FIELD_HELP, COMPOSITION_HELP, SETTINGS_GROUPS, _settings_paths, _cfg_enums via _loader) plus the _META/_PHASE/_TASK key sets. _help.py:783 stops importlib-execing panel-server for _settings_paths and does a plain import _panel_settings \u2014 same commit, with the coverage cases proving resolution still works. Each moved selftest case moves with its code.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "settings coverage derived from validate-config KNOWN_* sets, now in _panel_settings"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P12.2",
+      "title": "_panel_discovery.py: skills/agents/MCP discovery",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P12.1"
+      ],
+      "files": [
+        "plugins/audit/scripts/_panel_discovery.py",
+        "plugins/audit/scripts/panel-server.py"
+      ],
+      "docs": [],
+      "description": "Move lines 466-605 (_fm_of, _scan_skills, _scan_agents, _plugin_bases, discover, _local_plugin_bases, _mcp_names); front matter via _help.front_matter. Discovery selftest cases move along.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "discovery cases moved from panel-server"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P12.3",
+      "title": "_panel_state.py: the read side",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P12.2"
+      ],
+      "files": [
+        "plugins/audit/scripts/_panel_state.py",
+        "plugins/audit/scripts/panel-server.py"
+      ],
+      "docs": [],
+      "description": "Move path safety (_within/_config_path/_manifest_path/_declared_as_of), _viewer, read_config, bugs/composition/areas/journal/help/policy state, lock detection, usage_state, report_paths, render_report, build_state (lines 382-1450 minus the write functions). The largest single move; read-path selftest cases (sharded areas, policy verdicts, journal paging, usage empty-views) move along.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "read-path cases moved from panel-server"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P12.4",
+      "title": "_panel_write.py: locks, diffs, journal, writes",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P12.3"
+      ],
+      "files": [
+        "plugins/audit/scripts/_panel_write.py",
+        "plugins/audit/scripts/panel-server.py"
+      ],
+      "docs": [],
+      "description": "Move write_policy/write_areas, the write-lock trio, diff+journal helpers, write_config, _reject_unknown, apply_composition_patch, _touched_phase_ids, _write_back, apply_composition (1035-1105 + 1451-1961). Write-path selftest cases (composition sharded write-back, lock refusal, change rows, journal call site) move along.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "write-path cases moved from panel-server"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P12.5",
+      "title": "Slim panel-server.py: handler, lifecycle, assembly, integration selftest",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P12.4"
+      ],
+      "files": [
+        "plugins/audit/scripts/panel-server.py"
+      ],
+      "docs": [],
+      "description": "Prune dead imports; keep _make_handler + _free_port (the source-slicing selftests split on def do_GET / def do_PUT / def _free_port and must keep matching), pidfile lifecycle, UI assembly + substitution, main, and the integration selftest: UI_HTML pins, route-coverage slicing, HTTP round-trips, pidfile lifecycle, one end-to-end save through _panel_write. Phase sign-off asserts total case count >= pre-phase and mutation-proves one moved case per new module.",
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "shots"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

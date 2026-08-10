@@ -1,0 +1,178 @@
+{
+  "id": "P13",
+  "title": "refactor: render-report Python split",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [
+    "P11"
+  ],
+  "desiredOutcome": "render-report.py drops to ~1,500 lines: HTML fragment builders and the usage visualization live in _report_html.py and _report_usage.py with their selftest cases; render-report keeps render_html, the markdown renderer, main and the integration selftest. Shipped reports regenerate byte-identically where CI cmp demands it.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P13.1",
+      "title": "_report_html.py: escaping, chips, cells, filter panel",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/_report_html.py",
+        "plugins/audit/scripts/render-report.py"
+      ],
+      "docs": [],
+      "description": "Move lines 1642-1895 (e, _safe_url, _report_basename, fragment builders through _bar). Escaping/XSS and chip-grammar selftest cases move along.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "escaping + chip-grammar cases moved from render-report"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P13.2",
+      "title": "_report_usage.py: usage loading + visualization",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P13.1"
+      ],
+      "files": [
+        "plugins/audit/scripts/_report_usage.py",
+        "plugins/audit/scripts/render-report.py"
+      ],
+      "docs": [],
+      "description": "Move lines 1896-2760 (the largest Python block: load_usage through _usage_section) plus _usage_md; formatting comes from _fmt. Usage-section, cost-band, phase-budget and routing-advice cases move along. Verify includes the acme-store render carrying id=\"usage\".",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "usage-section cases moved from render-report"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "interactive"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P13.3",
+      "title": "Slim render-report.py + regenerate shipped reports",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P13.2"
+      ],
+      "files": [
+        "plugins/audit/scripts/render-report.py",
+        "docs/index.html",
+        "examples/acme-store/acme-store-audit.html"
+      ],
+      "docs": [],
+      "description": "Prune imports; keep render_html, _md/render_md, main, integration selftest (full-document renders, fragment/Artifact mode). Regenerate the shipped reports \u2014 CI requires cmp -s docs/index.html examples/acme-store/acme-store-audit.html and the demo-usage reproducibility diff to hold.",
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "shots",
+          "interactive"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P13.4",
+      "title": "Docs: the standalone-curl recipe names the real file set",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P13.3"
+      ],
+      "files": [
+        "docs/examples/azure-pipelines.yml"
+      ],
+      "docs": [],
+      "description": "The azure example curls three scripts standalone from a pinned v0.5.0 tag (still works forever). Add the current-main file list (entry point + _manifest_io _ui_theme _loader _fmt _report_html _report_usage _report_ui + ui/report.*) or state that pinning a released tag is the supported recipe. Body text only.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "validate"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

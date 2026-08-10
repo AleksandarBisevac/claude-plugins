@@ -1,0 +1,148 @@
+{
+  "id": "P11",
+  "title": "refactor: UI asset extraction",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [
+    "P10"
+  ],
+  "desiredOutcome": "The 5,340 embedded CSS/JS lines live as real, editor-highlightable files under scripts/ui/ (no .py ever, pinned by a selftest), read at import with explicit utf-8 and assembled byte-identically into the same UI_HTML/_CSS/_SCRIPT constants \u2014 every substring pin and both Playwright checks pass untouched, and the served page stays one self-contained HTML file.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint",
+    "shots"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P11.1",
+      "title": "Panel: ui/panel.{html,css,js} + _panel_ui.raw_template()",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/panel-server.py",
+        "plugins/audit/scripts/ui/panel.html",
+        "plugins/audit/scripts/ui/panel.css",
+        "plugins/audit/scripts/ui/panel.js",
+        "plugins/audit/scripts/_panel_ui.py"
+      ],
+      "docs": [],
+      "description": "Split the UI_HTML r-string at its natural seams: CSS (keeps /*__THEME_TOKENS__*/), JS (keeps every __*__ placeholder), HTML skeleton. _panel_ui.raw_template() reads the three assets utf-8 and returns the exact pre-substitution string; panel-server sets UI_HTML = _panel_ui.raw_template() and the .replace() substitution block is untouched. A logic-free move: all ~401 pins must pass unmodified in the same commit. A failing pin means the bytes moved \u2014 fix the move, never the pin.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "_panel_ui: placeholders present exactly once, CSS brace balance, _ui_theme lints over panel.css, no .py under scripts/ui"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "shots"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P11.2",
+      "title": "Report: ui/report.{css,js} + _report_ui",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P11.1"
+      ],
+      "files": [
+        "plugins/audit/scripts/render-report.py",
+        "plugins/audit/scripts/ui/report.css",
+        "plugins/audit/scripts/ui/report.js",
+        "plugins/audit/scripts/_report_ui.py"
+      ],
+      "docs": [],
+      "description": "_report_ui exposes CSS (= _ui_theme.TOKEN_CSS + file) and SCRIPT; render-report assigns _CSS/_SCRIPT from it so all ~109 pins pass unchanged. Same logic-free-move rule as P11.1.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "_report_ui: utf-8 decodability, brace balance, _ui_theme lints, no .py under ui/"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "shots",
+          "interactive"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P11.3",
+      "title": "Guards + docs for the asset layout",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P11.2"
+      ],
+      "files": [
+        "plugins/audit/scripts/_panel_ui.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CONTRIBUTING.md"
+      ],
+      "docs": [],
+      "description": "The \"scripts/ui holds no .py\" invariant gets its pinned selftest case (a .py there would silently escape the flat CI selftest glob and the entries_missing_guard listdir). PLUGIN-BUILD-GUIDE and CONTRIBUTING body text updated to describe assembly-at-import \u2014 body text only, never headings, so _help.source_drift keeps resolving every citation.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "validate"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

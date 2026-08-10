@@ -1,0 +1,256 @@
+{
+  "id": "P10",
+  "title": "refactor: shared-infra dedup",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [
+    "P9"
+  ],
+  "desiredOutcome": "The four duplication classes are single definitions before any big file is split: one path-importlib loader (_loader.py, replacing 12 scripts-side copies), one atomic JSON writer (mkstemp semantics in _manifest_io), one front-matter parser (_help.front_matter), one token/cost formatter (_fmt.py). New modules are then born on final infra, never migrated twice.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P10.1",
+      "title": "_loader.py: one path-importlib loader, one caching policy",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/_loader.py"
+      ],
+      "docs": [],
+      "description": "New flat module: load(path, modname=None, cache=True) keyed by realpath, load_script(basename) for siblings, load_hooks_config() for ../hooks/_config.py. No sys.modules registration. Replaces the 12 scripts-side importlib copies (5 different caching strategies today). The 2 hooks-side copies stay: hooks must not depend on scripts/ at module level, and the docstring records why. Selftest: same-object caching, cache=False isolation, missing file raises, no sys.modules pollution.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "_loader caching/isolation/missing-file/no-sys.modules cases"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P10.2",
+      "title": "Migrate loader call sites: panel-server + _help",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P10.1"
+      ],
+      "files": [
+        "plugins/audit/scripts/panel-server.py",
+        "plugins/audit/scripts/_help.py"
+      ],
+      "docs": [],
+      "description": "panel-server (_load/_cores, _lockmod, _journalmod, _viewer ledger load) and _help (x3) call _loader instead of hand-rolled spec_from_file_location. Pure mechanical migration; behavior pinned by the existing selftests of both files.",
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P10.3",
+      "title": "Migrate loader call sites: the seven remaining scripts",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P10.1"
+      ],
+      "files": [
+        "plugins/audit/scripts/audit-status.py",
+        "plugins/audit/scripts/audit-usage.py",
+        "plugins/audit/scripts/render-report.py",
+        "plugins/audit/scripts/audit-doctor.py",
+        "plugins/audit/scripts/gen-demo-manifest.py",
+        "plugins/audit/scripts/gen-demo-usage.py",
+        "plugins/audit/scripts/migrate-manifest.py"
+      ],
+      "docs": [],
+      "description": "Same mechanical migration for audit-status (x3), audit-usage (x2), render-report (x3), audit-doctor, gen-demo-manifest (x3), gen-demo-usage (x2), migrate-manifest. Each file\u2019s own selftest pins behavior.",
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P10.4",
+      "title": "One atomic JSON writer: mkstemp semantics into _manifest_io",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P10.2",
+        "P10.3"
+      ],
+      "files": [
+        "plugins/audit/scripts/_manifest_io.py",
+        "plugins/audit/scripts/panel-server.py"
+      ],
+      "docs": [],
+      "description": "Public read_json/atomic_write_json in _manifest_io with the better semantics from panel-server:448 (unique mkstemp temp in target dir, finally-cleanup, makedirs, per-caller ensure_ascii). save_sharded and the panel delegate to it; the collision-prone path+\".tmp\" writer dies. Byte output unchanged per caller: CI\u2019s gen-demo-usage diff and the docs/index.html cmp guard this. New mutation-proven cases: temp cleaned on write failure, concurrent-suffix uniqueness, trailing newline.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "atomic-write failure cleanup + uniqueness + byte-stability cases"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    },
+    {
+      "id": "P10.5",
+      "title": "One front-matter parser: _help.front_matter",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P10.4"
+      ],
+      "files": [
+        "plugins/audit/scripts/_help.py",
+        "plugins/audit/scripts/panel-server.py"
+      ],
+      "docs": [],
+      "description": "Promote a public _help.front_matter(text) merging the two implementations (panel-server:467 line-walk vs _help:509 regex): CRLF, quoted/escaped scalars, indented continuation, missing closing fence, >4KB front matter. The divergent edge cases become selftest cases; panel discovery delegates.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "front-matter edge cases where the two old parsers disagreed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P10.6",
+      "title": "_fmt.py: one token/cost formatter",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P10.5"
+      ],
+      "files": [
+        "plugins/audit/scripts/_fmt.py",
+        "plugins/audit/scripts/audit-usage.py",
+        "plugins/audit/scripts/render-report.py",
+        "plugins/audit/scripts/audit-status.py"
+      ],
+      "docs": [],
+      "description": "New flat module: fmt_tokens(n, dp=None), fmt_cost(x), fmt_int(n) parameterized to cover both the CLI shapes (audit-usage:54-72) and the report shapes (render-report:2039-2064). audit-usage keeps thin re-export aliases so audit-status\u2019s importlib load of the fmt helpers keeps working unchanged.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "_fmt magnitude table + <$0.01 rule + dp parameter cases"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

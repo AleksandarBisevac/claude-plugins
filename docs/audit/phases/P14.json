@@ -1,0 +1,172 @@
+{
+  "id": "P14",
+  "title": "refactor: cleanups",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [
+    "P12",
+    "P13"
+  ],
+  "desiredOutcome": "The remaining honesty debts are paid: cost_bands parity is asserted from a shared fixture instead of a comment\u2019s presence, audit-status imports _fmt directly, audit-doctor uses _loader, and hooks/_config gains section headers without gaining imports.",
+  "testGate": [
+    "sweep",
+    "validate",
+    "lint"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P14.1",
+      "title": "cost_bands parity: shared boundary fixture, both sides assert it",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "plugins/audit/scripts/usage_ledger.py",
+        "plugins/audit/scripts/ui/panel.js",
+        "plugins/audit/scripts/panel-server.py"
+      ],
+      "docs": [],
+      "description": "usage_ledger.cost_bands() is hand-mirrored in the panel JS, kept honest only by a selftest that checks the COMMENT is still present. Replace with a shared boundary fixture (band edges as data) asserted from usage_ledger\u2019s selftest and from the panel selftest against the JS source \u2014 the logic must agree, not the prose.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "band-boundary fixture asserted from both sides; comment-presence pin retired"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep",
+          "shots"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P14.2",
+      "title": "audit-status: sectioning + direct _fmt import",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P14.1"
+      ],
+      "files": [
+        "plugins/audit/scripts/audit-status.py",
+        "plugins/audit/scripts/audit-usage.py"
+      ],
+      "docs": [],
+      "description": "Internal section headers; import _fmt directly and retire the audit-usage fmt indirection once nothing external loads it.",
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P14.3",
+      "title": "audit-doctor: loader tidy",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P14.2"
+      ],
+      "files": [
+        "plugins/audit/scripts/audit-doctor.py"
+      ],
+      "docs": [],
+      "description": "Use _loader for its six path-loads; prune the local wrapper.",
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    },
+    {
+      "id": "P14.4",
+      "title": "hooks/_config.py: section headers only, no extraction",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P14.3"
+      ],
+      "files": [
+        "plugins/audit/hooks/_config.py"
+      ],
+      "docs": [],
+      "description": "Internal section headers + selftest grouping. Deliberately NO extraction: hooks stay importless of scripts/ by design \u2014 they run on every tool call from a launcher that may not have scripts/ on its path.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "sweep"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}
