@@ -1,7 +1,7 @@
 {
   "id": "P10",
   "title": "refactor: shared-infra dedup",
-  "status": "in_progress",
+  "status": "done",
   "model": "sonnet",
   "blockedBy": [
     "P9"
@@ -18,10 +18,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "The four duplication classes are single definitions, landed as six commits: _loader.py (14 importlib copies with 5 caching policies become one realpath-keyed loader; fresh-reload sites say cache=False), _manifest_io.atomic_write_json (the collision-free mkstemp writer is now the only writer, byte-stability proven for both ensure_ascii shapes), _help.front_matter (the two parsers' disagreements decided and locked), and _fmt.py (three formatter copies proven byte-identical via 36 frozen goldens). The desired outcome holds: the P11-P13 splits will be born on this infra and never migrated twice. Two executor runs were cut by mid-stream API errors and resumed with working-tree state handed back; no work was lost.",
   "tasks": [
     {
       "id": "P10.1",
@@ -267,7 +267,7 @@
         "technical": "_fmt.py unifies the three magnitude-table formatters; goldens frozen from the pre-change implementations prove byte-identity (audit-usage's fixed one-decimal shape is _fmt's dp=1; the <$0.01 rule shared; show=False is CLI-only). audit-usage keeps module-level names as thin wrappers so audit-status's attribute access is untouched; render-report delegates with matching parameters. 36 _fmt cases, the <$0.01 branch mutation-proven red.",
         "descriptive": "Token and cost formatting is one module instead of three drifting copies, proven byte-identical to both prior shapes."
       },
-      "commit": null,
+      "commit": "1cdcc43",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T18:29:00+02:00",
@@ -282,11 +282,5 @@
         "lint green"
       ]
     }
-  ],
-  "claim": {
-    "sessionId": "ef56ba84-569b-4dc0-89f5-aaee3d49eff5",
-    "host": "MacBook-Pro.local",
-    "branch": "audit/p10-refactor-shared-infra-dedup",
-    "at": "2026-08-10T17:48:00+02:00"
-  }
+  ]
 }
