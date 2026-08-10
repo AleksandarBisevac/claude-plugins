@@ -4,7 +4,91 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [0.31.0] - 2026-08-10
+## [0.32.0] - 2026-08-10
+
+**The code gets the treatment the product sells.** This plugin's whole pitch is enforcement over
+persuasion — plan gates, drift lints, mutation-proven selftests — while its own two biggest files
+were an 8,286-line and a 4,596-line scroll, its module boundaries lived in prose, and its build
+guide described nine files out of twenty-nine. This release refactors the plugin by its own
+rules: every move proven byte-identical before being believed, every new boundary enforced by a
+lint that was shown red before being trusted, and the suite growing from 1,945 to 2,173 cases
+across 40 suites on the way.
+
+### Changed
+- **`panel-server.py` 8,286 → 1,843 lines; `render-report.py` 4,596 → 1,611.** The settings
+  schema, discovery, read-side state and write path live in four flat `_panel_*` modules; the
+  report's fragment builders and the whole usage section (with its markdown twin) in two
+  `_report_*` modules — each carrying the selftest cases that pin it, moved with their labels
+  intact and their counts audited (nothing dropped; the panel family alone grew 428 → 469).
+  Entry-point filenames never changed; every downstream reference still works.
+- **The embedded UI is real files now.** 5,340 lines of CSS/JS/HTML moved out of Python
+  r-strings into `scripts/ui/panel.{html,css,js}` and `scripts/ui/report.{css,js}`, read at
+  import with explicit utf-8 and assembled into the exact same constants — proven by comparing
+  the assembled page old-vs-new: 244,588 == 244,588 bytes for the panel, 61,698 and 37,708 for
+  the report's CSS and script. The served page is still one self-contained document; only the
+  source stopped being a blob. One trap found and dodged: slicing a non-raw literal out of
+  source text captures pre-escape bytes, so the report extractor reads the evaluated AST
+  constant instead.
+- **Four duplication classes became single definitions.** `_loader.py` replaces fourteen
+  hand-rolled importlib copies that had grown five different caching policies (fresh-reload
+  sites now say `cache=False` instead of implying it); `_manifest_io.atomic_write_json` is the
+  one writer, with the collision-free mkstemp semantics and byte-stability proven for both
+  `ensure_ascii` shapes; `_help.front_matter` is the one front-matter parser, with the edge
+  cases the two old parsers disagreed on decided and locked; `_fmt.py` is the one token/cost
+  formatter, proven byte-identical to both prior shapes by 36 goldens frozen from the originals
+  before anything moved.
+
+### Added
+- **A dev-only lint gate — the runtime stays at zero dependencies.** `pyproject.toml` carries a
+  ruff config (E9 + pyflakes, py38 target, deliberately no formatter), CI pins `ruff` and
+  `vermin -t=3.8-` as the floor gate, and `_output.py` AST-enforces what version gates cannot
+  see: the walrus, `__future__`, `typing` and `dataclasses` bans are build failures now, each
+  proven red individually before being believed.
+- **The module structure is data with a lint (`_deps.py`).** An eight-layer table over the real
+  import graph (83 static edges): a cycle, an upward import, a file without a layer, or a new
+  hooks→scripts dependency fails the build by name. Its first run earned its keep — the layer
+  sketch was corrected twice by the real graph, and the one genuine pre-existing
+  hooks→scripts import (`_config` → `_manifest_io`) is carried as a named exception the
+  selftest holds to exactly one.
+- **The build guide is complete and stays complete.** A generated module map under a
+  byte-for-byte drift lint; every one of the 40 shipped Python files present in the directory
+  tree and the file-by-file sections, under an enumeration lint that names a missing file; a
+  navigability lint that fails any bare file over 400 lines. The enumeration lint found three
+  gaps the migration plan itself had missed, which is the argument for it in one sentence.
+- **`.gitattributes`, because the newline a checkout chooses is part of the build.** The ui/
+  assets are byte-read inputs; a Windows checkout rewrote them to CRLF and failed two selftest
+  pins two files away from the cause. The eol is pinned to LF now, and a guard beside each
+  reader names a CRLF asset directly.
+- **CONTRIBUTING: an add-a-script checklist and three recorded decisions** — folders under
+  `scripts/` declined (revisit at 40+ files), the `usage_ledger.py` split deferred with its
+  trigger, and the typing ban standing — each with its reasons written down.
+
+### Fixed
+- **The Settings tab no longer scrolls a phone sideways (F8), and the check that missed it now
+  looks everywhere.** A checkbox row could never shrink (`flex:0 0 auto`), so one long setting
+  name held a 447px floor on a 390px screen and took the whole document with it; the row may
+  shrink now and its label wraps. The 390px overflow gate drives every panel tab instead of the
+  one the photographer stopped on, names the widest offender, and measures 320px too.
+- **`journal_dir` answers in one spelling on every platform.** It joined config-side forward
+  slashes onto OS-side separators, and the hooks' delegation check rightly refused to call the
+  two spellings equal on Windows. Normalized at the API, proven red-first on POSIX via the
+  root-manifest `./` case the same bug produced there.
+- **Two checks that were green for the wrong reason now bite.** The report's stacked-segment
+  order case matched the stylesheet's variable declarations rather than the markup (re-aimed at
+  the real segments, proven red under reversed order), and the sub-cent cost rule was proven
+  only in `_fmt`'s own suite — a broken delegation left all 49 consumer cases green. A
+  four-tenths-of-a-cent fixture now renders through the real tile, red by name when the
+  delegation breaks.
+- **The cost bands have one definition.** The panel's JS mirror of `cost_bands()` was kept
+  honest by a selftest asserting a *comment* was still present; the band parameters are now a
+  single constant injected into the page like every other substituted value, pinned by logic
+  from both sides.
+- **The capture viewport fits Linux fonts** (the policy view rendered 30px taller on ubuntu
+  than on the macOS the viewport was sized against), and the panel's capture gate again proved
+  it reads real pages: the one non-reproducible failure it ever produced is now a named race in
+  the fault ledger with its reproduction condition recorded.
+
+
 
 **"What is this field?" cost a model.** Every explanation the plugin could give you lived in a
 document you had to go and find, or in an answer you paid a model to compose — including for
