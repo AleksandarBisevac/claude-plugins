@@ -2817,8 +2817,17 @@ button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);curso
  color:var(--muted);font-weight:700;margin:1.25rem 0 .4rem}
 .sub2 .lbl{gap:.35rem}
 label.f.wide{flex:1 1 100%}
-/* A checkbox and its words are one line, and the words are not a column header. */
-label.f.cbf{flex-direction:row;align-items:center;gap:.4rem;flex:0 0 auto}
+/* A checkbox and its words are one line, and the words are not a column header —
+   until the line is wider than the phone holding it. `flex:0 0 auto` said the row
+   may never shrink, so on a 390px screen "Always deny edits outside the plan" plus
+   its `enforce` chip reached 447px and took the whole DOCUMENT sideways with it
+   (F8). Shrinking is now allowed and `min-width:0` lets it actually happen: without
+   it a flex item's floor is its content's min-content width, which for a row of
+   inline-flex words is the whole row. `baseline` rather than `center` for the same
+   reason: once the label can be two lines, centring puts the box between them,
+   beside neither. On a row that still fits — every row on a desktop — the two are
+   the same picture. */
+label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;flex:0 1 auto;min-width:0}
 label.f.cbf input{margin:0}
 /* Reachable from any of the four cards. A form this long with the Save at the
    bottom is a form people leave without saving. */
@@ -2883,8 +2892,13 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
 .fall ol{margin:var(--sp-1) 0 0;padding-left:1.4rem;max-height:16rem;overflow:auto;
  display:grid;gap:2px}
 .src{font-size:.66rem}.hidden{display:none}
-/* info hints on labels */
-.lbl{display:inline-flex;align-items:center;gap:.25rem}
+/* info hints on labels.
+   Wrapping, because a label is a sentence: the words, the JSON key beside them and
+   the ⓘ are three items on one line only while one line is wide enough. An
+   inline-flex that cannot wrap has no narrow layout at all — it is exactly as wide
+   as its content wherever it is put, which is how a 390px screen ended up with a
+   447px row (F8). `min-width:0` for the same reason it is on the row above. */
+.lbl{display:inline-flex;align-items:center;gap:.25rem;flex-wrap:wrap;min-width:0}
 .hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
  border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}
@@ -7261,6 +7275,17 @@ def _selftest():
           "guessed from a breakpoint",
           ".hint.flip::after{left:auto;right:0}" in UI_HTML
           and "h.classList.toggle('flip'" in UI_HTML)
+    # F8. Both halves of one rule: a settings row is allowed to shrink, and the
+    # words inside it are allowed to wrap. Either one alone leaves the row exactly
+    # as wide as its content, which on a 390px screen was 447px of DOCUMENT.
+    check("shell: a checkbox row may shrink, so a long setting name cannot set the "
+          "page's width",
+          "label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;"
+          "flex:0 1 auto;min-width:0}" in UI_HTML)
+    check("shell: and the label inside it wraps, which is the only reason "
+          "shrinking has anywhere to go",
+          ".lbl{display:inline-flex;align-items:center;gap:.25rem;"
+          "flex-wrap:wrap;min-width:0}" in UI_HTML)
     check("UI building blocks are a tabbed table", "regtbl" in UI_HTML and "subtab" in UI_HTML)
     check("composition is a compact collapsible filterable table",
           "comptools" in UI_HTML and "table.comp" in UI_HTML and "needs skills" in UI_HTML

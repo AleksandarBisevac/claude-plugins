@@ -2125,17 +2125,90 @@ async function main() {
       // The one thing a phone shot must not show, and the one thing a reviewer
       // scrolling a PNG cannot see: the page itself sliding sideways. Wide tables
       // are allowed to scroll inside their own frame; the document is not.
-      const overflow = await mob.evaluate(() => {
-        const de = document.documentElement;
-        return { page: de.scrollWidth - de.clientWidth,
-                 body: document.body.scrollWidth - de.clientWidth };
-      });
-      if (overflow.page > 1 || overflow.body > 1) {
-        fail(`panel at 390px scrolls sideways: document overflows by ${overflow.page}px `
-           + `and body by ${overflow.body}px`);
-      } else {
-        note('panel at 390px: no horizontal page overflow');
+      //
+      // Driven over EVERY tab, not whichever one the shot happens to sit on. This
+      // assertion has existed since panel c2 and only ever ran on Overview — one of
+      // the views that passed — so it was green for its whole life while Settings
+      // took the document 76px sideways (F8). A check that looks at one of five
+      // views is not an assertion about the panel, and the tab it looks at is
+      // decided by where the photographer stopped. Proven rather than argued: with
+      // the defect restored and this loop cut back to Overview, the gate is green.
+      //
+      // The failure names the widest element that crosses the edge, because "76px"
+      // does not say which row to fix. Anything inside a frame of its own is
+      // excluded by asking its ancestors, not by listing selectors: `overflow-x`
+      // anything but `visible` scrolls or clips its content and cannot push the
+      // document, which is exactly the distinction this check is drawing.
+      //
+      // What it measures is the resting layout of each view, and deliberately only
+      // that. A ⓘ bubble is
+      // 272px wide and placed by a `mouseenter` handler — so a pointer that comes to
+      // rest on one WITHOUT that handler firing (the page scrolling underneath it,
+      // or the 5s poll re-rendering the form under it) opens an unmeasured bubble
+      // that reaches 500px and takes the document with it. That is a second, real
+      // mechanism, recorded as F9; it is not this row's CSS, and a sweep that
+      // tripped over it would be red for somebody else's bug. So the pointer is
+      // parked off every control first, and the measurement below is the layout, not
+      // the layout plus whatever the mouse happens to be touching.
+      const overflowAt = async (tab) => {
+        await mob.mouse.move(0, 0);
+        await mob.click(`.tab[data-t=${tab}]`);
+        await mob.mouse.move(0, 0);
+        await mob.waitForFunction(
+          (t) => { const v = document.getElementById(t);
+                   return v && !v.classList.contains('hidden')
+                     && v.querySelectorAll('.card').length > 0; },
+          tab, { timeout: 20000 });
+        await mob.waitForTimeout(250);
+        return mob.evaluate(() => {
+          const de = document.documentElement, w = de.clientWidth;
+          const framed = (n) => {
+            for (let p = n.parentElement; p; p = p.parentElement) {
+              if (getComputedStyle(p).overflowX !== 'visible') return true;
+            }
+            return false;
+          };
+          const name = (n) => n.tagName.toLowerCase()
+            + (typeof n.className === 'string' && n.className.trim()
+              ? '.' + n.className.trim().split(/\s+/).join('.') : '');
+          const widest = [...document.body.querySelectorAll('*')]
+            .filter((n) => n.getBoundingClientRect().right > w + 1 && !framed(n))
+            .map((n) => `${name(n)} @${Math.round(n.getBoundingClientRect().right)}px`);
+          return { page: de.scrollWidth - w, body: document.body.scrollWidth - w,
+                   width: w, widest: widest.slice(0, 3) };
+        });
+      };
+      for (const t of ['guards', 'comp', 'over', 'usage', 'policy']) {
+        const o = await overflowAt(t);
+        if (o.page > 1 || o.body > 1) {
+          fail(`the ${t} tab at 390px scrolls the document sideways by ${o.page}px `
+             + `(body ${o.body}px) in a ${o.width}px viewport — widest: `
+             + `${o.widest.join(', ') || 'nothing outside its own frame, so a '
+             + 'margin or a negative offset'}`);
+        } else {
+          note(`${t} at 390px: no horizontal page overflow`);
+        }
       }
+      // One width narrower, on the one tab that needed the fix. 390px is the phone
+      // this shot is taken on, and at 390px letting the ROW shrink is on its own
+      // enough — the label's words rewrap inside their own box and the page is
+      // clean whether or not `.lbl` may wrap. Deleting the `.lbl` half therefore
+      // proved nothing here, which by this repo's own rule means either the code
+      // goes or the claim narrows. It is 320px that the second half is for: there
+      // the unwrapped label puts 16px back on the document. So the narrow width is
+      // measured rather than the rule being pinned in Python and called covered.
+      await mob.setViewportSize({ width: 320, height: 844 });
+      const narrow = await overflowAt('guards');
+      if (narrow.page > 1 || narrow.body > 1) {
+        fail(`Settings at 320px scrolls the document sideways by ${narrow.page}px `
+           + `— widest: ${narrow.widest.join(', ') || 'nothing outside its own frame'}`);
+      } else {
+        note('guards at 320px: no horizontal page overflow either');
+      }
+      await mob.setViewportSize({ width: 390, height: 844 });
+      // Back where the sweep started, so the shot below is still Overview.
+      await mob.click('.tab[data-t=over]');
+      await mob.waitForTimeout(250);
       // Five views do not fit a 390px strip, and the fifth is the one off the
       // edge. A scrolling row with no edge treatment reads as a row with four
       // items — so the strip is asked whether it overflowed, and whether it said
@@ -2163,10 +2236,12 @@ async function main() {
       // `calc(100% - 2px - 2em)` and quietly made the first version 339px wide.
       //
       // The page-level overflow is measured as a DELTA across opening it, not as
-      // an absolute. Settings and Usage already overflow at this width without any
-      // drawer (76px and 67px, the same at HEAD) — a real defect, recorded as F8 —
-      // and a check that asserted zero here would be red for somebody else's bug,
-      // which proves nothing about this one.
+      // an absolute. It was written that way because Settings overflowed by 76px
+      // before anything was opened (F8, since fixed, and the sweep above is now the
+      // check for it); it stays that way because what this step is asking is what
+      // the DRAWER adds. An absolute here would be red for whatever else is on the
+      // page, which proves nothing about the drawer — and there is still one such
+      // thing, F9.
       await mob.click('.tab[data-t=guards]');
       await mob.waitForSelector('#guards [data-hint="enforce"]', { timeout: 15000 });
       const before390 = await mob.evaluate(() =>
