@@ -22,7 +22,7 @@
       "gate": "python3 plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate",
       "report": "python3 plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
       "sweep": "for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do python3 \"$f\" --selftest >/dev/null || { echo \"FAIL $f\"; exit 1; }; done",
-      "lint": "ruff check plugins/audit tools && vermin -t=3.8 --no-tips --violations plugins/audit/scripts plugins/audit/hooks",
+      "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks",
       "shots": "node tools/capture-screenshots.mjs --check",
       "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
     }
@@ -293,7 +293,8 @@
     "plugins/audit/scripts/_help.py": [
       "P10.2",
       "P10.5",
-      "P12.1"
+      "P12.1",
+      "P9.1"
     ],
     "plugins/audit/scripts/_loader.py": [
       "P10.1"
