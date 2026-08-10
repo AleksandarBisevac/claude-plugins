@@ -53,6 +53,7 @@ import _config  # noqa: E402
 # How often the "this hook is dispatching" marker is refreshed. A PreToolUse hook
 # on Skill/Agent/MCP runs often; the doctor's question is only ever "has it run
 # here recently", so one write an hour answers it for the cost of one stat.
+# --- seen marker + payload helpers --------------------------------------------
 SEEN_REFRESH_SECONDS = 3600
 SEEN_FILE = "capability-guard.json"
 
@@ -121,6 +122,7 @@ def _message(verdict, mode):
             "policy.onViolation to 'warn' to make this advisory.")
 
 
+# --- decision -----------------------------------------------------------------
 def decide(data, *, cfg=None, active=None):
     """Pure decision core. Returns (action, message) where action is one of
     "allow" (say nothing), "deny", "ask" or "warn".
@@ -171,6 +173,7 @@ def _has_area_rules(policy, kind):
         return False
 
 
+# --- cli ----------------------------------------------------------------------
 def main():
     try:
         data = json.load(sys.stdin)

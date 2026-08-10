@@ -45,6 +45,7 @@ import _ui_theme as _theme  # noqa: E402  (tokens + labels shared with the panel
 _RISK_LEVELS = ("low", "med", "high")
 
 
+# --- escaping + basename ----------------------------------------------------
 def e(value):
     """Escape ANY manifest value for HTML context."""
     return html.escape(str(value if value is not None else ""), quote=True)
@@ -70,6 +71,7 @@ def _report_basename(meta, cli_value):
     return name or "audit-report"
 
 
+# --- lookups ----------------------------------------------------------------
 def _tasks_by_id(manifest):
     return {t["id"]: t for p in (manifest.get("phases") or []) if isinstance(p, dict)
             for t in (p.get("tasks") or []) if isinstance(t, dict) and t.get("id")}
@@ -84,6 +86,7 @@ def _areas_of(area):
     return []
 
 
+# --- fragment builders ------------------------------------------------------
 def _bug_view(b, task_by_id):
     """Derived (status, fixedIn) for a bug — mirrors audit-status.effective_bug_status:
     a bug materialized into a done task reads as fixed (fixedIn = that task's commit),
@@ -193,6 +196,7 @@ def _filter_attrs(task):
     return "".join(out)
 
 
+# --- filter panel -----------------------------------------------------------
 def _filter_panel(manifest):
     """The model and date controls, server-rendered, or "" when the plan has neither.
 
@@ -258,6 +262,7 @@ def _filter_panel(manifest):
             '<div class="filterpanel">%s</div></details>' % "".join(rows))
 
 
+# --- risk + progress fragments ----------------------------------------------
 def _risk_chip(risk):
     """Tinted risk chip (low/med/high); em dash for null/unknown. Colored by the
     CSS theme token selected via data-risk (see render-report's _CSS)."""
@@ -440,6 +445,7 @@ def _selftest():
     return 0 if passed == len(cases) else 1
 
 
+# --- cli --------------------------------------------------------------------
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()

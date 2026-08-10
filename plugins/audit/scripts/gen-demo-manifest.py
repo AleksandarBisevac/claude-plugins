@@ -40,6 +40,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
+# --- demo vocab -----------------------------------------------------------------
 # No wall-clock anywhere: every timestamp is derived from this.
 BASE = datetime.datetime(2026, 4, 1, 9, 0, 0)
 
@@ -61,6 +62,7 @@ TITLE_NOUNS = ("the checkout payload", "the session cookie", "the product query"
                "the feature flags", "the webhook handler", "the search index")
 
 
+# --- generation -----------------------------------------------------------------
 def _load_manifest_io():
     return _loader.load_script("_manifest_io.py", modname="_manifest_io")
 
@@ -235,6 +237,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
     return manifest
 
 
+# --- bugs + output --------------------------------------------------------------
 def _bugs(phases):
     """A full bug lifecycle, including one reciprocal bug<->task link.
 
@@ -317,6 +320,7 @@ def write_manifest(manifest, out_dir, single_file=False):
     return written
 
 
+# --- cli ------------------------------------------------------------------------
 def main(argv):
     ap = argparse.ArgumentParser(
         prog="gen-demo-manifest.py",

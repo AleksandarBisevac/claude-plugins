@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
 
 
+# --- state gc -----------------------------------------------------------------
 _GC_PREFIXES = ("plan-gate-", "tdd-reminder-", "bash-writes-",
                 "config-error-notified-", "plan-bypass-")
 _GC_MAX_AGE = 7 * 86400  # seconds
@@ -65,6 +66,7 @@ def _gc_state(state_dir: Path, now: float = None) -> int:
     return removed
 
 
+# --- detection ----------------------------------------------------------------
 def _prompt_text(data: dict) -> str:
     for key in ("prompt", "user_prompt", "message"):
         val = data.get(key)
@@ -109,6 +111,7 @@ def _observed_message(state_dir: Path, session_id: str) -> list:
         return []
 
 
+# --- cli ----------------------------------------------------------------------
 def main() -> None:
     try:
         data = json.load(sys.stdin)

@@ -41,6 +41,7 @@ JS_MARK = "/*@JS@*/"
 _cache = None
 
 
+# --- template assembly --------------------------------------------------------
 def _read(name):
     with io.open(os.path.join(_UI_DIR, name), "r", encoding="utf-8", newline="") as fh:
         return fh.read()
@@ -84,6 +85,7 @@ _IMPORT_TIME_PLACEHOLDERS = (
 _REQUEST_TIME_PLACEHOLDERS = ("__AUDIT_TOKEN__", "__AUDIT_PROJECT__")
 
 
+# --- selftest -----------------------------------------------------------------
 def _selftest():
     ok = bad = 0
 

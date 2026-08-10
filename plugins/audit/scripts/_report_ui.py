@@ -39,6 +39,7 @@ _css_cache = None
 _script_cache = None
 
 
+# --- asset loading ------------------------------------------------------------
 def _read(name):
     with io.open(os.path.join(_UI_DIR, name), "r", encoding="utf-8", newline="") as fh:
         return fh.read()
@@ -84,6 +85,7 @@ CSS = _theme.TOKEN_CSS + _css()
 SCRIPT = _script()
 
 
+# --- selftest -----------------------------------------------------------------
 def _selftest():
     ok = bad = 0
 

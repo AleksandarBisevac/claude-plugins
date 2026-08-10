@@ -30,6 +30,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _policy  # noqa: E402  (the policy block's shape + the resolution it feeds)
 
+# --- known keys -----------------------------------------------------------------
 # Mirror of hooks/_config.py DEFAULTS key set (source of truth for the hooks).
 KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "trivialLineThreshold",
@@ -71,6 +72,7 @@ AUTHOR_MODES = ("email", "name", "hash", "none")
 _STR_PATHS = ("manifestPath", "gitRoot", "stateDir", "logsDir", "bypassKeyword")
 
 
+# --- helpers --------------------------------------------------------------------
 def _real_keys(obj):
     """Keys that are actual configuration, skipping `//` annotations.
 
@@ -90,6 +92,7 @@ def _is_str_list(v):
     return isinstance(v, list) and all(isinstance(x, str) for x in v)
 
 
+# --- validate_config ------------------------------------------------------------
 def validate_config(obj):
     """Return (findings, warnings). Pure; never raises on arbitrary JSON."""
     findings, warnings = [], []
@@ -225,6 +228,7 @@ def validate_config(obj):
     return findings, warnings
 
 
+# --- sub-checkers ---------------------------------------------------------------
 def _check_journal(journal, findings, warnings):
     """The audit trail's two settings.
 
@@ -333,6 +337,7 @@ def _check_rule(i, rule, findings, warnings):
         findings.append("guardEdits.customRules[%d].message must be a string" % i)
 
 
+# --- cli ------------------------------------------------------------------------
 def main(argv):
     if len(argv) != 1:
         sys.stderr.write("usage: validate-config.py <config-path>\n")

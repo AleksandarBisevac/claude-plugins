@@ -40,6 +40,7 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+# --- safe stdio ---------------------------------------------------------------
 def safe_stdio():
     """Make stdout/stderr unable to crash on a character they cannot spell.
 
@@ -60,6 +61,7 @@ def safe_stdio():
                 pass
 
 
+# --- entry-point guard check --------------------------------------------------
 def _is_entry(node):
     """True for `if __name__ == "__main__":`, however the comparison is spelled."""
     if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
@@ -135,6 +137,7 @@ def entries_missing_guard(script_dir=None):
     return missing
 
 
+# --- house-style AST checks ---------------------------------------------------
 _HOOKS_DIR = os.path.join(os.path.dirname(_HERE), "hooks")
 
 # The four bans: legal Python 3.8, illegal in this repo, and none of them caught by a
@@ -196,6 +199,7 @@ def house_style_violations(dirs=None):
     return violations
 
 
+# --- selftest -----------------------------------------------------------------
 def _selftest():
     import subprocess
     import tempfile

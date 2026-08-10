@@ -53,6 +53,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _CACHE = {}
 
 
+# --- module loading ---------------------------------------------------------
 def _default_modname(path):
     """A name derived from the file's basename, sanitized so it cannot collide
     with a real importable module: dots and hyphens (illegal in a plain

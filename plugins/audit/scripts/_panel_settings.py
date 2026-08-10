@@ -40,6 +40,7 @@ if _HERE not in sys.path:
 
 import _loader  # noqa: E402  (the one path-importlib loader for scripts/)
 
+# --- key allow-lists (composition write path) -------------------------------
 # Fields the composition patch is allowed to touch — the security allow-list.
 # `areas` is here so the registry can be written through the ONE write path that
 # takes the lock, validates, journals and patches only the index (meta lives on the
@@ -311,6 +312,7 @@ SETTINGS_GROUPS = (
 )
 
 
+# --- settings paths + enums -------------------------------------------------
 def _settings_paths():
     """Every config path the Settings form binds a control to."""
     return [f["path"] for g in SETTINGS_GROUPS for f in g["fields"]]
@@ -445,6 +447,7 @@ def _selftest():
     return 0 if passed == len(cases) else 1
 
 
+# --- cli --------------------------------------------------------------------
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()

@@ -36,6 +36,7 @@ import _manifest_io as _mio  # noqa: E402
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 
+# --- migration ------------------------------------------------------------------
 def _load_validator():
     return _loader.load_script("validate-manifest.py", modname="validate_manifest")
 
@@ -147,6 +148,7 @@ def migrate(path, *, dry_run=False, force=False, renumber=False, out=None):
     return 0, msg
 
 
+# --- cli ------------------------------------------------------------------------
 def main(argv):
     if "--selftest" in argv:
         return _selftest()

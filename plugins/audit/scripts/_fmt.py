@@ -54,6 +54,7 @@ Parameter mapping, this module -> the two originals:
 """
 
 
+# --- formatting -----------------------------------------------------------------
 def fmt_tokens(n, dp=None):
     """Compact, right-alignable token MAGNITUDE — `3.2M`, never `3,230,000`.
     `dp` controls decimal places past the magnitude letter; `None` (the default)

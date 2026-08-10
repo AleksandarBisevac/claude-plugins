@@ -35,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
 
+# --- notice templates ---------------------------------------------------------
 WARN_TEMPLATE = (
     "[bash-write-guard] That shell command modified source file(s) with no "
     "plan coverage: %s. Plan-first applies to shell writes too — add the "
@@ -76,6 +77,7 @@ LOCKED_TEMPLATE = (
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 
+# --- state --------------------------------------------------------------------
 def _state_file(state_dir: Path, session_id: str) -> Path:
     return state_dir / ("bash-writes-%s.json" % session_id)
 
@@ -123,6 +125,7 @@ def _git_dirty(root) -> "list | None":
         return None
 
 
+# --- decision -----------------------------------------------------------------
 def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
     """Returns ("record"|"warn"|"silent", detail). `dirty` is injectable for
     --selftest; real runs read `git status --porcelain`."""
@@ -228,6 +231,7 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
     return ("silent", "no unplanned source writes")
 
 
+# --- cli ----------------------------------------------------------------------
 def main() -> None:
     try:
         data = json.load(sys.stdin)

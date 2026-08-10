@@ -37,6 +37,7 @@ sys.path.insert(0, _HERE)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 
 
+# --- loading --------------------------------------------------------------------
 def _load_ledger_lib():
     return _loader.load_script("usage_ledger.py", modname="usage_ledger",
                                 cache=False)
@@ -47,6 +48,7 @@ def _load_manifest_io():
                                 cache=False)
 
 
+# --- vocab + scale --------------------------------------------------------------
 # Manifest tier -> the concrete model id a transcript would record.
 TIER_TO_MODEL = {
     "opus": "claude-opus-5",
@@ -64,6 +66,7 @@ DEFAULT_AUTHORS = ("alex@acme.example", "sara@acme.example", "milos@acme.example
 RISK_SCALE = {"high": 2.2, "med": 1.0, "low": 0.45, None: 1.0}
 
 
+# --- generation -----------------------------------------------------------------
 def _hours(ul, start_iso, end_iso, fallback_hours=6):
     """Hour buckets covering a task window, inclusive of the start hour."""
     start = ul.parse_ts(start_iso)
@@ -207,6 +210,7 @@ def write_ledger(rows, out_dir):
     return written
 
 
+# --- cli ------------------------------------------------------------------------
 def main(argv):
     ap = argparse.ArgumentParser(
         prog="gen-demo-usage.py",

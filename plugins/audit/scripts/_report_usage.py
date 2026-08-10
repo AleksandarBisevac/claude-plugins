@@ -48,6 +48,7 @@ import _report_html   # noqa: E402  (escaping and the shared fragment helpers)
 e = _report_html.e
 
 
+# --- loading ------------------------------------------------------------------
 def _iso_day(epoch):
     g = time.gmtime(epoch)
     return "%04d-%02d-%02dT00:00:00Z" % (g.tm_year, g.tm_mon, g.tm_mday)
@@ -180,6 +181,7 @@ def load_usage(manifest, manifest_path, project_dir=None):
         return None
 
 
+# --- viz constants + formatting helpers ---------------------------------------
 VIZ_SLOTS = 8
 # One folding rule for every categorical list in the section. Past this many
 # entities a reader stops comparing and starts scrolling, and the palette runs out
@@ -246,6 +248,7 @@ def _tip(header, rows):
     return e(("%s\n%s" % (header, body)) if body else header)
 
 
+# --- tiles + notices ----------------------------------------------------------
 def _tile(label, value, sub, delta=""):
     return ('<div class="tile"><div class="k">%s</div>'
             '<div class="v">%s%s</div><div class="s">%s</div></div>'
@@ -345,6 +348,7 @@ def _usage_notices(u):
     return "".join(out)
 
 
+# --- trend + budget -----------------------------------------------------------
 def _usage_trend(u):
     """The one dominant chart: total tokens per day.
 
@@ -467,6 +471,7 @@ def _budget_block(u):
             % ("".join(rows), total, foot))
 
 
+# --- rankings + sparklines + tables -------------------------------------------
 def _ranked(u, key, title, slots=None, models=None):
     """One ranked bar list. Top 8 then a folded `other` row — past 8 entities a
     categorical palette cannot keep adjacent pairs distinguishable, so folding is a
@@ -824,6 +829,7 @@ def _phase_stacks(u, slots, models):
     return '<h4 class="sub">Phase composition by model</h4>%s' % "".join(out)
 
 
+# --- heatmap ------------------------------------------------------------------
 _WDAY = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
@@ -855,6 +861,7 @@ def _usage_heatmap(u):
             % (ticks, "".join(rows), key, e(_fmt_tokens(peak))))
 
 
+# --- section assembly ---------------------------------------------------------
 def _usage_section(u):
     """The Usage block.
 
@@ -898,6 +905,8 @@ def _usage_section(u):
                    "pattern</summary>%s</details>" % detail)
     return "".join(out)
 
+
+# --- markdown rendering -------------------------------------------------------
 def _md(v):
     """Markdown cell escaper — same contract as render_md's local `cell`: only the
     metacharacters that would break a pipe table."""
@@ -1002,6 +1011,7 @@ def _usage_md(u):
     return "\n".join(lines)
 
 
+# --- selftest -----------------------------------------------------------------
 def _selftest():
     """The usage region's own cases, moved here with the code they are about
     (P13.2). Whole-document pins stayed in render-report: that a report with no
@@ -1359,6 +1369,7 @@ def _selftest():
     return 0 if all_pass else 1
 
 
+# --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()

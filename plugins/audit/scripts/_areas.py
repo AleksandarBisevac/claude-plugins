@@ -47,6 +47,7 @@ import re
 KNOWN_AREA = ("root", "description", "reviewSkill", "skills")
 
 
+# --- normalisation ------------------------------------------------------------
 def _norm_tag(tag):
     """A tag as it is compared: whitespace-trimmed, or "" if it is not a tag.
 
@@ -71,6 +72,7 @@ def areas_of(area):
     return out
 
 
+# --- registry access ----------------------------------------------------------
 def registry(manifest):
     """`meta.areas` as a tag -> entry dict, with the junk dropped rather than raised on.
 
@@ -107,6 +109,7 @@ def root_of(entry):
     return root.strip().replace("\\", "/").rstrip("/") or "."
 
 
+# --- review skill resolution --------------------------------------------------
 def resolve_review_skill(manifest, phase):
     """(skill, basis) for a phase's sign-off reviewer.
 
@@ -133,6 +136,7 @@ def resolve_review_skill(manifest, phase):
     return None, ""
 
 
+# --- skills resolution --------------------------------------------------------
 def resolve_skills(manifest, phase, task):
     """The skills an executor subagent loads: area defaults first, then the task's.
 
@@ -153,6 +157,7 @@ def resolve_skills(manifest, phase, task):
     return out
 
 
+# --- conflicts + unregistered tags --------------------------------------------
 def review_skill_conflicts(manifest, phase):
     """[(tag, skill), ...] when a phase's areas disagree about its reviewer.
 
@@ -204,6 +209,7 @@ def used_tags(manifest):
     return out
 
 
+# --- registry validation ------------------------------------------------------
 def validate_registry(areas, where="meta.areas"):
     """(findings, warnings) for a `meta.areas` value. Never raises.
 
@@ -279,6 +285,7 @@ def validate_registry(areas, where="meta.areas"):
     return findings, warnings
 
 
+# --- roots on disk ------------------------------------------------------------
 def missing_roots(manifest, project):
     """[(tag, root), ...] for registered areas whose root is not a directory.
 
@@ -295,6 +302,7 @@ def missing_roots(manifest, project):
     return out
 
 
+# --- the prose says what the code does ----------------------------------------
 # The resolution is executed by this module and OBEYED by a language model reading
 # the prose in reference/ and commands/. Two statements of one rule is the drift this
 # repository has already shipped once (`exemptGlobs` and `tddReminder.testGlobs`
@@ -350,6 +358,7 @@ def rule_drift(plugin_root=None):
     return out
 
 
+# --- selftest -----------------------------------------------------------------
 def _selftest():
     """Four surfaces resolve against this module, so it carries its own gate."""
     ok = bad = 0
@@ -570,6 +579,7 @@ def _selftest():
     return 1 if bad else 0
 
 
+# --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command

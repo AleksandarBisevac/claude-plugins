@@ -55,6 +55,7 @@ _HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PLUGIN_ROOT = os.path.dirname(_HOOKS_DIR)
 
 
+# --- secret detection ---------------------------------------------------------
 def _token_log_re(token_vars):
     """A logger call that passes a token as a *value* — as the SOLE/first arg
     (console.log(accessToken)), a later arg, an interpolation, a concat, an
@@ -78,6 +79,7 @@ def _bearer_re(token_vars):
     return re.compile(r"[Bb]earer\s+\$\{?\s*(?:" + alt + r")\b", re.IGNORECASE)
 
 
+# --- collection + deny helpers ------------------------------------------------
 def collect(tool: str, ti: dict):
     if tool == "NotebookEdit":
         path = str(ti.get("notebook_path", "") or ti.get("file_path", ""))
@@ -126,6 +128,7 @@ def block(msg: str) -> None:
     sys.exit(0)
 
 
+# --- decision -----------------------------------------------------------------
 def decide(data: dict, *, cfg=None):
     """Pure decision core. Returns ("allow", reason) or ("block", message)."""
     tool = data.get("tool_name", "")
@@ -201,6 +204,7 @@ def decide(data: dict, *, cfg=None):
     return ("allow", "clean")
 
 
+# --- cli ----------------------------------------------------------------------
 def main() -> None:
     try:
         data = json.load(sys.stdin)

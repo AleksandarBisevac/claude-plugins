@@ -38,6 +38,7 @@ import _report_html           # noqa: E402  (HTML fragment builders: escaping, c
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
 
 
+# --- module aliases (CSS/SCRIPT, fragment + usage re-exports) -------------------
 def _plugin_version():
     """The version of the plugin that rendered this file, or '' if unknown.
 
@@ -144,6 +145,7 @@ _md = _report_usage._md
 _usage_md = _report_usage._usage_md
 
 
+# --- report vocab ---------------------------------------------------------------
 def _plural(n, one, many=None):
     return "%d %s" % (n, one if n == 1 else (many or one + "s"))
 
@@ -194,6 +196,7 @@ _OPTIONAL_COLS = (
 )
 
 
+# --- table + verdict helpers ----------------------------------------------------
 def _present_columns(manifest):
     """The optional columns at least one task actually fills."""
     tasks = [t for p in (manifest.get("phases") or []) if isinstance(p, dict)
@@ -243,6 +246,7 @@ def _held_by(ph, done_ids):
     return out
 
 
+# --- render_html ----------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
                 fragment=False):
     """The HTML report. `fragment=True` emits it for an embedding host.
@@ -589,6 +593,7 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     return body.replace("@@NAV@@", nav).replace("@@TOOLBAR@@", doc_actions)
 
 
+# --- render_md ------------------------------------------------------------------
 def render_md(manifest, summary, usage=None):
     """Markdown twin of render_html. Only Markdown metacharacters (pipes,
     newlines) are escaped here — raw HTML inside manifest strings is passed
@@ -657,6 +662,7 @@ def render_md(manifest, summary, usage=None):
     return "\n".join(out)
 
 
+# --- cli ------------------------------------------------------------------------
 def main(argv):
     args = list(argv)
     out_dir = None

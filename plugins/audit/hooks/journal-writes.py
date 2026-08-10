@@ -39,6 +39,7 @@ _SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
                         "scripts")
 
 
+# --- helpers ------------------------------------------------------------------
 def _target_of(tool, ti):
     ti = ti if isinstance(ti, dict) else {}
     if tool == "NotebookEdit":
@@ -74,6 +75,7 @@ def _author(root, cfg):
         return None
 
 
+# --- decision -----------------------------------------------------------------
 def decide(data, *, cfg=None, root=None):
     """Pure decision core. Returns ("journal", entry) or ("skip", reason).
 
@@ -118,6 +120,7 @@ def decide(data, *, cfg=None, root=None):
     })
 
 
+# --- cli ----------------------------------------------------------------------
 def _journal_lib():
     return _config._load_journal_lib()
 

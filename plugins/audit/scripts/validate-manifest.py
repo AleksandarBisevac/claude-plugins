@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 
+# --- vocabulary + known keys ----------------------------------------------------
 STATUS = ("pending", "in_progress", "blocked", "done")
 TESTS_MODE = ("tdd", "regression", "gate-only")
 RISK = ("low", "med", "high", None)
@@ -93,6 +94,7 @@ KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
              "fixedIn", "notes", "ado"}
 
 
+# --- per-object checkers --------------------------------------------------------
 def _check_claim(phase, pwhere, findings, warnings):
     """Validate an optional parallel-run `claim` on a phase (v0.15 sharded layout).
 
@@ -307,6 +309,7 @@ def _cycle_findings(phases, findings):
                 path.append(nxt)
 
 
+# --- validate -------------------------------------------------------------------
 def validate(manifest):
     """Return (findings, warnings) — two lists of strings; empty findings = valid."""
     f, w = [], []
@@ -525,6 +528,7 @@ def validate(manifest):
     return (f, w)
 
 
+# --- cli ------------------------------------------------------------------------
 def main(argv):
     if len(argv) != 1:
         sys.stderr.write("usage: validate-manifest.py <manifest-path>\n")

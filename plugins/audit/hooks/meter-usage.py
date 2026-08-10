@@ -67,6 +67,7 @@ _SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
                         "scripts")
 
 
+# --- loading ------------------------------------------------------------------
 def _load_ledger_lib():
     """Load scripts/usage_ledger.py by path — the scripts dir is not a package,
     and this mirrors how the other cross-module loads in this plugin work."""
@@ -77,6 +78,7 @@ def _load_ledger_lib():
     return module
 
 
+# --- advisory + session summary -----------------------------------------------
 def advise(ul, ledger, manifest, ucfg, cursor, rows):
     """The one thing this hook ever says out loud: that the task in flight has
     crossed the project's own outlier threshold, while there is still time to act.
@@ -164,6 +166,7 @@ def session_summary(ul, ledger, ucfg, session_id):
     return "[audit] this session: " + " · ".join(bits)
 
 
+# --- metering -----------------------------------------------------------------
 def _compact(n):
     """Magnitudes are compact everywhere in this plugin — `3.2M`, never
     `3,230,000`. Mirrors _fmt_tokens in render-report.py and uTok in the panel."""
@@ -250,6 +253,7 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
     return written
 
 
+# --- cli ----------------------------------------------------------------------
 def main() -> None:
     try:
         data = json.load(sys.stdin)

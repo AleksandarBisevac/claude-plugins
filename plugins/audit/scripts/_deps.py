@@ -48,6 +48,7 @@ _HOOKS_DIR = os.path.join(os.path.dirname(_HERE), "hooks")
 # The module structure, position-indexed: LAYERS[0] is layer 0, the floor. Built from the
 # REAL import graph (see the module docstring), not aspiration - `import_graph()` and the
 # selftest's real-tree cases are what keep this honest as the tree grows.
+# --- layer table --------------------------------------------------------------
 LAYERS = (
     ("_output",),
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
@@ -85,6 +86,7 @@ def _layer_of(name, layers=None):
     return None
 
 
+# --- import graph -------------------------------------------------------------
 def _imported_sibling_names(tree, sibling_names, self_name):
     """Base module names `tree` statically imports that are also in `sibling_names`.
 
@@ -276,6 +278,7 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
     return violations
 
 
+# --- rendering ----------------------------------------------------------------
 def render(script_dir=None, layers=None):
     """A deterministic module map: every layer, its members, each member's out-edges.
 
@@ -308,6 +311,7 @@ def render(script_dir=None, layers=None):
     return "\n".join(lines) + "\n"
 
 
+# --- guide drift --------------------------------------------------------------
 _GUIDE_HEADING = "## 1a. Module map (generated)"
 # _HERE is plugins/audit/scripts; the guide lives at the repo root, three levels up
 # (scripts -> audit -> plugins -> repo root) - same anchor `_help._AGENT_DOCS` uses
@@ -469,6 +473,55 @@ def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
     return violations
 
 
+# --- navigability -------------------------------------------------------------
+# 400 lines is where a flat scroll stops being a map a reader can hold in their
+# head - past this a file needs real `# --- name ---` section headers to stay
+# navigable, the same house style `usage_ledger.py` / `audit-status.py` /
+# `hooks/_config.py` already carry.
+_NAV_MIN_LINES = 400
+
+_NAV_HEADER_RE = re.compile(r"^# --- (.+?) -+\s*$")
+
+
+def navigability_violations(script_dir=None, hooks_dir=None):
+    """(filename, problem) for every long .py file that is not carrying enough
+    real section headers to be navigable.
+
+    "Long" is `_NAV_MIN_LINES` or more; "enough" is at least 2 top-level (column
+    0, unindented) `# --- name ---` headers OTHER than `# --- selftest ---` -
+    the same house-style marker `usage_ledger.py` and this module's own new
+    headers use. A header buried inside a function (the indented sub-comments a
+    selftest sometimes carries to label its own case groups) does not count:
+    it is not a landmark a reader scanning the LEFT MARGIN can find. Only
+    `# --- selftest ---` itself is exempt from the count - a file's own test
+    block does not make its PRODUCTION code any easier to navigate.
+    """
+    script_dir = script_dir or _HERE
+    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
+    violations = []
+    for fname, kind in _real_source_files(script_dir, hooks_dir):
+        path = os.path.join(script_dir if kind == "scripts" else hooks_dir, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if len(lines) < _NAV_MIN_LINES:
+            continue
+        headers = 0
+        for line in lines:
+            m = _NAV_HEADER_RE.match(line)
+            if m and m.group(1).strip() != "selftest":
+                headers += 1
+        if headers < 2:
+            violations.append((fname,
+                                "%d lines but only %d non-selftest section header(s) "
+                                "(# --- name ---); needs >= 2 to be navigable"
+                                % (len(lines), headers)))
+    return violations
+
+
+# --- selftest -----------------------------------------------------------------
 def _selftest():
     import shutil
     import tempfile
@@ -790,6 +843,41 @@ def _selftest():
     finally:
         shutil.rmtree(enum_tmp, ignore_errors=True)
 
+    # --------------------------------------------------- navigability_violations
+    check("n1 the real tree's long files (>= %d lines) all carry at least 2 "
+          "non-selftest section headers - navigability is enforced, not just "
+          "declared, with no exceptions left on record: %r"
+          % (_NAV_MIN_LINES, navigability_violations()),
+          not navigability_violations())
+
+    nav_tmp = tempfile.mkdtemp(prefix="audit-deps-nav-")
+    try:
+        nav_hooks = os.path.join(nav_tmp, "hooks")  # empty; no hooks fixture needed
+        os.makedirs(nav_hooks)
+        long_path = os.path.join(nav_tmp, "long_file.py")
+        with open(long_path, "w", encoding="utf-8") as fh:
+            fh.write("pass\n" * (_NAV_MIN_LINES + 10))
+        nav_hits = navigability_violations(nav_tmp, hooks_dir=nav_hooks)
+        check("n2 a long file with no section headers at all is named as a "
+              "navigability violation: %r" % (nav_hits,),
+              any(f == "long_file.py" for f, _ in nav_hits))
+
+        # ---- mutation proof: a weakened check must MISS the n2 fixture ----
+        def _weakened_navigability_violations(script_dir, hooks_dir):
+            return []  # the header-count check removed entirely
+
+        weak_nav_hits = _weakened_navigability_violations(nav_tmp, nav_hooks)
+        check("n3 mutation proof: with the header-count check removed, the SAME "
+              "headerless-file fixture n2 catches is missed entirely (red proves "
+              "n2 is testing something real): %r" % (weak_nav_hits,),
+              not any(f == "long_file.py" for f, _ in weak_nav_hits))
+        real_nav_hits_again = navigability_violations(nav_tmp, hooks_dir=nav_hooks)
+        check("n4 mutation proof: the real, unweakened navigability_violations() "
+              "still catches it - nothing was left mutated behind",
+              any(f == "long_file.py" for f, _ in real_nav_hits_again))
+    finally:
+        shutil.rmtree(nav_tmp, ignore_errors=True)
+
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:
         print("%s %s" % ("PASS" if ok else "FAIL", label))
@@ -798,6 +886,7 @@ def _selftest():
     return 0 if passed == len(cases) else 1
 
 
+# --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()

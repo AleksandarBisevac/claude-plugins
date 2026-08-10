@@ -34,6 +34,7 @@ import os
 import tempfile
 
 
+# --- reading + assembly ---------------------------------------------------------
 def read_json(path):
     """Parse a JSON file. Raises like open()/json.load on a missing/invalid file."""
     with open(path, "r", encoding="utf-8") as fh:
@@ -157,6 +158,7 @@ def split_manifest(manifest, shard_rel_dir="phases"):
     return index, shards
 
 
+# --- atomic writing -------------------------------------------------------------
 def atomic_write_json(path, obj, ensure_ascii=True, indent=2):
     """Write `obj` as JSON to `path` atomically: a unique temp file (mkstemp, in
     the SAME directory as `path` so os.replace stays on one filesystem) is
@@ -189,6 +191,7 @@ def _atomic_write_json(path, data):
     atomic_write_json(path, data, ensure_ascii=True, indent=2)
 
 
+# --- sharded save ---------------------------------------------------------------
 def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     """Write an assembled `manifest` as index + per-phase shards, each file written
     atomically (temp + os.replace). Returns the list of written paths (shards first,
@@ -412,6 +415,7 @@ def _selftest():
     return 0 if passed == len(cases) else 1
 
 
+# --- cli ------------------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command

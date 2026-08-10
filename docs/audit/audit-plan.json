@@ -348,7 +348,8 @@
       "P15.4"
     ],
     "plugins/audit/scripts/_manifest_io.py": [
-      "P10.4"
+      "P10.4",
+      "P15.4"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -358,7 +359,8 @@
       "P12.2"
     ],
     "plugins/audit/scripts/_panel_settings.py": [
-      "P12.1"
+      "P12.1",
+      "P15.4"
     ],
     "plugins/audit/scripts/_panel_state.py": [
       "P12.3"

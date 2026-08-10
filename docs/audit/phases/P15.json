@@ -157,7 +157,7 @@
     {
       "id": "P15.4",
       "title": "section headers everywhere + navigability lint",
-      "status": "in_progress",
+      "status": "done",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -186,7 +186,9 @@
         "plugins/audit/hooks/guard-edits.py",
         "plugins/audit/hooks/guard-capabilities.py",
         "plugins/audit/hooks/journal-writes.py",
-        "plugins/audit/hooks/detect-plan-skip.py"
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/scripts/_manifest_io.py",
+        "plugins/audit/scripts/_panel_settings.py"
       ],
       "docs": [],
       "description": "Comment-only diffs: house-style '# --- x ---' headers for the 5 files with none (_report_usage 1365, _areas, _output, _panel_ui, _report_ui) and meaningful non-selftest sections for the big selftest-only files (render-report 1611, _policy 726, validate-manifest 850, validate-config, gen-demo-*, migrate-manifest, _fmt, _report_html, _loader) and the six hooks without one. Then the lint in _deps' selftest: every .py over 400 lines carries at least 2 non-selftest section headers; threshold a named constant with its reason; mutation-proven.",
@@ -202,21 +204,27 @@
         ]
       },
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "House headers added to 22 files (comment-only, additions-only, counts unchanged), _deps.navigability_violations with _NAV_MIN_LINES=400 and its reason; the lint's first real-tree run found two violators outside the declared scope (_manifest_io, _panel_settings) which the plan gate correctly refused - scope was extended by the orchestrator, both files headered, and the temporary exception list retired to zero. _deps 30 -> 34 cases (exception cases replaced by a clean real-tree assertion); fixture + mutation proofs kept.",
+        "descriptive": "Every big file is navigable and a bare one over 400 lines fails the build by name - with zero exceptions left standing."
       },
       "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-08-10T22:48:19+02:00",
-      "completedAt": null,
+      "completedAt": "2026-08-10T23:28:29+02:00",
       "risk": "low",
-      "verifiedBy": []
+      "verifiedBy": [
+        "_deps 34/34 (zero nav exceptions)",
+        "all touched counts unchanged",
+        "sweep green",
+        "lint green",
+        "additions-only diffs"
+      ]
     },
     {
       "id": "P15.5",
       "title": "CONTRIBUTING: add-a-script checklist + decision record",
-      "status": "pending",
+      "status": "in_progress",
       "model": "sonnet",
       "skills": [],
       "blockedBy": [],
@@ -242,9 +250,9 @@
         "descriptive": null
       },
       "commit": null,
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "startedAt": null,
+      "startedAt": "2026-08-10T23:28:29+02:00",
       "completedAt": null,
       "risk": "low",
       "verifiedBy": []

@@ -63,6 +63,7 @@ hooks are inventoried, never enforced.
 import fnmatch
 import os
 
+# --- constants + defaults -----------------------------------------------------
 KINDS = ("skills", "agents", "mcp")
 KNOWN_POLICY = {"enabled", "onViolation"} | set(KINDS)
 KNOWN_KIND = {"default", "allow", "deny", "areas"}
@@ -87,6 +88,7 @@ NAMESPACE = "audit:*"
 _REQUIRED_CACHE = {}
 
 
+# --- required set -------------------------------------------------------------
 def _plugin_root(plugin_root=None):
     return plugin_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -139,6 +141,7 @@ def required_names(plugin_root=None):
     return out
 
 
+# --- pattern matching ---------------------------------------------------------
 def required_patterns(kind, plugin_root=None):
     """What counts as "audit's own" for `kind`: the namespace glob + the concrete
     names. The glob covers a command that shipped after this release; the concrete
@@ -170,6 +173,7 @@ def _merge_kind(base, over):
     return out
 
 
+# --- policy config ------------------------------------------------------------
 def policy_cfg(config):
     """The merged `policy` block, defaults filled in per kind. Never raises.
 
@@ -238,6 +242,7 @@ def is_active(policy):
         return False
 
 
+# --- resolution ---------------------------------------------------------------
 def resolve(policy, kind, name, active_tags=(), plugin_root=None):
     """The verdict for one capability.
 
@@ -335,6 +340,7 @@ def required_denials(policy, plugin_root=None):
     return out
 
 
+# --- validation ---------------------------------------------------------------
 def validate_policy(policy, where="policy"):
     """(findings, warnings) for a `policy` value. Never raises.
 
@@ -441,6 +447,7 @@ def _check_list(value, where, present, findings):
                         "(%d bad: %r)" % (where, len(bad), bad[:3]))
 
 
+# --- tool -> capability mapping -----------------------------------------------
 def capability_of(tool_name, tool_input):
     """(kind, name) for a tool call, or (None, "") when nothing here governs it.
 
@@ -717,6 +724,7 @@ def _selftest():
     return 1 if bad else 0
 
 
+# --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
