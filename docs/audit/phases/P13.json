@@ -16,7 +16,7 @@
   ],
   "baseRef": "8d46c0308b47d8af6c28b16c6eae1f9fcdc98cfb",
   "branch": "audit/p13-refactor-render-report-split",
-  "mergedAt": null,
+  "mergedAt": "2026-08-10T19:52:27+02:00",
   "review": {
     "tool": null,
     "model": "sonnet",
