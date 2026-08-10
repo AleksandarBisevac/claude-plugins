@@ -382,6 +382,30 @@ jobs:
           python plugins/audit/scripts/render-report.py docs/audit/audit-plan.json \
             --out-dir /tmp/one-status --format html
           node tools/check-report-interactive.mjs /tmp/one-status/*.html
+          # ...and one document none of the four above can stand in for either: a
+          # report OLDER than the checks. Every artifact CI renders is by
+          # definition current, so the path that meets a missing element ran
+          # nowhere — and it met one by dereferencing it, dying inside
+          # page.evaluate with `Cannot read properties of null` and a stack ending
+          # in the checker (F7). A diagnostic that dies computing its own
+          # diagnosis reports the wrong thing twice, and the first reader of an
+          # older report believes the report is broken. Faked here by taking the
+          # class off the fresh render's filter bar, which is what a report
+          # predating .sectools looks like to a selector.
+          sed 's/class="toolbar sectools"/class="toolbar was-sectools"/' \
+            /tmp/one-status/audit-report.html > /tmp/one-status/aged.html
+          set +e
+          node tools/check-report-interactive.mjs /tmp/one-status/aged.html > /tmp/aged.log 2>&1
+          aged=$?
+          set -e
+          cat /tmp/aged.log
+          # Exit 2 is the assertion — "could not run", NOT exit 1 "the report is
+          # inert", which is the accusation this fault made. The grep is the
+          # second half and not the verdict: exit 2 alone is also what a missing
+          # browser produces, so the element has to be named too.
+          test "$aged" -eq 2 || { echo "expected exit 2 (cannot check), got $aged"; exit 1; }
+          grep -q 'no \.sectools' /tmp/aged.log \
+            || { echo 'expected the missing element to be named'; exit 1; }
       - name: JSON Schema validation (ajv, draft 2020-12)
         run: |
           npx --yes ajv-cli validate --spec=draft2020 \

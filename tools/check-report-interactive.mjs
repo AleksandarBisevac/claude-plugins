@@ -11,8 +11,9 @@
  *   node tools/check-report-interactive.mjs <report.html>
  *
  * Exit 0 = every interaction behaved. Exit 1 = something is inert; the failing
- * assertion names which. Exit 2 = could not run (no browser, bad arguments) —
- * distinct on purpose, so a missing dependency is never read as a passing check.
+ * assertion names which. Exit 2 = could not run (no browser, bad arguments, or a
+ * report older than these checks) — distinct on purpose, so a missing dependency
+ * is never read as a passing check.
  *
  * It also drives the one output nobody opens before shipping. The print rules
  * are checked under `emulateMedia('print')` and the orientation is read back out
@@ -26,7 +27,7 @@
  * http:// would be testing the easier case.
  */
 import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const file = process.argv[2];
@@ -78,12 +79,72 @@ const state = () => page.evaluate(() => {
   };
 });
 
-const load = await state();
-if (!load) {
-  console.error('FAIL: no table.phases in the document — the report did not render its phase table');
+// Is this a document these checks can speak about at all?
+//
+// Every selector below is emitted by the CURRENT renderer into every report,
+// whatever the plan contains — so a document without one is a document this tool
+// is newer than, and that is a fact about the FILE, not a verdict about the
+// product. It has to be said in those words, because both of the ways it used to
+// come out read as the report being broken. `.sectools` was dereferenced inside
+// page.evaluate and the tool died with `Cannot read properties of null` and a
+// stack ending in this file (F7): a diagnostic that dies computing its own
+// diagnosis reports the wrong thing twice, and everything it had already checked
+// is lost with it, since the notes are printed at the end. Worse, `#audit-nojs`
+// was asserted as `banner === null` — trivially true of a report that never
+// rendered a banner, so absence came out as a PASS on the one check whose whole
+// job is to prove the script ran.
+//
+// Hence the rule, and it is the rule rather than the patch: an element this tool
+// depends on is declared here and its absence is REPORTED BY NAME, never
+// dereferenced and never read as an answer. All of them are collected in one
+// pass so an old report names everything it is missing at once, instead of one
+// element per run.
+const source = readFileSync(path, 'utf8');
+const REQUIRED = [
+  ['table.phases', 'the phase table'],
+  ['table.phases thead', 'its column headers'],
+  ['table.phases tbody tr.phase strong', 'the phase titles, which is where a reader clicks'],
+  ['table.phases tbody tr.task', 'the task rows'],
+  ['.tablewrap', 'the frame the wide table scrolls inside'],
+  ['tr.norows', 'the filtered-to-nothing empty state'],
+  ['.topbar', 'the app shell header'],
+  ['.sectools', 'the sticky filter bar'],
+  ['.sectools [data-clear]', 'the Clear-filters button'],
+  ['#audit-q', 'the filter box'],
+  ['#audit-expand', 'the expand-all button'],
+  ['#audit-phase-status', 'the status chip row'],
+];
+const gone = [];
+for (const [sel, what] of REQUIRED) if (!(await page.$(sel))) gone.push([sel, what]);
+// The one element checked in the SOURCE, because its absence from the DOM is the
+// assertion: the script's first statement removes it. Asking the live page
+// whether it is there cannot tell "the script ran" from "no banner was ever
+// written", and those are opposite readings of the same null.
+if (!/id="audit-nojs"/.test(source)) gone.push(['#audit-nojs', 'the no-script banner, in the source']);
+if (gone.length) {
+  // The report's own stamp, so this names its basis rather than asserting age.
+  // Deliberately NOT a table of which version added which element: that would be
+  // a second place the renderer's history lives, and it would be wrong the first
+  // time an element moved.
+  const ver = await page.evaluate(() => {
+    const s = document.querySelector('.stampv');
+    return s ? s.textContent.trim() : '';
+  });
+  console.error(`cannot check ${file}: it was rendered before these checks existed.`);
+  console.error('');
+  for (const [sel, what] of gone) console.error(`  no ${sel}  --  ${what}`);
+  console.error('');
+  console.error(ver
+    ? `The file names its renderer: ${ver}.`
+    : 'The file names no renderer at all, so it predates the version stamp too.');
+  console.error('Nothing here is inert -- the elements these checks drive are simply not in');
+  console.error('this document. Render the manifest again and run this against the fresh file:');
+  console.error('  python3 plugins/audit/scripts/render-report.py <manifest> --out-dir <dir> --format html');
   await browser.close();
-  process.exit(1);
+  process.exit(2);
 }
+
+const load = await state();
 if (load.total < 2) {
   console.error(`cannot check interactivity: only ${load.total} phase row(s); use a report with several`);
   await browser.close();
@@ -98,6 +159,8 @@ expect('on load, tasks are collapsed', load.tasks, 0);
 // sandboxes inline <script> and was the real cause of one "the report is broken"
 // report. Checking it here means the banner can never rot into a lie: if the
 // removal breaks, the banner shows in a working browser and this goes red.
+// This assertion is only worth making because the sweep above has already found
+// the banner in the source; without that, a null here means either reading.
 const banner = await page.$('#audit-nojs');
 expect('the no-script banner is removed once the script runs', banner === null, true);
 
@@ -251,7 +314,23 @@ if (chips.length) {
 // 6. The More-filters panel: model, and the empty state that offers a way back.
 //    Skipped rather than failed on a plan that records no models — the panel is
 //    emitted from the data, so its absence there is correct.
+//
+//    The two elements around the chip are NOT data-driven once the chip is here:
+//    `_filter_panel` emits the <details>, the panel and the chips together, so a
+//    document with one and not the others is inconsistent with itself rather than
+//    merely old. That is a FAIL and not a sweep entry — but it is still named
+//    rather than clicked, because clicking a selector that is not there buys a
+//    30-second Playwright timeout and a stack, which reads as the report being
+//    dead when it is the checker that could not find its footing.
+const panelParts = [];
 if (await page.$('#audit-model .fchip')) {
+  for (const sel of ['.fdetails > summary', '.filterpanel']) {
+    if (!(await page.$(sel))) panelParts.push(sel);
+  }
+}
+if (panelParts.length) {
+  failures.push(`FAIL the report emits model chips but no ${panelParts.join(' and ')} to hold them`);
+} else if (await page.$('#audit-model .fchip')) {
   await page.click('.fdetails > summary');
   await page.waitForTimeout(80);
   await page.click('#audit-model .fchip');
@@ -458,7 +537,11 @@ await page.waitForTimeout(400);
 //    exist on a phone. Every string pin in the suite was green throughout.
 await page.setViewportSize({ width: 390, height: 780 });
 await page.waitForTimeout(250);
-if (await page.$('.fdetails > summary')) {
+//    Same pairing as step 6: the <details> without the panel inside it is a
+//    contradiction in one document, so it is named rather than dereferenced.
+if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
+  failures.push('FAIL the report emits a More-filters <details> with no .filterpanel inside it');
+} else if (await page.$('.fdetails > summary')) {
   await page.click('.fdetails > summary');
   await page.waitForTimeout(250);
   const phone = await page.evaluate(() => {
