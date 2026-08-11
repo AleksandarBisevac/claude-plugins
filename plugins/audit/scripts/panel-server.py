@@ -921,10 +921,30 @@ def _selftest():
     check("shell: a closed hint occupies no layout, so it cannot push the page "
           "sideways before anyone hovers it",
           "white-space:normal;display:none;pointer-events:none}" in UI_HTML)
-    check("shell: and an open one flips at the right edge, measured rather than "
-          "guessed from a breakpoint",
-          ".hint.flip::after{left:auto;right:0}" in UI_HTML
-          and "h.classList.toggle('flip'" in UI_HTML)
+    # F9, both halves. The bubble is 272px and a phone's column is 375px, so
+    # "anchor left, or flip to the right edge" has no correct answer for most of
+    # this form: left-anchored it takes the document sideways, flipped it starts
+    # off the left of the screen. It is clamped into the viewport instead, and the
+    # ONE geometry is stated in JS - the stylesheet only reads the two properties
+    # it writes, so there is nothing for a second cap to disagree with.
+    check("shell: an open hint is clamped into the viewport rather than anchored "
+          "to one of its own edges",
+          "left:var(--tipx,0px)" in UI_HTML
+          and "width:var(--tipw,17rem);box-sizing:border-box;" in UI_HTML
+          and "const x=Math.min(Math.max(TIPGUT,r.left),vw-TIPGUT-w);" in UI_HTML
+          and ".hint.flip" not in UI_HTML and "toggle('flip'" not in UI_HTML)
+    # The other half: WHEN that is decided. A `mouseenter` handler is skippable -
+    # scrolling the page under a stationary pointer updates :hover without
+    # dispatching one - so placement is driven by the document changing, not by a
+    # pointer being seen to arrive.
+    check("shell: hint placement is not hooked to a pointer event, so a hint that "
+          "arrives under a stationary mouse is still placed",
+          "new MutationObserver(placeTips).observe(document.body," in UI_HTML
+          and "attributeFilter:['class']}" in UI_HTML
+          and "addEventListener('scroll',placeTipsSoon,{capture:true,passive:true})"
+          in UI_HTML
+          and "startTipPlacement();}" in UI_HTML
+          and "h.addEventListener('mouseenter'" not in UI_HTML)
     # F8. Both halves of one rule: a settings row is allowed to shrink, and the
     # words inside it are allowed to wrap. Either one alone leaves the row exactly
     # as wide as its content, which on a 390px screen was 447px of DOCUMENT.

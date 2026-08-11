@@ -591,7 +591,8 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
  border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}
 .hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
-.hint::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + .4rem);z-index:60;width:17rem;max-width:72vw;
+.hint::after{content:attr(data-tip);position:absolute;left:var(--tipx,0px);top:calc(100% + .4rem);z-index:60;
+ width:var(--tipw,17rem);box-sizing:border-box;
  background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
  box-shadow:var(--shadow-md);padding:.5rem .5rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
  white-space:normal;display:none;pointer-events:none}
@@ -600,15 +601,26 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
    missing attribute is the empty string, which is an empty bubble rather than no
    bubble. */
 .hint:not([data-tip]):hover::after,.hint:not([data-tip]):focus::after{display:none}
-/* Two fixes for one bug. A 17rem bubble anchored left overflows the viewport for
-   any hint in the right half of a wide layout, and an absolutely-positioned box
-   counts toward scrollable overflow even while hidden — so the page carried 34px
-   of sideways scroll before anyone hovered anything. `visibility:hidden` was not
-   enough for that; `display:none` is, at the cost of the fade, which is a fair
-   trade for a tooltip that appears under the cursor anyway. And when it IS shown
-   it flips to the right edge if it would not fit. The old guard
-   (`overflow-x:hidden` under 48rem) hid the symptom, and only on phones. */
-.hint.flip::after{left:auto;right:0}
+/* An absolutely-positioned box counts toward scrollable overflow even while
+   hidden — so the page carried 34px of sideways scroll before anyone hovered
+   anything. `visibility:hidden` was not enough for that; `display:none` is, at the
+   cost of the fade, which is a fair trade for a tooltip that appears under the
+   cursor anyway. The old guard (`overflow-x:hidden` under 48rem) hid the symptom,
+   and only on phones.
+
+   WHERE it opens is `--tipx`, and the width it opens at is `--tipw`; both are
+   written by placeTip() in panel.js, which clamps the bubble into the viewport.
+   There is deliberately no `max-width` beside them: the width IS the clamp, and a
+   second cap expressed in `vw` would disagree with it by the width of a scrollbar.
+   This rule used to be a choice between two anchors — `left:0`, or `.flip`
+   swapping it for `right:0` — which on a phone has no correct answer at all (F9).
+
+   `box-sizing` is restated here because the sheet's global `*{box-sizing:
+   border-box}` does NOT reach pseudo-elements: `*` matches elements. Without it
+   this box was 17rem of TEXT plus its padding and border — 290px painted for a
+   number that says 272, which is exactly how much the old flip threshold was
+   wrong by as well, and 6px of it still reached the document after the clamp
+   landed. The width JS writes has to be the width the browser paints. */
 /* custom autocomplete combobox (replaces native datalist) */
 .combo{position:relative;flex:1 1 18rem}
 .combo>input{width:100%}

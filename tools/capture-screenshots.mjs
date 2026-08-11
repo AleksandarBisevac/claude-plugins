@@ -191,6 +191,64 @@ async function assertBarsPainted(page, label) {
 }
 
 /**
+ * Every ⓘ must open its bubble INSIDE the viewport (F9).
+ *
+ * A check of its own rather than one more selector in the overflow sweep, because
+ * the bubble is `.hint::after` — a pseudo-element, with no node. Nothing can call
+ * getBoundingClientRect on it, so the sweep's "widest element crossing the edge"
+ * list comes back EMPTY while the document is 103px too wide. That mismatch is the
+ * signature of this defect, and it is the reason it survived a check that was
+ * already measuring the page it broke.
+ *
+ * Both edges are asserted, because the two failures look nothing alike. Past the
+ * right edge the DOCUMENT scrolls sideways. Past the left edge nothing scrolls at
+ * all — a left overflow is clipped, not scrolled to — and the tooltip is simply
+ * unreadable, which is what the old `.flip` produced for 20 of Settings' 27
+ * controls on a phone. A fix aimed at the overflow alone would have passed here.
+ */
+async function assertHintsFit(page, label) {
+  const boxes = await page.evaluate(() => {
+    const vw = document.documentElement.clientWidth, out = [];
+    const num = (v) => parseFloat(v) || 0;
+    for (const h of document.querySelectorAll('.hint[data-tip]')) {
+      const r = h.getBoundingClientRect();
+      if (!r.width) continue;                 // a hint in a view that is not showing
+      const cs = getComputedStyle(h, '::after');
+      // The box-sizing the rule resolved to is READ, not assumed: getComputedStyle
+      // hands back the width the pseudo-element asked for, which is its content box
+      // or its border box depending on that property. Assuming it is worth 18px
+      // here — the bubble's own padding and border, which the sheet's global
+      // `*{box-sizing:border-box}` does not reach because `*` matches elements.
+      const extra = cs.boxSizing === 'border-box' ? 0
+        : num(cs.paddingLeft) + num(cs.paddingRight)
+          + num(cs.borderLeftWidth) + num(cs.borderRightWidth);
+      const left = r.left + num(cs.left);
+      out.push({
+        name: h.getAttribute('data-hint')
+          || (h.getAttribute('data-tip') || '').slice(0, 20) + '…',
+        left: Math.round(left), right: Math.round(left + num(cs.width) + extra), vw,
+      });
+    }
+    return out;
+  });
+  // A view with no ⓘ is not a defect — Usage has none, and pinning WHICH views do
+  // is a list that goes stale the first time one gains a label. What would be a
+  // defect is none anywhere, so the callers sum this across the panel and check
+  // that instead.
+  if (!boxes.length) { note(`${label}: no ⓘ on this view`); return boxes; }
+  const vw = boxes[0].vw;
+  const bad = boxes.filter((b) => b.left < 0 || b.right > b.vw + 1);
+  if (bad.length) {
+    fail(`${label}: ${bad.length} of ${boxes.length} ⓘ bubbles open outside the `
+       + `${vw}px viewport — `
+       + bad.slice(0, 3).map((b) => `${b.name} at ${b.left}..${b.right}`).join('; '));
+  } else {
+    note(`${label}: ${boxes.length}/${boxes.length} ⓘ bubbles open inside ${vw}px`);
+  }
+  return boxes;
+}
+
+/**
  * The theme toggle must move the NATIVE controls, not just our boxes.
  *
  * Custom properties cannot reach a checkbox, a `<select>` menu, a number spinner,
@@ -2094,6 +2152,22 @@ async function main() {
            + `${declared.length}/${declared.length} controls rendered`);
       }
 
+      // The wide case, which is the one the old flip was written for: a 290px bubble
+      // hung off a hint in the right half of a 1200px layout runs past the edge just
+      // as surely as it does on a phone, and here it is the only thing that would.
+      await page.mouse.move(0, 0);
+      const deskHints = await assertHintsFit(page, 'settings at 1200px');
+      // A view with no ⓘ is legitimate in general — Usage has none — but not this
+      // one, three lines under an assertion that every declared control rendered.
+      // Said HERE, and not only in the panel-wide tally further down, because the
+      // next step reaches the help drawer by clicking a ⓘ: with none on the page
+      // that click spends 30 seconds timing out and takes the run down with a
+      // stack, and a diagnostic that dies before it can accuse anything is F7.
+      if (!deskHints.length) {
+        fail('Settings rendered every one of its declared controls and not one ⓘ — '
+           + 'every containment check in this file now has nothing to look at');
+      }
+
       await shot(page, 'panel-guards');
 
       // The help drawer, over the form it explains — which is the point of a side
@@ -2227,15 +2301,12 @@ async function main() {
       // document, which is exactly the distinction this check is drawing.
       //
       // What it measures is the resting layout of each view, and deliberately only
-      // that. A ⓘ bubble is
-      // 272px wide and placed by a `mouseenter` handler — so a pointer that comes to
-      // rest on one WITHOUT that handler firing (the page scrolling underneath it,
-      // or the 5s poll re-rendering the form under it) opens an unmeasured bubble
-      // that reaches 500px and takes the document with it. That is a second, real
-      // mechanism, recorded as F9; it is not this row's CSS, and a sweep that
-      // tripped over it would be red for somebody else's bug. So the pointer is
-      // parked off every control first, and the measurement below is the layout, not
-      // the layout plus whatever the mouse happens to be touching.
+      // that: the pointer is parked off every control first, so what is reported is
+      // the layout rather than the layout plus whatever the mouse happens to be
+      // touching. The ⓘ bubble is the other thing that reaches past the edge, and it
+      // is measured separately by assertHintsFit — it has no node to be named in a
+      // list of widest elements, so a sweep tripping over it would report a number
+      // with an empty list of causes, which is exactly how F9 stayed open.
       const overflowAt = async (tab) => {
         await mob.mouse.move(0, 0);
         await mob.click(`.tab[data-t=${tab}]`);
@@ -2264,8 +2335,10 @@ async function main() {
                    width: w, widest: widest.slice(0, 3) };
         });
       };
+      let hintsSeen = 0;
       for (const t of ['guards', 'comp', 'over', 'usage', 'policy']) {
         const o = await overflowAt(t);
+        hintsSeen += (await assertHintsFit(mob, `${t} at 390px`)).length;
         if (o.page > 1 || o.body > 1) {
           fail(`the ${t} tab at 390px scrolls the document sideways by ${o.page}px `
              + `(body ${o.body}px) in a ${o.width}px viewport — widest: `
@@ -2275,6 +2348,41 @@ async function main() {
           note(`${t} at 390px: no horizontal page overflow`);
         }
       }
+      if (!hintsSeen) {
+        fail('not one ⓘ was measured across five views at 390px — either every '
+           + 'label lost its hint or nothing rendered, and the containment checks '
+           + 'above passed by having nothing to look at');
+      } else {
+        note(`hints: ${hintsSeen} ⓘ measured across five views at 390px`);
+      }
+
+      // The one thing that moves a hint sideways without the page moving at all:
+      // the Composition table scrolls inside its own frame, and its column headers
+      // carry ⓘ. Nothing here resizes and nothing scrolls the document, so a
+      // placement that only listens for those is left describing where the hint
+      // used to be. Measured rather than argued — the wrapper is asked how far it
+      // can go, and the check says so if the answer is nothing, because a table
+      // that stopped overflowing would make this step silently vacuous.
+      await mob.click('.tab[data-t=comp]');
+      await mob.waitForSelector('#comp table', { timeout: 15000 });
+      await mob.mouse.move(0, 0);
+      await mob.waitForTimeout(250);
+      const room = await mob.evaluate(() => {
+        const w = document.querySelector('.comptblwrap');
+        if (!w || !w.querySelector('.hint')) return 0;
+        w.scrollLeft = w.scrollWidth;
+        return w.scrollLeft;
+      });
+      await mob.waitForTimeout(250);
+      if (!room) {
+        fail('the composition table at 390px no longer scrolls sideways with a ⓘ '
+           + 'inside it — this step can no longer see what it is for');
+      } else {
+        await assertHintsFit(mob, `comp scrolled ${room}px inside its own frame`);
+      }
+      await mob.evaluate(() => {
+        const w = document.querySelector('.comptblwrap'); if (w) w.scrollLeft = 0;
+      });
       // One width narrower, on the one tab that needed the fix. 390px is the phone
       // this shot is taken on, and at 390px letting the ROW shrink is on its own
       // enough — the label's words rewrap inside their own box and the page is
@@ -2292,6 +2400,117 @@ async function main() {
         note('guards at 320px: no horizontal page overflow either');
       }
       await mob.setViewportSize({ width: 390, height: 844 });
+      // A resize is answered on the next frame, so this waits for one rather than
+      // racing it — a check that reads the layout mid-reflow reports the width it
+      // came from and calls it a defect.
+      await mob.waitForTimeout(250);
+      await assertHintsFit(mob, 'guards back at 390px');
+
+      // F9's own mechanism, which the sweep above cannot see: it measures every
+      // bubble's placement, but a placement that is merely NEVER COMPUTED reads as
+      // the default, and the default used to be the hint's own left edge. So this
+      // arrives at a hint the way the bug did — a pointer parked on nothing, the
+      // page scrolling underneath it. Chromium updates `:hover` for that without
+      // dispatching `mouseenter`, which is what the old placement hung off.
+      //
+      // The hint is asserted to really be hovered before anything is concluded from
+      // it: a step that scrolls to the wrong offset would otherwise report a clean
+      // page and prove only that no tooltip was open (F3's lesson — a check that
+      // goes green for the wrong reason).
+      await mob.click('.tab[data-t=guards]');
+      await mob.waitForTimeout(250);
+      await mob.mouse.move(0, 0);
+      await mob.evaluate(() => window.scrollTo(0, 0));
+      await mob.waitForTimeout(150);
+      const PARK_Y = 400;
+      // A hint whose bubble cannot fit anchored at its own left edge — which is
+      // where an unplaced one opens. Chosen by measurement, not by name: which
+      // control sits where is the field table's business, not this file's.
+      const parked = await mob.evaluate((y) => {
+        const vw = document.documentElement.clientWidth;
+        const h = [...document.querySelectorAll('#guards .hint[data-tip]')]
+          .find((n) => { const r = n.getBoundingClientRect();
+                         return r.width && r.left + 290 > vw; });
+        if (!h) return null;
+        const r = h.getBoundingClientRect();
+        return { name: h.getAttribute('data-hint'), cx: r.left + r.width / 2,
+                 to: Math.round(r.top + window.scrollY + r.height / 2 - y) };
+      }, PARK_Y);
+      if (!parked) {
+        fail('no ⓘ on Settings at 390px sits far enough right for its bubble to '
+           + 'need placing — this check can no longer see the defect it is for');
+      } else {
+        await mob.mouse.move(parked.cx, PARK_Y);      // resting on nothing
+        await mob.waitForTimeout(120);
+        await mob.evaluate((y) => window.scrollTo(0, y), parked.to);
+        await mob.waitForTimeout(250);
+        const rest = async (what) => {
+          const s = await mob.evaluate(() => {
+            const de = document.documentElement;
+            const h = [...document.querySelectorAll('.hint')]
+              .find((n) => n.matches(':hover'));
+            return { over: de.scrollWidth - de.clientWidth,
+                     hovered: h ? (h.getAttribute('data-hint') || '?') : null };
+          });
+          if (s.hovered !== parked.name) {
+            fail(`${what}: the pointer came to rest on ${JSON.stringify(s.hovered)}, `
+               + `not on "${parked.name}" — the hint this step chose for having a `
+               + 'bubble that cannot fit was never reached, so nothing here was '
+               + 'measured');
+            return;
+          }
+          const boxes = await assertHintsFit(mob, what);
+          const it = boxes.find((b) => b.name === s.hovered);
+          if (s.over > 1) {
+            fail(`${what}: the open bubble on "${s.hovered}" takes the document `
+               + `${s.over}px sideways`
+               + (it ? ` (it opens at ${it.left}..${it.right} of ${it.vw})` : ''));
+          } else {
+            note(`${what}: "${s.hovered}" opened under a pointer that never `
+               + `entered it, page clean`
+               + (it ? `, bubble ${it.left}..${it.right} of ${it.vw}` : ''));
+          }
+        };
+        await rest('a hint scrolled under a stationary pointer');
+        // And the other way in: the form re-rendering underneath the same
+        // stationary pointer, which is what the 5s poll does to it every five
+        // seconds. A hint that is REPLACED has never received a pointer event in
+        // its life.
+        await mob.evaluate(() => renderSettings());
+        await mob.waitForTimeout(250);
+        await rest('a hint re-rendered under a stationary pointer');
+
+        // And it must be placed before the frame that PAINTS it, not one frame
+        // later. The observer's callback is a microtask, so this renders and then
+        // yields exactly one turn of the microtask queue — earlier than any
+        // requestAnimationFrame can have run. What it compares is the same property
+        // at two points in time: if the two disagree, there was a frame in which
+        // the bubble was drawn somewhere nobody put it, and on this form that frame
+        // is 103px of document.
+        const early = await mob.evaluate(async (name) => {
+          renderSettings();
+          await Promise.resolve();
+          const h = document.querySelector(`.hint[data-hint="${name}"]`);
+          return h ? h.style.getPropertyValue('--tipx') : null;
+        }, parked.name);
+        await mob.waitForTimeout(250);
+        const settled = await mob.evaluate((name) => {
+          const h = document.querySelector(`.hint[data-hint="${name}"]`);
+          return h ? h.style.getPropertyValue('--tipx') : null;
+        }, parked.name);
+        if (early === null || settled === null) {
+          fail(`"${parked.name}" is no longer on the form, so the placement could `
+             + 'not be read at either point in time');
+        } else if (early !== settled) {
+          fail(`a re-rendered ⓘ is placed a frame late: --tipx is `
+             + `${JSON.stringify(early)} before the first paint and `
+             + `${JSON.stringify(settled)} after it`);
+        } else {
+          note(`placement is settled before the first paint (--tipx ${settled} `
+             + 'both before and after)');
+        }
+      }
+
       // Back where the sweep started, so the shot below is still Overview.
       await mob.click('.tab[data-t=over]');
       await mob.waitForTimeout(250);
