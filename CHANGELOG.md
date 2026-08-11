@@ -4,7 +4,55 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [0.32.0] - 2026-08-10
+## [0.32.1] - 2026-08-11
+
+**Three faults, and in every one the check that should have caught it was already running.** A
+gate that reddened once a month was racing its own fixture. A tooltip took a phone's page 103px
+sideways past a sweep that measures exactly that page — and could not see it, because the thing
+overflowing has no element to name. And the rule "hooks import nothing from scripts" was written
+in three places, one of which was an allow-list holding the single import that broke it. Nothing
+here is a new feature; the theme is that a passing check is not the same as a covered one.
+
+### Fixed
+- **The ⓘ tooltip had no right answer on a phone, and it was placed by an event that need not
+  fire.** Placement lived in a `mouseenter` handler, and a pointer can come to rest on a hint
+  without one — scroll the page under a stationary mouse and Chromium updates `:hover` silently,
+  and the panel's 5s poll re-renders the form underneath it the same way. Measured on Settings at
+  390px: a hint whose placement had simply never run opens left-anchored and takes the **document
+  103px sideways**. The deeper half is that fixing the timing alone would not have been enough —
+  the old answer chose between two anchors, and on a phone that choice has no correct answer for
+  **20 of Settings' 27 controls**: left-anchored the bubble runs past the right edge, flipped it
+  starts at **x=-117**, off screen, where nothing scrolls and nothing can be read. The bubble is
+  now clamped into the viewport — the hint's own position where that fits, the nearest edge where
+  it does not — and placement is driven by the document changing (a `MutationObserver`, resize and
+  scroll) rather than by a pointer being seen to arrive. A third defect surfaced while measuring
+  the fix: `*{box-sizing:border-box}` does not reach a pseudo-element, so a 17rem bubble painted
+  290px for a number that said 272, and the old flip threshold had been wrong by that same 18px in
+  the same direction as the bug it existed to prevent.
+- **The plan gate now reads a sharded manifest through the launcher, proven rather than assumed.**
+  `hooks/_config.py` loaded `scripts/_manifest_io` by inserting `scripts/` at the front of
+  `sys.path` — a process-wide change to import resolution, made in a hook that runs on every tool
+  call, to load one module. It now loads by path like every other scripts/-owned feature the hooks
+  reach for. The behaviour that depends on it had no end-to-end coverage: the CI wiring proof drove
+  its tiers on a single-file manifest, the one layout that needs nothing from `scripts/` to read,
+  while a sharded index carries phase stubs with **no status** — so a hook that failed to load the
+  module would fall back, see no phase running, and go **silent on a project whose gate should be
+  denying**. That case is now driven end to end.
+- **The panel's own composition check was racing its fixture, not failing under load.** It
+  installed a lock fixture by assigning the panel's polled `RUNSTATUS` global, which the 5s poll
+  rewrites from `/api/runstatus`; a poll landing in the gap put the real answer back and the check
+  read `null`. Nothing in the product was wrong. The fixture is served from the endpoint now, so
+  every later poll re-serves it, and a build lint reads the names the poll assigns out of
+  `panel.js` and fails if a check writes any of them into the page.
+
+### Changed
+- **`hooks/` statically imports nothing from `scripts/`, with no allow-list.** The rule was
+  already the stated design and already machine-checked; the checker carried one documented
+  exception, which was the only thing standing between the rule and being true. The exception is
+  gone with the import, and a new drift lint fails the build on any document that states the rule
+  and then carves an allowance out of it — the build guide had been doing exactly that.
+
+
 
 **The code gets the treatment the product sells.** This plugin's whole pitch is enforcement over
 persuasion — plan gates, drift lints, mutation-proven selftests — while its own two biggest files
