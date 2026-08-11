@@ -53,6 +53,9 @@ const ONLY = arg('--only', 'all');
 /** The identity the panel fixture writes as. See where it is installed, below. */
 const DEMO_AUTHOR = 'dev@example.com';
 
+/** The endpoint the panel's run-status poll reads. Fixtures for it go HERE. */
+const RUNSTATUS_URL = '**/api/runstatus';
+
 const problems = [];
 const note = (m) => console.log(`  ${m}`);
 const fail = (m) => { problems.push(m); console.log(`  FAIL ${m}`); };
@@ -817,6 +820,51 @@ async function captureConfirmDialog(page) {
 }
 
 /**
+ * The guard for F4's class: a fixture must not be an assignment to state the
+ * panel itself rewrites on a timer.
+ *
+ * F4 was one such assignment, racing a 5s poll — a check that failed once in a
+ * month of CI and passed on every rerun, which is the shape that gets learned as
+ * "just flaky" and then waves a real regression through. The rule is: anything the
+ * poll owns is installed at its ENDPOINT (page.route), where every later poll
+ * re-serves it, and never written into the page.
+ *
+ * The names are read out of the poll itself rather than listed here, so a second
+ * polled global is covered the day someone adds one — the same reason the Settings
+ * coverage check derives its expected paths from validate-config's own key sets.
+ */
+function assertNoHandAssignedPolledState() {
+  const src = readFileSync(path.join(SCRIPTS, 'ui', 'panel.js'), 'utf8');
+  const at = src.indexOf('async function pollRunStatus');
+  if (at < 0) {
+    fail('panel: pollRunStatus is gone from panel.js — the polled-state guard is '
+       + 'reading a function that no longer exists and can no longer protect '
+       + 'anything');
+    return;
+  }
+  const body = src.slice(at, src.indexOf('\n}', at));
+  const owned = [...new Set([...body.matchAll(/(?:^|[;{\s])([A-Z][A-Z0-9_]{2,})\s*=[^=]/g)]
+    .map((m) => m[1]))];
+  if (!owned.length) {
+    fail('panel: the run-status poll assigns nothing, so the polled-state guard '
+       + 'has no names to check — it would pass whatever this file did');
+    return;
+  }
+  const me = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  const bad = owned.filter((n) =>
+    new RegExp(`(?:^|[;{\\s])${n}\\s*=[^=]`).test(me));
+  if (bad.length) {
+    fail(`panel: this file writes ${bad.join(', ')} into the page, and the panel's `
+       + `own poll rewrites ${bad.length === 1 ? 'it' : 'them'} every 5s — that is `
+       + `F4: a fixture the product destroys mid-check, red once in N runs. Serve `
+       + `it from ${RUNSTATUS_URL} instead`);
+  } else {
+    note(`panel: no fixture hand-writes polled state (${owned.join(', ')} owned by `
+       + `the poll, served from the endpoint)`);
+  }
+}
+
+/**
  * Confirm-before-write: the dialog, the discard, the beforeunload guard and the
  * server's echo.
  *
@@ -828,6 +876,7 @@ async function captureConfirmDialog(page) {
  * dialog: it is a screenful of reassurance about values nobody checked.
  */
 async function assertConfirmFlowWorks(page) {
+  assertNoHandAssignedPolledState();
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   await page.click('.tab[data-t=comp]');
   await page.waitForSelector('#comp table', { timeout: 15000 });
@@ -1067,17 +1116,46 @@ async function assertConfirmFlowWorks(page) {
   }
 
   // --- the dialog states a lock that is live NOW -----------------------------
-  // The lock is fabricated in the page rather than in the fixture: it lives in a
-  // git dir this generated project does not have. What is under test is that the
-  // dialog reads the 5s POLL's answer — a dialog that opened saying "nothing is
-  // running" because nothing was running when the tab loaded is exactly the
-  // reassurance this flow must not give.
+  // The lock is fabricated rather than taken for real: it lives in a git dir this
+  // generated project does not have. What is under test is that the dialog reads
+  // the 5s POLL's answer — a dialog that opened saying "nothing is running"
+  // because nothing was running when the tab loaded is exactly the reassurance
+  // this flow must not give.
+  //
+  // It is installed at the ENDPOINT, and this is F4. The fixture used to be an
+  // assignment to the panel's own `RUNSTATUS`, which the poll owns and rewrites
+  // every five seconds — so a poll landing between the assignment and the click
+  // put the real (unlocked) answer back, `cfLock` returned nothing, and the check
+  // read a `.cflock` that had never been rendered. Once in ~N runs, on a machine
+  // slow enough to leave the window open: CI 31434177985, green on rerun, green
+  // standalone, and unreproducible for a month. Served from the endpoint the
+  // fixture survives every poll, and the poll below is deliberately fired INSIDE
+  // the old race window, so the flow that used to be a coin toss is now the
+  // ordinary path — a check that hand-assigns polled state again goes red here
+  // every time rather than once in a hundred runs.
+  //
+  // It also proves more than it did: the value the dialog states has now travelled
+  // the poll's own fetch-and-adopt path, which is the claim the comment above
+  // makes and which assigning the global never tested.
+  const realRun = await page.evaluate(() => api('GET', '/api/runstatus'));
+  const lockedRun = { ...realRun,
+    phases: { ...(realRun.phases || {}),
+      [target.phaseId]: { lock: { hostname: 'other-box', live: true }, claim: null } } };
+  await page.route(RUNSTATUS_URL, (r) => r.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(lockedRun) }));
   await modelInput.fill('lock-probe');
   await page.waitForTimeout(200);
-  await page.evaluate((pid) => {
-    RUNSTATUS = { index: null,
-      phases: { [pid]: { lock: { hostname: 'other-box', live: true }, claim: null } } };
-  }, target.phaseId);
+  await page.evaluate(() => pollRunStatus());
+  // Bare, not `window.` — the panel declares it with `let` at top level, which
+  // lands in the global lexical environment and never on `window`.
+  const adopted = await page.waitForFunction((pid) => !!(RUNSTATUS
+    && (RUNSTATUS.phases || {})[pid] && RUNSTATUS.phases[pid].lock),
+  target.phaseId, { timeout: 5000 }).then(() => true, () => false);
+  if (!adopted) {
+    fail(`composition: the panel never adopted a lock on ${target.phaseId} from `
+       + `/api/runstatus — the poll is not reading the endpoint, so nothing after `
+       + `this is a test of the dialog`);
+  }
   await saveBtn.click();
   await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
   const lockNote = await page.evaluate(() => {
@@ -1086,7 +1164,15 @@ async function assertConfirmFlowWorks(page) {
   });
   await page.locator('dialog.confirm [data-cfcancel]').click();
   await page.waitForTimeout(200);
-  await page.evaluate(() => { RUNSTATUS = null; renderComp(); });
+  // Put the real answer back the same way it was taken away — through the poll —
+  // so the tabs after this one see the server's truth rather than a global some
+  // earlier step blanked.
+  await page.unroute(RUNSTATUS_URL);
+  await page.evaluate(() => pollRunStatus());
+  await page.waitForFunction((pid) => !((RUNSTATUS || {}).phases || {})[pid]
+    || !RUNSTATUS.phases[pid].lock, target.phaseId, { timeout: 5000 })
+    .catch(() => {});
+  await page.evaluate(() => renderComp());
   await page.waitForTimeout(300);
   if (!lockNote || !lockNote.includes(target.phaseId)) {
     fail(`composition: ${target.phaseId} is locked by another run and the confirm `
