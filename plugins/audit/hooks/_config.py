@@ -71,6 +71,11 @@ Hooks never statically `import` anything from scripts/, this module included: th
 run on every tool call, launched by a process that may not have scripts/ on its
 sys.path, so scripts/-owned features (policy, journal, manifest assembly) are
 loaded by path via `_load_scripts_module` and treated as optional, not required.
+
+That sentence is machine-checked — `scripts/_deps.py` fails the build on any static
+hooks->scripts import, with no allow-list. It had one, for one import: this
+module's own manifest read, which the checker's first run found (F11) and which
+was the only thing standing between the rule and being true.
 """
 import copy
 import fnmatch
@@ -594,16 +599,26 @@ def _load_manifest_assembled(path):
     the legacy single file and the index+per-phase-shards form. Prefers
     scripts/_manifest_io (the single source of truth for assembly); if that module
     is somehow unavailable it FALLS BACK to a plain single-file read, so this
-    blocking-hook read path never regresses. Returns {} on any error (never raises)."""
-    try:
-        scripts_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
-        import _manifest_io  # noqa: E402  (dependency-free; imports only json+os)
-        return _manifest_io.load_manifest_safe(str(path))
-    except Exception:
-        pass
+    blocking-hook read path never regresses. Returns {} on any error (never raises).
+
+    Loaded by path, like every other scripts/-owned feature a hook reaches for. It
+    was the one place that did it by putting scripts/ at the FRONT of `sys.path`
+    and running a plain `import` — which is a process-wide edit to import
+    resolution, made inside a hook that runs on every tool call, to load one
+    module: from then on any import anywhere in the process resolves against
+    scripts/ first. Nothing in scripts/ shadows a stdlib name today, and that is a
+    property of a directory nobody is maintaining for it. It also made this module
+    the only static hooks->scripts edge in the tree, which its own docstring says
+    does not exist (F11). Costs 0.136 ms per call, measured, because importlib by
+    path does not cache in sys.modules — against a 10-second hook budget and at
+    most three calls in a run, that is not worth a second mechanism to avoid (D5's
+    reasoning, one module down)."""
+    mio = _load_scripts_module("_manifest_io", "_manifest_io.py")
+    if mio is not None:
+        try:
+            return mio.load_manifest_safe(str(path))
+        except Exception:
+            pass
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = json.load(fh)

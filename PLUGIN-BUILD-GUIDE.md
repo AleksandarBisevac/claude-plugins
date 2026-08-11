@@ -465,8 +465,10 @@ LOWER layer, and hooks/ may import nothing from scripts/ at all. `import_graph()
 edges via `ast` (not a regex — a nested or selftest-only import is still a real edge);
 `layer_violations()` and `map_drift()` compare that graph and this guide's own module map /
 directory tree / file-by-file sections against the truth, so the guide cannot silently drift
-out from under the code it documents. One known pre-existing exception (`hooks/_config.py`'s
-guarded `import _manifest_io`) is named rather than papered over. `--selftest`.
+out from under the code it documents. The hooks rule has **no allow-list** — it had one entry,
+this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
+at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
+the build on any document that states the rule and then carves an exception out of it. `--selftest`.
 
 ### `plugins/audit/scripts/usage_ledger.py`
 The token-usage metering core `meter-usage.py` and `audit-usage.py --backfill` both call.

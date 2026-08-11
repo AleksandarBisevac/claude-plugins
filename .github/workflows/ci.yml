@@ -138,6 +138,23 @@ jobs:
             > "$proj/docs/audit/audit-plan.json"
           fire deny | grep -q '"permissionDecision": *"deny"'
 
+          # 3b. ...and the same, SHARDED. The three cases above all use a
+          # single-file manifest, which is the one layout that needs nothing from
+          # scripts/ to read: the index of a sharded plan carries phase stubs with
+          # no `status` at all, so a hook that fails to load scripts/_manifest_io
+          # falls back to a plain read, sees no phase running, and goes SILENT on a
+          # project whose gate should be denying. That is a wiring failure no
+          # selftest can see (they call the loader directly) and no case here could
+          # see either, because the layout it needs the module for ran nowhere.
+          # Proven by breaking the delegation: deny becomes silence.
+          mkdir -p "$proj/docs/audit/phases"
+          printf '{"meta":{"version":2},"phases":[{"id":"P1","title":"p","shard":"phases/P1.json"}]}' \
+            > "$proj/docs/audit/audit-plan.json"
+          printf '{"id":"P1","title":"p","status":"in_progress","tasks":[{"id":"P1.1","title":"t","status":"pending"}]}' \
+            > "$proj/docs/audit/phases/P1.json"
+          fire sharded | grep -q '"permissionDecision": *"deny"' \
+            || { echo "sharded manifest: expected deny, got silence — the assembled read is not reaching scripts/_manifest_io through the launcher"; exit 1; }
+
           # 4. enforce:true restores always-on deny with no manifest at all.
           rm -rf "$proj/docs"
           mkdir -p "$proj/.claude"

@@ -29,12 +29,15 @@ every real edge still points strictly downward. `validate-config.py` imports onl
 is the checker correctly treating "nothing imports an entry point" as permission to place it
 wherever its group belongs, same idea named in the exercise's own validate-config example.
 
-ONE FINDING THIS MODULE DOES NOT PAPER OVER: `hooks/_config.py` has a real, guarded, static
-`import _manifest_io` (with a plain-JSON fallback if it fails) — a genuine violation of "hooks
-import nothing from scripts," predating this checker. Fixing it is out of this file's scope
-(this task may only touch `_deps.py`), so the selftest names that ONE known exception instead
-of asserting a false "hooks are clean," and still fails on any OTHER or NEW hooks->scripts
-import, which is the drift this checker exists to catch.
+THE ONE EXCEPTION THIS FILE USED TO CARRY IS GONE. Its first run found exactly one violation of
+"hooks import nothing from scripts": `hooks/_config.py`'s guarded, static `import _manifest_io`,
+reached by inserting scripts/ at the FRONT of `sys.path`. It was named in an allow-list here
+(`_KNOWN_HOOKS_EXCEPTIONS`) because that task could only touch this file; it was fixed in its own
+session (F11) by routing the load through the `_load_scripts_module` its own sibling two lines
+below already used, and the allow-list went with it. The rule is stated without exceptions now,
+which is the only form of it a reader can trust — an allow-list that survives its cause is a
+second place the rule lives, and the next violation would be argued against the list rather than
+against the rule.
 """
 
 import ast
@@ -65,9 +68,8 @@ LAYERS = (
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest"),
 )
 
-# hooks/_config.py's one pre-existing, guarded exception (see module docstring). Named here
-# once so the checker and its selftest read the same fact rather than two facts drifting.
-_KNOWN_HOOKS_EXCEPTIONS = frozenset((("_config.py", "_manifest_io"),))
+# No allow-list. There was one, for exactly one import, and it is gone with the import (F11);
+# see the module docstring for why it is not kept "in case".
 
 
 def _all_names(layers=None):
@@ -220,8 +222,8 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
       - an import cycle;
       - an edge where the importer's layer is not STRICTLY above the imported's (same
         layer included - a same-layer import is still not downward);
-      - a hooks/*.py static import of a scripts/ module name, except the one documented,
-        guarded, pre-existing case this file's docstring names (`_KNOWN_HOOKS_EXCEPTIONS`).
+      - a hooks/*.py static import of a scripts/ module name, with no exceptions - there was
+        one, for one import, and both are gone (F11; see the module docstring).
     A file that will not parse is its own violation in every one of the four passes it
     would otherwise take part in, rather than being dropped from the scan.
     """
@@ -268,8 +270,6 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
                 violations.append((hookfile,
                                     "file does not parse; cannot be scanned for "
                                     "scripts imports"))
-                continue
-            if (hookfile, imported) in _KNOWN_HOOKS_EXCEPTIONS:
                 continue
             violations.append((hookfile,
                                 "imports scripts module %s - hooks must not depend "
@@ -384,6 +384,47 @@ def map_drift(guide_path=None):
                   "regenerate with `python3 plugins/audit/scripts/"
                   "_deps.py --render`)")]
     return []
+
+
+# The hooks rule, as the guide has to state it. Two halves, and the second is the
+# one F11 was about: the required sentence ALONE sat happily beside a paragraph
+# that then carved an allowance out of it ("One known pre-existing exception
+# (`hooks/_config.py`'s guarded `import _manifest_io`) is named rather than papered
+# over"), so the guide went on describing an exception for as long as it took
+# somebody to notice. A rule and its exception in prose are two statements, and
+# only one of them was ever checked.
+# Scoped to one SENTENCE (`[^.]*` spans no full stop), so the paragraph may still
+# recount what the exception was and why it went - which the guide does. A rewrite
+# that puts "exception" back in the same sentence as the file goes red, and that is
+# the right answer: it is the shape the stale claim had.
+_GUIDE_HOOKS_RULE = "hooks/ may import nothing from scripts/ at all"
+_GUIDE_HOOKS_EXCUSE = re.compile(
+    r"exception[^.]*hooks/_config\.py|hooks/_config\.py[^.]*exception", re.I)
+
+
+def hooks_rule_drift(guide_path=None):
+    """[(guide-relative-path, problem), ...] - the guide against the rule this
+    module actually enforces for hooks/.
+
+    The same "a doc must match the code's own statement" pattern as `map_drift`
+    and `_areas.rule_drift`, aimed at the one claim neither of them covers: there
+    is no allow-list here any more, so no document may describe one."""
+    path = _guide_path(guide_path)
+    rel = "PLUGIN-BUILD-GUIDE.md" if guide_path is None else path
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        return [(rel, "unreadable: %s" % exc)]
+    out = []
+    if _GUIDE_HOOKS_RULE not in text:
+        out.append((rel, "does not state the hooks rule as %r"
+                    % _GUIDE_HOOKS_RULE))
+    hit = _GUIDE_HOOKS_EXCUSE.search(text)
+    if hit:
+        out.append((rel, "still describes an exception to it, and there is none: "
+                    "%r" % hit.group(0)[:90]))
+    return out
 
 
 _TREE_HEADING = "## 1. Directory tree"
@@ -545,24 +586,25 @@ def _selftest():
           not by_what("not assigned a layer") and not by_what("stale table entry"))
     check("r4 every real scripts/*.py file parses: %r" % (real_broken,), not real_broken)
 
-    # Read the RAW hooks scan directly, not through layer_violations() - that function
-    # deliberately suppresses the one documented exception from its own output, so this
-    # is the only way to prove the exception list still matches the real tree exactly
-    # (neither grown a new import nor gone stale by the known one disappearing).
+    # Read the RAW hooks scan directly as well as through layer_violations(). The raw list
+    # is what NAMES an offender; the filtered one is what a build reads. They were two
+    # different facts while an allow-list sat between them, and the point of removing it is
+    # that they are now one - so both are asserted, and a suppression reintroduced anywhere
+    # in between makes exactly one of them fail.
     real_on_disk = set()
     for _fname in sorted(os.listdir(_HERE)):
         if _fname.endswith(".py"):
             real_on_disk.add(_fname[:-3])
     real_hooks_raw = [(f, m) for f, m in _hooks_scripts_imports(_HOOKS_DIR, real_on_disk)
                        if m is not None]
-    check("r5 hooks/ imports nothing from scripts/ except the one documented, guarded, "
-          "pre-existing exception named in this module's docstring "
-          "(hooks/_config.py -> _manifest_io, a JSON-fallback-guarded read) - any OTHER "
-          "or NEW hooks->scripts import is drift and must fail here: %r"
+    check("r5 hooks/ statically imports nothing from scripts/ AT ALL - no allow-list, no "
+          "documented exception, because the one there was is fixed (F11): a hook runs on "
+          "every tool call from a process that may not have scripts/ on its path, so every "
+          "scripts/-owned feature is loaded by path and treated as optional: %r"
           % (real_hooks_raw,),
-          sorted(real_hooks_raw) == sorted(_KNOWN_HOOKS_EXCEPTIONS))
-    check("r5b ...and that one exception is correctly SUPPRESSED from layer_violations()'s "
-          "own output, so a clean run does not cry wolf about a fault already on record",
+          real_hooks_raw == [])
+    check("r5b ...and layer_violations() says the same thing rather than filtering it - the "
+          "raw scan and the reported one are one fact now, not two",
           not by_what("imports scripts module"))
 
     check("r6 real edge count is positive - a checker that finds zero edges on a tree "
@@ -655,6 +697,41 @@ def _selftest():
           "byte-for-byte right now - the house 'a doc block must match the code's own "
           "statement' pattern `_areas.rule_drift()` uses, applied to this generated "
           "block: %r" % (map_drift(),), not map_drift())
+
+    # ---------------------------------------------- hooks_rule_drift: guide vs the rule
+    # The generated map has a byte lint; the SENTENCE beside it had nothing, and that is
+    # how the guide went on naming an exception (`hooks/_config.py`'s guarded
+    # `import _manifest_io`) that no longer exists. Both halves are asserted against
+    # fixtures below, because a lint that only requires the sentence is green for a
+    # document that states the rule and then takes it back in the next clause.
+    check("g0 the shipped guide states the hooks rule and claims no exception to it: %r"
+          % (hooks_rule_drift(),), not hooks_rule_drift())
+
+    rule_tmp = tempfile.mkdtemp(prefix="audit-deps-rule-")
+    try:
+        silent_path = os.path.join(rule_tmp, "no-rule.md")
+        with open(silent_path, "w", encoding="utf-8") as fh:
+            fh.write("# guide\n\nhooks are lovely and nothing is said about imports.\n")
+        silent_hits = hooks_rule_drift(silent_path)
+        check("g0a a guide that never states the rule is drift: %r" % (silent_hits,),
+              len(silent_hits) == 1 and "does not state" in silent_hits[0][1])
+
+        excuse_path = os.path.join(rule_tmp, "excused.md")
+        with open(excuse_path, "w", encoding="utf-8") as fh:
+            fh.write("# guide\n\n...and " + _GUIDE_HOOKS_RULE + ". One known "
+                     "pre-existing exception (`hooks/_config.py`'s guarded "
+                     "`import _manifest_io`) is named rather than papered over.\n")
+        excuse_hits = hooks_rule_drift(excuse_path)
+        check("g0b ...and so is a guide that states it and then carves an allowance out "
+              "of it - which is exactly what shipped until F11, with the sentence above "
+              "it correct the whole time: %r" % (excuse_hits,),
+              len(excuse_hits) == 1 and "still describes an exception" in excuse_hits[0][1])
+
+        missing_rule_path = os.path.join(rule_tmp, "gone.md")
+        check("g0c an unreadable guide is reported, not treated as a clean one",
+              [p for _, p in hooks_rule_drift(missing_rule_path) if "unreadable" in p])
+    finally:
+        shutil.rmtree(rule_tmp, ignore_errors=True)
 
     guide_tmp = tempfile.mkdtemp(prefix="audit-deps-guide-")
     try:
