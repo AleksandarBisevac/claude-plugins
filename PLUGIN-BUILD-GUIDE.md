@@ -156,7 +156,7 @@ L1:
 L2:
   _panel_settings -> _loader, _output
   _panel_ui -> _output, _ui_theme
-  _report_html -> _output, _ui_theme
+  _report_html -> _areas, _output, _ui_theme
   _report_ui -> _output, _ui_theme
 
 L3:
@@ -177,7 +177,7 @@ L7:
   audit-journal -> _output
   audit-lock -> _output
   audit-status -> _areas, _fmt, _loader, _manifest_io, _output, _ui_theme
-  audit-usage -> _fmt, _loader, _output
+  audit-usage -> _areas, _fmt, _loader, _output
   gen-demo-manifest -> _loader, _output
   gen-demo-usage -> _loader, _output
   migrate-manifest -> _loader, _manifest_io, _output

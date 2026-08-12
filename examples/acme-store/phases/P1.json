@@ -1,6 +1,7 @@
 {
   "id": "P1",
   "title": "Auth hardening",
+  "area": "auth",
   "status": "done",
   "model": "opus",
   "budgetUSD": 40,

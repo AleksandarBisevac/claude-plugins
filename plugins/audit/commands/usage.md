@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: token spend attributed by phase, task, model, author and time — with cache economics, cost-per-task and a usage trend. Read-only (never mutates the manifest).'
-argument-hint: '[--by phase|task|model|author|agent|day] [--phase <id>] [--author <who>] [--since 7d] [--json] [--backfill]'
+argument-hint: '[--by phase|task|model|author|agent|day|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--json] [--backfill]'
 allowed-tools: Bash
 ---
 
@@ -30,8 +30,9 @@ Pass `$ARGUMENTS` through unchanged. Nothing here needs interpreting on your sid
 
 | Flag | Effect |
 |---|---|
-| `--by phase\|task\|model\|author\|agent\|day\|hour\|session\|branch\|attr` | one focused table instead of the dashboard |
+| `--by phase\|task\|model\|author\|agent\|day\|month\|hour\|session\|branch\|attr` | one focused table instead of the dashboard |
 | `--phase <id>` `--task <id>` `--model <name>` `--author <who>` | narrow the rows (`--model`/`--author` match on substring) |
+| `--area <tag>` | only spend whose phase carries this area tag (`untagged` selects spend no area owns) |
 | `--attr task\|phase\|window\|unattributed` | filter by attribution precision |
 | `--since 7d\|2w\|3m\|YYYY-MM-DD`, `--until YYYY-MM-DD` | bound the window |
 | `--top N` | cap TOP TASKS (default 10) |
@@ -51,6 +52,15 @@ Pass `$ARGUMENTS` through unchanged. Nothing here needs interpreting on your sid
   API", not as money spent.
 - **Cache read dominating the token total is healthy** — it is the cheapest tier by a factor of
   fifty. A high cache hit rate means the prompt prefix is stable and being reused.
+- **Area is a property of the plan, joined at read time** — a row carries a `phaseId` and the
+  phase carries the tags, so re-tagging a phase re-attributes its whole ledger history on the next
+  read, with no backfill. A phase tagged with several areas counts its rows under **each** tag, so
+  the `BY AREA` rows can sum past the total — the output says so when it applies. `untagged` is
+  where spend with no area lands (untagged phase, unknown phase, or no phase on the row).
+- **`MONTHLY` appears once the rows in view span two calendar months** — one month would restate
+  the totals line. Its ledger columns follow the filters; its plan columns (tasks done, bugs,
+  fixed, merged) count the **whole project** by event month, and the footer says so. `--by month`
+  is the same bucketing as a plain grouped table.
 
 ## When there is no data
 

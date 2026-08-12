@@ -1,6 +1,10 @@
 {
   "id": "P2",
   "title": "Input validation",
+  "area": [
+    "storefront",
+    "checkout"
+  ],
   "status": "in_progress",
   "model": "opus",
   "budgetUSD": 25,

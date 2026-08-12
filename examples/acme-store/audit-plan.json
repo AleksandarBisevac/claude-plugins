@@ -36,6 +36,17 @@
       "ledgerDir": ".claude/usage",
       "showCost": true,
       "pricingAsOf": "2026-08-06"
+    },
+    "areas": {
+      "auth": {
+        "description": "Sign-in, sessions and credential storage."
+      },
+      "storefront": {
+        "description": "What shoppers see: search, catalog, rendering and page weight."
+      },
+      "checkout": {
+        "description": "The cart-to-order path: payload validation and cart mutation schemas."
+      }
     }
   },
   "phases": [

@@ -34,12 +34,12 @@ toggle** (it follows your OS by default). It's **responsive**, too: on phones an
 tables scroll inside their own frame ([mobile](../../docs/screenshots/mobile.png)). The
 [`examples/`](../../examples/) folder holds the manifest behind it.
 
-| Overview | Expand a phase | Filter by status | More filters (model + dates) | Dark mode |
+| Overview | Expand a phase | Filter by status | More filters (area + model + dates) | Dark mode |
 |---|---|---|---|---|
 | [![overview](../../docs/screenshots/overview.png)](../../docs/screenshots/overview.png) | [![expanded](../../docs/screenshots/expanded.png)](../../docs/screenshots/expanded.png) | [![filtered](../../docs/screenshots/filtered.png)](../../docs/screenshots/filtered.png) | [![more filters](../../docs/screenshots/filters.png)](../../docs/screenshots/filters.png) | [![dark mode](../../docs/screenshots/dark.png)](../../docs/screenshots/dark.png) |
 
-Filters are the report's, not a viewer's: text, phase status, per-task **model** and a
-**worked-between** date range whose 7/30-day presets count back from the last day the plan
+Filters are the report's, not a viewer's: text, phase status, **area** tags, per-task **model**
+and a **worked-between** date range whose 7/30-day presets count back from the last day the plan
 recorded work — not from today, so a finished plan does not present three empty windows. A
 filtered view is a link (the state rides in the `#!` fragment), a collapsed phase says how many
 of its tasks matched, and nothing auto-expands. **Save as PDF** prints A4 in either orientation.
@@ -236,7 +236,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
 | `/audit:report` | `[--out-dir <dir>] [--share]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). `--share` publishes it as a Claude Code Artifact — a link a reviewer can open without installing anything — and asks before anything leaves the machine. Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
-| `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day] [--phase <id>] [--author <who>] [--since 7d] [--json] [--backfill]` | **Token spend, attributed** — per phase, task, model, author and time window, with cache economics, cost-per-task and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
+| `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day\|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--json] [--backfill]` | **Token spend, attributed** — per phase, task, model, author, area and time window (down to the calendar month), with cache economics, cost-per-task, a monthly overview and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
@@ -540,6 +540,22 @@ with no entry stays legal — the validator warns only in a manifest that regist
 where an unregistered tag is nearly always a typo — and a registered area no phase uses is fine
 too. A single-app repo writes none of this and behaves exactly as before.
 
+**Areas filter every surface, through one read-time join.** A ledger row carries a `phaseId`, the
+phase carries the tags, and nothing about an area is ever written into a row — so re-tagging a
+phase re-attributes its whole ledger history on the next read, no backfill, because area is a
+property of the plan, not of the moment the tokens were spent. On that one join: `/audit:status`
+prints a `BY AREA` block (per tag: phases and done/total tasks, with an `untagged` footer);
+`/audit:usage` takes `--area <tag>`, shows a `BY AREA` table in the dashboard and carries `byArea`
+in `--json`; the report grows area chips that gate phases like the status chips do and travel in
+the shareable hash as `a=`; and the panel's Usage tab gains an area select beside the other
+filters. Two honest edges, stated wherever they apply: a phase tagged with several areas counts
+under **each** of its tags, so area rows can sum past the total; and `untagged` is a real bucket —
+phases with no tags, phases the plan does not know, and rows that never carried a phase.
+
+| An area chip on: tagged phases stay, the rest — untagged included — are gone, and `a=` rides the hash |
+|---|
+| [![the example report filtered to one area: the chip is pressed, only the phases carrying that tag remain](../../docs/screenshots/areas.png)](../../docs/screenshots/areas.png) |
+
 ## Reports
 
 `/audit:report` renders the manifest to a shareable report — **one self-contained file, zero
@@ -604,8 +620,10 @@ which is what the manifest is for. Once phases run:
 ```bash
 /audit:usage                          # the dashboard
 /audit:usage --by task --since 7d     # one focused table, last week
+/audit:usage --by month               # spend by calendar month
 /audit:usage --author sara@acme.io    # who spent what
-/audit:usage --json                   # for CI
+/audit:usage --area api               # one area's spend ('untagged' works too)
+/audit:usage --json                   # for CI (byMonth, byArea, monthly included)
 ```
 
 ```
@@ -638,6 +656,22 @@ over-reports spend by roughly 2.4x. The ledger dedups by message id, and a selft
 
 A repo that has not run a phase since installing will show everything as `unattributed`. That is
 the design, not a failure: off-pipeline work is exactly what you would otherwise never see.
+
+**Month by month.** One function (`monthly_activity`) rolls the calendar up — ledger spend beside
+plan progress: tasks by their `completedAt` month, bugs by `reportedAt`, fixes by the month their
+linked task completed (the same derivation the bug list uses), phases by `mergedAt` — and three
+surfaces render it, so their numbers cannot drift: a `MONTHLY` table in the CLI dashboard, a
+Month-by-month table in the report's Usage section, and a clickable Monthly card in the panel that
+scopes the view to the month you pick. All three appear only once the ledger spans two calendar
+months — a one-month table would restate the totals — and all three state the same scope split:
+ledger columns follow whatever filters are in force, plan columns count the **whole project** by
+event month. `--by month` groups any focused table the same way, `--json` carries `byMonth` and
+`monthly`, and the panel's chart adds a **last 12 months** preset plus a forced day/week/month bin
+(calendar months, not 30-day windows).
+
+| The panel's Monthly card — ledger columns that follow the filters, plan columns that count the whole project |
+|---|
+| [![the Monthly card: tokens, cost and messages per calendar month beside project-wide tasks done, bugs, fixes and merges](../../docs/screenshots/panel-monthly.png)](../../docs/screenshots/panel-monthly.png) |
 
 **Cost bands.** Tasks are sorted into `typical` / `high` / `outlier` by what they cost, and the
 threshold is the project's **own** median and p90 — so it means something on day one with no
@@ -762,9 +796,24 @@ The ledger is gitignored by default — to share it across a team, un-ignore it 
 `*.jsonl merge=union` to `.gitattributes` (append-only NDJSON merges cleanly, and the per-row
 author is what makes cross-developer analytics work).
 
+**Who spent it, honestly scoped.** The ledger's per-row `author` is the only identity the plugin
+records — tasks carry no assignee field — so the surfaces claim exactly what that join supports.
+The report's Usage section grows **author chips** (only when the ledger records more than one
+author, since a set of one has nothing to compare) that scope that section's per-author views and
+nothing else — the tiles and trend above stay project-wide, the task table has no author to filter
+by, and the page says so. The panel, where the author filter already is the drill-down, adds a
+**person header** when one is selected: their all-time share of the spend, models used, phases and
+tasks touched with a status split, and active range — all-time on purpose, because the tiles below
+already answer the filtered question.
+
+| Author chips in the report (one selected, the section scoped) | The panel's person header (all-time strip + status split) |
+|---|---|
+| [![the report's usage section with one author chip pressed: the summary line names them and the per-author views narrow to their row](../../docs/screenshots/authors.png)](../../docs/screenshots/authors.png) | [![the panel's usage tab with an author selected: a person header states their all-time footprint and touched work above the filtered tiles](../../docs/screenshots/panel-person.png)](../../docs/screenshots/panel-person.png) |
+
 The same data drives a **Usage section in `/audit:report`** (stat tiles, per-phase stacked bars by
-model, a daily trend and a day x hour heatmap) and a **Usage tab in `/audit:panel`** with live
-filtering by model, author, phase, task, agent, attribution, free text and an absolute date
+model, a daily trend, a day x hour heatmap, author chips and the month-by-month table) and a
+**Usage tab in `/audit:panel`** with live
+filtering by model, author, phase, task, agent, attribution, area, free text and an absolute date
 window, sparklined KPI tiles with a trend against the previous period, and **Export CSV** of
 exactly the rows behind the current view.
 

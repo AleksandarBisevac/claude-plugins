@@ -2271,6 +2271,143 @@ async function main() {
         fail('report: the example records no per-task model, so there is no More-'
            + 'filters panel to capture — the filters shot cannot be refreshed');
       }
+
+      // The area chips (D1), photographed ON — the subject is a filter that
+      // filters: the chip row with one chip pressed, the phases carrying that tag
+      // kept, every other phase (the untagged one included) actually gone, and the
+      // selection riding in the shareable hash. The tag is chosen by measurement
+      // rather than by name — whichever keeps the most phases while still hiding
+      // at least one — so the picture shows both halves of the feature and this
+      // file never pins the example's own vocabulary.
+      if (!(await page.locator('#audit-areas .fchip').count())) {
+        fail('report: the example carries no area tags, so there is no chip row '
+           + 'and the areas shot cannot be refreshed');
+      } else {
+        const pick = await page.evaluate(() => {
+          const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+          const tagsOf = (r) => (r.getAttribute('data-area') || '')
+            .split(/\s+/).filter(Boolean);
+          let best = null;
+          for (const c of document.querySelectorAll('#audit-areas .fchip')) {
+            const tag = c.getAttribute('data-a');
+            const kept = rows.filter((r) => tagsOf(r).includes(tag)).length;
+            const hidden = rows.length - kept;
+            if (kept && hidden && (!best || kept > best.kept)) {
+              best = { tag, kept, hidden, total: rows.length,
+                       untagged: rows.filter((r) => !tagsOf(r).length).length };
+            }
+          }
+          return best;
+        });
+        if (!pick) {
+          fail('report: no area tag both keeps and hides a phase, so the areas '
+             + 'shot could not show the filter doing anything');
+        } else {
+          await page.click('.fdetails > summary');
+          await page.waitForTimeout(120);
+          await page.click(`#audit-areas .fchip[data-a="${pick.tag}"]`);
+          await page.waitForTimeout(250);
+          const on = await page.evaluate((tag) => {
+            const vis = (r) => r.style.display !== 'none';
+            const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+            const tagsOf = (r) => (r.getAttribute('data-area') || '')
+              .split(/\s+/).filter(Boolean);
+            const shown = rows.filter(vis);
+            const chip = document.querySelector(`#audit-areas .fchip[data-a="${tag}"]`);
+            return {
+              shown: shown.length,
+              offTag: shown.filter((r) => !tagsOf(r).includes(tag)).length,
+              untaggedShown: shown.filter((r) => !tagsOf(r).length).length,
+              pressed: chip ? chip.getAttribute('aria-pressed') : null,
+              panelOpen: !!document.querySelector('.fdetails[open]'),
+              hash: location.hash,
+            };
+          }, pick.tag);
+          if (!on.panelOpen || on.pressed !== 'true' || on.shown !== pick.kept
+              || on.offTag || on.untaggedShown || !/[!&]a=/.test(on.hash)) {
+            fail(`report: the areas shot would show panel open=${on.panelOpen}, `
+               + `chip pressed=${on.pressed}, ${on.shown}/${pick.total} phase rows `
+               + `(${on.offTag} off-tag, ${on.untaggedShown} untagged) for `
+               + `"${pick.tag}", hash "${on.hash}" - a picture of area chips must `
+               + `show the tagged phases kept and the rest actually gone`);
+          } else {
+            note(`areas: "${pick.tag}" keeps ${pick.kept}/${pick.total} phases, `
+               + `hides ${pick.hidden} (${pick.untagged} untagged), a= in the hash`);
+          }
+          await shot(page, 'areas');
+          await page.click(`#audit-areas .fchip[data-a="${pick.tag}"]`);
+          await page.waitForTimeout(250);
+          const back = await page.evaluate(() =>
+            [...document.querySelectorAll('table.phases tbody tr.phase')]
+              .filter((r) => r.style.display !== 'none').length);
+          if (back !== pick.total) {
+            fail(`report: releasing the "${pick.tag}" area chip left `
+               + `${back}/${pick.total} phase rows`);
+          }
+          await page.click('.fdetails > summary');
+          await page.waitForTimeout(120);
+        }
+      }
+
+      // The author chips (C3) — the usage section scoped to one person: the chip
+      // pressed, the summary line reading off the chip's own data attributes, the
+      // By author list down to that one row, and exactly one per-author cell left
+      // in Detail. The chips render only when the ledger records more than one
+      // author, and the committed example's ledger records three — so an absent
+      // row here is a regression, never a fixture choice.
+      if (!(await page.locator('#audit-authors .fchip').count())) {
+        fail('report: the example ledger records more than one author and no '
+           + 'author chip row rendered - the authors shot cannot be refreshed');
+      } else {
+        const who = await page.evaluate(() =>
+          document.querySelector('#audit-authors .fchip').getAttribute('data-au'));
+        await page.evaluate(() => document.getElementById('audit-authors')
+          .scrollIntoView({ block: 'start' }));
+        await page.waitForTimeout(200);
+        await page.click('#audit-authors .fchip');
+        await page.waitForTimeout(250);
+        const on = await page.evaluate((au) => {
+          const cells = [...document.querySelectorAll('.smcell')];
+          const visCells = cells.filter((c) => !c.hidden);
+          const rows = [...document.querySelectorAll('.rank[data-author]')];
+          const chip = document.querySelector('#audit-authors .fchip');
+          const auNote = document.getElementById('audit-au-note');
+          return {
+            cells: cells.length, vis: visCells.length,
+            visMine: visCells.length === 1
+              && visCells[0].getAttribute('data-author') === au,
+            rows: rows.length,
+            rowsVis: rows.filter((r) => !r.hidden).length,
+            pressed: chip ? chip.getAttribute('aria-pressed') : null,
+            said: auNote && !auNote.hidden ? auNote.textContent : null,
+            hash: location.hash,
+          };
+        }, who);
+        if (on.pressed !== 'true' || !on.visMine || on.rowsVis !== 1
+            || !on.said || !on.said.includes(who) || !/#!.*au=/.test(on.hash)) {
+          fail(`report: the authors shot would show chip pressed=${on.pressed}, `
+             + `${on.vis}/${on.cells} per-author cells and ${on.rowsVis}/${on.rows} `
+             + `By-author rows visible for ${who}, summary `
+             + `${JSON.stringify(on.said)}, hash "${on.hash}" - the single-author `
+             + `state is the subject, and it has to be real before it is committed`);
+        } else {
+          note(`authors: ${who} selected - 1/${on.cells} cells, 1/${on.rows} rows, `
+             + `summary line on, au= in the hash`);
+        }
+        await shot(page, 'authors');
+        await page.click('#audit-authors .fchip');     // release it
+        await page.waitForTimeout(250);
+        const off = await page.evaluate(() => ({
+          hash: location.hash,
+          noteHidden: (document.getElementById('audit-au-note') || {}).hidden,
+        }));
+        if (/#!.*au=/.test(off.hash) || off.noteHidden === false) {
+          fail(`report: releasing the author chip left hash "${off.hash}" and the `
+             + `summary line ${off.noteHidden === false ? 'showing' : 'hidden'}`);
+        }
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForTimeout(120);
+      }
       // After the last shot this context takes: the round trip ends where it
       // started, but it also writes localStorage, and nothing below reuses it.
       await assertThemeMovesNativeControls(page, 'report', '#audit-theme');
@@ -2480,6 +2617,163 @@ async function main() {
       await page.click('.tab[data-t=usage]');
       await page.waitForTimeout(600);
       await shot(page, 'panel-usage');
+
+      // C2's Monthly card — the ledger half beside the project-wide plan half.
+      // The card renders only once the ledger spans two calendar months, so that
+      // precondition is asserted rather than hoped for; and the WHOLE card has to
+      // sit inside the frame, below the sticky topbar/tab/filter stack — a
+      // capture that clipped the plan columns, or slid the heading under the
+      // pinned bars, would be a picture of half the feature. Both halves are also
+      // required to carry a number: a fixture whose plan half summed to zero
+      // would photograph the card half dead and nothing would say so.
+      {
+        const months = await page.evaluate(() =>
+          new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 7))).size);
+        if (months < 2) {
+          fail(`usage: the fixture ledger spans ${months} calendar month(s), so `
+             + `the Monthly card does not render and its shot cannot be taken`);
+        } else if (!(await page.locator('#usage [data-umonthly]').count())) {
+          fail(`usage: ${months} ledger months and no Monthly card in the DOM`);
+        } else {
+          const m = await page.evaluate(() => {
+            const tbl = document.querySelector('#usage [data-umonthly]');
+            const heads = [...tbl.querySelectorAll('thead th')].map((h) => h.textContent);
+            const rows = [...tbl.querySelectorAll('tbody tr')];
+            const iTok = heads.indexOf('tokens'), iDone = heads.indexOf('tasks done');
+            const num = (c) => parseFloat(String(c.textContent)
+              .replace(/[^0-9.]/g, '')) || 0;
+            const sum = (i) => rows.reduce((a, r) => a + num(r.cells[i]), 0);
+            // The card is [h2, crumb, wrapper]; scroll from its own structure so a
+            // reshuffle fails loudly here rather than framing the wrong heading.
+            const wrap = tbl.closest('.umwrap');
+            const h2 = wrap && wrap.previousElementSibling
+              ? wrap.previousElementSibling.previousElementSibling : null;
+            if (h2) h2.scrollIntoView({ block: 'start' });
+            return { heads, rows: rows.length,
+                     h2: h2 ? h2.textContent : null,
+                     ledger: iTok < 0 ? 0 : sum(iTok),
+                     plan: iDone < 0 ? 0 : heads.slice(iDone)
+                       .reduce((a, _, k) => a + sum(iDone + k), 0) };
+          });
+          await page.waitForTimeout(200);
+          // Slide the card out from under the sticky stack, then measure it.
+          await page.evaluate(() => {
+            const bars = ['.top', '.tabs', '#usage .ufil']
+              .map((s) => document.querySelector(s)).filter(Boolean);
+            const stack = Math.max(0, ...bars.map((b) => b.getBoundingClientRect().bottom));
+            const h2 = document.querySelector('#usage [data-umonthly]')
+              .closest('.umwrap').previousElementSibling.previousElementSibling;
+            window.scrollBy(0, h2.getBoundingClientRect().top - stack - 8);
+          });
+          await page.waitForTimeout(200);
+          const fits = await page.evaluate(() => {
+            const tbl = document.querySelector('#usage [data-umonthly]');
+            const h2 = tbl.closest('.umwrap').previousElementSibling.previousElementSibling;
+            const bars = ['.top', '.tabs', '#usage .ufil']
+              .map((s) => document.querySelector(s)).filter(Boolean);
+            return { top: Math.round(h2.getBoundingClientRect().top),
+                     stack: Math.round(Math.max(0,
+                       ...bars.map((b) => b.getBoundingClientRect().bottom))),
+                     bottom: Math.round(tbl.getBoundingClientRect().bottom),
+                     right: Math.round(tbl.getBoundingClientRect().right),
+                     vh: window.innerHeight,
+                     vw: document.documentElement.clientWidth };
+          });
+          if (m.h2 !== 'Monthly' || !m.heads.includes('tokens')
+              || !m.heads.includes('tasks done') || !m.heads.includes('merged')) {
+            fail(`usage: the Monthly card's shape moved - heading `
+               + `${JSON.stringify(m.h2)}, columns [${m.heads.join(', ')}]`);
+          } else if (!m.ledger || !m.plan) {
+            fail(`usage: the Monthly card would photograph half dead - ledger sum `
+               + `${m.ledger}, plan sum ${m.plan} over ${m.rows} month row(s)`);
+          } else if (fits.top < fits.stack - 1 || fits.bottom > fits.vh
+                     || fits.right > fits.vw) {
+            fail(`usage: the Monthly card does not fit the frame (heading at `
+               + `${fits.top}px under a ${fits.stack}px sticky stack, table ends `
+               + `${fits.bottom}/${fits.vh}px, right ${fits.right}/${fits.vw}px) - `
+               + `raise the viewport rather than clip the plan half`);
+          } else {
+            note(`usage: Monthly card in frame - ${m.rows} month row(s), ledger `
+               + `and plan halves both non-zero`);
+          }
+          await shot(page, 'panel-monthly');
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(200);
+        }
+      }
+
+      // C4's person header — the author drill-down with a face on it. The filter
+      // is set through the page's own setF (the same call the legend click makes),
+      // and every number the header shows is checked against a recomputation from
+      // USAGE.facts before the shutter opens — so under --check this step still
+      // proves the header renders and counts honestly, and the capture cannot
+      // commit a card whose all-time strip disagrees with the ledger it fronts.
+      {
+        const who = await page.evaluate(() => {
+          const t = {};
+          for (const f of USAGE.facts) t[f[F.author]] = (t[f[F.author]] || 0) + f[F.tokens];
+          return Object.keys(t).filter((a) => a && a !== 'unknown')
+            .sort((a, b) => t[b] - t[a])[0] || null;
+        });
+        if (!who) {
+          fail('usage: the fixture ledger records no author, so the person-header '
+             + 'shot cannot be taken');
+        } else {
+          await page.evaluate((a) => setF('author', a), who);
+          await page.waitForTimeout(300);
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(200);
+          const got = await page.evaluate((a) => {
+            const head = document.querySelector('#usage [data-person]');
+            const strip = document.querySelector('#usage [data-ptasks]');
+            const mine = USAGE.facts.filter((f) => f[F.author] === a);
+            const tasks = new Set(mine.map((f) => f[F.task])
+              .filter((t) => t && t !== '--'));
+            const phases = new Set(mine.map((f) => f[F.phase])
+              .filter((p) => p && p !== '--'));
+            const r = head && head.getBoundingClientRect();
+            const s = strip && strip.getBoundingClientRect();
+            return {
+              named: head ? head.textContent : null,
+              tasks: strip ? +strip.getAttribute('data-ptasks') : null,
+              phases: strip ? +strip.getAttribute('data-pphases') : null,
+              msgs: strip ? +strip.getAttribute('data-pmsgs') : null,
+              want: { tasks: tasks.size, phases: phases.size,
+                      msgs: mine.reduce((x, f) => x + f[F.msgs], 0) },
+              split: [...document.querySelectorAll('#usage .mut.small')]
+                .some((d) => /^Their touched tasks:/.test(d.textContent)),
+              inFrame: !!(r && s && r.top >= 0 && s.bottom <= window.innerHeight),
+            };
+          }, who);
+          if (!got.named || !got.named.includes(who)) {
+            fail(`usage: an author filter on ${who} renders no person header to `
+               + `photograph`);
+          } else if (got.tasks !== got.want.tasks || got.phases !== got.want.phases
+                     || got.msgs !== got.want.msgs) {
+            fail(`usage: the person header would photograph the wrong numbers - `
+               + `${got.phases} phases / ${got.tasks} tasks / ${got.msgs} msgs on `
+               + `screen, ${got.want.phases} / ${got.want.tasks} / `
+               + `${got.want.msgs} in the facts`);
+          } else if (!got.split) {
+            fail(`usage: ${who}'s header carries no status-split line - half the `
+               + `card this shot exists to show`);
+          } else if (!got.inFrame) {
+            fail(`usage: ${who}'s person header does not fit the frame at the top `
+               + `of the tab`);
+          } else {
+            note(`usage: person header for ${who} in frame (${got.want.phases} `
+               + `phases, ${got.want.tasks} tasks, ${got.want.msgs} msgs, status `
+               + `split shown)`);
+          }
+          await shot(page, 'panel-person');
+          await page.evaluate(() => clearAll());
+          await page.waitForTimeout(250);
+          if (await page.evaluate(() =>
+            !!document.querySelector('#usage [data-person]'))) {
+            fail('usage: the person header outlived its filter after the shot');
+          }
+        }
+      }
 
       // Round trip first — it ends where it started, so the shot below is still
       // the first press. The panel needs this more than the report does: Settings

@@ -96,9 +96,19 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
 - **Usage** — what the plan cost, recomputed in the browser on every filter change. KPI tiles
   carry a sparkline and a trend against the window before (all-time compares the ledger's last
   30 days with the 30 before them — anchored on the data, so a finished project still shows a
-  trend — and the chip names both periods). Filter by model, author, phase, task, agent or
-  attribution, by free text over ids *and* titles, and by an absolute from/to window that
-  writes the same filter a click on the chart does. **Export CSV** downloads exactly the rows
+  trend — and the chip names both periods). Filter by model, author, phase, task, agent,
+  attribution or **area** (the select appears only when the plan tags areas, offers `untagged`,
+  and joins spend to its phase's tags at read time — free text finds a tag too), by free text
+  over ids *and* titles, and by an absolute from/to window that
+  writes the same filter a click on the chart does. The chart bins by day, week, calendar month
+  or quarter as the span demands; a **bin** select forces day/week/month when a choice fits the
+  chart, and the presets include **last 12 months**. A **Monthly** card appears once the ledger
+  spans two calendar months: its ledger half follows the filters, its plan half (tasks done,
+  bugs, fixed, merged) is server-computed and project-wide — the crumb says so — and clicking a
+  month scopes the view to it. Selecting an author adds a **person header**: their all-time
+  share, models, phases and tasks touched with a status split, active range — deliberately not
+  following the filters, since the tiles below already answer the filtered question.
+  **Export CSV** downloads exactly the rows
   behind the view, with the span and bucket resolution in the filename. Every scope shows as a
   chip you can take off; `Esc` pops the last one. The **last 7 / 30 / 90 days** presets mean
   exactly that — they count back from today, not from the last day recorded — so on a plan that

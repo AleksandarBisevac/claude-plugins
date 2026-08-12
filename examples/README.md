@@ -23,6 +23,7 @@ report, hosted. Try the search, the phase-status chips, expand a phase, and
 |---|---|
 | All four **phase/task statuses** | `P1` done · `P2` in_progress · `P3` pending · tasks incl. a **blocked** one (`P2.3`) |
 | A **hard gate** between phases | `P3.blockedBy: ["P2"]` — P3 can't start until P2 is done |
+| **Monorepo areas** (tags + registry) | `P1: auth` · `P2: storefront, checkout` (a multi-tag phase) · `P3: storefront` · `BF1` untagged on purpose · described in `meta.areas` — the report's Area chips filter on them |
 | **Task ordering** inside a phase | `P2.4.dependsOn: ["P2.1"]` |
 | The full **bug lifecycle** | `BUG-1` open · `BUG-2` triaged · `BUG-3` in_progress · `BUG-4` fixed · `BUG-5` wontfix |
 | A **bug ↔ fix task** link (reciprocal) | `BUG-4` ↔ `BF1.2` (`fixedIn` = the fix commit) |

@@ -1,6 +1,7 @@
 {
   "id": "P3",
   "title": "Performance pass",
+  "area": "storefront",
   "status": "pending",
   "model": "haiku",
   "blockedBy": [

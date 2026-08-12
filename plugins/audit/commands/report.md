@@ -23,11 +23,15 @@ scratch file (e.g. `<out-dir or manifest dir>/.audit-summary.txt`, via Bash) and
 HTML, the Markdown, and the printable PDF. It is passed to the renderer only — it does **NOT** modify
 the manifest, so `/audit:report` stays read-only (no lock).
 
-The HTML opens standalone (double-click): in-page text/status filtering, per-phase collapse, a
-**Save as PDF** button (browser print, all phases expanded, either orientation) and a
-**Download .md** button — all
-self-contained (inline CSS + JS, zero network fetches), publishable as a CI artifact. Never locks,
-never mutates the manifest.
+The HTML opens standalone (double-click): in-page text/status filtering, area chips when the plan
+tags areas (they gate phases, like the status chips, and travel in the shareable `#!` hash as
+`a=`), per-phase collapse, a **Save as PDF** button (browser print, all phases expanded, either
+orientation) and a **Download .md** button — all
+self-contained (inline CSS + JS, zero network fetches), publishable as a CI artifact. The Usage
+section adds author chips when the ledger records more than one author — they scope that section's
+per-author views only, because tasks record no author to filter by, and the page says so — and a
+Month-by-month table once the ledger spans two calendar months, whose plan columns count the whole
+project by event month. Never locks, never mutates the manifest.
 
 ## `--share` — publish the report to a link
 

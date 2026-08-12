@@ -4,6 +4,87 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.33.0] - 2026-08-12
+
+**Four questions from one team adopting the plugin mid-project, and one posture answers all of
+them: propose rather than presume, and carry the evidence for what you claim.** A team introducing
+the plugin into a living repo does not want forty generated phases written into it unasked — so
+init now asks, and "no" parks the plan losslessly instead of discarding it. A `status: done` is
+only worth what it can prove, so completing a task now leaves a hash-chained record cross-anchored
+to git and the token ledger — sold as tamper-*evidence*, never immutability, because absolute
+immutability of a local file does not exist and claiming it would be the exact overpromise this
+plugin exists to refuse. And the two questions every ledger is eventually asked — *what did this
+month cost* and *which part of the system is spending* — get answers computed in exactly one place
+each, so no two surfaces can drift apart.
+
+### Added
+- **`/audit:init` presents its synthesized phases for approval before writing anything.**
+  Materialize all, park all, or choose per phase — materializing a phase pulls its `blockedBy`
+  predecessors in with it, announced; an interrupted gate parks everything, conservatively. Parked
+  phases live in the schema's previously dead `proposals[]` as full payloads with their phase ids
+  reserved, and the new **`/audit:propose`** command `list`s, `materialize`s (a move, not a
+  re-synthesis) or `drop`s them. Status prints a PROPOSALS block, doctor counts them, and the
+  validator enforces the `PROP-<n>` vocabulary.
+- **Completion records: done now carries evidence.** The journal hook caches a pre-image at
+  PreToolUse and writes field-level diffs (`P2.3: status in_progress->done, completedAt set`)
+  where a row used to say only that a tool wrote a path; a task completing, a commit landing and
+  a phase signing off each leave a chained `task.complete` / `task.commit` / `phase.signoff` row;
+  `verify()` anchors committed journal bytes to git history, so rewriting the file with freshly
+  recomputed hashes is a FINDING that costs an attacker the git history too; and doctor's new
+  `check_completions` cross-checks every done task in scope against its record, its commit SHA —
+  the first place a `task.commit` is ever tested against `git rev-parse` — and the ledger. A
+  watermark rule keeps every manifest that predates the feature green.
+- **`/audit:task move <taskId> --to <phaseId>`** — the sanctioned path for renumbering a task
+  into another phase: id re-allocation in the target phase, every `blockedBy`/`dependsOn`/
+  `fileIndex`/bug reference rewritten across shards, `movedFrom` on the task, and a chained
+  `task.move` row. Historical ledger rows keep the old id on purpose — history is not rewritten;
+  `movedFrom` is the join.
+- **`journal.strictManifestState: "ask"`** — an opt-in confirmation when an edit changes a task's
+  or phase's state fields (`status`, `completedAt`, `commit`, `attempts`). Deliberately no
+  `deny`: the orchestrator finishes tasks through the same tools the guard watches.
+- **The calendar is a first-class dimension.** `--by month` groups spend by calendar month
+  (`byMonth` in `--json`), and one function — `monthly_activity` — computes the 12-month view of
+  tokens beside plan progress (tasks by `completedAt`, bugs by `reportedAt`, fixes by the month
+  their linked task completed, phases by `mergedAt`) that three surfaces render and none may
+  reimplement: a MONTHLY table in the CLI, a Month-by-month table in the report, and a clickable
+  Monthly card in the panel whose plan half stays project-wide and says so. All three wait for a
+  second calendar month, because a one-month table restates the totals. The panel chart's 28-day
+  rung became true calendar months, with a forced day/week/month bin control and a last-12-months
+  preset.
+- **Author views that claim only what the join supports.** Tasks record no author, so the
+  report's new author chips scope the Usage section's per-author views and nothing else — the
+  page says so, and the tiles and trend above stay project-wide. The panel, where the author
+  filter already is the drill-down, adds a person header when one is selected: all-time share of
+  spend, models, phases and tasks touched with a status split, active range.
+- **Areas reach every surface through one read-time join.** A row's `phaseId` meets its phase's
+  tags at read time (`phase_tags` + `aggregate_area`), so re-tagging a phase re-attributes its
+  whole ledger history on the next read, with no backfill — area is a property of the plan, not
+  of the moment the tokens were spent. `/audit:status` prints the BY AREA block it had always
+  computed but only ever shipped in `--json`; `/audit:usage` gains `--area`, a BY AREA table and
+  `byArea` in `--json`; the report's dormant `data-area` attribute finally gets its filter (area
+  chips, `a=` in the shareable hash); and the panel's Usage tab gains an area select fed by both
+  state branches. Two edges stated wherever they apply: a phase tagged with several areas counts
+  under each of its tags, so area rows can sum past the total; and `untagged` is a real bucket —
+  untagged phases, unknown phases, and rows that never carried a phase.
+
+### Changed
+- **Doctor grades a switched-off journal honestly.** `journal.enabled: false` beside existing
+  journal rows is now a WARNING — *was running and has been turned off* — instead of OK, and the
+  flip itself is recorded as a last-will row evaluated against the pre-image config, closing the
+  hole where disabling the journal was the one config edit the journal never saw. Never a
+  FINDING: nothing overrides the user's own switch. The one intentionally changed pin in the
+  integrity work.
+- **The report's small multiples render every author's cell**, everything past the top eight
+  `hidden` until an author chip reveals it. The series was always computed for all authors; only
+  the render was cutting to top-N, and a filter over cells that do not exist would have been a
+  filter that lies.
+- **The worked example now carries area tags.** `acme-store`'s phases are tagged from their own
+  file paths — auth hardening under `auth`, input validation under `storefront` + `checkout` (a
+  real multi-tag phase), the performance pass under `storefront`, the bugfix batch left untagged
+  on purpose — with a `meta.areas` registry describing each. The live demo now shows the area
+  chips, and CI's interactive check exercises the real area-filter path on every push instead of
+  skipping it for want of a tag.
+
 ## [0.32.1] - 2026-08-11
 
 **Three faults, and in every one the check that should have caught it was already running.** A
