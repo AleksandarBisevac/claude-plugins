@@ -123,9 +123,106 @@ def _deny_payload(msg: str) -> dict:
     }
 
 
+def _ask_payload(msg: str) -> dict:
+    """Canonical PreToolUse ask payload — the strict-mode channel. NEVER deny:
+    the orchestrator completes tasks through these same tools, and a deny here
+    would refuse the pipeline its own bookkeeping."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": "[guard-edits] " + msg,
+        }
+    }
+
+
 def block(msg: str) -> None:
     print(json.dumps(_deny_payload(msg)))
     sys.exit(0)
+
+
+def ask(msg: str) -> None:
+    print(json.dumps(_ask_payload(msg)))
+    sys.exit(0)
+
+
+# --- strict manifest state (journal.strictManifestState, default "off") -------
+_STATE_RE = re.compile(r'"(?:status|completedAt|commit|attempts)"\s*:')
+
+
+def _strict_mode(cfg):
+    """"off" | "ask"; anything else (including absence) is off — opt-in."""
+    try:
+        block_ = (cfg or {}).get("journal")
+        v = block_.get("strictManifestState") if isinstance(block_, dict) else None
+        return v if v in ("off", "ask") else "off"
+    except Exception:
+        return "off"
+
+
+def _state_map(obj):
+    """{(kind, id): (status, completedAt, commit, attempts)} over a manifest,
+    an index, or one shard body. What strict mode means by 'state'."""
+    out = {}
+    if not isinstance(obj, dict):
+        return out
+    plist = obj.get("phases")
+    if isinstance(plist, list):
+        candidates = plist
+    elif obj.get("id") and isinstance(obj.get("tasks"), list):
+        candidates = [obj]
+    else:
+        candidates = []
+    for ph in candidates:
+        if not isinstance(ph, dict):
+            continue
+        if ph.get("id"):
+            out[("phase", ph["id"])] = json.dumps(
+                [ph.get(k) for k in ("status", "completedAt", "commit",
+                                     "attempts")], sort_keys=True, default=str)
+        tlist = ph.get("tasks")
+        for t in (tlist if isinstance(tlist, list) else []):
+            if isinstance(t, dict) and t.get("id"):
+                out[("task", t["id"])] = json.dumps(
+                    [t.get(k) for k in ("status", "completedAt", "commit",
+                                        "attempts")], sort_keys=True,
+                    default=str)
+    return out
+
+
+def _touches_state(tool: str, ti: dict, path: str, root) -> bool:
+    """Does this edit change task/phase STATE (status, completedAt, commit,
+    attempts)? Write: a real diff against the on-disk file (every whole-manifest
+    Write contains the word "status", so sniffing would ask on all of them).
+    Edit/MultiEdit/NotebookEdit: fragment heuristic on the old/new strings.
+    Unknowable -> False, fail open."""
+    try:
+        if tool == "Write":
+            target = path if os.path.isabs(path) else os.path.join(str(root),
+                                                                   path)
+            try:
+                with open(target, "r", encoding="utf-8") as fh:
+                    old_obj = json.load(fh)
+            except Exception:
+                return False       # a new or unreadable file is not a flip
+            try:
+                new_obj = json.loads(str(ti.get("content", "")))
+            except Exception:
+                return False
+            return _state_map(old_obj) != _state_map(new_obj)
+        frags = []
+        if tool == "Edit":
+            frags = [str(ti.get("old_string", "")),
+                     str(ti.get("new_string", ""))]
+        elif tool == "MultiEdit":
+            for e in ti.get("edits", []) or []:
+                frags.append(str(e.get("old_string", "")))
+                frags.append(str(e.get("new_string", "")))
+        elif tool == "NotebookEdit":
+            frags = [str(ti.get("new_source", ""))]
+        return any(_STATE_RE.search(f) for f in frags)
+    except Exception:
+        return False
 
 
 # --- decision -----------------------------------------------------------------
@@ -170,6 +267,23 @@ def decide(data: dict, *, cfg=None):
                     "here is what `audit-journal.py verify` exists to detect. To "
                     "record something, append a row; to stop recording, set "
                     "journal.enabled false." % rel)
+
+        # 6. opt-in strict manifest state (journal.strictManifestState: "ask").
+        #    ASK, never deny — the orchestrator completes tasks through these
+        #    same tools. Off by default; the journal + doctor detection stays
+        #    the default defence.
+        if _strict_mode(cfg) == "ask":
+            manifest_rel = str(cfg.get("manifestPath")
+                               or _config.DEFAULTS["manifestPath"])
+            if (rel == manifest_rel
+                    or _config.governing_lock(manifest_rel, rel)):
+                ti = data.get("tool_input", {}) or {}
+                if _touches_state(tool, ti, path, root):
+                    return ("ask",
+                            "journal.strictManifestState is \"ask\": this edit "
+                            "changes task/phase state (status, completedAt, "
+                            "commit or attempts) in %s -- confirm it is "
+                            "intentional." % rel)
 
     if not text:
         return ("allow", "no text")
@@ -218,6 +332,8 @@ def main() -> None:
 
     if verdict == "block":
         block(msg)
+    if verdict == "ask":
+        ask(msg)
     sys.exit(0)
 
 
@@ -322,7 +438,9 @@ def _selftest() -> int:
           "NotebookEdit", "docs/audit/journal/x.ipynb", "print(1)")
     # ...and the guard is about that directory alone. A neighbour whose name
     # merely starts the same way is ordinary work.
-    check("j4 the manifest beside it is not the journal", "allow", "Write",
+    check("j4 the manifest beside it is not the journal - and with "
+          "journal.strictManifestState at its DEFAULT (off) a manifest write "
+          "is allowed outright", "allow", "Write",
           "docs/audit/audit-plan.json", '{"meta":{"version":3}}')
     check("j5 a sibling directory with a similar name is not the journal",
           "allow", "Write", "docs/audit/journal-notes/why.md", "notes")
@@ -341,6 +459,102 @@ def _selftest() -> int:
           and str(hso.get("permissionDecisionReason", "")).startswith("[guard-edits]"))
     results.append(ok)
     print("%s j1 deny payload is canonical PreToolUse JSON" % ("PASS" if ok else "FAIL"))
+
+    # --- st: opt-in strict manifest state (journal.strictManifestState) -------
+    # "ask", never deny: the orchestrator completes tasks through these SAME
+    # tools, and a deny here would deny the pipeline its own bookkeeping. Off by
+    # default; detection (the journal + doctor) stays the default defence.
+    _prev_pd = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = tmp
+    try:
+        strict_cfg = _config._deep_merge(
+            cfg, {"journal": {"strictManifestState": "ask"}})
+        man = "docs/audit/audit-plan.json"
+
+        def st_decide(tool, ti, use_cfg):
+            data = {"tool_name": tool, "tool_input": ti, "cwd": tmp}
+            try:
+                return decide(data, cfg=use_cfg)
+            except Exception as exc:   # pragma: no cover
+                return ("EXC:%s" % exc, "")
+
+        def st_check(name, expected, tool, ti, use_cfg):
+            v, _m = st_decide(tool, ti, use_cfg)
+            ok = v == expected
+            results.append(ok)
+            print("%s %s (expected %s, got %s)"
+                  % ("PASS" if ok else "FAIL", name, expected, v))
+
+        st_check("st1 strict asks on a status flip via Edit", "ask", "Edit",
+                 {"file_path": man,
+                  "old_string": '"status": "in_progress"',
+                  "new_string": '"status": "done"'}, strict_cfg)
+        st_check("st2 an ordinary manifest edit stays allowed in strict",
+                 "allow", "Edit",
+                 {"file_path": man,
+                  "old_string": '"title": "Old title"',
+                  "new_string": '"title": "New title"'}, strict_cfg)
+        st_check("st3 the DEFAULT is off: the same state flip passes untouched",
+                 "allow", "Edit",
+                 {"file_path": man,
+                  "old_string": '"status": "in_progress"',
+                  "new_string": '"status": "done"'}, cfg)
+        # A Write is compared against the on-disk file, not sniffed for key
+        # names -- every whole-manifest Write contains the word "status".
+        os.makedirs(os.path.join(tmp, "docs", "audit"), exist_ok=True)
+        _st_doc = {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "commit": None, "attempts": 1}]}]}
+        with open(os.path.join(tmp, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(_st_doc, fh)
+        import copy as _copy
+        _st_done = _copy.deepcopy(_st_doc)
+        _st_done["phases"][0]["tasks"][0]["status"] = "done"
+        st_check("st4 strict asks on a Write whose STATE differs from disk",
+                 "ask", "Write",
+                 {"file_path": man, "content": json.dumps(_st_done)},
+                 strict_cfg)
+        _st_titled = _copy.deepcopy(_st_doc)
+        _st_titled["phases"][0]["tasks"][0]["title"] = "renamed"
+        st_check("st4b a Write changing only content fields is allowed in "
+                 "strict, though it contains the word status", "allow",
+                 "Write",
+                 {"file_path": man, "content": json.dumps(_st_titled)},
+                 strict_cfg)
+        st_check("st5 a phase shard is governed too", "ask", "Edit",
+                 {"file_path": "docs/audit/phases/P1.json",
+                  "old_string": '"completedAt": null',
+                  "new_string": '"completedAt": "2026-08-11T00:00:00Z"'},
+                 strict_cfg)
+        st_check("st6 an ordinary source file is never strict's business",
+                 "allow", "Edit",
+                 {"file_path": "src/app.py",
+                  "old_string": '"status": "a"',
+                  "new_string": '"status": "b"'}, strict_cfg)
+        _v, _m = st_decide("Edit", {"file_path": man,
+                                    "old_string": '"attempts": 1',
+                                    "new_string": '"attempts": 0'}, strict_cfg)
+        ok = _v == "ask"
+        results.append(ok)
+        print("%s st7 strict NEVER denies - the verdict is ask, and the "
+              "orchestrator keeps its own bookkeeping (got %s)"
+              % ("PASS" if ok else "FAIL", _v))
+        blob = json.loads(json.dumps(_ask_payload("why")))
+        hso = blob.get("hookSpecificOutput") or {}
+        ok = (hso.get("hookEventName") == "PreToolUse"
+              and hso.get("permissionDecision") == "ask"
+              and str(hso.get("permissionDecisionReason", ""))
+              .startswith("[guard-edits]"))
+        results.append(ok)
+        print("%s st8 the ask payload is canonical PreToolUse JSON"
+              % ("PASS" if ok else "FAIL"))
+    finally:
+        if _prev_pd is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev_pd
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

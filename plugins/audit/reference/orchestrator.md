@@ -31,7 +31,7 @@ either layout (the scripts and hooks assemble transparently), but WRITES must ta
   **runtime** field — phase `status`/`branch`/`baseRef`/`mergedAt`/`review`/`summary`/`claim` and
   task `status`/`attempts`/`startedAt`/`completedAt`/`outcome`/`commit` — lives in that phase's
   **shard**. Edit the SHARD, never the index. **Structural** writes (adding a phase/task/bug,
-  `fileIndex`, `bugs[]`) go to the **index** under the index lock. A phase run therefore touches
+  `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock. A phase run therefore touches
   **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
 - **Single-file layout** (`meta.version: 2` or absent): it's all one file, as before.
 - If a legacy single-file manifest is in play, a mutating command should note **once** that
@@ -315,6 +315,9 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
           carrying, and a record committed a week later cannot be checked against the change it
           describes. One file per writer per month, so parallel phases never conflict on it. If
           `journal.enabled` is false there is nothing there and nothing to stage.
+        - **Completion rows are hook-emitted.** The `journal-writes` hook derives `task.complete`,
+          `task.commit` and `phase.signoff` rows from your manifest edits — NEVER append those
+          actions by hand (two writers means duplicate rows and a doctor that cannot trust the count).
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
         - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit the phase's manifest file again).

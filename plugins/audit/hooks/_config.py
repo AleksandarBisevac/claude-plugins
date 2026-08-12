@@ -188,7 +188,10 @@ DEFAULTS = {
     # plan and is committed by the same commit that carries the change it records.
     # scripts/audit-journal.py owns the resolution; journal_dir() below is the one
     # copy of it the hooks read, and its selftest pins the two together.
-    "journal": {"enabled": True, "dir": None},
+    # `strictManifestState` ("off" | "ask", default off) is guard-edits' opt-in
+    # confirmation prompt on manifest STATE edits (status/completedAt/commit/
+    # attempts) -- never "deny": the orchestrator writes through the same tools.
+    "journal": {"enabled": True, "dir": None, "strictManifestState": "off"},
 }
 
 

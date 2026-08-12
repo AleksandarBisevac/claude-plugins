@@ -233,8 +233,15 @@ def check_manifest(rep, project, cfg):
                     "fix them before running a phase - the report renders an "
                     "INVALID MANIFEST banner until they are gone")
     else:
-        rep.ok("manifest", "%s valid (%d phases, %d tasks)"
-               % (manifest_rel, n_phases, n_tasks))
+        # Parked proposals are named here because a park-all /audit:init leaves
+        # "0 phases, 0 tasks" - which reads as a dead plan unless the line says
+        # the work is parked, not missing.
+        n_parked = sum(1 for x in (manifest.get("proposals") or [])
+                       if isinstance(x, dict) and x.get("status") == "proposed"
+                       and isinstance(x.get("payload"), dict))
+        rep.ok("manifest", "%s valid (%d phases, %d tasks%s)"
+               % (manifest_rel, n_phases, n_tasks,
+                  ", %d parked proposal(s)" % n_parked if n_parked else ""))
     for w in warnings[:5]:
         rep.warn("manifest", w)
 
@@ -604,7 +611,28 @@ def check_journal(rep, project, cfg, cfg_mod):
     for a git checkout and only suspicious in context. An empty journal is neither:
     it is what every repo looks like before its first recorded write."""
     if not cfg_mod.journal_enabled(cfg):
-        rep.ok("journal", "audit trail disabled in config (journal.enabled false)")
+        # Disabled is the user's own switch and never a finding. But rows on
+        # disk mean the trail WAS running: saying plain OK graded "someone
+        # turned it off mid-history" identically to "never used", and the
+        # completion records quietly stopped being written. The chain itself is
+        # deliberately not verified here -- a broken chain in a disabled
+        # journal is not this run's business.
+        has_rows = False
+        try:
+            jr = _load("audit_journal", "audit-journal.py")
+            res = jr.verify(project)
+            has_rows = bool(res.get("exists") and res.get("rows"))
+        except Exception:
+            has_rows = False
+        if has_rows:
+            rep.warn("journal",
+                     "audit trail was running and has been turned off -- "
+                     "completion records are no longer being written",
+                     "set journal.enabled true to resume the trail; the "
+                     "recorded history stays where it is")
+        else:
+            rep.ok("journal",
+                   "audit trail disabled in config (journal.enabled false)")
         return
     try:
         jr = _load("audit_journal", "audit-journal.py")
@@ -634,6 +662,195 @@ def check_journal(rep, project, cfg, cfg_mod):
         return
     rep.ok("journal", "%d row(s) in %d file(s) under %s, chain intact"
            % (res.get("rows", 0), len(res.get("files") or []), where))
+
+
+def _hours_between(a, b):
+    """Hours between two ISO timestamps, or None when either cannot be read —
+    an unreadable timestamp is a reason to say nothing, not to accuse."""
+    try:
+        import calendar
+
+        def parse(s):
+            return calendar.timegm(time.strptime(str(s)[:19],
+                                                 "%Y-%m-%dT%H:%M:%S"))
+        return abs(parse(a) - parse(b)) / 3600.0
+    except Exception:
+        return None
+
+
+def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
+                      deep=False):
+    """Completion records against the manifest (workstream B). Read-only.
+
+    The journal's `task.complete` rows are hook-emitted, one per status flip to
+    done — the pipeline's receipt. A done task INSIDE their era with no record
+    means the manifest was edited outside the pipeline or a record was removed:
+    positive evidence, so a FINDING. A commit SHA git has never heard of is the
+    same class. Everything the check cannot know is a WARNING at most, and the
+    era is decided by the WATERMARK rule with no config knob: the first
+    task.complete row's ts. Zero such rows means an older plugin wrote this
+    history, and that is a single ok line, not a nag."""
+    if not manifest:
+        return
+    try:
+        jr = _load("audit_journal", "audit-journal.py")
+        rows = jr.read_all(project)
+    except Exception as exc:
+        rep.warn("completions", "could not check: %s" % exc)
+        return
+    completes = [r for r in rows if r.get("action") == "task.complete"]
+    if not completes:
+        rep.ok("completions",
+               "completion records not in use (older plugin wrote this history)")
+        return
+    watermark = min(str(r.get("ts") or "") for r in completes)
+    recorded, row_ts, row_file = set(), {}, {}
+    for r in completes:
+        det = r.get("details") if isinstance(r.get("details"), dict) else {}
+        tid = det.get("taskId")
+        if tid:
+            recorded.add(tid)
+            row_ts.setdefault(tid, str(r.get("ts") or ""))
+            if r.get("_file"):
+                row_file.setdefault(tid, r["_file"])
+
+    done, pre_era = [], 0
+    for phase in manifest.get("phases") or []:
+        if not isinstance(phase, dict):
+            continue
+        for task in phase.get("tasks") or []:
+            if not isinstance(task, dict) or task.get("status") != "done":
+                continue
+            completed = task.get("completedAt")
+            if not isinstance(completed, str) or completed < watermark:
+                pre_era += 1        # older history: out of scope by watermark
+                continue
+            done.append(task)
+    if pre_era:
+        rep.ok("completions",
+               "%d done task(s) predate the first completion record and are "
+               "not checked (older plugin wrote that history)" % pre_era)
+    if not done:
+        if not pre_era:
+            rep.ok("completions", "no done tasks in the completion-record era")
+        return
+
+    could_not = []
+    missing = [t.get("id") for t in done if t.get("id") not in recorded]
+    if missing:
+        rep.finding("completions",
+                    "%d task(s) marked done with no completion record: %s -- "
+                    "the manifest was edited outside the pipeline or a record "
+                    "was removed"
+                    % (len(missing), ", ".join(str(x) for x in missing[:3])),
+                    "run `audit-journal.py show` to see what WAS recorded; to "
+                    "repair the trail, reopen the task and re-run it via "
+                    "/audit:run")
+
+    bad_sha, no_sha = [], []
+    for t in done:
+        sha = t.get("commit")
+        if not sha:
+            no_sha.append(str(t.get("id")))
+            continue
+        if not (git_root and shutil.which("git")):
+            could_not.append("commit SHAs (no git)")
+            break
+        try:
+            out = subprocess.run(["git", "-C", git_root, "rev-parse", "-q",
+                                  "--verify", "%s^{commit}" % sha],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, timeout=15)
+            if out.returncode != 0:
+                bad_sha.append("%s (%s)" % (t.get("id"), str(sha)[:12]))
+        except Exception:
+            could_not.append("commit %s" % str(sha)[:12])
+    if bad_sha:
+        rep.finding("completions",
+                    "the manifest names a commit git does not have: %s"
+                    % ", ".join(bad_sha[:3]),
+                    "a task.commit that resolves nowhere is a fabricated or "
+                    "rewritten SHA -- check `git log` against the journal's "
+                    "task.commit rows")
+    if no_sha:
+        rep.warn("completions",
+                 "%d done task(s) carry no commit SHA: %s"
+                 % (len(no_sha), ", ".join(no_sha[:3])),
+                 "the orchestrator writes task.commit after each task commit; "
+                 "a missing one usually means an interrupted run "
+                 "(/audit:resume re-commits)")
+
+    drift = []
+    for t in done:
+        gap = _hours_between(row_ts.get(t.get("id")), t.get("completedAt"))
+        if gap is not None and gap > 24:
+            drift.append("%s (%.0fh)" % (t.get("id"), gap))
+    if drift:
+        rep.warn("completions",
+                 "completion record and completedAt disagree by more than 24h: %s"
+                 % ", ".join(drift[:3]),
+                 "the record and the manifest were not written together -- "
+                 "worth a look, not proof of anything")
+
+    unspent = []
+    try:
+        ul = _load("usage_ledger", "usage_ledger.py")
+        usage = cfg.get("usage") or {}
+        ledger_dir = ul.find_ledger_dir(os.path.join(project, manifest_rel),
+                                        rel=usage.get("ledgerDir"),
+                                        project_dir=project)
+        lrows = ul.read_ledger(ledger_dir) if ledger_dir else []
+        spent = {r.get("taskId") for r in lrows if r.get("taskId")}
+        unspent = [str(t.get("id")) for t in done if t.get("id") not in spent]
+    except Exception as exc:
+        could_not.append("ledger coverage (%s)" % exc)
+    if unspent:
+        rep.warn("completions",
+                 "%d completion-era done task(s) have no usage-ledger rows: %s"
+                 % (len(unspent), ", ".join(unspent[:3])),
+                 "the ledger is re-derivable from Claude Code's own read-only "
+                 "transcripts: /audit:usage --backfill")
+
+    if deep and git_root and shutil.which("git"):
+        try:
+            # realpath BOTH sides: on macOS the project arrives as /var/... while
+            # git resolves its toplevel to /private/var/..., and a relpath across
+            # that symlink is a pathspec outside the repository.
+            jdir = os.path.realpath(jr.journal_dir(project))
+            groot = os.path.realpath(git_root)
+            jrel = os.path.relpath(jdir, groot)
+            if jrel.startswith(".."):
+                raise ValueError("journal dir %s is outside the git root" % jdir)
+            unstaged = []
+            for t in done:
+                sha = t.get("commit")
+                fname = row_file.get(t.get("id"))
+                if not sha or not fname:
+                    continue
+                out = subprocess.run(["git", "-C", groot, "ls-tree", "-r",
+                                      "--name-only", str(sha), "--", jrel],
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, timeout=15)
+                if (out.returncode == 0 and fname not in
+                        out.stdout.decode("utf-8", "replace")):
+                    unstaged.append("%s (%s)" % (t.get("id"), fname))
+            if unstaged:
+                rep.warn("completions",
+                         "--deep: the task commit does not carry the journal "
+                         "file that records it: %s" % ", ".join(unstaged[:3]),
+                         "the orchestrator stages the journal dir with every "
+                         "task commit; an absent file weakens the git "
+                         "cross-anchor")
+        except Exception as exc:
+            could_not.append("deep journal-in-commit (%s)" % exc)
+
+    if could_not:
+        rep.warn("completions",
+                 "could not check: %s" % "; ".join(sorted(set(could_not))[:3]))
+    if not (missing or bad_sha or no_sha or drift or unspent or could_not):
+        rep.ok("completions",
+               "%d done task(s) in the completion-record era all carry chained "
+               "records" % len(done))
 
 
 def check_locks(rep, git_root, project, manifest_rel):
@@ -671,8 +888,9 @@ def check_locks(rep, git_root, project, manifest_rel):
 
 
 # --- diagnose / render / cli ----------------------------------------------------
-def diagnose(project):
-    """Run every check. Returns a Report."""
+def diagnose(project, deep=False):
+    """Run every check. Returns a Report. `deep` adds the journal-in-commit
+    cross-check to check_completions (read-only, just slower)."""
     rep = Report()
     check_interpreter(rep)
     cfg, cfg_mod = check_config(rep, project)
@@ -686,6 +904,8 @@ def diagnose(project):
     check_hooks_fired(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
     check_journal(rep, project, cfg, cfg_mod)
+    check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
+                      deep=deep)
     check_locks(rep, git_root, project, manifest_rel)
     return rep
 
@@ -718,6 +938,9 @@ def main(argv):
         description="Diagnose an audit plugin setup. Read-only.")
     ap.add_argument("--project", default=os.getcwd())
     ap.add_argument("--json", action="store_true", dest="as_json")
+    ap.add_argument("--deep", action="store_true",
+                    help="also verify each task commit carries the journal "
+                         "file that records it (read-only, slower)")
     args = ap.parse_args(argv)
 
     project = os.path.abspath(args.project)
@@ -725,7 +948,7 @@ def main(argv):
         sys.stderr.write("ERROR: %s is not a directory\n" % project)
         return 2
 
-    rep = diagnose(project)
+    rep = diagnose(project, deep=args.deep)
     if args.as_json:
         print(json.dumps({"project": project, "counts": rep.counts(),
                           "checks": rep.rows}, indent=2))
@@ -1120,15 +1343,46 @@ def _selftest():
         check("journal: the finding says what was wrong, not just that something was",
               "edited after it was written" in detail(rep, "journal"),
               detail(rep, "journal"))
+        # UPDATED PIN (workstream B, deliberate contract change): a disabled
+        # journal with recorded rows used to read as plain OK, which graded
+        # "the trail was running and someone turned it off" identically to
+        # "this repo never used it". Rows present -> WARNING; the chain itself
+        # is still not verified (a broken chain in a disabled journal is not
+        # this run's business), and it is NEVER a finding -- nothing overrides
+        # the user's own switch.
         with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
                   encoding="utf-8") as fh:
             json.dump({"manifestPath": "plan.json",
                        "journal": {"dir": "trail", "enabled": False}}, fh)
         rep = diagnose(tmp)
-        check("journal: switched off, it says so and stops looking - a broken "
-              "chain in a disabled journal is not this run's business",
+        check("journal: switched off WITH rows on disk is a WARNING that says "
+              "the trail was running and has been turned off",
+              levels(rep, "journal") == ["WARNING"]
+              and "turned off" in detail(rep, "journal"),
+              detail(rep, "journal"))
+        check("journal: ...and never a FINDING - the user's switch is theirs",
+              rep.exit_code() == 0, repr(rep.counts()))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json",
+                       "journal": {"dir": "trail-never", "enabled": False}}, fh)
+        rep = diagnose(tmp)
+        check("journal: switched off with NO rows anywhere stays a plain OK",
               levels(rep, "journal") == ["OK"]
               and "disabled" in detail(rep, "journal"), detail(rep, "journal"))
+        os.remove(os.path.join(tmp, "plan.json"))
+
+        # proposals: a park-all init leaves 0 phases + parked proposals, and the
+        # ok line must SAY so - "valid (0 phases, 0 tasks)" alone reads as dead.
+        with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": [], "proposals": [
+                {"id": "PROP-1", "name": "Parked work", "status": "proposed",
+                 "payload": {"phase": {"id": "P1", "title": "Parked work",
+                                       "status": "pending", "tasks": []}}}]}, fh)
+        rep = diagnose(tmp)
+        check("manifest: parked proposals are counted in the ok line",
+              "1 parked proposal(s)" in detail(rep, "manifest"),
+              detail(rep, "manifest"))
         os.remove(os.path.join(tmp, "plan.json"))
 
         # sharded layout: intact, then broken
@@ -1181,6 +1435,159 @@ def _selftest():
         check("and it says the runner was not checked",
               "not checked" in detail(rep_sh, "buildCommands"),
               detail(rep_sh, "buildCommands"))
+
+        # --- completion records (workstream B: check_completions) --------------
+        # The journal's task.complete rows are the pipeline's receipt for a done
+        # task. check_completions joins them against the manifest, watermarked by
+        # the FIRST record, so history an older plugin wrote never goes red.
+        if have_git:
+            jr2 = _load("audit_journal", "audit-journal.py")
+            now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json",
+                           "journal": {"dir": "trail2"}}, fh)
+
+            def ctask(tid, completed=None, commit=None):
+                return {"id": tid, "title": "t", "status": "done",
+                        "completedAt": completed, "commit": commit}
+
+            def cplan(tasks):
+                with open(os.path.join(tmp, "plan.json"), "w",
+                          encoding="utf-8") as fh:
+                    json.dump({"meta": {"version": 2}, "phases": [
+                        {"id": "P1", "title": "p", "status": "in_progress",
+                         "tasks": tasks}]}, fh)
+
+            def crow(tid, completed):
+                jr2.append(tmp, {"action": "task.complete", "target": "plan.json",
+                                 "summary": "%s done" % tid, "ts": now,
+                                 "details": {"taskId": tid, "phaseId": "P1",
+                                             "from": "in_progress", "to": "done",
+                                             "completedAt": completed},
+                                 "actor": {"sessionId": "doc2", "via": "hook"}})
+
+            cplan([ctask("P1.1", completed=now)])
+            subprocess.run(["git", "-C", tmp, "add", "-A"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", tmp, "-c", "user.email=t@t",
+                            "-c", "user.name=t", "commit", "-q", "-m", "fixture"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            sha = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"],
+                                 stdout=subprocess.PIPE).stdout.decode().strip()
+
+            repc = diagnose(tmp)
+            check("completions: zero task.complete rows is a single plain OK "
+                  "naming the older plugin, never a nag",
+                  levels(repc, "completions") == ["OK"]
+                  and "not in use" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+
+            # compliant: record + real SHA + ledger row -> OK, exit 0
+            crow("P1.1", now)
+            cplan([ctask("P1.1", completed=now, commit=sha)])
+            os.makedirs(os.path.join(tmp, ".claude", "usage"), exist_ok=True)
+            lpath = os.path.join(tmp, ".claude", "usage",
+                                 "%s.jsonl" % now[:7])
+            with open(lpath, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({"ts": now, "taskId": "P1.1",
+                                     "phaseId": "P1"}) + "\n")
+            repc = diagnose(tmp)
+            check("completions: a compliant done task (record, real SHA, ledger "
+                  "rows) is OK",
+                  levels(repc, "completions") == ["OK"]
+                  and "carry chained records" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+            check("completions: ...and does not fail the run",
+                  repc.exit_code() == 0, repr(repc.counts()))
+
+            # hand-flipped to done with no record -> FINDING
+            cplan([ctask("P1.1", completed=now, commit=sha),
+                   ctask("P1.2", completed=now, commit=sha)])
+            repc = diagnose(tmp)
+            check("completions: a done task with no completion record is a "
+                  "FINDING that says what it means",
+                  "FINDING" in levels(repc, "completions")
+                  and "no completion record" in detail(repc, "completions")
+                  and "edited outside the pipeline" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+            check("completions: ...and it fails the run", repc.exit_code() == 1)
+
+            # fabricated SHA -> FINDING (the first place a commit is checked
+            # against git at all)
+            crow("P1.2", now)
+            cplan([ctask("P1.1", completed=now, commit=sha),
+                   ctask("P1.2", completed=now, commit="deadbeef" * 5)])
+            repc = diagnose(tmp)
+            check("completions: a commit git does not have is a FINDING",
+                  "FINDING" in levels(repc, "completions")
+                  and "git does not have" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+
+            # pre-watermark done tasks -> out of scope, OK
+            cplan([ctask("P1.1", completed=now, commit=sha),
+                   ctask("P1.3", completed="2020-01-01T00:00:00Z")])
+            repc = diagnose(tmp)
+            check("completions: done tasks that PREDATE the first record are "
+                  "out of scope - an aggregate line, no finding",
+                  "FINDING" not in levels(repc, "completions")
+                  and "predate" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+
+            # record ts vs completedAt drift beyond 24h -> WARNING
+            crow("P1.4", "2026-08-14T00:00:00Z")
+            cplan([ctask("P1.1", completed=now, commit=sha),
+                   ctask("P1.4", completed="2026-08-14T00:00:00Z", commit=sha)])
+            repc = diagnose(tmp)
+            check("completions: record ts vs completedAt drift beyond 24h is a "
+                  "WARNING, not an accusation",
+                  "FINDING" not in levels(repc, "completions")
+                  and "WARNING" in levels(repc, "completions")
+                  and "24h" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+
+            # a done task with a record but no commit SHA -> WARNING
+            crow("P1.5", now)
+            cplan([ctask("P1.1", completed=now, commit=sha),
+                   ctask("P1.5", completed=now, commit=None)])
+            repc = diagnose(tmp)
+            check("completions: a null task.commit is a WARNING",
+                  "FINDING" not in levels(repc, "completions")
+                  and "no commit SHA" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+
+            # zero ledger rows for an in-scope task -> WARNING + backfill hint
+            os.unlink(lpath)
+            cplan([ctask("P1.1", completed=now, commit=sha)])
+            repc = diagnose(tmp)
+            cfix = " ".join(r["fix"] or "" for r in repc.rows
+                            if r["check"] == "completions")
+            check("completions: zero ledger rows for the task is a WARNING that "
+                  "names the --backfill repair",
+                  "WARNING" in levels(repc, "completions")
+                  and "--backfill" in cfix,
+                  detail(repc, "completions") + " | " + cfix)
+            with open(lpath, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({"ts": now, "taskId": "P1.1",
+                                     "phaseId": "P1"}) + "\n")
+
+            # --deep: the task commit should carry the journal file that
+            # records it. The fixture commit predates the journal rows, so deep
+            # warns -- and the default run says nothing about it.
+            repc = diagnose(tmp)
+            check("completions: the deep check is OFF by default",
+                  "does not carry the journal" not in detail(repc, "completions"),
+                  detail(repc, "completions"))
+            repc = diagnose(tmp, deep=True)
+            check("completions: --deep warns when the task commit does not "
+                  "carry the journal file that records it",
+                  "WARNING" in levels(repc, "completions")
+                  and "does not carry the journal" in detail(repc, "completions"),
+                  detail(repc, "completions"))
+
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json"}, fh)
 
         # rendering + json shape
         text = render(rep, tmp)

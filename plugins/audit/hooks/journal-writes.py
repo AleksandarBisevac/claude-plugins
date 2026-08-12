@@ -1,11 +1,42 @@
 #!/usr/bin/env python3
 """
-PostToolUse recorder (matcher: Edit|Write|MultiEdit|NotebookEdit).
+Journal recorder -- registered at BOTH PreToolUse and PostToolUse
+(matcher: Edit|Write|MultiEdit|NotebookEdit), branching on `hook_event_name`
+the way require-plan.py does.
 
 Appends one row to the tamper-evident journal for every edit-tool write to the
 MANIFEST (index or phase shard) or to `.claude/audit.config.json`. Nothing else is
 recorded: the journal is the audit trail of the plan and the rules, not a log of
 the repository.
+
+THE TWO PASSES. Edit fragments are not parseable JSON, so a field-level diff can
+only come from remembering the file as it stood BEFORE the write. The Pre pass
+caches the target's bytes into a per-session slot under stateDir (overwritten
+every time -- a denied tool call self-heals on the next attempt) and exits 0
+silently, always. The Post pass consumes the slot, diffs old vs new JSON by id
+over the state fields, turns "Edit wrote <path>" into "P2.3: status
+in_progress->done, completedAt set" with the structured changes in the row's
+`details`, and emits ADDITIONAL chained rows derived from the same diff:
+
+    task.complete   a task's status moved to done
+    task.commit     a task's commit moved null -> SHA
+    phase.signoff   a phase's status moved to done
+
+This HOOK is the only writer of those actions -- a prose instruction to append
+them would be a second writer, and two writers means duplicate rows. Tokens are
+deliberately NOT in these rows: metering lands on Stop/SessionEnd, so any number
+written here would be wrong; the cross-anchor is the ledger, joined by taskId.
+
+THE DISABLE LOOPHOLE, CLOSED. `journal.enabled` used to be read from the config
+AFTER the write, so flipping it true->false silenced the very row that would
+have recorded the flip. The Post pass now judges `enabled` against the PRE-IMAGE
+config when the config itself is the target, so the flip is journalled as a
+final config.edit row -- the last will. Nothing overrides the user's switch:
+once off, edits record nothing.
+
+Fail-open at every step: no cache, unparseable JSON, an over-the-cap file --
+each falls back to today's generic "<tool> wrote <path>" summary, never to a
+broken write.
 
 WHY A HOOK AND NOT A PROMPT. The orchestrator could be told to journal its writes,
 and it would — most of the time. A model that forgets, or a session that never read
@@ -27,9 +58,12 @@ cannot be written must never break the write it was recording. ALWAYS exits 0.
 
 Run `python3 journal-writes.py --selftest` to exercise the decision core.
 """
+import hashlib
 import json
 import os
+import re
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
@@ -37,6 +71,17 @@ import _config  # noqa: E402
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 _SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "scripts")
+
+# The pre-image cache. 5 MB is far above any real manifest; past it the slot
+# records the miss and the Post pass falls back to the generic summary.
+_PREIMAGE_MAX_BYTES = 5 * 1024 * 1024
+_SAFE_SID = re.compile(r"[^A-Za-z0-9._-]+")
+
+# The state fields a diff reports. Everything else on a task or a phase is
+# content, and the journal records that the plan MOVED, not what it says.
+TASK_FIELDS = ("status", "startedAt", "completedAt", "commit", "attempts",
+               "outcome", "verifiedBy", "model", "skills")
+PHASE_FIELDS = ("status", "mergedAt", "branch")
 
 
 # --- helpers ------------------------------------------------------------------
@@ -76,24 +121,18 @@ def _author(root, cfg):
 
 
 # --- decision -----------------------------------------------------------------
-def decide(data, *, cfg=None, root=None):
-    """Pure decision core. Returns ("journal", entry) or ("skip", reason).
-
-    `entry` is the row's news — action, target, summary, actor. Everything that
-    makes it a CHAIN (v, ts, stateHash, prev, hash) belongs to audit-journal.py and
-    is deliberately not invented here."""
+def classify(data, *, cfg, root):
+    """What kind of target this write hits. Returns (action, rel, tool, ti);
+    `action` is None with the reason in `rel`'s place when it is nobody's
+    business. Shared by the Pre and Post passes so the two can never disagree
+    about what counts as the manifest."""
     tool = data.get("tool_name", "")
     if tool not in _EDIT_TOOLS:
-        return ("skip", "not an edit tool")
-    root = root if root is not None else _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
-    if not _config.journal_enabled(cfg):
-        return ("skip", "journal disabled")
-
+        return (None, "not an edit tool", tool, {})
     ti = data.get("tool_input", {}) or {}
     path = _target_of(tool, ti)
     if not path:
-        return ("skip", "no path")
+        return (None, "no path", tool, ti)
     rel = _config.rel_path(root, path)
     manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
 
@@ -101,23 +140,315 @@ def decide(data, *, cfg=None, root=None):
     # anyway, so this only matters when the guards are off — and a recorder that
     # records the recording is a loop nobody wants to read.
     if _config.in_journal(root, cfg, rel):
-        return ("skip", "the journal is not its own subject")
+        return (None, "the journal is not its own subject", tool, ti)
 
     if rel == manifest_rel or _config.governing_lock(manifest_rel, rel):
-        action = "manifest.edit"
-    elif rel == _config.CONFIG_REL:
-        action = "config.edit"
-    else:
-        return ("skip", "not a manifest or config path")
+        return ("manifest.edit", rel, tool, ti)
+    if rel == _config.CONFIG_REL:
+        return ("config.edit", rel, tool, ti)
+    return (None, "not a manifest or config path", tool, ti)
 
-    return ("journal", {
+
+def _entry(action, rel, tool, ti, data, root, cfg):
+    """The row's news — action, target, summary, actor. Everything that makes it
+    a CHAIN (v, ts, stateHash, prev, hash) belongs to audit-journal.py and is
+    deliberately not invented here."""
+    return {
         "action": action,
         "target": rel,
         "summary": "%s wrote %s" % (_how(tool, ti), rel),
         "actor": {"author": _author(root, cfg),
                   "sessionId": str(data.get("session_id") or "") or None,
                   "via": "hook"},
-    })
+    }
+
+
+def decide(data, *, cfg=None, root=None):
+    """Pure decision core. Returns ("journal", entry) or ("skip", reason)."""
+    root = root if root is not None else _config.repo_root(data)
+    cfg = cfg if cfg is not None else _config.load(root)
+    action, rel, tool, ti = classify(data, cfg=cfg, root=root)
+    if action is None:
+        return ("skip", rel)
+    if not _config.journal_enabled(cfg):
+        return ("skip", "journal disabled")
+    return ("journal", _entry(action, rel, tool, ti, data, root, cfg))
+
+
+# --- the pre-image cache ------------------------------------------------------
+def _slot_path(root, cfg, data, rel):
+    """<stateDir>/journal-preimage-<sessionId>.<sha256(rel)[:12]>.json — one slot
+    per (session, target), so parallel sessions never clobber each other's
+    pre-image and the same session's retries overwrite their own."""
+    state_rel = str(cfg.get("stateDir") or _config.DEFAULTS["stateDir"])
+    sid = _SAFE_SID.sub("-", str(data.get("session_id") or "")).strip("-.")
+    sid = (sid or "no-session")[:40]
+    digest = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:12]
+    return os.path.join(str(root), state_rel,
+                        "journal-preimage-%s.%s.json" % (sid, digest))
+
+
+def pre_cache(data, *, cfg=None, root=None):
+    """The PreToolUse pass: remember the target as it stands, so the Post pass
+    can diff. Returns the slot path when one was written, else None.
+
+    Never raises, never blocks, never speaks. The slot is overwritten every
+    time; a file over the cap (or absent) leaves `content` null, which the Post
+    pass reads as "fall back to the generic summary"."""
+    try:
+        root = root if root is not None else _config.repo_root(data)
+        cfg = cfg if cfg is not None else _config.load(root)
+        if not _config.journal_enabled(cfg):
+            return None            # on Pre, the config on disk IS the pre-image
+        action, rel, _tool, _ti = classify(data, cfg=cfg, root=root)
+        if action is None:
+            return None
+        slot = _slot_path(root, cfg, data, rel)
+        sha, content = None, None
+        target = os.path.join(str(root), rel)
+        try:
+            if os.path.getsize(target) <= _PREIMAGE_MAX_BYTES:
+                with open(target, "rb") as fh:
+                    raw = fh.read(_PREIMAGE_MAX_BYTES + 1)
+                sha = "sha256:" + hashlib.sha256(raw).hexdigest()
+                content = raw.decode("utf-8", "replace")
+        except OSError:
+            pass                   # no such file yet: the slot records that too
+        os.makedirs(os.path.dirname(slot), exist_ok=True)
+        with open(slot, "w", encoding="utf-8") as fh:
+            json.dump({"path": rel,
+                       "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                       "sha256": sha, "content": content}, fh)
+        return slot
+    except Exception:
+        return None
+
+
+def _consume_preimage(root, cfg, data, rel):
+    """Load AND delete the slot for `rel`. None on any miss — a miss is a
+    fallback, never an error."""
+    try:
+        slot = _slot_path(root, cfg, data, rel)
+        with open(slot, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+        try:
+            os.unlink(slot)
+        except OSError:
+            pass
+        if isinstance(obj, dict) and obj.get("path") == rel:
+            return obj
+    except Exception:
+        pass
+    return None
+
+
+# --- the diff -----------------------------------------------------------------
+def _read_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def _collect(obj):
+    """(phases_by_id, tasks_by_id, phase_of_task) out of a single-file manifest,
+    a sharded index, or one shard body (which IS a phase). Empty on anything
+    else — an empty diff is a generic summary, not a crash."""
+    phases, tasks, owner = {}, {}, {}
+    if not isinstance(obj, dict):
+        return phases, tasks, owner
+    plist = obj.get("phases")
+    if isinstance(plist, list):
+        candidates = plist
+    elif obj.get("id") and isinstance(obj.get("tasks"), list):
+        candidates = [obj]
+    else:
+        candidates = []
+    for ph in candidates:
+        if not isinstance(ph, dict):
+            continue
+        pid = ph.get("id")
+        if pid:
+            phases[pid] = ph
+        tlist = ph.get("tasks")
+        for t in (tlist if isinstance(tlist, list) else []):
+            if isinstance(t, dict) and t.get("id"):
+                tasks[t["id"]] = t
+                owner[t["id"]] = pid
+    return phases, tasks, owner
+
+
+def _render(val):
+    """A field value as short evidence text; audit-journal bounds it again."""
+    if val is None or isinstance(val, (str, int, float, bool)):
+        return val
+    try:
+        return json.dumps(val, sort_keys=True, separators=(",", ":"))[:120]
+    except Exception:
+        return type(val).__name__
+
+
+def semantic_diff(old_obj, new_obj):
+    """State diff of two manifest documents, by id.
+
+    Returns {"changes", "summary", "events"} or None when nothing this hook
+    tracks moved. The events are the completion records: derived from the SAME
+    comparison that produced the changes, so they cannot disagree with it."""
+    try:
+        old_phases, old_tasks, _old_owner = _collect(old_obj)
+        new_phases, new_tasks, new_owner = _collect(new_obj)
+        changes, phrases, events = [], [], []
+        for tid in new_tasks:
+            if tid not in old_tasks:
+                changes.append({"id": tid, "field": "task",
+                                "from": None, "to": "added"})
+                phrases.append("%s added" % tid)
+        for tid in old_tasks:
+            if tid not in new_tasks:
+                changes.append({"id": tid, "field": "task",
+                                "from": "present", "to": "removed"})
+                phrases.append("%s removed" % tid)
+        for tid, new_task in new_tasks.items():
+            old_task = old_tasks.get(tid)
+            if old_task is None:
+                continue
+            frags = []
+            for field in TASK_FIELDS:
+                ov, nv = old_task.get(field), new_task.get(field)
+                if ov == nv:
+                    continue
+                changes.append({"id": tid, "field": field,
+                                "from": _render(ov), "to": _render(nv)})
+                if field == "status":
+                    frags.append("status %s->%s" % (ov, nv))
+                elif ov is None:
+                    frags.append("%s set" % field)
+                elif nv is None:
+                    frags.append("%s cleared" % field)
+                else:
+                    frags.append("%s changed" % field)
+                if field == "status" and nv == "done" and ov != "done":
+                    events.append({"action": "task.complete",
+                                   "summary": "%s done" % tid,
+                                   "details": {
+                                       "taskId": tid,
+                                       "phaseId": new_owner.get(tid),
+                                       "from": ov, "to": nv,
+                                       "completedAt":
+                                       new_task.get("completedAt")}})
+                if (field == "commit" and ov is None
+                        and isinstance(nv, str) and nv):
+                    events.append({"action": "task.commit",
+                                   "summary": "%s commit %s" % (tid, nv[:12]),
+                                   "details": {"taskId": tid,
+                                               "phaseId": new_owner.get(tid),
+                                               "commit": nv}})
+            if frags:
+                phrases.append("%s: %s" % (tid, ", ".join(frags)))
+        for pid, new_phase in new_phases.items():
+            old_phase = old_phases.get(pid)
+            if old_phase is None:
+                continue
+            frags = []
+            for field in PHASE_FIELDS:
+                ov, nv = old_phase.get(field), new_phase.get(field)
+                if ov == nv:
+                    continue
+                changes.append({"id": pid, "field": field,
+                                "from": _render(ov), "to": _render(nv)})
+                if field == "status":
+                    frags.append("status %s->%s" % (ov, nv))
+                elif ov is None:
+                    frags.append("%s set" % field)
+                else:
+                    frags.append("%s changed" % field)
+                if field == "status" and nv == "done" and ov != "done":
+                    events.append({"action": "phase.signoff",
+                                   "summary": "%s signed off" % pid,
+                                   "details": {"phaseId": pid,
+                                               "from": ov, "to": nv,
+                                               "mergedAt":
+                                               new_phase.get("mergedAt")}})
+            if frags:
+                phrases.append("%s: %s" % (pid, ", ".join(frags)))
+        if not changes:
+            return None
+        summary = "; ".join(phrases)
+        if len(summary) > 300:
+            summary = summary[:297] + "..."
+        return {"changes": changes, "summary": summary, "events": events}
+    except Exception:
+        return None
+
+
+def _journal_flip(old_obj, new_obj):
+    """Did `journal.enabled` move between two config documents? Judged on the
+    EFFECTIVE value (absent = true), so deleting the key reads as the flip it
+    is. Returns one change dict, or None."""
+    try:
+        ov = _config.journal_enabled(old_obj if isinstance(old_obj, dict) else {})
+        nv = _config.journal_enabled(new_obj if isinstance(new_obj, dict) else {})
+        if ov != nv:
+            return {"field": "journal.enabled", "from": ov, "to": nv}
+    except Exception:
+        pass
+    return None
+
+
+def post_entries(data, *, cfg=None, root=None):
+    """The PostToolUse pass. Returns the list of entries to append: the primary
+    row (semantic when the pre-image allows, generic otherwise) followed by any
+    completion-event rows. Empty list = nothing to record. Never raises.
+
+    The disable loophole is closed HERE: when the config itself is the target,
+    `journal.enabled` is judged against the pre-image, so a true->false flip is
+    journalled as a final config.edit row instead of silencing its own record."""
+    try:
+        root = root if root is not None else _config.repo_root(data)
+        cfg = cfg if cfg is not None else _config.load(root)
+        action, rel, tool, ti = classify(data, cfg=cfg, root=root)
+        if action is None:
+            return []
+        pre = _consume_preimage(root, cfg, data, rel)   # consumed regardless
+        old_obj = None
+        if pre is not None and isinstance(pre.get("content"), str):
+            try:
+                old_obj = json.loads(pre["content"])
+            except Exception:
+                old_obj = None
+        enabled = _config.journal_enabled(cfg)
+        if action == "config.edit" and old_obj is not None:
+            enabled = _config.journal_enabled(
+                old_obj if isinstance(old_obj, dict) else {})
+        if not enabled:
+            return []
+        entry = _entry(action, rel, tool, ti, data, root, cfg)
+        events = []
+        if old_obj is not None:
+            new_obj = _read_json(os.path.join(str(root), rel))
+            if action == "config.edit":
+                flip = (_journal_flip(old_obj, new_obj)
+                        if new_obj is not None else None)
+                if flip is not None:
+                    entry["summary"] = ("journal.enabled %s->%s"
+                                        % (str(flip["from"]).lower(),
+                                           str(flip["to"]).lower()))
+                    entry["details"] = {"changes": [flip]}
+            else:
+                diff = (semantic_diff(old_obj, new_obj)
+                        if new_obj is not None else None)
+                if diff is not None:
+                    entry["summary"] = diff["summary"]
+                    entry["details"] = {"changes": diff["changes"]}
+                    for ev in diff["events"]:
+                        events.append({"action": ev["action"], "target": rel,
+                                       "summary": ev["summary"],
+                                       "details": ev["details"],
+                                       "actor": dict(entry["actor"])})
+        return [entry] + events
+    except Exception:
+        return []
 
 
 # --- cli ----------------------------------------------------------------------
@@ -131,11 +462,16 @@ def main() -> None:
     except Exception:
         sys.exit(0)
     try:
-        verdict, payload = decide(data)
-        if verdict == "journal":
-            mod = _journal_lib()
-            if mod is not None:
-                mod.append(str(_config.repo_root(data)), payload)
+        if str(data.get("hook_event_name") or "PostToolUse") == "PreToolUse":
+            pre_cache(data)
+        else:
+            entries = post_entries(data)
+            if entries:
+                mod = _journal_lib()
+                if mod is not None:
+                    root = str(_config.repo_root(data))
+                    for entry in entries:
+                        mod.append(root, entry)
     except Exception:
         pass
     sys.exit(0)
@@ -319,6 +655,250 @@ def _selftest() -> int:
         check("e3 ...and it really did record that write - a hook that stays quiet "
               "by doing nothing would pass the case above",
               jmod.verify(proj)["rows"] == 3, repr(jmod.verify(proj)))
+
+        # --- g: the Pre pass caches the pre-image ------------------------------
+        # Edit fragments are not parseable JSON, so the only way to diff is to
+        # remember the file as it stood BEFORE the write.
+        pproj = os.path.join(tmp, "prepost")
+        os.makedirs(os.path.join(pproj, "docs", "audit"))
+        man_rel = "docs/audit/audit-plan.json"
+        man_abs = os.path.join(pproj, man_rel)
+
+        def write_manifest(obj):
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump(obj, fh)
+
+        def manifest_doc(status="in_progress", commit=None, completed=None,
+                         phase_status="in_progress", merged=None):
+            return {"meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "p", "status": phase_status,
+                 "mergedAt": merged,
+                 "tasks": [{"id": "P1.1", "title": "t", "status": status,
+                            "commit": commit, "completedAt": completed}]}]}
+
+        write_manifest(manifest_doc())
+        slot = pre_cache(payload("Edit", man_rel, sid="pp-1"), cfg=cfg,
+                         root=pproj)
+        check("g1 the Pre pass caches a manifest target and returns the slot",
+              slot is not None and os.path.exists(slot), repr(slot))
+        with open(slot, encoding="utf-8") as fh:
+            slot_obj = json.load(fh)
+        check("g2 the slot holds the path, a hash and the bytes themselves",
+              slot_obj.get("path") == man_rel
+              and str(slot_obj.get("sha256") or "").startswith("sha256:")
+              and json.loads(slot_obj["content"])["phases"][0]["id"] == "P1",
+              repr(slot_obj)[:200])
+        check("g3 an ordinary source file leaves no slot",
+              pre_cache(payload("Edit", "src/app.py", sid="pp-1"), cfg=cfg,
+                        root=pproj) is None)
+        check("g4 a disabled journal caches nothing (the Pre pass reads the "
+              "pre-image config: on Pre, disk IS the pre-image)",
+              pre_cache(payload("Edit", man_rel, sid="pp-1"),
+                        cfg=_config._deep_merge(cfg, {"journal":
+                                                      {"enabled": False}}),
+                        root=pproj) is None)
+        write_manifest(manifest_doc(status="pending"))
+        pre_cache(payload("Edit", man_rel, sid="pp-1"), cfg=cfg, root=pproj)
+        with open(slot, encoding="utf-8") as fh:
+            slot_obj2 = json.load(fh)
+        check("g5 a second Pre OVERWRITES the stale slot - a denied tool call "
+              "self-heals on the next attempt",
+              json.loads(slot_obj2["content"])
+              ["phases"][0]["tasks"][0]["status"] == "pending")
+        os.makedirs(os.path.join(pproj, "docs", "audit", "phases"),
+                    exist_ok=True)
+        big_rel = "docs/audit/phases/P9.json"
+        with open(os.path.join(pproj, big_rel), "w", encoding="utf-8") as fh:
+            fh.write('{"id":"P9","tasks":[],"pad":"'
+                     + "x" * (5 * 1024 * 1024) + '"}')
+        slot_big = pre_cache(payload("Edit", big_rel, sid="pp-1"), cfg=cfg,
+                             root=pproj)
+        with open(slot_big, encoding="utf-8") as fh:
+            check("g6 a pre-image over the 5 MB cap is not cached whole - the "
+                  "slot records the miss and the Post pass falls back",
+                  json.load(fh).get("content") is None)
+
+        # --- h: the Post pass diffs, summarises, and derives events ------------
+        write_manifest(manifest_doc(status="in_progress"))
+        pre_cache(payload("Edit", man_rel, sid="pp-2"), cfg=cfg, root=pproj)
+        write_manifest(manifest_doc(status="done",
+                                    completed="2026-08-11T00:00:00Z"))
+        entries = post_entries(payload("Edit", man_rel, sid="pp-2"), cfg=cfg,
+                               root=pproj)
+        check("h1 a status flip yields a semantic summary, not 'Edit wrote ...'",
+              len(entries) >= 1
+              and "P1.1: status in_progress->done" in entries[0]["summary"]
+              and "completedAt set" in entries[0]["summary"],
+              repr([e.get("summary") for e in entries]))
+        check("h2 ...with the structured changes in details",
+              {"id": "P1.1", "field": "status", "from": "in_progress",
+               "to": "done"} in (entries[0].get("details") or {})
+              .get("changes", []), repr(entries[0].get("details")))
+        comp = [e for e in entries if e.get("action") == "task.complete"]
+        check("h3 ...and a task.complete row derived from the same diff - the "
+              "HOOK is the only writer of these",
+              len(comp) == 1 and comp[0]["details"] == {
+                  "taskId": "P1.1", "phaseId": "P1", "from": "in_progress",
+                  "to": "done", "completedAt": "2026-08-11T00:00:00Z"},
+              repr(comp))
+        check("h4 the Post pass consumed and deleted the slot",
+              not os.path.exists(_slot_path(pproj, cfg,
+                                            {"session_id": "pp-2"}, man_rel)))
+
+        write_manifest(manifest_doc(status="done", completed="X"))
+        pre_cache(payload("Write", man_rel, sid="pp-3"), cfg=cfg, root=pproj)
+        write_manifest(manifest_doc(status="done", completed="X",
+                                    commit="a" * 40))
+        entries = post_entries(payload("Write", man_rel, sid="pp-3"), cfg=cfg,
+                               root=pproj)
+        commit_rows = [e for e in entries if e.get("action") == "task.commit"]
+        check("h5 a Write is diffed by full content: commit null->SHA yields a "
+              "task.commit row",
+              len(commit_rows) == 1
+              and commit_rows[0]["details"]["commit"] == "a" * 40
+              and commit_rows[0]["details"]["taskId"] == "P1.1", repr(entries))
+        check("h5b ...and no task.complete - the status did not move this time",
+              not [e for e in entries if e.get("action") == "task.complete"])
+
+        write_manifest(manifest_doc(status="done", completed="X",
+                                    commit="a" * 40))
+        pre_cache(payload("Edit", man_rel, sid="pp-4"), cfg=cfg, root=pproj)
+        write_manifest(manifest_doc(status="done", completed="X",
+                                    commit="a" * 40, phase_status="done",
+                                    merged="2026-08-11T01:00:00Z"))
+        entries = post_entries(payload("Edit", man_rel, sid="pp-4"), cfg=cfg,
+                               root=pproj)
+        sign = [e for e in entries if e.get("action") == "phase.signoff"]
+        check("h6 a phase flipped to done yields a phase.signoff row carrying "
+              "mergedAt",
+              len(sign) == 1 and sign[0]["details"] == {
+                  "phaseId": "P1", "from": "in_progress", "to": "done",
+                  "mergedAt": "2026-08-11T01:00:00Z"}, repr(sign))
+
+        write_manifest(manifest_doc())
+        entries = post_entries(payload("Edit", man_rel, sid="pp-5"), cfg=cfg,
+                               root=pproj)
+        check("h7 a cache miss falls back to the generic summary, no details, "
+              "no events",
+              len(entries) == 1
+              and entries[0]["summary"].startswith("Edit wrote ")
+              and "details" not in entries[0], repr(entries))
+        slot2 = pre_cache(payload("Edit", man_rel, sid="pp-6"), cfg=cfg,
+                          root=pproj)
+        with open(slot2, "w", encoding="utf-8") as fh:
+            json.dump({"path": man_rel, "ts": "t", "sha256": "sha256:x",
+                       "content": "{not json"}, fh)
+        entries = post_entries(payload("Edit", man_rel, sid="pp-6"), cfg=cfg,
+                               root=pproj)
+        check("h8 an unparseable pre-image falls back to the generic summary",
+              len(entries) == 1
+              and entries[0]["summary"].startswith("Edit wrote "))
+        slot3 = pre_cache(payload("Edit", man_rel, sid="pp-7"), cfg=cfg,
+                          root=pproj)
+        with open(slot3, "w", encoding="utf-8") as fh:
+            json.dump({"path": man_rel, "ts": "t", "sha256": None,
+                       "content": None}, fh)
+        entries = post_entries(payload("Edit", man_rel, sid="pp-7"), cfg=cfg,
+                               root=pproj)
+        check("h9 an over-the-cap pre-image falls back too",
+              len(entries) == 1
+              and entries[0]["summary"].startswith("Edit wrote "))
+
+        # --- k: the disable loophole, closed -----------------------------------
+        # journal.enabled is judged against the PRE-IMAGE when the config itself
+        # is the target, so the flip that would have silenced its own record is
+        # written down as a final row - the last will.
+        cfg_rel = _config.CONFIG_REL
+        cfg_abs = os.path.join(pproj, cfg_rel)
+        os.makedirs(os.path.dirname(cfg_abs), exist_ok=True)
+
+        def write_cfg_file(obj):
+            with open(cfg_abs, "w", encoding="utf-8") as fh:
+                json.dump(obj, fh)
+
+        write_cfg_file({"journal": {"enabled": True}})
+        pre_cache(payload("Edit", cfg_rel, sid="pp-9"), cfg=cfg, root=pproj)
+        write_cfg_file({"journal": {"enabled": False}})
+        post_cfg = _config._deep_merge(cfg, {"journal": {"enabled": False}})
+        entries = post_entries(payload("Edit", cfg_rel, sid="pp-9"),
+                               cfg=post_cfg, root=pproj)
+        check("k1 flipping journal.enabled true->false IS journalled, with the "
+              "flip in details",
+              len(entries) == 1 and entries[0]["action"] == "config.edit"
+              and (entries[0].get("details") or {}).get("changes") ==
+              [{"field": "journal.enabled", "from": True, "to": False}]
+              and "journal.enabled" in entries[0]["summary"], repr(entries))
+        write_cfg_file({"journal": {"enabled": False}})
+        check("k2 a config edit while the journal was already off records "
+              "nothing - the user's switch is honoured",
+              pre_cache(payload("Edit", cfg_rel, sid="pp-10"), cfg=post_cfg,
+                        root=pproj) is None
+              and post_entries(payload("Edit", cfg_rel, sid="pp-10"),
+                               cfg=post_cfg, root=pproj) == [])
+        write_cfg_file({"journal": {"enabled": True}})
+        entries = post_entries(payload("Edit", cfg_rel, sid="pp-11"), cfg=cfg,
+                               root=pproj)
+        check("k3 flipping it back ON is recorded (generically - there was no "
+              "pre-image while it was off)",
+              len(entries) == 1 and entries[0]["action"] == "config.edit")
+
+        # --- w: the wiring - main() routes by hook_event_name ------------------
+        wproj = os.path.join(tmp, "wire")
+        os.makedirs(os.path.join(wproj, "docs", "audit"))
+        wman = os.path.join(wproj, "docs", "audit", "audit-plan.json")
+
+        def wwrite(status):
+            with open(wman, "w", encoding="utf-8") as fh:
+                json.dump({"meta": {"version": 2}, "phases": [
+                    {"id": "P1", "title": "p", "status": "in_progress",
+                     "tasks": [{"id": "P1.1", "title": "t", "status": status,
+                                "commit": None,
+                                "completedAt": "2026-08-11T02:00:00Z"
+                                if status == "done" else None}]}]}, fh)
+
+        def drive(event):
+            import io
+            _stdin, _stdout = sys.stdin, sys.stdout
+            cap = io.StringIO()
+            code = None
+            try:
+                sys.stdin = io.StringIO(json.dumps(
+                    {"tool_name": "Edit", "session_id": "wire-1",
+                     "hook_event_name": event,
+                     "tool_input": {"file_path": "docs/audit/audit-plan.json",
+                                    "new_string": "x"},
+                     "cwd": wproj}))
+                sys.stdout = cap
+                os.environ["CLAUDE_PROJECT_DIR"] = wproj
+                try:
+                    main()
+                except SystemExit as exc:
+                    code = exc.code
+            finally:
+                sys.stdin, sys.stdout = _stdin, _stdout
+                os.environ["CLAUDE_PROJECT_DIR"] = tmp
+            return code, cap.getvalue()
+
+        wwrite("in_progress")
+        code, spoke = drive("PreToolUse")
+        wslots = [f for f in os.listdir(os.path.join(wproj, ".claude", "state"))
+                  if f.startswith("journal-preimage-")] if os.path.isdir(
+                      os.path.join(wproj, ".claude", "state")) else []
+        check("w1 the Pre pass through main() exits 0, prints nothing, and "
+              "leaves a slot",
+              code in (0, None) and spoke == "" and len(wslots) == 1,
+              repr((code, spoke[:80], wslots)))
+        wwrite("done")
+        code, spoke = drive("PostToolUse")
+        wres = jmod.verify(wproj)
+        wrows = jmod.read_all(wproj)
+        check("w2 the Post pass through main() appends the semantic row AND the "
+              "task.complete row, and the chain verifies",
+              code in (0, None) and spoke == "" and wres["ok"]
+              and [r.get("action") for r in wrows] ==
+              ["manifest.edit", "task.complete"]
+              and wrows[1].get("details", {}).get("taskId") == "P1.1",
+              repr((wres, [r.get("action") for r in wrows])))
     finally:
         if prev_env is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

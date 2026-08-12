@@ -38,6 +38,11 @@ TESTS_MODE = ("tdd", "regression", "gate-only")
 RISK = ("low", "med", "high", None)
 BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix")
 BUG_ID_RE = re.compile(r"^BUG-\d+$")
+# v0.33 proposals lifecycle (/audit:init park + /audit:propose). The vocabulary
+# is enforced only on payload-bearing proposals — legacy free-form entries
+# (pre-0.33 wrote whatever it liked here) stay warnings-at-most.
+PROPOSAL_STATUS = ("proposed", "materialized", "dropped")
+PROP_ID_RE = re.compile(r"^PROP-\d+$")
 
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.
@@ -87,11 +92,20 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               "dependsOn", "files", "docs", "description", "tests", "outcome",
               "commit", "attempts", "maxAttempts", "startedAt", "completedAt",
               "risk", "verifiedBy", "bugId", "ado",
+              # workstream B: written by /audit:task move -- {id, phase, at},
+              # the durable half of the mapping (the other half is the
+              # journal's task.move row):
+              "movedFrom",
               # tolerated (older /audit:init wrote this; informational):
               "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
              "description", "repro", "expected", "actual", "files", "taskId",
              "fixedIn", "notes", "ado"}
+KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
+                  "technicalNote", "openQuestions", "createdISO", "payload",
+                  "materializedAs", "materializedAt",
+                  # tolerated on dropped proposals (/audit:propose drop note):
+                  "notes"}
 
 
 # --- per-object checkers --------------------------------------------------------
@@ -413,6 +427,30 @@ def validate(manifest):
             if "risk" in task and task.get("risk") not in RISK:
                 f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
             _check_ado(task, twhere, f)
+            # The id-prefix rule (workstream B) -- the hand-move detector.
+            # /audit:task move renumbers a task into its target phase, so an id
+            # that does not match `<phaseId>.<int>` means the object was dragged
+            # by hand. A WARNING only: legacy manifests with free-form ids must
+            # never go red over bookkeeping.
+            if tid and pid and not re.match(
+                    r"^%s\.\d+$" % re.escape(str(pid)), str(tid)):
+                w.append("%s: id does not follow its phase's prefix (%s.<n>) "
+                         "-- moved by hand? /audit:task move renumbers, "
+                         "rewrites references and records a task.move row. "
+                         "Informational; legacy ids stay legal" % (twhere, pid))
+            if "movedFrom" in task:
+                mf = task.get("movedFrom")
+                if mf is not None and not isinstance(mf, dict):
+                    w.append("%s: movedFrom should be an object "
+                             "{id, phase, at}, got %s"
+                             % (twhere, type(mf).__name__))
+                elif isinstance(mf, dict):
+                    lacking = [k for k in ("id", "phase", "at")
+                               if not mf.get(k)]
+                    if lacking:
+                        w.append("%s: movedFrom is missing %s -- /audit:task "
+                                 "move writes all three"
+                                 % (twhere, ", ".join(lacking)))
             if task.get("bugId"):
                 task_bug_links.append((twhere, tid, task["bugId"]))
 
@@ -524,6 +562,103 @@ def validate(manifest):
                 f.append("%s: bugId '%s' but that bug's taskId is %r — "
                          "link must be reciprocal"
                          % (twhere, bug_ref, linked.get("taskId")))
+
+    # -- proposals[] (parked phases; /audit:init park + /audit:propose) ----------
+    # Two classes of entry share this array. Payload-bearing proposals are
+    # structured records the /audit:propose lifecycle depends on — their
+    # vocabulary IS enforced (findings). Legacy free-form entries (pre-0.33)
+    # are tolerated: unknown-key warnings at most, so no old manifest goes red.
+    proposals = manifest.get("proposals")
+    if proposals is not None and not isinstance(proposals, list):
+        f.append("proposals: not an array")
+    prop_list = proposals if isinstance(proposals, list) else []
+    live_ids = set(all_ids)
+    prop_ids_seen = set()
+    reserved_ids = set()   # payload phase+task ids across still-parked proposals
+    staged_refs = []       # (where, ref) — blockedBy/dependsOn inside payloads
+    for xi, prop in enumerate(prop_list):
+        if not isinstance(prop, dict):
+            f.append("proposals[%d]: not an object" % xi)
+            continue
+        prid = prop.get("id")
+        xwhere = "proposal %s" % (prid or ("proposals[%d]" % xi))
+        _unknown_keys(prop, KNOWN_PROPOSAL, xwhere, w)
+        if prid:
+            if prid in prop_ids_seen:
+                f.append("duplicate proposal id: %s" % prid)
+            prop_ids_seen.add(prid)
+        payload = prop.get("payload")
+        if "payload" in prop and payload is not None and not isinstance(payload, dict):
+            f.append("%s: payload must be an object or null, got %s"
+                     % (xwhere, type(payload).__name__))
+            payload = None
+        if not isinstance(payload, dict):
+            continue  # legacy free-form entry — tolerated as-is
+        if not PROP_ID_RE.match(str(prid or "")):
+            f.append("%s: id must match PROP-<number>" % xwhere)
+        status = prop.get("status")
+        if status not in PROPOSAL_STATUS:
+            f.append("%s: status %r not in %s"
+                     % (xwhere, status, list(PROPOSAL_STATUS)))
+        mat = prop.get("materializedAs")
+        if mat is not None:
+            if mat not in phase_ids:
+                f.append("%s: materializedAs '%s' does not resolve to a phase"
+                         % (xwhere, mat))
+            if status != "materialized":
+                f.append("%s: materializedAs is set but status is %r — must be "
+                         "'materialized' (/audit:propose writes both together)"
+                         % (xwhere, status))
+        pphase = payload.get("phase")
+        if not isinstance(pphase, dict):
+            f.append("%s: payload.phase must be an object (the parked phase), "
+                     "got %s" % (xwhere, type(pphase).__name__))
+            continue
+        for key in ("id", "title"):
+            if not pphase.get(key):
+                f.append("%s: payload.phase missing required '%s'" % (xwhere, key))
+        if not isinstance(pphase.get("tasks"), list):
+            f.append("%s: payload.phase.tasks must be an array — park the full "
+                     "synthesized phase so materialization is a move, not a "
+                     "rebuild" % xwhere)
+        # Reserved-id bookkeeping applies only while the proposal is parked: a
+        # materialized payload id now living as a real phase is the SUCCESS
+        # state, not a collision, and a dropped proposal releases its ids.
+        if status == "proposed":
+            staged = [pphase.get("id")] + [
+                t.get("id") for t in _safe_list(pphase.get("tasks"))
+                if isinstance(t, dict)]
+            for sid in staged:
+                if not sid:
+                    continue
+                if sid in live_ids:
+                    f.append("%s: reserved id '%s' collides with a live id — "
+                             "/audit:propose materialize re-allocates on "
+                             "collision, but a parked payload should never "
+                             "share an id with the live plan" % (xwhere, sid))
+                elif sid in reserved_ids:
+                    f.append("%s: reserved id '%s' is already reserved by "
+                             "another proposal" % (xwhere, sid))
+                reserved_ids.add(sid)
+            for ref in _safe_list(pphase.get("blockedBy")):
+                if isinstance(ref, str):
+                    staged_refs.append((xwhere, ref))
+            for t in _safe_list(pphase.get("tasks")):
+                if not isinstance(t, dict):
+                    continue
+                for field in ("blockedBy", "dependsOn"):
+                    for ref in _safe_list(t.get(field)):
+                        if isinstance(ref, str):
+                            staged_refs.append((xwhere, ref))
+    # Staged refs resolve against the live plan OR any reserved id — a payload
+    # may lean on a sibling proposal. Naming nothing anywhere is only a warning:
+    # the payload is staged, not live, and materialize re-checks refs anyway.
+    staged_universe = live_ids | reserved_ids
+    for xwhere, ref in staged_refs:
+        if ref not in staged_universe:
+            w.append("%s: staged blockedBy/dependsOn '%s' names nothing in the "
+                     "live plan or any parked proposal — materialize will ask "
+                     "about it" % (xwhere, ref))
 
     return (f, w)
 
@@ -813,6 +948,151 @@ def _selftest():
     check("z8 done phase with a non-done task is a finding",
           "status 'done' but",
           lambda m: m["phases"][0].update(status="done"))
+
+    # --- v0.33: proposals[] lifecycle (parked phases) ---
+    def parked(pid="PROP-1", phase_id="P1"):
+        return {
+            "id": pid, "name": "Security hardening", "status": "proposed",
+            "origin": "audit:init", "createdISO": "2026-08-11T00:00:00Z",
+            "scope": "src/", "benefit": "fewer injection paths",
+            "openQuestions": [],
+            "payload": {"phase": {
+                "id": phase_id, "title": "Security hardening",
+                "status": "pending",
+                "tasks": [{"id": phase_id + ".1", "title": "Parameterize SQL",
+                           "status": "pending", "tests": {"mode": "tdd"},
+                           "files": ["src/db.ts"]}]}},
+            "materializedAs": None, "materializedAt": None,
+        }
+
+    # pr1: a parked proposal is clean AND none of its keys warn as unknown —
+    # asserted like ar1, or dropping a key from KNOWN_PROPOSAL goes unnoticed.
+    m_pr = copy.deepcopy(_valid_manifest())
+    m_pr["proposals"] = [parked()]
+    f_pr, w_pr = validate(m_pr)
+    noise_pr = [x for x in w_pr if "proposal" in x.lower()]
+    ok_pr = f_pr == [] and noise_pr == []
+    results.append(ok_pr)
+    print("%s pr1 parked proposal: no finding, no unknown-key warning (%s)"
+          % ("PASS" if ok_pr else "FAIL", "clean" if ok_pr else (f_pr or noise_pr)))
+    check("pr2 payload phase id colliding with a live phase is a finding",
+          "reserved id 'P0' collides",
+          lambda m: m.update(proposals=[parked(phase_id="P0")]))
+    check("pr3 payload task id colliding with a live task is a finding",
+          "reserved id 'P0.1' collides",
+          lambda m: m.update(proposals=[
+              dict(parked(), payload={"phase": {
+                  "id": "P1", "title": "T", "status": "pending",
+                  "tasks": [{"id": "P0.1", "title": "dup", "status": "pending"}]}})]))
+    check("pr4 dangling materializedAs is a finding",
+          "materializedAs 'P9' does not resolve",
+          lambda m: m.update(proposals=[
+              dict(parked(), status="materialized", materializedAs="P9")]))
+    check("pr5 payload-bearing proposal with a bad status is a finding",
+          "status 'parked' not in",
+          lambda m: m.update(proposals=[dict(parked(), status="parked")]))
+    # pr6: legacy free-form proposal (no payload) — warnings at most, NEVER a
+    # finding. The back-compat pin: pre-0.33 wrote whatever it liked here.
+    m_leg = copy.deepcopy(_valid_manifest())
+    m_leg["proposals"] = [{"id": "modernize-build", "name": "Modernize build",
+                           "status": "someday", "origin": "audit:init"}]
+    f_leg, _w_leg = validate(m_leg)
+    ok_leg = f_leg == []
+    results.append(ok_leg)
+    print("%s pr6 legacy free-form proposal: warnings at most, no finding (%s)"
+          % ("PASS" if ok_leg else "FAIL", "clean" if ok_leg else f_leg))
+    check("pr7a proposals as a string is a finding", "proposals: not an array",
+          lambda m: m.update(proposals="later"))
+    check("pr7b a non-object entry is a finding", "proposals[0]: not an object",
+          lambda m: m.update(proposals=["later"]))
+    check("pr8 duplicate PROP id is a finding", "duplicate proposal id: PROP-1",
+          lambda m: m.update(proposals=[parked(), parked(phase_id="P2")]))
+    # pr9: THE declined-init pin — meta + empty phases + parked proposals is a
+    # fully valid manifest (the park-all write path of /audit:init).
+    m_empty = {"meta": {"version": 2}, "phases": [], "fileIndex": {},
+               "bugs": [], "proposals": [parked()]}
+    f_empty, _w_empty = validate(m_empty)
+    ok_empty = f_empty == []
+    results.append(ok_empty)
+    print("%s pr9 meta + empty phases + parked proposals validates clean (%s)"
+          % ("PASS" if ok_empty else "FAIL", "clean" if ok_empty else f_empty))
+    check("pr10 materializedAs set while status is still 'proposed' is a finding",
+          "must be 'materialized'",
+          lambda m: m.update(proposals=[dict(parked(), materializedAs="P0")]))
+    check("pr11 two proposals reserving the same phase id is a finding",
+          "already reserved by another proposal",
+          lambda m: m.update(proposals=[parked(), parked(pid="PROP-2")]))
+    # pr12: staged blockedBy — a ref to another proposal's reserved id is clean;
+    # a ref naming nothing anywhere warns (staged, not live) but never fails.
+    m_ref = copy.deepcopy(_valid_manifest())
+    p_a, p_b = parked(), parked(pid="PROP-2", phase_id="P2")
+    p_b["payload"]["phase"]["blockedBy"] = ["P1"]
+    m_ref["proposals"] = [p_a, p_b]
+    f_ref, w_ref = validate(m_ref)
+    ok_ref = f_ref == [] and not any("blockedBy" in x for x in w_ref)
+    results.append(ok_ref)
+    print("%s pr12a staged blockedBy to another reserved id is clean (%s)"
+          % ("PASS" if ok_ref else "FAIL", "clean" if ok_ref else (f_ref or w_ref)))
+    m_ref2 = copy.deepcopy(_valid_manifest())
+    p_c = parked()
+    p_c["payload"]["phase"]["blockedBy"] = ["P77"]
+    m_ref2["proposals"] = [p_c]
+    f_ref2, w_ref2 = validate(m_ref2)
+    ok_ref2 = f_ref2 == [] and any("P77" in x for x in w_ref2)
+    results.append(ok_ref2)
+    print("%s pr12b staged blockedBy naming nothing warns, never fails (%s)"
+          % ("PASS" if ok_ref2 else "FAIL",
+             "clean+warned" if ok_ref2 else (f_ref2 or w_ref2)))
+    # pr13: a materialized proposal whose payload id now lives as a real phase
+    # must NOT be reported as a collision (that collision is the SUCCESS state).
+    m_mat = copy.deepcopy(_valid_manifest())
+    mat = parked(phase_id="P0")
+    mat.update(status="materialized", materializedAs="P0",
+               materializedAt="2026-08-11T00:00:00Z")
+    m_mat["proposals"] = [mat]
+    f_mat, _w_mat = validate(m_mat)
+    ok_mat = f_mat == []
+    results.append(ok_mat)
+    print("%s pr13 materialized proposal: live payload id is not a collision (%s)"
+          % ("PASS" if ok_mat else "FAIL", "clean" if ok_mat else f_mat))
+
+    # --- workstream B: task moves (id-prefix rule + movedFrom) ---
+    # The id rule is the hand-move detector: /audit:task move renumbers a task
+    # into its new phase, so an id that does not match its phase means someone
+    # dragged the object by hand. A WARNING, never a finding -- legacy
+    # manifests with free-form ids must not go red over bookkeeping.
+    check("mv1 a task id that does not follow its phase's prefix warns only",
+          None,
+          lambda m: m["phases"][0]["tasks"].append(
+              {"id": "ODD-7", "title": "stray", "status": "pending"}),
+          expect_warning="does not follow its phase")
+    m_mv = copy.deepcopy(_valid_manifest())
+    m_mv["phases"][0]["tasks"][0]["movedFrom"] = {
+        "id": "P3.4", "phase": "P3", "at": "2026-08-11T00:00:00Z"}
+    f_mv, w_mv = validate(m_mv)
+    noise_mv = [x for x in w_mv if "movedFrom" in x]
+    ok_mv = f_mv == [] and noise_mv == []
+    results.append(ok_mv)
+    print("%s mv2 a well-formed movedFrom is clean - no finding, no "
+          "unknown-key warning (%s)"
+          % ("PASS" if ok_mv else "FAIL",
+             "clean" if ok_mv else (f_mv or noise_mv)))
+    check("mv3 movedFrom that is not an object warns, and only warns", None,
+          lambda m: m["phases"][0]["tasks"][0].update(movedFrom="P3.4"),
+          expect_warning="movedFrom")
+    check("mv3b movedFrom missing its keys warns, naming them", None,
+          lambda m: m["phases"][0]["tasks"][0].update(movedFrom={"id": "P3.4"}),
+          expect_warning="movedFrom is missing")
+    check("mv4 movedFrom null is clean (the schema says object|null)", None,
+          lambda m: m["phases"][0]["tasks"][0].update(movedFrom=None))
+    # The base fixture itself must not warn: P0.1/P0.2 follow P0.
+    _f_base, _w_base = validate(copy.deepcopy(_valid_manifest()))
+    ok_base = _f_base == [] and not any("does not follow" in x
+                                       for x in _w_base)
+    results.append(ok_base)
+    print("%s mv5 existing well-formed ids produce no id-prefix warning (%s)"
+          % ("PASS" if ok_base else "FAIL",
+             "clean" if ok_base else (_f_base or _w_base)))
 
     # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os

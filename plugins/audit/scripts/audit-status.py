@@ -305,6 +305,7 @@ def rollup(manifest, findings, warnings, usage=None):
             g["phases"] += 1
             g["done"] += e["done"]
             g["total"] += e["total"]
+    props = [x for x in (manifest.get("proposals") or []) if isinstance(x, dict)]
     out = {
         "valid": not findings,
         "findings": len(findings),
@@ -317,6 +318,13 @@ def rollup(manifest, findings, warnings, usage=None):
                  "openHighSeverity": sum(
                      1 for b in open_bugs
                      if _is_high_severity(b.get("severity")))},
+        # "parked" counts only what /audit:propose materialize can act on —
+        # status 'proposed' WITH a payload. Legacy free-form entries show up in
+        # total/byStatus but are not parked work.
+        "proposals": {"total": len(props), "byStatus": _by_status(props),
+                      "parked": sum(1 for x in props
+                                    if x.get("status") == "proposed"
+                                    and isinstance(x.get("payload"), dict))},
         "ready": ready_tasks(manifest),
     }
     # Only present when a ledger exists, so consumers can treat "no key" as
@@ -406,6 +414,13 @@ def render_status(manifest, summary, width=18, only_phase=None):
     if not summary["valid"]:
         lines.append("  INVALID MANIFEST: %d validator finding(s) - fix before "
                      "running a phase" % summary["findings"])
+    # A park-all /audit:init leaves a valid plan with zero phases. Without this
+    # line that plan reads as "nothing to do" on the one surface everyone
+    # checks first, when the actual state is "everything is waiting for you".
+    props_sum = summary.get("proposals") or {}
+    if not summary["phases"] and props_sum.get("parked"):
+        lines.append("  empty plan - %d parked proposal(s) waiting: "
+                     "/audit:propose list" % props_sum["parked"])
 
     usage = summary.get("usage")
     if usage:
@@ -512,6 +527,7 @@ def render_status(manifest, summary, width=18, only_phase=None):
                      "something, or the plan is complete")
 
     lines += _bug_lines(manifest, summary)
+    lines += _proposal_lines(manifest, summary)
     lines += _resumable_lines(manifest, summary)
     return "\n".join(lines)
 
@@ -645,6 +661,38 @@ def _bug_lines(manifest, summary):
                    % (b.get("id") or "?", _theme.label(eff) or "?",
                       b.get("severity") or "-",
                       _one_line(b.get("title"))[:44], flag))
+    return out
+
+
+def _proposal_lines(manifest, summary):
+    """Parked proposals — phases synthesized by /audit:init but not materialized.
+
+    Listed only while parked (status 'proposed'): a materialized proposal is
+    already visible as its phase, and a dropped one is history. A payload-bearing
+    row carries the copy-pasteable materialize command; a legacy free-form entry
+    (no payload) is listed without one — there is nothing to materialize."""
+    props = [x for x in ((manifest or {}).get("proposals") or [])
+             if isinstance(x, dict)]
+    parked = [x for x in props if x.get("status") == "proposed"]
+    if not parked:
+        return []
+    sp = summary.get("proposals") or {}
+    out = ["", "  PROPOSALS  %d total - %d parked"
+           % (sp.get("total", len(props)), len(parked))]
+    for x in parked:
+        payload = x.get("payload") if isinstance(x.get("payload"), dict) else {}
+        ph = payload.get("phase") if isinstance(payload.get("phase"), dict) else {}
+        tasks = ph.get("tasks") if isinstance(ph.get("tasks"), list) else []
+        reserved = "-"
+        if ph.get("id"):
+            reserved = "%s (%d task%s)" % (ph["id"], len(tasks),
+                                           "" if len(tasks) == 1 else "s")
+        row = "    %-16s %-14s %s" % (
+            x.get("id") or "?", reserved,
+            _clip(_one_line(x.get("name") or x.get("id")), 40))
+        if ph.get("id"):
+            row += "   materialize: /audit:propose materialize %s" % (x.get("id") or "?")
+        out.append(row)
     return out
 
 
@@ -1089,6 +1137,48 @@ def _selftest():
     _shown = [ln for ln in _txt_m.split("\n") if "run: /audit:run" in ln]
     check("s30 exactly READY_LIST_MAX rows are listed",
           len(_shown) == READY_LIST_MAX, str(len(_shown)))
+
+    # (sp) proposals — parked phases must surface in status, not only in the file
+    _fx_p = copy.deepcopy(_fx)
+    _fx_p["proposals"] = [
+        {"id": "PROP-1", "name": "Security hardening", "status": "proposed",
+         "payload": {"phase": {"id": "P3", "title": "Security hardening",
+                               "status": "pending",
+                               "tasks": [{"id": "P3.1", "title": "t",
+                                          "status": "pending"}]}}},
+        {"id": "PROP-2", "name": "Old idea", "status": "dropped"},
+    ]
+    _sum_p = rollup(_fx_p, [], [])
+    check("sp1 no proposals -> no PROPOSALS block (back-compat)",
+          "PROPOSALS" not in _txt)
+    check("sp4 rollup carries proposals {total, byStatus, parked}",
+          _sum_p.get("proposals", {}).get("total") == 2
+          and _sum_p.get("proposals", {}).get("parked") == 1
+          and _sum_p.get("proposals", {}).get("byStatus", {}).get("proposed") == 1,
+          repr(_sum_p.get("proposals")))
+    _txt_p = render_status(_fx_p, _sum_p)
+    check("sp2 a parked proposal renders id, reserved phase, task count and the "
+          "materialize command",
+          "PROP-1" in _txt_p and "P3 (1 task" in _txt_p
+          and "/audit:propose materialize PROP-1" in _txt_p,
+          _txt_p.split("PROPOSALS")[-1][:120] if "PROPOSALS" in _txt_p else _txt_p[-120:])
+    check("sp5 materialized/dropped proposals are not listed as parked",
+          "PROP-2" not in _txt_p)
+    # a legacy free-form parked entry is listed but gets no materialize command
+    # (there is no payload to materialize)
+    _fx_leg = copy.deepcopy(_fx)
+    _fx_leg["proposals"] = [{"id": "modernize-build", "name": "Modernize build",
+                             "status": "proposed"}]
+    _txt_leg = render_status(_fx_leg, rollup(_fx_leg, [], []))
+    check("sp6 a legacy parked entry lists without a materialize command",
+          "modernize-build" in _txt_leg
+          and "materialize modernize-build" not in _txt_leg)
+    _empty_p = {"meta": {"version": 2}, "phases": [],
+                "proposals": _fx_p["proposals"][:1]}
+    _txt_ep = render_status(_empty_p, rollup(_empty_p, [], []))
+    check("sp3 an empty plan with parked proposals points at /audit:propose",
+          "parked proposal" in _txt_ep and "/audit:propose" in _txt_ep,
+          _txt_ep[:200])
     _few = {"meta": {"version": 2}, "phases": [
         {"id": "P1", "title": "narrow", "status": "pending", "tasks": [
             {"id": "P1.1", "title": "t", "status": "pending"}]}]}

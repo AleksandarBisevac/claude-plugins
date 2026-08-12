@@ -55,7 +55,10 @@ KNOWN_BANDS = {"highUSD", "outlierUSD"}
 # `dir` is null by default and that is MEANINGFUL — it means "beside the manifest",
 # so a repo that moves its plan takes the record of it along. Same shape as
 # usage.bands: a null here is an answer, not a missing value.
-KNOWN_JOURNAL = {"enabled", "dir"}
+KNOWN_JOURNAL = {"enabled", "dir", "strictManifestState"}
+# "deny" is deliberately absent: the orchestrator completes tasks through the
+# same edit tools the guard watches, so strict mode can only ever ASK.
+STRICT_MANIFEST_STATE = ("off", "ask")
 # Not a fourth statement of the policy block's shape: `_policy` owns it, and every
 # surface that needs the key set (this validator, the panel's Settings coverage
 # check) reads THIS name, which is that module's.
@@ -252,6 +255,12 @@ def _check_journal(journal, findings, warnings):
         if not isinstance(d, str) or not d.strip():
             findings.append("journal.dir must be a non-empty string, or null to "
                             "keep the journal beside the manifest")
+    if ("strictManifestState" in journal
+            and journal["strictManifestState"] not in STRICT_MANIFEST_STATE):
+        findings.append("journal.strictManifestState must be one of %s -- "
+                        "'ask' surfaces a confirmation prompt on manifest "
+                        "state edits; there is deliberately no 'deny'"
+                        % (STRICT_MANIFEST_STATE,))
 
 
 def _check_bands(bands, findings, warnings):
@@ -508,6 +517,19 @@ def _selftest():
     f, w = validate_config({"journal": {"enabledd": True}})
     check("a misspelled journal key -> warning only",
           not f and any("journal" in x for x in w))
+    f, w = validate_config({"journal": {"strictManifestState": "ask"}})
+    check("journal.strictManifestState 'ask' is a legal, known key",
+          not f and not w)
+    f, w = validate_config({"journal": {"strictManifestState": "off"}})
+    check("...and 'off' (the shipped default) is too", not f and not w)
+    f, w = validate_config({"journal": {"strictManifestState": "deny"}})
+    check("a strictManifestState outside off|ask is a finding - 'deny' is "
+          "deliberately not in the enum (the orchestrator writes through the "
+          "same tools the guard watches)",
+          any("strictManifestState" in x for x in f))
+    f, w = validate_config({"journal": {"strictManifestState": True}})
+    check("a non-string strictManifestState is a finding",
+          any("strictManifestState" in x for x in f))
 
     # --- policy ---------------------------------------------------------------
     # The rules themselves are exercised in _policy.py's own selftest; what is

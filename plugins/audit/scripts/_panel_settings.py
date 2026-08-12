@@ -182,6 +182,12 @@ FIELD_HELP = {
         "the manifest, which is what lets one commit carry both the change and the "
         "record of it. One file per writer, so two sessions in two worktrees never "
         "conflict.",
+    "journal.strictManifestState":
+        "ask surfaces a confirmation prompt whenever an edit changes a task's or "
+        "phase's status, completedAt, commit or attempts in the manifest. off "
+        "(the default) leaves detection to the journal and the doctor. There is "
+        "deliberately no deny: the pipeline completes tasks through the same "
+        "edit tools this guard watches.",
     "usage.pricing":
         "Rates in this project's currency per MILLION tokens. Lookup is exact match, "
         "then longest matching prefix — so a dated model id resolves to its family — "
@@ -307,6 +313,9 @@ SETTINGS_GROUPS = (
              "kind": "bool"},
             {"path": "journal.dir", "label": "Where the record is kept",
              "kind": "text", "placeholder": "beside the manifest"},
+            {"path": "journal.strictManifestState",
+             "label": "Confirm manifest state edits",
+             "kind": "enum", "enum": "strictManifestState"},
         ),
     },
 )
@@ -344,7 +353,8 @@ def _cfg_enums():
     UI is the same failure with one more place to forget."""
     vc = _validate_config()
     return {"inProgressPolicy": list(vc.IN_PROGRESS_POLICY),
-            "authorMode": list(vc.AUTHOR_MODES)}
+            "authorMode": list(vc.AUTHOR_MODES),
+            "strictManifestState": list(vc.STRICT_MANIFEST_STATE)}
 
 
 # --- selftest ---------------------------------------------------------------

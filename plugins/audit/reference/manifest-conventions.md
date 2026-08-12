@@ -1,7 +1,8 @@
 # Manifest conventions
 
 Shared rules for every command that reads or mutates the audit manifest
-(the `/audit:*` execution commands plus `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync`).
+(the `/audit:*` execution commands plus `/audit:init`, `/audit:task`, `/audit:bug`,
+`/audit:propose`, `/audit:sync`).
 Read this file FIRST. The execution commands also read `orchestrator.md`.
 
 ## Locating the manifest
@@ -31,9 +32,10 @@ Locks live in the **shared git dir**
 (`$(git -C <gitRoot> rev-parse --git-common-dir)/audit-locks`), not the working
 tree — so they coordinate across worktrees and never show up in `git status`.
 The full protocol and the two tiers (index lock vs per-phase-shard lock) are in
-`orchestrator.md`. The structural commands here — `init`, `task`, `bug`, `sync`
-— take the **index lock** (they mutate the shared index: phase directory,
-`bugs[]`, `fileIndex`, id counters). Before your **first** index write:
+`orchestrator.md`. The structural commands here — `init`, `task`, `bug`,
+`propose`, `sync` — take the **index lock** (they mutate the shared index: phase
+directory, `bugs[]`, `proposals[]`, `fileIndex`, id counters). Before your
+**first** index write:
 
 1. Take it with the script — never by hand:
    ```bash
@@ -69,15 +71,25 @@ merge, and `/audit:migrate --renumber` repairs it.
 - **Task**: `<phaseId>.<n>` where `n` = highest existing numeric suffix in that phase + 1 (`P2.4` → next is `P2.5`).
 - **Bug**: `BUG-<n>` where `n` = highest existing bug number + 1, repo-wide (`BUG-3` → next is `BUG-4`).
 - **Bugfix phase**: `BF<n>` where `n` = highest existing `BF` number + 1 (`BF1`, `BF2`, …).
+- **Proposal**: `PROP-<n>` where `n` = highest existing proposal number + 1, repo-wide.
 
 The "highest existing" is computed over the **whole** manifest — every phase shard plus
 the index — which the `/audit:*` commands already load assembled (so a task suffix sees
 every task in its phase, and a `BUG-`/`BF` number sees every bug/bugfix phase repo-wide).
 
+**Reserved ids.** A still-parked proposal (`status: "proposed"` with a payload)
+RESERVES its `payload.phase` id and task ids: `P<n>` allocation counts them
+alongside live phases, so materialization is a lossless move and inter-proposal
+`blockedBy` refs stay meaningful. Materialized and dropped proposals release
+their reservations (a materialized payload id IS the live phase; a dropped one
+is free to re-mint).
+
 ## Status enums
 
 - Phase/task: `pending | in_progress | blocked | done`
 - Bug: `open | triaged | in_progress | fixed | wontfix`
+- Proposal: `proposed | materialized | dropped` (enforced on payload-bearing
+  proposals; legacy free-form entries are tolerated as-is)
 - `tests.mode`: `tdd | regression | gate-only` · `risk`: `low | med | high`
 
 ## New task template
@@ -134,6 +146,33 @@ field answers. `/audit:status` prints the resolved reviewer with the basis it ca
 (`review: backend-review (area api)`), and `/audit:doctor` warns when a root is not a directory or a
 phase tag has no entry. Never re-derive any of this by hand when the output is in front of you.
 
+## Proposals (parked phases)
+
+`proposals[]` holds phases that were synthesized but not (yet) approved —
+`/audit:init`'s park path writes them, `/audit:propose` lists/materializes/drops
+them. A payload-bearing proposal is:
+
+```json
+{"id": "PROP-1", "name": "<phase title>", "status": "proposed",
+ "origin": "audit:init", "createdISO": "<ISO>",
+ "scope": "<main dirs>", "benefit": "<desiredOutcome>", "openQuestions": [],
+ "materializedAs": null, "materializedAt": null,
+ "payload": {"phase": { ...the full phase... }}}
+```
+
+Rules:
+- `payload.phase` must be **fully template-initialized** (new-task + new-phase
+  templates above) so materialization is a move, not a rebuild.
+- The payload's phase/task ids are **reserved** while parked (see ID allocation).
+- `fileIndex` covers **live** tasks only — parked tasks enter it at materialize
+  time, derived from `payload.phase.tasks[].files`.
+- `materializedAs`/`materializedAt` are written by `/audit:propose materialize`
+  together with `status: "materialized"` — never by hand, and the record is kept
+  as history (like closed bugs).
+- Legacy free-form entries (no payload) are tolerated: the validator warns at
+  most, `/audit:propose list` renders them with `-` columns, nothing can
+  materialize them.
+
 ## fileIndex maintenance
 
 Adding a task with `files` MUST add/extend the matching top-level `fileIndex`
@@ -143,3 +182,41 @@ entries (`"<file>": [..., "<taskId>"]`). Never remove other tasks' ids.
 
 Phases with `status: "done"` are history — never append tasks to them.
 Route new work to an open phase or create a new one.
+
+## Moving a task (`/audit:task move`)
+
+`/audit:task move <taskId> --to <phaseId>` is the only sanctioned way to relocate a
+task. It allocates a fresh `<targetPhase>.<n>` id under the index lock (counting
+reserved proposal ids), writes `movedFrom: {id, phase, at}` on the task, rewrites every
+`blockedBy`/`dependsOn`/`fileIndex`/`bugs[].taskId` reference across the index and all
+shards, and appends a chained `task.move` journal row with
+`{fromId, toId, fromPhase, toPhase}`. A hand-drag keeps the old id, which the validator
+flags (`id does not follow its phase's prefix` — a warning, never a finding).
+
+**Ledger attribution:** historical usage-ledger rows keep the OLD taskId — history is
+never rewritten. New spend attributes to the new id. `movedFrom` plus the `task.move`
+row are what let a reader join the two halves.
+
+## Tamper evidence and completion records
+
+Absolute immutability of local files does not exist — the user owns the disk. The
+ceiling is **tamper-evidence plus three cross-anchors**: (1) the hash-chained journal
+(`scripts/audit-journal.py`), (2) git history, into which the journal is staged with
+every task commit (so its committed past must stay a byte-prefix of the working copy —
+`verify` checks exactly that), and (3) the usage ledger, re-derivable from Claude
+Code's read-only transcripts via `/audit:usage --backfill`. A forger must rewrite all
+three consistently; any single-surface forgery is a `/audit:doctor` FINDING
+(`check_completions` + the journal check).
+
+The journal's **completion-record actions**:
+
+- `task.complete` — a task's status moved to done (details: taskId, phaseId, from, to, completedAt)
+- `task.commit` — a task's commit moved null → SHA (details: taskId, phaseId, commit)
+- `phase.signoff` — a phase's status moved to done (details: phaseId, from, to, mergedAt)
+- `task.move` — a task was renumbered into another phase (details: fromId, toId, fromPhase, toPhase)
+
+The first three are emitted by the `journal-writes` hook and by NOTHING else — never
+append them by hand; two writers means duplicate rows and a doctor that can no longer
+trust the count. `task.move` is written by `/audit:task move` via the journal CLI.
+Tokens are deliberately absent from these rows (metering lands on Stop/SessionEnd);
+spend is joined from the ledger by `taskId`.

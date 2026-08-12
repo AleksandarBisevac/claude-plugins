@@ -1,5 +1,5 @@
 ---
-description: 'Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings into a schema-valid plan for the /audit:* commands to execute.'
+description: 'Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings, then presents the proposed phases for approval BEFORE writing — approve to materialize, or park them as proposals for later /audit:propose materialize.'
 argument-hint: '[optional scope/goals — you will be interviewed for the rest]'
 allowed-tools: Read, Write, Edit, Bash, Agent, Glob, Grep, AskUserQuestion
 ---
@@ -17,15 +17,23 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve
 
 ## 1. Preflight
 
-If a file already exists at `manifestPath`, ask the user (AskUserQuestion):
+If a file already exists at `manifestPath`, first print any parked proposals it
+carries (`proposals[]` entries with `status: "proposed"`):
+`N parked proposal(s) — /audit:propose materialize <id>|--all` — the user may be
+re-running init when what they actually want is to materialize what the last run
+parked. Then ask (AskUserQuestion):
 - **Abort** (default) — keep the existing manifest; suggest `/audit:status`.
-- **Regenerate** — back it up to `<manifestPath>.bak-<UTC timestamp>` first.
-- **Append phases** — keep existing phases; new phases continue the id sequence.
+- **Regenerate** — back it up to `<manifestPath>.bak-<UTC timestamp>` first
+  (the backup includes any proposals).
+- **Append phases** — keep existing phases; new phases continue the id sequence,
+  counting BOTH live phases and any `proposals[].payload` reserved phase ids
+  (see manifest-conventions.md → ID allocation). New proposal ids continue the
+  `PROP-<n>` sequence the same way.
 
 On **Regenerate** or **Append**, take the **concurrency lock** (see
 `manifest-conventions.md` → Concurrency lock) BEFORE touching the file: refuse
 while another session holds the index lock, so a generation never clobbers
-an in-flight run, and hold it through write + validate (released in step 7).
+an in-flight run, and hold it through write + validate (released in step 8).
 
 ## 2. Interview (BEFORE any exploration)
 
@@ -113,7 +121,9 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    verification of later work), then thematic phases by dimension/subsystem. Give every
    phase a one-line `desiredOutcome` (what success looks like — `/audit:status` displays it and
    sign-off must address it). Respect the
-   size appetite; overflow goes to `deferred.items` (with reasons) or `proposals`.
+   size appetite; overflow goes to `deferred.items` (with reasons) or is parked
+   directly in `proposals[]` as a full payload (step 6's park format) so it stays
+   materializable.
    **Tag each phase** with the `area` tag(s) whose root(s) its tasks' files fall under — a list when
    the phase spans two, in the order you want them to resolve (written order decides the reviewer
    and the skill order). Skip entirely when step 3.5 found no workspace.
@@ -132,7 +142,8 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      the orchestrator commits from the parent repo and cannot stage submodule-internal files. If a
      finding lands inside a submodule, either scope a SEPARATE manifest with `meta.gitRoot` set to
      that submodule, or record it in `deferred` with the reason — do not put it in a parent task.
-4. **Assemble the manifest**: `$schema` (the plugin schema URL), `meta`
+4. **Assemble the CANDIDATE manifest in memory — do not write yet**: `$schema` (the plugin
+   schema URL), `meta`
    (`version: 2`, `repo` from `git remote get-url origin` or the directory name,
    `createdISO` from `date -u +%Y-%m-%dT%H:%M:%SZ`, `developmentBranch`, `branchPrefix: "audit"`,
    `gitRoot` (from step 3.1), `commit`, detected `buildCommands`, `areas` (from step 3.5 — omit the
@@ -144,20 +155,81 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    and mirror `gitRoot` into `.claude/audit.config.json`) so the orchestrator can commit its status
    history; note this to the user.
 
-## 6. Write + validate
+## 6. Present & approve (the gate)
 
-1. `mkdir -p` the manifest's parent directory; Write the manifest.
+Nothing synthesized has touched disk yet. Print the proposed plan, plain ASCII:
+
+```
+Proposed plan — 4 phases, 23 tasks (size appetite: M)
+
+  id  title                 goal (desiredOutcome)               tasks  key tasks
+  P0  Build & test health   CI green; test gate runnable        5      fix tsconfig; un-skip auth suite
+  P1  Security hardening    no high-risk injection paths        7      parameterize SQL in orders
+  ...
+  deferred: 3 item(s) (reasons below) - open questions: 2
+```
+
+"Key tasks" = the 2–3 highest-risk task titles per phase. Then ask ONE
+AskUserQuestion:
+
+1. **Materialize all N phases** (Recommended) — write the manifest exactly as
+   assembled; this is the pre-gate behavior.
+2. **Park all as proposals** — the manifest gets `meta` + `phases: []` +
+   `fileIndex: {}`; every synthesized phase is parked in `proposals[]` for later
+   `/audit:propose materialize`. Nothing is lost; nothing starts until asked.
+   The right answer for a team adopting the plugin mid-project that wants the
+   analysis without the plan taking over.
+3. **Choose per phase** — follow-up AskUserQuestion calls, one
+   Materialize/Park choice per phase, at most 4 phases per call. Then apply the
+   **dependency-closure rule**: materializing a phase auto-includes every phase
+   it is `blockedBy`-linked to, and you announce each auto-include ("P1 pulls in
+   P0 — P1 is blockedBy P0").
+
+If the gate is aborted or goes unanswered, **park all** — conservative and
+lossless: nothing is materialized without approval, nothing synthesized is lost.
+
+Each parked phase becomes one proposal (see manifest-conventions.md → Proposals):
+
+```json
+{"id": "PROP-1", "name": "<phase title>", "status": "proposed",
+ "origin": "audit:init", "createdISO": "<UTC now>",
+ "scope": "<the phase's main dirs>", "benefit": "<desiredOutcome>",
+ "openQuestions": [], "materializedAs": null, "materializedAt": null,
+ "payload": {"phase": { ...the full phase, tasks fully initialized... }}}
+```
+
+The payload keeps its synthesized phase id (`P1`, …) — the id is **reserved**
+(allocation counts it), so inter-proposal `blockedBy` refs stay meaningful and
+materialization is a move, not a rebuild. `fileIndex` entries for parked tasks
+are NOT written — the index covers live tasks only; materialize derives them
+from `payload.phase.tasks[].files`.
+
+## 7. Write + validate
+
+1. `mkdir -p` the manifest's parent directory; Write the manifest as decided in
+   step 6 (approved phases in `phases[]` with their `fileIndex` entries; parked
+   phases in `proposals[]`).
 2. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` —
    on findings, fix and re-run until clean (this is mandatory).
 3. If `npx` is available, also run
    `npx ajv-cli validate --spec=draft2020 -s "${CLAUDE_PLUGIN_ROOT}/schema/audit-plan.schema.json" -d <manifestPath>`;
    if npx is missing, skip silently.
 
-## 7. Report
+## 8. Report
 
-Print: per-phase table (`id — title — task count — dimensions covered`), total task count
-by `tests.mode` and `risk`, what was deferred and why, any open questions for the human,
-and the handoff: **next run `/audit:status`, then `/audit:phase P0`**.
+**Materialized (fully or partly):** per-phase table (`id — title — task count —
+dimensions covered`), total task count by `tests.mode` and `risk`, what was
+deferred and why, any open questions for the human, and the handoff: **next run
+`/audit:status`, then `/audit:phase P0`**.
+
+**Parked (any):** a proposal table (`PROP-id — reserved phase — title — tasks`)
+and the handoff: `/audit:propose list`, then
+`/audit:propose materialize <id>|--all`. Add one note when everything was
+parked: *the plan gate stays in its advisory (warn) tier until a phase is
+materialized and running — same as any idle manifest; with `enforce: true` an
+empty-phases manifest denies out-of-plan edits (its fileIndex is empty), so
+materialize a phase before starting fix work.*
+
 When areas were registered, list them (`tag — root — reviewer`) and say which phases carry which
 tag; `/audit:doctor` will warn about any root that is not a directory.
 Release the concurrency lock if you acquired one in step 1.

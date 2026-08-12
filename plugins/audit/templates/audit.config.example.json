@@ -72,10 +72,11 @@
     "throttleMinutes": 10,
     "inProgressPolicy": "skip-gate-only"
   },
-  "//journal": "The audit trail (audit-journal.py + the journal-writes hook): every edit-tool write to the manifest or to this config appends a hash-chained row recording who, when, what and the state it left behind. Tamper-EVIDENT, not tamper-proof - `audit-journal.py verify` names an edited, deleted or reordered row, and warns when a document changed with no row to explain it. Leave dir null to keep it beside the manifest, where the same commit carries both.",
+  "//journal": "The audit trail (audit-journal.py + the journal-writes hook): every edit-tool write to the manifest or to this config appends a hash-chained row recording who, when, what and the state it left behind - manifest state changes get a field-level diff, and completion records (task.complete, task.commit, phase.signoff) are emitted by the hook. Tamper-EVIDENT, not tamper-proof - `audit-journal.py verify` names an edited, deleted or reordered row, and warns when a document changed with no row to explain it. Leave dir null to keep it beside the manifest, where the same commit carries both. strictManifestState 'ask' (default 'off') additionally surfaces a confirmation prompt when an edit changes a task's or phase's status/completedAt/commit/attempts; there is deliberately no 'deny'.",
   "journal": {
     "enabled": true,
-    "dir": null
+    "dir": null,
+    "strictManifestState": "off"
   },
   "//policy": "Which skills, subagents and MCP tools may be used here (guard-capabilities.py). Shipped INERT and left that way below: every kind defaults to 'allow' with empty lists, which cannot refuse anything. To use it, either name what you refuse (\"deny\": [\"mcp__prod-db__*\"]) or flip a kind to \"default\": \"deny\" and list what you permit in \"allow\". Patterns are case-sensitive globs against the name the call uses: the Skill tool's `skill`, the Task/Agent tool's `subagent_type` (a call naming none is 'general-purpose'), or the whole MCP tool name. `areas` scopes a rule to a meta.areas tag, in force only while a phase carrying it has work in_progress. onViolation: deny (refuse the call) | ask (prompt per call) | warn (allow it and say so). audit's own commands, skills and agents stay allowed whatever you write - disabling the plugin is how you remove those, and a deny aimed at them is reported rather than silently ignored.",
   "policy": {

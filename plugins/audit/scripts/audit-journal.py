@@ -70,6 +70,17 @@ import sys
 import time
 
 ROW_VERSION = 1
+# A row carrying a `details` block is v2. The version names the SHAPE of one row,
+# not of the file: the hash covers whatever fields are present, so v1 and v2 rows
+# interleave in one file with no migration and no flag day.
+DETAILS_VERSION = 2
+DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
+                "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
+                "toPhase", "truncated")
+CHANGE_KEYS = ("id", "field", "from", "to")
+MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
+MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
+MAX_DETAILS_BYTES = 4096    # the whole block, canonically spelled
 DEFAULT_DIRNAME = "journal"
 DEFAULT_MANIFEST = "docs/audit/audit-plan.json"
 GENESIS = "genesis:"
@@ -294,6 +305,66 @@ def _release(lock):
         pass
 
 
+# --- details (row v2) ---------------------------------------------------------
+def _clip(value):
+    """One details value, bounded. Strings are truncated to MAX_VALUE_CHARS;
+    scalars pass; anything structured is spelled canonically first, so the bound
+    applies to what would actually be written."""
+    if isinstance(value, str):
+        return value[:MAX_VALUE_CHARS]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    try:
+        return canonical(value)[:MAX_VALUE_CHARS]
+    except Exception:
+        return None
+
+
+def normalise_details(details):
+    """The v2 `details` block: allow-listed keys only, every value bounded, the
+    whole block capped. Returns None when there is nothing worth keeping -- the
+    row then stays v1, which is what lets old and new rows share a file.
+
+    An unknown key is DROPPED rather than chained in: the hash covers whatever is
+    in the row, so an inventive writer would otherwise decide the format for
+    every reader that comes after it -- the same rule _normalise applies to the
+    row itself."""
+    if not isinstance(details, dict):
+        return None
+    out = {}
+    for key in DETAILS_KEYS:
+        if key not in details:
+            continue
+        val = details[key]
+        if key == "changes":
+            if not isinstance(val, list):
+                continue
+            kept = []
+            for change in val[:MAX_CHANGES]:
+                if not isinstance(change, dict):
+                    continue
+                kept.append({k: _clip(change.get(k)) for k in CHANGE_KEYS
+                             if k in change})
+            out["changes"] = kept
+            if len(val) > MAX_CHANGES:
+                out["truncated"] = True
+        elif key == "truncated":
+            if val is True:
+                out["truncated"] = True
+        else:
+            out[key] = _clip(val)
+    if not out:
+        return None
+    try:
+        if len(canonical(out).encode("utf-8")) > MAX_DETAILS_BYTES:
+            n_changes = (len(details.get("changes"))
+                         if isinstance(details.get("changes"), list) else 0)
+            return {"truncated": True, "changes": n_changes}
+    except Exception:
+        return None
+    return out
+
+
 # --- appending ----------------------------------------------------------------
 def _normalise(entry):
     """The caller supplies the news; this file owns the shape.
@@ -320,6 +391,10 @@ def _normalise(entry):
         "target": str(entry.get("target") or "").strip(),
         "summary": str(entry.get("summary") or ""),
     }
+    details = normalise_details(entry.get("details"))
+    if details is not None:
+        row["v"] = DETAILS_VERSION
+        row["details"] = details
     if not row["action"]:
         raise ValueError("a journal row must name an action")
     return row
@@ -371,6 +446,47 @@ def append(project, entry, config=None):
 
 
 # --- verifying ----------------------------------------------------------------
+def _git_anchor_finding(path):
+    """The git anchor: once a journal file is committed, its committed copy must
+    be a byte-prefix of the working copy -- append-only ACROSS commits, which is
+    what makes "rewrite the whole file and recompute every hash" detectable
+    (the forger must now rewrite git history too, on every clone that has it).
+
+    Returns the FINDING text, or None. Fail-open silently on every inability to
+    check: no git binary, not a repository, an untracked file, `git show`
+    erroring (tracked but not yet in HEAD). Line endings are normalised before
+    the compare -- on Windows the working file is CRLF while an autocrlf
+    checkout commits LF, and a false accusation is the one failure mode this
+    check must never have."""
+    try:
+        import shutil
+        import subprocess
+        if not shutil.which("git"):
+            return None
+        d = os.path.dirname(os.path.abspath(path))
+        name = os.path.basename(path)
+        probe = subprocess.run(
+            ["git", "-C", d, "ls-files", "--error-unmatch", name],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        if probe.returncode != 0:
+            return None
+        shown = subprocess.run(["git", "-C", d, "show", "HEAD:./%s" % name],
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, timeout=10)
+        if shown.returncode != 0 or not shown.stdout:
+            return None
+        committed = shown.stdout.replace(b"\r\n", b"\n")
+        with open(path, "rb") as fh:
+            working = fh.read().replace(b"\r\n", b"\n")
+        if not working.startswith(committed):
+            return ("%s: the journal's committed past changed -- a committed "
+                    "row was edited or removed (git show HEAD:%s is not a "
+                    "prefix of the working copy)" % (name, name))
+    except Exception:
+        return None
+    return None
+
+
 def verify(project, config=None):
     """Does the chain hold, and does the world still match its last row?
 
@@ -421,6 +537,9 @@ def verify(project, config=None):
             entry["warnings"].append(
                 "%s ends with a partial line -- a writer was interrupted. The rows "
                 "before it are intact; nothing was hidden by it." % name)
+        anchor = _git_anchor_finding(path)
+        if anchor:
+            entry["findings"].append(anchor)
         out["rows"] += entry["rows"]
         out["findings"].extend(entry["findings"])
         out["warnings"].extend(entry["warnings"])
@@ -454,6 +573,7 @@ def cmd_append(args, out):
         row = _append(project, {
             "action": args.action, "target": args.target or "",
             "summary": args.summary or "",
+            "details": getattr(args, "_details", None),
             "actor": {"author": args.author, "sessionId": args.session,
                       "via": args.via}}, config=config)
     except Exception as exc:
@@ -517,6 +637,7 @@ def main(argv, out=print):
     p.add_argument("--action", default="")
     p.add_argument("--target", default="")
     p.add_argument("--summary", default="")
+    p.add_argument("--details", default=None)
     p.add_argument("--via", default="cli")
     p.add_argument("--author", default=None)
     p.add_argument("--session", default=None)
@@ -532,6 +653,20 @@ def main(argv, out=print):
     if args.command == "append" and not args.action.strip():
         out("[audit-journal] append needs --action")
         return 2
+    # --details is parsed HERE, before anything is written: malformed JSON is a
+    # usage error (2), never a silently plain row -- a caller passing structured
+    # news must find out it was dropped.
+    args._details = None
+    if args.command == "append" and args.details:
+        try:
+            parsed = json.loads(args.details)
+        except Exception as exc:
+            out("[audit-journal] --details is not valid JSON: %s" % exc)
+            return 2
+        if not isinstance(parsed, dict):
+            out("[audit-journal] --details must be a JSON object")
+            return 2
+        args._details = parsed
     try:
         if args.command == "append":
             return cmd_append(args, out)
@@ -835,6 +970,206 @@ def _selftest():
               code == 1 and json.loads(txt)["ok"] is False)
         code, txt = run(["nonsense"], cproj)
         check("i10 an unknown command is a usage error", code == 2)
+
+        # --- j: row v2 -- the optional `details` block ------------------------
+        # The hash covers whatever fields are present, so a v1 row and a v2 row
+        # share a file with no migration; everything here pins that claim.
+        jproj = os.path.join(tmp, "v2")
+        os.makedirs(jproj)
+        jcfg = {"journal": {"dir": "j"}}
+        ok = append(jproj, {"action": "manifest.edit", "target": "plan.json",
+                            "summary": "P1.1: status in_progress->done",
+                            "details": {"taskId": "P1.1", "phaseId": "P1",
+                                        "from": "in_progress", "to": "done"},
+                            "actor": {"sessionId": "s-v2", "via": "hook"}},
+                    config=jcfg)
+        jrows = read_all(jproj, jcfg)
+        jrow = jrows[-1] if jrows else {}
+        check("j1 a row can carry details, and the allow-listed keys survive the "
+              "round trip",
+              ok is True and jrow.get("details") == {
+                  "taskId": "P1.1", "phaseId": "P1",
+                  "from": "in_progress", "to": "done"},
+              repr(jrow.get("details")))
+        jclean = {k: v for k, v in jrow.items() if k != "_file"}
+        check("j2 a details row is v2, hashes to its own contents, and verifies",
+              jrow.get("v") == 2 and jclean.get("hash") == row_hash(jclean)
+              and verify(jproj, jcfg)["ok"], repr(jrow))
+        append(jproj, {"action": "manifest.edit", "target": "plan.json",
+                       "summary": "plain", "actor": {"sessionId": "s-v2",
+                                                     "via": "hook"}}, config=jcfg)
+        jrows = read_all(jproj, jcfg)
+        check("j3 a row without details stays v1 with the v1 key set - the new "
+              "shape is opt-in per row, not a migration",
+              jrows[-1].get("v") == 1 and "details" not in jrows[-1]
+              and set(jrows[-1]) - {"_file"} == {
+                  "v", "ts", "actor", "action", "target", "summary",
+                  "stateHash", "prev", "hash"}, repr(sorted(jrows[-1])))
+        check("j3b ...and the mixed file still chains cleanly",
+              verify(jproj, jcfg)["ok"] and verify(jproj, jcfg)["rows"] == 2)
+
+        # A file an OLDER plugin wrote -- hand-built v1 rows -- then a v2 row
+        # appended by THIS code, chaining onto the old tail.
+        fixdir = os.path.join(tmp, "v1fixture")
+        os.makedirs(os.path.join(fixdir, "j"))
+        fpath = os.path.join(fixdir, "j", "%s.s-old.jsonl"
+                             % time.strftime("%Y-%m", time.gmtime()))
+        prev_h = genesis_prev(os.path.basename(fpath))
+        hand = []
+        for i in range(2):
+            r = {"v": 1, "ts": "2020-01-01T00:00:0%dZ" % i,
+                 "actor": {"author": None, "sessionId": "s-old", "via": "hook",
+                           "host": "h"},
+                 "action": "manifest.edit", "target": "", "summary": "old %d" % i,
+                 "stateHash": None, "prev": prev_h}
+            r["hash"] = row_hash(r)
+            prev_h = r["hash"]
+            hand.append(r)
+        rewrite(fpath, hand)
+        fixcfg = {"journal": {"dir": "j"}}
+        check("j4 a pre-v2 fixture file verifies untouched",
+              verify(fixdir, fixcfg)["ok"]
+              and verify(fixdir, fixcfg)["rows"] == 2,
+              repr(verify(fixdir, fixcfg)))
+        append(fixdir, {"action": "manifest.edit", "target": "",
+                        "summary": "new", "details": {"taskId": "P9.1"},
+                        "actor": {"sessionId": "s-old", "via": "hook"}},
+               config=fixcfg)
+        resv = verify(fixdir, fixcfg)
+        vrows, _ = read_file(fpath)
+        check("j5 a v2 row appended after v1 rows chains onto the old tail in "
+              "the SAME file",
+              resv["ok"] and resv["rows"] == 3 and len(resv["files"]) == 1
+              and vrows[-1].get("v") == 2
+              and vrows[-1].get("prev") == hand[-1]["hash"], repr(resv))
+
+        # The allow-list, the bounds, and the cap.
+        append(jproj, {"action": "x", "summary": "s",
+                       "details": {"taskId": "T", "invented": "nope"},
+                       "actor": {"sessionId": "s-v2"}}, config=jcfg)
+        check("j6 an unknown details key is dropped, not chained in",
+              read_all(jproj, jcfg)[-1].get("details") == {"taskId": "T"},
+              repr(read_all(jproj, jcfg)[-1].get("details")))
+        check("j6b a details dict with ONLY unknown keys leaves a plain v1 row",
+              normalise_details({"invented": 1}) is None
+              and normalise_details("not a dict") is None
+              and normalise_details(None) is None)
+        append(jproj, {"action": "x", "summary": "s",
+                       "details": {"from": "x" * 500},
+                       "actor": {"sessionId": "s-v2"}}, config=jcfg)
+        check("j7 a long value is truncated to %d chars" % MAX_VALUE_CHARS,
+              read_all(jproj, jcfg)[-1].get("details", {}).get("from") == "x" * 120)
+        many = [{"id": "P1.%d" % i, "field": "status", "from": "a", "to": "b"}
+                for i in range(20)]
+        det = normalise_details({"changes": many})
+        check("j8 a change list is capped at %d and says it was truncated"
+              % MAX_CHANGES,
+              isinstance(det, dict) and len(det.get("changes") or []) == 12
+              and det.get("truncated") is True, repr(det))
+        huge = {"changes": [{"id": "P1.%d" % i, "field": "outcome",
+                             "from": "a" * 120, "to": "b" * 120}
+                            for i in range(12)],
+                "taskId": "t" * 120, "phaseId": "p" * 120, "commit": "c" * 120,
+                "completedAt": "d" * 120, "fromId": "e" * 120, "toId": "f" * 120,
+                "fromPhase": "g" * 120, "toPhase": "h" * 120}
+        det = normalise_details(huge)
+        check("j9 a details block over %d bytes collapses to a truncation marker "
+              "that still says how many changes there were" % MAX_DETAILS_BYTES,
+              det == {"truncated": True, "changes": 12}, repr(det))
+        check("j9b the marker itself is under the cap",
+              len(canonical({"truncated": True, "changes": 12})
+                  .encode("utf-8")) < MAX_DETAILS_BYTES)
+
+        # The CLI.
+        c2proj = os.path.join(tmp, "cli2")
+        os.makedirs(c2proj)
+        code, txt = run(["append", "--action", "task.move",
+                         "--details", '{"fromId":"P1.1","toId":"P2.4"}'], c2proj)
+        check("j10 append --details writes the row (exit 0)", code == 0, txt)
+        code, txt = run(["show", "--json"], c2proj)
+        got = json.loads(txt)[-1] if code == 0 else {}
+        check("j10b ...and show --json carries it back out",
+              got.get("details") == {"fromId": "P1.1", "toId": "P2.4"}
+              and got.get("v") == 2, repr(got))
+        code, txt = run(["append", "--action", "x", "--details", "{not json"],
+                        c2proj)
+        check("j11 malformed --details is a usage error (2), not a silent plain "
+              "row", code == 2, txt)
+        code, txt = run(["append", "--action", "x", "--details", '["a list"]'],
+                        c2proj)
+        check("j11b a non-object --details is a usage error too", code == 2, txt)
+        check("j11c neither wrote anything",
+              verify(c2proj)["rows"] == 1, repr(verify(c2proj)))
+        append(c2proj, {"action": "x", "summary": "s", "details": "a string",
+                        "actor": {"sessionId": "s"}})
+        check("j12 a non-dict details via the API is ignored, the row stays v1",
+              read_all(c2proj)[-1].get("v") == 1
+              and "details" not in read_all(c2proj)[-1])
+
+        # --- k: the git anchor -------------------------------------------------
+        # A forger who rewrites the whole file and recomputes every hash forward
+        # produces a chain that verifies -- the module docstring admits it. What
+        # they cannot rewrite from here is git history: once the journal is
+        # committed, `git show HEAD:<file>` must be a byte-prefix of the working
+        # copy (append-only across commits).
+        import subprocess
+        if not shutil.which("git"):
+            print("SKIP k1-k4 (git is not on PATH)")
+        else:
+            gdir = os.path.join(tmp, "gitrepo")
+            os.makedirs(os.path.join(gdir, "docs", "audit"))
+
+            def git(*args):
+                return subprocess.run(
+                    ["git", "-C", gdir, "-c", "user.email=t@t",
+                     "-c", "user.name=t"] + list(args),
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=30)
+
+            git("init", "-q")
+            gcfg = {"manifestPath": "docs/audit/audit-plan.json"}
+            append(gdir, {"action": "manifest.edit", "target": "",
+                          "summary": "one",
+                          "actor": {"sessionId": "s-git", "via": "hook"}},
+                   config=gcfg)
+            gfile = journal_files(journal_dir(gdir, gcfg))[0]
+            resk = verify(gdir, gcfg)
+            check("k1 an untracked journal is silent - no finding, no warning "
+                  "(fail-open: no git anchor is not evidence of anything)",
+                  resk["ok"] and not resk["warnings"], repr(resk))
+            git("add", ".")
+            git("commit", "-q", "-m", "journal")
+            append(gdir, {"action": "manifest.edit", "target": "",
+                          "summary": "two",
+                          "actor": {"sessionId": "s-git", "via": "hook"}},
+                   config=gcfg)
+            check("k2 the committed copy is a byte-prefix of the working file, "
+                  "so appending after a commit stays clean",
+                  verify(gdir, gcfg)["ok"], repr(verify(gdir, gcfg)))
+            with open(gfile, "rb") as fh:
+                pristine = fh.read()
+            grows, _ = read_file(gfile)
+            forged, prev_f = [], genesis_prev(os.path.basename(gfile))
+            for r in grows:
+                r = dict(r)
+                if not forged:
+                    r["summary"] = "nothing happened"
+                r["prev"] = prev_f
+                r["hash"] = row_hash({k: v for k, v in r.items()
+                                      if k != "hash"})
+                prev_f = r["hash"]
+                forged.append(r)
+            rewrite(gfile, forged)
+            resk = verify(gdir, gcfg)
+            check("k3 a full rewrite with recomputed hashes chains cleanly and "
+                  "is STILL a FINDING - the committed past changed",
+                  not resk["ok"]
+                  and any("committed past changed" in f
+                          for f in resk["findings"]), repr(resk["findings"]))
+            with open(gfile, "wb") as fh:
+                fh.write(pristine)
+            check("k4 restored byte-for-byte, it verifies again",
+                  verify(gdir, gcfg)["ok"], repr(verify(gdir, gcfg)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

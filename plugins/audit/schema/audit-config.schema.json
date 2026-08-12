@@ -364,6 +364,14 @@
           ],
           "description": "Where the monthly per-writer .jsonl files live, relative to the project dir. null (the default) keeps the journal beside the manifest, so it is committed by the same commit that carries the change it records.",
           "minLength": 1
+        },
+        "strictManifestState": {
+          "type": "string",
+          "enum": [
+            "off",
+            "ask"
+          ],
+          "description": "Opt-in confirmation prompt (guard-edits.py) when an edit changes manifest STATE - a task or phase's status, completedAt, commit or attempts. 'ask' surfaces the tool call for approval; 'off' (the default) leaves detection to the journal and the doctor. There is deliberately no 'deny': the orchestrator completes tasks through the same edit tools."
         }
       }
     }

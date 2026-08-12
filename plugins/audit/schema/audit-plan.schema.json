@@ -550,6 +550,28 @@
           ],
           "description": "Link to bugs[].id when this task was materialized via /audit:bug fix. The orchestrator flips that bug to 'fixed' (+fixedIn) when the task commits."
         },
+        "movedFrom": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Written by /audit:task move when a task is renumbered into another phase: the id and phase it held before, and when it moved. The journal's chained task.move row is the other half of the mapping; historical ledger rows keep the OLD taskId, and this field is what lets a reader join them.",
+          "additionalProperties": true,
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "The task's previous id."
+            },
+            "phase": {
+              "type": "string",
+              "description": "The phase it lived in before the move."
+            },
+            "at": {
+              "type": "string",
+              "description": "ISO timestamp of the move."
+            }
+          }
+        },
         "ado": {
           "$ref": "#/$defs/adoLink"
         }
@@ -867,13 +889,15 @@
       "additionalProperties": true,
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "description": "PROP-<n>, allocated repo-wide like BUG-<n>. Legacy free-form ids are tolerated (validator warns, never fails)."
         },
         "name": {
           "type": "string"
         },
         "status": {
-          "type": "string"
+          "type": "string",
+          "description": "proposed | materialized | dropped (validator-enforced vocabulary for payload-bearing proposals)."
         },
         "origin": {
           "type": "string"
@@ -892,6 +916,37 @@
           "items": {
             "type": "string"
           }
+        },
+        "createdISO": {
+          "type": "string",
+          "description": "ISO timestamp when the proposal was parked."
+        },
+        "payload": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The full synthesized phase, parked losslessly so materialization is a move, not a re-synthesis. The phase id inside is RESERVED: id allocation counts it alongside live phases. fileIndex is deliberately not stored here — it is derived from payload.phase.tasks[].files at materialize time.",
+          "additionalProperties": true,
+          "properties": {
+            "phase": {
+              "$ref": "#/$defs/phase"
+            }
+          }
+        },
+        "materializedAs": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Phase id this proposal became, written by /audit:propose materialize (never by hand)."
+        },
+        "materializedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp of materialization."
         }
       }
     }

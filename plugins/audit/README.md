@@ -127,7 +127,11 @@ page behind it, read against the form rather than instead of it. All of it is
   (optional review skill + test gates + optional runtime boot). All share
   `reference/orchestrator.md`.
 - **`/audit:init`** — multi-agent codebase audit that GENERATES the manifest: interview →
-  recon → parallel read-only explorers → synthesized, schema-valid phases/tasks.
+  recon → parallel read-only explorers → synthesized phases presented for **approval before
+  anything is written** — approve to materialize, or park them as proposals.
+- **`/audit:propose`** — the parked-phase lifecycle: `list` what init parked,
+  `materialize` a proposal into a live phase (a move, not a re-synthesis), `drop` one
+  with a recorded reason.
 - **`/audit:task`** — add a tracked task interactively (id allocation, field initialization,
   fileIndex maintenance, revalidation).
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
@@ -188,12 +192,15 @@ page behind it, read against the form rather than instead of it. All of it is
     the plan gate (the statically-undecidable residual of the PreToolUse checks).
   - `remind-tdd.py` (PostToolUse: edits) — **non-blocking** nudge when source
     changes with no test touched in the session; throttled, manifest-aware, configurable.
-  - `journal-writes.py` (PostToolUse: edits) — appends one hash-chained row to the
-    **audit trail** for every edit-tool write to the manifest or to
-    `.claude/audit.config.json`: who, when, what, and the state it left behind.
-    Silent, never blocking. It is a hook rather than an instruction because a model
-    that forgets to log a change leaves a gap indistinguishable from one somebody
-    hid. See [Audit trail](#audit-trail).
+  - `journal-writes.py` (PreToolUse + PostToolUse: edits) — appends one hash-chained
+    row to the **audit trail** for every edit-tool write to the manifest or to
+    `.claude/audit.config.json`: who, when, what, and the state it left behind. The
+    Pre pass caches the file's pre-image so the Post pass can record a **field-level
+    diff** (`P2.3: status in_progress->done, completedAt set`) and emit the
+    **completion records** (`task.complete`, `task.commit`, `phase.signoff`) —
+    hook-emitted only, never appended by hand. Silent, never blocking. It is a hook
+    rather than an instruction because a model that forgets to log a change leaves a
+    gap indistinguishable from one somebody hid. See [Audit trail](#audit-trail).
   - Stale session state (incl. forgotten armed bypasses) is garbage-collected after 7 days.
 - **`schema/audit-plan.schema.json`** — a JSON Schema (draft 2020-12) for the manifest, so
   editors and CI validate it — plus `scripts/validate-manifest.py`, a dependency-free
@@ -219,7 +226,8 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 
 | Command | Arguments | What it does |
 |---|---|---|
-| `/audit:init` | `[scope/goals — you'll be interviewed for the rest]` | Multi-agent codebase audit that **generates** the manifest: interviews you for scope/dimensions/size, fans out parallel read-only explorers, and synthesizes their findings into schema-valid phases/tasks. The entry point every other command consumes. |
+| `/audit:init` | `[scope/goals — you'll be interviewed for the rest]` | Multi-agent codebase audit that **generates** the manifest: interviews you for scope/dimensions/size, fans out parallel read-only explorers, synthesizes findings, then **presents the proposed phases for approval before writing** — approve to materialize, park everything as proposals, or choose per phase. The entry point every other command consumes. |
+| `/audit:propose` | `list \| materialize <PROP-id>\|--all \| drop <PROP-id>` | Parked-phase lifecycle: `list` what `/audit:init` parked, `materialize` a proposal into a live phase (lossless — the full phase travels in the proposal's payload), `drop` one with a recorded reason. |
 | `/audit:status` | — | Read-only rollup — phases, tasks, bugs, and the ready-now list, with per-phase progress and resumable-phase flags. No locks, no mutations. |
 | `/audit:next` | `[--dry-run]` | Execute the next ready task (by phase order, then task id), then report what's ready next. `--dry-run` previews the choice without mutating. |
 | `/audit:run` | `<taskId> [--dry-run]` | Execute exactly one task by id, with status guards (offers reopen if `done`, attempt-reset if `blocked`, warns if `in_progress`) and unmet-blocker checks. Reopening a bugfix task reopens its linked bug. |
@@ -265,7 +273,7 @@ the report, and `scripts/validate-manifest.py` runs the referential validator (e
 ```
 
 Commands appear as `/audit:status`, `/audit:doctor`, `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:review`,
-`/audit:resume`, `/audit:report`, `/audit:panel`, `/audit:init`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
+`/audit:resume`, `/audit:report`, `/audit:panel`, `/audit:init`, `/audit:propose`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
 action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up immediately,
 run `/reload-plugins` (or restart the session).
 
@@ -339,7 +347,8 @@ Then check the setup is sound before committing to a run:
 Generate it (recommended):
 
 ```
-/audit:init            # interviews you, audits the codebase in parallel, writes the manifest
+/audit:init            # interviews you, audits the codebase in parallel, proposes phases
+                       # — approve to write them, or park them for /audit:propose later
 ```
 
 …or copy the starter and fill it in by hand (from your repo root, any terminal):
@@ -416,6 +425,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `usage.pricing` | Model id → `{in, out, cacheW5m, cacheW1h, cacheR}` in currency per **million** tokens | shipped table |
 | `journal.enabled` | Record every manifest / config write in the tamper-evident audit trail | `true` |
 | `journal.dir` | Where the trail's monthly per-writer `.jsonl` files live; unset → beside the manifest, so one commit carries both the change and the record of it | unset |
+| `journal.strictManifestState` | Opt-in confirmation prompt when an edit changes manifest **state** (a task/phase `status`, `completedAt`, `commit`, `attempts`): `off` \| `ask` — deliberately no `deny`, the orchestrator writes through the same tools | `off` |
 | `policy.enabled` | Enforce the capability policy below | `true` (and inert — the shipped rules allow everything) |
 | `policy.onViolation` | What a violation does: `deny` \| `ask` \| `warn` | `deny` |
 | `policy.{skills,agents,mcp}` | Per kind: `{default: "allow"\|"deny", allow: [pattern], deny: [pattern], areas: {tag: {allow, deny}}}` | `default: "allow"`, no rules |
@@ -781,22 +791,50 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-journal.py" show --limit 20
 
 `verify` catches an **edited**, **deleted** or **reordered** row (the chain breaks at that
 point), a file **renamed** into another writer's slot (the first row's `prev` is derived from
-the file's own name), a **torn tail** from an interrupted write, and **out-of-band drift** —
+the file's own name), a **torn tail** from an interrupted write, **out-of-band drift** —
 a manifest that moved with no row to explain it, which is what a shell write or a `git
-checkout` looks like from here. `/audit:doctor` runs the same check; a broken chain is its
-only journal FINDING, because it is the only one that cannot happen by accident.
+checkout` looks like from here — and, once a journal file has been committed, a **rewritten
+committed past**: `git show HEAD:<file>` must be a byte-prefix of the working copy, so the
+"rewrite the whole file and recompute every hash" forgery stops verifying the moment the
+journal is in git. `/audit:doctor` runs the same check; a broken chain and a changed
+committed past are its only journal FINDINGs, because they are the only ones that cannot
+happen by accident.
 
-**Tamper-evident, not tamper-proof**, and the difference is the whole honest claim: with no
-secret key — and there is nowhere on your own machine to keep one you cannot read — a forger
-who rewrites every hash forward produces a chain that verifies. Deleting the file is the same
-class of act, and is loud rather than silent. It is a smoke detector, not a vault. See
+**Tamper-evident, not tamper-proof**, and the difference is the whole honest claim: absolute
+immutability of local files does not exist — you own the disk, and with no secret key (there
+is nowhere on your own machine to keep one you cannot read) a forger who rewrites every hash
+forward produces a chain that verifies. The ceiling is tamper-evidence plus **three
+cross-anchors** that have to be forged *consistently*:
+
+1. the **hash-chained journal** itself, with its field-level diffs and completion records;
+2. **git history** — the journal is staged into every task commit, so its committed past is
+   pinned by every clone that has it;
+3. the **usage ledger**, re-derivable at any time from Claude Code's own read-only
+   transcripts (`/audit:usage --backfill`) and joined to tasks by `taskId`.
+
+A forger must rewrite all three and keep them agreeing; any single-surface forgery — a
+hand-flipped `done` with no `task.complete` row, a fabricated `task.commit` SHA git has
+never seen, a rewritten journal whose committed past changed — is a `/audit:doctor` FINDING
+(`check_completions` and the journal check). Deleting the file is the same class of act, and
+is loud rather than silent. It is a smoke detector wired to three alarms, not a vault. See
 [SECURITY.md](../../SECURITY.md#the-audit-trail-tamper-evident-not-tamper-proof).
+
+The **completion records** are journal rows the `journal-writes` hook derives from the
+manifest diff — `task.complete` (a task's status moved to done), `task.commit` (its commit
+moved null → SHA), `phase.signoff` (a phase moved to done) — plus `task.move`, written by
+`/audit:task move` when a task is renumbered into another phase. The hook is the only writer
+of the first three; never append them by hand (two writers means duplicate rows). Tokens are
+deliberately not in these rows — metering lands on Stop/SessionEnd, so any number written at
+completion time would be wrong; the ledger is the anchor for spend.
 
 The journal lives beside the manifest so the same commit carries the change and the record of
 it (the orchestrator stages it with each task commit), and one file per writer means two
 sessions in two worktrees never conflict on it. Edits to it are refused by `guard-edits.py`;
 a shell write into it cannot be refused, so `guard-bash-writes.py` reports it after the fact.
-Turn it off with `journal.enabled: false`.
+Turn it off with `journal.enabled: false` — the flip itself is journalled as a final
+`config.edit` row (the last will), and `/audit:doctor` will say the trail was running and
+has been turned off. For extra friction, `journal.strictManifestState: "ask"` surfaces a
+confirmation prompt on any edit that changes manifest state.
 
 ## Azure DevOps (optional)
 
@@ -952,7 +990,9 @@ An installed plugin is read-only (a `/plugin update` overwrites in-place edits �
 
 `meta` (global config) · `phases[]` (each with `tasks[]`, a `desiredOutcome`, a `testGate`) ·
 `fileIndex` (file → task ids, validated bidirectionally) · `bugs[]` (tracker; outside phases
-until materialized) · `deferred` · `proposals`. A task carries `model`, `skills`,
+until materialized) · `deferred` · `proposals[]` (parked phases — full phase payloads that
+`/audit:init` wrote but the user has not approved yet; `/audit:propose` materializes or drops
+them, and their ids stay reserved while parked). A task carries `model`, `skills`,
 `blockedBy`/`dependsOn` (cycle-checked), `files`, `tests` (`mode` + `add` + `gate`), `risk`,
 optional `bugId`, and orchestrator-written `status`/`commit`/`outcome`. A phase runs on an
 `audit/<id>-<slug>` branch, commits per task, and merges into `meta.developmentBranch` after
