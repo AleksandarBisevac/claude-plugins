@@ -721,6 +721,7 @@ GROUP_KEYS = {
     "author": lambda r: r.get("author") or "unknown",
     "agent": lambda r: r.get("agentType") or "orchestrator",
     "day": lambda r: bucket_date(r.get("ts")) or "unknown",
+    "month": lambda r: bucket_month(r.get("ts")),
     "hour": lambda r: r.get("ts") or "unknown",
     "session": lambda r: r.get("sessionId") or "unknown",
     "branch": lambda r: r.get("branch") or "--",
@@ -744,6 +745,45 @@ def aggregate(rows, by):
         acc.setdefault(keyfn(row), _blank())
         _add(acc[keyfn(row)], row)
     return {k: _finish(v) for k, v in acc.items()}
+
+
+# Where spend with no area lands. NOT a GROUP_KEYS entry: every GROUP_KEYS
+# dimension reads a field the row itself carries, while area is a property of
+# the PLAN joined in at read time — so re-tagging a phase re-attributes its
+# whole ledger history on the next read, with no backfill and no row rewriting.
+UNTAGGED_AREA = "untagged"
+
+
+def _row_area_tags(row, tags_by_phase):
+    """The area tags one row counts under — [UNTAGGED_AREA] when its phase has
+    none, is unknown to the plan, or the row never carried a phase at all."""
+    tags = (tags_by_phase or {}).get(row.get("phaseId") or "")
+    return tags if tags else [UNTAGGED_AREA]
+
+
+def aggregate_area(rows, tags_by_phase):
+    """Ledger spend by area tag -> {tag: finished totals}.
+
+    `tags_by_phase` is {phaseId: [tags]}, built by `_areas.phase_tags` and passed
+    in ready-made — this module stays stdlib-only and does not import _areas.
+
+    A multi-tag phase counts its rows under EACH of its tags, so per-tag figures
+    can sum PAST the ledger total; every renderer that shows per-area numbers
+    must say so. Rows that resolve to no tag land in `untagged`."""
+    acc = {}
+    for row in rows:
+        for tag in _row_area_tags(row, tags_by_phase):
+            acc.setdefault(tag, _blank())
+            _add(acc[tag], row)
+    return {k: _finish(v) for k, v in acc.items()}
+
+
+def rows_for_area(rows, tags_by_phase, tag):
+    """The subset of rows aggregate_area counts under `tag` — the ONE statement
+    of the join, shared with the CLI's --area filter so a filtered dashboard and
+    the BY AREA table can never disagree. `untagged` selects the untagged bucket."""
+    want = (tag or "").strip()
+    return [r for r in rows if want in _row_area_tags(r, tags_by_phase)]
 
 
 def heatmap(rows):
@@ -1284,6 +1324,112 @@ def coverage(rows):
     }
 
 
+MONTHLY_PLAN_KEYS = ("tasksCompleted", "bugsReported", "bugsFixed",
+                     "phasesMerged")
+
+
+def _event_month(value):
+    """ISO timestamp -> 'YYYY-MM' in UTC, or None when unparseable.
+
+    Parsed through parse_ts rather than sliced, so an offset timestamp lands in
+    its UTC month and garbage lands nowhere instead of in a bucket named after
+    its first seven characters."""
+    epoch = parse_ts(value)
+    if epoch is None:
+        return None
+    g = time.gmtime(epoch)
+    return "%04d-%02d" % (g.tm_year, g.tm_mon)
+
+
+def _month_span(first, last):
+    """Inclusive list of 'YYYY-MM' from first to last."""
+    out = []
+    y, m = int(first[:4]), int(first[5:7])
+    ly, lm = int(last[:4]), int(last[5:7])
+    while (y, m) <= (ly, lm):
+        out.append("%04d-%02d" % (y, m))
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+    return out
+
+
+def monthly_activity(manifest, rows, months=12):
+    """Calendar-month roll-up of ledger spend AND plan progress — the ONE
+    computation site behind the 12-month overview's three surfaces (report
+    table, panel card, CLI), so their numbers cannot drift apart.
+
+    ledger: {month: {tokens, costUSD, msgs}} from `rows`.
+    plan:   {month: {tasksCompleted, bugsReported, bugsFixed, phasesMerged}}
+            from the manifest — tasksCompleted counts DONE tasks by their
+            `completedAt` month, bugsReported by `bug.reportedAt`, phasesMerged
+            by `phase.mergedAt`. bugsFixed is DERIVED the way
+            audit-status.effective_bug_status derives 'fixed': a bug whose
+            linked task (`bug.taskId`) is done, bucketed by THAT task's
+            completedAt — and a wontfix bug never counts.
+
+    `months[]` is zero-filled between the first and last month seen on either
+    side, then trimmed to the LAST `months` entries (None/0 = no cap). Both
+    dicts carry exactly the months in `months[]`, zero-filled, so renderers
+    never have to .get() around holes.
+    """
+    ledger_acc = {}
+    for r in (rows or []):
+        m = _event_month((r.get("ts") or "") + ":00:00Z")
+        if m is None:
+            continue
+        slot = ledger_acc.setdefault(m, {"tokens": 0, "costUSD": 0.0,
+                                         "msgs": 0})
+        slot["tokens"] += _tokens(r)
+        slot["costUSD"] += _cost(r)
+        try:
+            slot["msgs"] += int(r.get("msgs") or 0)
+        except (TypeError, ValueError):
+            pass
+
+    plan_acc = {}
+
+    def bump(month, key):
+        if not month:
+            return
+        slot = plan_acc.setdefault(month, {k: 0 for k in MONTHLY_PLAN_KEYS})
+        slot[key] += 1
+
+    tasks = task_index(manifest)
+    for ph in ((manifest or {}).get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        bump(_event_month(ph.get("mergedAt")), "phasesMerged")
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("status") == "done":
+                bump(_event_month(t.get("completedAt")), "tasksCompleted")
+    for b in ((manifest or {}).get("bugs") or []):
+        if not isinstance(b, dict):
+            continue
+        bump(_event_month(b.get("reportedAt")), "bugsReported")
+        if b.get("status") == "wontfix":
+            continue
+        t = tasks.get(b.get("taskId")) if b.get("taskId") else None
+        if isinstance(t, dict) and t.get("status") == "done":
+            bump(_event_month(t.get("completedAt")), "bugsFixed")
+
+    seen = sorted(set(ledger_acc) | set(plan_acc))
+    if not seen:
+        return {"months": [], "ledger": {}, "plan": {}}
+    span = _month_span(seen[0], seen[-1])
+    if months and len(span) > months:
+        span = span[-months:]
+    ledger = {}
+    plan = {}
+    for m in span:
+        got = ledger_acc.get(m) or {"tokens": 0, "costUSD": 0.0, "msgs": 0}
+        ledger[m] = {"tokens": got["tokens"],
+                     "costUSD": round(got["costUSD"], 6),
+                     "msgs": got["msgs"]}
+        plan[m] = plan_acc.get(m) or {k: 0 for k in MONTHLY_PLAN_KEYS}
+    return {"months": span, "ledger": ledger, "plan": plan}
+
+
 # --- selftest -------------------------------------------------------------------
 def _selftest():
     import shutil
@@ -1621,6 +1767,150 @@ def _selftest():
         grid = heatmap(all_rows)
         check("agg: heatmap is 7x24", len(grid) == 7 and len(grid[0]) == 24)
         check("agg: heatmap totals match", sum(sum(r) for r in grid) == agg_all["tokens"])
+
+        # --- month bucket (mo) --------------------------------------------
+        check("mo1 'month' is a first-class group key, so --by month and byMonth "
+              "exist without their own code paths",
+              "month" in GROUP_KEYS)
+        by_month = aggregate(all_rows, "month")
+        check("mo2 every row lands in its calendar month",
+              by_month.get("2026-08", {}).get("msgs") == agg_all["msgs"])
+        _mo_rows = [dict(all_rows[0], ts="2026-07-31T23"),
+                    dict(all_rows[0], ts="2026-08-01T00")]
+        _mo = aggregate(_mo_rows, "month")
+        check("mo3 a month boundary splits two adjacent hours into two months",
+              set(_mo) == {"2026-07", "2026-08"}
+              and _mo["2026-07"]["msgs"] == _mo["2026-08"]["msgs"])
+        check("mo4 a garbled ts groups under 'unknown', never dropped",
+              aggregate([dict(all_rows[0], ts=None)], "month")
+              .get("unknown", {}).get("msgs") == all_rows[0]["msgs"])
+
+        # --- aggregate_area (aa): the read-time area join ------------------
+        # tags_by_phase arrives ready-made (_areas.phase_tags) - this module
+        # must stay stdlib-only, so the join is data in, never an import.
+        _aa_rows = [
+            {"ts": "2026-08-01T10", "phaseId": "P1", "msgs": 1, "in": 10,
+             "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0, "costUSD": 1.0},
+            {"ts": "2026-08-02T10", "phaseId": "P2", "msgs": 1, "in": 20,
+             "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0, "costUSD": 2.0},
+            {"ts": "2026-08-03T10", "phaseId": "P3", "msgs": 1, "in": 40,
+             "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0, "costUSD": 4.0},
+            {"ts": "2026-08-04T10", "phaseId": "P9", "msgs": 1, "in": 80,
+             "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0, "costUSD": 8.0},
+            {"ts": "2026-08-05T10", "msgs": 1, "in": 160, "out": 0,
+             "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0, "costUSD": 16.0},
+        ]
+        _aa_map = {"P1": ["backend"], "P2": ["backend", "web"], "P3": []}
+        _aa = aggregate_area(_aa_rows, _aa_map)
+        check("aa1 rows join to areas through their phase's tags",
+              _aa.get("backend", {}).get("msgs") == 2
+              and _aa.get("backend", {}).get("in") == 30
+              and _aa.get("web", {}).get("in") == 20)
+        check("aa2 a multi-tag phase counts under EACH tag, so per-tag figures "
+              "can sum past the ledger total - renderers must say so",
+              sum(v["msgs"] for v in _aa.values()) == 6
+              and totals(_aa_rows)["msgs"] == 5)
+        check("aa3 no-tag phase, unknown phase and phase-less row all land in "
+              "'untagged', never dropped",
+              _aa.get(UNTAGGED_AREA, {}).get("msgs") == 3
+              and _aa.get(UNTAGGED_AREA, {}).get("in") == 280)
+        check("aa4 the join is read-time: a re-tagged map re-attributes the SAME "
+              "rows with no backfill",
+              aggregate_area(_aa_rows, {"P1": ["mobile"]})
+              .get("mobile", {}).get("in") == 10)
+        check("aa5 empty rows are {}, and a None map buckets everything untagged "
+              "rather than raising",
+              aggregate_area([], _aa_map) == {}
+              and aggregate_area(_aa_rows, None)
+              .get(UNTAGGED_AREA, {}).get("msgs") == 5)
+        check("aa6 rows_for_area selects exactly the rows aggregate_area counts "
+              "under the tag - one join, two callers, no drift",
+              totals(rows_for_area(_aa_rows, _aa_map, "backend"))["in"] == 30
+              == _aa.get("backend", {}).get("in")
+              and totals(rows_for_area(_aa_rows, _aa_map, "web"))["in"] == 20
+              == _aa.get("web", {}).get("in"))
+        check("aa7 ...including the untagged bucket, and an unknown tag is []",
+              totals(rows_for_area(_aa_rows, _aa_map, "untagged"))["in"] == 280
+              and rows_for_area(_aa_rows, _aa_map, "nope") == [])
+
+        # --- monthly_activity (ma) ----------------------------------------
+        # One computation site for the 12-month overview's three surfaces
+        # (report table, panel card, CLI) - so the honesty rules are pinned
+        # here once instead of asserted per renderer.
+        _ma_man = {"phases": [
+            {"id": "P1", "mergedAt": "2026-06-05T10:00:00Z", "tasks": [
+                {"id": "P1.1", "status": "done",
+                 "completedAt": "2026-06-03T10:00:00Z"},
+                {"id": "P1.2", "status": "done",
+                 "completedAt": "2026-08-02T10:00:00Z"},
+                {"id": "P1.3", "status": "pending",
+                 "completedAt": "2026-08-09T10:00:00Z"},
+                {"id": "P1.4", "status": "done", "completedAt": "not-a-date"},
+            ]}],
+            "bugs": [
+                {"id": "BUG-1", "status": "open",
+                 "reportedAt": "2026-07-15T10:00:00Z", "taskId": "P1.2"},
+                {"id": "BUG-2", "status": "wontfix",
+                 "reportedAt": "2026-07-16T10:00:00Z", "taskId": "P1.1"},
+                {"id": "BUG-3", "status": "open",
+                 "reportedAt": "2026-08-01T10:00:00Z"},
+            ]}
+        _ma_rows = [
+            {"ts": "2026-06-10T09", "in": 5, "out": 100, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 20, "msgs": 2, "costUSD": 0.5},
+            {"ts": "2026-08-05T14", "in": 1, "out": 40, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 9, "msgs": 1, "costUSD": 0.25},
+            {"ts": "garbage", "in": 9, "out": 9, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 0, "msgs": 9, "costUSD": 9.0},
+        ]
+        ma = monthly_activity(_ma_man, _ma_rows)
+        check("ma1 months are zero-filled between the first and last month seen "
+              "on either side",
+              ma["months"] == ["2026-06", "2026-07", "2026-08"])
+        check("ma2 both halves carry every month in months[], zeroed when quiet, "
+              "so no renderer needs to .get() around holes",
+              set(ma["ledger"]) == set(ma["months"]) == set(ma["plan"])
+              and ma["ledger"]["2026-07"] == {"tokens": 0, "costUSD": 0.0,
+                                              "msgs": 0})
+        check("ma3 the ledger half buckets tokens/cost/msgs by calendar month, "
+              "and a garbled ts is skipped rather than mis-bucketed",
+              ma["ledger"]["2026-06"] == {"tokens": 125, "costUSD": 0.5,
+                                          "msgs": 2}
+              and ma["ledger"]["2026-08"]["msgs"] == 1
+              and sum(v["msgs"] for v in ma["ledger"].values()) == 3)
+        check("ma4 tasksCompleted counts DONE tasks by completedAt month - a "
+              "completedAt on a pending task does not count, nor an unparseable one",
+              ma["plan"]["2026-06"]["tasksCompleted"] == 1
+              and ma["plan"]["2026-08"]["tasksCompleted"] == 1
+              and sum(v["tasksCompleted"] for v in ma["plan"].values()) == 2)
+        check("ma5 bugsReported buckets by reportedAt month",
+              ma["plan"]["2026-07"]["bugsReported"] == 2
+              and ma["plan"]["2026-08"]["bugsReported"] == 1)
+        check("ma6 a bug counts as fixed in the month its LINKED TASK completed "
+              "- the effective_bug_status derivation, not a status field",
+              ma["plan"]["2026-08"]["bugsFixed"] == 1
+              and ma["plan"]["2026-07"]["bugsFixed"] == 0)
+        check("ma7 wontfix never reads as fixed, even with a done linked task",
+              sum(v["bugsFixed"] for v in ma["plan"].values()) == 1)
+        check("ma8 phasesMerged buckets by mergedAt month",
+              ma["plan"]["2026-06"]["phasesMerged"] == 1
+              and sum(v["phasesMerged"] for v in ma["plan"].values()) == 1)
+        check("ma9 the window trims to the LAST n months, dropping older keys "
+              "from both halves",
+              monthly_activity(_ma_man, _ma_rows, months=2)["months"]
+              == ["2026-07", "2026-08"]
+              and "2026-06" not in monthly_activity(
+                  _ma_man, _ma_rows, months=2)["ledger"])
+        check("ma10 empty everything is an empty shape, not a crash",
+              monthly_activity({}, []) == {"months": [], "ledger": {},
+                                           "plan": {}}
+              and monthly_activity(None, None) == {"months": [], "ledger": {},
+                                                   "plan": {}})
+        check("ma11 an offset timestamp lands in its UTC month",
+              monthly_activity({"phases": [{"id": "P9", "tasks": [
+                  {"id": "P9.1", "status": "done",
+                   "completedAt": "2026-09-01T01:00:00+02:00"}]}]}, [])
+              ["plan"]["2026-08"]["tasksCompleted"] == 1)
 
         # --- analytics: the honesty guards --------------------------------
         def mkrow(day, model, author, task, phase, attr, cost, out_tok=100,

@@ -35,6 +35,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import _ui_theme as _theme  # noqa: E402  (tokens + labels shared with the panel)
+import _areas  # noqa: E402  (one home for tag derivation; stdlib-only, no cycle)
 
 
 # Chip and pipeline-rail colors live in the report's CSS theme tokens (see
@@ -198,7 +199,7 @@ def _filter_attrs(task):
 
 # --- filter panel -----------------------------------------------------------
 def _filter_panel(manifest):
-    """The model and date controls, server-rendered, or "" when the plan has neither.
+    """The area, model and date controls, server-rendered, or "" with none of them.
 
     Everything here is emitted from the manifest rather than built by the script,
     which is the rule the status chips already follow: built in JS, a filter UI is
@@ -220,10 +221,21 @@ def _filter_panel(manifest):
             for key in ("startedAt", "completedAt"):
                 if t.get(key):
                     dates.append(_short_date(t[key]))
-    if not models and not dates:
+    tags = _areas.used_tags(manifest)
+    if not models and not dates and not tags:
         return ""
 
     rows = []
+    # Area first: it gates PHASES, where model and dates narrow the tasks inside
+    # them — the panel reads top-down from the coarser filter to the finer ones.
+    # First-seen order, not sorted: tags are read in the order the plan
+    # introduces them, same as the phase list below the panel. humanize=False
+    # because a tag is an identifier someone typed into the manifest, exactly
+    # like a model name (see _chip_buttons).
+    if tags:
+        rows.append('<div class="frow"><span class="tbl">Area:</span>'
+                    '<span id="audit-areas">%s</span></div>'
+                    % _chip_buttons(tags, "data-a", "fchip", humanize=False))
     if models:
         rows.append('<div class="frow"><span class="tbl">Model:</span>'
                     '<span id="audit-model">%s</span></div>'
@@ -425,6 +437,25 @@ def _selftest():
         {"startedAt": "2026-07-01T00:00:00Z", "completedAt": "2026-07-09T00:00:00Z"}]}]}
     check("_filter_panel's date range spans the earliest to the latest date",
           'min="2026-07-01" max="2026-07-09"' in _filter_panel(_withdates))
+    # D1: the Area chip row. A tag is enough on its own to earn the panel — the
+    # plan below has no models and no dates — and the chips keep the tags'
+    # first-seen order, deduped across phases by _areas.used_tags.
+    _witharea = {"phases": [
+        {"id": "P1", "area": "backend", "tasks": [{"id": "P1.1"}]},
+        {"id": "P2", "area": ["web", "backend"], "tasks": []}]}
+    _area_panel = _filter_panel(_witharea)
+    check("_filter_panel renders the Area chip row when any phase carries a tag "
+          "(a tag alone earns the panel)",
+          'id="audit-areas"' in _area_panel
+          and 'class="fchip" data-a="backend"' in _area_panel
+          and 'data-a="web"' in _area_panel)
+    check("_filter_panel keeps area tags in first-seen order, deduped, spelled "
+          "as identifiers rather than humanized",
+          _area_panel.index('data-a="backend"') < _area_panel.index('data-a="web"')
+          and _area_panel.count('data-a="backend"') == 1
+          and ">backend</button>" in _area_panel)
+    check("_filter_panel omits the Area row for a plan without tags",
+          'id="audit-areas"' not in _filter_panel(_withmodel))
 
     # --- _phase_meta_div() / _bar() ----------------------------------------------
     check("_phase_meta_div is '' with nothing to say",

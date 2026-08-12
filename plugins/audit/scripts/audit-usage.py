@@ -10,9 +10,9 @@ drawing, no ANSI, no emoji — matching the convention the rest of the plugin al
 follows so it reads in any terminal.
 
     audit-usage.py [<manifestPath>] [--by phase|task|model|author|agent|day|hour|
-                                          session|branch|attr]
+                                          month|session|branch|attr]
                    [--phase ID] [--task ID] [--model NAME] [--author WHO]
-                   [--attr task|phase|window|unattributed]
+                   [--area TAG] [--attr task|phase|window|unattributed]
                    [--since 7d|YYYY-MM-DD] [--until YYYY-MM-DD]
                    [--top N] [--no-cost] [--json]
                    [--backfill] [--project-dir DIR] [--ledger-dir DIR]
@@ -38,6 +38,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
+import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
 
 
 def _load(name, filename):
@@ -215,7 +216,7 @@ def titles_of(manifest):
 
 
 # --- filtering ------------------------------------------------------------------
-def apply_filters(rows, args):
+def apply_filters(rows, args, tags_by_phase=None):
     def keep(row):
         if args.phase and row.get("phaseId") != args.phase:
             return False
@@ -228,7 +229,13 @@ def apply_filters(rows, args):
         if args.attr and row.get("attr") != args.attr:
             return False
         return True
-    return [r for r in rows if keep(r)]
+    kept = [r for r in rows if keep(r)]
+    if getattr(args, "area", None):
+        # The SAME join aggregate_area uses (usage_ledger.rows_for_area), so a
+        # filtered dashboard and the BY AREA table cannot disagree about which
+        # rows an area owns. `--area untagged` selects the untagged bucket.
+        kept = ul.rows_for_area(kept, tags_by_phase or {}, args.area)
+    return kept
 
 
 # --- rendering ------------------------------------------------------------------
@@ -318,6 +325,7 @@ def render(rows, args, manifest, window, show_cost):
         return "\n".join(out)
 
     out += group_table("phase", "BY PHASE")
+    out += render_by_area(manifest, rows, tot, show_cost)
     if ul.aggregate(rows, "author") and tot["authors"] > 0:
         out += group_table("author", "BY AUTHOR")
     out += group_table("model", "BY MODEL")
@@ -340,8 +348,92 @@ def render(rows, args, manifest, window, show_cost):
         out += routing_advice_lines(
             ul.routing(manifest, rows,
                        (meta_usage or {}).get("pricing")).get("advice") or [])
+    out += render_monthly(manifest, rows, show_cost)
     out += render_trend(rows)
     return "\n".join(out)
+
+
+def render_by_area(manifest, rows, tot, show_cost):
+    """BY AREA table: ledger spend joined to `phase.area` tags at read time
+    (usage_ledger.aggregate_area over _areas.phase_tags), rendered only when the
+    plan tags anything at all — a project that never wrote an area keeps today's
+    dashboard byte for byte.
+
+    A multi-tag phase counts its rows under EACH of its tags, so area rows can
+    sum PAST the total line; when such a phase exists the footer says so rather
+    than letting the columns quietly disagree with the header. `untagged` (no
+    tags, unknown phase, or no phase on the row) always sorts last - it is a
+    residue, not an area."""
+    tags_by_phase = _areas.phase_tags(manifest)
+    if not any(tags_by_phase.values()):
+        return []
+    agg = ul.aggregate_area(rows, tags_by_phase)
+    if not agg:
+        return []
+    items = sorted(agg.items(),
+                   key=lambda kv: (kv[0] == ul.UNTAGGED_AREA, -kv[1]["tokens"]))
+    grand = tot["tokens"] or 1
+    headers = ["BY AREA", "tokens"]
+    aligns = ["<", ">"]
+    if show_cost:
+        headers.append("cost")
+        aligns.append(">")
+    headers += ["msgs", "phases", "share"]
+    aligns += [">", ">", "<"]
+    body = []
+    for key, v in items:
+        row = [key, fmt_tokens(v["tokens"])]
+        if show_cost:
+            row.append(fmt_cost(v["costUSD"]))
+        share = 100.0 * v["tokens"] / grand
+        pct = "<1%" if 0 < share < 1 else "%.0f%%" % share
+        row += [fmt_int(v["msgs"]), str(v["phases"]),
+                "%s %4s" % (bar(v["tokens"] / float(grand)), pct)]
+        body.append(tuple(row))
+    out = [""] + table(body, headers, aligns)
+    if any(len(tags) > 1 for tags in tags_by_phase.values()):
+        out.append("  a phase tagged with several areas counts under each of "
+                   "its tags, so area rows can sum past the total")
+    return out
+
+
+def render_monthly(manifest, rows, show_cost):
+    """Calendar-month table: ledger spend beside plan progress, one row per
+    month, from usage_ledger.monthly_activity — the same computation site the
+    report table and the panel card read, so the three surfaces cannot drift.
+
+    Rendered only when the rows in view span at least two calendar months: a
+    one-month table would restate the totals line. The ledger columns follow
+    the CLI filters (they are computed from the filtered rows); the plan
+    columns count the whole project by event month, and the footer says so."""
+    months_seen = {ul.bucket_month(r.get("ts")) for r in rows} - {"unknown"}
+    if len(months_seen) < 2:
+        return []
+    ma = ul.monthly_activity(manifest, rows)
+    if not ma["months"]:
+        return []
+    headers = ["MONTHLY", "tokens"]
+    aligns = ["<", ">"]
+    if show_cost:
+        headers.append("cost")
+        aligns.append(">")
+    headers += ["msgs", "tasks done", "bugs", "fixed", "merged"]
+    aligns += [">"] * 5
+    body = []
+    for m in ma["months"]:
+        led, plan = ma["ledger"][m], ma["plan"][m]
+        row = [m, fmt_tokens(led["tokens"])]
+        if show_cost:
+            row.append(fmt_cost(led["costUSD"]))
+        row += [fmt_int(led["msgs"]), str(plan["tasksCompleted"]),
+                str(plan["bugsReported"]), str(plan["bugsFixed"]),
+                str(plan["phasesMerged"])]
+        body.append(tuple(row))
+    out = [""] + table(body, headers, aligns)
+    out.append("  plan columns count the whole project by event month (task "
+               "completed, bug reported, linked fix task completed, phase "
+               "merged) - they do not follow the filters above")
+    return out
 
 
 def routing_advice_lines(advice):
@@ -572,6 +664,9 @@ def build_parser():
     p.add_argument("--task")
     p.add_argument("--model")
     p.add_argument("--author")
+    p.add_argument("--area", default=None,
+                   help="only spend whose phase carries this area tag "
+                        "('untagged' selects spend no area owns)")
     p.add_argument("--attr", choices=["task", "phase", "window", "unattributed"])
     p.add_argument("--since", default=None, help="7d | 2w | 3m | YYYY-MM-DD")
     p.add_argument("--until", default=None, help="YYYY-MM-DD")
@@ -609,7 +704,9 @@ def main(argv):
         return code
 
     since = resolve_since(args.since)
-    rows = apply_filters(ul.read_ledger(ledger_dir, since, args.until), args)
+    tags_by_phase = _areas.phase_tags(manifest)
+    rows = apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
+                         tags_by_phase)
     window = "all time" if not (since or args.until) else "%s -> %s" % (
         since or "start", args.until or today())
 
@@ -625,8 +722,11 @@ def main(argv):
             "byAuthor": ul.aggregate(rows, "author"),
             "byAgent": ul.aggregate(rows, "agent"),
             "byDay": ul.aggregate(rows, "day"),
+            "byMonth": ul.aggregate(rows, "month"),
+            "byArea": ul.aggregate_area(rows, tags_by_phase),
             "byAttribution": ul.aggregate(rows, "attr"),
             "heatmap": ul.heatmap(rows),
+            "monthly": ul.monthly_activity(manifest, rows),
             "bands": ul.cost_bands(
                 manifest, rows, meta_usage if isinstance(meta_usage, dict) else {}),
             "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
@@ -880,6 +980,121 @@ def _selftest():
                                          "byAttribution", "heatmap")))
         check("json: heatmap is 7x24",
               len(payload["heatmap"]) == 7 and len(payload["heatmap"][0]) == 24)
+
+        # --- month bucket (mo) ----------------------------------------------
+        check("mo1 --by month is a legal choice, derived from GROUP_KEYS",
+              "month" in ul.GROUP_KEYS
+              and build_parser().parse_args(["--by", "month"]).by == "month")
+        args_mo = build_parser().parse_args(["--by", "month"])
+        args_mo.ledger_dir = ledger
+        mo_text = render(loaded, args_mo, manifest, "all time", True)
+        check("mo2 --by month renders one focused monthly table",
+              "MONTH" in mo_text and "2026-08" in mo_text
+              and "BY PHASE" not in mo_text)
+        check("mo3 the json payload carries byMonth",
+              payload.get("byMonth", {}).get("2026-08", {}).get("out") == 3500)
+
+        # --- monthly overview (ma) ------------------------------------------
+        check("ma1 a single-month ledger shows no MONTHLY table - one row "
+              "would restate the totals line",
+              "MONTHLY" not in text)
+        check("ma2 the json payload carries the monthly overview even then",
+              payload.get("monthly", {}).get("months") == ["2026-08"])
+        _l2 = os.path.join(tmp, "usage2")
+        _extra = dict(rows[0])
+        _extra["ts"] = "2026-07-20T10"
+        _extra["sessionId"] = "s-jul"
+        ul.append_rows(_l2, rows + [_extra])
+        _loaded2 = ul.read_ledger(_l2)
+        _man2 = json.loads(json.dumps(manifest))
+        _man2["phases"][0]["tasks"][0]["status"] = "done"
+        _man2["phases"][0]["tasks"][0]["completedAt"] = "2026-08-01T10:00:00Z"
+        _man2["bugs"] = [{"id": "BUG-1", "status": "open",
+                          "reportedAt": "2026-07-02T10:00:00Z"}]
+        _mtext = render(_loaded2, args, _man2, "all time", True)
+        check("ma3 a two-month ledger renders the MONTHLY table with both months",
+              "MONTHLY" in _mtext and "2026-07" in _mtext and "2026-08" in _mtext)
+        check("ma4 plan columns ride beside the ledger columns",
+              "tasks done" in _mtext and "merged" in _mtext)
+        check("ma5 the plan columns say they are project-wide and do not follow "
+              "the filters",
+              "do not follow the filters" in _mtext)
+        check("ma6 the monthly table is plain ASCII",
+              all(ord(c) < 128 for c in _mtext))
+        check("ma7 --no-cost drops the monthly cost column too",
+              "cost" not in "\n".join(
+                  ln for ln in render(_loaded2, args, _man2, "all time",
+                                      False).splitlines()
+                  if "MONTHLY" in ln))
+
+        # --- areas (da): read-time join, --area filter, BY AREA table -------
+        # Area is a property of the PLAN: the same ledger re-reads differently
+        # when a phase is re-tagged, and a project that never wrote an area
+        # keeps today's dashboard byte for byte.
+        check("da1 a plan with no area tags renders no BY AREA table",
+              "BY AREA" not in text)
+        _man_a = json.loads(json.dumps(manifest))
+        _man_a["phases"][0]["area"] = "backend"
+        _man_a["phases"][1]["area"] = ["backend", "web"]
+        _atext = render(loaded, args, _man_a, "all time", True)
+        check("da2 tagged phases render BY AREA with one row per tag",
+              "BY AREA" in _atext and "backend" in _atext and "web" in _atext)
+        check("da3 the multi-tag caveat prints exactly when a phase carries "
+              "more than one tag - single-tag projects stay quiet",
+              "sum past the total" in _atext)
+        _man_b = json.loads(json.dumps(manifest))
+        _man_b["phases"][0]["area"] = "backend"
+        _btext = render(loaded, args, _man_b, "all time", True)
+        check("da4 ...and stays silent when no phase is multi-tagged",
+              "BY AREA" in _btext and "sum past the total" not in _btext)
+        check("da5 spend of an untagged phase lands in an 'untagged' row that "
+              "sorts last - a residue, not an area",
+              "untagged" in _btext
+              and _btext.index("untagged") > _btext.index("backend"))
+        check("da6 the BY AREA table is plain ASCII",
+              all(ord(c) < 128 for c in _atext))
+        _tags_a = _areas.phase_tags(_man_a)
+        args_da = build_parser().parse_args(["--area", "backend"])
+        check("da7 --area keeps exactly the rows whose phase carries the tag",
+              len(apply_filters(loaded, args_da, _tags_a)) == 3
+              and len(apply_filters(
+                  loaded, build_parser().parse_args(["--area", "web"]),
+                  _tags_a)) == 1
+              and apply_filters(
+                  loaded, build_parser().parse_args(["--area", "nope"]),
+                  _tags_a) == [])
+        check("da8 --area untagged selects the spend no area owns",
+              len(apply_filters(
+                  loaded, build_parser().parse_args(["--area", "untagged"]),
+                  _areas.phase_tags(_man_b))) == 1)
+        check("da9 a no-tag plan's json byArea buckets everything untagged - "
+              "an honest shape, not a missing key",
+              payload.get("byArea", {}).get("untagged", {}).get("out") == 3500)
+        _map = os.path.join(tmp, "area-plan.json")
+        with open(_map, "w", encoding="utf-8") as fh:
+            json.dump(_man_a, fh)
+        buf2, real2 = io.StringIO(), sys.stdout
+        sys.stdout = buf2
+        try:
+            code2 = main([_map, "--ledger-dir", ledger, "--project-dir", tmp,
+                          "--json"])
+        finally:
+            sys.stdout = real2
+        payload2 = json.loads(buf2.getvalue())
+        check("da10 json byArea joins through the named manifest's tags",
+              code2 == 0
+              and payload2.get("byArea", {}).get("backend", {}).get("out") == 3500
+              and payload2.get("byArea", {}).get("web", {}).get("out") == 2000)
+        buf3, real3 = io.StringIO(), sys.stdout
+        sys.stdout = buf3
+        try:
+            code3 = main([_map, "--ledger-dir", ledger, "--project-dir", tmp,
+                          "--json", "--area", "web"])
+        finally:
+            sys.stdout = real3
+        check("da11 --area narrows the whole json payload, totals included",
+              code3 == 0
+              and json.loads(buf3.getvalue())["totals"]["out"] == 2000)
 
         # backfill on a project with no transcripts must fail cleanly, not crash
         args_b = build_parser().parse_args(["--backfill"])

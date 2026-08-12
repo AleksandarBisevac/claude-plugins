@@ -173,14 +173,30 @@
   var modelFilter = '';   // panel: only tasks run by this model
   var dFrom = '', dTo = '';  // panel: ISO dates, compared as plain strings
   var preset = '';        // which relative-span chip is lit, if any
+  // Area chips (D1): a PHASE-level gate like phaseStatus, not a task narrower —
+  // `data-area` lives on the phase row and tasks carry none. Multi-select,
+  // unlike every filter above, because areas are how one plan holds several
+  // subsystems and "the backend AND the web work" is a view someone actually
+  // wants; a phase shows when ANY of its tags is selected. While a selection is
+  // active a phase with no tags has no answer to the question being asked and
+  // is hidden — the same reasoning dateOk applies to a task without dates.
+  var areaFilter = [];    // panel: selected area tags, in click order
 
   var modelBar = document.getElementById('audit-model');
+  var areaBar = document.getElementById('audit-areas');
   var fromInput = document.getElementById('audit-from');
   var toInput = document.getElementById('audit-to');
   var presetBar = document.getElementById('audit-presets');
   var fcount = document.getElementById('audit-fcount');
   var clearBtns = [].slice.call(document.querySelectorAll('[data-clear]'));
   var norow = grouped ? grouped.querySelector('tr.norows') : null;
+  // The author chips (C3) live in the Usage section and scope ONLY it: tasks
+  // record no author, so these never enter refresh() or touch the task table.
+  var authorBar = document.getElementById('audit-authors');
+  var auNote = document.getElementById('audit-au-note');
+  var auFilter = '';
+  var smCells = [].slice.call(document.querySelectorAll('.smcell'));
+  var auRows = [].slice.call(document.querySelectorAll('.rank[data-author]'));
 
   function esc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }
   // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
@@ -240,6 +256,17 @@
     // thousand rows costs no Date parsing at all.
     return (!dFrom || d >= dFrom) && (!dTo || d <= dTo);
   }
+  // The renderer joins a phase's tags with single spaces into `data-area`
+  // (render-report's phase-row emitter), so splitting on whitespace and
+  // dropping the empties reads an untagged phase as no tags rather than [''].
+  function areaOk(pr) {
+    if (!areaFilter.length) return true;
+    var tags = (pr.getAttribute('data-area') || '').split(/\s+/);
+    for (var i = 0; i < tags.length; i++) {
+      if (tags[i] && areaFilter.indexOf(tags[i]) !== -1) return true;
+    }
+    return false;
+  }
 
   // The filtered view, written back into the URL so it can be sent to someone.
   // `history.replaceState` and not an assignment to location.hash: assigning
@@ -257,9 +284,14 @@
     function put(k, v) { if (v) parts.push(k + '=' + encodeURIComponent(v)); }
     put('q', q ? q.value.trim() : '');
     put('ps', phaseStatus);
+    // Space-joined, mirroring the data-area attribute — one separator rule for
+    // both carriers of a tag list. `a` and `au` are distinct keys: the codec
+    // above splits on '&' and the FIRST '=', so a key is always matched whole.
+    put('a', areaFilter.join(' '));
     put('m', modelFilter);
     put('from', dFrom);
     put('to', dTo);
+    put('au', auFilter);
     // Only where this report OWNS the toggle. Embedded as a fragment, the host
     // stamps data-theme on the same root, and a link carrying a theme would flip
     // the page AROUND the report rather than the report. And only alongside a
@@ -283,7 +315,8 @@
     // is the difference between "these four phases used opus" and "here are all
     // twelve, four of them usefully".
     var narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
-    var anyFilter = narrows || term !== '' || phaseStatus !== '';
+    var anyFilter = narrows || term !== '' || phaseStatus !== ''
+                    || areaFilter.length > 0;
     var visP = 0, visT = 0, totT = 0;
     phaseRows.forEach(function (pr) {
       var pid = pr.getAttribute('data-phase');
@@ -304,8 +337,9 @@
                   && dateOk(t);
         if (t.__hit) nMatch++;
       });
-      // phase-level: phase-status filter + text (phase title OR any task matches)
+      // phase-level: status + area gates + text (phase title OR any task matches)
       var showP = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
+                  && areaOk(pr)
                   && (term === '' || pText || anyTaskText)
                   && (!narrows || nMatch > 0);
       pr.style.display = showP ? '' : 'none';
@@ -356,7 +390,8 @@
     // A filter folded away inside a closed <details> is how a reader concludes
     // rows are missing. The count on the summary says something is on.
     if (fcount) {
-      var nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0);
+      var nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0)
+                    + (areaFilter.length ? 1 : 0);
       fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {
@@ -498,6 +533,69 @@
     refresh();
   });
 
+  // area chips (inside the More filters panel) — the phase-level gate.
+  // highlight() paints exactly one active value; these chips hold a set, so
+  // their painter reads membership instead.
+  function paintAreas() {
+    if (!areaBar) return;
+    [].forEach.call(areaBar.children, function (x) {
+      var on = areaFilter.indexOf(x.getAttribute('data-a')) !== -1;
+      x.classList.toggle('on', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  wireChips(areaBar, 'data-a', function (val) {
+    var i = areaFilter.indexOf(val);
+    if (i === -1) areaFilter.push(val); else areaFilter.splice(i, 1);
+    paintAreas();
+    refresh();
+  });
+
+  // Author chips (C3, inside the Usage section). They toggle `hidden` on the
+  // section's per-author views and nothing else — the tiles and trend above
+  // stay project-wide, and the task table has no author to filter by. The
+  // default view is restored by re-applying hidden from the data-top marker
+  // the renderer stamped on the top-8 cells, so a release is exact rather
+  // than a re-render's guess.
+  function applyAuthor() {
+    smCells.forEach(function (c) {
+      c.hidden = auFilter ? c.getAttribute('data-author') !== auFilter
+                          : !c.hasAttribute('data-top');
+    });
+    auRows.forEach(function (r) {
+      r.hidden = !!auFilter && r.getAttribute('data-author') !== auFilter;
+    });
+    if (auNote) {
+      var chip = null;
+      if (authorBar && auFilter) {
+        [].forEach.call(authorBar.children, function (x) {
+          if (x.getAttribute && x.getAttribute('data-au') === auFilter) chip = x;
+        });
+      }
+      if (chip) {
+        // Assembled from the chip's own data attributes — the renderer already
+        // did this arithmetic once, and a second implementation here is how a
+        // summary ends up disagreeing with the chips it summarises.
+        var cost = chip.getAttribute('data-cost');
+        var sep = ' \u00b7 ';   // a middot, as an escape so the source stays ASCII
+        auNote.textContent = auFilter + ': ' + chip.getAttribute('data-tokens')
+          + ' tokens' + (cost ? sep + cost : '')
+          + sep + chip.getAttribute('data-msgs') + ' msgs'
+          + sep + chip.getAttribute('data-share') + ' of all spend';
+        auNote.hidden = false;
+      } else {
+        auNote.hidden = true;
+        auNote.textContent = '';
+      }
+    }
+    syncHash();
+  }
+  wireChips(authorBar, 'data-au', function (val, host, attr) {
+    auFilter = (auFilter === val) ? '' : val;
+    highlight(host, attr, auFilter);
+    applyAuthor();
+  });
+
   // The More-filters panel closes on an outside click and on Escape. A <details>
   // natively closes only through its own summary, so a reader who opens it,
   // picks a filter and moves on leaves it hanging over the table — and it is
@@ -569,11 +667,16 @@
     if (q) q.value = '';
     phaseStatus = ''; modelFilter = ''; dFrom = ''; dTo = ''; preset = '';
     taskStatus = {};
+    auFilter = '';
+    areaFilter = [];
     if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', '');
     if (modelBar) highlight(modelBar, 'data-m', '');
+    paintAreas();
+    if (authorBar) highlight(authorBar, 'data-au', '');
     // Clearing the state without unlighting these would leave rows claiming a
     // filter that no longer applies to them.
     tfHosts.forEach(function (h) { highlight(h, 'data-ts', ''); });
+    applyAuthor();
     paintDates();
     refresh();
   }
@@ -755,6 +858,15 @@
     modelFilter = HASH.m;
     if (modelBar) highlight(modelBar, 'data-m', modelFilter);
   }
+  if (HASH.a) {
+    areaFilter = HASH.a.split(/\s+/).filter(Boolean);
+    paintAreas();
+  }
   if (HASH.from || HASH.to) { dFrom = HASH.from || ''; dTo = HASH.to || ''; paintDates(); }
+  if (HASH.au) {
+    auFilter = HASH.au;
+    if (authorBar) highlight(authorBar, 'data-au', auFilter);
+    applyAuthor();
+  }
   refresh();
 })();

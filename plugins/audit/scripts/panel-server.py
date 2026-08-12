@@ -1618,6 +1618,75 @@ def _selftest():
           and "const[a,b]=UF.day.split('..')" in UI_HTML
           and "UF.day.replace('..',' to ')" in UI_HTML)
 
+    # --- usage C1: calendar-month bin + forced-bin control ------------------
+    # A plain 30-day rung would be dead code (28 always wins first), so the 28
+    # rung IS the calendar month: variable bins cut at month boundaries, which
+    # binAt's [start,end] binary search already supports.
+    check("c1: the 28 rung is a calendar month cut at month boundaries, not a "
+          "28-day stride wearing the name",
+          "function monthBins(days)" in UI_HTML
+          and "28:'month'" in UI_HTML and "'4 weeks'" not in UI_HTML
+          and "if(forced||bins.length<=MAXPTS)return{size:28,bins:bins}" in UI_HTML)
+    check("c1: a forced-bin control exists (auto/day/week/month), shares uBin "
+          "with the tile sparklines, and disables impossible options with the "
+          "reason on the option itself",
+          "'data-uf':'bin'" in UI_HTML
+          and "bin:'auto'" in UI_HTML
+          and "const forced={day:1,week:7,month:28}[UF.bin]" in UI_HTML
+          and "'would draw '+pts[v]+' points; the chart caps at '+MAXPTS"
+          in UI_HTML)
+    check("c1: a forced bin the span has outgrown resets to auto rather than "
+          "drawing a chart the select no longer offers, and clear-all resets "
+          "it with everything else",
+          "if(UF.bin!=='auto'&&pts[UF.bin]>MAXPTS)UF.bin='auto'" in UI_HTML
+          and "UF.bin='auto';" in UI_HTML.split("function clearAll()")[1][:220])
+    check("c1: the range presets offer the last 12 months",
+          "['365','last 12 months']" in UI_HTML)
+
+    # --- usage C2: the Monthly card -----------------------------------------
+    # One computation site (usage_ledger.monthly_activity) feeds the report
+    # table and the CLI; the card is the panel's surface. Ledger half follows
+    # the filters (client-side), plan half is server-shipped and project-wide.
+    check("c2: the monthly card recomputes its ledger half client-side from "
+          "the filtered facts and ships its plan half from the server",
+          "function uMonthly(facts)" in UI_HTML
+          and "USAGE.monthlyPlan||{}" in UI_HTML
+          and "Plan counts are project-wide - they do not follow the filters."
+          in UI_HTML)
+    check("c2: the month axis comes from the whole ledger plus the plan - so "
+          "filtering cannot drop the row that was just clicked - and one "
+          "ledger month renders no card",
+          "new Set(USAGE.facts.map(f=>f[F.ts].slice(0,7)))" in UI_HTML
+          and "if(allMonths.size<2)return[]" in UI_HTML)
+    check("c2: clicking a month writes the existing day-range grammar, first "
+          "of the month to its true end, toggling off on a second click",
+          "k+'-01..'+end" in UI_HTML
+          and "onclick:()=>setF('day',active?'':range)" in UI_HTML)
+
+    # --- usage C4: the person header ----------------------------------------
+    # NOT a new tab: UF.author already is the drill-down. The header is
+    # recomputed from USAGE.facts on each render - zero new state.
+    check("c4: a person header renders while an author filter is on, with "
+          "zero new state",
+          "function uPerson()" in UI_HTML
+          and "if(!UF.author)return[]" in UI_HTML
+          and "card.append(...uPerson())" in UI_HTML)
+    check("c4: it is all-time and says so, while everything below follows "
+          "the filters",
+          "'All time, whole ledger - this header does not follow the filters; '"
+          in UI_HTML)
+    check("c4: the viewer's own header wears the my-spend badge, compared "
+          "against the same STATE.viewer string the topbar and the chip use",
+          "((STATE||{}).viewer||{}).author===who" in UI_HTML
+          and "el('span',{class:'badge'},'my spend')" in UI_HTML)
+    check("c4: the counts a browser check recomputes ride in attributes, so "
+          "the check compares numbers, not prose",
+          "'data-ptasks':String(tasks.size)" in UI_HTML
+          and "'data-pphases':String(phases.size)" in UI_HTML
+          and "'data-pmsgs':String(msgs)" in UI_HTML)
+    check("c4: touched tasks are split by status through taskMeta",
+          "'Their touched tasks: '+parts.join(' - ')+'.'" in UI_HTML)
+
     # --- usage c5: filters, trends, export ---------------------------------
     # Derived, not enumerated. A filter added to UF and forgotten in DIMS is a
     # filter `clear all` cannot clear and Esc cannot pop — it stays on for the rest
@@ -1735,6 +1804,32 @@ def _selftest():
           "keepQ=!!(act&&act.id==='uq')" in UI_HTML
           and "if(keepQ){const n=$('#uq');" in UI_HTML
           and "n.setSelectionRange(caret,caret)" in UI_HTML)
+
+    # --- usage D4: the area filter ------------------------------------------
+    # The server ships `phaseAreas` with the facts (_panel_state pins its key
+    # parity and derivation); the client joins row.phaseId -> tags per row, at
+    # read time, so re-tagging a phase re-files its whole history. These pins
+    # hold the strings; the behaviour — counts against an in-page recomputation,
+    # the select's hiding rule — lives in capture-screenshots.mjs --check,
+    # because a string pin cannot see a dead page.
+    check("d4: rows join their phase's area tags through ONE helper - the "
+          "match, the haystack and the select all share it",
+          "function uAreas(f){const a=(USAGE.phaseAreas||{})[f[F.phase]];"
+          in UI_HTML
+          and "return a&&a.length?a:null;}" in UI_HTML)
+    check("d4: the area filter matches ANY tag of a multi-tag phase, and "
+          "'untagged' is the absence of tags, never a tag's equal",
+          "&&(!UF.area||(UF.area==='untagged'?!uAreas(f)" in UI_HTML
+          and ":(uAreas(f)||[]).includes(UF.area)))" in UI_HTML)
+    check("d4: free text finds rows by area name - the haystack ends with the "
+          "row's own tags",
+          "(uAreas(f)||[]).join(' ')].join(' ').toLowerCase()" in UI_HTML)
+    check("d4: the select hides when no tag reaches a row, and offers "
+          "'untagged' exactly when untagged spend exists",
+          "'data-uf':'area'" in UI_HTML
+          and "if(tags.size){" in UI_HTML
+          and "untagged?['untagged']:[]" in UI_HTML
+          and "'all areas ('+vals.length+')'" in UI_HTML)
 
     # --- F5: an empty usage view explains itself ---------------------------
     # The range presets count back from the wall clock, so on a ledger that

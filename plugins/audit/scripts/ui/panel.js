@@ -1876,8 +1876,8 @@ function pHonesty(){
 // land in a permanently empty view whose controls said nothing was filtered. With a
 // single author slot that state cannot be represented at all.
 let USAGE=null;
-const UF={model:'',author:'',phase:'',task:'',agent:'',attr:'',day:'',q:'',range:'all'};
-const DIMS=['model','author','phase','task','agent','attr','day','q'];
+const UF={model:'',author:'',phase:'',task:'',agent:'',attr:'',area:'',day:'',q:'',range:'all',bin:'auto'};
+const DIMS=['model','author','phase','task','agent','attr','area','day','q'];
 // What a filter is CALLED where it is shown. The internal name is the fact-tuple
 // field, which is the right name in the code and the wrong one on a chip: `attr` is
 // not a word, and `q` is not a dimension anybody typed.
@@ -1962,7 +1962,7 @@ function setF(dim,val){
  if(UF[dim])UORDER.push(dim);
  if(dim!=='day')SHOWN[dim]=TOP;      // a new scope starts from the top again
  renderUsage();}
-function clearAll(){DIMS.forEach(d=>UF[d]='');UF.range='all';UORDER=[];
+function clearAll(){DIMS.forEach(d=>UF[d]='');UF.range='all';UF.bin='auto';UORDER=[];
  DIMS.forEach(d=>{if(d in SHOWN)SHOWN[d]=TOP;});renderUsage();}
 
 // Chart dimension is DERIVED: scoping to one author makes the interesting split
@@ -1977,8 +1977,17 @@ function chartDim(){return UF.author?'model':'author';}
 function uHay(f){
  if(f.h===undefined)f.h=[f[F.phase],f[F.task],f[F.model],f[F.author],f[F.agent],
    f[F.attr],(USAGE.phaseTitles||{})[f[F.phase]]||'',
-   ((USAGE.taskMeta||{})[f[F.task]]||{}).title||''].join(' ').toLowerCase();
+   ((USAGE.taskMeta||{})[f[F.task]]||{}).title||'',
+   (uAreas(f)||[]).join(' ')].join(' ').toLowerCase();
  return f.h;}
+
+// A row's area is its PHASE's tags, joined at read time from the phaseAreas map
+// the server ships (area is a property of the plan, not of the moment of spend).
+// null - not [] - for a row with no tags: a phase the plan never tagged, a phase
+// it never heard of, and a row with no phase at all are one 'untagged' bucket,
+// which is the same bucket the CLI's BY AREA table keeps.
+function uAreas(f){const a=(USAGE.phaseAreas||{})[f[F.phase]];
+ return a&&a.length?a:null;}
 
 // Every filter EXCEPT the date window, in one place. uFiltered() applies it to the
 // window on screen and uDelta() applies it to the window before, and a dimension
@@ -1993,6 +2002,10 @@ function uMatch(f){
   &&(!UF.task||f[F.task]===UF.task)
   &&(!UF.agent||f[F.agent]===UF.agent)
   &&(!UF.attr||f[F.attr]===UF.attr)
+  // A multi-tag phase matches ANY of its tags - one row can answer to two areas,
+  // which is why every by-area rendering warns its columns can exceed the total.
+  &&(!UF.area||(UF.area==='untagged'?!uAreas(f)
+    :(uAreas(f)||[]).includes(UF.area)))
   &&(!UF.q||uHay(f).includes(UF.q.trim().toLowerCase()));}
 
 function uFiltered(){if(!USAGE)return[];let out=USAGE.facts.filter(uMatch);
@@ -2099,12 +2112,35 @@ function bindTip(node,build){
 // silently would be worse than the spaghetti: the reader would take a weekly total
 // for a daily one.
 const MAXPTS=60, LADDER=[1,7,28,91,364];
-const BINNAME={1:'day',7:'week',28:'4 weeks',91:'quarter',364:'year'};
+const BINNAME={1:'day',7:'week',28:'month',91:'quarter',364:'year'};
 const dnum=d=>Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))/864e5;
+const p2=n=>String(n).padStart(2,'0');
+// The 28 rung is a CALENDAR month, not a fixed 28-day stride: a plain 30-day
+// rung would be dead code (28 always fits first), and a "4 weeks" bucket never
+// matches the month a reader is asking about. Bins are cut at month boundaries
+// - variable width, clipped to the data span at both ends - so a bin's label
+// says the month it is and a click filters to that month. binAt's binary
+// search runs over [start,end] pairs and never assumed a fixed stride.
+function monthBins(days){
+ const last=days[days.length-1],bins=[];
+ let y=+days[0].slice(0,4),m=+days[0].slice(5,7),start=days[0];
+ for(;;){
+  const eom=y+'-'+p2(m)+'-'+p2(new Date(Date.UTC(y,m,0)).getUTCDate());
+  if(eom>=last){bins.push([start,last]);break;}
+  bins.push([start,eom]);
+  m++;if(m>12){m=1;y++;}
+  start=y+'-'+p2(m)+'-01';}
+ return bins;}
 function uBin(days){
  if(days.length<2)return{size:1,bins:days.map(d=>[d,d])};
  const span=dnum(days[days.length-1])-dnum(days[0])+1;
- const size=LADDER.find(s=>Math.ceil(span/s)<=MAXPTS)||LADDER[LADDER.length-1];
+ const forced={day:1,week:7,month:28}[UF.bin];
+ let size=forced||LADDER.find(s=>Math.ceil(span/s)<=MAXPTS)||LADDER[LADDER.length-1];
+ if(size===28){const bins=monthBins(days);
+  // Partial months at both ends can put the count one past ceil(span/28); a
+  // forced month keeps its bins, auto escalates to the quarter rung instead.
+  if(forced||bins.length<=MAXPTS)return{size:28,bins:bins};
+  size=91;}
  if(size===1)return{size:1,bins:days.map(d=>[d,d])};
  const start=dnum(days[0]),iso=n=>new Date(n*864e5).toISOString().slice(0,10);
  const bins=[];
@@ -2497,6 +2533,114 @@ function uBudgets(facts){
    +'phases at zero.'));
  return out;}
 
+// --- monthly overview -------------------------------------------------------
+// The 12-month card. One computation site (usage_ledger.monthly_activity)
+// feeds the report table and the CLI; this is the panel's surface of the same
+// numbers. The LEDGER half is recomputed here from the filtered facts, so it
+// follows the filter bar like everything else on this tab; the PLAN half
+// (tasks/bugs/merges) needs the manifest, arrives server-shipped as
+// USAGE.monthlyPlan, and is project-wide - the crumb says so, the same way
+// the routing advice names its scope. The month AXIS comes from the whole
+// ledger plus the plan, never from the filtered rows: an axis that collapsed
+// under the filter it feeds would drop the row that was just clicked, taking
+// the way back out with it.
+function uMonthly(facts){
+ const allMonths=new Set(USAGE.facts.map(f=>f[F.ts].slice(0,7)));
+ const plan=USAGE.monthlyPlan||{};
+ if(allMonths.size<2)return[];  // one ledger month would restate the tiles
+ const keys=[...new Set([...allMonths,...Object.keys(plan)])].sort();
+ const months=[];
+ let y=+keys[0].slice(0,4),m=+keys[0].slice(5,7);
+ const ey=+keys[keys.length-1].slice(0,4),em=+keys[keys.length-1].slice(5,7);
+ while(y<ey||(y===ey&&m<=em)){months.push(y+'-'+p2(m));m++;if(m>12){m=1;y++;}}
+ const show=months.slice(-12);
+ const led=new Map();
+ for(const f of facts){const k=f[F.ts].slice(0,7);
+  const s=led.get(k)||[0,0,0];s[0]+=f[F.tokens];s[1]+=f[F.cost];s[2]+=f[F.msgs];
+  led.set(k,s);}
+ const out=[el('h2',{},'Monthly')];
+ out.push(el('div',{class:'ucrumb mut'},
+   'Ledger columns follow the filters above. '
+   +'Plan counts are project-wide - they do not follow the filters. '
+   +'Click a month to scope the view to it.'));
+ const heads=['month','tokens'].concat(USAGE.showCost?['cost']:[])
+   .concat(['msgs','tasks done','bugs','fixed','merged']);
+ const tbl=el('table',{class:'utbl','data-umonthly':'1'},
+   el('thead',{},el('tr',{},heads.map(h=>el('th',{},h)))));
+ const tb=el('tbody');
+ for(const k of show){
+  const s=led.get(k)||[0,0,0],p=plan[k]||{};
+  const end=k+'-'+p2(new Date(Date.UTC(+k.slice(0,4),+k.slice(5,7),0)).getUTCDate());
+  const range=k+'-01..'+end;
+  const active=UF.day===range;
+  const tr=el('tr',{class:'pick'+(active?' on':''),'data-um':k,
+    title:active?'click to clear this month filter':'click to filter to '+k,
+    onclick:()=>setF('day',active?'':range)},
+   el('td',{class:'mono'},k),el('td',{},uTok(s[0])));
+  if(USAGE.showCost)tr.append(el('td',{},uCost(s[1])));
+  tr.append(el('td',{},s[2].toLocaleString()),
+    el('td',{},String(p.tasksCompleted||0)),
+    el('td',{},String(p.bugsReported||0)),
+    el('td',{},String(p.bugsFixed||0)),
+    el('td',{},String(p.phasesMerged||0)));
+  tb.append(tr);}
+ tbl.append(tb);
+ // Scrolls inside its own frame on a phone - eight columns must never push
+ // the document sideways (the mobile overflow check drives this for real).
+ out.push(el('div',{class:'umwrap'},tbl));
+ return out;}
+
+// --- person header ----------------------------------------------------------
+// NOT a new tab: UF.author already is the drill-down (the chart flips to
+// models, every bar and budget follows the filter). This is the header for
+// that state - who this is, their all-time footprint, and what they touched -
+// recomputed inline from USAGE.facts on each render, zero new state.
+// All-time on purpose: the tiles below already answer the filtered question,
+// and a header that moved with the date range would only restate them.
+function uPerson(){
+ if(!UF.author)return[];
+ const who=UF.author;
+ const mine=USAGE.facts.filter(f=>f[F.author]===who);
+ if(!mine.length)return[];
+ let tok=0,cost=0,msgs=0,first='',last='';
+ const models=new Map(),tasks=new Set(),phases=new Set();
+ for(const f of mine){
+  tok+=f[F.tokens];cost+=f[F.cost];msgs+=f[F.msgs];
+  models.set(f[F.model],(models.get(f[F.model])||0)+f[F.tokens]);
+  if(f[F.task]&&f[F.task]!=='--')tasks.add(f[F.task]);
+  if(f[F.phase]&&f[F.phase]!=='--')phases.add(f[F.phase]);
+  const d=f[F.ts].slice(0,10);
+  if(!first||d<first)first=d;
+  if(!last||d>last)last=d;}
+ let allTok=0,allCost=0;
+ for(const f of USAGE.facts){allTok+=f[F.tokens];allCost+=f[F.cost];}
+ const me=((STATE||{}).viewer||{}).author===who;
+ const h=el('h2',{'data-person':who},who);
+ if(me)h.append(' ',el('span',{class:'badge'},'my spend'));
+ const out=[h,el('div',{class:'ucrumb mut'},
+   'All time, whole ledger - this header does not follow the filters; '
+   +'the tiles and bars below do.')];
+ const bits=[uTok(tok)+' tokens ('+uPct(uShare(tok,allTok))+' of the project)'];
+ if(USAGE.showCost)bits.push(uCost(cost)+' of '+uCost(allCost));
+ bits.push(msgs.toLocaleString()+' messages');
+ bits.push(phases.size+' phase(s) and '+tasks.size+' task(s) touched');
+ if(first)bits.push('active '+(first===last?first:first+' to '+last));
+ const named=[...models.entries()].sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
+ bits.push('models: '+named.slice(0,3).join(', ')
+   +(named.length>3?' +'+(named.length-3)+' more':''));
+ out.push(el('div',{class:'ufact','data-ptasks':String(tasks.size),
+   'data-pphases':String(phases.size),'data-pmsgs':String(msgs)},
+   bits.join(' - ')));
+ const M=USAGE.taskMeta||{},split={};
+ for(const t of tasks){const st=(M[t]||{}).status||'untracked';
+  split[st]=(split[st]||0)+1;}
+ const order=['done','in_progress','blocked','pending','untracked'];
+ const parts=order.filter(k=>split[k])
+   .map(k=>split[k]+' '+k.replace('_',' '));
+ if(parts.length)out.push(el('div',{class:'mut small'},
+   'Their touched tasks: '+parts.join(' - ')+'.'));
+ return out;}
+
 // --- cost bands ------------------------------------------------------------------
 // The boundaries are NOT restated here: COST_BAND_PARAMS below is usage_ledger.py's
 // own COST_BAND_PARAMS constant, JSON-dumped into the page at serve time by the
@@ -2784,6 +2928,24 @@ function renderUsage(){const c=$('#usage');
   vals.forEach(v=>{const o=el('option',{value:v},v);
    if(UF[dim]===v)o.selected=true;sel.append(o);});
   r2.append(sel);});
+ // Area - the plan's partition of the work, joined from row.phaseId at read time
+ // (uAreas). Options are the tags that actually attribute spend in THIS ledger,
+ // not the plan's whole registry: a tag whose phases have no rows would select
+ // nothing and say nothing. Hidden when no tag reaches a row - a select whose
+ // only option is 'untagged' partitions nothing. 'untagged' is offered exactly
+ // when untagged spend exists (the ledger keeps an untagged bucket; hiding it
+ // here would make the tagged shares add up to a lie).
+ {const tags=new Set();let untagged=false;
+  USAGE.facts.forEach(f=>{const a=uAreas(f);
+   if(a)a.forEach(t=>tags.add(t));else untagged=true;});
+  if(tags.size){
+   const vals=[...tags].sort().concat(untagged?['untagged']:[]);
+   const sel=el('select',{'aria-label':'filter by area','data-uf':'area',
+     onchange:e=>setF('area',e.target.value)});
+   sel.append(el('option',{value:''},'all areas ('+vals.length+')'));
+   vals.forEach(v=>{const o=el('option',{value:v},v);
+    if(UF.area===v)o.selected=true;sel.append(o);});
+   r2.append(sel);}}
  // An absolute window, in the same UF.day grammar the chart's click writes.
  const dp=uDayPair();
  const mkDate=(which,val)=>el('input',{type:'date',value:val,
@@ -2799,8 +2961,27 @@ function renderUsage(){const c=$('#usage');
    el('span',{class:'filtlbl'},'to'),mkDate('to',dp[1])));
  r2.append(el('select',{'aria-label':'time range','data-uf':'range',
    onchange:e=>{UF.range=e.target.value;renderUsage();}},
-  [['all','all time'],['7','last 7 days'],['30','last 30 days'],['90','last 90 days']]
+  [['all','all time'],['7','last 7 days'],['30','last 30 days'],['90','last 90 days'],
+   ['365','last 12 months']]
    .map(([v,l])=>el('option',Object.assign({value:v},v===UF.range?{selected:'selected'}:{}),l))));
+ // Forced bin for the chart AND the tile sparklines - they share uBin, so one
+ // control moves both and the two can never show different resolutions. Auto
+ // follows the ladder; an option that would draw more than MAXPTS points is
+ // disabled and its tooltip says why - the cap is the chart's own readability
+ // bound, not a preference.
+ {const ds=[...new Set(uFiltered().map(f=>f[F.ts].slice(0,10)))].sort();
+  const span=ds.length>1?dnum(ds[ds.length-1])-dnum(ds[0])+1:ds.length;
+  const pts={day:span,week:Math.ceil(span/7),
+    month:ds.length>1?monthBins(ds).length:1};
+  if(UF.bin!=='auto'&&pts[UF.bin]>MAXPTS)UF.bin='auto';
+  const sel=el('select',{'aria-label':'chart bin','data-uf':'bin',
+    onchange:e=>{UF.bin=e.target.value;renderUsage();}});
+  [['auto','auto bin'],['day','by day'],['week','by week'],['month','by month']]
+   .forEach(([v,l])=>{const o=el('option',{value:v},l);
+    if(v!=='auto'&&pts[v]>MAXPTS){o.disabled=true;
+     o.title='would draw '+pts[v]+' points; the chart caps at '+MAXPTS;}
+    if(UF.bin===v)o.selected=true;sel.append(o);});
+  r2.append(sel);}
  r2.append(el('button',{class:'btn small push',type:'button','data-ucsv':'1',
    title:'Download the rows behind this view as CSV — one row per bucket, phase, '
      +'task, model, person, agent and attribution, with the filters applied',
@@ -2816,6 +2997,8 @@ function renderUsage(){const c=$('#usage');
     fVal(d),el('span',{class:'cx'},'x'))));
   chips.append(el('button',{class:'lnk',onclick:clearAll},'clear all'));
   card.append(chips);}
+
+ card.append(...uPerson());
 
  const facts=uFiltered();
  const days=[...new Set(facts.map(f=>f[F.ts].slice(0,10)))].sort();
@@ -2901,6 +3084,7 @@ function renderUsage(){const c=$('#usage');
  card.append(...uBars(facts,'model','By model'));
  card.append(...uBars(facts,'author','By author'));
  card.append(...uBars(facts,'task','By task'));
+ card.append(...uMonthly(facts));
 
  // economics - the same honesty caveats the report carries
  card.append(el('h2',{},'Unit economics'));

@@ -526,6 +526,7 @@ def render_status(manifest, summary, width=18, only_phase=None):
         lines.append("  READY NOW  nothing - every pending task is waiting on "
                      "something, or the plan is complete")
 
+    lines += _area_lines(au, summary)
     lines += _bug_lines(manifest, summary)
     lines += _proposal_lines(manifest, summary)
     lines += _resumable_lines(manifest, summary)
@@ -636,6 +637,46 @@ def _budget_lines(au, summary, usage):
     if unbudgeted:
         out.append("  budget       %d phase(s) declare none - not shown, and not "
                    "phases at zero" % unbudgeted)
+    return out
+
+
+def _area_lines(au, summary):
+    """`BY AREA` — the per-area rollup, printed instead of only shipped in --json.
+
+    `summary["areas"]` has been computed (and carried in --json) since the tags
+    existed; this renders THAT block rather than re-deriving it, so the terminal
+    and the machine can never disagree. Nothing is printed when no phase carries
+    a tag — the ordinary single-app repo pays nothing for this, the same call
+    `_scope_line` makes.
+
+    The `untagged` footer keeps the columns honest: without it, phases carrying
+    no tag would silently vanish from the one grouping a monorepo reader trusts.
+    And the multi-tag caveat is stated only when a phase actually carries more
+    than one tag — a phase tagged with N areas counts its tasks under each of
+    the N, so the per-area column can sum past the plan total, and a reader who
+    adds the column up deserves to be told why. A single-tag project has nothing
+    to be warned about, so it is not."""
+    areas = summary.get("areas") or {}
+    if not areas:
+        return []
+    phases = [p for p in (summary.get("phases") or []) if isinstance(p, dict)]
+    untagged = [p for p in phases if not p.get("area")]
+    rows = [(tag, g.get("phases", 0), g.get("done", 0), g.get("total", 0))
+            for tag, g in sorted(areas.items())]
+    if untagged:
+        rows.append(("untagged", len(untagged),
+                     sum(p.get("done", 0) for p in untagged),
+                     sum(p.get("total", 0) for p in untagged)))
+    out = ["", "  BY AREA  %d tag(s) - %d of %d phase(s) tagged"
+           % (len(areas), len(phases) - len(untagged), len(phases))]
+    w = max(len(r[0]) for r in rows)
+    for tag, n_ph, done, total in rows:
+        frac = (float(done) / total) if total else 0.0
+        out.append("    %-*s  %2d phase(s)  %s %d/%d tasks"
+                   % (w, tag, n_ph, au.bar(frac, 12), done, total))
+    if any(len(p.get("area") or []) > 1 for p in phases):
+        out.append("    note: a phase with several tags counts under each - "
+                   "per-area sums can exceed the plan total")
     return out
 
 
@@ -1252,6 +1293,47 @@ def _selftest():
           "area: solo" in _txt_a3 and "review:" not in _txt_a3, _txt_a3)
     check("e7 the scope line stays pure ASCII like the rest of the render",
           all(ord(c) < 128 for c in _txt_a))
+
+    # --- (ba) BY AREA block (D2) ------------------------------------------------
+    # The per-area rollup has been computed and shipped in --json since the tags
+    # existed; the terminal never printed it. These pin the printed block to the
+    # SAME rollup, never a re-derivation.
+    check("ba1 no area tags -> no BY AREA block (back-compat)",
+          "BY AREA" not in _txt)
+    _fx_ba = copy.deepcopy(_fx)
+    _fx_ba["phases"][0]["area"] = "backend"
+    _fx_ba["phases"][1]["area"] = ["backend"]
+    _txt_ba = render_status(_fx_ba, rollup(_fx_ba, [], []))
+    check("ba2 a tagged plan renders per-tag phases, tasks and a bar",
+          "BY AREA" in _txt_ba
+          and re.search(r"backend\s+2 phase\(s\)\s+\[[#.]+\] 1/3 tasks",
+                        _txt_ba) is not None,
+          _txt_ba.split("BY AREA")[-1][:160] if "BY AREA" in _txt_ba
+          else _txt_ba[-160:])
+    check("ba3 the header counts tags and tagged phases",
+          "BY AREA  1 tag(s) - 2 of 2 phase(s) tagged" in _txt_ba, _txt_ba)
+    check("ba4 a fully tagged single-tag plan gets no untagged footer and no "
+          "caveat - nothing to warn about",
+          "untagged" not in _txt_ba and "counts under each" not in _txt_ba,
+          _txt_ba)
+    _fx_bm = copy.deepcopy(_fx)
+    _fx_bm["phases"][0]["area"] = ["mobile", "security"]   # P2 stays untagged
+    _txt_bm = render_status(_fx_bm, rollup(_fx_bm, [], []))
+    check("ba5 a multi-tag phase shows the same figures under EACH of its tags",
+          re.search(r"mobile\s+1 phase\(s\)\s+\[[#.]+\] 1/1 tasks",
+                    _txt_bm) is not None
+          and re.search(r"security\s+1 phase\(s\)\s+\[[#.]+\] 1/1 tasks",
+                        _txt_bm) is not None, _txt_bm)
+    check("ba6 untagged phases get a footer row with the same figures",
+          re.search(r"untagged\s+1 phase\(s\)\s+\[[#.]+\] 0/2 tasks",
+                    _txt_bm) is not None, _txt_bm)
+    check("ba7 the multi-tag caveat is stated - per-area sums can pass the total",
+          "counts under each" in _txt_bm
+          and "exceed the plan total" in _txt_bm, _txt_bm)
+    check("ba8 the block stays pure ASCII like the rest of the render",
+          all(ord(c) < 128 for c in _txt_bm))
+    check("ba9 a fully done area draws a full bar - the same bar helper as the "
+          "phase rows", "[############] 1/1 tasks" in _txt_bm, _txt_bm)
 
     # --- (b) budget as a gate --------------------------------------------------
     def _with_budgets(*phase_rows):

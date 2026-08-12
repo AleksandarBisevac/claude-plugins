@@ -574,7 +574,10 @@ async function assertUsageWorks(page) {
     await page.waitForTimeout(500);
     await compare(`search "${term}"`, `[f[F.phase],f[F.task],f[F.model],f[F.author],`
       + `f[F.agent],f[F.attr],(USAGE.phaseTitles||{})[f[F.phase]]||'',`
-      + `((USAGE.taskMeta||{})[f[F.task]]||{}).title||''].join(' ').toLowerCase()`
+      + `((USAGE.taskMeta||{})[f[F.task]]||{}).title||'',`
+      // The haystack grew area tags (D4); the mirror must grow with it or a
+      // term that happens to hit a tag makes the oracle disagree with the page.
+      + `(((USAGE.phaseAreas||{})[f[F.phase]])||[]).join(' ')].join(' ').toLowerCase()`
       + `.includes(${JSON.stringify(term.toLowerCase())})`);
     // Typing is a filter change, and a filter change repaints the whole tab.
     const focused = await page.evaluate(() => document.activeElement
@@ -699,6 +702,233 @@ async function assertUsageWorks(page) {
       }
     }
     await clear();
+  }
+
+  // --- C1: the forced month bin ---------------------------------------------
+  // The inline pins can prove monthBins exists; only a browser can prove the
+  // chart actually redraws under it, names the month in its heading, and cuts
+  // its bins on the 1st rather than every 28 days wearing the name.
+  {
+    const sel = page.locator('#usage select[data-uf=bin]');
+    if (!(await sel.count())) {
+      fail('usage: no forced-bin control');
+    } else {
+      const monthOk = await page.evaluate(() => {
+        const o = [...document.querySelector('#usage select[data-uf=bin]').options]
+          .find((x) => x.value === 'month');
+        return !!o && !o.disabled;
+      });
+      if (!monthOk) {
+        note('usage: the month option is disabled on this fixture; bin caption check skipped');
+      } else {
+        await sel.selectOption('month');
+        await page.waitForTimeout(300);
+        const got = await page.evaluate(() => {
+          const h = [...document.querySelectorAll('#usage h2')]
+            .map((x) => x.textContent).find((t) => t.indexOf('Tokens per') === 0) || '';
+          const sr = uSeries(uFiltered(), chartDim());
+          return { head: h, size: sr.binSize,
+                   starts: sr.bins.slice(1).map((b) => b[0].slice(8)) };
+        });
+        if (got.head.indexOf('Tokens per month') !== 0 || got.size !== 28) {
+          fail(`usage: forced month bin draws "${got.head}" at size ${got.size}`);
+        } else if (got.starts.some((d) => d !== '01')) {
+          fail(`usage: month bins are not cut at month boundaries (starts ${got.starts.join(',')})`);
+        } else {
+          note(`usage: forced month bin -> "${got.head}", every interior bin starts on the 1st`);
+        }
+        await page.evaluate(() => { UF.bin = 'auto'; renderUsage(); });
+        await page.waitForTimeout(200);
+      }
+    }
+  }
+
+  // --- C2: the Monthly card ---------------------------------------------------
+  // Its ledger half is recomputed client-side, so the numbers on screen are
+  // checked against a recomputation from the facts; a row click must write the
+  // existing UF.day grammar, first of the month to its true end.
+  {
+    const row = page.locator('#usage [data-umonthly] tbody tr').first();
+    if (!(await row.count())) {
+      const months = await page.evaluate(() =>
+        new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 7))).size);
+      if (months >= 2) fail(`usage: ${months} ledger months but no Monthly card`);
+      else note('usage: one ledger month; the Monthly card correctly stays away');
+    } else {
+      const m = await page.evaluate(() => {
+        const tr = document.querySelector('#usage [data-umonthly] tbody tr');
+        const key = tr.getAttribute('data-um');
+        const want = USAGE.facts.filter((f) => f[F.ts].slice(0, 7) === key)
+          .reduce((a, f) => a + f[F.msgs], 0);
+        const cells = [...tr.cells].map((c) => c.textContent);
+        // msgs column: after month, tokens (+cost when shown)
+        const at = USAGE.showCost ? 3 : 2;
+        return { key, want, got: parseInt(cells[at].replace(/\D/g, ''), 10) };
+      });
+      if (m.got !== m.want) {
+        fail(`usage: the Monthly card says ${m.got} messages in ${m.key}, the facts say ${m.want}`);
+      } else {
+        note(`usage: Monthly card ${m.key} matches the facts (${m.want} messages)`);
+      }
+      await row.click();
+      await page.waitForTimeout(250);
+      const day = await page.evaluate(() => UF.day);
+      const wantRange = new RegExp(`^${m.key}-01\\.\\.${m.key}-\\d{2}$`);
+      if (!wantRange.test(day)) {
+        fail(`usage: clicking month ${m.key} wrote UF.day="${day}", not the first..end grammar`);
+      } else {
+        note(`usage: clicking ${m.key} scoped the view to ${day}`);
+      }
+      await clear();
+    }
+  }
+
+  // --- C4: the person header --------------------------------------------------
+  // Zero new state, so nothing but a browser can see it fail to render. The
+  // counts it shows ride in data attributes and are compared against an
+  // in-page recomputation from the same facts.
+  {
+    const who = await page.evaluate(() => {
+      const t = {};
+      for (const f of USAGE.facts) t[f[F.author]] = (t[f[F.author]] || 0) + f[F.tokens];
+      return Object.keys(t).sort((a, b) => t[b] - t[a])[0] || null;
+    });
+    if (!who) {
+      fail('usage: the fixture records no author to drive the person header');
+    } else {
+      await page.evaluate((a) => setF('author', a), who);
+      await page.waitForTimeout(250);
+      const got = await page.evaluate((a) => {
+        const elx = document.querySelector('#usage [data-ptasks]');
+        const mine = USAGE.facts.filter((f) => f[F.author] === a);
+        const tasks = new Set(mine.map((f) => f[F.task]).filter((t) => t && t !== '--'));
+        const phases = new Set(mine.map((f) => f[F.phase]).filter((p) => p && p !== '--'));
+        const msgs = mine.reduce((x, f) => x + f[F.msgs], 0);
+        return {
+          has: !!elx,
+          head: (document.querySelector('#usage [data-person]') || {}).textContent || '',
+          tasks: elx && +elx.getAttribute('data-ptasks'),
+          phases: elx && +elx.getAttribute('data-pphases'),
+          msgs: elx && +elx.getAttribute('data-pmsgs'),
+          want: { tasks: tasks.size, phases: phases.size, msgs },
+        };
+      }, who);
+      if (!got.has) {
+        fail(`usage: an author filter on ${who} renders no person header`);
+      } else if (got.tasks !== got.want.tasks || got.phases !== got.want.phases
+                 || got.msgs !== got.want.msgs) {
+        fail(`usage: the person header says ${got.phases} phases / ${got.tasks} tasks / `
+           + `${got.msgs} msgs; the facts say ${got.want.phases} / ${got.want.tasks} / ${got.want.msgs}`);
+      } else if (!got.head.includes(who)) {
+        fail(`usage: the person header does not name ${who} ("${got.head}")`);
+      } else {
+        note(`usage: person header for ${who} matches the facts `
+           + `(${got.want.phases} phases, ${got.want.tasks} tasks, ${got.want.msgs} msgs)`);
+      }
+      await clear();
+      const gone = await page.evaluate(() => !document.querySelector('#usage [data-person]'));
+      if (!gone) fail('usage: the person header outlives the author filter');
+      else note('usage: the person header leaves with the filter');
+    }
+  }
+
+  // --- D4: the area filter ----------------------------------------------------
+  // The expected count is recomputed HERE from the two structures the server
+  // shipped — USAGE.facts joined against USAGE.phaseAreas — never from the
+  // renderer's own aggregation, so a match that quietly keeps everything fails.
+  // The states this fixture cannot reach are driven in-page (the same way the
+  // identity check drives STATE.viewer): the hiding rule by emptying the join
+  // map, the haystack by blanking the titles that would otherwise mask it.
+  {
+    const sel = page.locator('#usage select[data-uf=area]');
+    const tags = await page.evaluate(() => {
+      const t = new Set();
+      for (const f of USAGE.facts) {
+        ((USAGE.phaseAreas || {})[f[F.phase]] || []).forEach((x) => t.add(x));
+      }
+      return [...t].sort();
+    });
+    if (!tags.length) {
+      if (await sel.count()) {
+        fail('usage: no phase tag reaches this ledger, yet an area select rendered');
+      } else {
+        note('usage: fixture joins no area tags; the area select correctly stays '
+           + 'away (the hiding rule cannot be driven the other way here)');
+      }
+    } else if (!(await sel.count())) {
+      fail(`usage: ${tags.length} area tags reach this ledger and no area select rendered`);
+    } else {
+      const tag = tags[0];
+      await sel.selectOption(tag);
+      await page.waitForTimeout(250);
+      await compare(`area=${tag}`,
+        `((USAGE.phaseAreas||{})[f[F.phase]]||[]).includes(${JSON.stringify(tag)})`);
+      const chip = page.locator('#usage .uchip[data-uchip=area]');
+      if (!(await chip.count())) {
+        fail('usage: area is filtered and there is no chip to clear it');
+      } else { await chip.click(); await page.waitForTimeout(250); }
+      await compare('area cleared', 'true');
+
+      // 'untagged' is offered exactly when untagged spend exists — the ledger
+      // keeps an untagged bucket, and hiding it would make the tagged shares lie.
+      const hasUntagged = await page.evaluate(() => USAGE.facts.some((f) => {
+        const a = (USAGE.phaseAreas || {})[f[F.phase]];
+        return !(a && a.length);
+      }));
+      const offered = await page.evaluate(() => [...document.querySelector(
+        '#usage select[data-uf=area]').options].some((o) => o.value === 'untagged'));
+      if (hasUntagged !== offered) {
+        fail(`usage: untagged spend ${hasUntagged ? 'exists' : 'does not exist'} `
+           + `and the area select ${offered ? 'offers' : 'does not offer'} 'untagged'`);
+      } else if (hasUntagged) {
+        await sel.selectOption('untagged');
+        await page.waitForTimeout(250);
+        await compare('area=untagged',
+          '!(((USAGE.phaseAreas||{})[f[F.phase]]||[]).length)');
+        await clear();
+      } else {
+        note('usage: no untagged spend in this fixture; the untagged bucket '
+           + 'correctly stays out of the select');
+      }
+
+      // Free text must reach the tags THEMSELVES. On this fixture every phase
+      // title contains its area word, which would mask a haystack that never
+      // read the tags — so the titles are blanked (and the per-row haystack
+      // cache dropped) for the duration of the probe, then restored.
+      await page.evaluate((t) => {
+        window.__d4Titles = USAGE.phaseTitles; USAGE.phaseTitles = {};
+        USAGE.facts.forEach((f) => { delete f.h; });
+        setF('q', t);
+      }, tag);
+      await page.waitForTimeout(250);
+      await compare(`search "${tag}" reaches the tags with the titles blanked`,
+        `[f[F.phase],f[F.task],f[F.model],f[F.author],f[F.agent],f[F.attr],`
+        + `(USAGE.phaseTitles||{})[f[F.phase]]||'',`
+        + `((USAGE.taskMeta||{})[f[F.task]]||{}).title||'',`
+        + `(((USAGE.phaseAreas||{})[f[F.phase]])||[]).join(' ')`
+        + `].join(' ').toLowerCase().includes(${JSON.stringify(tag.toLowerCase())})`);
+      await page.evaluate(() => {
+        USAGE.phaseTitles = window.__d4Titles; delete window.__d4Titles;
+        USAGE.facts.forEach((f) => { delete f.h; });
+      });
+      await clear();
+
+      // The hiding rule, driven from the state this fixture does not have: with
+      // no tags in the join map the select must leave, because its only option
+      // would be 'untagged' and that partitions nothing.
+      const hides = await page.evaluate(() => {
+        const saved = USAGE.phaseAreas;
+        USAGE.phaseAreas = {}; renderUsage();
+        const gone = !document.querySelector('#usage select[data-uf=area]');
+        USAGE.phaseAreas = saved;
+        USAGE.facts.forEach((f) => { delete f.h; });
+        renderUsage();
+        return gone;
+      });
+      await page.waitForTimeout(250);
+      if (!hides) fail('usage: with no tags in the join map the area select still renders');
+      else note('usage: the area select leaves when the plan carries no tags');
+    }
   }
 
   // --- CSV ------------------------------------------------------------------

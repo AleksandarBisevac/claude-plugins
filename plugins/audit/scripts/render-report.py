@@ -1157,6 +1157,78 @@ def _selftest():
           and "Date.now()" not in _SCRIPT
           and "new Date()" not in _SCRIPT
           and "DMAX + 'T00:00:00Z'" in _SCRIPT)
+    # --- C3: author chips scope the usage section, and only it -----------------
+    # The chip markup itself is pinned in _report_usage's ua cases; what needs a
+    # whole document is the WIRING - that report.js drives the chips, restores
+    # the top-8 default, writes the summary line off the chip's own data
+    # attributes, and carries the state in the hash as au=.
+    check("c3: the author chips are in the document and report.js wires them "
+          "rather than building them",
+          'id="audit-authors"' in uh
+          and "wireChips(authorBar, 'data-au'" in _SCRIPT)
+    check("c3: releasing the chip restores the top-8 default by re-applying "
+          "hidden from data-top, never by re-rendering",
+          "c.getAttribute('data-author') !== auFilter" in _SCRIPT
+          and ": !c.hasAttribute('data-top')" in _SCRIPT)
+    check("c3: the summary line is assembled from the chip's own data "
+          "attributes, not recomputed by a second implementation",
+          "chip.getAttribute('data-tokens')" in _SCRIPT
+          and "chip.getAttribute('data-share')" in _SCRIPT
+          and "of all spend" in _SCRIPT)
+    check("c3: the author filter is a link (au=) and restores from one",
+          "put('au', auFilter)" in _SCRIPT and "if (HASH.au)" in _SCRIPT)
+    check("c3: clear-all lifts the author scope with everything else",
+          "auFilter = '';" in _SCRIPT)
+    check("c3: hidden actually hides a rank row and a hidden smcell - the "
+          "author-facing rules a UA default cannot win against",
+          ".rank[hidden]{display:none}" in _CSS
+          and ".smcell[hidden]{display:none}" in _CSS)
+    check("c3: the task table is untouched by the author filter - no task or "
+          "phase row carries an author, and refresh() never reads the state",
+          re.search(r'<tr class="(?:task|phase)[^>]*data-author', uh) is None
+          and "auFilter" not in _SCRIPT.split("function refresh()")[1]
+              .split("function natCmp")[0])
+
+    # --- D1: area chips finally read the data-area the renderer always emitted -
+    # The phase-row emitter above has stamped space-joined tags into `data-area`
+    # since areas landed; until D1 no script read it back. The chip markup is
+    # pinned in _report_html's own selftest; what needs a whole document is the
+    # WIRING - report.js reads the attribute, gates PHASES on it (multi-select,
+    # any tag admits, no tags hides while a selection is active), and carries
+    # the selection in the hash as a= - a key distinct from the author's au=.
+    _ma = json.loads(json.dumps(manifest))
+    _ma["phases"][0]["area"] = ["api", "web"]
+    _mah = render_html(_ma, _lib.rollup(_ma, [], []), "audit-report", None)
+    check("d1: a tagged plan renders the Area chip row and an untagged plan "
+          "omits it (markup pinned in _report_html; this pins the document)",
+          'id="audit-areas"' in _mah and 'data-a="api"' in _mah
+          and 'id="audit-areas"' not in html_out)
+    check("d1: report.js reads data-area off the phase row, splitting the "
+          "space-joined tags the emitter writes",
+          "getAttribute('data-area')" in _SCRIPT
+          and "function areaOk" in _SCRIPT
+          and "areaOk(pr)" in _SCRIPT)
+    check("d1: the gate is multi-select and any selected tag admits a phase; "
+          "with none selected it admits everything",
+          "areaFilter.indexOf(tags[i])" in _SCRIPT
+          and "if (!areaFilter.length) return true;" in _SCRIPT)
+    check("d1: the area selection is a link (a=) and restores from one - "
+          "spelled apart from the author's au=, which stays wired",
+          "put('a', areaFilter.join(' '));" in _SCRIPT
+          and "if (HASH.a)" in _SCRIPT
+          and "put('au', auFilter)" in _SCRIPT and "if (HASH.au)" in _SCRIPT)
+    check("d1: clear-all lifts the area gate with everything else, and both "
+          "the way-back button and the panel count own it "
+          "(the reset is pinned INSIDE clearAll - the declaration up top "
+          "spells the same bytes and satisfied a whole-script substring)",
+          "areaFilter = [];" in _SCRIPT.split("function clearAll()")[1]
+          and "|| areaFilter.length > 0" in _SCRIPT
+          and "(areaFilter.length ? 1 : 0)" in _SCRIPT)
+    check("d1: the chips are wired, not built - report.js attaches behaviour "
+          "to the server-rendered row",
+          "wireChips(areaBar, 'data-a'" in _SCRIPT
+          and "function paintAreas()" in _SCRIPT)
+
     check("c5: filtering no longer forces its matches open - it offers a reason "
           "to open a row instead",
           "var open = showP && !!expanded[pid];" in _SCRIPT

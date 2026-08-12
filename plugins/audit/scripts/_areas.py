@@ -209,6 +209,24 @@ def used_tags(manifest):
     return out
 
 
+def phase_tags(manifest):
+    """{phaseId: [tags]} for every phase — the read-time join key that attributes
+    ledger spend to areas (`row.phaseId -> phase.area`).
+
+    Area is a property of the PLAN, not of the moment of spend: this map is built
+    fresh from the manifest at every read, so re-tagging a phase re-attributes its
+    whole ledger history with no backfill and no row rewriting. An untagged phase
+    maps to [] (present, not missing), so callers can tell "known phase, no tags"
+    from "phase the plan has never heard of". `usage_ledger.aggregate_area`
+    receives this map ready-made — that module stays stdlib-only and must not
+    import this one."""
+    out = {}
+    for phase in (manifest or {}).get("phases") or []:
+        if isinstance(phase, dict) and phase.get("id"):
+            out[phase["id"]] = areas_of(phase.get("area"))
+    return out
+
+
 # --- registry validation ------------------------------------------------------
 def validate_registry(areas, where="meta.areas"):
     """(findings, warnings) for a `meta.areas` value. Never raises.
@@ -486,6 +504,22 @@ def _selftest():
           unregistered_tags({"meta": {}, "phases": [{"id": "P1", "area": "x"}]}) == [])
     check("c6 used_tags lists every tag in first-seen order",
           used_tags(MAN) == ["api", "web", "sec"])
+
+    # --- phase_tags: the read-time spend-attribution join ------------------------
+    check("t1 phase_tags maps every phase id to its tags in written order",
+          phase_tags(MAN) == {"P1": ["api"], "P2": ["web", "sec"], "P3": []})
+    check("t2 an untagged phase is PRESENT with [] - 'known phase, no tags' must "
+          "stay distinguishable from 'phase the plan never heard of'",
+          phase_tags(MAN).get("P3") == [] and "P9" not in phase_tags(MAN))
+    check("t3 tags arrive trimmed and deduped, the same normalisation both sides "
+          "of every other lookup get",
+          phase_tags({"phases": [{"id": "P1", "area": [" api ", "api", ""]}]})
+          == {"P1": ["api"]})
+    check("t4 hostile shapes are an empty map, never a raise - a phase without an "
+          "id or that is not a dict is skipped",
+          phase_tags(None) == {} and phase_tags({}) == {}
+          and phase_tags({"phases": [3, {"area": "x"}, {"id": "P1"}]})
+          == {"P1": []})
 
     # --- registry validation -----------------------------------------------------
     f, w = validate_registry(MAN["meta"]["areas"])

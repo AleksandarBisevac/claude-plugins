@@ -747,6 +747,14 @@ details.more>summary:hover{color:var(--text)}
   gap:var(--sp-3)}
 .smcell{border:1px solid var(--border);border-radius:var(--radius);
   padding:var(--sp-2);background:var(--surface)}
+/* C3: the author chips toggle `hidden` on the section's per-author views.
+   Author-origin rules, not the UA default: .rank declares display:grid, which
+   would beat the UA's [hidden]{display:none} - the same trap .pmatch[hidden]
+   already documents. .smcell gets the twin rule so the pair cannot drift. */
+.auchips{display:flex;flex-wrap:wrap;gap:var(--sp-1);margin:var(--sp-2) 0 0}
+.rank[hidden]{display:none}
+.smcell[hidden]{display:none}
+.aunote{font-variant-numeric:tabular-nums}
 .smcell h4{font-size:.78rem;margin:0 0 var(--sp-1);font-weight:600;border:0;
   text-transform:none;letter-spacing:0;color:var(--text)}
 .mm{display:grid;grid-template-columns:.62rem 8rem 1fr;align-items:center;

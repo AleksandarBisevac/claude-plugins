@@ -752,7 +752,8 @@ def usage_state(project):
              # client reads this shape on a repo with no ledger yet, and a missing
              # key there is an `undefined` that only shows up on a fresh install.
              "phaseTitles": {}, "taskMeta": {}, "phaseBudgets": {},
-             "routingAdvice": [], "bands": ucfg.get("bands") or {},
+             "routingAdvice": [], "monthlyPlan": {}, "phaseAreas": {},
+             "bands": ucfg.get("bands") or {},
              "counts": {"phases": 0, "tasks": 0, "models": 0, "authors": 0,
                         "sessions": 0, "days": 0, "from": None, "to": None},
              "rolled": False, "totalRows": 0}
@@ -830,6 +831,26 @@ def usage_state(project):
     except Exception:
         advice = []
 
+    # The Monthly card's plan half. Its ledger half is recomputed client-side
+    # under the current filters; this half needs the manifest, so it ships from
+    # here and the card labels it project-wide. Rows are deliberately NOT passed:
+    # the client owns the month axis (its months union this dict's keys), and
+    # the plan half's months are the plan's own events.
+    try:
+        monthly_plan = ul.monthly_activity(
+            _mio.load_manifest_safe(mpath), []).get("plan") or {}
+    except Exception:
+        monthly_plan = {}
+
+    # The Usage tab's area filter joins each row's phaseId to the plan's tags at
+    # READ time — area is a property of the plan, not of the moment of spend, so
+    # re-tagging a phase re-attributes its whole ledger history with no backfill.
+    # The join map ships with the facts; the client does the join per row.
+    try:
+        phase_areas = _areas.phase_tags(_mio.load_manifest_safe(mpath))
+    except Exception:
+        phase_areas = {}
+
     return {
         "enabled": bool(ucfg.get("enabled", True)),
         "ledgerDir": ledger_dir,
@@ -849,6 +870,8 @@ def usage_state(project):
         # would multiply the payload to serve one paragraph. So this is a
         # statement about the PROJECT, and the panel labels it as such.
         "routingAdvice": advice,
+        "monthlyPlan": monthly_plan,
+        "phaseAreas": phase_areas,
         "bands": ucfg.get("bands") or {},
         "counts": counts,
         "rolled": rolled,
@@ -1254,6 +1277,63 @@ def _selftest():
         else:
             with open(_cfg_path, "w", encoding="utf-8") as fh:
                 fh.write(_prev_cfg)
+
+    # --- monthlyPlan (C2): the Monthly card's server-shipped plan half ----------
+    # The ledger half of that card is recomputed in the browser under the current
+    # filters; the plan half cannot be (the client has no manifest), so it ships
+    # here. Key parity first: the empty branch must carry every key the populated
+    # branch returns — the pinned rule beside the empty dict — so a fresh install
+    # reads {} and never undefined.
+    _mp_empty = usage_state(os.path.join(tmp, "no-such-proj"))
+    check("usage_state ships monthlyPlan in BOTH branches - {} on a repo with "
+          "no ledger, never undefined",
+          _mp_empty["facts"] == [] and "monthlyPlan" in _mp_empty
+          and _mp_empty["monthlyPlan"] == {})
+    with open(mpath, encoding="utf-8") as _fh:
+        _orig_manifest = json.load(_fh)
+    try:
+        _atomic_write_json(mpath, {
+            "meta": {"version": 2},
+            "phases": [{"id": "P1", "title": "P", "status": "done",
+                        "mergedAt": "2026-08-06T10:00:00Z",
+                        "tasks": [{"id": "P1.1", "title": "T", "status": "done",
+                                   "completedAt": "2026-08-03T10:00:00Z"}]}],
+            "bugs": [{"id": "BUG-1", "status": "open",
+                      "reportedAt": "2026-07-02T10:00:00Z", "taskId": "P1.1"}]})
+        _mp = usage_state(proj)
+        check("the populated branch derives monthlyPlan from the manifest "
+              "through monthly_activity - completedAt/reportedAt/mergedAt "
+              "buckets, bugsFixed via the linked done task",
+              _mp["monthlyPlan"].get("2026-08", {}).get("tasksCompleted") == 1
+              and _mp["monthlyPlan"].get("2026-08", {}).get("phasesMerged") == 1
+              and _mp["monthlyPlan"].get("2026-07", {}).get("bugsReported") == 1
+              and _mp["monthlyPlan"].get("2026-08", {}).get("bugsFixed") == 1)
+    finally:
+        _atomic_write_json(mpath, _orig_manifest)
+
+    # --- phaseAreas (D4): the Usage tab's area filter join map ------------------
+    # The client attributes spend to areas in a read-time join (row.phaseId ->
+    # phase.area tags), so the map ships with the facts. Key parity again: BOTH
+    # branches carry the key, and an untagged phase maps to [] rather than being
+    # missing, so the client can tell "known phase, no tags" from "phase the
+    # plan never heard of".
+    check("usage_state ships phaseAreas in BOTH branches - {} on a repo with "
+          "no ledger, never undefined",
+          "phaseAreas" in _mp_empty and _mp_empty["phaseAreas"] == {})
+    try:
+        _atomic_write_json(mpath, {
+            "meta": {"version": 2},
+            "phases": [
+                {"id": "P1", "title": "A", "status": "done",
+                 "area": ["backend", "sec"], "tasks": []},
+                {"id": "P2", "title": "B", "status": "pending", "tasks": []}]})
+        check("the populated branch derives phaseAreas through _areas."
+              "phase_tags - a multi-tag phase keeps every tag, an untagged "
+              "phase maps to [], not missing",
+              usage_state(proj).get("phaseAreas")
+              == {"P1": ["backend", "sec"], "P2": []})
+    finally:
+        _atomic_write_json(mpath, _orig_manifest)
 
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived

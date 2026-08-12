@@ -156,6 +156,7 @@ def load_usage(manifest, manifest_path, project_dir=None):
             "retry": ul.retry_cost(manifest, rows),
             "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
             "coverage": ul.coverage(rows),
+            "monthly": ul.monthly_activity(manifest, rows),
             "seriesAuthorModel": {
                 a: ul.series([r for r in rows if (r.get("author") or "unknown") == a],
                              "model")
@@ -472,10 +473,49 @@ def _budget_block(u):
 
 
 # --- rankings + sparklines + tables -------------------------------------------
-def _ranked(u, key, title, slots=None, models=None):
+def _author_chips(u):
+    """The author chip row — rendered only when the ledger records more than
+    one author, because a set of one has nothing to compare.
+
+    Honestly scoped: tasks record no author, so these chips must NOT claim the
+    task table. They scope this Usage section's per-author views (the By author
+    rows and the small-multiples cells), and the note beside them says exactly
+    that. Each chip carries its own totals as pre-formatted data attributes so
+    report.js writes the summary line off the page rather than through a second
+    implementation of the arithmetic."""
+    data = u.get("byAuthor") or {}
+    if len(data) < 2:
+        return ""
+    total = sum(v["tokens"] for v in data.values()) or 1
+    show_cost = u.get("showCost", True)
+    chips = []
+    for a, v in sorted(data.items(), key=lambda kv: -kv[1]["tokens"]):
+        share = 100.0 * v["tokens"] / total
+        share_txt = "<1%" if 0 < share < 1 else "%.0f%%" % share
+        chips.append(
+            '<button type="button" class="fchip" data-au="%s" data-tokens="%s" '
+            'data-cost="%s" data-msgs="%s" data-share="%s" '
+            'aria-pressed="false">%s</button>'
+            % (e(a), e(_fmt_tokens(v["tokens"])),
+               e(_fmt_cost(v["costUSD"])) if show_cost else "",
+               "{:,}".format(v["msgs"]), e(share_txt), e(a)))
+    return ('<div class="auchips" id="audit-authors">%s</div>'
+            '<p class="muted small">Author chips scope the per-author views of '
+            "this section (the By author list, and the per-author panels in "
+            "Detail) &mdash; the tiles and trend above stay project-wide, and "
+            "the task table records no author to filter by. The panel has the "
+            "full drill-down.</p>"
+            '<p class="muted small aunote" id="audit-au-note" hidden></p>'
+            % "".join(chips))
+
+
+def _ranked(u, key, title, slots=None, models=None, row_attr=None):
     """One ranked bar list. Top 8 then a folded `other` row — past 8 entities a
     categorical palette cannot keep adjacent pairs distinguishable, so folding is a
-    correctness bound rather than a style choice."""
+    correctness bound rather than a style choice.
+
+    `row_attr` stamps each REAL entity's key on its row (the folded `other` row
+    never gets one) — the hook the author chips drive."""
     data = u.get(key) or {}
     if not data:
         return ""
@@ -499,14 +539,17 @@ def _ranked(u, key, title, slots=None, models=None):
         amt = _fmt_tokens(v["tokens"])
         if u.get("showCost", True):
             amt += " &middot; %s" % e(_fmt_cost(v["costUSD"]))
+        attr_bit = (' %s="%s"' % (row_attr, e(k))) \
+            if (row_attr and k in data) else ""
         # The bar is a share the eye reads against its neighbours; the hover adds
         # the exact count and the share of the whole, which the bar cannot show
         # because it is scaled to the largest row, not to the total.
         rows.append(
-            '<div class="rank" title="%s"><span class="nm">%s</span>'
+            '<div class="rank"%s title="%s"><span class="nm">%s</span>'
             '<span class="track"><i style="width:%.1f%%;background:%s"></i></span>'
             '<span class="amt">%s</span></div>'
-            % (_tip(label.strip(), [
+            % (attr_bit,
+               _tip(label.strip(), [
                 ("tokens", _fmt_tokens(v["tokens"], 2)),
                 ("share", "%.0f%%" % (100.0 * v["tokens"] / grand)),
                 ("cost", _fmt_cost(v["costUSD"])
@@ -621,8 +664,12 @@ def _small_multiples(u, slots):
         return ""
     ranked = sorted(grid, key=lambda a: -sum(sum(r) for r in grid[a].values()))
     shown, hidden = ranked[:TOP_N], ranked[TOP_N:]
+    # EVERY author's cell goes into the document (C3): the top 8 by spend are
+    # visible (data-top marks the default set report.js restores), the tail is
+    # present but `hidden` so an author chip can reveal any one of them without
+    # a re-render — a printed page still shows only the top 8.
     cells = []
-    for author in shown:
+    for author in ranked:
         panels = "".join(
             '<div class="mm"><span class="mk" style="background:%s"></span>'
             '<span class="mn">%s</span>%s</div>'
@@ -632,11 +679,12 @@ def _small_multiples(u, slots):
                                 if m in slots else "var(--bar-neutral)")
                                for m in sorted(grid[author],
                                                key=lambda y: slots.get(y, 99))))
-        cells.append('<div class="smcell"><h4>%s</h4>%s</div>'
-                     % (e(author), panels))
-    more = ('<p class="muted small">+%d more author(s) not shown — the top %d '
-            "account for the bulk of spend; use the panel's author filter for the "
-            "rest.</p>" % (len(hidden), TOP_N)) if hidden else ""
+        marker = ' data-top="1"' if author in shown else " hidden"
+        cells.append('<div class="smcell" data-author="%s"%s><h4>%s</h4>%s</div>'
+                     % (e(author), marker, e(author), panels))
+    more = ('<p class="muted small">+%d more author(s) hidden — the top %d by '
+            "spend show by default; pick an author chip above to see any one "
+            "of them.</p>" % (len(hidden), TOP_N)) if hidden else ""
     unit = "day" if binsize == 1 else ("%d days" % binsize)
     return ('<h4 class="sub">Each author, by model</h4>'
             '<p class="muted small">Every panel shares one axis (%s to %s, one '
@@ -647,6 +695,52 @@ def _small_multiples(u, slots):
             '<div class="smgrid">%s</div>%s'
             % (e(alldays[0]), e(alldays[-1]), e(unit), e(_fmt_tokens(peak)),
                "".join(cells), more))
+
+
+def _monthly_block(u):
+    """Calendar-month table: ledger spend beside plan progress, off the
+    `monthly` dict usage_ledger.monthly_activity computed — the same
+    computation site the CLI table and the panel card read.
+
+    Rendered only when at least two months carry ledger activity: a one-month
+    table restates the tiles. The caption names the derivation field by field,
+    because "3 bugs fixed in June" is a claim and its basis (the linked task's
+    completedAt, not a status flag) is not guessable from the number."""
+    ma = u.get("monthly") or {}
+    months = ma.get("months") or []
+    led = ma.get("ledger") or {}
+    plan = ma.get("plan") or {}
+    active = [m for m in months
+              if (led.get(m) or {}).get("tokens")
+              or (led.get(m) or {}).get("msgs")]
+    if len(active) < 2:
+        return ""
+    show_cost = u.get("showCost", True)
+    rows = []
+    for m in months:
+        lg = led.get(m) or {}
+        pl = plan.get(m) or {}
+        cost_cell = ("<td class=mono>%s</td>"
+                     % e(_fmt_cost(lg.get("costUSD", 0.0)))) if show_cost else ""
+        rows.append(
+            "<tr><td class=mono>%s</td><td class=mono>%s</td>%s<td>%s</td>"
+            "<td>%d</td><td>%d</td><td>%d</td><td>%d</td></tr>"
+            % (e(m), e(_fmt_tokens(lg.get("tokens", 0))), cost_cell,
+               "{:,}".format(lg.get("msgs", 0)),
+               pl.get("tasksCompleted", 0), pl.get("bugsReported", 0),
+               pl.get("bugsFixed", 0), pl.get("phasesMerged", 0)))
+    cost_th = "<th>cost</th>" if show_cost else ""
+    return ('<h4 class="sub">Month by month</h4>'
+            '<p class="muted small">Ledger columns are this ledger\'s spend by '
+            "calendar month. Plan columns count the whole project by event "
+            "month &mdash; a task in its <code>completedAt</code> month, a bug "
+            "in its <code>reportedAt</code> month, a fix in the month its "
+            "linked task completed (the same derivation the bug list uses), a "
+            "phase in its <code>mergedAt</code> month.</p>"
+            '<div class="tablewrap"><table class="data"><thead><tr>'
+            "<th>month</th><th>tokens</th>%s<th>msgs</th><th>tasks done</th>"
+            "<th>bugs</th><th>fixed</th><th>merged</th></tr></thead>"
+            "<tbody>%s</tbody></table></div>" % (cost_th, "".join(rows)))
 
 
 def _routing_table(u):
@@ -886,13 +980,15 @@ def _usage_section(u):
                    % (e(win.get("since") or "?"), e(win.get("until") or "?")))
     out.append(_usage_trend(u))
 
+    out.append(_author_chips(u))
     out.append('<div class="ranks">%s%s%s</div>' % (
         _ranked(u, "byPhase", "By phase"),
         _ranked(u, "byModel", "By model", slots, models),
-        _ranked(u, "byAuthor", "By author")))
+        _ranked(u, "byAuthor", "By author", row_attr="data-author")))
     out.append(_budget_block(u))
 
     detail = "".join([
+        _monthly_block(u),
         _small_multiples(u, slots),
         _phase_stacks(u, slots, models),
         _economics_block(u),
@@ -900,9 +996,10 @@ def _usage_section(u):
         _usage_heatmap(u),
     ])
     if detail:
-        out.append("<details class=\"more\"><summary>Detail — per-author split, "
-                   "phase composition, unit economics, model routing, hourly "
-                   "pattern</summary>%s</details>" % detail)
+        out.append("<details class=\"more\"><summary>Detail — monthly "
+                   "activity, per-author split, phase composition, unit "
+                   "economics, model routing, hourly pattern</summary>"
+                   "%s</details>" % detail)
     return "".join(out)
 
 
@@ -952,6 +1049,37 @@ def _usage_md(u):
     lines += block("By model", u["byModel"], "model")
     if len(u.get("byAuthor") or {}) > 1:
         lines += block("By author", u["byAuthor"], "author")
+
+    # The monthly overview, same gate and same derivation note as the HTML —
+    # the twin must not know months the page does not, or vice versa.
+    _ma = u.get("monthly") or {}
+    _mm = _ma.get("months") or []
+    _mled = _ma.get("ledger") or {}
+    _mplan = _ma.get("plan") or {}
+    if len([m for m in _mm
+            if (_mled.get(m) or {}).get("tokens")
+            or (_mled.get(m) or {}).get("msgs")]) >= 2:
+        cols = ("| month | tokens | %smsgs | tasks done | bugs | fixed | "
+                "merged |" % ("cost | " if show_cost else ""))
+        sep = "|---|---:|%s---:|---:|---:|---:|---:|" % (
+            "---:|" if show_cost else "")
+        lines += ["### Month by month", "",
+                  "Plan columns count the whole project by event month (task "
+                  "completedAt, bug reportedAt, the linked task's completedAt "
+                  "for a fix, phase mergedAt).", "", cols, sep]
+        for m in _mm:
+            lg = _mled.get(m) or {}
+            pl = _mplan.get(m) or {}
+            cells = [m, _fmt_tokens(lg.get("tokens", 0))]
+            if show_cost:
+                cells.append(_fmt_cost(lg.get("costUSD", 0.0)))
+            cells += ["{:,}".format(lg.get("msgs", 0)),
+                      str(pl.get("tasksCompleted", 0)),
+                      str(pl.get("bugsReported", 0)),
+                      str(pl.get("bugsFixed", 0)),
+                      str(pl.get("phasesMerged", 0))]
+            lines.append("| %s |" % " | ".join(_md(c) for c in cells))
+        lines.append("")
 
     # The analytics carry the same honesty caveats as the HTML. This is not a
     # summary of the charts — for the three light-mode palette slots that sit under
@@ -1047,6 +1175,16 @@ def _selftest():
         "showCost": True, "pricingAsOf": "2026-08-06",
         "counts": {"phases": 2, "people": 2, "models": 2, "sessions": 3,
                    "days": 2, "from": "2026-08-01", "to": "2026-08-02"},
+        "monthly": {
+            "months": ["2026-07", "2026-08"],
+            "ledger": {"2026-07": {"tokens": 900000, "costUSD": 7.0,
+                                   "msgs": 20},
+                       "2026-08": {"tokens": 600000, "costUSD": 5.3456,
+                                   "msgs": 22}},
+            "plan": {"2026-07": {"tasksCompleted": 2, "bugsReported": 1,
+                                 "bugsFixed": 0, "phasesMerged": 1},
+                     "2026-08": {"tasksCompleted": 1, "bugsReported": 2,
+                                 "bugsFixed": 1, "phasesMerged": 0}}},
     }
     _u["heatmap"][2][14] = 900000
     _u["heatmap"][4][9] = 600000
@@ -1161,9 +1299,20 @@ def _selftest():
     check("u18 phase composition folds and says how many are hidden",
           _bh.count('class="uphase"') == TOP_N and "+22 more phase" in _bh,
           "%d rows" % _bh.count('class="uphase"'))
-    check("u19 small multiples fold and say how many authors are hidden",
-          _bh.count('class="smcell"') == TOP_N and "+12 more author" in _bh,
-          "%d cells" % _bh.count('class="smcell"'))
+    # u19 CONTRACT CHANGE (C3): every author's cell is now IN the document —
+    # the top 8 by spend visible (data-top), the rest present but `hidden`, so
+    # the author chips can reveal any one of them without a re-render. The old
+    # pin (exactly TOP_N cells) asserted the tail was NOT in the document; that
+    # is the behaviour C3 replaces, and the fold is still said out loud.
+    check("u19 small multiples render every author - top-8 visible, the rest "
+          "hidden for the chips to reveal - and still say how many are hidden",
+          _bh.count('class="smcell"') == 20
+          and _bh.count('data-top="1"') == 8
+          and _bh.count('" hidden><h4>') == 12
+          and "+12 more author" in _bh,
+          "%d cells, %d top, %d hidden" % (_bh.count('class="smcell"'),
+                                           _bh.count('data-top="1"'),
+                                           _bh.count('" hidden><h4>')))
     check("u20 no categorical axis ever exceeds the 8 validated hues",
           max((int(m) for m in re.findall(r"var\(--viz-(\d)\)", _bh)),
               default=0) <= VIZ_SLOTS)
@@ -1361,6 +1510,105 @@ def _selftest():
           "upper bound, not a forecast" in _adv
           and "would not emit the same tokens" in _adv
           and "one rate epoch" in _adv)
+
+    # --- author chips (ua) ----------------------------------------------------
+    # Honestly scoped: tasks record no author, so the chips must not claim the
+    # task table. They scope THIS section's per-author views, and each chip
+    # carries its own totals as data attributes so report.js can write the
+    # summary line off the page instead of recomputing it.
+    _ac = _author_chips(_u)
+    check("ua1 with more than one author the chip row renders one chip per "
+          "author, each carrying its totals as data attributes",
+          _ac.count('data-au=') == 2
+          and 'data-au="a@x.io"' in _ac
+          and 'data-tokens="1.0M"' in _ac and 'data-cost="$8.00"' in _ac
+          and 'data-msgs="30"' in _ac and 'data-share="67%"' in _ac
+          and 'aria-pressed="false"' in _ac)
+    check("ua2 a single author renders no chip row - there is nothing to "
+          "compare",
+          _author_chips(dict(_u, byAuthor={
+              "a@x.io": {"tokens": 1, "costUSD": 0.0, "msgs": 1}})) == "")
+    check("ua3 the chips, the scope note and the summary-line slot reach the "
+          "section, and the note says what stays project-wide",
+          'id="audit-authors"' in uh and 'id="audit-au-note"' in uh
+          and "stay project-wide" in uh
+          and "records no author" in uh)
+    check("ua4 showCost off empties the cost attribute rather than shipping a "
+          "dollar the page hides",
+          'data-cost=""' in _author_chips(dict(_u, showCost=False)))
+    check("ua5 By author rows carry data-author for the chips to drive; other "
+          "ranked lists do not",
+          'data-author="a@x.io"' in _ranked(_u, "byAuthor", "By author",
+                                            row_attr="data-author")
+          and 'data-author' not in _ranked(_u, "byPhase", "By phase"))
+    check("ua6 an author name is escaped in the chip like everywhere else",
+          "&lt;script&gt;" in _author_chips(dict(_u, byAuthor={
+              "<script>": {"tokens": 5, "costUSD": 0.0, "msgs": 1},
+              "b@x.io": {"tokens": 1, "costUSD": 0.0, "msgs": 1}}))
+          and "<script>" not in _author_chips(dict(_u, byAuthor={
+              "<script>": {"tokens": 5, "costUSD": 0.0, "msgs": 1},
+              "b@x.io": {"tokens": 1, "costUSD": 0.0, "msgs": 1}})))
+    check("ua7 every smcell names its author so a chip can find it",
+          _usage_section(_sm).count('data-author=') >= 2)
+
+    # --- monthly overview (um) ------------------------------------------------
+    check("um1 the monthly table renders both halves and its caption names the "
+          "derivation, field by field",
+          "Month by month" in uh and "completedAt" in uh
+          and "reportedAt" in uh and "mergedAt" in uh
+          and "linked task" in uh
+          and "<td class=mono>2026-07</td>" in uh
+          and "<td class=mono>2026-08</td>" in uh)
+    check("um2 below two ledger-active months it renders nothing - one row "
+          "would restate the tiles",
+          _monthly_block(dict(_u, monthly={
+              "months": ["2026-07", "2026-08"],
+              "ledger": {"2026-07": {"tokens": 0, "costUSD": 0.0, "msgs": 0},
+                         "2026-08": {"tokens": 5, "costUSD": 0.1, "msgs": 1}},
+              "plan": {"2026-07": {"tasksCompleted": 1, "bugsReported": 0,
+                                   "bugsFixed": 0, "phasesMerged": 0},
+                       "2026-08": {"tasksCompleted": 0, "bugsReported": 0,
+                                   "bugsFixed": 0, "phasesMerged": 0}}})) == ""
+          and _monthly_block(dict(_u, monthly=None)) == "")
+    check("um3 showCost off drops the monthly cost column and every dollar "
+          "with it",
+          "<th>cost</th>" not in _monthly_block(dict(_u, showCost=False))
+          and "$" not in _monthly_block(dict(_u, showCost=False))
+          and "<th>cost</th>" in _monthly_block(_u))
+    check("um4 the markdown twin carries the same months and the same "
+          "derivation note",
+          "### Month by month" in um
+          and "| 2026-07 | 900.0K |" in um
+          and "completedAt" in um and "mergedAt" in um)
+    # um5: the wiring, not the fragment - load_usage computes `monthly` off the
+    # real ledger + manifest through usage_ledger.monthly_activity, so the three
+    # surfaces read one computation site.
+    import json as _json
+    import shutil as _sh
+    import tempfile as _tf
+    _tmp = _tf.mkdtemp(prefix="report-usage-monthly-")
+    try:
+        _led = os.path.join(_tmp, ".claude", "usage")
+        os.makedirs(_led)
+        for _month, _day in (("2026-07", "2026-07-03"), ("2026-08", "2026-08-04")):
+            with open(os.path.join(_led, _month + ".jsonl"), "w",
+                      encoding="utf-8") as _fh:
+                _fh.write(_json.dumps({
+                    "ts": _day + "T10", "model": "claude-opus-5",
+                    "author": "a@x.io", "msgs": 1, "in": 5, "out": 10,
+                    "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0,
+                    "costUSD": 0.1}) + "\n")
+        _lu = load_usage({"meta": {}, "phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1", "status": "done",
+             "completedAt": "2026-08-01T10:00:00Z"}]}], "bugs": []},
+            os.path.join(_tmp, "m.json"), _tmp)
+        check("um5 load_usage computes `monthly` from ledger + manifest through "
+              "the one computation site",
+              bool(_lu) and _lu.get("monthly", {}).get("months")
+              == ["2026-07", "2026-08"]
+              and _lu["monthly"]["plan"]["2026-08"]["tasksCompleted"] == 1)
+    finally:
+        _sh.rmtree(_tmp, ignore_errors=True)
 
     check("u15 zero-token ledger renders nothing rather than an empty frame",
           _usage_section(dict(_u, totals=dict(_u["totals"], tokens=0))) == ""

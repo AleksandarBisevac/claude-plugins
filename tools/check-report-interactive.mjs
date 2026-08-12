@@ -366,6 +366,134 @@ if (panelParts.length) {
     /#!/.test(await page.evaluate(() => location.hash)), false);
 } else notes.push('ok   (this plan records no models — More filters skipped)');
 
+// 6b. Author chips in the Usage section (C3). Emitted only when the ledger
+//     records more than one author, so their absence is a fact about the FILE
+//     (single author, no ledger, or rendered before the chips existed) — a
+//     skip, not a failure, exactly like the model chips above. What they claim:
+//     a chip narrows the per-author small multiples to exactly that author,
+//     the state is a link (au=), and releasing the chip restores the top-8
+//     default by re-applying `hidden` — none of which a string pin can see die.
+if (await page.$('#audit-authors .fchip')) {
+  const auBefore = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('.smcell')];
+    return {
+      cells: cells.length,
+      vis: cells.filter((c) => !c.hidden).length,
+      top: document.querySelectorAll('.smcell[data-top]').length,
+      chip: document.querySelector('#audit-authors .fchip').getAttribute('data-au'),
+    };
+  });
+  await page.click('#audit-authors .fchip');
+  await page.waitForTimeout(250);
+  const auOn = await page.evaluate(() => {
+    const vis = [...document.querySelectorAll('.smcell')].filter((c) => !c.hidden);
+    const note = document.getElementById('audit-au-note');
+    return {
+      vis: vis.length,
+      head: vis.length === 1 ? vis[0].querySelector('h4').textContent : null,
+      note: note && !note.hidden ? note.textContent : '',
+      hash: location.hash,
+    };
+  });
+  if (auBefore.cells >= 2) {
+    if (auOn.vis !== 1) {
+      failures.push(`FAIL an author chip leaves exactly one .smcell visible: got ${auOn.vis} of ${auBefore.cells}`);
+    } else if (auOn.head !== auBefore.chip) {
+      failures.push(`FAIL the one visible cell is "${auOn.head}", the chip said "${auBefore.chip}"`);
+    } else notes.push(`ok   author chip "${auBefore.chip}" leaves exactly one .smcell visible`);
+  } else notes.push('ok   (fewer than two .smcell panels — the chip cannot narrow them; skipped that half)');
+  expect('the author view is a link (au= in the hash)', /#!.*au=/.test(auOn.hash), true);
+  if (!auOn.note.includes(auBefore.chip)) {
+    failures.push(`FAIL the summary line names the selected author: got "${auOn.note}"`);
+  } else notes.push(`ok   the summary line reads off the chip: "${auOn.note}"`);
+  await page.click('#audit-authors .fchip');   // release it
+  await page.waitForTimeout(250);
+  const auOff = await page.evaluate(() => ({
+    vis: [...document.querySelectorAll('.smcell')].filter((c) => !c.hidden).length,
+    noteHidden: (document.getElementById('audit-au-note') || {}).hidden,
+    hash: location.hash,
+  }));
+  // Absolute, against the renderer's own data-top marker — NOT against the
+  // count measured at load. An earlier clearAll has already run applyAuthor
+  // once by this point, so "same as before" would also pass a restore that
+  // consistently hides everything; the marker is what "default" means.
+  if (auBefore.cells && !auBefore.top) {
+    failures.push(`FAIL ${auBefore.cells} smcell panels but none marked data-top — the default view would be empty`);
+  }
+  expect('releasing the chip restores the top-8 default (the data-top set)', auOff.vis, auBefore.top);
+  expect('...and the summary line leaves with it', auOff.noteHidden, true);
+  expect('...and the au fragment leaves the URL', /au=/.test(auOff.hash), false);
+} else notes.push('ok   (no author chips — one author, no ledger, or a report older than them — skipped)');
+
+// 6c. Area chips in the More-filters panel (D1). Emitted only when a phase
+//     carries an `area` tag, so their absence is a fact about the FILE — a
+//     skip, not a failure, exactly like the model chips above. What they claim:
+//     the chip is a PHASE-level gate — a phase tagged with the selected area
+//     stays, a phase with no tags is hidden while the selection is active —
+//     the selection is a link (a=, a key distinct from the author's au=), and
+//     Clear filters restores the hidden phases and takes a= out of the URL.
+//     The a= regex anchors on [!&] on purpose: /a=/ alone also matches au=,
+//     and would read the author fragment as this one.
+const areaParts = [];
+if (await page.$('#audit-areas .fchip')) {
+  for (const sel of ['.fdetails > summary', '.filterpanel']) {
+    if (!(await page.$(sel))) areaParts.push(sel);
+  }
+}
+if (areaParts.length) {
+  failures.push(`FAIL the report emits area chips but no ${areaParts.join(' and ')} to hold them`);
+} else if (await page.$('#audit-areas .fchip')) {
+  const areaTag = await page.evaluate(() =>
+    document.querySelector('#audit-areas .fchip').getAttribute('data-a'));
+  const areaBefore = await page.evaluate((tag) => {
+    const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+    const tagsOf = (r) => (r.getAttribute('data-area') || '').split(/\s+/).filter(Boolean);
+    return {
+      tagged: rows.filter((r) => tagsOf(r).indexOf(tag) !== -1).length,
+      untagged: rows.filter((r) => tagsOf(r).length === 0).length,
+      total: rows.length,
+    };
+  }, areaTag);
+  await page.click('.fdetails > summary');
+  await page.waitForTimeout(80);
+  await page.click('#audit-areas .fchip');
+  await page.waitForTimeout(250);
+  const areaOn = await page.evaluate((tag) => {
+    const vis = (r) => r.style.display !== 'none';
+    const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+    const tagsOf = (r) => (r.getAttribute('data-area') || '').split(/\s+/).filter(Boolean);
+    return {
+      taggedShown: rows.filter((r) => vis(r) && tagsOf(r).indexOf(tag) !== -1).length,
+      untaggedShown: rows.filter((r) => vis(r) && tagsOf(r).length === 0).length,
+      pressed: document.querySelector('#audit-areas .fchip').getAttribute('aria-pressed'),
+      hash: location.hash,
+    };
+  }, areaTag);
+  expect(`the "${areaTag}" area chip keeps every phase carrying that tag`,
+    areaOn.taggedShown, areaBefore.tagged);
+  if (areaBefore.untagged > 0) {
+    expect(`...and hides all ${areaBefore.untagged} untagged phase(s) — no tags is no answer to an area`,
+      areaOn.untaggedShown, 0);
+  } else notes.push('ok   (every phase in this plan is tagged — the untagged half cannot be proven here)');
+  expect('an area chip reports itself as on', areaOn.pressed, 'true');
+  expect('the area view is a link (a= in the hash, apart from au=)',
+    /[!&]a=/.test(areaOn.hash), true);
+  // The TOOLBAR clear button, same reason as step 6: the open panel covers the
+  // table's own copy.
+  await page.click('.sectools [data-clear]');
+  await page.waitForTimeout(250);
+  const areaOff = await page.evaluate(() => ({
+    phases: [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .filter((r) => r.style.display !== 'none').length,
+    pressed: document.querySelector('#audit-areas .fchip').getAttribute('aria-pressed'),
+    hash: location.hash,
+  }));
+  expect('Clear filters restores the hidden phases with everything else',
+    areaOff.phases, areaBefore.total);
+  expect('...and the chip stops reporting itself as on', areaOff.pressed, 'false');
+  expect('...and a= leaves the URL', /[!&]a=/.test(areaOff.hash), false);
+} else notes.push('ok   (no phase in this plan carries an area tag — area chips skipped)');
+
 // 7. Paper — the one output nobody looks at before shipping, and the only part
 //    of the report a string pin genuinely cannot check: whether the print rules
 //    FIRE, and which way round the sheet is allowed to be.
