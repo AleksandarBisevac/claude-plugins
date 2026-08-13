@@ -568,6 +568,18 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
  border-radius:var(--pill);padding:.5rem 1rem;font-size:.85rem;opacity:0;transition:opacity var(--dur);pointer-events:none}
 #toast.show{opacity:1}#toast.err{border-color:var(--err);color:var(--err)}#toast.ok{border-color:var(--ok)}
 #toast.warn{border-color:var(--warn);color:var(--warn)}
+/* Save-result lifecycle (sv). Success dissolves through an opacity TRANSITION
+   — never a keyframe: the capture tool's settle() waits out getAnimations().
+   A refusal stays until its × (or until the next Save/Discard replaces the
+   slot); on a phone its body scrolls inside itself rather than owning the
+   screen. */
+.savenote .findings.ok{transition:opacity .45s var(--ease)}
+.savenote .findings.ok.fadeout{opacity:0}
+.savenote .nthead{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem}
+.savenote .notex{border:none;background:none;color:inherit;cursor:pointer;
+ font-size:1rem;line-height:1;padding:0 .2rem;flex:0 0 auto}
+.savenote .fbody{margin-top:.2rem}
+@media(max-width:34rem){.savenote .fbody{max-height:8rem;overflow-y:auto}}
 .findings{margin:.5rem 0 0;padding:.5rem .75rem;border-radius:var(--radius);font-size:.82rem}
 .findings.err{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
 .findings.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
@@ -626,11 +638,20 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
    number that says 272, which is exactly how much the old flip threshold was
    wrong by as well, and 6px of it still reached the document after the clamp
    landed. The width JS writes has to be the width the browser paints. */
-/* custom autocomplete combobox (replaces native datalist) */
+/* custom autocomplete combobox (replaces native datalist).
+   The menu is position:FIXED, placed by JS (comboWrap's place(), the placeTip
+   pattern): absolutely-positioned inside the wrap it was clipped by any
+   ancestor with an overflow frame of its own — the composition table's
+   .comptblwrap scrolls sideways by design and cut the model menu off at the
+   frame's bottom edge. left/top/width are written by JS; the sheet owns the
+   rest. */
 .combo{position:relative;flex:1 1 18rem}
 .combo>input{width:100%}
-.combo-menu{position:absolute;left:0;right:0;top:calc(100% + .25rem);z-index:40;background:var(--surface);
+.combo-menu{position:fixed;z-index:40;background:var(--surface);
  border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;overflow:auto;padding:.25rem}
+/* The overflow footer: a count, not a choice — keyboard nav never reaches it. */
+.combo-more{padding:.35rem .5rem;color:var(--muted);font-size:.72rem;
+ font-style:italic;cursor:default;border-top:1px solid var(--border)}
 .combo-it{display:flex;align-items:center;gap:.5rem;padding:.5rem .5rem;border-radius:6px;cursor:pointer}
 .combo-it:hover,.combo-it.active{background:var(--surface-2)}
 .combo-n{font-size:.82rem;flex:0 0 auto}
@@ -698,6 +719,10 @@ td.tmodel input{width:6.5rem;padding:.25rem .5rem;font-size:.8rem}
 td.tskills{min-width:15rem}
 .comp-review{display:flex;align-items:center;gap:.25rem;margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
 .comp-review input{width:8rem;padding:.25rem .5rem;font-size:.78rem}
+/* The model combos (mc) size to their hosts, not to the .combo default of
+   18rem — a phase header row and a 6.5rem table cell both hold one. */
+.comp-review .combo{flex:0 1 auto;min-width:0}
+td.tmodel .combo{min-width:6.5rem}
 .comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.25rem}
 .comp .chips{gap:.25rem}
 .topbtns{display:flex;gap:var(--sp-1);align-items:center;flex-shrink:0}

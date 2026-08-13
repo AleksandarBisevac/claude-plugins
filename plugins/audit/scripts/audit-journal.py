@@ -54,10 +54,13 @@ name, so a file cannot be renamed into another writer's slot and still verify.
 which is what lets `verify` notice a document that changed with no row to explain
 it (out-of-band drift).
 
-FAIL-SOFT BY CONTRACT. `append()` returns True/False and never raises: a save that
-SUCCEEDED must never be reported as failed because the journal was unwritable. The
-callers (panel PUTs, the journal-writes hook) treat False as "not logged", never as
-"the write failed".
+FAIL-SOFT BY CONTRACT. `append()` returns the path of the file the row landed in
+(truthy) on success, False on failure, and never raises: a save that SUCCEEDED
+must never be reported as failed because the journal was unwritable. The callers
+(panel PUTs, the journal-writes hook) treat False as "not logged", never as "the
+write failed" -- and the hook records the returned path in its per-session
+sidecar, so guard-bash-writes can tell the plugin's own append from a shell
+write into the journal (F-F3).
 """
 import argparse
 import errno
@@ -205,8 +208,13 @@ def writer_id(actor):
     raw = str(actor.get("sessionId") or "").strip()
     if not raw:
         raw = "%s-%d" % (platform.node() or "host", os.getpid())
-    safe = _SAFE.sub("-", raw).strip("-.") or "writer"
-    return safe[:24]
+    # Strip once BEFORE the slice (so leading rubbish does not spend the 24-char
+    # budget) and once AFTER it (F-F2: a real UUID is 8-4-4-4-12, so the slice
+    # ends exactly on its fourth dash, and a writer id with a trailing `-` or `.`
+    # is one character away from reading as another writer's slot). The `or`
+    # sits on the FINAL expression, for ids that are nothing but separators.
+    safe = _SAFE.sub("-", raw).strip("-.")
+    return safe[:24].strip("-.") or "writer"
 
 
 def month_of(ts):
@@ -401,8 +409,8 @@ def _normalise(entry):
 
 
 def _append(project, entry, config=None):
-    """The real append. Raises on anything that stopped it -- `append` is the
-    fail-soft wrapper the writers call."""
+    """The real append. Returns (row, path). Raises on anything that stopped
+    it -- `append` is the fail-soft wrapper the writers call."""
     config = load_config(project) if config is None else config
     if not enabled(config):
         raise IOError("journal disabled (journal.enabled false)")
@@ -431,21 +439,81 @@ def _append(project, entry, config=None):
             fh.write(canonical(row) + "\n")
     finally:
         _release(lock)
-    return row
+    return row, path
 
 
 def append(project, entry, config=None):
-    """Append one row. Returns True/False and NEVER raises -- see the module note:
-    a write that succeeded must not be reported as failed because the record of it
-    could not be written."""
+    """Append one row. Returns the absolute path of the file the row landed in
+    (truthy) on success, False on failure, and NEVER raises -- see the module
+    note: a write that succeeded must not be reported as failed because the
+    record of it could not be written.
+
+    The path, not True (F-F3): the journal-writes hook records it in a
+    per-session sidecar so guard-bash-writes can tell the plugin's own append
+    from a shell write into the journal. Every caller that boolean-tests the
+    result is unchanged -- a non-empty path is truthy."""
     try:
-        _append(project, entry, config=config)
-        return True
+        _row, path = _append(project, entry, config=config)
+        return path
     except Exception:
         return False
 
 
 # --- verifying ----------------------------------------------------------------
+def _git_status_sets(directory):
+    """One `git status --porcelain -z -uall` for a whole journal directory:
+    (dirty, untracked) sets of BASENAMES, or None when the question cannot be
+    asked at all (no git binary, not a repository, git errored).
+
+    This is F-B3's batching seam, shared with the doctor's journal-hygiene
+    check: verify() used to pay `git ls-files` + `git show` per journal file,
+    every file, every call -- O(files) subprocesses over a directory that is
+    almost entirely tracked-and-clean. A file porcelain does not mention is
+    byte-identical to HEAD, so the committed copy is a prefix of the working
+    copy TRIVIALLY and the single-file primitive has nothing left to prove.
+    `git show` is then paid only for tracked-but-dirty files -- the 0-2 active
+    writers of the moment -- O(1 + dirty).
+
+    Basenames, not repo-relative paths, because journal_files() is flat by
+    design: a same-named entry deeper in the tree can only ADD a name to
+    `dirty`, which costs one redundant single-file check and can never hide
+    one. Rename/copy entries contribute both sides for the same reason.
+    `-uall` so an untracked directory is expanded into its files rather than
+    collapsed to one `dir/` line (the doctor's check needs the files).
+    Fail-open: None means "ask per file", exactly the pre-batch behaviour."""
+    try:
+        import shutil
+        import subprocess
+        if not shutil.which("git"):
+            return None
+        out = subprocess.run(
+            ["git", "-C", directory, "status", "--porcelain", "-z", "-uall",
+             "--", "."],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        if out.returncode != 0:
+            return None
+        dirty, untracked = set(), set()
+        tokens = (out.stdout or b"").decode("utf-8", "replace").split("\0")
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            i += 1
+            if len(tok) < 4 or tok[2] != " ":
+                continue
+            xy, p = tok[:2], tok[3:]
+            name = os.path.basename(p.rstrip("/"))
+            if xy == "??":
+                untracked.add(name)
+            else:
+                dirty.add(name)
+                if xy[0] in ("R", "C") and i < len(tokens):
+                    dirty.add(os.path.basename(tokens[i].rstrip("/")))
+                    i += 1
+        return dirty, untracked
+    except Exception:
+        return None
+
+
 def _git_anchor_finding(path):
     """The git anchor: once a journal file is committed, its committed copy must
     be a byte-prefix of the working copy -- append-only ACROSS commits, which is
@@ -503,6 +571,13 @@ def verify(project, config=None):
            "enabled": enabled(config)}
     if not out["exists"]:
         return out
+    # F-B3: one porcelain for the whole directory decides which files pay the
+    # single-file anchor check. None = git unavailable, ask per file (the
+    # primitive fails open on its own); a name in neither set is tracked and
+    # clean, so the committed copy equals the working copy and the prefix
+    # holds trivially; untracked files are skipped for the same reason the
+    # primitive skips them (no committed past = nothing to anchor to).
+    status_sets = _git_status_sets(directory)
     latest = {}                    # target -> (ts, stateHash, file)
     for path in journal_files(directory):
         name = os.path.basename(path)
@@ -537,7 +612,12 @@ def verify(project, config=None):
             entry["warnings"].append(
                 "%s ends with a partial line -- a writer was interrupted. The rows "
                 "before it are intact; nothing was hidden by it." % name)
-        anchor = _git_anchor_finding(path)
+        if status_sets is None:
+            anchor = _git_anchor_finding(path)
+        elif name in status_sets[0]:
+            anchor = _git_anchor_finding(path)
+        else:
+            anchor = None
         if anchor:
             entry["findings"].append(anchor)
         out["rows"] += entry["rows"]
@@ -570,7 +650,7 @@ def cmd_append(args, out):
             "nothing written")
         return 0
     try:
-        row = _append(project, {
+        row, _path = _append(project, {
             "action": args.action, "target": args.target or "",
             "summary": args.summary or "",
             "details": getattr(args, "_details", None),
@@ -731,8 +811,14 @@ def _selftest():
                                "via": "panel"}}, config=cfg)
         d = journal_dir(proj, cfg)
         files = journal_files(d)
-        check("b1 append() reports success and writes exactly one file",
-              ok is True and len(files) == 1, repr(files))
+        # F-F3: success is the PATH of the file the row landed in, not a bare
+        # True -- the journal-writes hook records that path in its sidecar so
+        # guard-bash-writes can tell the plugin's own append from a shell write.
+        # Truthiness is unchanged, so every caller that boolean-tests survives.
+        check("b1 append() reports success as the path it wrote, and writes "
+              "exactly one file",
+              isinstance(ok, str) and ok == files[0] and len(files) == 1,
+              repr((ok, files)))
         check("b2 the file is <month>.<writer>.jsonl",
               os.path.basename(files[0]).endswith(".s-one.jsonl")
               and os.path.basename(files[0])[:7] == time.strftime("%Y-%m",
@@ -877,6 +963,25 @@ def _selftest():
               bool(writer_id({})) and writer_id({}) == writer_id({}))
         check("e7 a long session id is truncated (a file name is not unbounded)",
               len(writer_id({"sessionId": "x" * 200})) == 24)
+        # F-F2: the truncation itself can END on `-` or `.`. A real UUID is
+        # 8-4-4-4-12, so its 24-char slice ends exactly on the fourth dash --
+        # every real session got a writer id with a trailing `-`, and a rename
+        # of that file (or a hand copy that drops the dash) reads as another
+        # writer's slot. Strip AFTER the slice too; the first strip still
+        # handles leading rubbish before the slice spends its budget on it.
+        check("e8 a real UUID's writer id does not end on a dash",
+              writer_id({"sessionId": "abcd1234-ef56-7890-abcd-123456789012"})
+              == "abcd1234-ef56-7890-abcd",
+              repr(writer_id({"sessionId":
+                              "abcd1234-ef56-7890-abcd-123456789012"})))
+        check("e8b the boundary id whose 24th char is the dash is trimmed, "
+              "not kept",
+              writer_id({"sessionId": "a" * 23 + "-" + "b" * 10}) == "a" * 23,
+              repr(writer_id({"sessionId": "a" * 23 + "-" + "b" * 10})))
+        check("e8c a pathological id of nothing but separators still gets a "
+              "stable name",
+              writer_id({"sessionId": "." * 40}) == "writer"
+              and writer_id({"sessionId": "-.-.-.-" * 10}) == "writer")
 
         # --- f: two writers, two files, one clean journal ---------------------
         two = os.path.join(tmp, "two")
@@ -913,9 +1018,10 @@ def _selftest():
         check("g2 ...and it gives up in bounded time", time.time() - t0 < 10)
         os.utime(held, (time.time() - 600, time.time() - 600))
         check("g3 a lock left behind by a dead writer is stolen, not waited on "
-              "forever",
-              append(gproj, {"action": "c", "actor": {"sessionId": "s"}},
-                     config=gcfg) is True)
+              "forever (and success is the written path)",
+              isinstance(append(gproj, {"action": "c",
+                                        "actor": {"sessionId": "s"}},
+                                config=gcfg), str))
         check("g4 the stolen-lock append still chains cleanly",
               verify(gproj, gcfg)["ok"])
         check("g5 the lock file is not left lying in the journal directory",
@@ -987,7 +1093,7 @@ def _selftest():
         jrow = jrows[-1] if jrows else {}
         check("j1 a row can carry details, and the allow-listed keys survive the "
               "round trip",
-              ok is True and jrow.get("details") == {
+              isinstance(ok, str) and jrow.get("details") == {
                   "taskId": "P1.1", "phaseId": "P1",
                   "from": "in_progress", "to": "done"},
               repr(jrow.get("details")))
@@ -1170,6 +1276,75 @@ def _selftest():
                 fh.write(pristine)
             check("k4 restored byte-for-byte, it verifies again",
                   verify(gdir, gcfg)["ok"], repr(verify(gdir, gcfg)))
+
+            # k5-k8 (F-B3): the anchor is BATCHED - one porcelain per
+            # directory decides who pays the single-file check. Fixture: two
+            # committed-clean writer files + one committed-then-appended one.
+            append(gdir, {"action": "manifest.edit", "target": "",
+                          "summary": "w2", "actor": {"sessionId": "s-git-2",
+                                                     "via": "hook"}},
+                   config=gcfg)
+            append(gdir, {"action": "manifest.edit", "target": "",
+                          "summary": "w3", "actor": {"sessionId": "s-git-3",
+                                                     "via": "hook"}},
+                   config=gcfg)
+            git("add", ".")
+            git("commit", "-q", "-m", "all writers committed")
+            _orig_anchor = _git_anchor_finding
+            _anchor_calls = []
+
+            def _counting_anchor(path):
+                _anchor_calls.append(os.path.basename(path))
+                return _orig_anchor(path)
+
+            globals()["_git_anchor_finding"] = _counting_anchor
+            try:
+                resk = verify(gdir, gcfg)
+                check("k5 tracked-and-clean files never pay the single-file "
+                      "check - committed equals working, the prefix holds "
+                      "trivially",
+                      resk["ok"] and _anchor_calls == [],
+                      repr((_anchor_calls, resk["findings"])))
+                append(gdir, {"action": "manifest.edit", "target": "",
+                              "summary": "three",
+                              "actor": {"sessionId": "s-git", "via": "hook"}},
+                       config=gcfg)
+                _anchor_calls.clear()
+                resk = verify(gdir, gcfg)
+                check("k6 a committed-then-appended file is the ONLY one that "
+                      "pays git show, and it still verifies - O(1+dirty)",
+                      resk["ok"]
+                      and _anchor_calls == [os.path.basename(gfile)],
+                      repr((_anchor_calls, resk["findings"])))
+                with open(gfile, "rb") as fh:
+                    pristine2 = fh.read()
+                grows2, _ = read_file(gfile)
+                forged2, prev_f2 = [], genesis_prev(os.path.basename(gfile))
+                for r in grows2:
+                    r = dict(r)
+                    if not forged2:
+                        r["summary"] = "nothing happened here either"
+                    r["prev"] = prev_f2
+                    r["hash"] = row_hash({k: v for k, v in r.items()
+                                          if k != "hash"})
+                    prev_f2 = r["hash"]
+                    forged2.append(r)
+                rewrite(gfile, forged2)
+                resk = verify(gdir, gcfg)
+                check("k7 a rewritten committed row is STILL a FINDING through "
+                      "the batched path - batching skips the clean, never the "
+                      "guilty",
+                      not resk["ok"]
+                      and any("committed past changed" in f
+                              for f in resk["findings"]),
+                      repr(resk["findings"]))
+                with open(gfile, "wb") as fh:
+                    fh.write(pristine2)
+                check("k8 restored byte-for-byte, the batched pass is green "
+                      "again", verify(gdir, gcfg)["ok"],
+                      repr(verify(gdir, gcfg)["findings"]))
+            finally:
+                globals()["_git_anchor_finding"] = _orig_anchor
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -109,7 +109,7 @@
         },
         "areas": {
           "type": "object",
-          "description": "Registry of the areas a phase's `area` tag can name — the monorepo half of the plugin. Optional in both directions and back-compatible by construction: a tag with no entry here stays legal (the validator warns; nothing refuses), and an entry no phase uses is legal too. Registering a tag is what gives it properties: a root directory, a description, a default sign-off reviewer and default executor skills. Resolution is phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill for the reviewer, and area skills + task.skills (deduped, area first) for the executor. When a phase carries several tags, WRITTEN ORDER decides — the first tag whose area declares the field answers.",
+          "description": "Registry of the areas a phase's `area` tag can name — the monorepo half of the plugin. Optional in both directions and back-compatible by construction: a tag with no entry here stays legal (the validator warns; nothing refuses), and an entry no phase uses is legal too. Registering a tag is what gives it properties: a root directory, a description, a default sign-off reviewer, default executor skills and an advisory owner. Resolution is phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill for the reviewer, and area skills + task.skills (deduped, area first) for the executor. When a phase carries several tags, WRITTEN ORDER decides — the first tag whose area declares the field answers.",
           "additionalProperties": {
             "$ref": "#/$defs/area"
           }
@@ -276,6 +276,13 @@
             "type": "string"
           },
           "description": "Skills every executor subagent working in this area loads BEFORE the task's own — house conventions first, task specifics second. Merged with task.skills and deduped, area first."
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Who to coordinate with about this area, written in the SAME form usage.authorMode records authors (git user.email under the default 'email' mode, user.name under 'name') so the ledger's author column and this field are one identity. Advisory only: nothing gates, refuses or assigns on it — the plan-gate hook adds a heads-up note when someone else edits here, and status/panel display it. Explicit null is an answer ('nobody owns this') and stops the written-order lookup, exactly like reviewSkill."
         }
       }
     },

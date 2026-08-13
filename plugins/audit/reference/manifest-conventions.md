@@ -146,6 +146,13 @@ field answers. `/audit:status` prints the resolved reviewer with the basis it ca
 (`review: backend-review (area api)`), and `/audit:doctor` warns when a root is not a directory or a
 phase tag has no entry. Never re-derive any of this by hand when the output is in front of you.
 
+An area may also declare an advisory **`owner`** (v0.34) — who to coordinate with, written the
+way `usage.authorMode` records authors (git `user.email` under the default mode). An explicit
+`null` is an answer ("nobody owns this"), not a fall-through, and across several tags written
+order decides here too. Advisory only: when someone else edits a covered file in an owned area,
+the plan gate adds a once-per-session heads-up; `/audit:status` and the panel display the owner;
+nothing gates on it and nothing is assigned by it.
+
 ## Proposals (parked phases)
 
 `proposals[]` holds phases that were synthesized but not (yet) approved —
@@ -206,7 +213,8 @@ every task commit (so its committed past must stay a byte-prefix of the working 
 `verify` checks exactly that), and (3) the usage ledger, re-derivable from Claude
 Code's read-only transcripts via `/audit:usage --backfill`. A forger must rewrite all
 three consistently; any single-surface forgery is a `/audit:doctor` FINDING
-(`check_completions` + the journal check).
+(`check_completions` + the journal check). The journal directory must stay **tracked** —
+never add it to `.gitignore`; anchor (2) only pins committed history.
 
 The journal's **completion-record actions**:
 

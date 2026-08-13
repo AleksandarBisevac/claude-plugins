@@ -44,7 +44,7 @@ import re
 
 # Keys an area entry may carry. Unknown ones warn — a typo'd `reviewskill` would
 # otherwise be a reviewer that silently never runs.
-KNOWN_AREA = ("root", "description", "reviewSkill", "skills")
+KNOWN_AREA = ("root", "description", "reviewSkill", "skills", "owner")
 
 
 # --- normalisation ------------------------------------------------------------
@@ -133,6 +133,33 @@ def resolve_review_skill(manifest, phase):
     meta = meta if isinstance(meta, dict) else {}
     if "reviewSkill" in meta:
         return (meta.get("reviewSkill") or None), "meta"
+    return None, ""
+
+
+# --- owner resolution -----------------------------------------------------------
+def owner_of(manifest, phase):
+    """(owner, tag) for the phase's advisory area owner.
+
+    The tags are tried in written order and the FIRST entry that declares an
+    `owner` key answers — the same lookup shape as `resolve_review_skill`, for the
+    same reason: any tie-break is arbitrary, so it must be the stated one. A tag
+    whose entry has no `owner` key is skipped, not treated as "nobody". An entry
+    with an explicit `owner: null` IS an answer — "nobody owns this" — and stops
+    the lookup: the returned tag names the area that said so, which is how callers
+    tell (None, "api") apart from (None, "") — nothing declared anywhere.
+
+    Advisory by construction: the only consumers are a heads-up note, status
+    lines and panel labels. Nothing gates on the return value."""
+    phase = phase if isinstance(phase, dict) else {}
+    for tag in areas_of(phase.get("area")):
+        entry = entry_of(manifest, tag)
+        if "owner" in entry:
+            owner = entry.get("owner")
+            if isinstance(owner, str):
+                owner = owner.strip() or None
+            else:
+                owner = None  # null, or a shape the validator reports
+            return owner, tag
     return None, ""
 
 
@@ -245,7 +272,7 @@ def validate_registry(areas, where="meta.areas"):
         return findings, warnings
     if not isinstance(areas, dict):
         findings.append("%s: must be an object {tag: {root, description, "
-                        "reviewSkill?, skills?}}, got %s"
+                        "reviewSkill?, skills?, owner?}}, got %s"
                         % (where, type(areas).__name__))
         return findings, warnings
     for tag, entry in areas.items():
@@ -259,7 +286,7 @@ def validate_registry(areas, where="meta.areas"):
                             "trimmed, so write it as %r" % (where, tag, t))
         if not isinstance(entry, dict):
             findings.append("%s: must be an object {root, description, reviewSkill?, "
-                            "skills?}, got %s" % (awhere, type(entry).__name__))
+                            "skills?, owner?}, got %s" % (awhere, type(entry).__name__))
             continue
         for key in entry:
             ks = str(key)
@@ -300,6 +327,18 @@ def validate_registry(areas, where="meta.areas"):
                 if bad:
                     findings.append("%s.skills: every entry must be a non-empty skill "
                                     "name (%d bad: %r)" % (awhere, len(bad), bad[:3]))
+        owner = entry.get("owner")
+        if "owner" in entry:
+            # Type only. Whether this identity has ever appeared in the ledger is
+            # the doctor's question (it has the ledger in hand); an offline shape
+            # check that guessed would false-alarm on every pre-first-run project.
+            if owner is not None and not isinstance(owner, str):
+                findings.append("%s.owner: must be an author string (the form "
+                                "usage.authorMode records) or null, got %s"
+                                % (awhere, type(owner).__name__))
+            elif isinstance(owner, str) and not owner.strip():
+                findings.append("%s.owner: must not be empty - write null to say "
+                                "'nobody owns this'" % awhere)
     return findings, warnings
 
 
@@ -520,6 +559,51 @@ def _selftest():
           phase_tags(None) == {} and phase_tags({}) == {}
           and phase_tags({"phases": [3, {"area": "x"}, {"id": "P1"}]})
           == {"P1": []})
+
+    # --- owner resolution ----------------------------------------------------------
+    OMAN = {"meta": {"areas": {"api": {"root": "services/api", "owner": "jane@x.com"},
+                               "web": {"root": "apps/web"},
+                               "sec": {"root": ".", "owner": "raj@x.com"},
+                               "none": {"root": "lib", "owner": None}}},
+            "phases": [{"id": "P1", "area": "api"}]}
+    check("o1 the area that declares an owner answers, and names itself",
+          owner_of(OMAN, OMAN["phases"][0]) == ("jane@x.com", "api"))
+    check("o2 a tag with no owner KEY is skipped, not read as 'nobody' - web is "
+          "first and silent, so api answers",
+          owner_of(OMAN, {"area": ["web", "api"]}) == ("jane@x.com", "api"))
+    check("o3 written order decides between two areas that BOTH declare",
+          owner_of(OMAN, {"area": ["api", "sec"]}) == ("jane@x.com", "api")
+          and owner_of(OMAN, {"area": ["sec", "api"]}) == ("raj@x.com", "sec"))
+    check("o4 an explicit null is an ANSWER - 'nobody owns this' stops the lookup "
+          "and still names the area that said so",
+          owner_of(OMAN, {"area": ["none", "api"]}) == (None, "none"))
+    check("o5 nothing declared anywhere is (None, '') - distinguishable from o4",
+          owner_of(OMAN, {"area": "web"}) == (None, "")
+          and owner_of(OMAN, {"id": "PX"}) == (None, ""))
+    check("o6 hostile shapes never raise",
+          owner_of(None, None) == (None, "")
+          and owner_of({"meta": {"areas": {"a": 3}}}, {"area": "a"}) == (None, "")
+          and owner_of({"meta": {"areas": {"a": {"owner": 7}}}}, {"area": "a"})
+          == (None, "a"))
+    check("o7 an owner arrives trimmed; a whitespace-only owner reads as nobody "
+          "but keeps the declaring tag",
+          owner_of({"meta": {"areas": {"a": {"owner": " jane "}}}}, {"area": "a"})
+          == ("jane", "a")
+          and owner_of({"meta": {"areas": {"a": {"owner": "  "}}}}, {"area": "a"})
+          == (None, "a"))
+    f, w = validate_registry({"api": {"root": "a", "owner": "jane@x.com"}})
+    check("o8 'owner' is a KNOWN key - it must not draw the unknown-key warning",
+          not f and not w, repr((f, w)))
+    f, _ = validate_registry({"api": {"root": "a", "owner": 3}})
+    check("o9 a non-string non-null owner is a finding",
+          len(f) == 1 and "owner" in f[0], repr(f))
+    f, _ = validate_registry({"api": {"root": "a", "owner": ""}})
+    check("o10 an empty-string owner is a finding - null is how you say nobody",
+          len(f) == 1 and "owner" in f[0] and "null" in f[0], repr(f))
+    f, w = validate_registry({"api": {"root": "a", "owner": None}})
+    check("o11 an explicit null owner is legal and quiet - and NOTHING here asks "
+          "the ledger whether the identity exists; that is the doctor's question",
+          not f and not w, repr((f, w)))
 
     # --- registry validation -----------------------------------------------------
     f, w = validate_registry(MAN["meta"]["areas"])

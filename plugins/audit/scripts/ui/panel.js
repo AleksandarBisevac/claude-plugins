@@ -72,7 +72,10 @@ function showTab(t,push){
   // from a background change, and these four are exclusive views, not filters.
   if(on)x.setAttribute('aria-current','true');else x.removeAttribute('aria-current');});
  for(const id of TABS)$('#'+id).classList.toggle('hidden',id!==t);
- if(push!==false){const h='#/'+t;if(location.hash!==h)history.replaceState(null,'',h);}
+ // fp: the tab writer carries the usage-filter fragment, so switching views
+ // does not throw away a filtered link somebody is about to copy.
+ if(push!==false){const uf=uFragment();const h='#/'+t+(uf?'!'+uf:'');
+  if(location.hash!==h)history.replaceState(null,'',h);}
  try{localStorage.setItem('audit-panel-tab',t);}catch(e){}
  // After the browser has laid the view out, not before it.
  requestAnimationFrame(()=>window.scrollTo({top:SCROLL[t]||0,behavior:'auto'}));}
@@ -83,18 +86,47 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.t))
 function tabsOverflow(){const n=document.querySelector('.tabs');
  if(n)n.classList.toggle('scrolls',n.scrollWidth>n.clientWidth+1);}
 addEventListener('resize',tabsOverflow);tabsOverflow();
-addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'');
+// Both readers split on the FIRST '!': the fragment behind it is the usage
+// filters' (fp), and `#/usage!m=opus` has to route like `#/usage` did.
+addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(t)&&t!==CURTAB)showTab(t,false);});
-function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'');
+function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(h))return h;
  try{const s=localStorage.getItem('audit-panel-tab');if(TABS.includes(s))return s;}catch(e){}
  return 'guards';}
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'');
  setTimeout(()=>t.className=t.className.replace('show','').trim(),2600);}
-function findingsBox(res){const box=el('div');
- if(res.findings&&res.findings.length)box.append(el('div',{class:'findings err'},'✗ '+res.findings.join(' · ')));
+// The save-result card's lifecycle (sv): success dissolves after SAVE_NOTE_MS,
+// a refusal stays until dismissed or until the next Save/Discard replaces the
+// slot, warnings persist. "✓ saved" used to sit in the slot for the rest of
+// the session — indistinguishable from a save that just landed.
+const SAVE_NOTE_MS=5000;
+function findingsBox(res){const box=el('div',{class:'savenote'});
+ if(res.findings&&res.findings.length){
+  // No timer on a refusal: a reader who glanced away must find the list still
+  // there. It leaves through its own ×, or when the next Save/Discard
+  // replaceChildren()s the slot this box lives in.
+  const card=el('div',{class:'findings err'});
+  card.append(el('div',{class:'nthead'},
+    el('b',{},res.locked?'Locked — nothing was written'
+      :'Save rejected — nothing was written'),
+    el('button',{class:'notex','aria-label':'dismiss','data-notex':'1',
+      type:'button',onclick:()=>card.remove()},'×')),
+   el('div',{class:'fbody'},'✗ '+res.findings.join(' · ')));
+  box.append(card);}
  if(res.warnings&&res.warnings.length)box.append(el('div',{class:'findings warn'},'! '+res.warnings.join(' · ')));
- if(res.ok&&!(res.warnings&&res.warnings.length))box.append(el('div',{class:'findings ok'},'✓ saved'));
+ if(res.ok&&!(res.warnings&&res.warnings.length)){
+  const okd=el('div',{class:'findings ok'},'✓ saved');
+  // The timer belongs to the NODE and is armed exactly once, here: renderPolicy
+  // carries these nodes across its own redraw (PNOTE), and a timer re-armed per
+  // render would reset the clock on every repaint. An opacity TRANSITION, not a
+  // keyframe — the screenshot tool's settle() waits out getAnimations(), and an
+  // idling keyframe would stall every shutter behind it. The fallback removal
+  // covers a card whose transition never fires (a hidden tab paints nothing).
+  setTimeout(()=>{okd.classList.add('fadeout');
+   okd.addEventListener('transitionend',()=>okd.remove(),{once:true});
+   setTimeout(()=>okd.remove(),600);},SAVE_NOTE_MS);
+  box.append(okd);}
  return box;}
 // ---------- who is writing, what exactly, and whether it was recorded ----------
 // Three questions the panel could not answer until now, and they are one flow: a
@@ -328,12 +360,20 @@ function saveOutcome(res,rows,what,slot){
  return diff;}
 
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
- USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;
+ USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;MITEMS=null;
  POLICY=await api('GET','/api/policy').catch(()=>null);PDRAFT=pClone(POLICY&&POLICY.stored);
+ // fp: restore the usage filters BEFORE the first renderUsage — the hash first
+ // (a share link is an instruction somebody sent), this repo's stored filters
+ // second, defaults last.
+ {const h=location.hash||'',bang=h.indexOf('!');
+  const got=bang>=0&&uApplyFragment(h.slice(bang+1));
+  if(!got){let s=null;try{s=localStorage.getItem(UFSTORE);}catch(e){}
+   if(s)uApplyFragment(s);}}
  renderViewer();renderSettings();renderComp();renderOver();renderUsage();renderPolicy();
  // Restored last, once every view has content to scroll to.
  showTab(initialTab());
- RUNSTATUS=STATE.runStatus||null;startRunPoll();startTipPlacement();}
+ RUNSTATUS=STATE.runStatus||null;FP=(RUNSTATUS||{}).fingerprint||null;
+ startRunPoll();startTipPlacement();}
 // ---------- shared: info hints + autocomplete ----------
 // The help text, the form's shape and the enum choices all arrive from Python —
 // see FIELD_HELP / SETTINGS_GROUPS / _cfg_enums in this file. They used to be a JS
@@ -629,12 +669,37 @@ function openHelpIndex(){return hShow({kind:'index'},false);}
 $('#helpbtn').onclick=()=>openHelpIndex();
 // A custom autocomplete: menu opens directly under the input, limited height,
 // clear items (name + source + description), keyboard + click select.
+// The filter reads name+description+source, not the name alone: "which skills
+// mention security" and "which models did the ledger meter" are questions the
+// name cannot answer. The haystack is built lazily and cached on the item (the
+// uHay pattern), so the second keystroke rebuilds nothing. In the usage combos
+// the description is a magnitude ("3.2M"), so a digit query matches token
+// counts too — uniformity beats a per-site opt-out.
 function comboWrap(inp,itemsFn,onChoose,onEnterFree){
  const wrap=el('div',{class:'combo'}),menu=el('div',{class:'combo-menu hidden'});
  let active=-1,shown=[];
  const close=()=>{menu.classList.add('hidden');active=-1;};
+ // Fixed-position, like placeTip: the menu used to hang absolutely inside the
+ // wrap, and any ancestor with its own overflow frame (.comptblwrap scrolls
+ // sideways by design) clipped it at the frame's edge. Placed at the input's
+ // own x where that fits, clamped into the viewport where it does not, and
+ // flipped above the input when the space below cannot hold it (390px is the
+ // width that decides all three).
+ const place=()=>{if(menu.classList.contains('hidden'))return;
+  const r=inp.getBoundingClientRect(),vw=document.documentElement.clientWidth,
+    vh=innerHeight,gut=8;
+  const w=Math.min(Math.max(r.width,180),vw-2*gut);
+  menu.style.width=w+'px';
+  menu.style.left=Math.min(Math.max(gut,r.left),vw-gut-w)+'px';
+  const mh=Math.min(menu.scrollHeight,240);
+  menu.style.top=(r.bottom+4+mh>vh-gut&&r.top-4-mh>gut
+    ?r.top-4-mh:r.bottom+4)+'px';};
+ menu.__place=place;   // re-placed by the document-level scroll listener below
  const render=()=>{const q=inp.value.trim().toLowerCase();
-  shown=itemsFn().filter(it=>it.name.toLowerCase().includes(q)).slice(0,60);
+  const all=itemsFn().filter(it=>{
+   if(it.h===undefined)it.h=(it.name+' '+(it.description||'')+' '+(it.source||'')).toLowerCase();
+   return it.h.includes(q);});
+  shown=all.slice(0,60);
   menu.textContent='';
   if(!shown.length){close();return;}
   shown.forEach((it,i)=>menu.append(el('div',{class:'combo-it'+(i===active?' active':''),
@@ -642,7 +707,12 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
     el('span',{class:'combo-n mono'},it.name),
     it.source?el('span',{class:'src badge'},it.source):null,
     it.description?el('span',{class:'combo-d'},it.description):null)));
-  menu.classList.remove('hidden');
+  // The footer is appended to the MENU and never enters `shown`: keyboard nav
+  // indexes that array, and a row that cannot be chosen must not be reachable
+  // by ArrowDown. The count is taken before the slice, so it is the truth.
+  if(all.length>shown.length)menu.append(el('div',{class:'combo-more'},
+    '…'+(all.length-shown.length)+' more — keep typing'));
+  menu.classList.remove('hidden');place();
   const a=menu.querySelector('.combo-it.active');if(a)a.scrollIntoView({block:'nearest'});};
  inp.setAttribute('autocomplete','off');
  inp.addEventListener('focus',render);
@@ -655,6 +725,12 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
   else if(e.key==='Escape'){close();}});
  inp.addEventListener('blur',()=>setTimeout(close,150));
  wrap.append(inp,menu);return wrap;}
+// One listener for every combo, registered once: a fixed-position menu does not
+// follow its input when something scrolls, so any open menu is re-placed. Only
+// menus still in the DOM are found, so re-rendered views leak nothing.
+['scroll','resize'].forEach(ev=>addEventListener(ev,()=>{
+ document.querySelectorAll('.combo-menu:not(.hidden)').forEach(m=>{
+  if(m.__place)m.__place();});},{capture:true,passive:true}));
 
 // ---------- Settings ----------
 // The view id stays `guards`: it is the hash route (#/guards), the screenshot name
@@ -742,6 +818,7 @@ function renderSettings(){const c=$('#guards');c.textContent='';
    discard.disabled=!n;
    discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';});
  const CUSTOM={
+  'planGate':()=>planGateField(cfg),
   'guardEdits.tokenVars':()=>tokenVarsField(cfg,d),
   'secretPatterns.extra':()=>secretPatternsField(cfg),
   'guardEdits.customRules':()=>customRulesField(cfg),
@@ -815,6 +892,30 @@ function scalarField(cfg,d,f,tip){
   else if(f.kind==='number')setPath(cfg,f.path,Number(v));
   else setPath(cfg,f.path,v);};
  return el('label',{class:'f'},klabel(f.label,f.path,tip),inp);}
+
+// The plan gate's tier, stated ONCE. The select's preset also reads the LEGACY
+// `enforce` flag (true presets 'deny'), and any change writes planGate while
+// deleting enforce — so a file that said the gate's tier twice leaves this form
+// saying it once. The PUT sends the whole object, and _config_changes echoes
+// BOTH writes at save time, honestly. Tier choices come from the validator's
+// own tuple (ENUMS.planGate — see _cfg_enums), like every other enum here.
+function planGateField(cfg){
+ const sel=el('select',{id:fieldId('planGate')},
+   el('option',{value:''},'graded on evidence (default)'),
+   (ENUMS.planGate||[]).map(v=>el('option',{value:v},v)));
+ sel.value=cfg.planGate??(cfg.enforce===true?'deny':'');
+ const cap=el('div',{class:'mut small'});
+ const legacy=()=>{cap.textContent=
+   (cfg.planGate===undefined&&cfg.enforce===true)
+    ?'preset from the legacy enforce: true — saving rewrites it as planGate: "deny"'
+    :(cfg.planGate===undefined&&typeof cfg.enforce==='boolean')
+    ?'a legacy enforce key is in the file — any change here removes it'
+    :'';};
+ legacy();
+ sel.onchange=()=>{const v=sel.value;
+  if(v)setPath(cfg,'planGate',v);else delPath(cfg,'planGate');
+  delPath(cfg,'enforce');legacy();};
+ return el('div',{class:'f'},sel,cap);}
 
 // The three defaults are ACTIVE while this list is empty, and vanish the moment it
 // is not — `_config.token_vars` returns the configured list only when it is
@@ -963,16 +1064,90 @@ function pricingField(cfg,d){
         else delPath(cfg,'usage.pricing');draw();}},'reset'):null)));});
   tbl.append(tb);wrap.append(el('div',{class:'ptblwrap'},tbl));
   const add=el('input',{placeholder:'add a model id…'});
+  const addModel=v=>{const o=cur();o[v]=o[v]||{};
+   setPath(cfg,'usage.pricing',o);add.value='';draw();};
   add.addEventListener('keydown',e=>{if(e.key!=='Enter'||!add.value.trim())return;
-   const o=cur();o[add.value.trim()]=o[add.value.trim()]||{};
-   setPath(cfg,'usage.pricing',o);add.value='';draw();});
-  wrap.append(el('div',{class:'row'},add));
+   addModel(add.value.trim());});
+  // close() BEFORE addModel: draw() rebuilds this whole box, menu included.
+  wrap.append(el('div',{class:'row'},comboWrap(add,modelItems,(name,close)=>{
+   close();addModel(name);})));
   wrap.append(el('p',{class:'blurb'},'Empty means the shipped rate shown in the box, '
    +'so only what you change is written. An unrecognised model id falls back to the '
    +'longest matching prefix and then to _default, which is priced at the top tier '
    +'on purpose: over-stating spend is the safer error for a cost display.'));};
  draw();return wrap;}
 // ---------- Composition ----------
+// ---------- model suggestions (mc) ----------
+// One union, three sources, each named: the models the MANIFEST already routes
+// to, the ids the RATE TABLE prices, and what the LEDGER has actually metered.
+// The badge is the point — a model only one source spells is usually one slip
+// from its cousins, and the validator cannot arbitrate that (it is an offline
+// shape-checker with no ledger and no config), so the cross-source view lives
+// here. A name in several sources keeps its most local badge: manifest first,
+// then rates, then ledger.
+let MITEMS=null;
+function modelItems(){
+ if(MITEMS)return MITEMS;
+ const out=new Map();
+ const add=(name,source,description)=>{
+  if(name&&!out.has(name))out.set(name,{name,source,description});};
+ const comp=(STATE&&STATE.composition)||{phases:[],tasks:[]};
+ const useT={},useP={};
+ (comp.tasks||[]).forEach(t=>{if(t.model)useT[t.model]=(useT[t.model]||0)+1;});
+ (comp.phases||[]).forEach(p=>{if(p.reviewModel)useP[p.reviewModel]=(useP[p.reviewModel]||0)+1;});
+ [...new Set([...Object.keys(useT),...Object.keys(useP)])].sort().forEach(m=>{
+  const bits=[];
+  if(useT[m])bits.push(useT[m]+' task(s)');
+  if(useP[m])bits.push(useP[m]+' review(s)');
+  add(m,'manifest','used by '+bits.join(', '));});
+ const rates=Object.assign({},(((STATE||{}).defaults||{}).usage||{}).pricing||{},
+   (((STATE||{}).config||{}).usage||{}).pricing||{});
+ Object.keys(rates).sort().forEach(m=>{
+  if(m==='_default')return;
+  const r=rates[m]||{};
+  add(m,'rates','$'+(r.in??'?')+' in / $'+(r.out??'?')+' out per MTok');});
+ if(USAGE&&USAGE.facts&&USAGE.facts.length){
+  const tot=new Map();
+  for(const f of USAGE.facts)tot.set(f[F.model],(tot.get(f[F.model])||0)+f[F.tokens]);
+  [...tot.keys()].sort().forEach(m=>{
+   if(m)add(m,'ledger',uTok(tot.get(m))+' tokens in this ledger');});}
+ return (MITEMS=[...out.values()]);}
+// One slip apart: case-insensitively equal but spelled differently, or one
+// substitution / insertion / deletion / adjacent transposition away — the same
+// four typo shapes validate-manifest's md warning reads, spelled here a second
+// time only because this half runs in a browser and that one runs offline.
+function mdNear(a,b){if(a===b)return false;
+ const x=a.toLowerCase(),y=b.toLowerCase();
+ if(x===y)return true;
+ if(Math.abs(x.length-y.length)>1)return false;
+ if(x.length===y.length){const d=[];
+  for(let i=0;i<x.length;i++)if(x[i]!==y[i])d.push(i);
+  if(d.length===1)return true;
+  return d.length===2&&d[1]===d[0]+1&&x[d[0]]===y[d[1]]&&x[d[1]]===y[d[0]];}
+ const s=x.length<y.length?x:y,l=x.length<y.length?y:x;
+ let i=0,j=0,used=false;
+ while(i<s.length){if(s[i]===l[j]){i++;j++;continue;}
+  if(used)return false;used=true;j++;}
+ return true;}
+// The three-source half of the typo check: a model the manifest spells that NO
+// other source knows, one slip from a name the rates or the ledger do know.
+// Non-blocking by design — the panel cannot know which spelling is intended,
+// only that two sources disagree by one slip.
+function modelHints(){
+ const manifest=new Set(),other=new Set();
+ const comp=(STATE&&STATE.composition)||{phases:[],tasks:[]};
+ (comp.tasks||[]).forEach(t=>{if(t.model)manifest.add(t.model);});
+ (comp.phases||[]).forEach(p=>{if(p.reviewModel)manifest.add(p.reviewModel);});
+ const rates=Object.assign({},(((STATE||{}).defaults||{}).usage||{}).pricing||{},
+   (((STATE||{}).config||{}).usage||{}).pricing||{});
+ Object.keys(rates).forEach(m=>{if(m!=='_default')other.add(m);});
+ if(USAGE&&USAGE.facts)USAGE.facts.forEach(f=>{if(f[F.model])other.add(f[F.model]);});
+ const out=[];
+ [...manifest].sort().forEach(m=>{
+  if(other.has(m))return;              // spelled the same somewhere real
+  const near=[...other].filter(o=>mdNear(m,o)).sort();
+  if(near.length)out.push({model:m,near:near[0]});});
+ return out;}
 function skillPicker(current,onChange){
  const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)'});
  inp.addEventListener('input',()=>onChange(inp.value.trim()||null));
@@ -998,6 +1173,7 @@ const COMPF={q:'',status:'',needs:false,open:{},apply:null};
 function openInComp(pid){COMPF.q=pid;COMPF.status='';COMPF.needs=false;COMPF.open[pid]=true;
  if(COMPF.apply)COMPF.apply();showTab('comp');}
 function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.composition;
+ MITEMS=null;   // STATE may have moved under us (save re-render, disk refresh)
  const patch={meta:{},phases:{},tasks:{}};
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,
    {comp:'reviewSkill',label:'Phase sign-off review skill'}));
@@ -1019,6 +1195,12 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  const expandBtn=el('button',{class:'btn small',type:'button'},'expand all');
  const count=el('span',{class:'count',style:'margin-left:auto'});
  tcard.append(el('div',{class:'comptools'},q,el('span',{class:'filtlbl'},'phase:'),statusBar,needsBtn,expandBtn,count));
+ // mc: the three-source near-miss hint (see modelHints). A note, not a gate.
+ modelHints().slice(0,3).forEach(h=>tcard.append(
+  el('div',{class:'mut small','data-mdhint':h.model},
+   'model "'+h.model+'" is spelled only in this manifest; the rate table / '
+   +'ledger know "'+h.near+'" — one slip apart. A hint, not a gate: if "'
+   +h.model+'" is intended, it meters at _default rates until it is priced.')));
  const tbody=el('tbody');
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
    // The two editable columns carry the reference for the whole column. A ⓘ per
@@ -1032,8 +1214,14 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  comp.phases.forEach(ph=>{
   const tasks=byPhase[ph.id]||[];
   const rev=el('input',{value:ph.reviewModel??'',placeholder:'review model'});
-  rev.oninput=()=>{patch.phases[ph.id]={reviewModel:rev.value.trim()||null};};
-  rev.onclick=e=>e.stopPropagation();
+  const setRev=v=>{patch.phases[ph.id]={reviewModel:v||null};};
+  rev.oninput=()=>setRev(rev.value.trim());
+  const revCombo=comboWrap(rev,modelItems,(name,close)=>{
+    rev.value=name;setRev(name);close();});
+  // The STOP moved from the input to its combo WRAPPER: the phase row toggles
+  // on click, and the combo's menu is part of the same control — a click that
+  // chooses a model must not also collapse the phase under the menu.
+  revCombo.onclick=e=>e.stopPropagation();
   const pr=el('tr',{class:'phase','data-status':ph.status||''});
   pr.append(el('td',{colspan:'5'},el('div',{class:'phtd'},
     el('span',{class:'tri'}),el('span',{class:'mono'},ph.id||''),el('strong',{},ph.title||''),
@@ -1041,19 +1229,23 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
     el('span',{class:'st','data-status':ph.status||''},label(ph.status)),
     el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
     el('span',{class:'comp-review'},flabel('review',MDESC.phaseReviewModel,
-      {comp:'phaseReviewModel',label:'Phase review model'}),rev))));
+      {comp:'phaseReviewModel',label:'Phase review model'}),revCombo))));
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
   tbody.append(pr);
   const taskEls=[];
   tasks.forEach(t=>{
    const tp={};const model=el('input',{value:t.model??'',placeholder:'—'});
-   model.oninput=()=>{tp.model=model.value.trim()||null;patch.tasks[t.id]=tp;};
+   const setModel=v=>{tp.model=v||null;patch.tasks[t.id]=tp;};
+   model.oninput=()=>setModel(model.value.trim());
+   // mc: choosing from the menu writes the SAME patch the keystroke writes.
+   const modelCombo=comboWrap(model,modelItems,(name,close)=>{
+     model.value=name;setModel(name);close();});
    const getSkills=()=>tp.skills!==undefined?tp.skills:(t.skills||[]);
    const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(COMPF.needs)refresh();});
    const tr=el('tr',{class:'task','data-status':t.status||''});
    tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle',title:t.title||''},t.title||''),
      el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
-     el('td',{class:'tmodel'},model),el('td',{class:'tskills'},chips));
+     el('td',{class:'tmodel'},modelCombo),el('td',{class:'tskills'},chips));
    tbody.append(tr);
    taskEls.push({id:t.id||'',title:t.title||'',tr,getSkills});
   });
@@ -1205,12 +1397,27 @@ function manifestFindingsBox(n,list){
 // Stops while the tab is hidden. A backgrounded panel polling a colleague's laptop
 // every few seconds forever is the kind of thing people notice in a battery graph
 // and never forgive.
-let RUNSTATUS=null, RUNPOLL=null;
-function runStatusKey(rs){return JSON.stringify(rs&&{i:rs.index,p:rs.phases});}
+let RUNSTATUS=null, RUNPOLL=null, FP=null;
+// gt: the gate block IS in the key — a fresh gate event or a bypass arming
+// repaints Overview from the payload the poll already fetched. The
+// fingerprint stays OUT (it hands off to refreshFromDisk; the D9 rule).
+function runStatusKey(rs){return JSON.stringify(rs&&{i:rs.index,p:rs.phases,g:rs.gate});}
 async function pollRunStatus(){
  if(document.hidden)return;
  try{
   const next=await api('GET','/api/runstatus');
+  // lv: the fingerprint is the disk's change stamp, and it deliberately does
+  // NOT enter runStatusKey — the poll itself still never refetches full state
+  // (the D9 rule). A moved stamp hands off to refreshFromDisk (defined past
+  // the Overview marker), which does. Deferred while any dialog is open — the
+  // browse table holds references into the old USAGE.facts and a confirm is
+  // mid-decision — and FP stays put, so the poll after the dialog closes
+  // picks the change up rather than swallowing it.
+  const fp=next.fingerprint;
+  if(fp&&fp!==FP){
+   if(FP===null)FP=fp;
+   else if(!document.querySelector('dialog[open]')){FP=fp;refreshFromDisk();}
+  }
   if(runStatusKey(next)===runStatusKey(RUNSTATUS))return;   // no repaint on no change
   RUNSTATUS=next;
   if(!$('#over').classList.contains('hidden'))renderOver();
@@ -1232,6 +1439,55 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollRunSta
 // The filter state lives OUT here for the same reason COMPF does: the 5s run-status
 // poll repaints this view, so a filter held in the render closure would be wiped by
 // a badge update the reader never asked for, five seconds after they set it.
+
+// ---------- lv: out-of-band change handling ----------
+// Defined BELOW the Overview marker on purpose: the D9 selftest slices this
+// file's source from pollRunStatus to that marker and asserts the poll path
+// never touches renderSettings — the full refetch lives out here, reached
+// only through the fingerprint hand-off in pollRunStatus.
+function staleNote(id){const slot=$('#'+id+' .findings-slot');
+ if(!slot||slot.querySelector('[data-stale]'))return;
+ slot.append(el('div',{class:'findings warn','data-stale':id},
+  'The file changed on disk while this form holds unsaved edits. Save stays '
+  +'safe — what was applied is echoed back and compared — and Discard now '
+  +'reloads the file as it is on disk.'));}
+async function refreshFromDisk(){
+ // Dirtiness is judged BEFORE the state swap: the EDITS closures compare each
+ // form against STATE, and a swapped STATE would misjudge every open form.
+ const dirty={guards:editRows('guards').length>0,comp:editRows('comp').length>0,
+   policy:editRows('policy').length>0};
+ const y=window.scrollY;
+ try{
+  STATE=await api('GET','/api/state');
+  USAGE=await api('GET','/api/usage').catch(()=>USAGE);
+  BANDS=null;MITEMS=null;
+  const pol=await api('GET','/api/policy').catch(()=>null);
+  renderViewer();
+  // Only CLEAN views re-render: renderComp resets its patch (:renderComp) and
+  // renderSettings reclones cfg, so re-rendering a dirty one would eat the
+  // human's edits. A dirty view keeps them and gets the persistent notice —
+  // the applied-diff echo already covers the conflicting-save endgame.
+  // The findings-slot NODES are carried across the re-render (the PNOTE move):
+  // an own save moves the disk stamp too, and the refresh it triggers must not
+  // eat the "saved" card whose 5s clock belongs to the node, or the refusal
+  // card someone has not read yet.
+  const reRender=(id,fn)=>{const slot=$('#'+id+' .findings-slot');
+   const keep=slot?[...slot.childNodes]:[];
+   fn();
+   const s2=$('#'+id+' .findings-slot');
+   if(s2&&keep.length)s2.append(...keep);};
+  if(!dirty.guards)reRender('guards',renderSettings);else staleNote('guards');
+  if(!dirty.comp)reRender('comp',renderComp);else staleNote('comp');
+  if(pol){POLICY=pol;
+   if(!dirty.policy){PDRAFT=pClone(POLICY&&POLICY.stored);
+    reRender('policy',renderPolicy);}
+   else staleNote('policy');}
+  renderOver();
+  renderUsage();
+ }catch(e){/* a stale view beats a dead panel */}
+ // The Usage chart remounts on its own rAF; put the reader back where they were.
+ requestAnimationFrame(()=>window.scrollTo(0,y));}
+
 const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan'};
 // Nothing-to-see-first: the statuses that need a human come before the ones that
 // do not, in the strips and in the status sort. Plan order is still the default —
@@ -1378,6 +1634,39 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  count.textContent=ovAnyFilter()?(ordered.length+' / '+r.phases.length+' phases')
    :(r.phases.length+' phases · '+r.tasks.total+' tasks');
  c.append(card);
+
+ // --- plan gate (gt, v0.34 B3) ---------------------------------------------------
+ // The tier the gate is in, WHY (server-computed by the hooks' own functions —
+ // never re-derived here), whether a single-use bypass is armed, and the tail
+ // of the gate events feed. The block rides /api/runstatus and is part of
+ // runStatusKey, so a fresh verdict repaints this card within one poll.
+ const g=rs.gate;
+ if(g){
+  const gcard=el('div',{class:'card',id:'gatecard'});
+  gcard.append(h2h('Plan gate',
+    'The plan-first gate’s current tier, its source, and the newest verdicts '
+    +'it delivered (from .claude/logs/plan-gate-events.jsonl). Deny and ask come '
+    +'from require-plan/guard-secrets-read; the bypass rows from #no-plan.'));
+  const strip=el('div',{class:'ovstrip'},
+    el('span',{class:'st','data-status':g.mode||'','data-gate-tier':g.mode||''},label(g.mode)),
+    el('span',{class:'mut'},g.source||''));
+  if(g.bypassArmed)strip.append(el('span',{class:'badge held','data-bypass-armed':'1',
+    title:'a single-use bypass (#no-plan) is armed and unexpired in some session — '
+    +'the next non-trivial edit there rides it'},'⚑ bypass armed'));
+  gcard.append(strip);
+  const evs=g.events||[];
+  if(!evs.length)gcard.append(el('div',{class:'mut'},
+    'No gate events yet — verdicts land here as they happen.'));
+  else{const tb=el('tbody');
+   evs.forEach(e=>tb.append(el('tr',{},
+     el('td',{class:'mono'},String(e.ts||'').replace('T',' ').replace('Z','')),
+     el('td',{},el('span',{class:'badge','data-ev':e.event||''},e.event||'')),
+     el('td',{class:'mono'},e.file||''),
+     el('td',{class:'d'},e.reason||''))));
+   gcard.append(el('div',{class:'regtblwrap'},el('table',{class:'regtbl'},
+     el('thead',{},el('tr',{},el('th',{},'when'),el('th',{},'event'),
+       el('th',{},'file'),el('th',{},'why'))),tb)));}
+  c.append(gcard);}
 
  // --- ready now ----------------------------------------------------------------
  const tById={};tasks.forEach(t=>{tById[t.id]=t;});
@@ -1963,7 +2252,66 @@ function setF(dim,val){
  if(dim!=='day')SHOWN[dim]=TOP;      // a new scope starts from the top again
  renderUsage();}
 function clearAll(){DIMS.forEach(d=>UF[d]='');UF.range='all';UF.bin='auto';UORDER=[];
+ // Cleared HERE and not left to the render's persist pass: the pin for this
+ // lives inside this function's own slice (the F-D1 lesson — a pin outside
+ // the function it vouches for vouches for nothing).
+ try{localStorage.removeItem(UFSTORE);}catch(e){}
+ syncUFHash('');
  DIMS.forEach(d=>{if(d in SHOWN)SHOWN[d]=TOP;});renderUsage();}
+
+// ---------- filter persistence (fp) ----------
+// A filtered Usage view is a LINK and it survives a reload. The grammar is
+// `#/<tab>!k=v&…`: the tab route keeps the slot it always had and the filters
+// ride behind the first `!` — the same marker the report uses to keep its
+// filter fragment out of its own nav's way. Keys mirror the report's where
+// the two surfaces overlap (m, au, a, day as from/to) so a habit learned on
+// one transfers; ph/tk/ag/at/q are panel dimensions, r/b the range and bin
+// knobs. UORDER is rebuilt from parameter ORDER, so Esc pops filters in the
+// sequence they were applied even after a reload. SHOWN depths are session
+// furniture and deliberately not carried. The store is keyed per PROJECT —
+// filters describe one repo's plan; the theme and the active tab stay global
+// on purpose (they describe the reader, not the repo).
+const UFKEY={model:'m',author:'au',area:'a',phase:'ph',task:'tk',agent:'ag',attr:'at',q:'q'};
+const UFDIM={};for(const d in UFKEY)UFDIM[UFKEY[d]]=d;
+const UFSTORE='audit-panel-uf:'+PROJECT;
+function uFragment(){
+ const parts=[];
+ const put=(k,v)=>{if(v)parts.push(k+'='+encodeURIComponent(v));};
+ UORDER.forEach(d=>{
+  if(d==='day'){const p=uDayPair();put('from',p[0]);put('to',p[1]);}
+  else put(UFKEY[d],UF[d]);});
+ if(UF.range!=='all')put('r',UF.range);
+ if(UF.bin!=='auto')put('b',UF.bin);
+ return parts.join('&');}
+function uApplyFragment(frag){
+ let any=false;
+ (frag||'').split('&').forEach(pair=>{
+  if(!pair)return;
+  const i=pair.indexOf('='),k=i<0?pair:pair.slice(0,i);
+  let v=i<0?'':pair.slice(i+1);
+  try{v=decodeURIComponent(v);}catch(e){v='';}
+  if(!v)return;
+  const d=UFDIM[k];
+  if(d){UF[d]=v;UORDER=UORDER.filter(x=>x!==d);UORDER.push(d);any=true;return;}
+  if(k==='from'||k==='to'){
+   const cur=(UF.day||'').split('..'),a=k==='from'?v:(cur[0]||''),
+     b=k==='to'?v:(cur[1]||cur[0]||'');
+   UF.day=(a||b)?(a===b?a:a+'..'+b):'';
+   if(UF.day&&!UORDER.includes('day'))UORDER.push('day');
+   any=true;return;}
+  if(k==='r'&&['7','30','90','365'].includes(v)){UF.range=v;any=true;return;}
+  if(k==='b'&&['day','week','month'].includes(v)){UF.bin=v;any=true;}});
+ return any;}
+// Empty filters take the fragment OFF (the report's own syncHash rule): a
+// bare `#/usage` must not grow a trailing `!`.
+function syncUFHash(frag){
+ const h='#/'+(CURTAB||initialTab())+(frag?'!'+frag:'');
+ try{if(location.hash!==h)history.replaceState(null,'',h);}catch(e){}}
+function persistUF(){
+ const frag=uFragment();
+ try{if(frag)localStorage.setItem(UFSTORE,frag);
+  else localStorage.removeItem(UFSTORE);}catch(e){}
+ syncUFHash(frag);}
 
 // Chart dimension is DERIVED: scoping to one author makes the interesting split
 // their models. Nothing stores "which level am I on".
@@ -2639,6 +2987,13 @@ function uPerson(){
    .map(k=>split[k]+' '+k.replace('_',' '));
  if(parts.length)out.push(el('div',{class:'mut small'},
    'Their touched tasks: '+parts.join(' - ')+'.'));
+ // Advisory ownership (v0.34 D3): the areas whose meta.areas owner IS this
+ // person, joined against the VALUES of the server-shipped areaOwners map.
+ // A label, not an assignment - the same claim the manifest makes, no more.
+ const owned=Object.entries(USAGE.areaOwners||{})
+   .filter(([,o])=>o===who).map(([t])=>t).sort();
+ if(owned.length)out.push(el('div',{class:'mut small','data-owns':owned.join(',')},
+   'owns: '+owned.join(', ')+' (advisory - meta.areas owner, not an assignee)'));
  return out;}
 
 // --- cost bands ------------------------------------------------------------------
@@ -2831,6 +3186,7 @@ function openBrowse(dim,title,facts){
  search.focus();}
 
 function renderUsage(){const c=$('#usage');
+ persistUF();  // fp: every filter change repaints this tab, so this one call is the write-through
  // Every filter change repaints this whole tab — and a filter change is exactly
  // what typing in the search box IS. Without this, the third letter of a five
  // letter search goes into a box that no longer exists, and the caret with it.
@@ -2944,6 +3300,10 @@ function renderUsage(){const c=$('#usage');
      onchange:e=>setF('area',e.target.value)});
    sel.append(el('option',{value:''},'all areas ('+vals.length+')'));
    vals.forEach(v=>{const o=el('option',{value:v},v);
+    // The advisory owner rides as a native tooltip - visible on hover,
+    // silent for tags with no declared owner (and for 'untagged').
+    const ow=(USAGE.areaOwners||{})[v];
+    if(ow)o.title='owner: '+ow;
     if(UF.area===v)o.selected=true;sel.append(o);});
    r2.append(sel);}}
  // An absolute window, in the same UF.day grammar the chart's click writes.

@@ -305,6 +305,15 @@ def rollup(manifest, findings, warnings, usage=None):
             g["phases"] += 1
             g["done"] += e["done"]
             g["total"] += e["total"]
+    # The advisory owner (v0.34 D3), only for areas that DECLARE the key - no
+    # key means no claim, and an explicit null is carried as null ("nobody"),
+    # the same distinction _areas.owner_of draws.
+    reg = _areas.registry(manifest)
+    for tag, g in areas.items():
+        entry = reg.get(tag) or {}
+        if "owner" in entry:
+            o = entry.get("owner")
+            g["owner"] = o.strip() if isinstance(o, str) and o.strip() else None
     props = [x for x in (manifest.get("proposals") or []) if isinstance(x, dict)]
     out = {
         "valid": not findings,
@@ -661,19 +670,25 @@ def _area_lines(au, summary):
         return []
     phases = [p for p in (summary.get("phases") or []) if isinstance(p, dict)]
     untagged = [p for p in phases if not p.get("area")]
-    rows = [(tag, g.get("phases", 0), g.get("done", 0), g.get("total", 0))
+    rows = [(tag, g.get("phases", 0), g.get("done", 0), g.get("total", 0),
+             g.get("owner"))
             for tag, g in sorted(areas.items())]
     if untagged:
         rows.append(("untagged", len(untagged),
                      sum(p.get("done", 0) for p in untagged),
-                     sum(p.get("total", 0) for p in untagged)))
+                     sum(p.get("total", 0) for p in untagged), None))
     out = ["", "  BY AREA  %d tag(s) - %d of %d phase(s) tagged"
            % (len(areas), len(phases) - len(untagged), len(phases))]
     w = max(len(r[0]) for r in rows)
-    for tag, n_ph, done, total in rows:
+    for tag, n_ph, done, total, owner in rows:
         frac = (float(done) / total) if total else 0.0
-        out.append("    %-*s  %2d phase(s)  %s %d/%d tasks"
-                   % (w, tag, n_ph, au.bar(frac, 12), done, total))
+        line = ("    %-*s  %2d phase(s)  %s %d/%d tasks"
+                % (w, tag, n_ph, au.bar(frac, 12), done, total))
+        if owner:
+            # The advisory owner, from the same rollup --json ships - the
+            # person to coordinate with, never an assignee.
+            line += " - %s" % owner
+        out.append(line)
     if any(len(p.get("area") or []) > 1 for p in phases):
         out.append("    note: a phase with several tags counts under each - "
                    "per-area sums can exceed the plan total")
@@ -711,11 +726,20 @@ def _proposal_lines(manifest, summary):
     Listed only while parked (status 'proposed'): a materialized proposal is
     already visible as its phase, and a dropped one is history. A payload-bearing
     row carries the copy-pasteable materialize command; a legacy free-form entry
-    (no payload) is listed without one — there is nothing to materialize."""
+    (no payload) is listed without one — there is nothing to materialize.
+
+    A status OUTSIDE that vocabulary (hand-written or older-init entries carry
+    things like "open") is neither parked nor history — it used to be silently
+    invisible here, which is the one failure a status surface must not have.
+    Such entries are counted in a legacy footer that points at
+    /audit:propose list, which reads them in full. The validator stays tolerant
+    of them on purpose; counting is this surface's job, judging is not."""
     props = [x for x in ((manifest or {}).get("proposals") or [])
              if isinstance(x, dict)]
     parked = [x for x in props if x.get("status") == "proposed"]
-    if not parked:
+    legacy = [x for x in props
+              if x.get("status") not in ("proposed", "materialized", "dropped")]
+    if not parked and not legacy:
         return []
     sp = summary.get("proposals") or {}
     out = ["", "  PROPOSALS  %d total - %d parked"
@@ -734,6 +758,9 @@ def _proposal_lines(manifest, summary):
         if ph.get("id"):
             row += "   materialize: /audit:propose materialize %s" % (x.get("id") or "?")
         out.append(row)
+    if legacy:
+        out.append("    +%d legacy proposal(s) (free-form) - /audit:propose list"
+                   % len(legacy))
     return out
 
 
@@ -1003,7 +1030,21 @@ def _selftest():
         findings, warnings = vm.validate(m)
         return rollup(m, findings, warnings)
 
+    # One id token, one check group. Two groups sharing a letter shadow each
+    # other in this output and in every grep of it (the `pp` collision shipped
+    # exactly that way, then `s` collided again between the render group and
+    # the submodule group). A parameterized check looping over fixtures reuses
+    # its id legitimately - from ONE call site - so the guard keys the token to
+    # where it was issued and fails only when a SECOND site claims it.
+    _check_sites = {}
+
     def check(name, ok, detail=""):
+        token = (name.split() or [name])[0]
+        site = sys._getframe(1).f_lineno
+        if _check_sites.setdefault(token, site) != site:
+            ok, detail = False, ("duplicate check id %r - already used at "
+                                 "line %d, rename one group"
+                                 % (token, _check_sites[token]))
         results.append(ok)
         print("%s %s%s" % ("PASS" if ok else "FAIL", name,
                            (" (%s)" % detail) if detail and not ok else ""))
@@ -1214,6 +1255,20 @@ def _selftest():
     check("sp6 a legacy parked entry lists without a materialize command",
           "modernize-build" in _txt_leg
           and "materialize modernize-build" not in _txt_leg)
+    # A status OUTSIDE the vocabulary (proposed|materialized|dropped) is the
+    # truly invisible class: hand-written or older-init entries carry statuses
+    # like "open", and the parked filter silently dropped them from a surface
+    # whose whole job is that nothing tracked goes unseen.
+    _fx_out = copy.deepcopy(_fx)
+    _fx_out["proposals"] = [{"id": "modernize-build", "name": "Modernize build",
+                             "status": "open"}]
+    _txt_out = render_status(_fx_out, rollup(_fx_out, [], []))
+    check("sp7 a proposal whose status is outside the vocabulary is surfaced "
+          "as a legacy footer, not silently dropped",
+          "PROPOSALS" in _txt_out
+          and "+1 legacy proposal(s) (free-form) - /audit:propose list"
+              in _txt_out,
+          _txt_out[-200:])
     _empty_p = {"meta": {"version": 2}, "phases": [],
                 "proposals": _fx_p["proposals"][:1]}
     _txt_ep = render_status(_empty_p, rollup(_empty_p, [], []))
@@ -1334,6 +1389,38 @@ def _selftest():
           all(ord(c) < 128 for c in _txt_bm))
     check("ba9 a fully done area draws a full bar - the same bar helper as the "
           "phase rows", "[############] 1/1 tasks" in _txt_bm, _txt_bm)
+    # ba10+ (v0.34 D3): the advisory owner reaches the two places this command
+    # answers from - the rollup (--json) and the BY AREA rows - from the SAME
+    # registry read, so the terminal and the machine cannot disagree about who
+    # to coordinate with.
+    _fx_bo = copy.deepcopy(_fx)
+    _fx_bo["phases"][0]["area"] = "backend"
+    _fx_bo["phases"][1]["area"] = "ops"
+    _fx_bo["meta"]["areas"] = {"backend": {"root": "src", "owner": "jane@x.com"},
+                               "ops": {"root": "infra"}}
+    _s_bo = rollup(_fx_bo, [], [])
+    _txt_bo = render_status(_fx_bo, _s_bo)
+    check("ba10 the rollup carries the registry owner per area, and only for "
+          "areas that DECLARE one - no key means no claim",
+          _s_bo["areas"]["backend"].get("owner") == "jane@x.com"
+          and "owner" not in _s_bo["areas"]["ops"], repr(_s_bo["areas"]))
+    check("ba11 the BY AREA row suffixes the owner after the figures, and an "
+          "ownerless area gets no suffix",
+          re.search(r"backend\s+1 phase\(s\)\s+\[[#.]+\] \d/\d tasks "
+                    r"- jane@x\.com", _txt_bo) is not None
+          and re.search(r"ops\s+1 phase\(s\)\s+\[[#.]+\] \d/\d tasks -",
+                        _txt_bo) is None, _txt_bo)
+    _fx_bn = copy.deepcopy(_fx_bo)
+    _fx_bn["meta"]["areas"]["backend"]["owner"] = None
+    _s_bn = rollup(_fx_bn, [], [])
+    check("ba12 an explicit null owner is 'nobody' - carried as null in the "
+          "rollup, no suffix in the render",
+          "owner" in _s_bn["areas"]["backend"]
+          and _s_bn["areas"]["backend"]["owner"] is None
+          and " tasks - " not in render_status(_fx_bn, _s_bn),
+          repr(_s_bn["areas"]))
+    check("ba13 the owner suffix stays pure ASCII like the rest of the render",
+          all(ord(c) < 128 for c in _txt_bo))
 
     # --- (b) budget as a gate --------------------------------------------------
     def _with_budgets(*phase_rows):
@@ -1525,8 +1612,10 @@ def _selftest():
           blob["tasks"]["total"] == 3 and blob["bugs"]["total"] == 1
           and blob["phases"][0]["done"] == 1 and blob["valid"] is True)
 
-    # (s) submodule conflict detection
-    check("s1 parse_gitmodules extracts paths", parse_gitmodules(
+    # (sm) submodule conflict detection (renamed from s1-s5, which collided
+    # with the render group's s1-s5 above - the guard in check() now trips
+    # on any repeat)
+    check("sm1 parse_gitmodules extracts paths", parse_gitmodules(
         '[submodule "vendor/child"]\n\tpath = vendor/child\n\turl = ../child\n'
         '[submodule "libs/x"]\n  path = libs/x\n  url = ../x\n')
         == ["vendor/child", "libs/x"])
@@ -1540,18 +1629,18 @@ def _selftest():
              "files": ["src/app.ts"]},
         ]}]}
     conf = submodule_conflicts(subm, ["vendor/child"])
-    check("s2 file inside submodule flagged", conf == [("P0.1", "vendor/child/src/foo.ts", "vendor/child")],
+    check("sm2 file inside submodule flagged", conf == [("P0.1", "vendor/child/src/foo.ts", "vendor/child")],
           repr(conf))
-    check("s3 path-boundary: child-other NOT flagged",
+    check("sm3 path-boundary: child-other NOT flagged",
           all(c[0] != "P0.2" for c in conf))
     # git_root prefix stripping: files are project-relative, submodules git-root-relative
     subm_gr = {"meta": {"version": 2}, "phases": [{"id": "P0", "title": "p",
         "status": "pending", "tasks": [{"id": "P0.1", "title": "t", "status": "pending",
         "files": ["test/vendor/child/src/foo.ts", "test/src/app.ts"]}]}]}
     conf_gr = submodule_conflicts(subm_gr, ["vendor/child"], git_root="test")
-    check("s4 gitRoot prefix stripped before match",
+    check("sm4 gitRoot prefix stripped before match",
           [c[0] for c in conf_gr] == ["P0.1"] and conf_gr[0][1].startswith("test/vendor"))
-    check("s5 :line suffix tolerated", submodule_conflicts(
+    check("sm5 :line suffix tolerated", submodule_conflicts(
         {"meta": {}, "phases": [{"id": "P", "title": "p", "status": "pending",
          "tasks": [{"id": "P.1", "title": "t", "status": "pending",
                     "files": ["vendor/child/a.ts:10-20"]}]}]}, ["vendor/child"]) != [])

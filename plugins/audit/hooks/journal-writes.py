@@ -69,8 +69,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
 
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
-_SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "scripts")
 
 # The pre-image cache. 5 MB is far above any real manifest; past it the slot
 # records the miss and the Post pass falls back to the generic summary.
@@ -107,13 +105,16 @@ def _author(root, cfg):
     The SAME function the usage ledger writes its author column with, so the
     journal's `who` and the ledger's `who` are one identity and `my spend` in the
     panel can line up with `my changes` here. Costs one `git config` read, and only
-    on a manifest or config write — never on an ordinary edit."""
+    on a manifest or config write — never on an ordinary edit.
+
+    The module arrives through `_config._ledger_lib()` (F-B2) — the same cached
+    one-load seam the journal and areas modules use. In production that saves
+    almost nothing (one call per hook process); the win is parity and the
+    selftests, which call this dozens of times per run."""
     try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "usage_ledger", os.path.join(_SCRIPTS, "usage_ledger.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        mod = _config._ledger_lib()
+        if mod is None:
+            return None
         mode = (_config.usage_cfg(cfg) or {}).get("authorMode") or "email"
         return mod.resolve_author(str(root), mode)
     except Exception:
@@ -451,6 +452,53 @@ def post_entries(data, *, cfg=None, root=None):
         return []
 
 
+# --- the F-F3 sidecar -----------------------------------------------------------
+def _sidecar_path(root, cfg, data):
+    """<stateDir>/bash-writes-plugin-<sid>.json -- where this session's plugin-made
+    journal writes are named. The `bash-writes-` prefix is already in
+    detect-plan-skip's GC tuple, so the sidecar ages out with the rest of the
+    session state."""
+    state_rel = str(cfg.get("stateDir") or _config.DEFAULTS["stateDir"])
+    sid = _SAFE_SID.sub("-", str(data.get("session_id") or "")).strip("-.")
+    sid = (sid or "no-session")[:40]
+    return os.path.join(str(root), state_rel,
+                        "bash-writes-plugin-%s.json" % sid)
+
+
+def record_plugin_write(root, cfg, data, written_path):
+    """Note a journal file THIS hook just appended to -- {"pluginWrote": [rel]}.
+
+    The append above put that file into `git status`, and guard-bash-writes'
+    next Bash pass used to blame the shell command for it (F-F3). That guard
+    reads this sidecar and skips exactly the rels named here.
+
+    ONE writer, this hook, on purpose: hooks registered on the SAME event run
+    in parallel, so folding this into guard-bash-writes' own state file
+    (`bash-writes-<sid>.json`) would be two processes writing one file with no
+    lock. A sidecar with a single writer has no race to lose. Returns the slot
+    path, or None -- never raises (it runs inside a PostToolUse hook)."""
+    try:
+        rel = _config.rel_path(root, str(written_path))
+        slot = _sidecar_path(root, cfg, data)
+        wrote = []
+        try:
+            with open(slot, "r", encoding="utf-8") as fh:
+                obj = json.load(fh)
+            if isinstance(obj, dict) and isinstance(obj.get("pluginWrote"),
+                                                    list):
+                wrote = [str(x) for x in obj["pluginWrote"]]
+        except Exception:
+            pass
+        if rel not in wrote:
+            wrote.append(rel)
+            os.makedirs(os.path.dirname(slot), exist_ok=True)
+            with open(slot, "w", encoding="utf-8") as fh:
+                json.dump({"pluginWrote": wrote}, fh)
+        return slot
+    except Exception:
+        return None
+
+
 # --- cli ----------------------------------------------------------------------
 def _journal_lib():
     return _config._load_journal_lib()
@@ -470,8 +518,11 @@ def main() -> None:
                 mod = _journal_lib()
                 if mod is not None:
                     root = str(_config.repo_root(data))
+                    cfg = _config.load(root)
                     for entry in entries:
-                        mod.append(root, entry)
+                        written = mod.append(root, entry)
+                        if written:
+                            record_plugin_write(root, cfg, data, written)
     except Exception:
         pass
     sys.exit(0)
@@ -580,6 +631,34 @@ def _selftest() -> int:
         check("c6 authorMode none is honoured here too - a project that refuses to "
               "record who spends must not have it recorded here instead",
               v == "journal" and e["actor"]["author"] is None, repr(e["actor"]))
+        # F-B2: the ledger module behind _author loads through _config's cache.
+        # Honest accounting: production calls _author once per hook process, so
+        # the cache is a selftest/parity win (suites drive it dozens of times,
+        # each uncached call re-executing a ~1800-line module) - plus the same
+        # single-module identity _journal_lib and _areas_lib already have.
+        _llib_fn = getattr(_config, "_ledger_lib", None)
+        _llib = _llib_fn() if _llib_fn else None
+        check("c7 _config caches the ledger module - the same object across "
+              "two calls, and _author's answer is resolve_author's answer",
+              _llib is not None and _llib is _llib_fn()
+              and _author(tmp, cfg) == _llib.resolve_author(str(tmp), "email"))
+        _saved_lib = dict(getattr(_config, "_LEDGER_LIB", None) or {})
+
+        class _StubLedger:
+            @staticmethod
+            def resolve_author(_root, mode):
+                return "stub-author:" + mode
+
+        try:
+            if hasattr(_config, "_LEDGER_LIB"):
+                _config._LEDGER_LIB.update({"tried": True, "mod": _StubLedger})
+            check("c8 _author reads THROUGH the cache - swap the cached module "
+                  "and the answer follows it",
+                  _author(tmp, cfg) == "stub-author:email")
+        finally:
+            if hasattr(_config, "_LEDGER_LIB"):
+                _config._LEDGER_LIB.clear()
+                _config._LEDGER_LIB.update(_saved_lib)
 
         # --- end to end: the hook actually writes a verifiable chain -----------
         # decide() alone proves the decision, not the wiring. Two writes go all the
@@ -899,6 +978,63 @@ def _selftest() -> int:
               ["manifest.edit", "task.complete"]
               and wrows[1].get("details", {}).get("taskId") == "P1.1",
               repr((wres, [r.get("action") for r in wrows])))
+
+        # --- j: the F-F3 sidecar -----------------------------------------------
+        # The append above put the journal file into git status, and
+        # guard-bash-writes' next Bash pass used to blame the shell command for
+        # it. After every successful append, main() records the written file's
+        # rel path in <stateDir>/bash-writes-plugin-<sid>.json -- ONE writer
+        # (this hook), because hooks on the same event run in parallel and a
+        # shared state file would race. guard-bash-writes reads it and skips
+        # exactly those rels; its k group drives THIS writer, so the two sides
+        # cannot drift about where the sidecar lives.
+        _wsd = os.path.join(wproj, ".claude", "state")
+        _wsides = ([f for f in os.listdir(_wsd)
+                    if f.startswith("bash-writes-plugin-")]
+                   if os.path.isdir(_wsd) else [])
+        _wjfiles = jmod.journal_files(jmod.journal_dir(wproj, cfg))
+        _wjrels = [os.path.relpath(p, wproj).replace(os.sep, "/")
+                   for p in _wjfiles]
+        _wslot = (os.path.join(_wsd, _wsides[0]) if _wsides else None)
+        try:
+            with open(_wslot, "r", encoding="utf-8") as fh:
+                _wobj = json.load(fh)
+        except Exception:
+            _wobj = {}
+        check("j1 the Post pass leaves a sidecar naming the journal file the "
+              "append landed in",
+              len(_wsides) == 1
+              and sorted(_wobj.get("pluginWrote") or []) == sorted(_wjrels),
+              repr((_wsides, _wobj, _wjrels)))
+        check("j2 the sidecar name carries the bash-writes- prefix, so the "
+              "existing state GC sweeps it",
+              bool(_wsides) and _wsides[0].startswith("bash-writes-")
+              and ("wire-1" in _wsides[0]))
+        wwrite("in_progress")
+        drive("PreToolUse")
+        wwrite("done")
+        drive("PostToolUse")
+        try:
+            with open(_wslot, "r", encoding="utf-8") as fh:
+                _wobj2 = json.load(fh)
+        except Exception:
+            _wobj2 = {}
+        check("j3 a second append to the same file does not duplicate the "
+              "entry",
+              sorted(_wobj2.get("pluginWrote") or []) == sorted(_wjrels),
+              repr(_wobj2))
+        check("j4 record_plugin_write never raises on garbage - it guards a "
+              "PostToolUse hook",
+              getattr(sys.modules[__name__], "record_plugin_write",
+                      lambda *a: None)(None, None, None, None) is None)
+        # A disabled journal appends nothing, so there is nothing to record.
+        _joff = os.path.join(tmp, "joff")
+        os.makedirs(os.path.join(_joff, "docs", "audit"), exist_ok=True)
+        _joffcfg = _config._deep_merge(cfg, {"journal": {"enabled": False}})
+        check("j5 a disabled journal leaves no sidecar (nothing was appended)",
+              post_entries(payload("Edit", "docs/audit/audit-plan.json",
+                                   sid="j5"), cfg=_joffcfg, root=_joff) == []
+              and not os.path.isdir(os.path.join(_joff, ".claude", "state")))
     finally:
         if prev_env is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

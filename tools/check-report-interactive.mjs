@@ -339,7 +339,10 @@ if (panelParts.length) {
   if (m.phases < 1 || m.phases > load.total) {
     failures.push(`FAIL a model chip narrows the table: got ${m.phases} of ${load.total}`);
   } else notes.push(`ok   a model chip narrows the table: ${m.phases} of ${load.total}`);
-  if (!/#!.*m=/.test(await page.evaluate(() => location.hash))) {
+  // Anchored on [!&] like the area checks below: /#!.*m=/ also matches the
+  // `m=` inside a `from=` date fragment, so a report that lost the model key
+  // but carried a date filter would pass this line with no m= param at all.
+  if (!/[!&]m=/.test(await page.evaluate(() => location.hash))) {
     failures.push(`FAIL the filtered view is a link: hash is "${await page.evaluate(() => location.hash)}"`);
   } else notes.push('ok   the filtered view is written into the URL');
 
@@ -402,7 +405,7 @@ if (await page.$('#audit-authors .fchip')) {
       failures.push(`FAIL the one visible cell is "${auOn.head}", the chip said "${auBefore.chip}"`);
     } else notes.push(`ok   author chip "${auBefore.chip}" leaves exactly one .smcell visible`);
   } else notes.push('ok   (fewer than two .smcell panels — the chip cannot narrow them; skipped that half)');
-  expect('the author view is a link (au= in the hash)', /#!.*au=/.test(auOn.hash), true);
+  expect('the author view is a link (au= in the hash)', /[!&]au=/.test(auOn.hash), true);
   if (!auOn.note.includes(auBefore.chip)) {
     failures.push(`FAIL the summary line names the selected author: got "${auOn.note}"`);
   } else notes.push(`ok   the summary line reads off the chip: "${auOn.note}"`);

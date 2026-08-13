@@ -92,11 +92,13 @@ FIELD_HELP = {
     "trivialLineThreshold":
         "The first file you touch in a session is free if the edit adds at most this "
         "many lines. Anything larger needs a plan.",
-    "enforce":
-        "Force the plan gate to DENY even with no manifest. Off by default, which "
-        "grades it on evidence: observe (no manifest) -> warn (a manifest, nothing "
-        "running) -> deny (a phase is in_progress). The secret guards are never "
-        "graded — they deny either way.",
+    "planGate":
+        "Pin the plan-first gate to one tier: observe records, warn advises, ask "
+        "holds each out-of-plan edit for your approval, deny refuses. On the "
+        "default it grades itself on evidence: observe (no manifest) -> warn (a "
+        "manifest, nothing running) -> deny (a phase is in_progress). Replaces "
+        "the legacy enforce flag - saving from here rewrites enforce as planGate. "
+        "The secret guards are never graded; they deny either way.",
     "exemptGlobs":
         "Globs whose edits skip the plan-first, TDD and shell-write guards — docs, "
         "tests, .claude/** and the manifest. Globs, not regexes: each one is matched "
@@ -229,8 +231,12 @@ SETTINGS_GROUPS = (
             {"path": "bypassKeyword", "label": "Bypass keyword", "kind": "text"},
             {"path": "trivialLineThreshold", "label": "Free first touch, in lines",
              "kind": "int", "min": 1},
-            {"path": "enforce", "label": "Always deny edits outside the plan",
-             "kind": "bool"},
+            # `custom` (planGateField in panel.js): a select whose preset also
+            # reads the LEGACY `enforce` flag, and whose change writes planGate
+            # while deleting enforce — one statement of the gate's tier. The
+            # enforce key itself keeps no control here; see _settings_exempt.
+            {"path": "planGate", "label": "How hard the gate pushes",
+             "kind": "custom"},
             {"path": "exemptGlobs", "label": "Paths the guards skip", "kind": "list",
              "placeholder": "glob…"},
         ),
@@ -354,7 +360,8 @@ def _cfg_enums():
     vc = _validate_config()
     return {"inProgressPolicy": list(vc.IN_PROGRESS_POLICY),
             "authorMode": list(vc.AUTHOR_MODES),
-            "strictManifestState": list(vc.STRICT_MANIFEST_STATE)}
+            "strictManifestState": list(vc.STRICT_MANIFEST_STATE),
+            "planGate": list(vc.PLAN_GATE_MODES)}
 
 
 # --- selftest ---------------------------------------------------------------
@@ -378,14 +385,21 @@ def _selftest():
                    "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
                    "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL}
     # `policy` is a root key with no control on this form, on purpose — the one
-    # exemption, and it is stated rather than silently subtracted. It is not a
-    # setting with a value; it is a rule set whose meaning is the verdict it
+    # kind of exemption, and it is stated rather than silently subtracted. It is
+    # not a setting with a value; it is a rule set whose meaning is the verdict it
     # produces for each installed capability, which is what /api/policy serves and
     # what the **Policy tab** renders, switch by switch. The exemption is pinned
     # below: it must name a key the validator actually knows, or it would silently
     # excuse nothing. (panel-server.py's own selftest confirms it is served by its
     # own endpoint — that needs the server's source, so it stays there.)
-    _settings_exempt = {"policy"}
+    #
+    # `enforce` (v0.34 B1) is exempt for the opposite reason: it IS editable from
+    # this form, through the planGate control — the select's preset reads the
+    # legacy flag, and saving rewrites it as planGate while deleting enforce. A
+    # second, dedicated checkbox would be two controls writing one gate, free to
+    # disagree about it. The check below pins that the planGate control exists,
+    # so this exemption cannot outlive the control that justifies it.
+    _settings_exempt = {"policy", "enforce"}
     _expected = {k for k in _vc.KNOWN_ROOT
                  if k not in _containers and k not in _settings_exempt}
     for _parent, _keys in _containers.items():
@@ -442,10 +456,21 @@ def _selftest():
           "areas" in _META_KEYS and "areas" in _META_API_ONLY
           and "areas" not in _PHASE_KEYS and "areas" not in _TASK_KEYS)
 
+    # The enforce exemption's justification, pinned: the planGate control is on
+    # the form, custom-rendered (planGateField owns the legacy-flag rewrite).
+    _pg = [f for g in SETTINGS_GROUPS for f in g["fields"]
+           if f["path"] == "planGate"]
+    check("enforce is exempt BECAUSE planGate's control edits it - that control "
+          "must exist, custom, or the exemption excuses a hole",
+          len(_pg) == 1 and _pg[0]["kind"] == "custom")
+
     # --- _cfg_enums --------------------------------------------------------------
     check("the enum choices ARE the validator's tuples, not a copy of them",
           set(_cfg_enums()["inProgressPolicy"]) == set(_vc.IN_PROGRESS_POLICY)
           and set(_cfg_enums()["authorMode"]) == set(_vc.AUTHOR_MODES))
+    check("the planGate tiers reach the form from the validator's own tuple, "
+          "in escalation order",
+          _cfg_enums()["planGate"] == list(_vc.PLAN_GATE_MODES))
     check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
           "with json.dumps)", json.dumps(_cfg_enums(), sort_keys=True))
 

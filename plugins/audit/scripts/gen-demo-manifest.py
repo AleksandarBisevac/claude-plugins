@@ -110,6 +110,31 @@ def _task_statuses(phase_status, n_tasks, rng):
     return ["pending"] * n_tasks           # blocked + pending phases: nothing started
 
 
+def _demo_areas():
+    """The `meta.areas` registry, advisory owners included (v0.34).
+
+    The owner identities are gen-demo-usage.py's own DEFAULT_AUTHORS, loaded from
+    that script rather than restated here — an owner the ledger has never seen is
+    exactly the mismatch /audit:doctor warns about, and this fixture exists to
+    show the join working. `infra` stays ownerless on purpose: the no-owner case
+    must render too. Every entry carries a root because the validator warns on a
+    rootless area and the selftest holds the fixture to zero warnings.
+    """
+    authors = _loader.load_script("gen-demo-usage.py",
+                                  modname="gen_demo_usage").DEFAULT_AUTHORS
+    blurb = {"backend": "Service and API passes",
+             "web": "Storefront web passes",
+             "mobile": "Mobile app passes",
+             "infra": "Build and deploy passes"}
+    out = {}
+    for i, tag in enumerate(AREAS):
+        entry = {"root": "src/%s" % tag, "description": blurb[tag]}
+        if tag != "infra":
+            entry["owner"] = authors[i % len(authors)]
+        out[tag] = entry
+    return out
+
+
 def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
     """Build an ASSEMBLED manifest dict (the sharded split happens on write)."""
     rng = random.Random(seed)
@@ -228,6 +253,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
             # defect there, not the renderer.
             "usage": {"ledgerDir": ".claude/usage", "showCost": True,
                       "pricingAsOf": "2026-08-06"},
+            "areas": _demo_areas(),
         },
         "phases": phases,
         "fileIndex": file_index,
@@ -427,6 +453,21 @@ def _selftest():
     check("a phase is gated behind another",
           any(p.get("blockedBy") for p in m["phases"]))
     check("area tags present", all(p.get("area") for p in m["phases"]))
+    # v0.34: the registry, with advisory owners. Owners are gen-demo-usage.py's
+    # own ledger authors — read from that script, never restated — so the panel's
+    # person header shows a real "owns:" line and doctor's owner-vs-ledger join
+    # has a true match. One area stays ownerless: the no-owner case must render.
+    used_tags = {p["area"] for p in m["phases"]}
+    reg = m["meta"].get("areas") or {}
+    ledger_authors = set(_loader.load_script(
+        "gen-demo-usage.py", modname="gen_demo_usage").DEFAULT_AUTHORS)
+    reg_owners = {k: v.get("owner") for k, v in reg.items() if "owner" in v}
+    check("meta.areas registers every tag the phases use",
+          used_tags <= set(reg), sorted(used_tags - set(reg)))
+    check("advisory owners are the ledger's own authors, on some areas "
+          "but not all",
+          bool(reg_owners) and set(reg_owners.values()) <= ledger_authors
+          and len(reg_owners) < len(reg), repr(reg_owners))
 
     # no wall-clock leaked in
     check("timestamps derive from the fixed base (no wall-clock)",

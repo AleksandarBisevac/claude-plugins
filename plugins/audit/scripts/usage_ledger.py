@@ -573,6 +573,12 @@ def _native(path):
     return os.path.normpath(path) if path else path
 
 
+def _home():
+    """The user's home directory — a seam, so the selftest can point the walk
+    guard in `find_ledger_dir` at a fixture home instead of the real one."""
+    return os.path.expanduser("~")
+
+
 def find_ledger_dir(manifest_path, rel=None, project_dir=None):
     """Locate the ledger for a manifest, or None when there isn't one.
 
@@ -582,6 +588,27 @@ def find_ledger_dir(manifest_path, rel=None, project_dir=None):
     other layout, and it fails DANGEROUSLY rather than loudly: pointed at
     `examples/acme-store/audit-plan.json` it resolves to the enclosing repo and
     silently renders THAT project's spend under the example's name.
+
+    The walk is bounded twice (F-E1):
+
+      * It stops at the first ancestor containing `.git` — directory OR file,
+        because worktrees and submodules mark themselves with a gitfile. A
+        manifest inside a repo either has its ledger inside that repo or has no
+        ledger; whatever sits above the repo root belongs to another project.
+      * It never answers with a path under `~/.claude` — Claude Code's own
+        global state, present on nearly every machine that ever ran it, which
+        made it exactly the confident-numbers-about-the-wrong-project failure
+        this function exists to avoid.
+
+    Verifying candidate rows' `repo` key against the manifest's project was
+    considered instead and rejected: the recorded repo path is a weak identity —
+    renaming or moving a checkout changes it, so that check would turn every
+    renamed clone's true ledger into a false negative. The bound keeps the
+    decision about WHERE a ledger may live, never about what its rows claim.
+
+    An explicit `project_dir` skips the walk and is answered as given, even
+    before the directory exists — the pre-first-run path is deliberate (it is
+    how doctor names where the ledger WOULD live).
 
     Returning None when nothing is found is deliberate. A missing ledger means the
     Usage section renders as nothing, which is honest; a guessed one means a report
@@ -597,12 +624,23 @@ def find_ledger_dir(manifest_path, rel=None, project_dir=None):
         here = os.path.dirname(os.path.abspath(manifest_path))
     except Exception:
         return None
+    try:
+        home_claude = os.path.realpath(os.path.join(_home(), ".claude"))
+    except Exception:
+        home_claude = None
     seen = set()
     while here and here not in seen:
         seen.add(here)
         candidate = os.path.join(here, rel)
         if os.path.isdir(candidate):
-            return _native(candidate)
+            real = os.path.realpath(candidate)
+            if home_claude is None or (real != home_claude and
+                                       not real.startswith(home_claude + os.sep)):
+                return _native(candidate)
+        # The repo boundary is tested AFTER the candidate, so a repo root
+        # holding both `.git` and the ledger still answers with the ledger.
+        if os.path.exists(os.path.join(here, ".git")):
+            return None
         here = os.path.dirname(here)
     return None
 
@@ -1740,6 +1778,56 @@ def _selftest():
                                  os.path.join(tmp, "proj")))):
             check("discover: %s returns a path in this platform's own separator"
                   % label, got == os.path.normpath(got))
+
+        # The walk is bounded by the repo itself (F-E1). Unbounded, a manifest
+        # inside a repo with no ledger walked PAST the repo root, found
+        # ~/.claude/usage -- the user's global Claude state, which exists on
+        # nearly every machine that ever ran Claude Code -- and rendered every
+        # project's spend under this one manifest's name.
+        fake_home = os.path.join(tmp, "home")
+        os.makedirs(os.path.join(fake_home, ".claude", "usage"), exist_ok=True)
+        with open(os.path.join(fake_home, ".claude", "usage", "2026-08.jsonl"),
+                  "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"v": 1, "tokens": 7}) + "\n")
+        repo = os.path.join(fake_home, "repo")
+        os.makedirs(os.path.join(repo, ".git"), exist_ok=True)  # a real clone
+        os.makedirs(os.path.join(repo, "docs", "audit"), exist_ok=True)
+        _real_home = globals().get("_home")
+        globals()["_home"] = lambda: fake_home
+        try:
+            check("discover: the walk stops at the repo root (.git dir) and "
+                  "never finds the HOME ledger above it",
+                  find_ledger_dir(os.path.join(repo, "docs", "audit", "m.json"),
+                                  ".claude/usage") is None)
+            # Worktrees and submodules mark the boundary with a FILE named
+            # .git; the ledger above such a checkout belongs to someone else.
+            parent = os.path.join(tmp, "parent")
+            os.makedirs(os.path.join(parent, ".claude", "usage"), exist_ok=True)
+            wt = os.path.join(parent, "wt")
+            os.makedirs(os.path.join(wt, "docs"), exist_ok=True)
+            with open(os.path.join(wt, ".git"), "w", encoding="utf-8") as fh:
+                fh.write("gitdir: /somewhere/else\n")
+            check("discover: a worktree's .git FILE is the same boundary",
+                  find_ledger_dir(os.path.join(wt, "docs", "m.json"),
+                                  ".claude/usage") is None)
+            # No .git anywhere on the way up: the home guard alone must
+            # refuse ~/.claude before the walk runs out of ancestors.
+            check("discover: outside any repo the walk still never answers "
+                  "with the user's own ~/.claude",
+                  find_ledger_dir(os.path.join(fake_home, "notes", "m.json"),
+                                  ".claude/usage") is None)
+        finally:
+            if _real_home is None:
+                del globals()["_home"]
+            else:
+                globals()["_home"] = _real_home
+        # The boundary must not shadow the repo's OWN ledger: the candidate
+        # is tested before the .git stop, so a root holding both still answers.
+        os.makedirs(os.path.join(tmp, "proj", ".git"), exist_ok=True)
+        check("discover: a repo root holding both .git and the ledger still "
+              "answers with the ledger",
+              find_ledger_dir(os.path.join(deep, "m.json"), ".claude/usage")
+              == os.path.join(tmp, "proj", ".claude", "usage"))
 
         check("cursor: lives outside stateDir, next to the ledger",
               os.path.isfile(os.path.join(ledger, ".cursors", "sess-1.json")))

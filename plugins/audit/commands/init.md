@@ -226,7 +226,8 @@ deferred and why, any open questions for the human, and the handoff: **next run
 and the handoff: `/audit:propose list`, then
 `/audit:propose materialize <id>|--all`. Add one note when everything was
 parked: *the plan gate stays in its advisory (warn) tier until a phase is
-materialized and running — same as any idle manifest; with `enforce: true` an
+materialized and running — same as any idle manifest; with `planGate: "deny"`
+(or legacy `enforce: true`) an
 empty-phases manifest denies out-of-plan edits (its fileIndex is empty), so
 materialize a phase before starting fix work.*
 

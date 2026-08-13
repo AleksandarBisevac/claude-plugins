@@ -12,14 +12,26 @@ repo's `.claude/audit.config.json` (loaded by _config.py) with safe defaults:
   manifestPath, exemptGlobs, trivialLineThreshold, stateDir, logsDir, bypassKeyword.
 
 Decision order (ALLOW = silent exit 0; BLOCK = permissionDecision "deny" JSON
-on stdout + exit 0 — the canonical PreToolUse protocol — PreToolUse only):
+on stdout + exit 0 — the canonical PreToolUse protocol — PreToolUse only;
+ASK = permissionDecision "ask" when planGate pins that tier):
   1. No file_path / unknown tool / parse error → ALLOW (never break legit work).
   2. Target matches an exempt glob (from config) → ALLOW.
-  3. Target belongs to a task whose status == "in_progress" in the manifest → ALLOW.
-  4. A single-use bypass is armed for this session → ALLOW.
+  3. Target belongs to a task whose status == "in_progress" in the manifest →
+     ALLOW. On the PostToolUse pass a covered edit may additionally carry the
+     ownership advisory (_owner_note): additionalContext, once per
+     session+area, never a verdict.
+  4. A single-use bypass is armed for this session (and not older than
+     BYPASS_TTL_SECONDS via its armedAtEpoch; a legacy slot without the field
+     has no TTL) → ALLOW.
   5. Trivial-edit allowance: the FIRST non-exempt code file in a session with
      change magnitude <= trivialLineThreshold → ALLOW. A 2nd distinct
-     non-exempt file, or a change over the threshold → BLOCK.
+     non-exempt file, or a change over the threshold → the gate's tier decides
+     (observe/warn/ask/deny — _config.plan_gate_mode).
+
+Every verdict past step 5 also drops one line into the gate events feed
+(_config.append_gate_event → <logsDir>/plan-gate-events.jsonl): deny and
+ask.shown on the Pre pass (a denial has no Post), everything else when the
+edit actually happened.
 
 "Change magnitude" is max(added lines, added chars / 200, removed lines) — a
 single-line minified blob and a large deletion both count as large.
@@ -55,7 +67,6 @@ import _config  # noqa: E402
 _rel_path = _config.rel_path
 _matches_exempt = _config.matches_exempt
 _strip_line_suffix = _config.strip_line_suffix
-_in_progress_files = _config.in_progress_files
 
 
 def _change_magnitude(tool: str, ti: dict) -> int:
@@ -149,6 +160,20 @@ def _deny_payload(msg: str) -> dict:
     }
 
 
+def _ask_payload(msg: str) -> dict:
+    """Canonical PreToolUse ask payload — the planGate:"ask" channel (the same
+    shape guard-edits' strict mode uses). Deliberately NOT deny: ask hands the
+    decision to the human's own prompt, once per edit. The dialog itself cannot
+    be driven by a selftest, so the payload SHAPE is the pinned contract."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": "[require-plan] " + msg,
+        }
+    }
+
+
 def _warn_payload(msg: str) -> dict:
     """Non-blocking advisory, delivered on the PostToolUse pass.
 
@@ -192,6 +217,90 @@ def _record_observed(state_dir: Path, session_id: str, rel: str, reason: str) ->
             json.dump(seen, fh)
     except Exception:
         pass
+
+
+def _owner_note(root, cfg, state_dir: Path, session_id: str, rel: str,
+                manifest_rel: str, entries) -> str:
+    """The ownership advisory for a COVERED edit (v0.34 D2), or None — which is
+    the answer almost always.
+
+    `meta.areas[tag].owner` is advisory by design: this note is the only thing
+    the hook does with it, it rides additionalContext on the Post pass, and it
+    can never change a verdict. Silence costs nothing and is the default in
+    every direction — no owner declared anywhere (the default-off: a manifest
+    that never says `owner` never pays past the map already in hand), an
+    explicit `owner: null` ("nobody owns this"), the author IS the owner, or
+    authorMode "none" (a project that refuses attribution is not nudged with
+    it). The gates run cheapest first so the one subprocess — resolving the
+    author the way journal-writes and the usage ledger do, `git config` under
+    usage.authorMode — is paid only when a real mismatch is still possible.
+
+    A mismatch is said ONCE per session+area (`owner-note-<sid>.json`, a state
+    file detect-plan-skip's GC prefixes sweep): the point is coordination, and
+    a nudge that repeats on every edit is a nudge nobody reads. Never raises.
+    """
+    try:
+        task_id = None
+        for e in entries or []:
+            tid = (e or {}).get("taskId")
+            if tid:
+                task_id = tid
+                break
+        if not task_id:
+            return None
+        # The phase comes from the ASSEMBLED manifest — under the sharded
+        # layout the index stubs carry no `area`, and an id-prefix convention
+        # ("P1.1 belongs to P1") is a naming accident, not a fact.
+        manifest = _config._load_manifest_assembled(Path(root) / manifest_rel)
+        if not isinstance(manifest, dict):
+            return None
+        phase = None
+        for ph in manifest.get("phases") or []:
+            if isinstance(ph, dict) and any(
+                    isinstance(t, dict) and t.get("id") == task_id
+                    for t in ph.get("tasks") or []):
+                phase = ph
+                break
+        if phase is None:
+            return None
+        areas = _config._areas_lib()
+        if areas is None or not hasattr(areas, "owner_of"):
+            return None
+        owner, tag = areas.owner_of(manifest, phase)
+        if not owner:
+            return None
+        note_file = state_dir / ("owner-note-%s.json" % session_id)
+        mentioned = []
+        try:
+            if note_file.exists():
+                with open(note_file, "r", encoding="utf-8") as fh:
+                    loaded = json.load(fh) or {}
+                if isinstance(loaded, dict):
+                    mentioned = [t for t in loaded.get("areas") or []
+                                 if isinstance(t, str)]
+        except Exception:
+            mentioned = []
+        if tag in mentioned:
+            return None
+        mod = _config._ledger_lib()
+        if mod is None:
+            return None
+        mode = (_config.usage_cfg(cfg) or {}).get("authorMode") or "email"
+        author = mod.resolve_author(str(root), mode)
+        if not author or author == owner:
+            return None
+        try:
+            _ensure_dir(state_dir)
+            with open(note_file, "w", encoding="utf-8") as fh:
+                json.dump({"areas": mentioned + [tag]}, fh)
+        except Exception:
+            pass
+        return ("heads-up, not a gate: %s belongs to phase %s (area '%s'), "
+                "whose owner is %s; you are recorded as %s. Fine to continue "
+                "- coordination is the point, say so in the handoff."
+                % (rel, phase.get("id") or "?", tag, owner, author))
+    except Exception:
+        return None
 
 
 # --- core decision ------------------------------------------------------------
@@ -279,31 +388,90 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
     if _matches_exempt(rel, exempt):
         return ("allow", "exempt path: %s" % rel)
 
-    # 3. covered by an in_progress task (exact match OR directory prefix match)
-    in_prog = _in_progress_files(root, manifest_rel)
-    if rel in in_prog or (rel + "/") in in_prog or any(
-        rel.startswith(f) for f in in_prog if f.endswith("/")
-    ):
-        return ("allow", "covered by in_progress task: %s" % rel)
-
     session_id = str(data.get("session_id", "") or "no-session")
 
-    # 4. single-use bypass — observed at Pre, consumed at Post
+    # 3. covered by an in_progress task (exact match OR directory prefix match).
+    #    A covered edit is allowed on every tier — but on the Post pass it may
+    #    still carry the ownership advisory (_owner_note): when the area this
+    #    task belongs to declares an `owner` who is not the recorded author, a
+    #    one-per-session-per-area heads-up rides additionalContext. Advisory
+    #    only: the verdict never hardens past "warn", and no gate event is
+    #    written — this is coordination, not a gate verdict.
+    tmap = _config.in_progress_task_map(root, manifest_rel)
+    covering = None
+    if rel in tmap:
+        covering = rel
+    elif (rel + "/") in tmap:
+        covering = rel + "/"
+    else:
+        for f in tmap:
+            if f.endswith("/") and rel.startswith(f):
+                covering = f
+                break
+    if covering is not None:
+        if commit_state:
+            note = _owner_note(root, cfg, sd, session_id, rel, manifest_rel,
+                               tmap.get(covering))
+            if note:
+                return ("warn", note)
+        return ("allow", "covered by in_progress task: %s" % rel)
+
+    # 4. single-use bypass — observed at Pre, consumed at Post. An armed slot
+    #    expires unused after BYPASS_TTL_SECONDS (via `armedAtEpoch`, written by
+    #    detect-plan-skip): older than that, it is treated as never armed — the
+    #    Pre pass falls through to the gate, and the Post pass deletes the slot
+    #    and logs the expiry. A legacy slot WITHOUT the field is honoured with
+    #    no TTL (fail-open; the 7-day state GC still sweeps it).
     bypass_file = sd / ("plan-bypass-%s.json" % session_id)
     try:
         if bypass_file.exists():
-            if not commit_state:
-                return ("allow", "bypass armed: %s" % rel)
+            expired = False
             try:
-                bypass_file.unlink()
+                with open(bypass_file, "r", encoding="utf-8") as fh:
+                    info = json.load(fh) or {}
+                armed_at = (info.get("armedAtEpoch")
+                            if isinstance(info, dict) else None)
+                if (isinstance(armed_at, (int, float))
+                        and not isinstance(armed_at, bool)
+                        and time.time() - armed_at
+                        > _config.BYPASS_TTL_SECONDS):
+                    expired = True
             except Exception:
-                pass
-            _append_log(
-                ld,
-                "%s session=%s consumed by successful edit of %s"
-                % (_now_iso(), session_id, rel),
-            )
-            return ("allow", "bypass consumed: %s" % rel)
+                pass       # unreadable = legacy shape: honoured without TTL
+            if expired:
+                if commit_state:
+                    try:
+                        bypass_file.unlink()
+                    except Exception:
+                        pass
+                    _append_log(
+                        ld,
+                        "%s session=%s bypass expired unused (armed more than "
+                        "%d minutes ago)"
+                        % (_now_iso(), session_id,
+                           _config.BYPASS_TTL_SECONDS // 60),
+                    )
+                    _config.append_gate_event(ld, {
+                        "event": "bypass.expired", "file": rel,
+                        "reason": "expired unused", "sessionId": session_id})
+                # fall through: an expired bypass is not armed
+            elif not commit_state:
+                return ("allow", "bypass armed: %s" % rel)
+            else:
+                try:
+                    bypass_file.unlink()
+                except Exception:
+                    pass
+                _append_log(
+                    ld,
+                    "%s session=%s consumed by successful edit of %s"
+                    % (_now_iso(), session_id, rel),
+                )
+                _config.append_gate_event(ld, {
+                    "event": "bypass.consumed", "file": rel, "mode": "allow",
+                    "reason": "single-use bypass consumed",
+                    "sessionId": session_id})
+                return ("allow", "bypass consumed: %s" % rel)
     except Exception:
         pass
 
@@ -331,6 +499,10 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
                     json.dump({"files": files_list}, fh)
             except Exception:
                 pass
+            _config.append_gate_event(ld, {
+                "event": "allow.trivial", "file": rel, "mode": "allow",
+                "reason": "first small file (magnitude %d)" % magnitude,
+                "sessionId": session_id})
             return ("allow",
                     "recorded first trivial code file (magnitude %d): %s"
                     % (magnitude, rel))
@@ -357,28 +529,83 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
         # would be a decision made on no evidence.
         if commit_state:
             _record_observed(sd, session_id, rel, reason)
+            _config.append_gate_event(ld, {
+                "event": "observe", "file": rel, "mode": "observe",
+                "reason": reason, "sessionId": session_id})
         return ("observe", "would have blocked (%s): %s" % (reason, rel))
 
     if mode == "warn":
+        if commit_state:
+            _config.append_gate_event(ld, {
+                "event": "warn", "file": rel, "mode": "warn",
+                "reason": reason, "sessionId": session_id})
         return (
             "warn",
+            "Tell the human this verbatim before continuing: "
             "%s is not covered by an in_progress task (%s).\n"
             "The plan gate is advisory until a phase is running: start one with "
             "/audit:next or /audit:phase, or add a task covering this file to %s."
             % (rel, reason, manifest_rel),
         )
 
+    if mode == "ask":
+        # planGate:"ask" — every out-of-plan edit is handed to the human's own
+        # permission prompt, once per edit (consistent with strictManifestState:
+        # nothing is remembered, so approving one edit approves ONE edit).
+        # main() prints the ask payload on Pre; on Post the edit having happened
+        # IS the approval, so it stays silent — the ask.approved event is the
+        # approval's only durable trace.
+        _config.append_gate_event(ld, {
+            "event": "ask.approved" if commit_state else "ask.shown",
+            "file": rel, "mode": "ask", "reason": reason,
+            "sessionId": session_id})
+        return (
+            "ask",
+            "%s is not covered by an in_progress task (%s).\n"
+            "planGate is set to \"ask\" in .claude/audit.config.json, so each "
+            "edit outside the plan waits for your approval - approving covers "
+            "this one edit. To stop being asked, add a task covering this file "
+            "to %s, or set planGate to another tier."
+            % (rel, reason, manifest_rel),
+        )
+
+    # The deny names its ACTUAL cause (F-F4): "a phase is in_progress" was
+    # printed even when the denial came from enforce:true in an empty repo —
+    # a flatly false sentence, shipped because nothing pinned the text.
+    knob = _config.plan_gate_knob(cfg)
+    if knob == "deny":
+        cause = ("planGate is set to \"deny\" in .claude/audit.config.json - "
+                 "refused regardless of what is running.")
+    elif _config.enforce_always(cfg):
+        cause = ("enforce: true is set in .claude/audit.config.json (legacy; "
+                 "planGate: \"deny\" says the same) - refused regardless of "
+                 "what is running.")
+    else:
+        cause = ("Phase %s is in_progress, so edits are held to the plan."
+                 % (state.get("runningPhase") or "?"))
+    if not commit_state:
+        # Pre only: after a denial there is no Post pass to record anything.
+        _config.append_gate_event(ld, {
+            "event": "deny", "file": rel, "mode": "deny", "reason": reason,
+            "sessionId": session_id})
     return (
         "block",
         "Outside the running plan (%s): %s\n"
-        "A phase is in_progress, so edits are held to it. To proceed, either:\n"
-        "  1. Add a task covering this file to %s (status \"in_progress\"), OR\n"
-        "  2. Include %s anywhere in your prompt to opt out for this one "
-        "change (single-use, logged).\n"
+        "%s\n"
+        "Two ways forward, weighed:\n"
+        "  1. This is part of the work at hand -> add a task covering this "
+        "file to %s (status \"in_progress\"). Preferred: the change lands in "
+        "the plan, reviewed and recorded.\n"
+        "  2. This is genuinely a one-off -> the HUMAN types %s in their own "
+        "prompt to opt out for one change. Agents cannot arm it; it is "
+        "single-use, logged, and expires unused after %d minutes.\n"
+        "If you are an agent reading this: ask the human which they want - do "
+        "not recommend the bypass.\n"
         "Exempt regardless: %s, and the first single small (magnitude <= %d: "
-        "lines added, chars/200, or lines removed — whichever is larger) "
+        "lines added, chars/200, or lines removed - whichever is larger) "
         "non-exempt file per session."
-        % (reason, rel, manifest_rel, keyword, ", ".join(exempt), threshold),
+        % (reason, rel, cause, manifest_rel, keyword,
+           _config.BYPASS_TTL_SECONDS // 60, ", ".join(exempt), threshold),
     )
 
 
@@ -404,6 +631,9 @@ def main() -> None:
 
     if verdict == "block":
         block(msg)
+    if verdict == "ask":
+        print(json.dumps(_ask_payload(msg)))
+        sys.exit(0)
     # observe and warn never gate on Pre. Printing nothing keeps the user's normal
     # permission prompt intact.
     sys.exit(0)
@@ -827,6 +1057,409 @@ def _selftest() -> int:
     results.append(ok)
     print("%s k15 warn is additionalContext on Post, never a permissionDecision"
           % ("PASS" if ok else "FAIL"))
+
+    # (g) the planGate knob, and the ask tier (v0.34 B1). Everything above
+    # step 6 is untouched by pinning a tier: an exempt file, a covered file and
+    # the first small file are allowed on EVERY tier, ask included (the k4/k5
+    # rule, re-proven under the knob).
+    def check_knob(name, expected, data, *, use_cfg, event="PreToolUse"):
+        try:
+            verdict, _ = decide(data, cfg=use_cfg, state_dir=sd, logs_dir=ld,
+                                event=event)
+        except Exception as exc:  # pragma: no cover
+            verdict = "EXC:%s" % exc
+        ok = verdict == expected
+        results.append(ok)
+        print("%s %s (expected %s, got %s)"
+              % ("PASS" if ok else "FAIL", name, expected, verdict))
+
+    cfg_ask = dict(cfg_graded)
+    cfg_ask["planGate"] = "ask"
+    clear_manifest()
+    check_knob("g1 planGate:'ask' turns an out-of-policy edit into ask", "ask",
+               offending("selftest-g1"), use_cfg=cfg_ask)
+    check_knob("g2 an exempt file is allowed at the ask tier", "allow",
+               payload("Write", "README.md", content=big, sid="selftest-g2"),
+               use_cfg=cfg_ask)
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+            {"id": "P1.1", "title": "t", "status": "in_progress",
+             "files": ["src/graded/covered.ts"]}]}]})
+    check_knob("g3 a covered file is allowed at the ask tier", "allow",
+               payload("Edit", "src/graded/covered.ts", new_string=big,
+                       sid="selftest-g3"), use_cfg=cfg_ask)
+    clear_manifest()
+    check_knob("g4 the first small file is still free under ask", "allow",
+               payload("Write", "src/graded/small.ts", content="const a=1;",
+                       sid="selftest-g4"), use_cfg=cfg_ask)
+    cfg_pin_deny = dict(cfg_graded)
+    cfg_pin_deny["planGate"] = "deny"
+    check_knob("g5 planGate:'deny' blocks with no manifest at all", "block",
+               offending("selftest-g5"), use_cfg=cfg_pin_deny)
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "pending"}]}]})
+    cfg_pin_obs = dict(cfg_graded)
+    cfg_pin_obs["planGate"] = "observe"
+    check_knob("g6 planGate:'observe' observes even while a phase runs", "observe",
+               offending("selftest-g6"), use_cfg=cfg_pin_obs)
+    cfg_both = dict(cfg_graded)
+    cfg_both.update(planGate="observe", enforce=True)
+    check_knob("g7 planGate beats enforce when both are set", "observe",
+               offending("selftest-g7"), use_cfg=cfg_both)
+    check_knob("g8 ask is the verdict on the Post pass too - main() is what "
+               "turns it into silence (the edit happened = the human approved)",
+               "ask", offending("selftest-g8"), use_cfg=cfg_ask,
+               event="PostToolUse")
+    clear_manifest()
+
+    # The ask payload's SHAPE is the pinned contract - the dialog itself cannot
+    # be driven by a selftest (mirror of j1 and k15).
+    ap = json.loads(json.dumps(_ask_payload("why")))
+    hso = ap.get("hookSpecificOutput") or {}
+    ok = (hso.get("hookEventName") == "PreToolUse"
+          and hso.get("permissionDecision") == "ask"
+          and str(hso.get("permissionDecisionReason", "")).startswith(
+              "[require-plan]"))
+    results.append(ok)
+    print("%s g9 the ask payload is a canonical PreToolUse 'ask' decision"
+          % ("PASS" if ok else "FAIL"))
+
+    # main() routing: Pre prints the ask payload; Post prints nothing (silence
+    # is the approval record - the gate event feed carries the trace).
+    import io as _io
+    gproj = Path(tempfile.mkdtemp(prefix="require-plan-ask-"))
+    (gproj / ".claude").mkdir(parents=True, exist_ok=True)
+    (gproj / ".claude" / "audit.config.json").write_text(
+        json.dumps({"planGate": "ask"}), encoding="utf-8")
+
+    def drive_main(event):
+        _stdin, _stdout = sys.stdin, sys.stdout
+        cap = _io.StringIO()
+        code = None
+        _prev = os.environ.get("CLAUDE_PROJECT_DIR")
+        try:
+            sys.stdin = _io.StringIO(json.dumps(
+                {"tool_name": "Edit", "session_id": "ask-main",
+                 "hook_event_name": event,
+                 "tool_input": {"file_path": "src/asked.ts", "new_string": big},
+                 "cwd": str(gproj)}))
+            sys.stdout = cap
+            os.environ["CLAUDE_PROJECT_DIR"] = str(gproj)
+            try:
+                main()
+            except SystemExit as exc:
+                code = exc.code
+        finally:
+            sys.stdin, sys.stdout = _stdin, _stdout
+            if _prev is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _prev
+        return code, cap.getvalue()
+
+    code, spoke = drive_main("PreToolUse")
+    try:
+        blob = json.loads(spoke) if spoke.strip() else {}
+    except Exception:
+        blob = {}
+    ok = (code in (0, None) and (blob.get("hookSpecificOutput") or {})
+          .get("permissionDecision") == "ask")
+    results.append(ok)
+    print("%s g10 main() on Pre prints the ask payload and exits 0"
+          % ("PASS" if ok else "FAIL"))
+    code, spoke = drive_main("PostToolUse")
+    ok = code in (0, None) and spoke == ""
+    results.append(ok)
+    print("%s g11 main() on Post prints NOTHING for ask - the edit happening "
+          "IS the approval" % ("PASS" if ok else "FAIL"))
+    shutil.rmtree(gproj, ignore_errors=True)
+
+    # (h) what a refusal SAYS, by actual cause (F-F4), and the bypass TTL (B4).
+    # The deny used to claim "A phase is in_progress" whether or not one was -
+    # enforce:true with an empty repo produced a sentence that was flatly false,
+    # and nothing pinned the text, which is how the bug shipped.
+    def deny_msg(use_cfg, sid):
+        try:
+            return decide(offending(sid), cfg=use_cfg, state_dir=sd,
+                          logs_dir=ld)
+        except Exception as exc:  # pragma: no cover
+            return ("EXC", str(exc))
+
+    def hok(name, cond, detail=""):
+        results.append(bool(cond))
+        print("%s %s%s" % ("PASS" if cond else "FAIL", name,
+                           (" (%s)" % detail) if detail and not cond else ""))
+
+    clear_manifest()
+    cfg_leg = dict(cfg_graded)
+    cfg_leg["enforce"] = True
+    v, m = deny_msg(cfg_leg, "selftest-h1")
+    hok("h1 enforce:true with NO phase running blames the config, not a "
+        "phantom phase",
+        v == "block" and "enforce: true" in m and "legacy" in m
+        and "A phase is in_progress" not in m, repr(m))
+    cfg_pin = dict(cfg_graded)
+    cfg_pin["planGate"] = "deny"
+    v, m = deny_msg(cfg_pin, "selftest-h2")
+    hok("h2 planGate:'deny' names the knob and says it holds regardless of "
+        "what is running",
+        v == "block" and 'planGate is set to "deny"' in m
+        and "regardless of what is running" in m, repr(m))
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P3", "title": "p", "status": "in_progress",
+         "tasks": [{"id": "P3.1", "title": "t", "status": "pending"}]}]})
+    v, m = deny_msg(cfg_graded, "selftest-h3")
+    hok("h3 a real running phase is NAMED - 'phase P3', not 'a phase'",
+        v == "block" and "Phase P3 is in_progress" in m, repr(m))
+    hok("h4 the refusal tells an agent to ask the human and NOT to recommend "
+        "the bypass",
+        "ask the human" in m and "do not recommend the bypass" in m, repr(m))
+    hok("h5 ...and states the bypass facts: the HUMAN types it, single-use, "
+        "logged, 30-minute expiry",
+        "HUMAN" in m and "single-use" in m and "30 minutes" in m
+        and "Agents cannot arm it" in m, repr(m))
+    clear_manifest()
+
+    # The TTL itself (require-plan's half: honouring it). Armed slots carry
+    # armedAtEpoch (written by detect-plan-skip); older than the TTL = never
+    # armed, deleted + logged on the Post pass; a legacy slot without the
+    # field is honoured WITHOUT a TTL.
+    sess_h = "selftest-h-ttl"
+    bp_h = sd / ("plan-bypass-%s.json" % sess_h)
+    p_ttl = payload("Write", "src/ttl/big.ts", content=big, sid=sess_h)
+    bp_h.write_text(json.dumps({"ts": _now_iso(), "reason": "fresh",
+                                "armedAtEpoch": int(time.time())}),
+                    encoding="utf-8")
+    v, _m = decide(p_ttl, cfg=cfg, state_dir=sd, logs_dir=ld)
+    hok("h6 a fresh armed bypass still allows on Pre", v == "allow")
+    stale_epoch = int(time.time()) - _config.BYPASS_TTL_SECONDS - 120
+    bp_h.write_text(json.dumps({"ts": _now_iso(), "reason": "stale",
+                                "armedAtEpoch": stale_epoch}),
+                    encoding="utf-8")
+    v, _m = decide(p_ttl, cfg=cfg, state_dir=sd, logs_dir=ld)
+    hok("h7 an EXPIRED bypass does not arm - the edit is gated as if none "
+        "existed (Pre leaves the file for Post to clean)",
+        v == "block" and bp_h.exists(), repr(v))
+    v, _m = decide(p_ttl, cfg=cfg, state_dir=sd, logs_dir=ld,
+                   event="PostToolUse")
+    log_txt = ((ld / "plan-bypass.log").read_text(encoding="utf-8")
+               if (ld / "plan-bypass.log").exists() else "")
+    hok("h8 the Post pass deletes the expired slot and logs 'expired unused'",
+        v == "block" and not bp_h.exists()
+        and "expired unused" in log_txt, repr((v, bp_h.exists())))
+    bp_h.write_text(json.dumps({"ts": _now_iso(), "reason": "legacy"}),
+                    encoding="utf-8")
+    v, _m = decide(p_ttl, cfg=cfg, state_dir=sd, logs_dir=ld)
+    hok("h9 a legacy slot without armedAtEpoch is honoured WITHOUT a TTL "
+        "(fail-open; the 7-day GC still sweeps it)", v == "allow")
+    try:
+        bp_h.unlink()
+    except Exception:
+        pass
+
+    # (i) the gate events feed (v0.34 B3). Verdicts used to leave NO trace -
+    # only the bypass had a log - so each branch now drops one compact line
+    # into <logsDir>/plan-gate-events.jsonl. Pre records only what has no Post
+    # (deny, ask.shown); everything else lands when the edit actually happened.
+    def feed(p):
+        f = p / _config.GATE_EVENTS_FILE
+        if not f.exists():
+            return []
+        return [json.loads(line) for line in
+                f.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    clear_manifest()
+    ild = tmp / "ev-observe"
+    decide(offending("selftest-i1"), cfg=cfg_graded, state_dir=sd, logs_dir=ild)
+    hok("i1 observe on Pre leaves no event - Pre records only deny/ask.shown",
+        feed(ild) == [], repr(feed(ild)))
+    decide(offending("selftest-i1"), cfg=cfg_graded, state_dir=sd, logs_dir=ild,
+           event="PostToolUse")
+    rows = feed(ild)
+    hok("i2 observe on Post leaves ONE observe event naming file and session",
+        len(rows) == 1 and rows[0].get("event") == "observe"
+        and rows[0].get("file") == "src/graded/mod.ts"
+        and rows[0].get("sessionId") == "selftest-i1", repr(rows))
+    ild = tmp / "ev-deny"
+    v, _m = decide(offending("selftest-i3"), cfg=cfg_pin, state_dir=sd,
+                   logs_dir=ild)
+    rows = feed(ild)
+    hok("i3 a deny is recorded on Pre - there is no Post after a denial",
+        v == "block" and len(rows) == 1 and rows[0].get("event") == "deny"
+        and rows[0].get("mode") == "deny", repr(rows))
+    ild = tmp / "ev-ask"
+    decide(offending("selftest-i4"), cfg=cfg_ask, state_dir=sd, logs_dir=ild)
+    decide(offending("selftest-i4"), cfg=cfg_ask, state_dir=sd, logs_dir=ild,
+           event="PostToolUse")
+    rows = feed(ild)
+    hok("i4 ask leaves ask.shown on Pre and ask.approved on Post - the "
+        "approval's only durable trace",
+        [r.get("event") for r in rows] == ["ask.shown", "ask.approved"],
+        repr(rows))
+    ild = tmp / "ev-warn"
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]})
+    v, m = decide(offending("selftest-i5"), cfg=cfg_graded, state_dir=sd,
+                  logs_dir=ild, event="PostToolUse")
+    rows = feed(ild)
+    hok("i5 warn on Post leaves a warn event",
+        v == "warn" and [r.get("event") for r in rows] == ["warn"], repr(rows))
+    hok("i6 the warn text LEADS with the relay instruction - the cheap half "
+        "of visibility, the feed is the durable half",
+        m.startswith("Tell the human this verbatim before continuing"),
+        repr(m[:80]))
+    clear_manifest()
+    ild = tmp / "ev-bypass"
+    sess_i = "selftest-i7"
+    bp_i = sd / ("plan-bypass-%s.json" % sess_i)
+    bp_i.write_text(json.dumps({"ts": _now_iso(), "reason": "x",
+                                "armedAtEpoch": int(time.time())}),
+                    encoding="utf-8")
+    p_i = payload("Write", "src/ev/i7.ts", content=big, sid=sess_i)
+    decide(p_i, cfg=cfg, state_dir=sd, logs_dir=ild, event="PostToolUse")
+    rows = feed(ild)
+    hok("i7 a consumed bypass is bypass.consumed",
+        [r.get("event") for r in rows] == ["bypass.consumed"], repr(rows))
+    bp_i.write_text(json.dumps({"ts": _now_iso(), "reason": "x",
+                                "armedAtEpoch": stale_epoch}), encoding="utf-8")
+    decide(p_i, cfg=cfg, state_dir=sd, logs_dir=ild, event="PostToolUse")
+    rows = feed(ild)
+    hok("i8 an expired one is bypass.expired",
+        rows and rows[-1].get("event") == "bypass.expired", repr(rows))
+    ild = tmp / "ev-trivial"
+    decide(payload("Write", "src/ev/small.ts", content="const a=1;",
+                   sid="selftest-i9"), cfg=cfg_graded, state_dir=sd,
+           logs_dir=ild, event="PostToolUse")
+    rows = feed(ild)
+    hok("i9 the recorded first small file is allow.trivial - the free slot is "
+        "part of the gate's story too",
+        [r.get("event") for r in rows] == ["allow.trivial"], repr(rows))
+    ild = tmp / "ev-quiet"
+    decide(payload("Write", "README.md", content=big, sid="selftest-i10"),
+           cfg=cfg_graded, state_dir=sd, logs_dir=ild, event="PostToolUse")
+    hok("i10 an exempt path leaves no feed line - the feed is verdicts, not "
+        "an access log", feed(ild) == [])
+
+    # (o) the ownership advisory on the covered path (v0.34 D2). Advisory by
+    # construction: it rides additionalContext on the Post pass, never a
+    # permissionDecision — Pre never speaks, no tier can turn it into a block,
+    # and silence is the default in every direction (no owner declared
+    # anywhere, explicit null, author matches, authorMode none). The git
+    # subprocess behind the author is paid only past every cheaper gate, which
+    # the call counter below pins.
+    _ledmod = _config._ledger_lib()
+    _orig_resolve = getattr(_ledmod, "resolve_author", None) if _ledmod else None
+    _calls = {"n": 0}
+
+    def _fake_resolve(_root, mode="email"):
+        _calls["n"] += 1
+        return None if mode == "none" else "sam@x.com"
+
+    def ocheck(name, cond, detail=""):
+        results.append(bool(cond))
+        print("%s %s%s" % ("PASS" if cond else "FAIL", name,
+                           (" (%s)" % detail) if detail and not cond else ""))
+
+    if _ledmod is None:
+        print("SKIP o* (usage_ledger module unavailable)")
+    else:
+        _ledmod.resolve_author = _fake_resolve
+        try:
+            def own_phase(pid, area, files):
+                return {"id": pid, "title": "p", "status": "in_progress",
+                        "area": area,
+                        "tasks": [{"id": pid + ".1", "title": "t",
+                                   "status": "in_progress", "files": files}]}
+
+            write_manifest({"meta": {"version": 2, "areas": {
+                "api": {"root": "services/api", "owner": "jane@x.com"},
+                "web": {"root": "apps/web", "owner": "sam@x.com"},
+                "lib": {"root": "lib", "owner": None},
+                "sec": {"root": "sec", "owner": "raj@x.com"}}},
+                "phases": [
+                    own_phase("P1", "api", ["src/own/a.ts", "src/own/a2.ts"]),
+                    own_phase("P2", "web", ["src/own/b.ts"]),
+                    own_phase("P3", "lib", ["src/own/c.ts"]),
+                    own_phase("P4", "sec", ["src/own/d.ts"])]})
+            sess_o = "selftest-own-1"
+            overdicts = []
+
+            def own(file, sid=sess_o, event="PreToolUse", use_cfg=None):
+                v, m = decide(payload("Edit", file, new_string=big, sid=sid),
+                              cfg=use_cfg if use_cfg is not None else cfg_graded,
+                              state_dir=sd, logs_dir=ld, event=event)
+                overdicts.append(v)
+                return v, m
+
+            v, m = own("src/own/a.ts")
+            ocheck("o1 Pre never speaks: a covered file with a mismatched owner "
+                   "is a plain allow, and the author subprocess is never paid",
+                   v == "allow" and _calls["n"] == 0, repr((v, _calls["n"])))
+            v, m = own("src/own/a.ts", event="PostToolUse")
+            ocheck("o2 Post on a mismatch is a warn with the measured wording - "
+                   "heads-up, phase, area, owner, author, fine to continue",
+                   v == "warn" and m.startswith("heads-up, not a gate:")
+                   and "src/own/a.ts belongs to phase P1 (area 'api')" in m
+                   and "whose owner is jane@x.com" in m
+                   and "you are recorded as sam@x.com" in m
+                   and "Fine to continue" in m
+                   and "say so in the handoff" in m, repr((v, m)))
+            note_file = sd / ("owner-note-%s.json" % sess_o)
+            ocheck("o3 the throttle slot exists and its name starts with "
+                   "'owner-note-' - the prefix detect-plan-skip's GC sweeps",
+                   note_file.exists()
+                   and note_file.name.startswith("owner-note-"),
+                   repr(note_file))
+            v, m = own("src/own/a2.ts", event="PostToolUse")
+            ocheck("o4 the same session+area warns ONCE - a second covered edit "
+                   "in the same area stays quiet",
+                   v == "allow", repr((v, m)))
+            v, m = own("src/own/d.ts", event="PostToolUse")
+            ocheck("o5 a DIFFERENT area in the same session warns again - the "
+                   "throttle is per session+area, not per session",
+                   v == "warn" and "area 'sec'" in m
+                   and "raj@x.com" in m, repr((v, m)))
+            v, m = own("src/own/a.ts", sid="selftest-own-2",
+                       event="PostToolUse")
+            ocheck("o6 a NEW session is told once too - the note is session "
+                   "state, not repo state",
+                   v == "warn" and "jane@x.com" in m, repr((v, m)))
+            v, m = own("src/own/b.ts", sid="selftest-own-3",
+                       event="PostToolUse")
+            ocheck("o7 the owner editing their own area hears nothing",
+                   v == "allow", repr((v, m)))
+            n_before = _calls["n"]
+            v, m = own("src/own/c.ts", sid="selftest-own-3",
+                       event="PostToolUse")
+            ocheck("o8 an explicit null owner is 'nobody owns this' - silent, "
+                   "and the author subprocess is never paid for it",
+                   v == "allow" and _calls["n"] == n_before, repr((v, m)))
+            cfg_none = _config._deep_merge(cfg_graded,
+                                           {"usage": {"authorMode": "none"}})
+            v, m = own("src/own/a.ts", sid="selftest-own-4",
+                       event="PostToolUse", use_cfg=cfg_none)
+            ocheck("o9 authorMode 'none' turns the advisory off silently - a "
+                   "project that refuses attribution is not nudged about it",
+                   v == "allow", repr((v, m)))
+            write_manifest({"meta": {"version": 2, "areas": {
+                "api": {"root": "services/api"}}},
+                "phases": [own_phase("P1", "api", ["src/own/a.ts"])]})
+            n_before = _calls["n"]
+            v, m = own("src/own/a.ts", sid="selftest-own-5",
+                       event="PostToolUse")
+            ocheck("o10 no owner declared ANYWHERE is the default-off: silent, "
+                   "zero cost past the manifest read, no knob needed",
+                   v == "allow" and _calls["n"] == n_before, repr((v, m)))
+            ocheck("o11 the advisory can never harden: every verdict above was "
+                   "allow or warn, never block or ask",
+                   overdicts and set(overdicts) <= {"allow", "warn"},
+                   repr(overdicts))
+            clear_manifest()
+        finally:
+            if _orig_resolve is not None:
+                _ledmod.resolve_author = _orig_resolve
 
     if _prev_project_dir is None:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)

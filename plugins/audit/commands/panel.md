@@ -41,10 +41,18 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   the key rather than writing a default. Regexes and the band pair are checked as you type;
   the save is decided by `validate-config.py`, which refuses invalid input, and writes
   atomically. Every "set X in the config" notice elsewhere in the panel links here.
+  The plan gate's tier is one select (**How hard the gate pushes**, v0.34): its preset also
+  reads the legacy `enforce` flag, and choosing a tier writes `planGate` while deleting
+  `enforce` — one statement of the gate's tier, not two keys contradicting each other.
 - **Composition** — set `meta.reviewSkill`, per-task `skills[]` / `model`, per-phase
   `review.model`, `meta.buildCommands` — via an autocomplete **populated by discovery** of
   the skills & agents actually available (project `.claude/`, `~/.claude/`, installed
-  plugins). Writes back **only** these fields, validates via `validate-manifest.py`, and
+  plugins). The model fields carry the same autocomplete with three named sources (v0.34):
+  models the manifest already uses, models the rate table prices, and models the token
+  ledger has actually recorded — the last is what a typo'd model id looks like from the
+  spend side. Every autocomplete searches descriptions as well as names, and a long list
+  ends `…N more — keep typing` rather than cutting off silently.
+  Writes back **only** these fields, validates via `validate-manifest.py`, and
   **refuses while an `/audit` run holds a lock** (the index or any phase — see conventions →
   Concurrency lock). Never touches phases/tasks/bugs structure — use `/audit:task`,
   `/audit:bug`, `/audit:run` for that.
@@ -83,16 +91,28 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   closing the tab with unsaved work asks first, and the server recomputes the change list
   against the file it is about to write and sends it back — so if a second tab or an
   `/audit` run moved the file under you, the save says so instead of quietly reassuring you.
-  The toast reports how many changes landed. The topbar names the identity the write is
+  The toast reports how many changes landed. A landed save also leaves a **✓ saved** card
+  that dissolves after five seconds; a refused save leaves a card that does not — bold
+  title, the findings that refused it, its own dismiss × — because a refusal must outlive a
+  glance away (v0.34). The topbar names the identity the write is
   recorded under (`viewing as …`, resolved exactly as the token ledger resolves a spender —
   see `usage.authorMode`), and Usage has a **my spend** chip that filters on that same name.
+  The panel also refreshes **itself**: a fingerprint of the manifest, shards, config and
+  ledger rides the run-status poll, and when a file moves on disk clean views re-render
+  within a few seconds — a form holding unsaved edits is left alone and gets a persistent
+  notice instead (Save is still checked against the file on disk; Discard reloads it), and
+  refreshes hold while any dialog is open.
 - **Overview** — the live rollup + validation status, as something you can steer by: task and
   bug **status strips** that are both the legend and the filter (press one to scope the phase
   list), search over id / title / area / desired outcome, sort by plan order, progress or
   status, optional **group by area** from `meta.areas`, each phase row showing its desired
   outcome and opening that phase in Composition, and a **Ready now** card with the exact
   `/audit:run <id>` to copy. Bug statuses here are *effective* — a bug materialized into a task
-  reads `Fixed` once that task is done, which is what the counts above them use.
+  reads `Fixed` once that task is done, which is what the counts above them use. A **Plan
+  gate** card (v0.34) names the tier in force and its source (`planGate`, legacy `enforce`,
+  or the graded ladder), shows whether a bypass is armed right now, and lists the latest
+  gate events from `<logsDir>/plan-gate-events.jsonl` as they land — refreshed by the same
+  poll that tracks running phases.
 - **Usage** — what the plan cost, recomputed in the browser on every filter change. KPI tiles
   carry a sparkline and a trend against the window before (all-time compares the ledger's last
   30 days with the 30 before them — anchored on the data, so a finished project still shows a
@@ -110,7 +130,10 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   following the filters, since the tiles below already answer the filtered question.
   **Export CSV** downloads exactly the rows
   behind the view, with the span and bucket resolution in the filename. Every scope shows as a
-  chip you can take off; `Esc` pops the last one. The **last 7 / 30 / 90 days** presets mean
+  chip you can take off; `Esc` pops the last one. Filters **persist** (v0.34): the state
+  rides in the URL fragment (`#/usage!au=…`), so a filtered view is a share link the way the
+  report's is, and it is remembered per repo across reopens — hash wins over the remembered
+  state, and clearing the filters clears both. The **last 7 / 30 / 90 days** presets mean
   exactly that — they count back from today, not from the last day recorded — so on a plan that
   finished months ago they can select nothing. When that happens the tab says which window it
   asked for, when the ledger actually ends, and offers the all-time view; more generally, an

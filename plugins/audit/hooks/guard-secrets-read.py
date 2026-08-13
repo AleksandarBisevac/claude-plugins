@@ -168,6 +168,19 @@ def _deny_payload(msg: str) -> dict:
     }
 
 
+def _ask_payload(msg: str) -> dict:
+    """Canonical PreToolUse ask payload — planGate:"ask" parity with
+    require-plan (v0.34 B1). Only the shell PLAN-gate branch can return ask;
+    the secret guards are never graded and never ask."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": "[guard-secrets-read] " + msg,
+        }
+    }
+
+
 def block(msg: str) -> None:
     print(json.dumps(_deny_payload(msg)))
     sys.exit(0)
@@ -318,15 +331,41 @@ def decide(data: dict, *, cfg=None):
             # so those guards need no evidence to be right.
             manifest_rel = (cfg.get("manifestPath")
                             or _config.DEFAULTS["manifestPath"])
-            mode = _config.plan_gate_mode(
-                cfg, _config.manifest_state(root, manifest_rel))
+            state = _config.manifest_state(root, manifest_rel)
+            mode = _config.plan_gate_mode(cfg, state)
             if mode == "deny":
+                # The refusal names its ACTUAL cause (F-F4), mirroring
+                # require-plan word for word: "a phase is in_progress" was
+                # printed here even when the denial came from enforce:true in
+                # an empty repo.
+                knob = _config.plan_gate_knob(cfg)
+                if knob == "deny":
+                    cause = ("planGate is set to \"deny\" in "
+                             ".claude/audit.config.json - refused regardless "
+                             "of what is running.")
+                elif _config.enforce_always(cfg):
+                    cause = ("enforce: true is set in .claude/audit.config.json "
+                             "(legacy; planGate: \"deny\" says the same) - "
+                             "refused regardless of what is running.")
+                else:
+                    cause = ("Phase %s is in_progress, so edits are held to "
+                             "the plan." % (state.get("runningPhase") or "?"))
                 return ("block",
-                        "Shell write into a source file bypasses the plan-first gate: "
-                        "%s\nA phase is in_progress, so edits are held to it. Use the "
-                        "Edit/Write tools (guard-edits + require-plan review the "
-                        "change), or cover the file with an in_progress task. Exempt "
-                        "paths (docs, tests, .claude/**) are unaffected." % hit)
+                        "Shell write into a source file bypasses the plan-first "
+                        "gate: %s\n%s Use the Edit/Write tools (guard-edits + "
+                        "require-plan review the change), or cover the file "
+                        "with an in_progress task. Exempt paths (docs, tests, "
+                        ".claude/**) are unaffected." % (hit, cause))
+            if mode == "ask":
+                # planGate:"ask" parity with require-plan: the same file must be
+                # treated the same whether the agent reaches for Edit or sed -i.
+                return ("ask",
+                        "Shell write into a source file outside the plan: %s\n"
+                        "planGate is set to \"ask\" in .claude/audit.config.json, "
+                        "so this write waits for your approval - approving covers "
+                        "this one command. Prefer the Edit/Write tools "
+                        "(guard-edits + require-plan review the change), or cover "
+                        "the file with an in_progress task." % hit)
             return ("allow", "bash: source write, plan gate %s: %s" % (mode, hit))
         return ("allow", "bash: no secret read")
 
@@ -346,6 +385,9 @@ def main() -> None:
 
     if verdict == "block":
         block(msg)
+    if verdict == "ask":
+        print(json.dumps(_ask_payload(msg)))
+        sys.exit(0)
     sys.exit(0)
 
 
@@ -557,6 +599,79 @@ def _selftest() -> int:
           bash("echo x 1> src/app.ts"))
     check("s13 clobber `>|` into source file blocked", "block",
           bash("echo x >| src/app.ts"))
+
+    # (s14+) planGate parity (v0.34 B1): the shell-write branch follows the SAME
+    # knob require-plan follows -- _help's gate page pins in prose that the two
+    # halves grade identically, and an ask tier only one of them honours would
+    # make that sentence a lie. The manifest fixture above still has phase P0
+    # in_progress here, so 'observe while a phase runs' is a real pin, not a
+    # vacuous one.
+    cfg_ask = _config._deep_merge(_config.DEFAULTS, {"planGate": "ask"})
+    check("s14 planGate:'ask' turns an uncovered shell write into ask", "ask",
+          bash("sed -i 's/a/b/' src/uncovered-ask.ts"), use_cfg=cfg_ask)
+    check("s15 a covered file is allowed at the ask tier", "allow",
+          bash("sed -i 's/a/b/' src/covered/mod.ts"), use_cfg=cfg_ask)
+    cfg_pin_obs = _config._deep_merge(_config.DEFAULTS, {"planGate": "observe"})
+    check("s16 planGate:'observe' lets the shell write through while a phase "
+          "runs (the same lowering require-plan honours)", "allow",
+          bash("sed -i 's/a/b/' src/uncovered-observe.ts"), use_cfg=cfg_pin_obs)
+    cfg_pin_deny = _config._deep_merge(_config.DEFAULTS, {"planGate": "deny",
+                                                          "manifestPath":
+                                                          "no/such/plan.json"})
+    check("s17 planGate:'deny' blocks the shell write with no manifest at all",
+          "block", bash("sed -i 's/a/b/' src/uncovered-deny.ts"),
+          use_cfg=cfg_pin_deny)
+    check("s18 secret reads are NOT graded - .env is refused at the ask tier "
+          "too", "block", read(".env"), use_cfg=cfg_ask)
+    # (s20+) what the shell refusal SAYS, by actual cause (F-F4) - the mirror
+    # of require-plan's h group: this file used to claim "A phase is
+    # in_progress" whether or not one was, on the same evidence tiers.
+    def sdeny(use_cfg, cmd="sed -i 's/a/b/' src/blamed.ts"):
+        try:
+            return decide(bash(cmd), cfg=use_cfg)
+        except Exception as exc:  # pragma: no cover
+            return ("EXC", str(exc))
+
+    import shutil as _sh2
+    _sh2.rmtree(tmp / "docs", ignore_errors=True)
+    _v, _m = sdeny(cfg_enforced)
+    _ok = (_v == "block" and "enforce: true" in _m and "legacy" in _m
+           and "A phase is in_progress" not in _m)
+    results.append(_ok)
+    print("%s s20 enforce:true with NO phase running blames the config, not a "
+          "phantom phase%s" % ("PASS" if _ok else "FAIL",
+                               "" if _ok else " (%r)" % _m))
+    _v, _m = sdeny(_config._deep_merge(_config.DEFAULTS, {"planGate": "deny"}))
+    _ok = (_v == "block" and 'planGate is set to "deny"' in _m
+           and "regardless of what is running" in _m)
+    results.append(_ok)
+    print("%s s21 planGate:'deny' names the knob, exactly as require-plan does"
+          % ("PASS" if _ok else "FAIL"))
+    _mdir2 = tmp / "docs" / "audit"
+    _mdir2.mkdir(parents=True, exist_ok=True)
+    (_mdir2 / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P7", "title": "p", "status": "in_progress",
+             "tasks": [{"id": "P7.1", "title": "t", "status": "pending"}]}]}),
+        encoding="utf-8")
+    _v, _m = sdeny(cfg)
+    _ok = _v == "block" and "Phase P7 is in_progress" in _m
+    results.append(_ok)
+    print("%s s22 a real running phase is NAMED - 'phase P7', not 'a phase'%s"
+          % ("PASS" if _ok else "FAIL", "" if _ok else " (%r)" % _m))
+    _sh2.rmtree(tmp / "docs", ignore_errors=True)
+
+    # The ask payload's SHAPE is the pinned contract (the dialog cannot be
+    # driven by a selftest) - mirror of require-plan's g9 and of j1 below.
+    _ap = json.loads(json.dumps(_ask_payload("why")))
+    _hso = _ap.get("hookSpecificOutput") or {}
+    _ok = (_hso.get("hookEventName") == "PreToolUse"
+           and _hso.get("permissionDecision") == "ask"
+           and str(_hso.get("permissionDecisionReason", "")).startswith(
+               "[guard-secrets-read]"))
+    results.append(_ok)
+    print("%s s19 the ask payload is a canonical PreToolUse 'ask' decision"
+          % ("PASS" if _ok else "FAIL"))
 
     # --- extra pattern from config ---
     cfg_extra = _config._deep_merge(

@@ -83,7 +83,17 @@
     },
     "enforce": {
       "type": "boolean",
-      "description": "Force the plan-first gate to DENY regardless of evidence. Default false, which grades the gate: observe with no manifest, warn with a manifest but no phase in_progress, deny once a phase is running. Only the plan gate is graded — the secret guards deny by default either way."
+      "description": "LEGACY: force the plan-first gate to DENY regardless of evidence — planGate: \"deny\" says the same thing, and planGate wins when both are set. Default false, which grades the gate: observe with no manifest, warn with a manifest but no phase in_progress, deny once a phase is running. Only the plan gate is graded — the secret guards deny by default either way."
+    },
+    "planGate": {
+      "type": "string",
+      "enum": [
+        "observe",
+        "warn",
+        "ask",
+        "deny"
+      ],
+      "description": "Pin the plan-first gate to one tier by hand instead of grading it on evidence: observe (record only, report once per session), warn (advisory), ask (each out-of-plan edit waits for the human's approval — approving covers one edit), deny (refuse). Absent (the default) the gate grades itself: observe with no manifest, warn with a manifest but nothing running, deny once a phase is in_progress. Beats the legacy enforce when both are set; a value outside the enum is read as unset (fail-open, never deny) and flagged by validate-config.py. Only the plan gate is affected — the secret guards deny at every tier."
     },
     "trivialLineThreshold": {
       "type": "integer",

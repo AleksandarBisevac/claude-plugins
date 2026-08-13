@@ -259,6 +259,109 @@ def _unknown_keys(obj, known, where, warnings):
                             "ignored by the orchestrator)" % (where, ks))
 
 
+def _model_near_miss(a, b):
+    """True iff two model ids are one slip apart: case-insensitively equal but
+    spelled differently, or one substitution, insertion, deletion or ADJACENT
+    TRANSPOSITION away (case-insensitive) -- the four classic typo shapes."""
+    if a == b:
+        return False
+    x, y = a.lower(), b.lower()
+    if x == y:
+        return True
+    if abs(len(x) - len(y)) > 1:
+        return False
+    if len(x) == len(y):
+        diffs = [i for i, (cx, cy) in enumerate(zip(x, y)) if cx != cy]
+        if len(diffs) == 1:
+            return True
+        return (len(diffs) == 2 and diffs[1] == diffs[0] + 1
+                and x[diffs[0]] == y[diffs[1]] and x[diffs[1]] == y[diffs[0]])
+    short, long_ = (x, y) if len(x) < len(y) else (y, x)
+    i = j = 0
+    skipped = False
+    while i < len(short):
+        if short[i] == long_[j]:
+            i += 1
+            j += 1
+            continue
+        if skipped:
+            return False
+        skipped = True
+        j += 1
+    return True
+
+
+def _check_model_typos(manifest, warnings):
+    """Intra-manifest model-id near-miss detector (WARNING only).
+
+    Flags a model value that is used EXACTLY ONCE while a case-insensitive or
+    edit-distance-1 neighbour is used elsewhere in the manifest, or appears
+    among meta.usage.pricing keys when that table exists. A spelling used
+    twice or more is an established choice, never flagged; a clean
+    single-model manifest has no neighbour to near-miss and stays silent.
+
+    Deliberately intra-manifest: this validator is an offline shape-checker
+    (no config, no ledger — see validate()), so the three-source model hint
+    (manifest vs rate table vs ledger) lives in the panel, which has all three
+    in hand.
+    """
+    sites = {}   # model value -> [where, ...] in document order
+
+    def note_use(val, where):
+        if isinstance(val, str) and val.strip():
+            sites.setdefault(val, []).append(where)
+
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    for pi, phase in enumerate(_safe_list(phases)):
+        if not isinstance(phase, dict):
+            continue
+        pwhere = "phase %s" % (phase.get("id") or ("phases[%d]" % pi))
+        note_use(phase.get("model"), pwhere)
+        review = phase.get("review")
+        if isinstance(review, dict):
+            note_use(review.get("model"), pwhere + " review")
+        for ti, task in enumerate(_safe_list(phase.get("tasks"))):
+            if isinstance(task, dict):
+                note_use(task.get("model"), "task %s"
+                         % (task.get("id") or ("%s.tasks[%d]" % (pwhere, ti))))
+
+    pricing = []
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    if isinstance(meta, dict) and isinstance(meta.get("usage"), dict) \
+            and isinstance(meta["usage"].get("pricing"), dict):
+        pricing = [k for k in meta["usage"]["pricing"]
+                   if isinstance(k, str) and not k.startswith("_")]
+
+    for val in sorted(sites):
+        if len(sites[val]) != 1:
+            continue
+        near = None
+        # Prefer the most-used neighbour (the established spelling), then the
+        # pricing table, so the warning names the likeliest intended id.
+        for other in sorted(sites, key=lambda v: (-len(sites[v]), v)):
+            if other != val and len(sites[other]) > 1 \
+                    and _model_near_miss(val, other):
+                near = (other, "used %d times elsewhere in this manifest"
+                        % len(sites[other]))
+                break
+        if near is None:
+            for key in sorted(pricing):
+                if key != val and _model_near_miss(val, key):
+                    near = (key, "a meta.usage.pricing key")
+                    break
+        if near is None:
+            for other in sorted(sites):
+                if other != val and len(sites[other]) == 1 \
+                        and _model_near_miss(val, other):
+                    near = (other, "used once at %s" % sites[other][0])
+                    break
+        if near is not None:
+            warnings.append(
+                "%s: model '%s' is used once and is a near-miss of '%s' (%s) "
+                "-- a one-slip model id routes work to a model nobody priced "
+                "or intended" % (sites[val][0], val, near[0], near[1]))
+
+
 def _cycle_findings(phases, findings):
     """Detect dependency cycles over the waits-on graph.
 
@@ -502,6 +605,7 @@ def validate(manifest):
                         "a task")
 
     _cycle_findings(phases, f)
+    _check_model_typos(manifest, w)
 
     # -- fileIndex integrity (both directions) -----------------------------------
     file_index = manifest.get("fileIndex")
@@ -1093,6 +1197,67 @@ def _selftest():
     print("%s mv5 existing well-formed ids produce no id-prefix warning (%s)"
           % ("PASS" if ok_base else "FAIL",
              "clean" if ok_base else (_f_base or _w_base)))
+
+    # --- md: intra-manifest model-id near-miss (typo detector) ---
+    # WARNING only, and only for a value used EXACTLY once beside a
+    # case-insensitive / edit-distance-1 neighbour used elsewhere in the
+    # manifest or among meta.usage.pricing keys. Deliberately intra-manifest:
+    # this validator is an offline shape-checker and never reads the config or
+    # the ledger, so the three-source model hint lives in the panel instead.
+    def _mk_md1(m):
+        t = m["phases"][0]["tasks"]
+        t[0]["model"] = "claude-opus-5"
+        t[1]["model"] = "claude-opus-5"
+        t.append({"id": "P0.3", "title": "typo", "status": "pending",
+                  "model": "claude-opsu-5"})
+    check("md1 a once-used model one edit from an established one warns",
+          None, _mk_md1, expect_warning="'claude-opsu-5'")
+    def _mk_md2(m):
+        t = m["phases"][0]["tasks"]
+        t[0]["model"] = "sonnet"
+        t[1]["model"] = "Sonnet"
+    check("md2 a case-only near-miss used once warns", None, _mk_md2,
+          expect_warning="'Sonnet'")
+    # md3: a clean single-model manifest never draws this (the mv5 pattern) --
+    # there is no second spelling to near-miss against.
+    m_md = copy.deepcopy(_valid_manifest())
+    for _t in m_md["phases"][0]["tasks"]:
+        _t["model"] = "claude-opus-5"
+    f_md, w_md = validate(m_md)
+    noise_md = [x for x in w_md if "model" in x]
+    ok_md = f_md == [] and noise_md == []
+    results.append(ok_md)
+    print("%s md3 a clean single-model manifest draws no model warning (%s)"
+          % ("PASS" if ok_md else "FAIL",
+             "clean" if ok_md else (f_md or noise_md)))
+    def _mk_md4(m):
+        m["meta"]["usage"] = {"pricing": {"claude-haiku-4-5": {"in": 1.0}}}
+        m["phases"][0]["tasks"][0]["model"] = "claude-haiku-45"
+    check("md4 a once-used near-miss of a meta.usage.pricing key warns",
+          None, _mk_md4, expect_warning="'claude-haiku-45'")
+    # md5: a value used twice is an established spelling, not a slip -- even
+    # one edit away from another established one.
+    m_md5 = copy.deepcopy(_valid_manifest())
+    _ts = m_md5["phases"][0]["tasks"]
+    _ts[0]["model"] = "claude-opus-5"
+    _ts[1]["model"] = "claude-opus-5"
+    _ts.append({"id": "P0.3", "title": "x", "status": "pending",
+                "model": "claude-opsu-5"})
+    _ts.append({"id": "P0.4", "title": "y", "status": "pending",
+                "model": "claude-opsu-5"})
+    f_md5, w_md5 = validate(m_md5)
+    noise_md5 = [x for x in w_md5 if "is used once" in x]
+    ok_md5 = f_md5 == [] and noise_md5 == []
+    results.append(ok_md5)
+    print("%s md5 a spelling used twice is established, never flagged (%s)"
+          % ("PASS" if ok_md5 else "FAIL",
+             "clean" if ok_md5 else (f_md5 or noise_md5)))
+    def _mk_md6(m):
+        m["phases"][0]["review"] = {"model": "claude-opus5"}
+        for t in m["phases"][0]["tasks"]:
+            t["model"] = "claude-opus-5"
+    check("md6 a phase review model near-missing the task model warns, "
+          "naming the phase", None, _mk_md6, expect_warning="phase P0 review")
 
     # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os

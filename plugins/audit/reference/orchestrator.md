@@ -102,7 +102,7 @@ never hardcode branch names, package ids, skills, or build tools here:
 - `meta.reviewSkill` — DEFAULT skill invoked at phase sign-off (default **null** → skip; tests are the signer).
   A phase can override it, and a registered area sits between the two — see `meta.areas` below.
 - `meta.areas` — OPTIONAL registry of the areas a phase's `area` tag can name:
-  `{tag: {root, description, reviewSkill?, skills?}}`. Registration is optional in both directions —
+  `{tag: {root, description, reviewSkill?, skills?, owner?}}`. Registration is optional in both directions —
   a tag with no entry stays legal (the validator warns; nothing refuses), an entry no phase uses is
   legal too — so a single-app repo writes nothing and behaves exactly as before. `root` is relative
   to the PROJECT dir, like `task.files`. Registering a tag gives it two resolutions, and **both are
@@ -116,6 +116,9 @@ never hardcode branch names, package ids, skills, or build tools here:
   - When a phase carries **several tags**, WRITTEN ORDER decides: the first tag whose area declares
     the field answers. `/audit:status` prints the resolved reviewer and the basis it came from
     (`review: backend-review (area api)`), so you never have to re-derive this by hand.
+  - An area may also declare an advisory **`owner`** (v0.34) — who to coordinate with, never an
+    assignee; nothing gates on it. If the plan gate's heads-up names an owner mismatch during a
+    task, carry it into the handoff — coordination is the point, the edit itself is fine.
 - `meta.runtimeBoot` — object `{appRootPath, launch, verify}` for a runtime smoke gate (default **null** → skip).
 - `meta.nodePreamble` — shell prefix to run before build gates, e.g. `source ~/.nvm/nvm.sh && nvm use`
   (default **null** → run gates directly). Do NOT pipe it — run it as its own statement, then chain the command.

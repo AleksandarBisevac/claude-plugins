@@ -190,7 +190,7 @@ TESTS_MODE = {
     "gate-only": "Gate only",
 }
 RISK = {"low": "Low", "med": "Medium", "high": "High"}
-GATE_TIER = {"observe": "Observe", "warn": "Warn", "deny": "Deny"}
+GATE_TIER = {"observe": "Observe", "warn": "Warn", "ask": "Ask", "deny": "Deny"}
 
 # One flat map for the surfaces that render statuses and bug statuses in the same
 # table cell. The two disagree on nothing: `in_progress` reads the same either way.

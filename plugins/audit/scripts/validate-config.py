@@ -33,10 +33,15 @@ import _policy  # noqa: E402  (the policy block's shape + the resolution it feed
 # --- known keys -----------------------------------------------------------------
 # Mirror of hooks/_config.py DEFAULTS key set (source of truth for the hooks).
 KNOWN_ROOT = {
-    "manifestPath", "gitRoot", "exemptGlobs", "enforce", "trivialLineThreshold",
-    "stateDir", "logsDir", "bypassKeyword", "secretPatterns", "guardEdits",
-    "bashWriteCheck", "tddReminder", "usage", "journal", "policy",
+    "manifestPath", "gitRoot", "exemptGlobs", "enforce", "planGate",
+    "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
+    "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
+    "journal", "policy",
 }
+# The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
+# module stays the source of truth for the gate itself); the selftest below pins
+# the two together, and the panel's select reads THIS tuple via _cfg_enums.
+PLAN_GATE_MODES = ("observe", "warn", "ask", "deny")
 KNOWN_SECRET = {"extra"}
 KNOWN_GUARD = {"tokenVars", "customRules"}
 KNOWN_RULE = {"pathPrefix", "bannedPattern", "message"}
@@ -125,6 +130,19 @@ def validate_config(obj):
     # file says otherwise is exactly the surprise this finding prevents.
     if "enforce" in obj and not isinstance(obj["enforce"], bool):
         findings.append("enforce must be true or false (a bool, not a string)")
+
+    # Same reasoning, stronger stakes: the hook fails OPEN on a planGate typo
+    # (the graded ladder, never deny), so a value outside the enum is a setting
+    # that silently does nothing while reading like a decision.
+    if "planGate" in obj and obj["planGate"] not in PLAN_GATE_MODES:
+        findings.append("planGate must be one of %s - the gate reads anything "
+                        "else as unset (the graded ladder)"
+                        % (PLAN_GATE_MODES,))
+    if "planGate" in obj and "enforce" in obj:
+        warnings.append("both planGate and enforce are set - planGate wins; "
+                        "enforce is legacy (true means the same as planGate: "
+                        "\"deny\"), so drop it to keep one statement of the "
+                        "gate's tier")
 
     sp = obj.get("secretPatterns")
     if sp is not None:
@@ -419,6 +437,34 @@ def _selftest():
     check("enforce as a number is a finding", any("enforce" in x for x in f))
     f, w = validate_config({"enforce": False})
     check("enforce is a known root key (no unknown-key warning)", not w)
+
+    # --- planGate (v0.34 B1) ---------------------------------------------------
+    # The hook fails OPEN on a typo (never to deny), which is exactly why the
+    # validator must fail LOUD on one: a value the gate silently reads as unset
+    # would otherwise sit in the file looking like a decision.
+    for _tier in ("observe", "warn", "ask", "deny"):
+        f, w = validate_config({"planGate": _tier})
+        check("planGate %r is a legal, known value (no finding, no warning)"
+              % _tier, not f and not w)
+    f, w = validate_config({"planGate": "denny"})
+    check("a typo'd planGate is a FINDING - the hook would silently read it "
+          "as unset", any("planGate" in x for x in f))
+    f, w = validate_config({"planGate": True})
+    check("a non-string planGate is a finding", any("planGate" in x for x in f))
+    f, w = validate_config({"planGate": "deny", "enforce": True})
+    check("planGate + enforce together is a WARNING naming the winner - the "
+          "file still works, planGate wins",
+          not f and any("planGate" in x and "enforce" in x for x in w))
+    f, w = validate_config({"planGate": "observe", "enforce": False})
+    check("...and it fires whichever way they point (enforce:false is still "
+          "a second, losing statement about the same gate)",
+          not f and any("planGate" in x and "enforce" in x for x in w))
+    import _loader as _ldr
+    _hcfg = _ldr.load_hooks_config(modname="audit__config_vc_selftest")
+    check("PLAN_GATE_MODES IS the hooks' own tier tuple - the panel's select "
+          "reads this validator, so a tier the gate honours can never be "
+          "missing from the form",
+          tuple(PLAN_GATE_MODES) == tuple(_hcfg.PLAN_GATE_TIERS))
 
     # The `//comment` convention is what this plugin's own template ships; warning
     # about it made the template fail its own validator nine times over.

@@ -89,6 +89,7 @@ _FIELD_TOPICS = (
     ("meta.areas", "areas"),
     ("phases[].area", "areas"),
     ("enforce", "gate-tiers"),
+    ("planGate", "gate-tiers"),
     ("exemptGlobs", "gate-tiers"),
     ("trivialLineThreshold", "gate-tiers"),
     ("bypassKeyword", "gate-tiers"),
@@ -316,10 +317,15 @@ def _gate_topic():
                                                     "phaseRunning": True},
          "Refuses the edit unless the file is in the running task, exempt, or a "
          "single-use bypass was armed."),
+        ('planGate: "ask", whatever the evidence', {"planGate": "ask"},
+         {"exists": False},
+         "Each out-of-plan edit waits for the human's approval, once per edit. "
+         "Any tier can be pinned this way; observe is the only one that lowers "
+         "the gate below its evidence, and the doctor warns about it."),
         ("enforce: true, whatever the evidence", {"enforce": True},
          {"exists": False},
          "Always-on deny, as a decision someone made rather than a default that "
-         "surprises a stranger."),
+         "surprises a stranger. Legacy: planGate: \"deny\" says the same thing."),
     ):
         mode = cfg_mod.plan_gate_mode(cfg, state)
         rows.append([evidence, theme.label(mode, theme.GATE_TIER), effect])
@@ -339,6 +345,10 @@ def _gate_topic():
             "refuse at every tier.",
             "The shell-write half of the gate grades identically, so `sed -i` and "
             "the Edit tool agree about the same file.",
+            "`planGate` pins one tier by hand - observe, warn, ask or deny - "
+            "instead of grading on evidence, and it beats the legacy `enforce` "
+            "flag when both are set. A typo fails open to the graded ladder, "
+            "never to deny; the validator flags it.",
         ],
         "table": {
             "caption": "What the repo has, and what the gate does about it",
@@ -893,8 +903,13 @@ def _selftest():
                   for t in tps.values()))
     gate = tps["gate-tiers"]["table"]["rows"]
     check("t2 the gate table is COMPUTED by plan_gate_mode, not typed - these are "
-          "the hook's own answers to the hook's own three questions",
-          [r[1] for r in gate] == ["Observe", "Warn", "Deny", "Deny"], repr(gate))
+          "the hook's own answers, planGate rows included (v0.34: ask joins the "
+          "ladder, and the pinned-tier rows are the knob's own verdicts)",
+          [r[1] for r in gate] == ["Observe", "Warn", "Deny", "Ask", "Deny"],
+          repr(gate))
+    check("t2b the page says what the knob is and that it beats the legacy flag",
+          any("planGate" in p and "enforce" in p
+              for p in tps["gate-tiers"]["paragraphs"]))
     check("t3 the areas rule is the pinned sentence itself, so the drawer cannot "
           "state a different one from the four docs",
           any(_areas.REVIEW_RULE in p for p in tps["areas"]["paragraphs"])
@@ -1065,6 +1080,11 @@ def _selftest():
           and pay["fields"]["config"]["journal.enabled"]["topic"] == "journal"
           and pay["fields"]["config"]["enforce"]["topic"] == "gate-tiers"
           and pay["fields"]["manifest"]["meta.areas"]["topic"] == "areas")
+    check("p3b planGate is documented and opens the gate page, beside the "
+          "legacy flag it replaces",
+          pay["fields"]["config"].get("planGate", {}).get("topic") == "gate-tiers"
+          and "ask" in (pay["fields"]["config"].get("planGate", {})
+                        .get("enum") or []))
     check("p4 ...and every topic a field names exists",
           not [p for p, e in list(pay["fields"]["config"].items())
                + list(pay["fields"]["manifest"].items())

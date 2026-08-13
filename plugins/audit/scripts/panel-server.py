@@ -799,6 +799,49 @@ def _selftest():
     check("an empty field REMOVES the key rather than writing an empty string - a "
           "config listing every default is unreadable and freezes today's defaults",
           "function delPath(" in UI_HTML and "delPath(cfg,f.path)" in UI_HTML)
+    # --- gt: the planGate control (v0.34 B1) ------------------------------------
+    # One statement of the gate's tier: the select's preset reads the LEGACY
+    # enforce flag, and any change writes planGate while deleting enforce.
+    _pgf = (UI_HTML[UI_HTML.index("function planGateField("):]
+            if "function planGateField(" in UI_HTML else "")
+    _pgf = _pgf[:_pgf.index("\nfunction ")] if "\nfunction " in _pgf else _pgf
+    check("gt: the planGate control is a custom field wired into the CUSTOM map",
+          "function planGateField(" in UI_HTML
+          and "'planGate':()=>planGateField(cfg)" in UI_HTML)
+    check("gt: its preset reads planGate FIRST and the legacy enforce:true as "
+          "'deny' - inside the field's own slice (the F-D1 lesson)",
+          "cfg.planGate??(cfg.enforce===true?'deny':'')" in _pgf)
+    check("gt: a change writes planGate and deletes enforce - one statement of "
+          "the tier survives a save",
+          "setPath(cfg,'planGate',v)" in _pgf
+          and "delPath(cfg,'planGate')" in _pgf
+          and "delPath(cfg,'enforce')" in _pgf)
+    check("gt: the legacy preset says out loud where it came from and what "
+          "saving does about it",
+          "legacy enforce: true" in _pgf and "rewrites it as planGate" in _pgf)
+    check("gt: the tier choices are the validator's own tuple, served through "
+          "_cfg_enums like every other enum on the form",
+          _cfg_enums().get("planGate") == list(_vc.PLAN_GATE_MODES)
+          and "ENUMS.planGate" in _pgf)
+    # The Overview card fed by the polled gate block. Its code lives in
+    # renderOver, BELOW the Overview marker, so the D9 slice (pollRunStatus ->
+    # marker never touches renderSettings) stays intact by construction.
+    _over_src = UI_HTML[UI_HTML.index("function renderOver("):]
+    check("gt: the Overview draws a Plan gate card from the polled payload - "
+          "tier + source, the bypass indicator, and the events table",
+          "id:'gatecard'" in _over_src and "'Plan gate'" in _over_src
+          and "rs.gate" in _over_src
+          and "'data-bypass-armed':'1'" in _over_src
+          and "'data-ev':e.event||''" in _over_src
+          and "No gate events yet" in _over_src)
+    check("gt: the server block behind that card is _run_status's, with the "
+          "tier computed by the hooks' own functions",
+          isinstance((_run_status(proj, read_config(proj), {})
+                      .get("gate") or {}).get("mode"), str)
+          and "plan_gate_mode" in
+          open(os.path.join(_HERE, "_panel_state.py"),
+               encoding="utf-8").read().split("def _gate_block")[1]
+                                       .split("def _run_status")[0])
     check("and it drops the container it emptied, so no \"usage\": {} is left behind",
           "if(par&&typeof par==='object'&&!Object.keys(par).length)" in UI_HTML)
     check("Settings keeps the route, the screenshot name and the pinned id it "
@@ -1149,14 +1192,14 @@ def _selftest():
           "moved?el('span',{class:'badge pend'" in UI_HTML
           and "POLICY=await api('GET','/api/policy')" in UI_HTML)
     # EVERY assignment, not one of them. The first version of this pin asked
-    # whether the string appeared at all — and it appears three times (boot, save,
-    # discard), so a mutation that pointed one of them at the merged block left it
-    # green. A wholesale PUT built from defaults would write every default into the
-    # file the first time anyone pressed Save.
+    # whether the string appeared at all — and it appears four times (boot, save,
+    # discard, and v0.34's refreshFromDisk), so a mutation that pointed one of
+    # them at the merged block left it green. A wholesale PUT built from defaults
+    # would write every default into the file the first time anyone pressed Save.
     _pdraft = re.findall(r"PDRAFT=pClone\(([^)]*)\)", UI_HTML)
     check("the draft is the block AS WRITTEN, not the merged one - and that is "
           "true of every place the draft is set, not merely somewhere",
-          _pdraft == ["POLICY&&POLICY.stored"] * 3
+          _pdraft == ["POLICY&&POLICY.stored"] * 4
           and "pRuleOf(POLICY.stored,kind,r.name,tag)" in UI_HTML)
     check("a switch moves an EXACT name only, so a glob covering ten rows is not "
           "silently dropped by pressing Default on one of them",
@@ -1195,9 +1238,10 @@ def _selftest():
           and "if(Array.isArray(k[l])&&!k[l].length)delete k[l];" in UI_HTML
           and "if(!Object.keys(k.areas).length)delete k.areas;" in UI_HTML)
     check("a save goes through the one confirm flow, writes through the one policy "
-          "endpoint, and describes itself in the vocabulary the server echoes",
+          "endpoint, and describes itself in the vocabulary the server echoes "
+          "(four call sites: boot, PUT, the post-save re-read, refreshFromDisk)",
           "confirmChanges({title:'Save capability policy'" in UI_HTML
-          and UI_HTML.count("'/api/policy'") == 3
+          and UI_HTML.count("'/api/policy'") == 4
           and "function policyChanges(){" in UI_HTML
           and "return configChanges(cfg);}" in UI_HTML)
     check("the box saying what a save did survives the redraw that follows it, "
@@ -1831,6 +1875,26 @@ def _selftest():
           and "untagged?['untagged']:[]" in UI_HTML
           and "'all areas ('+vals.length+')'" in UI_HTML)
 
+    # --- usage ow (v0.34 D3): the advisory area owner on the Usage tab -------
+    # The server ships `areaOwners` {tag: owner} with the facts (_panel_state
+    # pins its key parity and derivation). Two read-only surfaces consume it:
+    # the person header's "owns:" line (a join of UF.author against the map's
+    # VALUES) and a native title tooltip on the area select's options. String
+    # pins here; the rendered truth lives in capture-screenshots.mjs --check.
+    check("ow: the person header joins the author against areaOwners VALUES "
+          "and renders an owns: line with a data-owns hook",
+          "const owned=Object.entries(USAGE.areaOwners||{})" in UI_HTML
+          and ".filter(([,o])=>o===who).map(([t])=>t).sort();" in UI_HTML
+          and "'owns: '+owned.join(', ')" in UI_HTML
+          and "'data-owns':owned.join(',')" in UI_HTML)
+    check("ow: ...and says it is advisory in the line itself - a label, "
+          "never an assignment",
+          "(advisory - meta.areas owner, not an assignee)" in UI_HTML)
+    check("ow: each area option carries its owner as a title tooltip, and "
+          "an ownerless tag carries none",
+          "const ow=(USAGE.areaOwners||{})[v];" in UI_HTML
+          and "if(ow)o.title='owner: '+ow;" in UI_HTML)
+
     # --- F5: an empty usage view explains itself ---------------------------
     # The range presets count back from the wall clock, so on a ledger that
     # stopped in May every preset but 90 selects nothing. That is the normal end
@@ -1924,6 +1988,201 @@ def _selftest():
           "because a scale is a drawing decision and not a measurement",
           "const peak=Math.max(...head.map(x=>x[1][0]))||1;" in UI_HTML
           and "const rng=(hi-lo)||1;" in UI_HTML)
+
+    # --- v0.34 C1 (cs): combo search over name+description+source -------------
+    # String pins over one inline script, as ever: the behaviour (the footer
+    # count recomputed in-page, description search on a controlled registry)
+    # is driven in tools/capture-screenshots.mjs --check.
+    check("cs: the combo filters on name, description AND source through one "
+          "lazily built haystack per item (the uHay pattern)",
+          "(it.name+' '+(it.description||'')+' '+(it.source||'')).toLowerCase()"
+          in UI_HTML
+          and "if(it.h===undefined)it.h=" in UI_HTML
+          and "it.name.toLowerCase().includes(q)" not in UI_HTML)
+    check("cs: the count is taken BEFORE the 60-item slice and the overflow "
+          "footer says how much is unshown",
+          "shown=all.slice(0,60);" in UI_HTML
+          and "combo-more" in UI_HTML
+          and "' more — keep typing'" in UI_HTML
+          and "if(all.length>shown.length)" in UI_HTML)
+    check("cs: the footer lives OUTSIDE the keyboard-nav array, so ArrowDown "
+          "can never land on a row that cannot be chosen",
+          "active=Math.min(active+1,shown.length-1)" in UI_HTML
+          and "shown.push" not in UI_HTML)
+    check("cs: the menu is position:fixed and re-placed on scroll, so the "
+          "composition table's own frame cannot clip it at its bottom edge",
+          ".combo-menu{position:fixed" in UI_HTML
+          and "menu.__place=place;" in UI_HTML
+          and "m.__place()" in UI_HTML)
+
+    # --- v0.34 C2 (mc): the model combo, three sources -------------------------
+    # The ledger-only listing and the collapse-safety of the review combo are
+    # driven in capture-screenshots.mjs --check; these pin the constructs.
+    check("mc: modelItems unions manifest, rates and ledger, with an honest "
+          "description per source and _default skipped",
+          "function modelItems(" in UI_HTML
+          and "add(m,'manifest','used by '+bits.join(', '));" in UI_HTML
+          and "' out per MTok');" in UI_HTML
+          and "' tokens in this ledger'" in UI_HTML
+          and "if(m==='_default')return;" in UI_HTML)
+    check("mc: the union is cached and invalidated whenever STATE/USAGE are "
+          "refetched, so a keystroke never re-scans 20000 facts",
+          "return (MITEMS=[...out.values()]);" in UI_HTML
+          and UI_HTML.count("MITEMS=null") >= 2)
+    check("mc: the task model, the phase review model and the pricing add "
+          "box all ride the combo",
+          "comboWrap(model,modelItems," in UI_HTML
+          and "comboWrap(rev,modelItems," in UI_HTML
+          and "comboWrap(add,modelItems," in UI_HTML)
+    check("mc: choosing from the menu writes the SAME patch the keystroke "
+          "writes",
+          "model.value=name;setModel(name);close();" in UI_HTML
+          and "rev.value=name;setRev(name);close();" in UI_HTML)
+    check("mc: the stopPropagation moved from the review input to its combo "
+          "WRAPPER - a click on the menu must not collapse the phase row",
+          "revCombo.onclick=e=>e.stopPropagation();" in UI_HTML
+          and "rev.onclick=e=>e.stopPropagation();" not in UI_HTML)
+    check("mc: the three-source near-miss hint is a .mut note, never a "
+          "finding - the panel cannot know which spelling was intended, and "
+          "the validator cannot see the ledger or the rate table at all",
+          "function modelHints(" in UI_HTML
+          and "class:'mut small','data-mdhint'" in UI_HTML)
+
+    # --- v0.34 C3 (sv): the save-result card's lifecycle -----------------------
+    # The card that never left: "✓ saved" used to sit in the findings slot for
+    # the rest of the session, indistinguishable from a save that just landed.
+    # The lifecycle (present -> gone after SAVE_NOTE_MS; error card closable)
+    # is driven in capture-screenshots.mjs --check; these pin the constructs.
+    check("sv: the success card dissolves after SAVE_NOTE_MS through an "
+          "opacity TRANSITION, never a keyframe (the browser checks' settle() "
+          "waits out getAnimations, and a keyframe would stall every shutter)",
+          "const SAVE_NOTE_MS=5000;" in UI_HTML
+          and "okd.classList.add('fadeout')" in UI_HTML
+          and ".savenote .findings.ok{transition:opacity" in UI_HTML
+          and "@keyframes fadeout" not in UI_HTML)
+    check("sv: the timer belongs to the NODE, armed once at creation, so "
+          "renderPolicy's PNOTE carry cannot re-arm it - plus a fallback "
+          "removal for a card whose transition never fires (hidden tab)",
+          UI_HTML.count("okd.classList.add('fadeout')") == 1
+          and "setTimeout(()=>okd.remove(),600)" in UI_HTML)
+    _fb = UI_HTML[UI_HTML.index("function findingsBox"):]
+    _fb = _fb[:_fb.index("return box;}")]
+    _fberr = _fb[_fb.index("res.findings&&res.findings.length"):
+                 _fb.index("res.warnings&&res.warnings.length")]
+    check("sv: the error card is a bold title + the findings body + a dismiss "
+          "button, and carries NO timer of its own - a refusal must outlive "
+          "a glance away",
+          "'Save rejected — nothing was written'" in _fberr
+          and "'Locked — nothing was written'" in _fberr
+          and "'data-notex':'1'" in _fberr
+          and "'aria-label':'dismiss'" in _fberr
+          and "setTimeout" not in _fberr)
+    _fbwarn = _fb[_fb.index("res.warnings&&res.warnings.length"):
+                  _fb.index("if(res.ok")]
+    check("sv: warnings persist - no timer and no dismiss machinery; the next "
+          "Save/Discard's replaceChildren is what clears them",
+          "findings warn" in _fbwarn and "setTimeout" not in _fbwarn)
+    check("sv: the #toast banner keeps its 2600ms - the noToast budget and "
+          "the 900ms content checks are calibrated against it",
+          ".trim(),2600)" in UI_HTML)
+    check("sv: a multi-finding card scrolls inside itself on a phone rather "
+          "than owning the screen",
+          "@media(max-width:34rem){.savenote .fbody{max-height" in UI_HTML)
+
+    # --- v0.34 C4 (fp): usage-filter persistence --------------------------------
+    # Reload/share-link/clearAll round trips are driven in
+    # capture-screenshots.mjs --check; these pin the grammar and the wiring.
+    check("fp: the hash grammar is '#/<tab>!k=v&...' - both hash READERS "
+          "split on the FIRST '!', and the tab writer carries the fragment",
+          UI_HTML.count(".split('!')[0]") == 2
+          and "const uf=uFragment();const h='#/'+t+(uf?'!'+uf:'');" in UI_HTML)
+    check("fp: the codec mirrors the report's keys where the two overlap "
+          "(m/au/a, day as from/to) and encodes the same way",
+          "const UFKEY={model:'m',author:'au',area:'a',phase:'ph',task:'tk',"
+          "agent:'ag',attr:'at',q:'q'};" in UI_HTML
+          and "put('from',p[0]);put('to',p[1]);" in UI_HTML
+          and "parts.push(k+'='+encodeURIComponent(v))" in UI_HTML)
+    check("fp: the store is keyed per PROJECT - filters describe one repo's "
+          "plan, while the theme and the active tab stay global on purpose",
+          "const UFSTORE='audit-panel-uf:'+PROJECT;" in UI_HTML)
+    _boot = UI_HTML[UI_HTML.index("async function boot()"):]
+    _boot = _boot[:_boot.index("startRunPoll()")]
+    check("fp: restore runs in boot() BEFORE the first renderUsage - hash "
+          "over storage over defaults",
+          "uApplyFragment(h.slice(bang+1))" in _boot
+          and "localStorage.getItem(UFSTORE)" in _boot
+          and _boot.index("uApplyFragment") < _boot.index("renderUsage()"))
+    check("fp: clearAll clears the store AND the fragment INSIDE its own "
+          "slice (the F-D1 lesson: a pin outside the function it vouches for "
+          "vouches for nothing)",
+          "localStorage.removeItem(UFSTORE)" in
+          UI_HTML.split("function clearAll()")[1][:400]
+          and "syncUFHash('')" in UI_HTML.split("function clearAll()")[1][:400])
+    check("fp: empty filters take the fragment OFF (the report's syncHash "
+          "rule), and the write-through lives in renderUsage so every "
+          "mutation path persists",
+          "else localStorage.removeItem(UFSTORE)" in UI_HTML
+          and "persistUF();" in UI_HTML.split("function renderUsage()")[1][:250])
+    _ufrag = UI_HTML[UI_HTML.index("function uFragment()"):]
+    _ufrag = _ufrag[:_ufrag.index("function uApplyFragment")]
+    check("fp: SHOWN depths are session furniture and never enter the codec",
+          "SHOWN" not in _ufrag)
+
+    # --- v0.34 C5 (lv): live data - polling + fingerprint -----------------------
+    # The fingerprint's own cases (stability, what moves it) live in
+    # _panel_state.py; the out-of-band-write round trip is driven in
+    # capture-screenshots.mjs --check. These pin the client wiring.
+    check("lv: the fingerprint rides the runstatus PAYLOAD and stays OUT of "
+          "runStatusKey - the D9 claim (the poll never has to refetch full "
+          "state) stays literally true of the poll itself. gt: the GATE block "
+          "is IN the key ({i,p,g}), so a fresh gate event repaints the card "
+          "from the same payload",
+          "function runStatusKey(rs){return JSON.stringify(rs&&{i:rs.index,"
+          "p:rs.phases,g:rs.gate});}" in UI_HTML
+          and isinstance(_run_status(proj, read_config(proj), {})
+                         .get("fingerprint"), str))
+    _poll = UI_HTML[UI_HTML.index("async function pollRunStatus"):
+                    UI_HTML.index("// ---------- Overview")]
+    check("lv: a changed fingerprint hands off to refreshFromDisk, is "
+          "DEFERRED while any dialog is open (FP stays put, so the next poll "
+          "retries), and the first sight only seeds",
+          "refreshFromDisk();" in _poll
+          and "!document.querySelector('dialog[open]')" in _poll
+          and "if(FP===null)FP=fp;" in _poll)
+    check("lv: refreshFromDisk is defined OUTSIDE the D9 slice - the poll "
+          "path still never touches renderSettings",
+          "async function refreshFromDisk()" in UI_HTML
+          and UI_HTML.index("async function refreshFromDisk()")
+          > UI_HTML.index("// ---------- Overview"))
+    _rfd = UI_HTML[UI_HTML.index("function staleNote("):UI_HTML.index("const OVF=")]
+    check("lv: dirtiness is judged BEFORE the state swap and only clean views "
+          "re-render - a dirty one keeps its edits and gets the persistent "
+          "notice instead",
+          "const dirty={guards:editRows('guards').length>0" in _rfd
+          and "if(!dirty.guards)reRender('guards',renderSettings);"
+              "else staleNote('guards');" in _rfd
+          and "if(!dirty.comp)reRender('comp',renderComp);"
+              "else staleNote('comp');" in _rfd
+          and "else staleNote('policy');" in _rfd)
+    check("lv: the findings-slot nodes are CARRIED across the refresh render "
+          "(the PNOTE move) - an own save moves the stamp too, and the "
+          "refresh must not eat the card whose 5s clock belongs to the node",
+          "const keep=slot?[...slot.childNodes]:[];" in _rfd
+          and "if(s2&&keep.length)s2.append(...keep);" in _rfd)
+    check("lv: renderUsage and renderOver always re-render (UF and the caret "
+          "restore already survive them), caches are dropped, and the scroll "
+          "position is put back after the chart remounts",
+          "renderOver();" in _rfd and "renderUsage();" in _rfd
+          and "BANDS=null;MITEMS=null;" in _rfd
+          and "const y=window.scrollY;" in _rfd
+          and "requestAnimationFrame(()=>window.scrollTo(0,y));" in _rfd)
+    check("lv: FP is seeded from the boot payload, so a fresh panel does not "
+          "double-fetch on its first poll",
+          "FP=(RUNSTATUS||{}).fingerprint||null;" in UI_HTML)
+    check("lv: the stale notice is added once per view and names what Save "
+          "and Discard will do about the moved file",
+          "'data-stale':id" in UI_HTML
+          and "slot.querySelector('[data-stale]')" in UI_HTML)
 
     # usage_state's own cases (facts, the roll-up cap, the declared rate basis)
     # moved to _panel_state.py (P12.3); everything above is the tab that reads it.

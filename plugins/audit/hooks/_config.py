@@ -25,14 +25,21 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   Default '.' (project dir IS the git root).
                                   Keep in sync with the manifest's meta.gitRoot.
   exemptGlobs             [str] — globs exempt from plan-first enforcement
-  enforce                 bool  — force the plan gate to DENY regardless of evidence.
-                                  Default false, which grades the gate: observe with
-                                  no manifest, warn with a manifest but nothing
-                                  running, deny once a phase is in_progress. Set true
-                                  to get always-on deny (the pre-0.20 behaviour).
-                                  Only the PLAN gate is graded — the secret guards
-                                  deny by default either way, because reading .env is
-                                  wrong whether or not a plan exists.
+  enforce                 bool  — LEGACY: force the plan gate to DENY regardless of
+                                  evidence (same as planGate: "deny"; planGate wins
+                                  when both are set). Default false, which grades
+                                  the gate: observe with no manifest, warn with a
+                                  manifest but nothing running, deny once a phase
+                                  is in_progress. Only the PLAN gate is graded —
+                                  the secret guards deny by default either way,
+                                  because reading .env is wrong whether or not a
+                                  plan exists.
+  planGate                str   — pin the plan gate to one tier by hand:
+                                  "observe" | "warn" | "ask" | "deny". Absent (the
+                                  default) keeps the graded ladder above. "ask"
+                                  surfaces each out-of-plan edit for the human's
+                                  approval. Beats enforce; a typo fails open to
+                                  the ladder (the validator flags it).
   trivialLineThreshold    int   — max added lines for the 1st free code file/session
   stateDir                str   — where per-session state files live
   logsDir                 str   — where the bypass log lives
@@ -82,6 +89,7 @@ import fnmatch
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 CONFIG_REL = ".claude/audit.config.json"
@@ -117,7 +125,13 @@ DEFAULTS = {
         "**/test_*.*",
     ],
     # false grades the plan gate by evidence; true restores always-on deny.
+    # LEGACY: `planGate: "deny"` says the same thing, and planGate wins when
+    # both are set.
     "enforce": False,
+    # Pin the plan gate to one tier by hand: "observe" | "warn" | "ask" | "deny".
+    # None (the default) keeps the graded ladder plan_gate_mode documents. A
+    # typo fails OPEN to the ladder -- never to deny.
+    "planGate": None,
     "trivialLineThreshold": 80,
     "stateDir": ".claude/state",
     "logsDir": ".claude/logs",
@@ -339,6 +353,26 @@ def ledger_dir(root, cfg):
     cursor would re-scan from offset 0 and double-count."""
     return Path(root) / (usage_cfg(cfg).get("ledgerDir")
                          or DEFAULTS["usage"]["ledgerDir"])
+
+
+# --- usage ledger ---------------------------------------------------------------
+_LEDGER_LIB = {"tried": False, "mod": None}
+
+
+def _ledger_lib():
+    """scripts/usage_ledger.py, loaded once — the `_load_journal_lib` caching.
+
+    Honest accounting: a hook process resolves an author once per run, so in
+    production this cache saves almost nothing. What it buys is parity (the
+    ledger module now has the same one-load seam the journal and areas modules
+    have) and the selftests, which drive `_author` dozens of times and were
+    re-executing a ~1800-line module on every call. None when it cannot be
+    loaded — callers read that as "author attribution is off"."""
+    if not _LEDGER_LIB["tried"]:
+        _LEDGER_LIB["tried"] = True
+        _LEDGER_LIB["mod"] = _load_scripts_module("usage_ledger",
+                                                  "usage_ledger.py")
+    return _LEDGER_LIB["mod"]
 
 
 # --- journal ------------------------------------------------------------------
@@ -801,7 +835,12 @@ def in_progress_files(root, manifest_rel):
 
 
 def manifest_state(root, manifest_rel):
-    """How much the plan gate actually knows: {"exists": bool, "phaseRunning": bool}.
+    """How much the plan gate actually knows:
+    {"exists": bool, "phaseRunning": bool, "runningPhase": "<id>"|None}.
+
+    `runningPhase` names the phase behind `phaseRunning` (the phase itself when
+    it is in_progress, the OWNER phase when only a task is), so a denial can say
+    "phase P3 is in_progress" instead of the anonymous claim that shipped F-F4.
 
     The gate's verdict is graded on this, so the two questions have to be answered
     separately. "No manifest" and "a manifest with nothing running" look identical to
@@ -820,7 +859,7 @@ def manifest_state(root, manifest_rel):
 
     Never raises. On any error it reports the LEAST aggressive state, so a crash in
     here can only relax the gate, never invent a denial."""
-    state = {"exists": False, "phaseRunning": False}
+    state = {"exists": False, "phaseRunning": False, "runningPhase": None}
     try:
         path = Path(root) / manifest_rel
         if not path.exists():
@@ -834,19 +873,54 @@ def manifest_state(root, manifest_rel):
                 continue
             if phase.get("status") == "in_progress":
                 state["phaseRunning"] = True
+                state["runningPhase"] = phase.get("id")
                 return state
             for task in phase.get("tasks", []) or []:
                 if isinstance(task, dict) and task.get("status") == "in_progress":
                     state["phaseRunning"] = True
+                    state["runningPhase"] = phase.get("id")
                     return state
     except Exception:
         pass
     return state
 
 
+# --- plan-first bypass ----------------------------------------------------------
+# How long an armed #no-plan bypass stays live before require-plan treats it as
+# never armed (deleting it on its next Post pass). A CONSTANT, not a config key,
+# on purpose: the surface for one knob is large (schema, validator, panel
+# control, help, docs) and nobody has asked for tunability -- if someone does,
+# the upgrade path is a `bypassTtlMinutes` key beside `bypassKeyword` in
+# DEFAULTS, threaded through those same places. Legacy bypass slots without
+# `armedAtEpoch` are honoured WITHOUT a TTL (fail-open; the 7-day state GC
+# still sweeps them).
+BYPASS_TTL_SECONDS = 30 * 60
+
 # --- plan gate ----------------------------------------------------------------
+# The tiers `planGate` may pin, in escalation order. validate-config.py mirrors
+# this as PLAN_GATE_MODES (its FINDING enum, which the panel's select reads);
+# the two are pinned together by that validator's selftest.
+PLAN_GATE_TIERS = ("observe", "warn", "ask", "deny")
+
+
+def plan_gate_knob(cfg):
+    """The `planGate` override: one of PLAN_GATE_TIERS, or None when unset.
+
+    Fail-open on a typo, and openly: a value outside the enum reads as UNSET
+    (the graded ladder), never as deny -- the validator makes the typo a
+    FINDING, so it is caught where it can be read rather than silently obeyed
+    as something else."""
+    try:
+        val = (cfg or {}).get("planGate")
+        if isinstance(val, str) and val in PLAN_GATE_TIERS:
+            return val
+    except Exception:
+        pass
+    return None
+
+
 def plan_gate_mode(cfg, state):
-    """Resolve evidence into "observe" | "warn" | "deny".
+    """Resolve evidence into "observe" | "warn" | "ask" | "deny".
 
     The product is plan-first development, mechanically enforced. In a repo with no
     manifest there is no plan, so there is nothing to enforce — what a deny does
@@ -862,9 +936,21 @@ def plan_gate_mode(cfg, state):
         manifest, nothing running    -> warn      (advisory)
         manifest + a phase running   -> deny      (full enforcement)
 
+    `planGate` (v0.34) pins one tier by hand — "observe" | "warn" | "ask" |
+    "deny" — and wins over everything below, including `enforce`: it is the
+    newer, more explicit spelling, and when the two disagree the one that can
+    say all four things beats the one that can only say deny. "ask" surfaces
+    each out-of-plan edit for the human's approval; "observe" is the only
+    setting that LOWERS the gate below its evidence, which the doctor warns
+    about when a phase is running.
+
     `enforce: true` restores always-on deny for anyone who wants it — as a decision
-    someone made, rather than a default that surprises a stranger."""
+    someone made, rather than a default that surprises a stranger. It is the
+    legacy spelling of `planGate: "deny"`."""
     try:
+        knob = plan_gate_knob(cfg)
+        if knob:
+            return knob
         if enforce_always(cfg):
             return "deny"
         if not (state or {}).get("exists"):
@@ -883,6 +969,58 @@ def enforce_always(cfg):
     except Exception:
         pass
     return bool(DEFAULTS.get("enforce", False))
+
+
+# --- gate events feed -----------------------------------------------------------
+GATE_EVENTS_FILE = "plan-gate-events.jsonl"
+_GATE_EVENTS_MAX_BYTES = 512 * 1024
+_GATE_EVENTS_KEEP_LINES = 400
+_GATE_EVENT_KEYS = ("event", "file", "mode", "reason", "sessionId")
+
+
+def append_gate_event(logs_dir, event):
+    """One compact JSON line into `<logsDir>/plan-gate-events.jsonl` (v0.34 B3).
+
+    The gate's verdicts used to leave NO trace at all — only the bypass
+    arm/consume had a log — so "what has the gate been doing" had no answer a
+    human could read. This is that answer's raw feed: telemetry, not evidence.
+    It lives in logsDir on purpose (stateDir is per-session GC territory; the
+    journal is the tamper-evidence surface, and telemetry does not belong in a
+    hash chain). The panel's Overview reads the tail of it.
+
+    The row is {ts} + the allow-listed keys of `event`, stringified and
+    bounded; unknown keys are dropped, None values omitted. Never raises —
+    this runs inside blocking hooks, and a feed that cannot be written is
+    silence, not an error.
+
+    Self-trim: past ~512KB the newest ~400 lines are rewritten through a temp
+    file + os.replace (atomic on POSIX and Windows alike), fail-open."""
+    try:
+        logs = Path(logs_dir)
+        logs.mkdir(parents=True, exist_ok=True)
+        path = logs / GATE_EVENTS_FILE
+        row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        for key in _GATE_EVENT_KEYS:
+            val = (event or {}).get(key) if isinstance(event, dict) else None
+            if val is not None:
+                row[key] = str(val)[:200]
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True, separators=(",", ":"),
+                                ensure_ascii=True) + "\n")
+        try:
+            if path.stat().st_size > _GATE_EVENTS_MAX_BYTES:
+                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    lines = fh.read().splitlines()
+                keep = lines[-_GATE_EVENTS_KEEP_LINES:]
+                tmp_path = str(path) + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as fh:
+                    fh.write("\n".join(keep) + "\n")
+                os.replace(tmp_path, str(path))
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
 
 
 # --- selftest -----------------------------------------------------------------
@@ -994,16 +1132,20 @@ def _selftest() -> int:
             (d / "audit-plan.json").write_text(json.dumps(idx), encoding="utf-8")
 
         st = manifest_state(tmp_f, rel)
-        check("f1 no manifest -> exists False, phaseRunning False",
-              st == {"exists": False, "phaseRunning": False}, repr(st))
+        check("f1 no manifest -> exists False, phaseRunning False, no phase "
+              "to name",
+              st == {"exists": False, "phaseRunning": False,
+                     "runningPhase": None}, repr(st))
         check("f2 no manifest -> observe", plan_gate_mode({}, st) == "observe")
 
         write_manifest({"meta": {"version": 2}, "phases": [
             {"id": "P1", "title": "p", "status": "done", "tasks": [
                 {"id": "P1.1", "title": "t", "status": "done"}]}]})
         st = manifest_state(tmp_f, rel)
-        check("f3 manifest with nothing running -> exists, not running",
-              st == {"exists": True, "phaseRunning": False}, repr(st))
+        check("f3 manifest with nothing running -> exists, not running, no "
+              "phase to name",
+              st == {"exists": True, "phaseRunning": False,
+                     "runningPhase": None}, repr(st))
         check("f4 manifest, nothing running -> warn", plan_gate_mode({}, st) == "warn")
 
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -1011,6 +1153,9 @@ def _selftest() -> int:
                 {"id": "P1.1", "title": "t", "status": "pending"}]}]})
         st = manifest_state(tmp_f, rel)
         check("f5 in_progress phase -> phaseRunning", st["phaseRunning"] is True)
+        check("f5b ...and the state NAMES the phase, so a denial can say which "
+              "plan is holding the pen (F-F4)", st["runningPhase"] == "P1",
+              repr(st))
         check("f6 manifest + running phase -> deny", plan_gate_mode({}, st) == "deny")
 
         # A task running under a phase that is not still counts as executing a plan.
@@ -1019,6 +1164,8 @@ def _selftest() -> int:
                 {"id": "P1.1", "title": "t", "status": "in_progress"}]}]})
         check("f7 in_progress TASK under a pending phase counts as running",
               manifest_state(tmp_f, rel)["phaseRunning"] is True)
+        check("f7b ...and the task's OWNER phase is the one named",
+              manifest_state(tmp_f, rel)["runningPhase"] == "P1")
 
         # The sharded trap: the index stub has no status, so a raw read sees None.
         write_manifest({"phases": [
@@ -1066,9 +1213,42 @@ def _selftest() -> int:
 
         # Never raises, and degrades to the least aggressive verdict.
         check("f14 manifest_state on garbage input still returns the safe shape",
-              manifest_state(None, None) == {"exists": False, "phaseRunning": False})
+              manifest_state(None, None) == {"exists": False,
+                                             "phaseRunning": False,
+                                             "runningPhase": None})
         check("f15 plan_gate_mode on garbage input degrades to observe",
               plan_gate_mode(None, None) == "observe")
+
+        # --- planGate: pin a tier by hand (v0.34 B1) --------------------------
+        # `planGate` set = that tier, whatever the evidence; absent = the graded
+        # ladder above, unchanged. It beats the legacy `enforce` when both are
+        # set, and a typo fails OPEN to the ladder rather than to deny.
+        _none = {"exists": False, "phaseRunning": False}
+        _running = {"exists": True, "phaseRunning": True}
+        check("f16 planGate: 'deny' pins deny with no evidence at all",
+              plan_gate_mode({"planGate": "deny"}, _none) == "deny")
+        check("f17 planGate: 'observe' pins observe even while a phase runs - "
+              "the one setting that LOWERS the gate below its evidence",
+              plan_gate_mode({"planGate": "observe"}, _running) == "observe")
+        check("f18 planGate: 'ask' is a tier of its own",
+              plan_gate_mode({"planGate": "ask"}, _none) == "ask"
+              and plan_gate_mode({"planGate": "ask"}, _running) == "ask")
+        check("f19 planGate: 'warn' pins warn",
+              plan_gate_mode({"planGate": "warn"}, _running) == "warn")
+        check("f20 planGate beats enforce, in both directions",
+              plan_gate_mode({"planGate": "observe", "enforce": True},
+                             _running) == "observe"
+              and plan_gate_mode({"planGate": "deny", "enforce": False},
+                                 _none) == "deny")
+        check("f21 a typo'd or non-string planGate fails OPEN to the ladder",
+              plan_gate_mode({"planGate": "denny"}, _none) == "observe"
+              and plan_gate_mode({"planGate": 1}, _running) == "deny"
+              and plan_gate_knob({"planGate": "denny"}) is None
+              and plan_gate_knob(None) is None)
+        check("f22 absent means graded - the default is None, not a mode",
+              DEFAULTS.get("planGate", "MISSING") is None
+              and plan_gate_knob({}) is None
+              and plan_gate_knob({"planGate": "warn"}) == "warn")
     finally:
         shutil.rmtree(tmp_f, ignore_errors=True)
 
@@ -1124,6 +1304,59 @@ def _selftest() -> int:
               and str(jd) == _jmod.journal_dir(str(tmp_j), cfg_j))
     finally:
         shutil.rmtree(tmp_j, ignore_errors=True)
+
+    # (k) the gate events feed (v0.34 B3): the gate's verdicts used to leave no
+    # trace at all — only the bypass had a log. One compact line per verdict,
+    # into logsDir (stateDir is GC territory; the journal is tamper-evidence,
+    # and telemetry does not belong in a hash chain), self-trimming, never
+    # raising.
+    tmp_k = Path(tempfile.mkdtemp(prefix="config-gate-events-"))
+    try:
+        kld = tmp_k / "logs"
+        append_gate_event(kld, {"event": "deny", "file": "src/a.ts",
+                                "mode": "deny", "reason": "second file",
+                                "sessionId": "sess-k"})
+        kpath = kld / GATE_EVENTS_FILE
+        try:
+            klines = kpath.read_text(encoding="utf-8").splitlines()
+            krow = json.loads(klines[0])
+        except Exception:
+            klines, krow = [], {}
+        check("k1 one verdict, one compact parseable line, ts included",
+              len(klines) == 1 and krow.get("event") == "deny"
+              and krow.get("file") == "src/a.ts" and krow.get("mode") == "deny"
+              and krow.get("sessionId") == "sess-k" and bool(krow.get("ts")),
+              repr(klines[:1]))
+        append_gate_event(kld, {"event": "warn", "invented": "nope",
+                                "reason": None})
+        krow2 = json.loads(kpath.read_text(encoding="utf-8").splitlines()[-1])
+        check("k2 unknown keys are dropped and None values are omitted, so the "
+              "row shape stays the contract's",
+              set(krow2) <= {"ts", "event", "file", "mode", "reason",
+                             "sessionId"} and "invented" not in krow2
+              and "reason" not in krow2, repr(krow2))
+        check("k3 garbage in, silence out - never a raise into a hook",
+              append_gate_event(None, None) is None
+              and append_gate_event(tmp_k / "logs2", "not a dict") is None)
+        # The self-trim, deterministically: an already-oversized feed is
+        # rewritten down to the newest ~400 lines by the very next append,
+        # and that append's own row survives the rewrite as the newest line.
+        big_line = json.dumps({"ts": "t", "event": "observe",
+                               "file": "y" * 180})
+        with open(kpath, "w", encoding="utf-8") as fh:
+            fh.write((big_line + "\n") * 3000)          # ~650KB, over the cap
+        check("k4a (fixture guard) the constructed feed really is over the cap",
+              kpath.stat().st_size > _GATE_EVENTS_MAX_BYTES)
+        append_gate_event(kld, {"event": "deny", "file": "newest.ts"})
+        klines = kpath.read_text(encoding="utf-8").splitlines()
+        check("k4 past ~512KB the feed trims itself to the newest ~400 lines, "
+              "and the newest row survives the rewrite",
+              len(klines) == _GATE_EVENTS_KEEP_LINES
+              and kpath.stat().st_size < _GATE_EVENTS_MAX_BYTES
+              and json.loads(klines[-1]).get("file") == "newest.ts",
+              repr((len(klines), kpath.stat().st_size)))
+    finally:
+        shutil.rmtree(tmp_k, ignore_errors=True)
 
     # (p) the capability policy — the block itself lives in scripts/_policy.py and
     # is exercised there; what this file owns is the delegation and the one piece of

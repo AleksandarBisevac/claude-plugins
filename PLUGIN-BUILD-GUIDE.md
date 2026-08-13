@@ -183,7 +183,7 @@ L7:
   migrate-manifest -> _loader, _manifest_io, _output
   panel-server -> _help, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _panel_ui, _panel_write, _ui_theme
   render-report -> _loader, _manifest_io, _output, _report_html, _report_ui, _report_usage, _ui_theme
-  validate-config -> _output, _policy
+  validate-config -> _loader, _output, _policy
   validate-manifest -> _areas, _manifest_io, _output
 ```
 

@@ -198,7 +198,6 @@
   var smCells = [].slice.call(document.querySelectorAll('.smcell'));
   var auRows = [].slice.call(document.querySelectorAll('.rank[data-author]'));
 
-  function esc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }
   // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
   // refresh() calls them inside a loop over phases — so one keystroke in the filter
   // ran 200 selector queries across a 4200-row tbody, roughly 840,000 node visits,

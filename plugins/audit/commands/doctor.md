@@ -29,9 +29,16 @@ differently:
 - **FINDING** — broken now. The named command or gate will fail. Fix these first; each one
   carries its own `->` fix line.
 - **WARNING** — works today, will bite later. A missing manifest, no evidence the hooks have
-  run, an empty ledger, a stale lock. Worth reading, not worth blocking on.
+  run, an empty ledger (told apart from a ledger nothing ever created — that one reads
+  `no ledger yet` and names the path metering will write), a stale lock, journal files
+  uncommitted for over a week (the git anchor only pins committed history), an area owner
+  the ledger's author column has never seen (usually an identity written differently from
+  what `usage.authorMode` records). Worth reading, not worth blocking on.
 - **OK** — checked and healthy. Included deliberately: knowing the plan gate is in `warn`
-  rather than `deny` is as useful as knowing something is broken.
+  rather than `deny` is as useful as knowing something is broken. The plan-gate line names
+  the tier **and what put it there** — `planGate`, legacy `enforce`, or the graded ladder —
+  and pinning `planGate: "observe"` while a phase is running is the one setting that warns,
+  because it holds the gate below what the evidence would enforce.
 
 If the run reports **no hook state**, the most likely cause is not a broken hook but a
 plugin that is installed yet not enabled for this project — check `/plugin` → Installed.

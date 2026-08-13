@@ -931,6 +931,106 @@ async function assertUsageWorks(page) {
     }
   }
 
+  // --- D3 (v0.34): the advisory area owner ------------------------------------
+  // Two read-only surfaces consume USAGE.areaOwners: a title tooltip on the
+  // area select's options and an "owns:" line in the person header, joined
+  // against the map's VALUES. Driven in-page, the same way the D4 hiding rule
+  // and the identity check are (the fixture generator belongs to the final
+  // demo step): injecting the map exercises exactly the join the
+  // server-shipped one takes — _panel_state pins the shipping, panel-server
+  // pins the strings, this pins the DOM.
+  {
+    const tags = await page.evaluate(() => {
+      const t = new Set();
+      for (const f of USAGE.facts) {
+        ((USAGE.phaseAreas || {})[f[F.phase]] || []).forEach((x) => t.add(x));
+      }
+      return [...t].sort();
+    });
+    const who = await page.evaluate(() => {
+      const t = new Set();
+      for (const f of USAGE.facts) if (f[F.author] && f[F.author] !== 'unknown') t.add(f[F.author]);
+      return [...t].sort()[0] || null;
+    });
+    if (!tags.length || !who) {
+      fail('usage: the fixture carries no area tags or no author, so the owner '
+         + 'surfaces cannot be driven');
+    } else {
+      const owned = tags[0];
+      await page.evaluate(([t, a]) => {
+        window.__d3Owners = USAGE.areaOwners;
+        USAGE.areaOwners = { [t]: a };
+        renderUsage();
+      }, [owned, who]);
+      await page.waitForTimeout(250);
+
+      // 1. the tooltip: the owned tag's option carries `owner: <who>`; a tag
+      // with no declared owner (and 'untagged') carries none.
+      const tip = await page.evaluate((t) => {
+        const sel = document.querySelector('#usage select[data-uf=area]');
+        if (!sel) return null;
+        const opt = [...sel.options].find((o) => o.value === t);
+        const other = [...sel.options].find((o) => o.value && o.value !== t);
+        return {
+          title: opt ? opt.title : '',
+          otherTitle: other ? other.title : '',
+          hasOther: !!other,
+        };
+      }, owned);
+      if (!tip) {
+        fail('usage: the area select is gone while the owner tooltip is probed');
+      } else if (tip.title !== `owner: ${who}`) {
+        fail(`usage: the ${owned} option's tooltip reads "${tip.title}", `
+           + `expected "owner: ${who}"`);
+      } else if (tip.hasOther && tip.otherTitle) {
+        fail(`usage: a tag with no declared owner carries a tooltip ("${tip.otherTitle}")`);
+      } else {
+        note(`usage: the ${owned} option tooltips its owner and the others stay bare`);
+      }
+
+      // 2. the owns line: filter to the owner and the person header names the
+      // owned areas — data-owns is compared against a recomputation from the
+      // live map, not against a copy of the renderer's output.
+      await page.evaluate((a) => setF('author', a), who);
+      await page.waitForTimeout(250);
+      const owns = await page.evaluate(() => {
+        const elx = document.querySelector('#usage [data-owns]');
+        return elx ? { val: elx.getAttribute('data-owns'), text: elx.textContent } : null;
+      });
+      const expect = await page.evaluate((a) => Object.entries(USAGE.areaOwners || {})
+        .filter(([, o]) => o === a).map(([t]) => t).sort().join(','), who);
+      if (!owns) {
+        fail(`usage: ${who} owns ${expect} and the person header renders no owns: line`);
+      } else if (owns.val !== expect) {
+        fail(`usage: the owns: line says "${owns.val}", the areaOwners map says "${expect}"`);
+      } else if (!owns.text.includes('advisory')) {
+        fail('usage: the owns: line does not say it is advisory');
+      } else {
+        note(`usage: person header owns: line matches the map (${expect}) and says advisory`);
+      }
+      await clear();
+
+      // 3. an author who owns nothing gets no owns: line — the join is by
+      // VALUE, not by having any owners in the map at all.
+      await page.evaluate(([t, a]) => {
+        USAGE.areaOwners = { [t]: a + '-someone-else' };
+        renderUsage();
+        setF('author', a);
+      }, [owned, who]);
+      await page.waitForTimeout(250);
+      const bare = await page.evaluate(() => !document.querySelector('#usage [data-owns]'));
+      if (!bare) fail('usage: an author who owns nothing still gets an owns: line');
+      else note('usage: an author who owns nothing gets no owns: line');
+      await clear();
+      await page.evaluate(() => {
+        USAGE.areaOwners = window.__d3Owners;
+        delete window.__d3Owners;
+        renderUsage();
+      });
+      await page.waitForTimeout(250);
+    }
+  }
+
   // --- CSV ------------------------------------------------------------------
   // The export is the one control here whose output leaves the browser, so its
   // row count is checked against the facts and its numbers against a spreadsheet's
@@ -1131,7 +1231,9 @@ function assertNoHandAssignedPolledState() {
     return;
   }
   const body = src.slice(at, src.indexOf('\n}', at));
-  const owned = [...new Set([...body.matchAll(/(?:^|[;{\s])([A-Z][A-Z0-9_]{2,})\s*=[^=]/g)]
+  // {1,}, not {2,}: the poll owns the two-letter FP as well as RUNSTATUS, and a
+  // three-character minimum silently waved every hand-write of FP through.
+  const owned = [...new Set([...body.matchAll(/(?:^|[;{\s])([A-Z][A-Z0-9_]{1,})\s*=[^=]/g)]
     .map((m) => m[1]))];
   if (!owned.length) {
     fail('panel: the run-status poll assigns nothing, so the polled-state guard '
@@ -1349,6 +1451,29 @@ async function assertConfirmFlowWorks(page) {
   // were already stale. Driven for real: edit here, write a different value to the
   // same field through the API, then confirm. The server recomputes `applied`
   // against what is actually on disk, and the mismatch has to surface.
+  //
+  // v0.34 lv: the panel now refreshes ITSELF when the disk stamp moves, and
+  // this step writes to the manifest out-of-band on purpose — a poll landing
+  // in the window would swap STATE under the exact staleness the echo exists
+  // to catch, and the check would go red once in N runs (the F4 shape). So
+  // the stamp is frozen at the ENDPOINT for the duration and thawed after;
+  // the deferred refresh then lands on a clean form, which is the ordinary
+  // case — and the echo stays the guard for a move the refresh cannot see,
+  // a dialog already open (refreshes are deferred while any dialog is).
+  //
+  // The freeze alone is HALF the fix (F-C-1's second face, found when the
+  // gate-card shot shifted the poll's phase): the saves above moved the stamp,
+  // and if the client has not adopted that move yet, the first poll against
+  // the frozen route sees a stamp it does not hold and refreshes anyway —
+  // updating the form's own from-values and dissolving the very staleness
+  // this leg exists to produce. So the hand-off is drained BEFORE the form
+  // goes stale, exactly as the model-combo step opens.
+  const frozenRun = await page.evaluate(() => api('GET', '/api/runstatus'));
+  await page.route(RUNSTATUS_URL, (r) => r.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify(frozenRun) }));
+  await page.evaluate(async () => { await pollRunStatus(); await refreshFromDisk(); });
+  await page.waitForTimeout(300);
   const OTHER = NEW === 'opus' ? 'sonnet' : 'opus';
   const THIRD = 'haiku-3';
   await modelInput.fill(THIRD);
@@ -1373,6 +1498,11 @@ async function assertConfirmFlowWorks(page) {
   } else {
     note('composition: a manifest that moved under the form is reported, not hidden');
   }
+  // Thaw the stamp and let the deferred refresh land now, on a clean form,
+  // so the steps below see the panel's ordinary live behaviour.
+  await page.unroute(RUNSTATUS_URL);
+  await page.evaluate(() => pollRunStatus());
+  await page.waitForTimeout(400);
 
   // --- Discard puts the form back, and only after confirming -----------------
   const before = await onDisk();
@@ -1582,6 +1712,653 @@ async function noToast(page, label) {
   }
 }
 
+/* ---- v0.34 C1 (cs): combo search — the footer count and the keyboard rail --
+ *
+ * Every count is recomputed in-page from the same data the combo reads
+ * (USAGE.facts), never from the menu's own rendering. Description search is
+ * asserted only on the policy fixture's controlled registry (below), where
+ * every skill and its description are written by this file — a real machine's
+ * discovery is never asserted numerically.
+ */
+async function assertComboSearchCount(page) {
+  await page.click('.tab[data-t=usage]');
+  await page.waitForTimeout(400);
+  const want = await page.evaluate(() => {
+    const tasks = [...new Set(USAGE.facts.map((f) => f[F.task]).filter(Boolean))];
+    return { total: tasks.length, shown: Math.min(60, tasks.length),
+             more: Math.max(0, tasks.length - 60) };
+  });
+  if (want.total <= 60) {
+    fail(`usage: the fixture ledger carries only ${want.total} distinct tasks — `
+       + `the combo's overflow footer cannot exist here and this check is blind`);
+    return;
+  }
+  const inp = page.locator('#usage input[aria-label="filter by task"]');
+  if (!(await inp.count())) { fail('usage: no task filter combo'); return; }
+  await inp.click();
+  await page.waitForTimeout(250);
+  const menu = await page.evaluate(() => {
+    const m = [...document.querySelectorAll('.combo-menu')]
+      .find((x) => !x.classList.contains('hidden'));
+    if (!m) return null;
+    const r = m.getBoundingClientRect();
+    return { items: m.querySelectorAll('.combo-it').length,
+             foot: (m.querySelector('.combo-more') || {}).textContent || null,
+             fixed: getComputedStyle(m).position,
+             inView: r.left >= -1 && r.top >= -1
+               && r.right <= document.documentElement.clientWidth + 1
+               && r.bottom <= innerHeight + 1 };
+  });
+  if (!menu) { fail('usage: focusing the task combo opened no menu'); return; }
+  if (menu.items !== want.shown || !menu.foot
+      || !menu.foot.includes(`${want.more} more`)) {
+    fail(`usage: the task combo lists ${menu.items} of ${want.total} rows with `
+       + `footer ${JSON.stringify(menu.foot)} — expected ${want.shown} rows and `
+       + `a "…${want.more} more" footer counted BEFORE the slice`);
+  } else if (menu.fixed !== 'fixed' || !menu.inView) {
+    fail(`usage: the combo menu is position:${menu.fixed}, inView=${menu.inView} `
+       + `— a menu clipped by its host's frame is the defect the fixed `
+       + `placement exists to remove`);
+  } else {
+    note(`usage: task combo lists 60 of ${want.total} + "…${want.more} more", `
+       + `fixed and inside the viewport`);
+  }
+  // The footer must be unreachable by keyboard: with 60 choosable rows, 61
+  // ArrowDowns pin the highlight to the LAST choosable row, never the footer.
+  for (let i = 0; i < 61; i++) await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(150);
+  const nav = await page.evaluate(() => {
+    const m = [...document.querySelectorAll('.combo-menu')]
+      .find((x) => !x.classList.contains('hidden'));
+    const act = m && m.querySelector('.combo-it.active');
+    const items = m ? [...m.querySelectorAll('.combo-it')] : [];
+    return { active: !!act, last: !!act && act === items[items.length - 1],
+             footActive: !!(m && m.querySelector('.combo-more.active')) };
+  });
+  if (!nav.active || nav.footActive || !nav.last) {
+    fail(`usage: 61 ArrowDowns left active=${nav.active}, footer-active=`
+       + `${nav.footActive}, on-last-choosable=${nav.last} — the footer must `
+       + `stay outside the keyboard rail`);
+  } else {
+    note('usage: keyboard nav stops on the last choosable row; the footer is '
+       + 'not reachable');
+  }
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => clearAll());
+  await page.waitForTimeout(200);
+}
+
+/** cs, second half: description search, on the policy fixture's own registry. */
+async function assertComboDescriptionSearch(page) {
+  // 'behaviour' appears in exactly one skill DESCRIPTION (code-simplifier's)
+  // and in no skill name — the oracle is recomputed from REG in-page, so a
+  // fixture edit re-aims this check instead of silently blinding it.
+  const term = 'behaviour';
+  await page.click('.tab[data-t=comp]');
+  await page.waitForSelector('#comp table', { timeout: 15000 });
+  await page.waitForTimeout(200);
+  const want = await page.evaluate((t) =>
+    REG.skills.filter((s) => (s.name + ' ' + (s.description || '') + ' '
+      + (s.source || '')).toLowerCase().includes(t)).map((s) => s.name), term);
+  if (want.length !== 1 || want[0].toLowerCase().includes(term)) {
+    fail(`policy: the fixture registry no longer has exactly one description-`
+       + `only match for "${term}" (${JSON.stringify(want)}) — re-aim the oracle`);
+    return;
+  }
+  const inp = page.locator('#comp input[placeholder^="search a skill"]').first();
+  await inp.click();
+  await inp.fill(term);
+  await page.waitForTimeout(300);
+  const got = await page.evaluate(() => {
+    const m = [...document.querySelectorAll('.combo-menu')]
+      .find((x) => !x.classList.contains('hidden'));
+    return m ? [...m.querySelectorAll('.combo-n')].map((n) => n.textContent) : [];
+  });
+  if (got.length !== 1 || got[0] !== want[0]) {
+    fail(`policy: searching skills for "${term}" listed ${JSON.stringify(got)}, `
+       + `expected ${JSON.stringify(want)} — the combo is not reading descriptions`);
+  } else {
+    note(`policy: description search "${term}" -> ${got[0]} (its name carries `
+       + `no match)`);
+  }
+  // renderComp resets the patch this typing created — leave the form clean.
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => renderComp());
+  await page.waitForTimeout(200);
+}
+
+/* ---- v0.34 C2 (mc): the model combo's three sources -------------------------
+ *
+ * The ledger-only case is the load-bearing one — a model only the ledger knows
+ * is what a typo'd manifest model looks like from the other side — and every
+ * model in the generated ledger is also a default rate-table key, so a
+ * ledger-only row is INJECTED into the page's own USAGE.facts, computed back
+ * from those same facts, and removed. In-page data is still data a refresh
+ * REPLACES: USAGE is refetched whenever the disk stamp moves, and the
+ * confirm-flow checks just moved it (saves to the manifest and its config) —
+ * so a refetch landing between the injection and the menu swapped USAGE and
+ * erased the probe, red once in ~10 runs (F-C-1, the F4 shape). The endpoint
+ * is therefore frozen for the step's duration, pending refreshes are drained
+ * before the probe goes in, and the race window is then driven ON PURPOSE —
+ * a real stamp move plus a poll — so a lost freeze goes red every run rather
+ * than once in N.
+ */
+async function assertModelCombo(page, project) {
+  await page.click('.tab[data-t=comp]');
+  await page.waitForSelector('#comp table', { timeout: 15000 });
+  await page.waitForTimeout(200);
+  // Freeze the poll's endpoint for the whole step (the F4 rule, the same
+  // page.route the stale-echo and lock legs use): frozen, every mid-step poll
+  // re-serves the same stamp, and the refetch that would swap USAGE cannot
+  // start.
+  const frozen = await page.evaluate(() => api('GET', '/api/runstatus'));
+  await page.route(RUNSTATUS_URL, (r) => r.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(frozen) }));
+  // Drain what is already in motion: pollRunStatus fires refreshFromDisk
+  // WITHOUT awaiting it, so a poll that landed a moment ago may be swapping
+  // USAGE right now. One awaited poll adopts the frozen stamp through the
+  // product's own hand-off (never a hand-write of polled state — the guard
+  // above now covers two-letter names too), then one awaited refresh runs to
+  // completion behind it; after that, the injection below cannot be overtaken
+  // by a refetch that started before the freeze.
+  await page.evaluate(async () => { await pollRunStatus(); await refreshFromDisk(); });
+  await page.waitForTimeout(300);
+  const LONLY = 'claude-ledger-only-probe';
+  const pre = await page.evaluate((name) => {
+    const f = [];
+    f[F.ts] = (USAGE.facts[0] || [])[F.ts] || '2026-04-01T09';
+    f[F.phase] = '--'; f[F.task] = '--'; f[F.model] = name;
+    f[F.author] = 'probe@example.com'; f[F.agent] = 'orchestrator';
+    f[F.attr] = 'unattributed'; f[F.tokens] = 12345; f[F.cost] = 0; f[F.msgs] = 1;
+    USAGE.facts.push(f);
+    MITEMS = null;
+    const items = modelItems();
+    return {
+      sources: [...new Set(items.map((it) => it.source))].sort(),
+      probe: items.find((it) => it.name === name) || null,
+      aManifest: (items.find((it) => it.source === 'manifest') || {}).name || null,
+    };
+  }, LONLY);
+  if (JSON.stringify(pre.sources) !== JSON.stringify(['ledger', 'manifest', 'rates'])) {
+    fail(`composition: modelItems() carries sources ${JSON.stringify(pre.sources)} `
+       + `— expected all three of ledger/manifest/rates on this fixture`);
+  }
+  if (!pre.probe || pre.probe.source !== 'ledger'
+      || !/tokens in this ledger/.test(pre.probe.description || '')) {
+    fail(`composition: a ledger-only model resolves to `
+       + `${JSON.stringify(pre.probe)} — expected source "ledger" with its `
+       + `token count as the description`);
+  }
+  // The old race, now driven on purpose (the lock-dialog precedent): the disk
+  // stamp moves for real — a byte-identical rewrite of the fixture's config
+  // plus a newline, so the JSON is untouched but (mtime, size) is not — and a
+  // poll fires inside the injection->menu window. Against the frozen endpoint
+  // the poll re-serves the frozen stamp and nothing refetches; remove the
+  // freeze and this goes red every run instead of once in ~10.
+  const cfgPath = path.join(project, '.claude', 'audit.config.json');
+  writeFileSync(cfgPath, readFileSync(cfgPath, 'utf8') + '\n');
+  await page.evaluate(() => pollRunStatus());
+  await page.waitForTimeout(400);
+  const held = await page.evaluate((name) =>
+    USAGE.facts.some((f) => f[F.model] === name), LONLY);
+  if (!held) {
+    fail('composition: the ledger-only probe vanished from USAGE.facts before '
+       + 'the menu opened — a mid-step refetch swapped USAGE under the check '
+       + '(F-C-1); the runstatus freeze is not holding');
+  }
+  // Open a real task-model combo and find the probe on screen, un-clipped.
+  const pid = await page.evaluate(() =>
+    ((STATE.composition || {}).tasks[0] || {}).phaseId);
+  await page.evaluate((p) => openInComp(p), pid);
+  await page.waitForTimeout(300);
+  const box = page.locator('#comp tr.task .tmodel input').first();
+  await box.click();
+  await box.fill('ledger-only');
+  await page.waitForTimeout(250);
+  const seen = await page.evaluate((name) => {
+    const m = [...document.querySelectorAll('.combo-menu')]
+      .find((x) => !x.classList.contains('hidden'));
+    if (!m) return null;
+    const it = [...m.querySelectorAll('.combo-it')].find((x) =>
+      (x.querySelector('.combo-n') || {}).textContent === name);
+    if (!it) return { found: false };
+    const r = it.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + 6, (r.top + r.bottom) / 2);
+    return { found: true,
+             badge: (it.querySelector('.src.badge') || {}).textContent || null,
+             clickable: it === hit || it.contains(hit) };
+  }, LONLY);
+  if (!seen || !seen.found) {
+    fail(`composition: typing "ledger-only" into a task-model combo does not `
+       + `list the ledger-only model (${JSON.stringify(seen)})`);
+  } else if (seen.badge !== 'ledger' || !seen.clickable) {
+    fail(`composition: the ledger-only row wears badge ${JSON.stringify(seen.badge)} `
+       + `and clickable=${seen.clickable} — a row the table's frame clips is a `
+       + `row nobody can choose`);
+  } else {
+    note('composition: a ledger-only model is listed with its ledger badge, '
+       + 'un-clipped by the table frame');
+  }
+  // Choosing from the review combo must not toggle the phase row it rides on
+  // (the STOP moved to the wrapper), and the choice must land in the form's
+  // own patch. The oracle is a LEAK COUNTER, not the row's open state: a comp
+  // filter force-opens phases and a propagated click can double-toggle a row
+  // back open, so "still open afterwards" was provably green under sabotage.
+  // A delegated listener on #comp counts clicks that REACH a phase row —
+  // with the wrapper's stop in place, both halves of the interaction (the
+  // input click and the menu click) must leave it at zero.
+  await page.keyboard.press('Escape');
+  // No quiesce needed here: the endpoint has been frozen since the top of the
+  // step, so a poll cannot start the refresh that would blow away the open
+  // menu mid-leg.
+  await page.evaluate(() => { COMPF.q = ''; COMPF.status = ''; COMPF.needs = false;
+    if (COMPF.apply) COMPF.apply(); });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => {
+    window.__phaseClicks = 0;
+    document.getElementById('comp').addEventListener('click', (ev) => {
+      if (ev.target.closest && ev.target.closest('tr.phase')) window.__phaseClicks++;
+    });
+  });
+  const rev = await page.locator('#comp tr.phase .comp-review input').first()
+    .elementHandle();
+  if (!rev) {
+    fail('composition: no review-model input to drive the combo on');
+  } else {
+    await rev.click();
+    await page.waitForTimeout(250);
+    const pick = page.locator('.combo-menu:not(.hidden) .combo-it').first();
+    if (!(await pick.count())) {
+      fail('composition: focusing the review-model input opened no menu');
+    } else {
+      const name = await pick.locator('.combo-n').textContent();
+      await pick.click();
+      await page.waitForTimeout(250);
+      const after = await page.evaluate(() => ({
+        leaks: window.__phaseClicks,
+        rows: editRows('comp').map((r) => r.field),
+      }));
+      after.value = await rev.evaluate((n) => n.value);
+      if (after.leaks) {
+        fail(`composition: ${after.leaks} click(s) from inside the review combo `
+           + `reached the phase row — the stopPropagation is not on the wrapper, `
+           + `so choosing a model also toggles the phase under the menu`);
+      } else if (after.value !== name || !after.rows.includes('review model')) {
+        fail(`composition: the menu choice "${name}" landed as `
+           + `${JSON.stringify(after.value)} with change rows `
+           + `${JSON.stringify(after.rows)} — onChoose is not writing the patch`);
+      } else {
+        note(`composition: review combo chose "${name}" — zero clicks leaked to `
+           + `the phase row, and the change registered`);
+      }
+    }
+  }
+  // Put everything back: the injected fact out, the typed patch dropped.
+  await page.evaluate(() => {
+    USAGE.facts.pop(); MITEMS = null; renderComp();
+  });
+  // Thaw the stamp the same way the confirm-flow legs do. The poll now sees
+  // the move this step made on purpose, and the deferred refresh lands here,
+  // on a clean form, before the next check begins.
+  await page.unroute(RUNSTATUS_URL);
+  await page.evaluate(() => pollRunStatus());
+  await page.waitForTimeout(400);
+}
+
+/* ---- v0.34 C3 (sv): the save-result card's lifecycle ------------------------
+ *
+ * Success card up after a landed save and GONE after its 5s clock; refusal
+ * card up after a refused save, still there past that same deadline, and
+ * dismissed by its own ×. The bad regex is decided by the SERVER's engine —
+ * '(' fails Python's re, which is the one the hook uses.
+ */
+async function assertSaveNoteLifecycle(page) {
+  await page.click('.tab[data-t=guards]');
+  await page.waitForSelector('#guards .savebar', { timeout: 10000 });
+  const rex = page.locator('#set-secretPatterns\\.extra input');
+  if (!(await rex.count())) { fail('settings: no secretPatterns.extra editor'); return; }
+  await rex.click();
+  await rex.fill('(');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(700);
+  const err = await page.evaluate(() => {
+    const c = document.querySelector('#guards .findings-slot .findings.err');
+    return c ? { title: (c.querySelector('b') || {}).textContent || '',
+                 body: (c.querySelector('.fbody') || {}).textContent || '',
+                 close: !!c.querySelector('[data-notex]') } : null;
+  });
+  if (!err || !/nothing was written/.test(err.title) || !err.close || !err.body) {
+    fail(`settings: a refused save drew ${JSON.stringify(err)} — expected a `
+       + `bold title, the findings body and a dismiss button`);
+  }
+  // The refusal must outlive the success card's own deadline — that is the
+  // "no timer on this branch" half of the design.
+  await page.waitForTimeout(5600);
+  if (!(await page.evaluate(() =>
+    !!document.querySelector('#guards .findings-slot .findings.err')))) {
+    fail('settings: the refusal card timed itself out — a refusal has to '
+       + 'outlive a glance away');
+  } else {
+    await page.locator('#guards [data-notex]').click();
+    await page.waitForTimeout(200);
+    if (await page.evaluate(() =>
+      !!document.querySelector('#guards .findings-slot .findings.err'))) {
+      fail('settings: the refusal card ignored its own dismiss button');
+    } else {
+      note('settings: refusal card up, still up 5.6s later, closed by its ×');
+    }
+  }
+  // Throw the refused edit away through the panel's own Discard.
+  await page.locator('#guards [data-discard=guards]').click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(400);
+
+  // The landed save: card up, then gone on its own clock — including across
+  // the disk-stamp refresh an own save triggers (the carry keeps the node).
+  const box = page.locator('#guards input[type=checkbox]').first();
+  await box.click();
+  await page.waitForTimeout(200);
+  await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(700);
+  const okUp = await page.evaluate(() => {
+    const c = document.querySelector('#guards .findings-slot .findings.ok');
+    return c ? c.textContent : null;
+  });
+  if (!okUp || !okUp.includes('saved')) {
+    fail(`settings: a landed save drew no success card (${JSON.stringify(okUp)})`);
+  }
+  await page.waitForTimeout(5600);
+  const okGone = await page.evaluate(() =>
+    !document.querySelector('#guards .findings-slot .findings.ok'));
+  if (!okGone) {
+    fail('settings: the "saved" card is still up 6.3s after the save — the '
+       + 'card that never leaves is the class this lifecycle exists to end');
+  } else if (okUp) {
+    note('settings: "saved" card present after the save, gone on its 5s clock');
+  }
+  // Leave the fixture as found.
+  await box.click();
+  await page.waitForTimeout(200);
+  await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(400);
+}
+
+/* ---- v0.34 C4 (fp): filter persistence — reload, share link, clearAll -------
+ *
+ * The author is picked from USAGE.facts in-page; every survival assertion
+ * compares UF/DOM state against that same pick. The share-link leg runs in a
+ * NEW browser context: fresh localStorage, so what survives there survived in
+ * the URL and nowhere else.
+ */
+async function assertFilterPersistence(page, browser, panelUrl) {
+  await page.click('.tab[data-t=usage]');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => clearAll());
+  await page.waitForTimeout(200);
+  const who = await page.evaluate(() => {
+    const t = {};
+    for (const f of USAGE.facts) t[f[F.author]] = (t[f[F.author]] || 0) + f[F.tokens];
+    return Object.keys(t).filter((a) => a && a !== 'unknown')
+      .sort((a, b) => t[b] - t[a])[0] || null;
+  });
+  if (!who) { fail('usage: no author in the ledger to persist a filter for'); return; }
+  await page.evaluate((a) => setF('author', a), who);
+  await page.waitForTimeout(250);
+  const hash1 = await page.evaluate(() => location.hash);
+  if (!hash1.startsWith('#/usage!') || !/[!&]au=/.test(hash1)) {
+    fail(`usage: an author filter wrote hash "${hash1}" — expected the `
+       + `'#/usage!au=…' grammar`);
+  }
+  // Tab routing works WITH the fragment: away and back, filter intact.
+  await page.click('.tab[data-t=comp]');
+  await page.waitForTimeout(250);
+  const onComp = await page.evaluate(() => ({
+    hash: location.hash, compShown: !document.getElementById('comp')
+      .classList.contains('hidden') }));
+  if (!onComp.compShown || !onComp.hash.startsWith('#/comp!')) {
+    fail(`usage: switching tabs under a filter fragment gave hash `
+       + `"${onComp.hash}" with comp shown=${onComp.compShown}`);
+  }
+  await page.click('.tab[data-t=usage]');
+  await page.waitForTimeout(250);
+  // The reload: chip, person header and hash all survive.
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tab', { timeout: 15000 });
+  await page.waitForTimeout(600);
+  const back = await page.evaluate(() => ({
+    author: UF.author, order: UORDER.slice(), hash: location.hash,
+    chip: !!document.querySelector('#usage [data-uchip=author]'),
+    person: !!document.querySelector('#usage [data-person]'),
+    usageShown: !document.getElementById('usage').classList.contains('hidden'),
+  }));
+  if (back.author !== who || !back.chip || !back.person
+      || !/[!&]au=/.test(back.hash) || !back.usageShown) {
+    fail(`usage: after a reload the filter state is author=`
+       + `${JSON.stringify(back.author)}, chip=${back.chip}, person header=`
+       + `${back.person}, hash="${back.hash}" — the filters did not survive`);
+  } else {
+    note(`usage: reload kept the ${who} filter — chip, person header and hash`);
+  }
+  // The share link, in a NEW context: no localStorage, only the URL.
+  const shareCtx = await browser.newContext({
+    viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
+    reducedMotion: 'reduce', colorScheme: 'light',
+  });
+  try {
+    const p2 = await shareCtx.newPage();
+    await p2.goto(panelUrl + '#/usage!au=' + encodeURIComponent(who),
+                  { waitUntil: 'load' });
+    await p2.waitForSelector('.tab', { timeout: 15000 });
+    await p2.waitForTimeout(600);
+    const shared = await p2.evaluate(() => ({
+      author: UF.author,
+      usageShown: !document.getElementById('usage').classList.contains('hidden'),
+      chip: !!document.querySelector('#usage [data-uchip=author]'),
+    }));
+    if (shared.author !== who || !shared.usageShown || !shared.chip) {
+      fail(`usage: a share link opened in a fresh context landed on author=`
+         + `${JSON.stringify(shared.author)}, usage shown=${shared.usageShown}, `
+         + `chip=${shared.chip} — the link is not carrying the view`);
+    } else {
+      note('usage: a share link reproduces the filtered view in a fresh context');
+    }
+  } finally {
+    await shareCtx.close();
+  }
+  // clearAll clears the STORE and the FRAGMENT — then a reload stays clean.
+  await page.evaluate(() => clearAll());
+  await page.waitForTimeout(200);
+  const cleared = await page.evaluate(() => ({
+    hash: location.hash,
+    stored: (() => { try {
+      return localStorage.getItem('audit-panel-uf:' + PROJECT);
+    } catch (e) { return 'unreadable'; } })(),
+  }));
+  if (cleared.hash.includes('!') || cleared.stored !== null) {
+    fail(`usage: clearAll left hash "${cleared.hash}" and store `
+       + `${JSON.stringify(cleared.stored)} — both must be gone`);
+  }
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('.tab', { timeout: 15000 });
+  await page.waitForTimeout(600);
+  const clean = await page.evaluate(() => ({
+    author: UF.author, order: UORDER.length,
+    chips: document.querySelectorAll('#usage .uchip').length }));
+  if (clean.author !== '' || clean.order || clean.chips) {
+    fail(`usage: after clearAll + reload the view still carries `
+       + `${JSON.stringify(clean)} — cleared filters must stay cleared`);
+  } else {
+    note('usage: clearAll cleans the hash and the store; a reload stays clean');
+  }
+}
+
+/* ---- v0.34 C5 (lv): live data — an out-of-band write reaches the screen -----
+ *
+ * The write goes to the SHARD file on disk (writeFileSync, no panel API), and
+ * the panel has ≤6.5s — one 5s poll plus margin — to show it without a reload.
+ * Filters survive because renderUsage/renderOver re-render through the same
+ * UF/COMPF state they always had; a dirty form is left alone and says why.
+ */
+async function assertLiveData(page, project) {
+  const pid = await page.evaluate(() =>
+    ((STATE.composition || {}).tasks[0] || {}).phaseId);
+  const who = await page.evaluate(() => {
+    const t = {};
+    for (const f of USAGE.facts) t[f[F.author]] = (t[f[F.author]] || 0) + f[F.tokens];
+    return Object.keys(t).filter((a) => a && a !== 'unknown')
+      .sort((a, b) => t[b] - t[a])[0] || null;
+  });
+  await page.click('.tab[data-t=usage]');
+  await page.waitForTimeout(200);
+  await page.evaluate((a) => setF('author', a), who);
+  await page.evaluate((p) => openInComp(p), pid);
+  await page.waitForTimeout(300);
+
+  const idx = JSON.parse(readFileSync(path.join(project, 'audit-plan.json'), 'utf8'));
+  const stub = (idx.phases || []).find((p) => p.id === pid);
+  if (!stub || !stub.shard) {
+    fail(`live: ${pid} has no shard in the fixture index — the out-of-band `
+       + `write has nowhere to land`);
+    return;
+  }
+  const shardPath = path.join(project, stub.shard);
+  const mark1 = 'LIVE-PROBE-TITLE-ONE';
+  const body = JSON.parse(readFileSync(shardPath, 'utf8'));
+  body.title = mark1;
+  writeFileSync(shardPath, JSON.stringify(body, null, 2));
+  const sawIt = await page.waitForFunction((m) =>
+    [...document.querySelectorAll('#over .ptitle')].some((n) => n.textContent === m)
+    && [...document.querySelectorAll('#comp tr.phase strong')]
+      .some((n) => n.textContent === m),
+  mark1, { timeout: 6500 }).then(() => true, () => false);
+  const kept = await page.evaluate(() => ({
+    author: UF.author, compQ: COMPF.q,
+    chip: !!document.querySelector('#usage [data-uchip=author]') }));
+  if (!sawIt) {
+    fail(`live: a title written straight to ${stub.shard} never reached `
+       + `Overview/Composition within 6.5s — the fingerprint hand-off is not `
+       + `refreshing from disk`);
+  } else if (kept.author !== who || kept.compQ !== pid || !kept.chip) {
+    fail(`live: the refresh reached the screen but ate the filters — author=`
+       + `${JSON.stringify(kept.author)}, COMPF.q=${JSON.stringify(kept.compQ)}, `
+       + `chip=${kept.chip}`);
+  } else {
+    note(`live: an out-of-band shard write reached Overview and Composition `
+       + `in under 6.5s, filters intact`);
+  }
+
+  // The dirty leg: typed work survives the next refresh, with the notice up.
+  const box = page.locator('#comp tr.task .tmodel input').first();
+  await box.click();
+  await box.fill('dirty-probe');
+  await page.waitForTimeout(200);
+  const mark2 = 'LIVE-PROBE-TITLE-TWO';
+  body.title = mark2;
+  writeFileSync(shardPath, JSON.stringify(body, null, 2));
+  const sawOver = await page.waitForFunction((m) =>
+    [...document.querySelectorAll('#over .ptitle')].some((n) => n.textContent === m),
+  mark2, { timeout: 6500 }).then(() => true, () => false);
+  const dirty = await page.evaluate(() => ({
+    value: (document.querySelector('#comp tr.task .tmodel input') || {}).value,
+    stale: !!document.querySelector('#comp [data-stale=comp]'),
+    compTitle: [...document.querySelectorAll('#comp tr.phase strong')]
+      .some((n) => n.textContent === 'LIVE-PROBE-TITLE-TWO'),
+  }));
+  if (!sawOver) {
+    fail('live: with a dirty composition form, Overview never showed the '
+       + 'second out-of-band write — clean views must keep refreshing');
+  } else if (dirty.value !== 'dirty-probe' || !dirty.stale) {
+    fail(`live: the second refresh ${dirty.value === 'dirty-probe'
+      ? 'left the edit but drew no notice' : 'ATE the half-typed edit'} `
+       + `(value=${JSON.stringify(dirty.value)}, notice=${dirty.stale}) — a `
+       + `dirty view is left alone and told the file moved`);
+  } else if (dirty.compTitle) {
+    fail('live: the dirty composition table re-rendered anyway — its half-typed '
+       + 'patch would have been reset with it');
+  } else {
+    note('live: a dirty form kept its edit through the refresh, with the '
+       + 'file-moved notice up; Overview refreshed regardless');
+  }
+  // Leave the page clean for whatever runs after.
+  await page.evaluate(() => { renderComp(); clearAll(); });
+  await page.waitForTimeout(200);
+}
+
+/* ---- the plan gate card (gt, v0.34 B3) --------------------------------------
+ *
+ * Server truth is pinned in _panel_state (the gate block) and panel-server (the
+ * card's source slice); what only a browser can prove is the LOOP: a line
+ * appended to the events feed ON DISK reaches the Overview table through the
+ * 5s poll, because the gate block is part of runStatusKey. The ask dialog
+ * itself cannot be driven from here — the hook selftests pin the ask payload's
+ * shape — so this asserts the card, the bypass indicator, and the feed's round
+ * trip, each within one poll plus margin.
+ */
+async function assertGateCard(page, project) {
+  await page.click('.tab[data-t=over]');
+  await page.waitForTimeout(250);
+  const card = await page.evaluate(() => {
+    const c = document.getElementById('gatecard');
+    if (!c) return null;
+    return { tier: (c.querySelector('.st') || {}).textContent || '',
+             src: (c.querySelector('.mut') || {}).textContent || '' };
+  });
+  if (!card) { fail('gate card: #gatecard is not in the Overview at all'); return; }
+  if (!['Observe', 'Warn', 'Ask', 'Deny'].includes(card.tier) || !card.src.trim()) {
+    fail(`gate card: tier/source not rendered (tier=${JSON.stringify(card.tier)}, `
+       + `source=${JSON.stringify(card.src)})`);
+  } else {
+    note(`gate card: tier ${card.tier} — ${card.src}`);
+  }
+
+  // A synthetic event lands in the table within one poll + margin.
+  const logsDir = path.join(project, '.claude', 'logs');
+  mkdirSync(logsDir, { recursive: true });
+  const marker = `gate-probe-${Date.now()}.ts`;
+  writeFileSync(path.join(logsDir, 'plan-gate-events.jsonl'),
+    JSON.stringify({ ts: '2026-08-13T00:00:00Z', event: 'deny', file: marker,
+                     mode: 'deny', reason: 'browser-check probe' }) + '\n',
+    { flag: 'a' });
+  const sawEvent = await page.waitForFunction((m) =>
+    [...document.querySelectorAll('#gatecard td')].some((n) => n.textContent === m),
+  marker, { timeout: 6500 }).then(() => true, () => false);
+  if (!sawEvent) {
+    fail('gate card: an event appended to plan-gate-events.jsonl never reached '
+       + 'the Overview table within 6.5s — the gate block is not repainting');
+  } else {
+    note('gate card: a fresh feed line reached the events table in under 6.5s');
+  }
+
+  // The bypass indicator follows a live slot, and leaves with it.
+  const slot = path.join(project, '.claude', 'state', 'plan-bypass-shotcheck.json');
+  mkdirSync(path.dirname(slot), { recursive: true });
+  writeFileSync(slot, JSON.stringify({ ts: 't', reason: 'browser-check',
+    armedAtEpoch: Math.floor(Date.now() / 1000) }));
+  const sawArmed = await page.waitForFunction(() =>
+    !!document.querySelector('#gatecard [data-bypass-armed]'),
+  null, { timeout: 6500 }).then(() => true, () => false);
+  rmSync(slot, { force: true });
+  const armedGone = await page.waitForFunction(() =>
+    !document.querySelector('#gatecard [data-bypass-armed]'),
+  null, { timeout: 6500 }).then(() => true, () => false);
+  if (!sawArmed) {
+    fail('gate card: an armed bypass slot never lit the indicator within 6.5s');
+  } else if (!armedGone) {
+    fail('gate card: the indicator stayed lit after the slot was removed');
+  } else {
+    note('gate card: the bypass indicator follows the slot, on and off');
+  }
+}
+
 /* ---- the help drawer -------------------------------------------------------
  *
  * Every oracle here is `GET /api/help` — the payload itself, fetched inside the
@@ -1635,10 +2412,14 @@ async function assertHelpDrawerWorks(page, declared) {
   // exactly like a dead panel (F7's lesson, in this harness).
   await page.click('.tab[data-t=guards]');
   await page.waitForTimeout(200);
-  const opener = page.locator('#guards [data-hint="enforce"]').first();
+  // trivialLineThreshold as the worked example since v0.34 B1: `enforce` lost
+  // its dedicated control (the planGate select owns the gate's tier now), and
+  // this field keeps every assertion meaningful — a schema sentence, a real
+  // default (80; planGate's is null), microcopy, and the same gate-tiers topic.
+  const opener = page.locator('#guards [data-hint="trivialLineThreshold"]').first();
   if (!(await opener.count()) || !(await opener.isVisible())) {
-    fail('help: the "enforce" setting has no ⓘ that can be pressed — every '
-       + 'Settings control is supposed to carry one');
+    fail('help: the "trivialLineThreshold" setting has no ⓘ that can be pressed '
+       + '— every Settings control is supposed to carry one');
     return;
   }
   await opener.click();
@@ -1661,21 +2442,22 @@ async function assertHelpDrawerWorks(page, declared) {
       sources: [...d.querySelectorAll('.dsrc span')].map((s) => s.textContent),
     };
   });
-  const want = doc.fields.config.enforce;
-  if (field.path !== 'enforce' || !field.means.includes(want.description)) {
-    fail(`help: the drawer for "enforce" does not carry the schema's own sentence `
-       + `(path=${JSON.stringify(field.path)}, shown=${JSON.stringify(
-         field.means.slice(0, 80))})`);
+  const want = doc.fields.config.trivialLineThreshold;
+  if (field.path !== 'trivialLineThreshold'
+      || !field.means.includes(want.description)) {
+    fail(`help: the drawer for "trivialLineThreshold" does not carry the `
+       + `schema's own sentence (path=${JSON.stringify(field.path)}, shown=`
+       + `${JSON.stringify(field.means.slice(0, 80))})`);
   } else {
-    note('help: the enforce drawer quotes the schema verbatim');
+    note('help: the trivialLineThreshold drawer quotes the schema verbatim');
   }
   // The default is the value the HOOKS fall back to. A drawer that showed a
   // different one would be worse than one that showed none, because "leave it
   // empty and you get this" is the whole reason it is there.
   const dflt = field.facts.find(([k]) => k === 'Default');
   if (!dflt || dflt[1] !== String(want.default)) {
-    fail(`help: the drawer says the default of enforce is ${JSON.stringify(dflt)}, `
-       + `the payload says ${JSON.stringify(want.default)}`);
+    fail(`help: the drawer says the default of trivialLineThreshold is `
+       + `${JSON.stringify(dflt)}, the payload says ${JSON.stringify(want.default)}`);
   } else if (!field.sources.some((s) => s === doc.schemas.config)) {
     fail(`help: the description is not attributed to ${doc.schemas.config} — a `
        + `quotation with no source is just prose`);
@@ -1685,16 +2467,17 @@ async function assertHelpDrawerWorks(page, declared) {
   }
   // The panel's own microcopy is the OTHER voice, and it is labelled as such
   // rather than run together with the schema's sentence.
-  const microcopy = await page.evaluate(() => HELP.enforce);
+  const microcopy = await page.evaluate(() => HELP.trivialLineThreshold);
   if (!field.panel.includes(microcopy)) {
-    fail('help: the drawer drops the panel\'s own note for enforce, which is the '
-       + 'half that says what this form does about the setting');
+    fail('help: the drawer drops the panel\'s own note for trivialLineThreshold, '
+       + 'which is the half that says what this form does about the setting');
   }
 
   // --- the concept page behind the field --------------------------------------
   if (field.topic !== want.topic) {
-    fail(`help: the enforce drawer offers topic ${JSON.stringify(field.topic)}, the `
-       + `payload links it to ${JSON.stringify(want.topic)}`);
+    fail(`help: the trivialLineThreshold drawer offers topic `
+       + `${JSON.stringify(field.topic)}, the payload links it to `
+       + `${JSON.stringify(want.topic)}`);
   } else {
     await page.click(`dialog.drawer [data-htopic="${want.topic}"]`);
     await page.waitForSelector(`dialog.drawer [data-htable="${want.topic}"]`,
@@ -1718,12 +2501,12 @@ async function assertHelpDrawerWorks(page, declared) {
       note(`help: the ${want.topic} page is the payload's own ${oracle.length} rows`);
     }
     // Back returns to the field, not to the index: a reader who drilled in to
-    // check how the gate grades is still asking about `enforce`.
+    // check how the gate grades is still asking about the field they left.
     await page.click('dialog.drawer [data-hback]');
     await page.waitForTimeout(200);
     const back = await page.evaluate(() =>
       (document.querySelector('dialog.drawer [data-hpath]') || {}).textContent);
-    if (back !== 'enforce') {
+    if (back !== 'trivialLineThreshold') {
       fail(`help: going back from the topic landed on ${JSON.stringify(back)} `
          + `rather than the field it was opened from`);
     } else {
@@ -1790,7 +2573,7 @@ async function assertHelpDrawerWorks(page, declared) {
   } else {
     note('help: a closed drawer occupies nothing');
   }
-  if (closed.open || closed.focus !== 'enforce') {
+  if (closed.open || closed.focus !== 'trivialLineThreshold') {
     fail(`help: after Esc the drawer is open=${closed.open} and focus is on `
        + `${JSON.stringify(closed.focus)} — a keyboard reader who asked what a `
        + `field means has to find their way back to it`);
@@ -2614,6 +3397,66 @@ async function main() {
       await shot(page, 'panel-overview', { full: true });
       await assertOverviewWorks(page);
 
+      // gt (v0.34): the Plan gate card with a populated events table — the shot
+      // the README's gate-events paragraph sits beside. Seeded straight into the
+      // fixture's feed file and read back through the poll, the same loop the
+      // gate check at the end drives; every row uses the vocabulary the hooks
+      // really write (event names, reason shapes), because a committed PNG that
+      // invents its own vocab is documentation of a product that does not exist.
+      // Asserted before the shutter: a card that fell back to its "no events
+      // yet" state would photograph the feature as absent.
+      {
+        const gateLogs = path.join(big, '.claude', 'logs');
+        mkdirSync(gateLogs, { recursive: true });
+        const seeded = [
+          ['2026-04-18T09:12:04Z', 'observe', 'src/web/mod06_02.ts', 'observe',
+            'change magnitude 96 (> 80)'],
+          ['2026-04-18T09:40:31Z', 'allow.trivial', 'src/web/mod06_04.ts', 'allow',
+            'first small file (magnitude 41)'],
+          ['2026-04-19T10:02:47Z', 'warn', 'src/mobile/mod07_01.ts', 'warn',
+            'second distinct file in session'],
+          ['2026-04-19T14:21:09Z', 'deny', 'src/mobile/mod07_03.ts', 'deny',
+            'change magnitude 214 (> 80)'],
+          ['2026-04-19T14:24:52Z', 'bypass.armed', null, null,
+            '#no-plan hotfix the retry policy config'],
+          ['2026-04-19T14:26:10Z', 'bypass.consumed', 'src/mobile/mod07_03.ts',
+            'allow', 'single-use bypass consumed'],
+        ];
+        writeFileSync(path.join(gateLogs, 'plan-gate-events.jsonl'),
+          seeded.map(([ts, event, file, mode, reason]) => JSON.stringify(
+            { ts, event, ...(file ? { file } : {}), ...(mode ? { mode } : {}),
+              reason, sessionId: 'sess-demo' })).join('\n') + '\n');
+        await page.evaluate(() => pollRunStatus());
+        const landed = await page.waitForFunction((n) => {
+          const c = document.getElementById('gatecard');
+          return !!c && c.querySelectorAll('tbody tr').length === n;
+        }, seeded.length, { timeout: 6500 }).then(() => true, () => false);
+        const shown = await page.evaluate(() => {
+          const c = document.getElementById('gatecard');
+          return c ? { rows: c.querySelectorAll('tbody tr').length,
+                       tier: (c.querySelector('.st') || {}).textContent || '',
+                       first: ((c.querySelector('tbody tr td:nth-child(2)') || {})
+                         .textContent || '') } : null;
+        });
+        if (!landed || !shown || !shown.tier.trim()) {
+          fail(`gate shot: ${seeded.length} seeded feed lines drew `
+             + `${JSON.stringify(shown)} — the card is not showing the feed, so `
+             + `the shot would show the feature as absent`);
+        } else if (shown.first !== 'bypass.consumed') {
+          fail(`gate shot: the newest seeded event is "bypass.consumed" and the `
+             + `top row reads "${shown.first}" — the table is not newest-first`);
+        } else {
+          note(`gate shot: tier ${shown.tier}, all ${shown.rows} seeded events `
+             + `listed newest-first`);
+        }
+        await page.evaluate(() =>
+          document.getElementById('gatecard').scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(250);
+        await shot(page, 'panel-gate');
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForTimeout(200);
+      }
+
       await page.click('.tab[data-t=usage]');
       await page.waitForTimeout(600);
       await shot(page, 'panel-usage');
@@ -3072,10 +3915,10 @@ async function main() {
       // page, which proves nothing about the drawer — and there is still one such
       // thing, F9.
       await mob.click('.tab[data-t=guards]');
-      await mob.waitForSelector('#guards [data-hint="enforce"]', { timeout: 15000 });
+      await mob.waitForSelector('#guards [data-hint="trivialLineThreshold"]', { timeout: 15000 });
       const before390 = await mob.evaluate(() =>
         document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      await mob.click('#guards [data-hint="enforce"]');
+      await mob.click('#guards [data-hint="trivialLineThreshold"]');
       await mob.waitForSelector('dialog.drawer[open]', { timeout: 10000 });
       await mob.waitForTimeout(250);
       const sheet = await mob.evaluate(() => {
@@ -3127,6 +3970,39 @@ async function main() {
         note(`policy at 390px: no page overflow (table scrolls in its own frame: `
            + `${polOverflow.framed})`);
       }
+      // cs at 390px: the fixed-position combo menu must open INSIDE the phone
+      // viewport — the width the old anchored-in-the-wrap menu had no answer
+      // for (any host frame clipped it; the screen edge now clamps it).
+      await mob.click('.tab[data-t=usage]');
+      await mob.waitForTimeout(400);
+      const mobInp = mob.locator('#usage input[aria-label="filter by task"]');
+      if (!(await mobInp.count())) {
+        fail('usage at 390px: no task combo to open');
+      } else {
+        await mobInp.click();
+        await mob.waitForTimeout(250);
+        const mm = await mob.evaluate(() => {
+          const m = [...document.querySelectorAll('.combo-menu')]
+            .find((x) => !x.classList.contains('hidden'));
+          if (!m) return null;
+          const r = m.getBoundingClientRect();
+          return { left: Math.round(r.left), right: Math.round(r.right),
+                   top: Math.round(r.top), bottom: Math.round(r.bottom),
+                   vw: document.documentElement.clientWidth, vh: innerHeight };
+        });
+        if (!mm) {
+          fail('usage at 390px: focusing the task combo opened no menu');
+        } else if (mm.left < 0 || mm.right > mm.vw + 1 || mm.bottom > mm.vh + 1) {
+          fail(`usage at 390px: the combo menu opens at ${mm.left}..${mm.right} x `
+             + `${mm.top}..${mm.bottom} in a ${mm.vw}x${mm.vh} viewport — the `
+             + `clamp is not holding on a phone`);
+        } else {
+          note(`usage at 390px: the combo menu fits the viewport `
+             + `(${mm.left}..${mm.right} of ${mm.vw})`);
+        }
+        await mob.keyboard.press('Escape');
+        await mob.waitForTimeout(150);
+      }
       await mobCtx.close();
       // Deliberately AFTER the last capture. Driving Usage ends in an export, and an
       // export raises a toast — which the dark shot caught and committed, a banner
@@ -3141,6 +4017,18 @@ async function main() {
       // Last of all: it writes to the fixture's manifest and its config, so every
       // check above sees the state it was generated with.
       await assertConfirmFlowWorks(page);
+      // v0.34 panel UX (C1-C5). Same writes-last discipline: the save-note
+      // lifecycle saves the config twice, and the live-data check writes the
+      // manifest's shard straight on disk — so both run after everything that
+      // measures the fixture as generated, and live-data runs dead last.
+      await assertModelCombo(page, big);
+      await assertComboSearchCount(page);
+      await assertFilterPersistence(page, browser, panel.url);
+      await assertSaveNoteLifecycle(page);
+      await assertLiveData(page, big);
+      // gt (v0.34 B3): writes into the fixture's logs/state dirs, so it keeps
+      // to the same writes-last discipline and runs after live-data.
+      await assertGateCard(page, big);
 
       // ---- the policy switchboard, on a fixture of its own ---------------------
       // Its own project and its own HOME — see writePolicyFixture for why a tab
@@ -3257,6 +4145,9 @@ async function main() {
         await shot(ppage, 'panel-policy');
         // Everything below writes to the fixture's config, so it runs after.
         await assertPolicyWorks(ppage, path.join(seen.dir, seen.file));
+        // cs, second half: the description search, on the one registry whose
+        // every description this file wrote.
+        await assertComboDescriptionSearch(ppage);
         await pctx.close();
       }
       // Collected across every tab this run touched, and reported last so the more

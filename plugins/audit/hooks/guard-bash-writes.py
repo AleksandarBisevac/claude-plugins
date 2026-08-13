@@ -20,6 +20,11 @@ Two branches by tool_name:
 
 State: <stateDir>/bash-writes-<session_id>.json
   {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...]}
+Read-only sidecar: <stateDir>/bash-writes-plugin-<sid>.json {"pluginWrote": [rel]}
+  — journal files the plugin ITSELF appended to (written by journal-writes.py,
+  the single writer; hooks on one event run in parallel). Those rels are
+  skipped before the journal check, so the plugin's own append is never
+  blamed on the next shell command (F-F3).
 
 Config: `.claude/audit.config.json` → bashWriteCheck.enabled (default true).
 Non-git repos, git errors/timeouts (5 s) → silent. ALWAYS exits 0.
@@ -28,12 +33,18 @@ Run `python3 guard-bash-writes.py --selftest` to exercise the decision core.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
+
+# Mirrors journal-writes.py's `_SAFE_SID`: the sidecar read below is written by
+# that hook, and the two must agree about how a session id becomes a file name.
+# The k1 selftest drives the REAL writer, so a drift here goes red.
+_SAFE_SID = re.compile(r"[^A-Za-z0-9._-]+")
 
 # --- notice templates ---------------------------------------------------------
 WARN_TEMPLATE = (
@@ -56,8 +67,10 @@ JOURNAL_TEMPLATE = (
     "written by the plugin (panel saves, the journal-writes hook, "
     "`audit-journal.py append`) and never by hand, and an edit tool would have "
     "been REFUSED here. This is a non-blocking notice; the change was NOT "
-    "reverted. Run `audit-journal.py verify` to see whether the chain still holds, "
-    "and tell the human what wrote there."
+    "reverted. Run `audit-journal.py verify` to see whether the chain still holds "
+    "- if verify says the chain holds and the newest row is fresh, this was "
+    "likely the plugin itself (a panel save, or an edit and a shell command in "
+    "one message). Otherwise, tell the human what wrote there."
 )
 
 # Same fact as require-plan's lock denial, delivered late because a shell write
@@ -102,6 +115,27 @@ def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
             json.dump(state, fh)
     except Exception:
         pass
+
+
+def _plugin_wrote(state_dir: Path, session_id: str) -> set:
+    """Journal files THIS session's own plugin hooks appended to (F-F3).
+
+    Written by journal-writes.py after each successful append, as
+    `<stateDir>/bash-writes-plugin-<sid>.json` `{"pluginWrote": [rel, ...]}`.
+    Read-only here, and that is load-bearing: hooks registered on the same
+    event run in PARALLEL, so the sidecar has exactly one writer (the hook
+    that made the journal write) and this one only ever looks. Empty set on
+    any miss -- a missing sidecar means nothing was appended by the plugin."""
+    try:
+        sid = _SAFE_SID.sub("-", str(session_id or "")).strip("-.")
+        sid = (sid or "no-session")[:40]
+        with open(state_dir / ("bash-writes-plugin-%s.json" % sid),
+                  "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+        wrote = obj.get("pluginWrote") if isinstance(obj, dict) else None
+        return {str(x) for x in wrote} if isinstance(wrote, list) else set()
+    except Exception:
+        return set()
 
 
 def _git_dirty(root) -> "list | None":
@@ -171,12 +205,21 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
     manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
     exempt = cfg.get("exemptGlobs") or _config.DEFAULTS["exemptGlobs"]
     exts = _config.source_exts(cfg)
+    plugin_wrote = _plugin_wrote(sd, session_id)
     in_prog = None
     suspicious = []
     locked = []
     journalled = []
     for rel in new:
         if rel in state["toolEdited"] or rel in state["warned"]:
+            continue
+        # F-F3: the plugin's OWN journal appends (the journal-writes hook) put
+        # the journal file into git status too. Skip exactly the files the
+        # sidecar names, BEFORE the in_journal check -- or the plugin's own row
+        # would be reported as a shell write into the audit trail on the next
+        # Bash command. The file still entered seenDirty above, so it is not
+        # rediscovered as new on the pass after this one.
+        if rel in plugin_wrote:
             continue
         # Checked before the exempt globs: the journal lives beside the manifest,
         # so `docs/audit/**` — which is exempt from the plan gate on purpose —
@@ -379,6 +422,76 @@ def _selftest() -> int:
     check("j5 a neighbour whose name merely starts the same is ordinary work",
           "silent", payload("Bash", sid="bw-j5"),
           dirty=["docs/audit/journal-notes/why.md"])
+
+    # (k) F-F3: the plugin's OWN journal append lands in git status too, and it
+    # used to be blamed on the next shell command -- journal-writes appends a
+    # row at PostToolUse, the journal file goes dirty, and the next Bash pass
+    # reported "That shell command wrote into the append-only audit journal"
+    # about a write the plugin itself made. The fix is a sidecar with ONE
+    # writer (journal-writes), read here; k1 drives the REAL writer so the two
+    # sides cannot drift about where the sidecar lives.
+    import importlib.util as _ilu
+    _jw_spec = _ilu.spec_from_file_location(
+        "journal_writes_for_k",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "journal-writes.py"))
+    _jw = _ilu.module_from_spec(_jw_spec)
+    _jw_spec.loader.exec_module(_jw)
+    kproj = tmp / "ff3"
+    (kproj / "docs" / "audit").mkdir(parents=True, exist_ok=True)
+    (kproj / "docs" / "audit" / "audit-plan.json").write_text(
+        '{"meta":{"version":3}}', encoding="utf-8")
+    ksd = kproj / ".claude" / "state"
+    kcfg = _config._deep_merge(_config.DEFAULTS, {})
+    ksid = "bw-k1"
+    kdata = {"tool_name": "Edit", "session_id": ksid,
+             "tool_input": {"file_path": "docs/audit/audit-plan.json",
+                            "new_string": "x"},
+             "cwd": str(kproj)}
+    os.environ["CLAUDE_PROJECT_DIR"] = str(kproj)
+    try:
+        _jmod = _config._load_journal_lib()
+        _entries = _jw.post_entries(kdata, cfg=kcfg, root=str(kproj))
+        _written = []
+        for _e in _entries:
+            _p = _jmod.append(str(kproj), _e, config=kcfg)
+            if _p:
+                # exactly the wiring journal-writes' main() performs after a
+                # successful append; getattr so the RED run (before the
+                # sidecar exists) fails the case instead of crashing the suite
+                getattr(_jw, "record_plugin_write",
+                        lambda *a: None)(str(kproj), kcfg, kdata, _p)
+                _written.append(_p)
+        _jrel = (_config.rel_path(kproj, _written[0]) if _written
+                 else "append-failed")
+        _kpayload = {"tool_name": "Bash", "tool_input": {"command": "x"},
+                     "session_id": ksid, "cwd": str(kproj)}
+        try:
+            _v, _ = decide(_kpayload, cfg=kcfg, state_dir=ksd, dirty=[_jrel])
+        except Exception as _exc:                       # pragma: no cover
+            _v = "EXC:%s" % _exc
+        ok = bool(_written) and _v == "silent"
+        results.append(ok)
+        print("%s k1 the plugin's own journal append is SILENT on the next "
+              "Bash pass - the sidecar names it, so the shell is not blamed "
+              "for it (got %s for %s)" % ("PASS" if ok else "FAIL", _v, _jrel))
+        # A journal write the sidecar does NOT name is still the guard's
+        # business: that is the sed-shaped write the template exists for.
+        _v2, _d2 = decide({"tool_name": "Bash", "tool_input": {"command": "x"},
+                           "session_id": "bw-k2", "cwd": str(kproj)},
+                          cfg=kcfg, state_dir=ksd, dirty=[_jrel])
+        ok = _v2 == "warn" and "append-only audit journal" in _d2
+        results.append(ok)
+        print("%s k2 a session WITHOUT a sidecar entry still warns about the "
+              "same journal file - the guard's purpose survives the fix"
+              % ("PASS" if ok else "FAIL"))
+        ok = "likely the plugin itself" in JOURNAL_TEMPLATE
+        results.append(ok)
+        print("%s k3 the journal warning tells the reader how to read a clean "
+              "verify: a fresh chained row was likely the plugin itself"
+              % ("PASS" if ok else "FAIL"))
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
 
     # (f) REAL git integration: init a repo, dirty it, no `dirty` injection
     s = "bw-f"

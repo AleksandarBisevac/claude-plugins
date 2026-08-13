@@ -1177,8 +1177,10 @@ def _selftest():
           and "of all spend" in _SCRIPT)
     check("c3: the author filter is a link (au=) and restores from one",
           "put('au', auFilter)" in _SCRIPT and "if (HASH.au)" in _SCRIPT)
-    check("c3: clear-all lifts the author scope with everything else",
-          "auFilter = '';" in _SCRIPT)
+    check("c3: clear-all lifts the author scope with everything else "
+          "(pinned INSIDE clearAll - the declaration up top spells the same "
+          "bytes and satisfied a whole-script substring)",
+          "auFilter = '';" in _SCRIPT.split("function clearAll()")[1])
     check("c3: hidden actually hides a rank row and a hidden smcell - the "
           "author-facing rules a UA default cannot win against",
           ".rank[hidden]{display:none}" in _CSS

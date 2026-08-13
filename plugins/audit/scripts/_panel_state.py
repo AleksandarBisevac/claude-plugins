@@ -47,6 +47,7 @@ BOUNDARY DECISIONS -- read-side code that touched names the write path also uses
 Stdlib only, Python 3.8 compatible.
 """
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -709,10 +710,153 @@ def _lock_info(lockdir):
     return out
 
 
+def data_fingerprint(project, config):
+    """A cheap change stamp over everything the panel renders from disk (lv).
+
+    (mtime_ns, size) of: the CONFIG file first (manifestPath/ledgerDir live in
+    it, so a config edit must move the stamp even when it merely points the
+    panel at different files), then the manifest, then every shard the index
+    names, then the newest (mtime_ns, size) across the ledger dir's *.jsonl.
+    Pure stats per request — no watcher thread, no state between calls —
+    folded into /api/runstatus so the existing 5s poll carries it for free.
+
+    SSE was weighed and rejected for this: through the stdlib server it would
+    be stream-until-close over HTTP/1.0 (no chunked replies), a second send
+    path beside _send, and one parked thread per open tab — for a localhost
+    tool whose staleness budget the poll already meets.
+
+    A missing file stamps as "-", so a project with nothing on disk yields a
+    STABLE sentinel rather than an error; this function never raises.
+    """
+    def stamp(path):
+        try:
+            st = os.stat(path)
+            return "%d:%d" % (st.st_mtime_ns, st.st_size)
+        except Exception:
+            return "-"
+
+    parts = []
+    try:
+        parts.append(stamp(_config_path(project)))
+        mpath = _manifest_path(project, config)
+        parts.append(stamp(mpath))
+        try:
+            idx = _read_json(mpath)
+        except Exception:
+            idx = None
+        if isinstance(idx, dict):
+            base = os.path.dirname(os.path.abspath(mpath))
+            for ph in idx.get("phases") or []:
+                if isinstance(ph, dict) and isinstance(ph.get("shard"), str):
+                    parts.append(stamp(os.path.join(base, ph["shard"])))
+        newest = None
+        try:
+            led = str(_cores()[3].ledger_dir(project, config))
+            for name in os.listdir(led):
+                if name.endswith(".jsonl"):
+                    st = os.stat(os.path.join(led, name))
+                    key = (st.st_mtime_ns, st.st_size)
+                    if newest is None or key > newest:
+                        newest = key
+        except Exception:
+            newest = None
+        parts.append("-" if newest is None else "%d:%d" % newest)
+        return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        return "unavailable"
+
+
+def _gate_block(project, config):
+    """The Plan gate card's payload (v0.34 B3): tier + why, whether a bypass is
+    armed, and the tail of the gate events feed.
+
+    Computed SERVER-SIDE with the hooks' own functions (`plan_gate_mode`,
+    `plan_gate_knob`, `manifest_state` through `_cores()[3]`), so the card can
+    never disagree with the gate about what tier is in force — the same rule
+    the policy switchboard follows. Events are the newest ~20 lines of
+    `<logsDir>/plan-gate-events.jsonl`, newest first; the armed indicator
+    honours the same TTL require-plan honours, so the card never claims a
+    bypass the gate would refuse. Never raises; a bare dict on any miss."""
+    out = {"mode": "observe", "source": "", "bypassArmed": False, "events": []}
+    try:
+        cfg_mod = _cores()[3]
+        config = config if isinstance(config, dict) else {}
+        manifest_rel = (config.get("manifestPath")
+                        or cfg_mod.DEFAULTS["manifestPath"])
+        state = cfg_mod.manifest_state(project, manifest_rel)
+        out["mode"] = cfg_mod.plan_gate_mode(config, state)
+        knob = cfg_mod.plan_gate_knob(config)
+        if knob:
+            out["source"] = ("planGate: \"%s\" in .claude/audit.config.json "
+                             "(pinned)" % knob)
+        elif cfg_mod.enforce_always(config):
+            out["source"] = ("enforce: true (legacy; same as planGate: "
+                             "\"deny\")")
+        elif not state.get("exists"):
+            out["source"] = "graded on evidence: no manifest at %s" % manifest_rel
+        elif state.get("phaseRunning"):
+            out["source"] = ("graded on evidence: phase %s is in_progress"
+                             % state.get("runningPhase"))
+        else:
+            out["source"] = ("graded on evidence: manifest present, nothing "
+                             "running")
+        sd = os.path.join(str(project),
+                          str(config.get("stateDir")
+                              or cfg_mod.DEFAULTS["stateDir"]))
+        try:
+            for name in os.listdir(sd):
+                if not (name.startswith("plan-bypass-")
+                        and name.endswith(".json")):
+                    continue
+                try:
+                    with open(os.path.join(sd, name), "r",
+                              encoding="utf-8") as fh:
+                        info = json.load(fh) or {}
+                    at = (info.get("armedAtEpoch")
+                          if isinstance(info, dict) else None)
+                    if (isinstance(at, (int, float))
+                            and not isinstance(at, bool)
+                            and time.time() - at > cfg_mod.BYPASS_TTL_SECONDS):
+                        continue          # expired: require-plan would refuse it
+                except Exception:
+                    pass                  # unreadable = legacy shape = armed
+                out["bypassArmed"] = True
+                break
+        except Exception:
+            pass
+        try:
+            feed = os.path.join(str(project),
+                                str(config.get("logsDir")
+                                    or cfg_mod.DEFAULTS["logsDir"]),
+                                cfg_mod.GATE_EVENTS_FILE)
+            with open(feed, "r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.read().splitlines()
+            for line in reversed(lines[-20:]):        # newest first
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(row, dict):
+                    out["events"].append(row)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return out
+
+
 def _run_status(project, config, manifest):
     """Per-phase live run status for the panel ('who's running what'): which phase is
     locked (and by whom) and which carries an optimistic claim. Combines the shared
-    git-dir phase locks with each phase's `claim` from the manifest."""
+    git-dir phase locks with each phase's `claim` from the manifest.
+
+    Also carries `fingerprint` (data_fingerprint above): the poll that reads this
+    endpoint is how the panel notices the files moved on disk — a fingerprint
+    change hands off to refreshFromDisk instead of repainting Overview. And the
+    `gate` block (v0.34 B3): the Plan gate card's tier/source/bypass/events,
+    which DOES enter the client's `runStatusKey` ({index, phases, gate}), so a
+    fresh gate event repaints the card without the poll ever refetching full
+    state (the D9 rule, still literally true of the poll itself)."""
     locks = _lock_info(_audit_lock_dir(project, config))
     phases = {}
     if isinstance(manifest, dict):
@@ -724,7 +868,9 @@ def _run_status(project, config, manifest):
                     "claim": claim if isinstance(claim, dict) else None}
     for pid, info in locks["phases"].items():          # locks for phases not in the manifest
         phases.setdefault(pid, {"lock": info, "claim": None})
-    return {"index": locks["index"], "phases": phases}
+    return {"index": locks["index"], "phases": phases,
+            "fingerprint": data_fingerprint(project, config),
+            "gate": _gate_block(project, config)}
 
 _MAX_FACTS = 20000
 
@@ -753,6 +899,7 @@ def usage_state(project):
              # key there is an `undefined` that only shows up on a fresh install.
              "phaseTitles": {}, "taskMeta": {}, "phaseBudgets": {},
              "routingAdvice": [], "monthlyPlan": {}, "phaseAreas": {},
+             "areaOwners": {},
              "bands": ucfg.get("bands") or {},
              "counts": {"phases": 0, "tasks": 0, "models": 0, "authors": 0,
                         "sessions": 0, "days": 0, "from": None, "to": None},
@@ -851,6 +998,20 @@ def usage_state(project):
     except Exception:
         phase_areas = {}
 
+    # The advisory owner per registered area (v0.34 D3): {tag: owner}, only
+    # for tags that DECLARE a non-null owner - an explicit null ("nobody") and
+    # an undeclared owner read the same to the UI, which only ever displays.
+    # panel.js joins UF.author against the VALUES for the person header's
+    # "owns:" line, and titles the area select's options with them.
+    try:
+        area_owners = {}
+        for _tag, _entry in _areas.registry(_mio.load_manifest_safe(mpath)).items():
+            _o = _entry.get("owner")
+            if isinstance(_o, str) and _o.strip():
+                area_owners[_tag] = _o.strip()
+    except Exception:
+        area_owners = {}
+
     return {
         "enabled": bool(ucfg.get("enabled", True)),
         "ledgerDir": ledger_dir,
@@ -872,6 +1033,7 @@ def usage_state(project):
         "routingAdvice": advice,
         "monthlyPlan": monthly_plan,
         "phaseAreas": phase_areas,
+        "areaOwners": area_owners,
         "bands": ucfg.get("bands") or {},
         "counts": counts,
         "rolled": rolled,
@@ -1335,6 +1497,30 @@ def _selftest():
     finally:
         _atomic_write_json(mpath, _orig_manifest)
 
+    # --- areaOwners (v0.34 D3): the advisory owner per registered area ----------
+    # panel.js joins UF.author against these values for the person header's
+    # "owns:" line and titles the area select options. Key parity again - the
+    # sibling case beside phaseAreas', because a key in one branch only is an
+    # `undefined` that ships on every fresh install.
+    check("usage_state ships areaOwners in BOTH branches - {} on a repo with "
+          "no ledger, never undefined",
+          "areaOwners" in _mp_empty and _mp_empty["areaOwners"] == {})
+    try:
+        _atomic_write_json(mpath, {
+            "meta": {"version": 2,
+                     "areas": {"backend": {"root": "src",
+                                           "owner": " jane@x.com "},
+                               "sec": {"root": "sec", "owner": None},
+                               "web": {"root": "web"}}},
+            "phases": [{"id": "P1", "title": "A", "status": "done",
+                        "area": ["backend", "sec"], "tasks": []}]})
+        check("the populated branch maps tag -> trimmed owner through _areas."
+              "registry - only tags that DECLARE a non-null owner enter the "
+              "map, so null ('nobody') and undeclared read the same to the UI",
+              usage_state(proj).get("areaOwners") == {"backend": "jane@x.com"})
+    finally:
+        _atomic_write_json(mpath, _orig_manifest)
+
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
     # from the project's own config, so there is nothing to traverse with.
@@ -1375,6 +1561,128 @@ def _selftest():
           '"routingAdvice": advice' in _src
           and "ul.routing(_mio.load_manifest_safe(mpath), rows," in _src
           and "advice = []" in _src)
+
+    # --- v0.34 C5 (lv): the data fingerprint -------------------------------------
+    # Pure stats per request, folded into /api/runstatus so the existing 5s
+    # poll carries it. The browser half (refreshFromDisk) is driven in
+    # capture-screenshots.mjs --check.
+    _fp1 = data_fingerprint(proj, read_config(proj))
+    _fp2 = data_fingerprint(proj, read_config(proj))
+    check("lv: the fingerprint is a pure stat - stable across two calls with "
+          "nothing changed", isinstance(_fp1, str) and _fp1 and _fp1 == _fp2)
+    # Change the SIZE, not only the mtime: coarse filesystems round mtime to a
+    # second, and a rewrite inside that second would otherwise stamp equal.
+    _m_orig = open(mpath, encoding="utf-8").read()
+    try:
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(_m_orig + " ")
+        check("lv: a manifest rewrite moves it",
+              data_fingerprint(proj, read_config(proj)) != _fp1)
+    finally:
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(_m_orig)
+    _c_orig = open(_config_path(proj), encoding="utf-8").read()
+    try:
+        with open(_config_path(proj), "w", encoding="utf-8") as fh:
+            fh.write(_c_orig + " ")
+        check("lv: a config write moves it (manifestPath/ledgerDir live there, "
+              "so the config file is stamped FIRST)",
+              data_fingerprint(proj, read_config(proj)) != _fp1)
+    finally:
+        with open(_config_path(proj), "w", encoding="utf-8") as fh:
+            fh.write(_c_orig)
+    with open(os.path.join(led, "2026-08.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "2026-08-03T10", "sessionId": "s9",
+                             "model": "m", "msgs": 1, "in": 1, "out": 1,
+                             "costUSD": 0.0}) + "\n")
+    check("lv: a ledger append moves it (newest *.jsonl stat)",
+          data_fingerprint(proj, read_config(proj)) != _fp1)
+    # Sharded: every shard body is stamped, so a phase edit that never touches
+    # the index still moves the stamp.
+    _lvproj = tempfile.mkdtemp(prefix="state-lv-")
+    try:
+        _atomic_write_json(_config_path(_lvproj),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+        _lvm = _manifest_path(_lvproj, read_config(_lvproj))
+        os.makedirs(os.path.dirname(_lvm), exist_ok=True)
+        _mio.save_sharded(_lvm, {
+            "meta": {"version": 3},
+            "phases": [{"id": "P1", "title": "One", "status": "pending",
+                        "tasks": [{"id": "P1.1", "title": "T",
+                                   "status": "pending"}]}]})
+        _lv1 = data_fingerprint(_lvproj, read_config(_lvproj))
+        with open(os.path.join(os.path.dirname(_lvm), "phases", "P1.json"),
+                  "a", encoding="utf-8") as fh:
+            fh.write(" ")
+        check("lv: a sharded phase body moves it without the index changing",
+              data_fingerprint(_lvproj, read_config(_lvproj)) != _lv1)
+    finally:
+        shutil.rmtree(_lvproj, ignore_errors=True)
+    _lvmiss = os.path.join(tmp, "lv-nothing-here")
+    check("lv: missing everything is a stable sentinel, never a raise",
+          data_fingerprint(_lvmiss, {}) == data_fingerprint(_lvmiss, {})
+          and isinstance(data_fingerprint(_lvmiss, {}), str))
+    check("lv: the fingerprint rides /api/runstatus's payload - with and "
+          "without a manifest - so the existing poll carries it for free "
+          "while it stays OUT of runStatusKey (a moved stamp hands off to "
+          "refreshFromDisk instead of repainting)",
+          isinstance(_run_status(proj, read_config(proj), {})
+                     .get("fingerprint"), str)
+          and isinstance(_run_status(_lvmiss, {}, {}).get("fingerprint"), str))
+    check("lv: SSE is weighed and rejected in prose where the stamp is "
+          "defined, so the next person does not re-litigate it blind",
+          "SSE" in (data_fingerprint.__doc__ or ""))
+
+    # --- v0.34 B3 (gt): the Plan gate block on /api/runstatus --------------------
+    # Tier + why, bypass-armed, and the tail of the gate events feed - the
+    # panel's Overview card is fed from here, so the server computes the tier
+    # with the hooks' own functions rather than letting the browser guess.
+    _gtcfg = _cores()[3]
+    _gt = _run_status(proj, read_config(proj), {}).get("gate")
+    check("gt: runstatus carries a gate block with the tier and its source",
+          isinstance(_gt, dict) and _gt.get("mode") in ("observe", "warn",
+                                                        "ask", "deny")
+          and bool(_gt.get("source")) and isinstance(_gt.get("events"), list)
+          and _gt.get("bypassArmed") is False)
+    check("gt: a pinned planGate names the knob as the source, tier included",
+          (_run_status(proj, {"planGate": "ask"}, {}).get("gate") or {})
+          .get("mode") == "ask"
+          and "planGate" in str((_run_status(proj, {"planGate": "ask"}, {})
+                                 .get("gate") or {}).get("source")))
+    check("gt: legacy enforce:true is named as legacy, not as evidence",
+          "legacy" in str((_run_status(proj, {"enforce": True}, {})
+                           .get("gate") or {}).get("source")))
+    for _i in range(25):
+        _gtcfg.append_gate_event(os.path.join(proj, ".claude", "logs"),
+                                 {"event": "observe", "file": "f%d.ts" % _i,
+                                  "sessionId": "gt"})
+    _gt = _run_status(proj, read_config(proj), {}).get("gate") or {}
+    check("gt: the events table is the feed's tail, newest first, capped at 20",
+          len(_gt.get("events") or []) == 20
+          and _gt["events"][0].get("file") == "f24.ts"
+          and _gt["events"][-1].get("file") == "f5.ts")
+    _gtsd = os.path.join(proj, ".claude", "state")
+    os.makedirs(_gtsd, exist_ok=True)
+    with open(os.path.join(_gtsd, "plan-bypass-gt.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"ts": "t", "reason": "x",
+                   "armedAtEpoch": int(time.time())}, fh)
+    check("gt: a live bypass slot flips the armed indicator",
+          (_run_status(proj, read_config(proj), {}).get("gate") or {})
+          .get("bypassArmed") is True)
+    with open(os.path.join(_gtsd, "plan-bypass-gt.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"ts": "t", "reason": "x",
+                   "armedAtEpoch": int(time.time())
+                   - _gtcfg.BYPASS_TTL_SECONDS - 60}, fh)
+    check("gt: an EXPIRED slot does not count as armed - the card must not "
+          "claim a bypass require-plan would refuse",
+          (_run_status(proj, read_config(proj), {}).get("gate") or {})
+          .get("bypassArmed") is False)
+    os.unlink(os.path.join(_gtsd, "plan-bypass-gt.json"))
+    check("gt: a project with nothing on disk still gets a gate block, never "
+          "a raise",
+          isinstance(_run_status(_lvmiss, {}, {}).get("gate"), dict))
 
     # --- isolation cases (P12.3): the moved boundary stays real -----------------
     _imports = [l for l in _src.split("\n")

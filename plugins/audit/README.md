@@ -61,7 +61,12 @@ write guards, TDD reminder, usage & pricing, audit trail — schema-validated, e
 does with its JSON key and an ⓘ hint beside it, and every field left empty simply absent from
 the file. It also **wires composition** — `meta.reviewSkill`, per-task `skills`/`model`, per-phase review
 model, `meta.buildCommands` — from **an autocomplete populated by the skills & agents actually
-available** in this repo + `~/.claude/` + installed plugins. Same Slate & Teal look, light/dark,
+available** in this repo + `~/.claude/` + installed plugins. The model fields get the same
+treatment with their **sources named**: models the manifest already uses, models the rate
+table prices, and models **the token ledger has actually seen** — that last one is what a
+typo'd manifest model looks like from the other side. Every autocomplete searches
+descriptions as well as names, and a long result list says `…N more — keep typing` instead
+of cutting off silently. Same Slate & Teal look, light/dark,
 responsive. It writes only config + composition fields (never structural manifest CRUD, and never
 while a `/audit` run holds the lock), validating before each atomic save. Composition is a
 **compact, collapsible, filterable table** (search · phase-status · "needs skills" · expand-all)
@@ -74,7 +79,18 @@ server recomputes that list against the file it is about to write and sends it b
 manifest a second tab or an `/audit` run moved under you is reported rather than papered over.
 The topbar names the identity a write is recorded under (`viewing as …`, resolved exactly as the
 token ledger resolves a spender — see `usage.authorMode`), and Usage's **my spend** chip filters
-on that same name.
+on that same name. A save's outcome has a lifecycle to match its weight: a landed save says
+**✓ saved** and dissolves five seconds later, while a refused save stays up — bold title, the
+findings that refused it, its own dismiss × — until you close it or fix it; a refusal must
+outlive a glance away.
+
+The panel is also **live without being a distraction**: a fingerprint of the manifest, its
+shards, the config and the ledger rides on the poll the panel already runs, so when the files
+move on disk — an `/audit` run, a second tab, your editor — clean views re-render themselves
+within a few seconds. A form holding **unsaved edits is left exactly as it is** and gets a
+persistent notice instead: Save is still checked against the file as it is on disk (the confirm
+dialog's echo), and Discard reloads what is really there. Refreshes hold while any dialog is
+open.
 
 | Settings | Composition (compact/collapsible) | Composition expanded | Save shows every change | Dark |
 |---|---|---|---|---|
@@ -83,10 +99,15 @@ on that same name.
 The **Overview** tab is a live validation + progress rollup you can steer by — status strips that
 are both legend and filter, search, sort, group-by-area, each phase row carrying its desired
 outcome and opening that phase in Composition, and a *Ready now* card with the `/audit:run <id>`
-to copy — and the Composition tab lists the
+to copy — plus a **Plan gate** card: the tier in force, where it came from (`planGate`, legacy
+`enforce`, or the graded ladder), whether a bypass is armed right now, and the latest
+[gate events](#installing-arms-global-hooks) as they land — and the Composition tab lists the
 **building blocks it discovered** (skills · agents · MCP servers, from this repo + `~/.claude/` +
 installed plugins) — the names that feed the autocomplete. The **Usage** tab is the token ledger
-with the filters on top of it (see [Token usage](#token-usage)). All of it scales, and all of it
+with the filters on top of it (see [Token usage](#token-usage)) — and its filters **persist**:
+the state rides in the URL fragment (`#/usage!au=…`), so a filtered view is a share link the
+way the report's is, and it is remembered per repo across reopens; clearing the filters clears
+both. All of it scales, and all of it
 works on a phone — the shots below are a 50-phase × 1000-task manifest, and the last one is that
 same panel at 390px:
 
@@ -164,14 +185,23 @@ page behind it, read against the form rather than instead of it. All of it is
     non-trivial edits must be planned in the manifest or opted out via a single-use keyword,
     **once there is a plan to check against**: with no manifest it observes and reports once
     per session, with a manifest but nothing running it warns, and it denies only while a
-    phase is `in_progress` (`enforce: true` denies at every tier). The shell-write plan gate
+    phase is `in_progress` (`planGate` pins any single tier — including `ask`, which holds
+    each out-of-plan edit for your approval; legacy `enforce: true` = `planGate: "deny"`).
+    The shell-write plan gate
     in `guard-secrets-read.py` grades identically, so `sed -i` and `Edit` agree on the same
-    file; the secret checks themselves are never graded.
+    file; the secret checks themselves are never graded. A refusal names its true cause —
+    the running phase by id, or the config key that pinned the tier — and weighs the two
+    ways forward: add a task covering the file (preferred), or the **human** types the
+    bypass keyword in their own prompt; an agent reading it is told to ask, not to
+    recommend the bypass.
     "Non-trivial" = change magnitude (added lines, chars/200, or removed lines) over the
     threshold, or a second distinct file in a session. The bypass is **transactional**:
-    observed before the edit, consumed only after it actually happens.
-  - `detect-plan-skip.py` (UserPromptSubmit) — arms that single-use opt-out when your prompt
-    contains the bypass keyword (and tells you); also warns once per session when
+    observed before the edit, consumed only after it actually happens — and it expires
+    unused after 30 minutes.
+  - `detect-plan-skip.py` (UserPromptSubmit) — arms that single-use opt-out when **your**
+    prompt contains the bypass keyword (and tells you, naming the 30-minute expiry; hooks
+    see only human prompts, which is what makes the keyword the human's and not an
+    agent's); also warns once per session when
     `.claude/audit.config.json` is malformed (your custom rules would silently not apply).
   - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — blocks reading secret files
     (`.env`, credentials, signing material) directly or indirectly (`git show`, `source`,
@@ -290,15 +320,33 @@ repos that never opted in.
 |---|---|---|
 | No audit manifest | **observes** | One line per session naming what it *would* have held. Nothing is blocked. |
 | A manifest, no phase `in_progress` | **warns** | An advisory noting the file is not covered by a running task. |
-| A manifest + a phase `in_progress` | **denies** | Edits are held to the running plan (bypass: include `#no-plan` in your prompt — single-use, logged). |
+| A manifest + a phase `in_progress` | **denies** | Edits are held to the running plan (bypass: the **human** includes `#no-plan` in their own prompt — single-use, logged, expires unused after 30 minutes). |
 
 The reasoning is the same one the cost report applies to itself: a claim needs the evidence
 that makes it true. With no manifest there is no plan to check an edit against, so denying
 there would be this plugin's strongest claim made on its weakest evidence. Grading it is
 the thesis applied consistently, not a softening of it.
 
-`enforce: true` in `.claude/audit.config.json` restores always-on deny at any tier — as a
-decision you made, rather than a default that surprises a stranger.
+`planGate` in `.claude/audit.config.json` pins the gate to one tier by hand — `"observe"`,
+`"warn"`, `"ask"` (every out-of-plan edit is held for your approval, one edit at a time) or
+`"deny"` — as a decision you made, rather than a default that surprises a stranger. Unset,
+the graded ladder above applies. It supersedes the legacy `enforce` key: `enforce: true`
+means the same as `planGate: "deny"`, `planGate` wins when both are set, and a typo'd
+`planGate` value falls back to the ladder — open, never to deny.
+
+**Gate events.** Every verdict the plan gate reaches — a deny, a warn, an observe line, an
+approved ask, a bypass armed / consumed / expired — leaves one JSON line in
+`<logsDir>/plan-gate-events.jsonl` (it lives with the rest of `logsDir`, which you already
+gitignore; self-trimming past ~512KB; writing it never blocks anything). The panel's
+Overview tab reads it: a **Plan gate** card naming the active tier and where it came from,
+whether a bypass is armed right now, and the latest events — so what the gate has been
+deciding on your behalf is a glance, not an archaeology dig. And when the gate warns instead
+of denying, the warning opens with *"Tell the human this verbatim before continuing"* — the
+agent reading it is asked to relay it, not to weigh it silently.
+
+| The Plan gate card (tier, source, the latest verdicts) |
+|---|
+| [![the plan gate card with its events table](../../docs/screenshots/panel-gate.png)](../../docs/screenshots/panel-gate.png) |
 
 **Only the plan gate is graded.** The secret-read guard, the token-logging ban and the
 shell-write secret checks deny by default at every tier: reading `.env` is wrong whether or
@@ -403,9 +451,10 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `manifestPath` | Path to the manifest | `docs/audit/audit-plan.json` |
 | `gitRoot` | Git repo root relative to the project dir (set when git/the workspace is in a subdir; keep in sync with manifest `meta.gitRoot`) | `.` |
 | `exemptGlobs` | Globs exempt from plan-first | `docs/audit/**`, `**/*.md`, `.claude/**`, `**/*.spec.*`, `**/*.test.*` |
-| `enforce` | Force the plan gate to DENY regardless of evidence. `false` grades it: observe → warn → deny (see above) | `false` |
+| `planGate` | Pin the plan gate to one tier: `observe` \| `warn` \| `ask` (hold each out-of-plan edit for approval) \| `deny`. Unset → the graded ladder: observe → warn → deny (see above). Wins over `enforce`; an unknown value falls back to the ladder | unset |
+| `enforce` | Legacy (pre-0.34): `true` = always-deny, the same as `planGate: "deny"` — which wins when both are set | `false` |
 | `trivialLineThreshold` | Max change magnitude for the 1st free code file/session | `80` |
-| `stateDir` / `logsDir` | Where state + bypass log live (add both to `.gitignore`) | `.claude/state` / `.claude/logs` |
+| `stateDir` / `logsDir` | Where state + bypass log live (add both to `.gitignore`; the journal is the opposite: never ignore it) | `.claude/state` / `.claude/logs` |
 | `bypassKeyword` | Single-use plan-first opt-out keyword | `#no-plan` |
 | `secretPatterns.extra` | Extra secret-path regexes (added to the built-in set) | `[]` |
 | `guardEdits.tokenVars` | Identifier names treated as auth tokens | `accessToken`, `refreshToken`, `idToken` |
@@ -433,10 +482,13 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 Every key above has a control in the panel's **Settings** tab, grouped into *Paths & gate*,
 *Write guards*, *TDD reminder*, *Usage & pricing* and *Audit trail* — the coverage is asserted by
 `panel-server.py --selftest` against `validate-config.py`'s own key sets, so a key documented
-here and unreachable there is a build failure rather than a discovery. `policy` is the one
-deliberate exception: it is not a value with a box but a rule set whose meaning is the verdict it
-produces for each installed capability, so it has its own endpoint (`/api/policy`, which serves
-those verdicts) rather than a generic text field. The exemption is pinned by the same selftest.
+here and unreachable there is a build failure rather than a discovery. Two deliberate
+exceptions, both pinned by that same selftest: `policy` is not a value with a box but a rule set
+whose meaning is the verdict it produces for each installed capability, so it has its own
+endpoint (`/api/policy`, which serves those verdicts) rather than a generic text field; and
+legacy `enforce` has no checkbox because the `planGate` select **is** its control — the select's
+preset reads the legacy flag, and choosing a tier writes `planGate` while deleting `enforce`,
+one statement of the gate's tier instead of two contradicting ones.
 
 ### Capability policy — `policy`
 
@@ -524,12 +576,16 @@ properties:
 detects a workspace (pnpm/yarn workspaces, turbo, nx, lerna, `go.work`, a Cargo workspace, a `.sln`)
 and tags the phases it generates.
 
-Two things resolve against it:
+Three things resolve against it:
 
 - **Review skill** — `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`. The
   first level that is **present** answers; an explicit `null` is an answer (skip review), not a
   fall-through.
 - **Executor skills** — the area's `skills` first, then `task.skills`, deduped, area first.
+- **Advisory owner** — `meta.areas[tag].owner`, written the way `usage.authorMode` records authors
+  (git `user.email` under the default mode): who to coordinate with, never an assignee. Advisory
+  only — when someone else edits a covered file in an owned area, the plan gate adds a
+  once-per-session heads-up; `/audit:status` and the panel display it; nothing gates or assigns.
 
 With several tags on one phase, **written order decides**. `/audit:status` prints the resolved
 reviewer and where it came from (`review: backend-review (area api)`), and `/audit:doctor` warns
@@ -792,7 +848,8 @@ written, so changing the table never rewrites history.
 **Privacy.** Rows carry counts, model ids, timestamps, branch and author — never prompt content.
 Transcripts are read-only. `usage.authorMode` accepts `email` (default), `name`, `hash`
 (pseudonymous but still groupable) or `none`; `usage.enabled: false` turns the whole thing off.
-The ledger is gitignored by default — to share it across a team, un-ignore it and add
+The ledger is gitignored by default (unlike the journal, which must be tracked) — to share it
+across a team, un-ignore it and add
 `*.jsonl merge=union` to `.gitattributes` (append-only NDJSON merges cleanly, and the per-row
 author is what makes cross-developer analytics work).
 
@@ -878,12 +935,27 @@ completion time would be wrong; the ledger is the anchor for spend.
 
 The journal lives beside the manifest so the same commit carries the change and the record of
 it (the orchestrator stages it with each task commit), and one file per writer means two
-sessions in two worktrees never conflict on it. Edits to it are refused by `guard-edits.py`;
+sessions in two worktrees never conflict on it. Do NOT add the journal directory to
+`.gitignore` — git history is one of the trail's three anchors, and it can only pin what is
+committed; an ignored journal quietly downgrades the trail from three anchors to two.
+(`/audit:doctor` warns when journal files sit uncommitted for more than a week.) Edits to it
+are refused by `guard-edits.py`;
 a shell write into it cannot be refused, so `guard-bash-writes.py` reports it after the fact.
 Turn it off with `journal.enabled: false` — the flip itself is journalled as a final
 `config.edit` row (the last will), and `/audit:doctor` will say the trail was running and
 has been turned off. For extra friction, `journal.strictManifestState: "ask"` surfaces a
 confirmation prompt on any edit that changes manifest state.
+
+**Growth.** The journal grows one file per writer (session) per month, and only for sessions
+that actually write the manifest or the config — a solo developer sees roughly 20–60 files a
+month in heavy use, a team of 3–4 perhaps 150+, each file a few KB of NDJSON. That is small
+by design: the files are meant to be tracked, and git stores appends to them cheaply.
+Verification cost is flat too — `verify` asks git about the whole directory once and pays the
+per-file check only for files with uncommitted changes, so a year of history does not make
+the doctor slower. There is deliberately **no compactor**: each file's chain is seeded from
+its own basename and every row's hash covers its `prev`, so merging or rewriting old files
+would be indistinguishable from the forgery the chain exists to catch. If a directory of
+years-old files ever bothers you, leave them where they are — they are the record.
 
 ## Azure DevOps (optional)
 
@@ -952,7 +1024,7 @@ that answers questions about this plugin from this plugin's documents — README
 the schemas, `commands/*.md`, and [SECURITY.md](../../SECURITY.md) — with a file-and-line
 citation for every claim, and "the documents do not say" when they do not. Ask for it by name:
 
-> Use the audit-guide subagent: what does `enforce: true` change, and what stays graded?
+> Use the audit-guide subagent: what does `planGate: "ask"` change, and what stays graded?
 
 It is **mechanically read-only** — no Edit, no Write, no Bash — so it explains the command to
 run and never claims to have run it. And it is deliberately **not** a skill: a skill
@@ -972,6 +1044,10 @@ free. You choose when it is worth a model.
   prompt for manual approval rather than silently passing.
 - **`.claude/state` / `.claude/logs` showing up as untracked.** Add them to `.gitignore`; the plugin
   garbage-collects entries older than 7 days but never commits them.
+- **Journal files showing up as untracked.** The opposite case: untracked journal files are work
+  not yet committed, not clutter — stage and commit them (the orchestrator does this with each
+  task commit). Never add the journal directory to `.gitignore`; the git anchor only pins
+  committed history.
 - **Git submodules.** The orchestrator commits from one repo (the git root); files inside a
   submodule belong to a separate nested repo the parent can't stage. The `/audit:*` commands preflight
   this — if a `task.files` entry is inside a submodule they **stop** and tell you to either point `meta.gitRoot` at

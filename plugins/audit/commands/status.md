@@ -18,9 +18,11 @@ It already renders the whole report: an overall line with a progress bar, the us
 line when metering is on, one aligned table across every phase (markers `[x]` done ·
 `[~]` in_progress · `[!]` blocked · `[ ]` pending), what each pending task is waiting
 on, the ready-now list with a copy-pasteable `/audit:run <id>`, open bugs, parked
-proposals when `/audit:init` parked any, a `BY AREA` rollup when the plan tags areas
-(per tag: phases and done/total tasks, an `untagged` footer, and — only when a phase
-actually carries several tags — the caveat that such a phase counts under each), and a
+proposals when `/audit:init` parked any (plus a one-line footer counting free-form
+legacy proposals, which `/audit:propose list` still reads), a `BY AREA` rollup when the
+plan tags areas (per tag: phases and done/total tasks, ` - <owner>` when the area
+declares its advisory owner, an `untagged` footer, and — only when a phase actually
+carries several tags — the caveat that such a phase counts under each), and a
 RESUMABLE line when a phase was interrupted.
 
 This used to be prose telling you how to lay the rollup out. That cost tokens on every

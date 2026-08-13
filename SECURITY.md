@@ -49,7 +49,10 @@ The plan gate is **conditional**, and anyone reasoning about this plugin's guara
 the condition. It denies only when there is a plan to enforce against: with no manifest it
 records and reports without blocking, with a manifest but no phase `in_progress` it warns,
 and it denies once a phase is running. `enforce: true` in `.claude/audit.config.json` denies
-at every tier. Both plan gates are graded this way — `require-plan` and the shell-write
+at every tier, and `planGate` (0.34.0) pins any single tier by hand — `"observe"`, `"warn"`,
+`"ask"` (each out-of-plan edit waits for the human's approval) or `"deny"` — winning over
+`enforce` when both are set; a `planGate` typo fails open to the graded ladder, never to
+deny. Both plan gates are graded this way — `require-plan` and the shell-write
 branch of `guard-secrets-read` — so the same file gets the same verdict whether it is edited
 through a tool or through `sed -i`.
 

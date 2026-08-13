@@ -178,18 +178,44 @@ def check_config(rep, project):
 
 
 def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
-    """The tier the plan gate is currently in - the question people actually ask."""
+    """The tier the plan gate is currently in - the question people actually ask.
+
+    When the tier is PINNED (planGate, or the legacy enforce), the line names the
+    source: "deny" alone reads like evidence, and the whole point of a pinned
+    tier is that the evidence did not choose it. planGate:"observe" beside a
+    running phase gets a WARNING - it is the only setting that lowers the gate
+    BELOW what the evidence would enforce, and someone who set it weeks ago
+    deserves to hear that it is now the thing holding enforcement off."""
     state = cfg_mod.manifest_state(project, manifest_rel)
     mode = cfg_mod.plan_gate_mode(cfg, state)
+    knob = cfg_mod.plan_gate_knob(cfg)
+    if knob:
+        if knob == "observe" and state.get("phaseRunning"):
+            rep.warn("plan gate",
+                     "observe - planGate: \"observe\" is pinned in "
+                     ".claude/audit.config.json while a phase is in_progress, so "
+                     "out-of-plan edits are only recorded - BELOW what the "
+                     "evidence would enforce",
+                     "remove planGate (or set it to \"deny\") to restore "
+                     "enforcement while a phase runs")
+        else:
+            rep.ok("plan gate",
+                   "%s - planGate: \"%s\" is pinned in .claude/audit.config.json, "
+                   "so the tier is fixed regardless of what is running" % (mode,
+                                                                           knob))
+        return
     if cfg.get("enforce") is True:
-        rep.ok("plan gate", "deny - enforce:true is set, so it denies regardless of "
-                            "whether a plan is running")
+        rep.ok("plan gate", "deny - enforce:true is set (legacy; planGate: "
+                            "\"deny\" says the same and wins when both are "
+                            "present), so it denies regardless of whether a plan "
+                            "is running")
         return
     if mode == "observe":
         rep.ok("plan gate",
                "observe - no manifest at %s, so out-of-plan edits are recorded and "
                "reported once per session, never blocked. Run /audit:init to enforce, "
-               "or set \"enforce\": true to enforce without a manifest" % manifest_rel)
+               "or set \"planGate\": \"deny\" to enforce without a manifest"
+               % manifest_rel)
     elif mode == "warn":
         rep.ok("plan gate",
                "warn - a manifest exists but no phase is in_progress, so out-of-plan "
@@ -239,9 +265,15 @@ def check_manifest(rep, project, cfg):
         n_parked = sum(1 for x in (manifest.get("proposals") or [])
                        if isinstance(x, dict) and x.get("status") == "proposed"
                        and isinstance(x.get("payload"), dict))
-        rep.ok("manifest", "%s valid (%d phases, %d tasks%s)"
+        # Same rule as audit-status's legacy footer (F-E3): a status outside
+        # the proposals vocabulary is still tracked work and must be counted.
+        n_legacy = sum(1 for x in (manifest.get("proposals") or [])
+                       if isinstance(x, dict) and x.get("status")
+                       not in ("proposed", "materialized", "dropped"))
+        rep.ok("manifest", "%s valid (%d phases, %d tasks%s%s)"
                % (manifest_rel, n_phases, n_tasks,
-                  ", %d parked proposal(s)" % n_parked if n_parked else ""))
+                  ", %d parked proposal(s)" % n_parked if n_parked else "",
+                  ", %d legacy proposal(s)" % n_legacy if n_legacy else ""))
     for w in warnings[:5]:
         rep.warn("manifest", w)
 
@@ -318,7 +350,7 @@ def check_submodules(rep, project, cfg, manifest, git_root):
 
 
 # --- checks: policy & build -----------------------------------------------------
-def check_areas(rep, project, manifest):
+def check_areas(rep, project, cfg, manifest, manifest_rel):
     """The `meta.areas` registry against the tree it claims to describe (v0.28).
 
     Two failures, both of which look like nothing at all from inside the manifest:
@@ -357,6 +389,48 @@ def check_areas(rep, project, manifest):
     if not missing and not unreg:
         rep.ok("areas", "%d area(s) registered, %d phase tag(s), all resolving"
                % (len(reg), len(ar.used_tags(manifest))))
+    # v0.34 D3: the advisory owner against the ledger's author column - the
+    # one place the two identities can be compared, and the doctor is the one
+    # honest home for the question (it has the ledger in hand; the offline
+    # validator would false-alarm on every pre-first-run repo, new team
+    # member and hash-mode project). Heavily gated: the ledger must HAVE
+    # rows, authorMode must be an identity an owner could be written in
+    # (email/name), and only then is an owner nobody has ever matched worth
+    # a question. WARNING at most - identity drift is a coordination smell,
+    # not a broken repo.
+    owners = {}
+    for tag, entry in reg.items():
+        o = entry.get("owner")
+        if isinstance(o, str) and o.strip():
+            owners[tag] = o.strip()
+    if not owners:
+        return
+    mode = ((cfg.get("usage") or {}).get("authorMode") or "email")
+    if mode not in ("email", "name"):
+        return
+    authors = set()
+    try:
+        ul = _load("usage_ledger", "usage_ledger.py")
+        ld = ul.find_ledger_dir(os.path.join(project, manifest_rel),
+                                rel=(cfg.get("usage") or {}).get("ledgerDir"),
+                                project_dir=project)
+        if ld and os.path.isdir(ld):
+            authors = {r.get("author") for r in ul.read_ledger(str(ld))
+                       if r.get("author")}
+    except Exception:
+        authors = set()
+    if not authors:
+        return
+    unseen = sorted(set(owners.values()) - authors)
+    if unseen:
+        rep.warn("areas",
+                 "%d area owner(s) never appear in the ledger's author "
+                 "column: %s - never seen yet?"
+                 % (len(unseen), ", ".join(unseen[:3])),
+                 "is this the identity git config reports for them? owners "
+                 "join the ledger by usage.authorMode (git user.email under "
+                 "'email', user.name under 'name') - written any other way, "
+                 "the join never matches")
 
 
 def check_policy(rep, project, cfg, cfg_mod, manifest):
@@ -585,6 +659,16 @@ def check_ledger(rep, project, cfg, manifest_rel):
                  "metering starts once the hooks have run a turn; "
                  "/audit:usage --backfill reads transcripts already on disk")
         return
+    # With a project dir in hand, find_ledger_dir answers where the ledger
+    # WOULD live whether or not it exists yet (deliberate contract - see its
+    # docstring). Missing and empty are different diagnoses: "exists but holds
+    # no rows" about a directory nothing ever created is a false statement.
+    if not os.path.isdir(ledger_dir):
+        rep.warn("usage ledger",
+                 "no ledger yet - it would live at %s; metering writes it on "
+                 "the first metered turn" % ledger_dir,
+                 "/audit:usage --backfill reads transcripts already on disk")
+        return
     try:
         files = ul.ledger_files(ledger_dir)
     except Exception:
@@ -596,7 +680,44 @@ def check_ledger(rep, project, cfg, manifest_rel):
     rep.ok("usage ledger", "%d ledger file(s) in %s" % (len(files), ledger_dir))
 
 
-def check_journal(rep, project, cfg, cfg_mod):
+def _journal_never_committed(jr, directory):
+    """(count, oldest_age_days, oldest_name) for journal files that have sat
+    UNTRACKED for more than 7 days, or None when there is nothing to say.
+
+    Rides audit-journal's own porcelain seam (`_git_status_sets`) -- one
+    subprocess for the whole directory, the same batched read verify() uses
+    (F-B3). Age by MTIME, not by the filename's month: a file opened on the
+    30th is a day old on the 1st, and punishing it for its name teaches people
+    the warning is noise. The 7-day line is the one the state GC already draws
+    (_GC_MAX_AGE) -- older than any session state is allowed to live. Never
+    raises; None on every inability to answer (no git, not a repository, no
+    untracked files), because an unanswerable question is not a warning."""
+    try:
+        if not directory or not os.path.isdir(directory):
+            return None
+        sets = jr._git_status_sets(directory)
+        if not sets or not sets[1]:
+            return None
+        now = time.time()
+        old = []
+        for f in jr.journal_files(directory):
+            if os.path.basename(f) not in sets[1]:
+                continue
+            try:
+                age = now - os.stat(f).st_mtime
+            except Exception:
+                continue
+            if age > 7 * 86400:
+                old.append((age, os.path.basename(f)))
+        if not old:
+            return None
+        old.sort(reverse=True)
+        return len(old), int(old[0][0] // 86400), old[0][1]
+    except Exception:
+        return None
+
+
+def check_journal(rep, project, cfg, cfg_mod, git_root):
     """Does the audit trail still hold together? (v0.29)
 
     Delegates to `audit-journal.verify` rather than re-deriving the verdict — the
@@ -645,6 +766,22 @@ def check_journal(rep, project, cfg, cfg_mod):
     if not res.get("exists"):
         rep.ok("journal", "no writes recorded yet (%s does not exist)" % where)
         return
+    # D4 / F-F1: the git anchor only pins committed history. An uncommitted
+    # journal file younger than 7 days is the normal write-then-commit rhythm;
+    # one older than that has been outliving every session state file while
+    # the anchor protects none of it -- usually a gitignored or forgotten
+    # directory. A WARNING, never a FINDING: a finding is positive evidence of
+    # forgery, and an absent commit is evidence of nothing but absence.
+    if git_root and shutil.which("git"):
+        stale = _journal_never_committed(jr, res.get("dir"))
+        if stale:
+            n, days, oldest = stale
+            rep.warn("journal",
+                     "%d journal file(s) have never been committed (oldest "
+                     "%s, %d day(s) old): the git anchor only pins committed "
+                     "history" % (n, oldest, days),
+                     "stage and commit the journal directory - it is designed "
+                     "to be tracked; do not add it to .gitignore")
     if res.get("findings"):
         rep.finding("journal",
                     "the chain does not hold: %s" % "; ".join(res["findings"][:3]),
@@ -898,12 +1035,12 @@ def diagnose(project, deep=False):
     manifest_rel, manifest = check_manifest(rep, project, cfg)
     check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel)
     check_submodules(rep, project, cfg, manifest, git_root)
-    check_areas(rep, project, manifest)
+    check_areas(rep, project, cfg, manifest, manifest_rel)
     check_policy(rep, project, cfg, cfg_mod, manifest)
     check_build_commands(rep, project, manifest)
     check_hooks_fired(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
-    check_journal(rep, project, cfg, cfg_mod)
+    check_journal(rep, project, cfg, cfg_mod, git_root)
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=deep)
     check_locks(rep, git_root, project, manifest_rel)
@@ -1005,6 +1142,25 @@ def _selftest():
               levels(rep, "hooks") == ["WARNING"], repr(levels(rep, "hooks")))
         check("the hooks warning names the likely cause (not enabled)",
               "enabled" in hooks_fix, hooks_fix)
+        # F-E2: an absent ledger DIRECTORY used to read "<path> exists but
+        # holds no rows yet" - a diagnostic asserting the existence of a
+        # directory nothing ever created. Missing and empty are two branches.
+        check("ledger: a missing directory reads 'no ledger yet' and names "
+              "where it would live",
+              "no ledger yet" in detail(rep, "usage ledger")
+              and os.path.join(tmp, ".claude", "usage")
+                  in detail(rep, "usage ledger"),
+              detail(rep, "usage ledger"))
+        check("ledger: ...and never claims the directory exists",
+              "exists" not in detail(rep, "usage ledger"),
+              detail(rep, "usage ledger"))
+        os.makedirs(os.path.join(tmp, ".claude", "usage"))
+        rep_led = diagnose(tmp)
+        check("ledger: present but empty keeps the 'exists but holds no rows "
+              "yet' wording",
+              "exists but holds no rows yet" in detail(rep_led, "usage ledger"),
+              detail(rep_led, "usage ledger"))
+        sh.rmtree(os.path.join(tmp, ".claude", "usage"))
         if have_git:
             check("fresh repo: a fresh setup yields no findings",
                   rep.counts()["FINDING"] == 0,
@@ -1120,6 +1276,31 @@ def _selftest():
         check("the buildCommands warning names the runner",
               "definitely-not-a-real-runner" in detail(rep, "buildCommands"))
 
+        # v0.34 B1: planGate pins a tier by hand; the doctor names the knob as
+        # the fixed-mode source, and warns LOUDLY about the one setting that
+        # lowers the gate below its evidence. plan.json still carries the
+        # running phase here.
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json", "planGate": "ask"}, fh)
+        rep = diagnose(tmp)
+        check("a pinned planGate names the knob as the fixed-mode source",
+              levels(rep, "plan gate") == ["OK"]
+              and "planGate" in detail(rep, "plan gate")
+              and "ask" in detail(rep, "plan gate"), detail(rep, "plan gate"))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json", "planGate": "observe"}, fh)
+        rep = diagnose(tmp)
+        check("planGate:'observe' while a phase is RUNNING is a WARNING - the "
+              "only setting that drops the gate below its evidence",
+              levels(rep, "plan gate") == ["WARNING"]
+              and "in_progress" in detail(rep, "plan gate"),
+              detail(rep, "plan gate"))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json"}, fh)
+
         # an invalid manifest
         with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
             json.dump({"meta": {"version": 2}, "phases": [
@@ -1193,6 +1374,57 @@ def _selftest():
         check("areas: NO registry means the check says nothing at all - a "
               "single-app repo is not nagged about a monorepo feature",
               levels(rep, "areas") == [], repr(levels(rep, "areas")))
+
+        # v0.34 D3: the advisory owner against the ledger's author column -
+        # the one place the two identities can be compared. Heavily gated:
+        # the ledger must HAVE rows, authorMode must be an identity an owner
+        # could be written in (email/name), and only then is an unseen owner
+        # worth a question. WARNING at most - identity drift is a
+        # coordination smell, not a broken repo.
+        _ldir = os.path.join(tmp, ".claude", "usage")
+        os.makedirs(_ldir, exist_ok=True)
+        with open(os.path.join(_ldir, "2026-08.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({"ts": "2026-08-01T00:00:00Z",
+                                 "author": "jane@x.com",
+                                 "inputTokens": 1}) + "\n")
+        rep = with_areas({"api": {"root": "services/api",
+                                  "owner": "jane@x.com"}}, "api")
+        check("areas owner: an owner the ledger HAS seen is silent - the "
+              "identities join and there is nothing to ask",
+              levels(rep, "areas") == ["OK"], detail(rep, "areas"))
+        rep = with_areas({"api": {"root": "services/api",
+                                  "owner": "Jane Doe"}}, "api")
+        check("areas owner: an owner the ledger has never seen is a WARNING "
+              "that asks the identity question instead of accusing",
+              "WARNING" in levels(rep, "areas")
+              and "never appear in the ledger's author column"
+                  in detail(rep, "areas")
+              and "Jane Doe" in detail(rep, "areas"), detail(rep, "areas"))
+        _afix = " ".join(r["fix"] or "" for r in rep.rows
+                         if r["check"] == "areas")
+        check("areas owner: the fix names the actual join - the form "
+              "usage.authorMode records",
+              "identity git config reports" in _afix
+              and "authorMode" in _afix, _afix)
+        check("areas owner: ...and it is never a FINDING",
+              rep.exit_code() == 0, repr(rep.counts()))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan.json",
+                       "usage": {"authorMode": "hash"}}, fh)
+        rep = diagnose(tmp)
+        check("areas owner: authorMode 'hash' silences the hint - pseudonyms "
+              "cannot honestly join an email-shaped owner",
+              "never appear" not in detail(rep, "areas"),
+              detail(rep, "areas"))
+        sh.rmtree(_ldir)
+        rep = with_areas({"api": {"root": "services/api",
+                                  "owner": "Jane Doe"}}, "api")
+        check("areas owner: no ledger rows means silence - pre-first-run and "
+              "new-member repos are not coordination smells",
+              "never appear" not in detail(rep, "areas"),
+              detail(rep, "areas"))
 
         # --- the capability policy (v0.30) ------------------------------------
         # The resolution is exercised in _policy.py's selftest; what is checked
@@ -1370,6 +1602,59 @@ def _selftest():
         check("journal: switched off with NO rows anywhere stays a plain OK",
               levels(rep, "journal") == ["OK"]
               and "disabled" in detail(rep, "journal"), detail(rep, "journal"))
+
+        # D4 / F-F1: journal git hygiene. The git anchor only pins committed
+        # history, so a journal file that has sat UNTRACKED for more than 7
+        # days is work the anchor cannot protect - a WARNING that names it,
+        # never a FINDING (absence of a commit is not evidence of forgery).
+        # Fresh uncommitted files are the normal write-then-commit rhythm and
+        # stay silent.
+        if have_git:
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json",
+                           "journal": {"dir": "trail2"}}, fh)
+            jr.append(tmp, {"action": "manifest.edit", "target": "",
+                            "summary": "hygiene row",
+                            "actor": {"sessionId": "hyg", "via": "hook"}})
+            rep = diagnose(tmp)
+            check("journal hygiene: a FRESH uncommitted file is silent - "
+                  "write-then-commit is the normal rhythm",
+                  "never been committed" not in detail(rep, "journal"),
+                  detail(rep, "journal"))
+            _hf = jr.journal_files(jr.journal_dir(tmp))[0]
+            _old8 = time.time() - 8 * 86400
+            os.utime(_hf, (_old8, _old8))
+            rep = diagnose(tmp)
+            check("journal hygiene: an 8-day-old uncommitted file is a WARNING "
+                  "naming the count, the oldest file and what the anchor "
+                  "cannot do for it",
+                  "WARNING" in levels(rep, "journal")
+                  and "1 journal file(s) have never been committed"
+                      in detail(rep, "journal")
+                  and "the git anchor only pins committed history"
+                      in detail(rep, "journal")
+                  and os.path.basename(_hf) in detail(rep, "journal"),
+                  detail(rep, "journal"))
+            check("journal hygiene: ...and never a FINDING, never the exit code",
+                  rep.counts()["FINDING"] == 0 and rep.exit_code() == 0,
+                  repr(rep.counts()))
+            _hfix = " ".join(r["fix"] or "" for r in rep.rows
+                             if r["check"] == "journal")
+            check("journal hygiene: the fix says commit it, and warns off "
+                  ".gitignore", "commit" in _hfix and "gitignore" in _hfix,
+                  _hfix)
+            subprocess.run(["git", "-C", tmp, "add", "trail2"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", tmp, "-c", "user.email=t@t",
+                            "-c", "user.name=t", "commit", "-q", "-m", "trail2"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            rep = diagnose(tmp)
+            check("journal hygiene: once committed, the warning is gone and "
+                  "the chain reads plain OK",
+                  levels(rep, "journal") == ["OK"]
+                  and "never been committed" not in detail(rep, "journal"),
+                  detail(rep, "journal"))
         os.remove(os.path.join(tmp, "plan.json"))
 
         # proposals: a park-all init leaves 0 phases + parked proposals, and the
@@ -1382,6 +1667,19 @@ def _selftest():
         rep = diagnose(tmp)
         check("manifest: parked proposals are counted in the ok line",
               "1 parked proposal(s)" in detail(rep, "manifest"),
+              detail(rep, "manifest"))
+        os.remove(os.path.join(tmp, "plan.json"))
+
+        # F-E3 sibling: a proposal whose status is OUTSIDE the vocabulary
+        # (proposed|materialized|dropped) is real tracked work too - the ok
+        # line must count it rather than let it vanish into "0 phases, 0 tasks".
+        with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": [], "proposals": [
+                {"id": "modernize-build", "name": "Modernize build",
+                 "status": "open"}]}, fh)
+        rep = diagnose(tmp)
+        check("manifest: legacy free-form proposals are counted in the ok line",
+              "1 legacy proposal(s)" in detail(rep, "manifest"),
               detail(rep, "manifest"))
         os.remove(os.path.join(tmp, "plan.json"))
 
@@ -1534,10 +1832,14 @@ def _selftest():
                   and "predate" in detail(repc, "completions"),
                   detail(repc, "completions"))
 
-            # record ts vs completedAt drift beyond 24h -> WARNING
-            crow("P1.4", "2026-08-14T00:00:00Z")
+            # record ts vs completedAt drift beyond 24h -> WARNING. The drift is
+            # derived from `now` (F-A1: a hardcoded date here went red the day the
+            # calendar caught up with it) - 48h guarantees the >24h gap forever.
+            drifted = time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                    time.gmtime(time.time() + 48 * 3600))
+            crow("P1.4", drifted)
             cplan([ctask("P1.1", completed=now, commit=sha),
-                   ctask("P1.4", completed="2026-08-14T00:00:00Z", commit=sha)])
+                   ctask("P1.4", completed=drifted, commit=sha)])
             repc = diagnose(tmp)
             check("completions: record ts vs completedAt drift beyond 24h is a "
                   "WARNING, not an accusation",
