@@ -79,12 +79,29 @@ def bar(fraction, width=18):
     return "[" + "#" * filled + "." * (width - filled) + "]"
 
 
-def table(rows, headers, aligns=None, indent="  "):
-    """Fixed-width ASCII table. `rows` is a list of string tuples."""
+def _md_cell(v):
+    """A `|` inside a cell is a column break to a markdown parser."""
+    return str(v).replace("|", "\\|")
+
+
+def table(rows, headers, aligns=None, indent="  ", fmt="ascii"):
+    """Fixed-width ASCII table, or a markdown pipe table when `fmt` is "md".
+
+    md exists because the /audit:usage command echoes this output verbatim
+    into a markdown renderer, where the ASCII shape dies twice: runs of
+    spaces fold, and adjacent lines merge into one paragraph. The same
+    `aligns` drive both shapes (`>` becomes `---:`)."""
     if not rows:
         return []
     cols = len(headers)
     aligns = aligns or (["<"] + [">"] * (cols - 1))
+    if fmt == "md":
+        out = ["| " + " | ".join(_md_cell(h) for h in headers) + " |",
+               "|" + "|".join("---:" if aligns[i] == ">" else "---"
+                              for i in range(cols)) + "|"]
+        for row in rows:
+            out.append("| " + " | ".join(_md_cell(c) for c in row) + " |")
+        return out
     widths = [len(h) for h in headers]
     for row in rows:
         for i in range(cols):
@@ -245,20 +262,31 @@ def render(rows, args, manifest, window, show_cost):
     repo = next((r.get("repo") for r in rows if r.get("repo")), "-")
     out = []
 
-    out.append("USAGE  repo %s   window %s" % (repo, window))
+    fmt = getattr(args, "format", "ascii") or "ascii"
+    md = fmt == "md"
+
+    # The md header is a bullet list because markdown merges adjacent plain
+    # lines into one paragraph — three aligned lines would render as a blob.
+    out.append(("**USAGE**  repo %s - window %s" if md
+                else "USAGE  repo %s   window %s") % (repo, window))
     out.append("")
-    head = "  Total   %s tokens" % fmt_tokens(tot["tokens"])
+    sep = " - " if md else "   "
+    head = ("- **Total** %s tokens" if md
+            else "  Total   %s tokens") % fmt_tokens(tot["tokens"])
     if show_cost:
-        head += "   ~%s equiv" % fmt_cost(tot["costUSD"])
-    head += "   %s msgs   %s sessions" % (fmt_int(tot["msgs"]), tot["sessions"])
+        head += sep + "~%s equiv" % fmt_cost(tot["costUSD"])
+    head += sep + "%s msgs" % fmt_int(tot["msgs"]) + sep + \
+        "%s sessions" % tot["sessions"]
     if tot["authors"] > 1:
-        head += "   %d authors" % tot["authors"]
+        head += sep + "%d authors" % tot["authors"]
     out.append(head)
-    out.append("          in %s - out %s - cache write %s - cache read %s   "
+    out.append(("- " if md else "          ")
+               + "in %s - out %s - cache write %s - cache read %s%s"
                "(cache hit %.0f%%)" % (
                    fmt_tokens(tot["in"]), fmt_tokens(tot["out"]),
                    fmt_tokens(tot["cacheW5m"] + tot["cacheW1h"]),
-                   fmt_tokens(tot["cacheR"]), tot["cacheHitPct"]))
+                   fmt_tokens(tot["cacheR"]), " " if md else "   ",
+                   tot["cacheHitPct"]))
     # The rate table behind every dollar above. This is the third surface of the
     # same gap: the JSON payload has carried `pricingAsOf` all along and the
     # terminal printed a cost with no basis at all, exactly as the HTML report did
@@ -268,7 +296,7 @@ def render(rows, args, manifest, window, show_cost):
     if show_cost and rows:
         as_of = ((((manifest or {}).get("meta") or {}).get("usage") or {})
                  .get("pricingAsOf"))
-        out.append("          costs priced at %s" % (
+        out.append(("- " if md else "          ") + "costs priced at %s" % (
             "rates as of %s" % as_of if as_of
             else "undated rates - set usage.pricingAsOf"))
     if not rows:
@@ -318,14 +346,14 @@ def render(rows, args, manifest, window, show_cost):
             if extra:
                 row.append(extra[1](key, v))
             body.append(tuple(row))
-        return [""] + table(body, headers, aligns)
+        return [""] + table(body, headers, aligns, fmt=fmt)
 
     if args.by:
         out += group_table(args.by, args.by.upper(), limit=args.top)
         return "\n".join(out)
 
     out += group_table("phase", "BY PHASE")
-    out += render_by_area(manifest, rows, tot, show_cost)
+    out += render_by_area(manifest, rows, tot, show_cost, fmt=fmt)
     if ul.aggregate(rows, "author") and tot["authors"] > 0:
         out += group_table("author", "BY AUTHOR")
     out += group_table("model", "BY MODEL")
@@ -344,16 +372,17 @@ def render(rows, args, manifest, window, show_cost):
         else:
             out += group_table("task", "TOP TASKS", limit=args.top)
         out.append("")
-        out.append("  " + band_note(bands))
+        out.append(("" if md else "  ") + band_note(bands))
         out += routing_advice_lines(
             ul.routing(manifest, rows,
-                       (meta_usage or {}).get("pricing")).get("advice") or [])
-    out += render_monthly(manifest, rows, show_cost)
-    out += render_trend(rows)
+                       (meta_usage or {}).get("pricing")).get("advice") or [],
+            fmt=fmt)
+    out += render_monthly(manifest, rows, show_cost, fmt=fmt)
+    out += render_trend(rows, fmt=fmt)
     return "\n".join(out)
 
 
-def render_by_area(manifest, rows, tot, show_cost):
+def render_by_area(manifest, rows, tot, show_cost, fmt="ascii"):
     """BY AREA table: ledger spend joined to `phase.area` tags at read time
     (usage_ledger.aggregate_area over _areas.phase_tags), rendered only when the
     plan tags anything at all — a project that never wrote an area keeps today's
@@ -390,14 +419,15 @@ def render_by_area(manifest, rows, tot, show_cost):
         row += [fmt_int(v["msgs"]), str(v["phases"]),
                 "%s %4s" % (bar(v["tokens"] / float(grand)), pct)]
         body.append(tuple(row))
-    out = [""] + table(body, headers, aligns)
+    out = [""] + table(body, headers, aligns, fmt=fmt)
     if any(len(tags) > 1 for tags in tags_by_phase.values()):
-        out.append("  a phase tagged with several areas counts under each of "
-                   "its tags, so area rows can sum past the total")
+        note = ("a phase tagged with several areas counts under each of "
+                "its tags, so area rows can sum past the total")
+        out += ["", "*%s*" % note] if fmt == "md" else ["  " + note]
     return out
 
 
-def render_monthly(manifest, rows, show_cost):
+def render_monthly(manifest, rows, show_cost, fmt="ascii"):
     """Calendar-month table: ledger spend beside plan progress, one row per
     month, from usage_ledger.monthly_activity — the same computation site the
     report table and the panel card read, so the three surfaces cannot drift.
@@ -429,31 +459,42 @@ def render_monthly(manifest, rows, show_cost):
                 str(plan["bugsReported"]), str(plan["bugsFixed"]),
                 str(plan["phasesMerged"])]
         body.append(tuple(row))
-    out = [""] + table(body, headers, aligns)
-    out.append("  plan columns count the whole project by event month (task "
-               "completed, bug reported, linked fix task completed, phase "
-               "merged) - they do not follow the filters above")
+    out = [""] + table(body, headers, aligns, fmt=fmt)
+    note = ("plan columns count the whole project by event month (task "
+            "completed, bug reported, linked fix task completed, phase "
+            "merged) - they do not follow the filters above")
+    out += ["", "*%s*" % note] if fmt == "md" else ["  " + note]
     return out
 
 
-def routing_advice_lines(advice):
+def routing_advice_lines(advice, fmt="ascii"):
     """The one recommendation the CLI makes. Silent unless the ledger's own
-    evidence clears every gate — which on a well-routed project is normal."""
+    evidence clears every gate — which on a well-routed project is normal.
+    md nests the two evidence lines under their advice bullet; markdown
+    would otherwise merge all three into one paragraph."""
     if not advice:
         return []
-    out = ["", "  WHAT THE EVIDENCE SUPPORTS"]
+    md = fmt == "md"
+    out = ["", "**WHAT THE EVIDENCE SUPPORTS**" if md
+           else "  WHAT THE EVIDENCE SUPPORTS"]
+    if md:
+        out.append("")
     for a in advice:
-        out.append("  %s work is running on %s - %d task(s) at %.1f mean attempts"
+        out.append(("- " if md else "  ")
+                   + "%s work is running on %s - %d task(s) at %.1f mean attempts"
                    % (a["risk"], a["from"], a["tasks"], a["fromMeanAttempts"] or 0))
-        out.append("    those same tokens cost %s at %s rates vs %s  ->  %s less (%.0f%%)"
+        out.append(("  - " if md else "    ")
+                   + "those same tokens cost %s at %s rates vs %s  ->  %s less (%.0f%%)"
                    % (fmt_cost(a["atToRates"]), a["to"],
                       fmt_cost(a["atFromRates"]), fmt_cost(a["saving"]),
                       a["savingPct"]))
-        out.append("    %s has already run %d task(s) in this band here, at %.1f "
+        out.append(("  - " if md else "    ")
+                   + "%s has already run %d task(s) in this band here, at %.1f "
                    "mean attempts" % (a["to"], a["evidenceTasks"],
                                       a["evidenceAttempts"] or 0))
-    out.append("  upper bound, not a forecast: the same tokens re-priced at the "
-               "other model's rates")
+    caveat = ("upper bound, not a forecast: the same tokens re-priced at the "
+              "other model's rates")
+    out += ["", "*%s*" % caveat] if md else ["  " + caveat]
     return out
 
 
@@ -473,20 +514,36 @@ def band_note(bands):
                fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
 
 
-def render_trend(rows, width=28):
-    """Daily column chart plus the peak/quiet read the trend is actually for."""
+def render_trend(rows, width=28, fmt="ascii"):
+    """Daily column chart plus the peak/quiet read the trend is actually for.
+    md renders it as a day/tokens/trend table — a bare `#` column would lose
+    its leading alignment in a markdown renderer and the bars would float."""
     daily = ul.aggregate(rows, "day")
     days = sorted(k for k in daily if k != "unknown")
     if not days:
         return []
-    out = ["", "  TREND  daily tokens"]
+    md = fmt == "md"
     peak = max(daily[d]["tokens"] for d in days) or 1
-    for d in days[-30:]:
-        n = daily[d]["tokens"]
-        marker = "   peak %s" % fmt_tokens(n) if n == peak else ""
-        out.append("  %s  %s%s" % (
-            d[5:], "#" * max(1 if n else 0, int(round(width * n / float(peak)))),
-            marker))
+    if md:
+        out = ["", "**TREND**  daily tokens", ""]
+        body = []
+        for d in days[-30:]:
+            n = daily[d]["tokens"]
+            body.append((d[5:], fmt_tokens(n),
+                         "#" * max(1 if n else 0,
+                                   int(round(width * n / float(peak))))
+                         + (" peak" if n == peak else "")))
+        out += table(body, ["day", "tokens", "trend"], ["<", ">", "<"],
+                     fmt="md")
+    else:
+        out = ["", "  TREND  daily tokens"]
+        for d in days[-30:]:
+            n = daily[d]["tokens"]
+            marker = "   peak %s" % fmt_tokens(n) if n == peak else ""
+            out.append("  %s  %s%s" % (
+                d[5:],
+                "#" * max(1 if n else 0, int(round(width * n / float(peak)))),
+                marker))
 
     hourly = {}
     for row in rows:
@@ -505,7 +562,7 @@ def render_trend(rows, width=28):
     if delta is not None:
         bits.append("last 7 active days %+.0f%% vs prior 7" % delta)
     if bits:
-        out.append("  " + " - ".join(bits))
+        out += ["", " - ".join(bits)] if md else ["  " + " - ".join(bits)]
     return out
 
 
@@ -671,6 +728,10 @@ def build_parser():
     p.add_argument("--since", default=None, help="7d | 2w | 3m | YYYY-MM-DD")
     p.add_argument("--until", default=None, help="YYYY-MM-DD")
     p.add_argument("--top", type=int, default=10)
+    p.add_argument("--format", choices=["ascii", "md"], default="ascii",
+                   help="md renders pipe tables and bullets for surfaces that "
+                        "display markdown (the /audit:usage command passes it); "
+                        "ascii is the terminal/pipe shape")
     p.add_argument("--no-cost", action="store_true",
                    help="tokens only; omit equivalent cost")
     p.add_argument("--json", action="store_true", dest="as_json")
@@ -1095,6 +1156,66 @@ def _selftest():
         check("da11 --area narrows the whole json payload, totals included",
               code3 == 0
               and json.loads(buf3.getvalue())["totals"]["out"] == 2000)
+
+        # --- markdown format (md): --format md for markdown surfaces --------
+        # The /audit:usage command echoes stdout verbatim into a markdown
+        # renderer, where the ASCII layout dies twice: runs of spaces fold,
+        # and consecutive lines merge into one paragraph. md mode emits pipe
+        # tables and bullets instead. ascii stays the default - terminals,
+        # pipes and CI keep today's bytes.
+        check("md1 the default format is ascii and carries no pipe tables",
+              build_parser().parse_args([]).format == "ascii"
+              and "|" not in text)
+        args_md = build_parser().parse_args(["--format", "md"])
+        args_md.ledger_dir = ledger
+        md_text = render(loaded, args_md, manifest, "all time", True)
+        check("md2 --format md renders pipe tables with an alignment row",
+              "\n| BY PHASE |" in md_text and "---:" in md_text)
+        check("md3 the header block is bulleted so markdown cannot merge its "
+              "lines into one paragraph",
+              md_text.startswith("**USAGE**") and "\n- **Total** " in md_text)
+        check("md4 md output is still pure ASCII with no ANSI escapes",
+              all(ord(c) < 128 for c in md_text) and "\033" not in md_text)
+        args_by_md = build_parser().parse_args(["--by", "model",
+                                                "--format", "md"])
+        args_by_md.ledger_dir = ledger
+        _one_md = render(loaded, args_by_md, manifest, "all time", True)
+        check("md5 --by renders one focused md table",
+              "\n| MODEL |" in _one_md and "BY PHASE" not in _one_md)
+        check("md6 the trend renders as a table under a bold heading",
+              "**TREND**" in md_text and "\n| day |" in md_text)
+        check("md7 --no-cost drops the cost column in md too",
+              "| cost |" in md_text
+              and "| cost |" not in render(loaded, args_md, manifest,
+                                           "all time", False))
+        _man_p = json.loads(json.dumps(manifest))
+        _man_p["phases"][0]["title"] = "Alpha | Beta"
+        check("md8 a pipe inside a cell is escaped, not a column break",
+              "Alpha \\| Beta" in render(loaded, args_md, _man_p,
+                                         "all time", True))
+        check("md9 the multi-tag area caveat survives in md",
+              "sum past the total" in render(loaded, args_md, _man_a,
+                                             "all time", True))
+        check("md10 an empty ledger explains itself in md as well",
+              "No usage recorded" in render([], args_md, manifest,
+                                            "all time", True))
+        _amd = "\n".join(routing_advice_lines([{
+            "risk": "low", "from": "claude-opus-5", "to": "claude-sonnet-5",
+            "tasks": 7, "fromMeanAttempts": 1.0, "atFromRates": 157.75,
+            "atToRates": 94.65, "saving": 63.10, "savingPct": 40.0,
+            "evidenceTasks": 5, "evidenceAttempts": 1.0}], fmt="md"))
+        check("md11 advice lines are bullets in md so they stay separate lines",
+              "**WHAT THE EVIDENCE SUPPORTS**" in _amd and "\n- " in _amd)
+        buf4, real4 = io.StringIO(), sys.stdout
+        sys.stdout = buf4
+        try:
+            code4 = main([_map, "--ledger-dir", ledger, "--project-dir", tmp,
+                          "--json", "--format", "md"])
+        finally:
+            sys.stdout = real4
+        check("md12 --json is format-agnostic - the payload stays json",
+              code4 == 0
+              and json.loads(buf4.getvalue())["totals"]["out"] == 3500)
 
         # backfill on a project with no transcripts must fail cleanly, not crash
         args_b = build_parser().parse_args(["--backfill"])

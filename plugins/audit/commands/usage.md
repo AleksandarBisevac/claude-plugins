@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: token spend attributed by phase, task, model, author and time — with cache economics, cost-per-task and a usage trend. Read-only (never mutates the manifest).'
-argument-hint: '[--by phase|task|model|author|agent|day|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--json] [--backfill]'
+argument-hint: '[--by phase|task|model|author|agent|day|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--format md|ascii] [--json] [--backfill]'
 allowed-tools: Bash
 ---
 
@@ -9,13 +9,16 @@ allowed-tools: Bash
 Run
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-usage.py" <manifestPath> $ARGUMENTS
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-usage.py" <manifestPath> --format md $ARGUMENTS
 ```
 
-**Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it.**
-The script renders its own final ASCII output for a reason: a usage tool that spends a pile of
-tokens laying out its own tables every time you ask what you spent is self-defeating. Reading the
-numbers back to the user costs roughly as much as the report describes. Just show it.
+**Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it — and do
+NOT wrap it in a code fence.** The output is already markdown (pipe tables, bullets); a fence
+would disable the table rendering it exists for. The script renders its own final output for a
+reason: a usage tool that spends a pile of tokens laying out its own tables every time you ask
+what you spent is self-defeating. Reading the numbers back to the user costs roughly as much as
+the report describes. Just show it. (A user-supplied `--format ascii` in the arguments wins over
+the default above — argparse takes the last occurrence; print that verbatim too, fenced.)
 
 The only thing worth adding is a single line of interpretation when something in the output is
 genuinely notable — a phase that cost several times its peers, a cache hit rate that collapsed, a
@@ -37,6 +40,7 @@ Pass `$ARGUMENTS` through unchanged. Nothing here needs interpreting on your sid
 | `--since 7d\|2w\|3m\|YYYY-MM-DD`, `--until YYYY-MM-DD` | bound the window |
 | `--top N` | cap TOP TASKS (default 10) |
 | `--no-cost` | tokens only, no dollar figures |
+| `--format md\|ascii` | `md` (the default above) renders pipe tables for this chat surface; `ascii` is the fixed-width terminal shape for pipes, logs and CI |
 | `--json` | machine-readable, for CI |
 | `--backfill` | re-read every transcript and rebuild the ledger |
 
