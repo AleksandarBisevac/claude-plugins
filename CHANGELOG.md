@@ -4,6 +4,137 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.34.0] - 2026-08-13
+
+**A gate that cannot explain itself gets worked around; this release makes the plan gate speak
+to the human it protects.** The old refusal stated one cause — "A phase is in_progress" —
+whether or not that was true: with `enforce: true` and nothing running, the message named a
+phase that did not exist, and the agent relaying it padded the gap with invented explanation,
+so the person downstream got the confabulation instead of the verdict. Now every refusal names
+its true cause, a `planGate` knob adds an **ask** tier that routes the decision *to* the human
+rather than around them, warnings open by telling the agent to relay them verbatim, every
+verdict leaves a line in an events feed the panel reads back, and the bypass is something only
+a human can arm — single-use, logged, and expired unused after 30 minutes. Around that: the
+dogfooding fault backlog paid down (thirteen fixes, plus three faults this release found and
+fixed in its own verification tooling — every one proven red first), a panel that searches,
+persists and refreshes itself, and monorepo areas that can name an owner — advisory, never an
+assignee.
+
+### Added
+- **`planGate` pins the gate's tier by hand: `observe` | `warn` | `ask` | `deny`.** Unset, the
+  graded ladder stays exactly as it was; set, the tier is fixed and both plan gates (edit tools
+  and the shell-write branch) obey it identically. **`ask`** holds each out-of-plan edit for the
+  human's approval, one edit at a time — approving the dialog *is* the evidence, recorded as an
+  `ask.approved` event. It supersedes the legacy `enforce` key (`true` = `planGate: "deny"`,
+  and `planGate` wins when both are set, with a validator warning); a typo'd value fails **open**
+  to the ladder — never to deny — and the validator names it. The panel's Settings gains one
+  select for it whose preset also reads the legacy flag and whose change writes `planGate` while
+  deleting `enforce`; `/audit:doctor` names which key pinned the tier, and warns loudly about the
+  one setting that holds the gate *below* its evidence — `planGate: "observe"` while a phase runs.
+- **Gate events: the gate's decisions are on file, not in scrollback.** Every verdict — deny,
+  warn, observe, an approved ask, a bypass armed / consumed / expired — appends one compact JSON
+  line to `<logsDir>/plan-gate-events.jsonl` (fail-open, self-trimming past ~512KB, never
+  blocking a verdict on telemetry). The panel's Overview gains a **Plan gate** card: the tier in
+  force and its source, whether a bypass is armed right now, and the latest events — landing
+  within one poll, because the gate block rides the run-status payload the panel already fetches.
+- **Advisory area ownership.** `meta.areas[tag].owner` names who to coordinate with, written the
+  way `usage.authorMode` records authors so the ledger can join it; an explicit `null` is an
+  answer ("nobody"), and across several tags written order decides, like every other area field.
+  When someone else edits a covered file in an owned area, the gate adds a once-per-session
+  heads-up — measured tone, "fine to continue, say so in the handoff" — and never blocks.
+  `/audit:status` prints the owner in BY AREA, the panel shows `owns: …` in the person header
+  and on area options, and doctor hints when an owner never appears in the ledger's author
+  column (usually an identity spelled differently from what git reports). Deliberately no
+  `task.assignee` and no enforcement — the ledger's author×task join stays the only identity
+  claim the data supports.
+- **The panel's model fields get a real autocomplete with its sources named.** Task model,
+  phase review model: one menu merging the manifest's models ("used by N task(s)"), the rate
+  table's ("$in/$out per MTok") and — the load-bearing one — models **the token ledger has
+  actually seen** ("N tokens in this ledger"), because a ledger-only name is what a typo'd
+  manifest model looks like from the spend side. The validator's new near-miss check warns on
+  exactly that shape inside the manifest (a model used once, edit-distance-1 from one used
+  elsewhere), and never on an honestly single-model plan.
+- **Usage filters persist and travel.** The Usage tab's filter state rides the URL fragment
+  (`#/usage!au=…` — the tab router splits on the first `!`), so a filtered view is a share link
+  the way the report's is, and it is remembered per repo across reopens (hash wins over the
+  remembered state; clearing filters clears both). Combo search now matches **descriptions** as
+  well as names everywhere, and a long list says `…N more — keep typing` instead of cutting off
+  silently.
+- **The panel refreshes itself without eating anyone's edits.** A fingerprint of the manifest,
+  its shards, the config and the ledger rides the existing 5s poll; when the files move on disk,
+  clean views re-render within a poll, while a form holding unsaved edits is left untouched and
+  gets a persistent notice — Save is still checked against the file on disk, Discard reloads
+  what is really there, and refreshes hold while any dialog is open. SSE was considered and
+  rejected: for a localhost tool already polling, a second streaming path buys nothing.
+
+### Changed
+- **Refusals and warnings state their true cause and their real alternatives.** A deny names
+  the running phase by id, or the config key that pinned the tier — three different sentences
+  for three different causes, now pinned by tests (the old single sentence was pinned by
+  nothing, which is how it shipped false). The refusal weighs the two ways forward — add a task
+  covering the file (preferred), or the **human** types the bypass keyword in their own prompt —
+  and tells an agent reading it to ask, not to recommend the bypass. Warnings open with "Tell
+  the human this verbatim before continuing."
+- **The `#no-plan` bypass expires unused after 30 minutes.** Arming it says so; consuming an
+  expired one instead logs `expired unused`. Hooks only see prompts a human submits, which is
+  what makes the keyword the human's — an agent cannot type it for them.
+- **A refused save now outlives a glance away.** The panel's save-result card gets a lifecycle:
+  success says `✓ saved` and dissolves after 5s; a refusal stays — bold title, the findings,
+  its own dismiss — until closed or superseded. Previously both faded on the same clock.
+- **The journal's git policy is stated everywhere it was implied.** Never gitignore the journal
+  — git history is one of the trail's three anchors and only pins committed history; README,
+  the config table, troubleshooting and the conventions doc now say so, and doctor warns when
+  journal files sit uncommitted past a week (mirroring the GC horizon). A new **Growth**
+  paragraph states the honest arithmetic — one small file per writer per month, no compactor by
+  design, because rewriting chained files is indistinguishable from the forgery the chain
+  exists to catch.
+- **Ledger writer ids sanitize cleanly** (F-F2): a slice can no longer leave a filename ending
+  in `-`/`.`, and a pathological id falls back to `writer`. In-flight sessions simply start a
+  fresh file mid-month — harmless, chains are per-file and multi-writer is the normal case.
+
+### Fixed
+The v0.33 dogfooding backlog paid down, plus three faults this release found in itself — every
+fix proven red first, or by sabotage with the original restored (F-F2 sits under Changed):
+- **Ledger discovery could walk out of the repo and bill it with the home ledger** (F-E1):
+  `find_ledger_dir` now stops at the first ancestor owning a `.git` (dir *or* file — worktrees)
+  and never returns a path under `~/.claude`, fixing all four callers at once.
+- **A repo that never metered read "ledger empty"** (F-E2): doctor now tells a directory nothing
+  created ("no ledger yet — would live at …") apart from one that exists and holds no rows.
+- **Free-form proposals were invisible** (F-E3): entries whose status is outside the vocabulary
+  now surface as a one-line legacy footer in status and a count in doctor, instead of vanishing
+  from every list while still occupying the file.
+- **The plugin's own journal append warned about itself** (F-F3): `journal-writes` records what
+  it wrote to a single-writer sidecar and `guard-bash-writes` skips exactly those rows — a real
+  `sed` into the journal still warns. One racing shared file was the bug's shape; one writer per
+  file is the fix's.
+- **Journal pre-image slots were never garbage-collected** (F-B1): `journal-preimage-` joined
+  the GC prefix set; an 8-day-old slot is now removed like every other stale session file.
+- **Trail verification cost one `git show` per journal file** (F-B3): `verify()` batches one
+  porcelain call per directory and pays the per-file check only for dirty files — doctor and
+  the panel's state build inherit the flat cost.
+- Doctor's selftest was **date-dependent** (F-A1): a fixture hardcoded `completedAt:
+  2026-08-14`, so the drift check legitimately stopped firing the day the calendar caught up;
+  the timestamp is now derived from the clock.
+- The hooks' ledger module loads through the same cache as its siblings (F-B2); the report
+  checker's `clearAll` pin now reads the function it names rather than the whole file (F-D1)
+  and its `m=` filter regex is anchored like the area check's (F-D2); a dead `esc()` left the
+  report's source (F-C1); the submodule selftest group no longer shares letters with the shard
+  group, and a duplicate-name guard makes the next collision a red build instead of a silent
+  overwrite (F-D3).
+- **The new model-combo browser check was itself flaky** (F-C-1, found by this release's own
+  verification): it injected a probe into in-page state that the panel's new live-refresh
+  replaces wholesale, so a refetch landing mid-step erased the fixture — the same F4 shape the
+  lock check had. The run-status endpoint is now frozen for the step, in-flight refreshes are
+  drained before the probe goes in, and the old race window is driven on purpose every run —
+  proven red with a forced mid-step stamp move, then green with the freeze, then stable across
+  three consecutive full `--check` runs. Fixing it surfaced two more of the same class: the
+  stale-echo check's freeze could itself trigger the one refresh it existed to block (a poll
+  against the frozen route seeing a stamp the client had not adopted yet — green only by the
+  grace of the poll's phase, deterministic the moment a new step shifted it), which now drains
+  the hand-off first; and the build lint that forbids hand-writing polled state required names of three
+  letters or more, so the two-letter `FP` was invisible to it — tightened, and proven red on a
+  real violation before being believed.
+
 ## [0.33.0] - 2026-08-12
 
 **Four questions from one team adopting the plugin mid-project, and one posture answers all of
