@@ -3,9 +3,10 @@
 The audit trail: an append-only, hash-chained record of every change to the plan
 and the config -- dependency-free (stdlib).
 
-    audit-journal.py append --action <a> [--target <path>] [--summary <text>]
-    audit-journal.py verify [--json]
-    audit-journal.py show   [--limit N] [--json] [--target <path>]
+    audit-journal.py append  --action <a> [--target <path>] [--summary <text>]
+    audit-journal.py verify  [--json]
+    audit-journal.py show    [--limit N] [--json] [--target <path>]
+    audit-journal.py archive [--before YYYY-MM]
     audit-journal.py --selftest
       (every command takes --project DIR; default the current directory)
 
@@ -42,6 +43,12 @@ sessions in two git worktrees append at the same time, and a single shared file
 would conflict on every merge -- the one thing the sharded manifest layout exists
 to avoid. Sitting next to the manifest, the journal is committable by the same
 commit that carries the change it records.
+
+Past months can be moved whole into `<journal dir>/archive/` by the `archive`
+subcommand -- `git mv`, never a rewrite, because the chain seed is the file's
+BASENAME and the hash chain survives only untouched bytes. Every reader
+(verify, show, the doctor) sees archived files exactly as it sees live ones;
+exactly one level deep, never a recursive walk.
 
 ROW
     {"v", "ts", "actor": {"author", "sessionId", "via", "host"},
@@ -85,6 +92,8 @@ MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
 MAX_DETAILS_BYTES = 4096    # the whole block, canonically spelled
 DEFAULT_DIRNAME = "journal"
+ARCHIVE_DIRNAME = "archive"
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 DEFAULT_MANIFEST = "docs/audit/audit-plan.json"
 GENESIS = "genesis:"
 LOCK_STALE_SECONDS = 30     # after this a lock is assumed to belong to a dead writer
@@ -255,9 +264,27 @@ def read_file(path):
 
 
 def journal_files(directory):
+    """Every journal file in `directory`, plus `directory/archive/` -- exactly
+    ONE level, deliberately not a walk: `archive/` is the single subdirectory
+    this module itself creates (the `archive` subcommand git-mv's whole
+    month-files into it), so it is the only place a journal file can
+    legitimately be, and a general recursion would sweep in anything a user
+    nested under the journal and make every consumer pay O(tree) for it.
+
+    Sorted as full paths, so live files come first (a month name starts with a
+    digit, `archive/` with a letter). The chain seed stays the BASENAME either
+    way (see genesis_prev), which is why a `git mv` into archive/ leaves every
+    chain verifying unchanged: untouched bytes under the same name."""
     try:
-        return sorted(os.path.join(directory, n) for n in os.listdir(directory)
-                      if n.endswith(".jsonl"))
+        out = [os.path.join(directory, n) for n in os.listdir(directory)
+               if n.endswith(".jsonl")]
+        arch = os.path.join(directory, ARCHIVE_DIRNAME)
+        try:
+            out.extend(os.path.join(arch, n) for n in os.listdir(arch)
+                       if n.endswith(".jsonl"))
+        except Exception:
+            pass                     # no archive/ yet is the normal state
+        return sorted(out)
     except Exception:
         return []
 
@@ -462,8 +489,10 @@ def append(project, entry, config=None):
 # --- verifying ----------------------------------------------------------------
 def _git_status_sets(directory):
     """One `git status --porcelain -z -uall` for a whole journal directory:
-    (dirty, untracked) sets of BASENAMES, or None when the question cannot be
-    asked at all (no git binary, not a repository, git errored).
+    (dirty, untracked) sets of JOURNAL-RELATIVE PATHS ("/" separators:
+    "<name>" for a live file, "archive/<name>" for an archived one), or None
+    when the question cannot be asked at all (no git binary, not a
+    repository, git errored).
 
     This is F-B3's batching seam, shared with the doctor's journal-hygiene
     check: verify() used to pay `git ls-files` + `git show` per journal file,
@@ -474,24 +503,44 @@ def _git_status_sets(directory):
     `git show` is then paid only for tracked-but-dirty files -- the 0-2 active
     writers of the moment -- O(1 + dirty).
 
-    Basenames, not repo-relative paths, because journal_files() is flat by
-    design: a same-named entry deeper in the tree can only ADD a name to
-    `dirty`, which costs one redundant single-file check and can never hide
-    one. Rename/copy entries contribute both sides for the same reason.
-    `-uall` so an untracked directory is expanded into its files rather than
-    collapsed to one `dir/` line (the doctor's check needs the files).
-    Fail-open: None means "ask per file", exactly the pre-batch behaviour."""
+    Paths, not basenames (F-D-1): with archive/ the same basename can sit
+    live AND archived, and under basename keys the tracked archive twin
+    answered for the untracked live file -- the doctor's never-committed
+    check counted both and could name the wrong one as oldest. Porcelain
+    prints repo-root-relative paths, so one extra `rev-parse --show-prefix`
+    (still O(1) per call) maps them onto the directory; an entry outside the
+    directory is dropped -- it can never name a journal file. Rename/copy
+    entries contribute both sides: a stale side costs one redundant
+    single-file check and can never hide one. `-uall` so an untracked
+    directory is expanded into its files rather than collapsed to one `dir/`
+    line (the doctor's check needs the files). Fail-open: None means "ask
+    per file", exactly the pre-batch behaviour."""
     try:
         import shutil
         import subprocess
         if not shutil.which("git"):
             return None
+        pfx = subprocess.run(
+            ["git", "-C", directory, "rev-parse", "--show-prefix"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        if pfx.returncode != 0:
+            return None
+        prefix = (pfx.stdout or b"").decode("utf-8", "replace").strip()
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
         out = subprocess.run(
             ["git", "-C", directory, "status", "--porcelain", "-z", "-uall",
              "--", "."],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
         if out.returncode != 0:
             return None
+
+        def rel(p):
+            p = p.rstrip("/")
+            if not prefix:
+                return p
+            return p[len(prefix):] if p.startswith(prefix) else None
+
         dirty, untracked = set(), set()
         tokens = (out.stdout or b"").decode("utf-8", "replace").split("\0")
         i = 0
@@ -500,14 +549,17 @@ def _git_status_sets(directory):
             i += 1
             if len(tok) < 4 or tok[2] != " ":
                 continue
-            xy, p = tok[:2], tok[3:]
-            name = os.path.basename(p.rstrip("/"))
+            xy, p = tok[:2], rel(tok[3:])
             if xy == "??":
-                untracked.add(name)
+                if p is not None:
+                    untracked.add(p)
             else:
-                dirty.add(name)
+                if p is not None:
+                    dirty.add(p)
                 if xy[0] in ("R", "C") and i < len(tokens):
-                    dirty.add(os.path.basename(tokens[i].rstrip("/")))
+                    q = rel(tokens[i])
+                    if q is not None:
+                        dirty.add(q)
                     i += 1
         return dirty, untracked
     except Exception:
@@ -522,7 +574,9 @@ def _git_anchor_finding(path):
 
     Returns the FINDING text, or None. Fail-open silently on every inability to
     check: no git binary, not a repository, an untracked file, `git show`
-    erroring (tracked but not yet in HEAD). Line endings are normalised before
+    erroring (tracked but not yet in HEAD) -- with one deliberate retry: a file
+    in archive/ whose committed copy is not at its new path yet is anchored
+    against the PRE-archive path one level up (see the comment at the seam). Line endings are normalised before
     the compare -- on Windows the working file is CRLF while an autocrlf
     checkout commits LF, and a false accusation is the one failure mode this
     check must never have."""
@@ -541,15 +595,32 @@ def _git_anchor_finding(path):
         shown = subprocess.run(["git", "-C", d, "show", "HEAD:./%s" % name],
                                stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, timeout=10)
+        committed_at = name
         if shown.returncode != 0 or not shown.stdout:
-            return None
+            # The archive seam (v0.37 D): a file `git mv`ed into archive/
+            # whose move is staged but NOT yet committed has no committed copy
+            # at its new path -- but its committed past sits one level up, at
+            # the pre-archive path, and git ls-files (the index) already
+            # vouched the file is tracked. Anchoring against the parent copy
+            # closes the window in which a whole-file rewrite would otherwise
+            # slip between the mv and its commit. Only for a directory
+            # literally named archive/ -- the one subdirectory this module
+            # itself creates; everything else keeps the plain fail-open.
+            if os.path.basename(d) != ARCHIVE_DIRNAME:
+                return None
+            shown = subprocess.run(["git", "-C", d, "show", "HEAD:../%s" % name],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, timeout=10)
+            if shown.returncode != 0 or not shown.stdout:
+                return None
+            committed_at = "%s (its pre-archive path)" % name
         committed = shown.stdout.replace(b"\r\n", b"\n")
         with open(path, "rb") as fh:
             working = fh.read().replace(b"\r\n", b"\n")
         if not working.startswith(committed):
             return ("%s: the journal's committed past changed -- a committed "
                     "row was edited or removed (git show HEAD:%s is not a "
-                    "prefix of the working copy)" % (name, name))
+                    "prefix of the working copy)" % (name, committed_at))
     except Exception:
         return None
     return None
@@ -573,22 +644,32 @@ def verify(project, config=None):
         return out
     # F-B3: one porcelain for the whole directory decides which files pay the
     # single-file anchor check. None = git unavailable, ask per file (the
-    # primitive fails open on its own); a name in neither set is tracked and
+    # primitive fails open on its own); a path in neither set is tracked and
     # clean, so the committed copy equals the working copy and the prefix
     # holds trivially; untracked files are skipped for the same reason the
     # primitive skips them (no committed past = nothing to anchor to).
+    # Keyed by journal-relative path (F-D-1) -- `where` below, never the
+    # basename, so a live and an archived twin never answer for one another.
     status_sets = _git_status_sets(directory)
     latest = {}                    # target -> (ts, stateHash, file)
+    seen_names = {}                # basename -> [journal-relative paths]
     for path in journal_files(directory):
         name = os.path.basename(path)
+        # Display identity vs chain identity (v0.37 archive): `where` is the
+        # journal-relative path ("archive/<name>" for an archived file), so a
+        # live and an archived month can never read as one another in a report
+        # -- while the GENESIS SEED below stays the basename, which is exactly
+        # what lets a git-mv'd file keep verifying: untouched bytes, same name.
+        where = os.path.relpath(path, directory).replace(os.sep, "/")
+        seen_names.setdefault(name, []).append(where)
         rows, torn = read_file(path)
-        entry = {"file": name, "rows": 0, "findings": [], "warnings": []}
+        entry = {"file": where, "rows": 0, "findings": [], "warnings": []}
         prev = genesis_prev(name)
         for i, row in enumerate(rows):
             if row.get("_unparseable"):
                 entry["findings"].append(
                     "%s line %d is not valid JSON, and it is not the last line -- "
-                    "a row was corrupted" % (name, row.get("_line") or (i + 1)))
+                    "a row was corrupted" % (where, row.get("_line") or (i + 1)))
                 prev = None
                 continue
             entry["rows"] += 1
@@ -597,24 +678,25 @@ def verify(project, config=None):
                 entry["findings"].append(
                     "%s row %d (%s) does not hash to its own contents -- it was "
                     "edited after it was written"
-                    % (name, i + 1, row.get("action") or "?"))
+                    % (where, i + 1, row.get("action") or "?"))
             elif prev is not None and row.get("prev") != prev:
                 entry["findings"].append(
                     "%s row %d (%s) does not follow the row before it -- a row was "
                     "deleted, reordered, or this file was renamed"
-                    % (name, i + 1, row.get("action") or "?"))
+                    % (where, i + 1, row.get("action") or "?"))
             prev = stored if isinstance(stored, str) else None
             tgt = row.get("target")
             if tgt and (tgt not in latest
                         or str(row.get("ts") or "") >= latest[tgt][0]):
-                latest[tgt] = (str(row.get("ts") or ""), row.get("stateHash"), name)
+                latest[tgt] = (str(row.get("ts") or ""), row.get("stateHash"),
+                               where)
         if torn:
             entry["warnings"].append(
                 "%s ends with a partial line -- a writer was interrupted. The rows "
-                "before it are intact; nothing was hidden by it." % name)
+                "before it are intact; nothing was hidden by it." % where)
         if status_sets is None:
             anchor = _git_anchor_finding(path)
-        elif name in status_sets[0]:
+        elif where in status_sets[0]:
             anchor = _git_anchor_finding(path)
         else:
             anchor = None
@@ -624,6 +706,18 @@ def verify(project, config=None):
         out["findings"].extend(entry["findings"])
         out["warnings"].extend(entry["warnings"])
         out["files"].append(entry)
+
+    # The same basename live AND archived: both chains verify (same genesis
+    # seed), but every consumer that sums rows now counts the month twice.
+    # A WARNING, not a finding -- an interrupted or hand-made copy is not
+    # tampering, and the `archive` subcommand itself refuses to create this.
+    for name, places in sorted(seen_names.items()):
+        if len(places) > 1:
+            out["warnings"].append(
+                "%s exists more than once (%s) -- the same basename seeds the "
+                "same chain, so its rows double-count; keep exactly one "
+                "(a hand copy or an interrupted archive, never something "
+                "`archive` produces)" % (name, ", ".join(places)))
 
     for tgt, (_ts, state, name) in sorted(latest.items()):
         if not state:
@@ -687,6 +781,128 @@ def cmd_verify(args, out):
     return 0
 
 
+def cmd_archive(args, out):
+    """Move whole month-files into <journal>/archive/ -- `git mv`, never a
+    rewrite, because the hash chain survives only untouched bytes and the
+    genesis seed is the file's BASENAME: a moved file verifies exactly as it
+    did live, and git carries its committed history across the move so the
+    git anchor keeps holding.
+
+    Default: every month-file older than the current month. --before YYYY-MM
+    archives strictly older months. The current month (and anything newer) is
+    never archived -- it is still being written.
+
+    DECISION (pinned, v0.37 D): an UNTRACKED file is moved with os.rename
+    rather than refused. `git mv` fails on untracked files, and the reason
+    git mv is the mechanism -- carrying COMMITTED history across the move --
+    does not exist for a file with no committed past: a plain rename loses
+    nothing the chain or the anchor ever had. The doctor's never-committed
+    warning follows the file into archive/ and keeps nagging until it is
+    committed, which is the honest state of affairs.
+    """
+    import shutil
+    import subprocess
+
+    def git(directory, *a):
+        try:
+            res = subprocess.run(["git", "-C", directory] + list(a),
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, timeout=30)
+            return res.returncode, (res.stdout or b"").decode("utf-8",
+                                                              "replace"), \
+                (res.stderr or b"").decode("utf-8", "replace")
+        except Exception as exc:
+            return 1, "", str(exc)
+
+    project = os.path.abspath(args.project)
+    config = load_config(project)
+    directory = journal_dir(project, config)
+    current = time.strftime("%Y-%m", time.gmtime())
+    before = (args.before or "").strip()
+    if before and not _MONTH_RE.match(before):
+        out("[audit-journal] --before must be YYYY-MM (got %r)" % before)
+        return 2
+    cutoff = before or current
+    if cutoff > current:
+        out("[audit-journal] --before %s reaches into the future; the current "
+            "month and anything newer is still being written and is never "
+            "archived -- archiving everything older than %s instead"
+            % (before, current))
+        cutoff = current
+    if not os.path.isdir(directory):
+        out("[audit-journal] nothing to archive: no journal at %s" % directory)
+        return 0
+    in_repo = False
+    if shutil.which("git"):
+        rc, txt, _err = git(directory, "rev-parse", "--is-inside-work-tree")
+        in_repo = rc == 0 and txt.strip() == "true"
+    if not in_repo:
+        # The whole point of archiving by `git mv` is that committed history
+        # follows the move and the git anchor keeps holding. No repository
+        # means no history to carry -- and an archive that silently plain-moved
+        # files here would teach people the operation is safe anywhere.
+        out("[audit-journal] not inside a git repository (or git is not on "
+            "PATH): archive moves files with `git mv` so their committed "
+            "history follows the move and the git anchor keeps holding -- "
+            "with no repository there is nothing to carry. Run `git init` "
+            "and commit the journal first.")
+        return 2
+    moved, kept, failed = [], [], []
+    arch = os.path.join(directory, ARCHIVE_DIRNAME)
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".jsonl"):
+            continue
+        month = name[:7]
+        if not _MONTH_RE.match(month):
+            kept.append("%s: kept -- no YYYY-MM month prefix to judge it by"
+                        % name)
+            continue
+        if month >= cutoff:
+            continue        # current/future months and >= --before stay live
+        if os.path.exists(os.path.join(arch, name)):
+            kept.append("%s: kept -- archive/%s already exists; refusing to "
+                        "overwrite it (verify will warn about the duplicate)"
+                        % (name, name))
+            continue
+        os.makedirs(arch, exist_ok=True)
+        rc, _txt, _err = git(directory, "ls-files", "--error-unmatch",
+                             "--", name)
+        if rc == 0:
+            rc2, _txt2, err2 = git(directory, "mv", name,
+                                   "%s/%s" % (ARCHIVE_DIRNAME, name))
+            if rc2 != 0:
+                failed.append("%s: git mv failed (%s)"
+                              % (name, err2.strip() or "unknown error"))
+                continue
+            moved.append("%s -> archive/%s (git mv; committed history "
+                         "follows the move)" % (name, name))
+        else:
+            try:
+                os.rename(os.path.join(directory, name),
+                          os.path.join(arch, name))
+            except OSError as exc:
+                failed.append("%s: could not move (%s)" % (name, exc))
+                continue
+            moved.append("%s -> archive/%s (renamed; never committed, so "
+                         "there was no git history to carry)" % (name, name))
+    for line in kept:
+        out("[audit-journal] " + line)
+    for line in failed:
+        out("[audit-journal] FAILED " + line)
+    for line in moved:
+        out("[audit-journal] archived " + line)
+    if moved:
+        out("[audit-journal] %d file(s) moved, 0 bytes rewritten: a hash "
+            "chain survives only untouched bytes, and its seed is the file's "
+            "basename, so every moved file verifies exactly as it did. "
+            "Commit the archive/ directory so the git anchor pins it."
+            % len(moved))
+    elif not kept and not failed:
+        out("[audit-journal] nothing to archive: no month-file older than %s "
+            "in %s" % (cutoff, directory))
+    return 1 if failed else 0
+
+
 def cmd_show(args, out):
     project = os.path.abspath(args.project)
     rows = read_all(project)
@@ -712,8 +928,9 @@ def cmd_show(args, out):
 
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="audit-journal.py", add_help=True)
-    p.add_argument("command", choices=["append", "verify", "show"])
+    p.add_argument("command", choices=["append", "verify", "show", "archive"])
     p.add_argument("--project", default=".")
+    p.add_argument("--before", default="")
     p.add_argument("--action", default="")
     p.add_argument("--target", default="")
     p.add_argument("--summary", default="")
@@ -752,6 +969,8 @@ def main(argv, out=print):
             return cmd_append(args, out)
         if args.command == "verify":
             return cmd_verify(args, out)
+        if args.command == "archive":
+            return cmd_archive(args, out)
         return cmd_show(args, out)
     except Exception as exc:                    # never leave a caller guessing
         out("[audit-journal] internal error: %s" % exc)
@@ -774,6 +993,16 @@ def _selftest():
         lines = []
         code = main(argv + ["--project", project], out=lines.append)
         return code, "\n".join(lines)
+
+    def _month_shift(n):
+        """YYYY-MM for `n` months before the current month. Computed, never
+        hardcoded -- a hardcoded date goes red the day the calendar catches
+        up with it (the doctor's F-A1 lesson)."""
+        t = time.gmtime()
+        y, m = t.tm_year, t.tm_mon - n
+        while m < 1:
+            y, m = y - 1, m + 12
+        return "%04d-%02d" % (y, m)
 
     tmp = tempfile.mkdtemp(prefix="audit-journal-")
     try:
@@ -1345,6 +1574,324 @@ def _selftest():
                       repr(verify(gdir, gcfg)["findings"]))
             finally:
                 globals()["_git_anchor_finding"] = _orig_anchor
+
+            # k9-k10 (F-D-1): status keys are JOURNAL-RELATIVE PATHS, not
+            # basenames. The journal dir here sits three levels deep
+            # (docs/audit/journal), so these go red if porcelain's
+            # repo-root-relative paths are ever mapped onto the directory
+            # wrongly: an archived file the batch cannot see never pays the
+            # anchor, and a forged archive twin would sail through.
+            jdir9 = journal_dir(gdir, gcfg)
+            aname9 = os.path.basename(gfile)
+            apath9 = os.path.join(jdir9, "archive", aname9)
+            os.makedirs(os.path.join(jdir9, "archive"))
+            shutil.copyfile(gfile, apath9)
+            git("add", ".")
+            git("commit", "-q", "-m", "archive twin committed")
+            with open(apath9, "rb") as fh:
+                pristine9 = fh.read()
+            arows9, _ = read_file(apath9)
+            forged9, prev9 = [], genesis_prev(aname9)
+            for r in arows9:
+                r = dict(r)
+                if not forged9:
+                    r["summary"] = "nothing happened"
+                r["prev"] = prev9
+                r["hash"] = row_hash({k: v for k, v in r.items()
+                                      if k != "hash"})
+                prev9 = r["hash"]
+                forged9.append(r)
+            rewrite(apath9, forged9)
+            resk = verify(gdir, gcfg)
+            aent9 = [e for e in resk["files"]
+                     if e["file"] == "archive/" + aname9]
+            check("k9 a forged ARCHIVED twin of a live basename is caught "
+                  "through the batched path - the twin answers for ITSELF, "
+                  "its live namesake cannot answer for it (F-D-1)",
+                  not resk["ok"] and aent9
+                  and any("committed past changed" in f
+                          for f in aent9[0]["findings"]),
+                  repr(resk["findings"]))
+            with open(apath9, "wb") as fh:
+                fh.write(pristine9)
+            resk = verify(gdir, gcfg)
+            check("k10 restored byte-for-byte the batch is green again, and "
+                  "only the duplicate-basename WARNING remains (the "
+                  "collision state itself, already named by verify)",
+                  resk["ok"] and not resk["findings"]
+                  and any("double-count" in w for w in resk["warnings"]),
+                  repr((resk["findings"], resk["warnings"])))
+
+        # --- l: the archive/ subdirectory -------------------------------------
+        # journal_files sees `<journal>/archive/` -- EXACTLY one level, never a
+        # walk. The chain seed is the file's BASENAME (genesis_prev), so a file
+        # MOVED into archive/ byte-for-byte verifies exactly as it did live:
+        # that is the entire design of the git-mv archive (untouched bytes,
+        # same name, different directory).
+        lproj = os.path.join(tmp, "arch")
+        os.makedirs(lproj)
+        lcfg = {"journal": {"dir": "j"}}
+        old_month = _month_shift(2)
+        for i, summ in enumerate(("old-1", "old-2")):
+            append(lproj, {"action": "manifest.edit", "target": "",
+                           "summary": summ,
+                           "ts": "%s-01T00:00:0%dZ" % (old_month, i),
+                           "actor": {"sessionId": "s-old", "via": "hook"}},
+                   config=lcfg)
+        append(lproj, {"action": "manifest.edit", "target": "",
+                       "summary": "live",
+                       "actor": {"sessionId": "s-new", "via": "hook"}},
+               config=lcfg)
+        ldir = journal_dir(lproj, lcfg)
+        pre = verify(lproj, lcfg)
+        check("l1 the fixture verifies green BEFORE archiving",
+              pre["ok"] and pre["rows"] == 3, repr(pre))
+        lold = os.path.join(ldir, "%s.s-old.jsonl" % old_month)
+        lnew_name = "%s.s-new.jsonl" % time.strftime("%Y-%m", time.gmtime())
+        with open(lold, "rb") as fh:
+            lbytes = fh.read()
+        os.makedirs(os.path.join(ldir, "archive"))
+        lapath = os.path.join(ldir, "archive", os.path.basename(lold))
+        os.rename(lold, lapath)
+        check("l2 journal_files sees the archive/ subdirectory, live files "
+              "first",
+              [os.path.relpath(p, ldir).replace(os.sep, "/")
+               for p in journal_files(ldir)]
+              == [lnew_name, "archive/%s.s-old.jsonl" % old_month],
+              repr(journal_files(ldir)))
+        deepdir = os.path.join(ldir, "archive", "deep")
+        os.makedirs(deepdir)
+        with open(os.path.join(deepdir, "0000-01.x.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{}\n")
+        check("l3 exactly ONE level: a file nested below archive/ is not a "
+              "journal file (minimal scope, not a tree walk)",
+              all(os.sep + "deep" + os.sep not in p
+                  for p in journal_files(ldir)), repr(journal_files(ldir)))
+        res = verify(lproj, lcfg)
+        check("l4 the chain verifies green AFTER the move -- untouched bytes "
+              "under the same basename seed the same genesis",
+              res["ok"] and res["rows"] == 3, repr(res))
+        check("l5 verify reports the archived file AS archive/<name>, so a "
+              "live and an archived month cannot read as one another",
+              any(e["file"] == "archive/%s.s-old.jsonl" % old_month
+                  for e in res["files"])
+              and any(e["file"] == lnew_name for e in res["files"]),
+              repr([e["file"] for e in res["files"]]))
+        arows, _ = read_file(lapath)
+        arows2 = [dict(r) for r in arows]
+        arows2[0]["summary"] = "nothing happened"
+        rewrite(lapath, arows2)
+        res = verify(lproj, lcfg)
+        check("l6 a broken chain INSIDE archive/ is still a FINDING, and it "
+              "names the archive/ path",
+              not res["ok"] and any("archive/" in f and "edited after" in f
+                                    for f in res["findings"]),
+              repr(res["findings"]))
+        with open(lapath, "wb") as fh:
+            fh.write(lbytes)
+        check("l7 restored byte-for-byte, the archived file is green again",
+              verify(lproj, lcfg)["ok"],
+              repr(verify(lproj, lcfg)["findings"]))
+        shutil.copyfile(lapath, lold)
+        res = verify(lproj, lcfg)
+        check("l8 the same basename live AND archived is a WARNING naming the "
+              "duplication (its rows double-count)",
+              res["ok"] and any("archive/" in w and "double-count" in w
+                                for w in res["warnings"]),
+              repr(res["warnings"]))
+        os.unlink(lold)
+        check("l9 read_all includes archived rows, tagged with the BASENAME "
+              "(_file feeds the doctor's deep check, which greps commit trees "
+              "where the file was still live)",
+              len(read_all(lproj, lcfg)) == 3
+              and any(r.get("_file") == os.path.basename(lold)
+                      for r in read_all(lproj, lcfg)),
+              repr([r.get("_file") for r in read_all(lproj, lcfg)]))
+
+        # --- m: the `archive` subcommand ---------------------------------------
+        # `git mv`, never a rewrite: the hash chain survives only untouched
+        # bytes, and git carries the file's committed history across the move
+        # so the git anchor keeps holding.
+        m0 = os.path.join(tmp, "norepo")
+        os.makedirs(os.path.join(m0, ".claude"))
+        with open(os.path.join(m0, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"journal": {"dir": "j"}}')
+        append(m0, {"action": "manifest.edit", "target": "",
+                    "summary": "old", "ts": old_month + "-01T00:00:00Z",
+                    "actor": {"sessionId": "s-m", "via": "hook"}},
+               config={"journal": {"dir": "j"}})
+        code, txt = run(["archive"], m0)
+        check("m1 outside a git repository archive REFUSES (usage error 2) "
+              "and says why: git mv is the mechanism, no repo means no "
+              "history to carry",
+              code == 2 and "git mv" in txt and "git init" in txt, txt)
+        check("m1b ...and nothing moved",
+              os.path.isfile(os.path.join(m0, "j", "%s.s-m.jsonl" % old_month))
+              and not os.path.isdir(os.path.join(m0, "j", "archive")),
+              repr(os.listdir(os.path.join(m0, "j"))))
+        if not shutil.which("git"):
+            print("SKIP m2-m10 (git is not on PATH)")
+        else:
+            mdir = os.path.join(tmp, "archrepo")
+            os.makedirs(os.path.join(mdir, ".claude"))
+            with open(os.path.join(mdir, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                fh.write('{"journal": {"dir": "j"}}')
+
+            def mgit(*a):
+                return subprocess.run(
+                    ["git", "-C", mdir, "-c", "user.email=t@t",
+                     "-c", "user.name=t"] + list(a),
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    timeout=30)
+
+            mgit("init", "-q")
+            mcfg = {"journal": {"dir": "j"}}
+            for i in range(2):
+                append(mdir, {"action": "manifest.edit", "target": "",
+                              "summary": "old %d" % i,
+                              "ts": "%s-01T00:00:0%dZ" % (old_month, i),
+                              "actor": {"sessionId": "s-arch", "via": "hook"}},
+                       config=mcfg)
+            append(mdir, {"action": "manifest.edit", "target": "",
+                          "summary": "live",
+                          "actor": {"sessionId": "s-arch", "via": "hook"}},
+                   config=mcfg)
+            mgit("add", ".")
+            mgit("commit", "-q", "-m", "journal committed")
+            mold = os.path.join(mdir, "j", "%s.s-arch.jsonl" % old_month)
+            mlive = os.path.join(mdir, "j", "%s.s-arch.jsonl"
+                                 % time.strftime("%Y-%m", time.gmtime()))
+            with open(mold, "rb") as fh:
+                mbytes = fh.read()
+            msha = hashlib.sha256(mbytes).hexdigest()
+            pre = verify(mdir, mcfg)
+            code, txt = run(["archive"], mdir)
+            march = os.path.join(mdir, "j", "archive",
+                                 "%s.s-arch.jsonl" % old_month)
+            same_bytes = False
+            if os.path.isfile(march):
+                with open(march, "rb") as fh:
+                    same_bytes = (hashlib.sha256(fh.read()).hexdigest()
+                                  == msha)
+            check("m2 archive moves the past month into archive/ and leaves "
+                  "the bytes untouched (sha256-identical)",
+                  code == 0 and same_bytes and not os.path.exists(mold), txt)
+            check("m2b the current month stays live -- still being written, "
+                  "never archived", os.path.isfile(mlive),
+                  repr(journal_files(os.path.join(mdir, "j"))))
+            check("m2c the output says what moved and why mv-not-rewrite "
+                  "matters (the chain survives only untouched bytes)",
+                  "git mv" in txt and "untouched bytes" in txt, txt)
+            st = mgit("status", "--porcelain").stdout.decode("utf-8",
+                                                             "replace")
+            check("m3 the move is a STAGED RENAME -- git followed it, nothing "
+                  "was deleted-and-recreated",
+                  any(line.startswith("R ") for line in st.splitlines()), st)
+            post = verify(mdir, mcfg)
+            check("m4 chain verify is green before AND after: same rows, no "
+                  "findings",
+                  pre["ok"] and post["ok"]
+                  and pre["rows"] == post["rows"] == 3,
+                  repr((pre["rows"], post["rows"], post["findings"])))
+            code, txt = run(["archive"], mdir)
+            check("m5 a second run is idempotent: exit 0 and a calm "
+                  "nothing-to-archive line",
+                  code == 0 and "nothing to archive" in txt, txt)
+            # The staged-rename window: HEAD has no copy at the NEW path yet,
+            # so a whole-file rewrite here would slip past a naive anchor. The
+            # committed past sits one level up, at the pre-archive path, and
+            # the anchor must follow it there.
+            frows, _ = read_file(march)
+            forged, fprev = [], genesis_prev(os.path.basename(march))
+            for r in frows:
+                r = dict(r)
+                if not forged:
+                    r["summary"] = "nothing happened"
+                r["prev"] = fprev
+                r["hash"] = row_hash({k: v for k, v in r.items()
+                                      if k != "hash"})
+                fprev = r["hash"]
+                forged.append(r)
+            rewrite(march, forged)
+            res = verify(mdir, mcfg)
+            check("m6 a full rewrite of the archived file DURING the "
+                  "staged-rename window is STILL a FINDING -- the anchor "
+                  "follows the move back to the pre-archive path",
+                  not res["ok"] and any("committed past changed" in f
+                                        for f in res["findings"]),
+                  repr(res["findings"]))
+            with open(march, "wb") as fh:
+                fh.write(mbytes)
+            check("m6b restored byte-for-byte, green again",
+                  verify(mdir, mcfg)["ok"],
+                  repr(verify(mdir, mcfg)["findings"]))
+            mgit("add", "-A")
+            mgit("commit", "-q", "-m", "the archive commit")
+            check("m7 after the archive commit the moved file anchors at its "
+                  "NEW path and still verifies", verify(mdir, mcfg)["ok"],
+                  repr(verify(mdir, mcfg)["findings"]))
+            # Untracked files and --before. DECISION (pinned): an untracked
+            # file is MOVED with os.rename rather than refused -- git mv fails
+            # on untracked files, and the reason git mv is the mechanism
+            # (carrying COMMITTED history across the move) does not exist for
+            # a file with no committed past; a plain rename loses nothing.
+            old3, old1 = _month_shift(3), _month_shift(1)
+            for mo in (old3, old1):
+                append(mdir, {"action": "manifest.edit", "target": "",
+                              "summary": "untracked " + mo,
+                              "ts": mo + "-01T00:00:00Z",
+                              "actor": {"sessionId": "s-un", "via": "hook"}},
+                       config=mcfg)
+            code, txt = run(["archive", "--before", old1], mdir)
+            check("m8 --before archives strictly OLDER months only: %s "
+                  "moves, %s stays" % (old3, old1),
+                  code == 0
+                  and os.path.isfile(os.path.join(
+                      mdir, "j", "archive", "%s.s-un.jsonl" % old3))
+                  and os.path.isfile(os.path.join(
+                      mdir, "j", "%s.s-un.jsonl" % old1)), txt)
+            check("m8b an untracked file is MOVED (renamed), and the output "
+                  "says there was no git history to carry",
+                  "renamed" in txt and "no git history" in txt, txt)
+            check("m8c ...and the untracked move still verifies green",
+                  verify(mdir, mcfg)["ok"],
+                  repr(verify(mdir, mcfg)["findings"]))
+            code, txt = run(["archive", "--before", "not-a-month"], mdir)
+            check("m9 a malformed --before is a usage error (2) naming the "
+                  "shape", code == 2 and "YYYY-MM" in txt, txt)
+            future = "%04d-01" % (time.gmtime().tm_year + 1)
+            code, txt = run(["archive", "--before", future], mdir)
+            check("m9b a future --before is clamped out loud -- the current "
+                  "month and anything newer is never archived",
+                  code == 0 and "never archived" in txt
+                  and os.path.isfile(mlive), txt)
+            # A live file re-created for an archived month (a late append):
+            # never overwritten -- the refusal is printed, verify warns.
+            append(mdir, {"action": "manifest.edit", "target": "",
+                          "summary": "late row for an archived month",
+                          "ts": old_month + "-15T00:00:00Z",
+                          "actor": {"sessionId": "s-arch", "via": "hook"}},
+                   config=mcfg)
+            res = verify(mdir, mcfg)
+            check("m10 a re-created live file for an archived month is the "
+                  "duplicate WARNING, not a silent double count",
+                  res["ok"] and any("double-count" in w
+                                    for w in res["warnings"]),
+                  repr(res["warnings"]))
+            code, txt = run(["archive"], mdir)
+            check("m10b archive refuses to overwrite an existing archive "
+                  "file -- the live one is kept and the refusal printed",
+                  code == 0 and "refusing to overwrite" in txt
+                  and os.path.isfile(mold), txt)
+            os.unlink(mold)
+            check("m10c with the duplicate gone the journal reads clean "
+                  "again",
+                  verify(mdir, mcfg)["ok"]
+                  and not verify(mdir, mcfg)["warnings"],
+                  repr(verify(mdir, mcfg)["warnings"]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

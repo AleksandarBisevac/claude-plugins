@@ -692,7 +692,26 @@ def _journal_never_committed(jr, directory):
     the warning is noise. The 7-day line is the one the state GC already draws
     (_GC_MAX_AGE) -- older than any session state is allowed to live. Never
     raises; None on every inability to answer (no git, not a repository, no
-    untracked files), because an unanswerable question is not a warning."""
+    untracked files), because an unanswerable question is not a warning.
+
+    Archive files count too: journal_files walks journal/archive/ (one level)
+    and the porcelain's -uall expands untracked directories into files, so an
+    untracked file is the same unanchored work wherever it sits. DECISION
+    (pinned, v0.37 D): a file `git mv`ed into archive/ with the move staged
+    but not yet committed says NOTHING here -- porcelain reports a staged
+    rename as "R " (dirty), never "??" (untracked), and that classification is
+    correct: the file's history IS committed, at its pre-move path, which the
+    verify anchor still checks. The archive subcommand's own output already
+    tells the user to commit the move; a second nag with a false name
+    ("never committed" about a committed file) would teach people to ignore
+    the true one.
+
+    Keyed by JOURNAL-RELATIVE PATH, not basename (F-D-1): with archive/ the
+    same basename can sit live (untracked) AND archived (tracked+committed),
+    and a basename lookup let the committed twin inflate the count and
+    mis-name the oldest. The path key counts exactly the untracked files,
+    and `oldest` carries the journal-relative path so a live and an archived
+    month can never read as one another."""
     try:
         if not directory or not os.path.isdir(directory):
             return None
@@ -702,14 +721,15 @@ def _journal_never_committed(jr, directory):
         now = time.time()
         old = []
         for f in jr.journal_files(directory):
-            if os.path.basename(f) not in sets[1]:
+            rel = os.path.relpath(f, directory).replace(os.sep, "/")
+            if rel not in sets[1]:
                 continue
             try:
                 age = now - os.stat(f).st_mtime
             except Exception:
                 continue
             if age > 7 * 86400:
-                old.append((age, os.path.basename(f)))
+                old.append((age, rel))
         if not old:
             return None
         old.sort(reverse=True)
@@ -1749,6 +1769,162 @@ def _selftest():
                   levels(rep, "journal") == ["OK"]
                   and "never been committed" not in detail(rep, "journal"),
                   detail(rep, "journal"))
+
+        # --- journal archive (v0.37 D) ---------------------------------------
+        # `journal/archive/` holds whole month-files moved by `audit-journal.py
+        # archive` via git mv: untouched bytes under the same basename, so
+        # jr.verify counts them and the doctor's totals must include them. A
+        # git mv leaves a STAGED RENAME -- porcelain says "R ", not "??" -- so
+        # a moved-but-uncommitted file must never trip never-committed: its
+        # history IS committed, at the pre-move path, and the archive
+        # subcommand's own output already says to commit the move. An UNTRACKED
+        # file in archive/ is the same unanchored work it was live, and the
+        # warning follows it there.
+        if have_git:
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json",
+                           "journal": {"dir": "trail3"}}, fh)
+            t3 = os.path.join(tmp, "trail3")
+            _t = time.gmtime()
+            _y, _m = ((_t.tm_year, _t.tm_mon - 2) if _t.tm_mon > 2
+                      else (_t.tm_year - 1, _t.tm_mon + 10))
+            _oldmo = "%04d-%02d" % (_y, _m)
+            jr.append(tmp, {"action": "manifest.edit", "target": "",
+                            "summary": "old row",
+                            "ts": _oldmo + "-01T00:00:00Z",
+                            "actor": {"sessionId": "arch", "via": "hook"}})
+            jr.append(tmp, {"action": "manifest.edit", "target": "",
+                            "summary": "live row",
+                            "actor": {"sessionId": "arch", "via": "hook"}})
+            subprocess.run(["git", "-C", tmp, "add", "trail3"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", tmp, "-c", "user.email=t@t",
+                            "-c", "user.name=t", "commit", "-q", "-m",
+                            "trail3"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            rep = diagnose(tmp)
+            check("journal archive: baseline before the move -- 2 rows in 2 "
+                  "files read OK",
+                  levels(rep, "journal") == ["OK"]
+                  and "2 row(s) in 2 file(s)" in detail(rep, "journal"),
+                  detail(rep, "journal"))
+            # The sanctioned git mv: inside THIS tmp fixture repo only.
+            os.makedirs(os.path.join(t3, "archive"), exist_ok=True)
+            subprocess.run(["git", "-C", tmp, "mv",
+                            "trail3/%s.arch.jsonl" % _oldmo,
+                            "trail3/archive/%s.arch.jsonl" % _oldmo],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            _moved = os.path.join(t3, "archive", "%s.arch.jsonl" % _oldmo)
+            _old8 = time.time() - 8 * 86400
+            os.utime(_moved, (_old8, _old8))
+            rep = diagnose(tmp)
+            check("journal archive: rows moved into archive/ are still "
+                  "counted -- 2 row(s) in 2 file(s), chain intact",
+                  levels(rep, "journal") == ["OK"]
+                  and "2 row(s) in 2 file(s)" in detail(rep, "journal"),
+                  detail(rep, "journal"))
+            check("journal archive: a tracked file whose MOVE is staged but "
+                  "uncommitted never trips never-committed (porcelain calls "
+                  "it R, not ??; its history is committed at the old path)",
+                  "never been committed" not in detail(rep, "journal"),
+                  detail(rep, "journal"))
+            jr.append(tmp, {"action": "manifest.edit", "target": "",
+                            "summary": "never committed",
+                            "ts": _oldmo + "-02T00:00:00Z",
+                            "actor": {"sessionId": "arch2", "via": "hook"}})
+            _un_arch = os.path.join(t3, "archive", "%s.arch2.jsonl" % _oldmo)
+            os.rename(os.path.join(t3, "%s.arch2.jsonl" % _oldmo), _un_arch)
+            os.utime(_un_arch, (_old8, _old8))
+            rep = diagnose(tmp)
+            check("journal archive: an 8-day-old UNTRACKED file inside "
+                  "archive/ IS covered by the never-committed warning",
+                  "WARNING" in levels(rep, "journal")
+                  and "never been committed" in detail(rep, "journal")
+                  and os.path.basename(_un_arch) in detail(rep, "journal"),
+                  detail(rep, "journal"))
+            with open(_un_arch, "r", encoding="utf-8") as fh:
+                _row0 = json.loads(fh.readline())
+            _row0["summary"] = "nothing happened"
+            with open(_un_arch, "w", encoding="utf-8") as fh:
+                fh.write(jr.canonical(_row0) + "\n")
+            rep = diagnose(tmp)
+            check("journal archive: a broken chain inside archive/ is a "
+                  "FINDING and fails the run",
+                  levels(rep, "journal") == ["FINDING"]
+                  and rep.exit_code() == 1, detail(rep, "journal"))
+            os.unlink(_un_arch)
+            subprocess.run(["git", "-C", tmp, "-c", "user.email=t@t",
+                            "-c", "user.name=t", "commit", "-q", "-m",
+                            "archive move"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            rep = diagnose(tmp)
+            check("journal archive: with the move committed, the archive "
+                  "reads plain OK",
+                  levels(rep, "journal") == ["OK"], detail(rep, "journal"))
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json",
+                           "journal": {"dir": "trail2"}}, fh)
+
+        # --- journal basename collision (F-D-1) ---------------------------
+        # The same basename live AND archived: an already-anomalous state
+        # that verify() flags as a duplicate WARNING. never-committed must
+        # still count ONLY the untracked file -- the status lookup is keyed
+        # by journal-relative path, so the tracked+committed archive twin
+        # can never answer for the untracked live one (basename keying
+        # counted both, and "oldest" could name the wrong file).
+        if have_git:
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json",
+                           "journal": {"dir": "trail4"}}, fh)
+            t4 = os.path.join(tmp, "trail4")
+            jr.append(tmp, {"action": "manifest.edit", "target": "",
+                            "summary": "archived twin",
+                            "ts": _oldmo + "-01T00:00:00Z",
+                            "actor": {"sessionId": "coll", "via": "hook"}})
+            _cname = "%s.coll.jsonl" % _oldmo
+            os.makedirs(os.path.join(t4, "archive"), exist_ok=True)
+            os.rename(os.path.join(t4, _cname),
+                      os.path.join(t4, "archive", _cname))
+            subprocess.run(["git", "-C", tmp, "add", "trail4"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", tmp, "-c", "user.email=t@t",
+                            "-c", "user.name=t", "commit", "-q", "-m",
+                            "archived twin"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            jr.append(tmp, {"action": "manifest.edit", "target": "",
+                            "summary": "live twin",
+                            "ts": _oldmo + "-02T00:00:00Z",
+                            "actor": {"sessionId": "coll", "via": "hook"}})
+            _old10 = time.time() - 10 * 86400
+            os.utime(os.path.join(t4, "archive", _cname), (_old10, _old10))
+            _old8c = time.time() - 8 * 86400
+            os.utime(os.path.join(t4, _cname), (_old8c, _old8c))
+            rep = diagnose(tmp)
+            check("journal collision: a tracked+committed archive twin of an "
+                  "untracked live basename is NOT counted by never-committed "
+                  "- exactly 1 file, and oldest names the live one",
+                  "1 journal file(s) have never been committed"
+                      in detail(rep, "journal")
+                  and ("(oldest %s," % _cname) in detail(rep, "journal")
+                  and "oldest archive/" not in detail(rep, "journal"),
+                  detail(rep, "journal"))
+            check("journal collision: ...and still never a FINDING - the "
+                  "duplicate itself stays verify's WARNING",
+                  rep.counts()["FINDING"] == 0 and rep.exit_code() == 0,
+                  repr(rep.counts()))
+            with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"manifestPath": "plan.json",
+                           "journal": {"dir": "trail2"}}, fh)
         os.remove(os.path.join(tmp, "plan.json"))
 
         # proposals: a park-all init leaves 0 phases + parked proposals, and the
