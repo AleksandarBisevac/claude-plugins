@@ -860,6 +860,17 @@ def _selftest():
         print("%s %s%s" % ("PASS" if ok else "FAIL", name,
                            (" (%s)" % detail) if detail and not ok else ""))
 
+    # F-C-1: substring pins about MARKUP must not read the embedded scripts.
+    # report.js and the payload blobs are embedded whole in every rendered
+    # document, so a literal like `<th>` in script SOURCE counted as a table
+    # column -- v0.36 D even shipped a `'<' + 'th>'` string-split in report.js
+    # to dodge the cols: pin. The check was blind, not the product wrong.
+    # Markup pins below read the document through this helper; pins that are
+    # deliberately ABOUT script or the whole document (the x* escaping cases,
+    # the _SCRIPT source pins, uh's JS-source counts) keep the full text.
+    def _markup(doc):
+        return re.sub(r"(?is)<script\b.*?</script\s*>", "", doc)
+
     evil_title = "<script>alert(1)</script>"
     manifest = {
         "meta": {"version": 2, "title": evil_title, "repo": "r",
@@ -1039,7 +1050,7 @@ def _selftest():
     # belongs with `data-status`, not in the identity of the row.
     check("rail: a phase row is class=phase whatever its gate state, so counting "
           "phase rows cannot depend on the plan's shape",
-          html_out.count('<tr class="phase"') == len(_sum["phases"]))
+          _markup(html_out).count('<tr class="phase"') == len(_sum["phases"]))
     # A purpose-built chain rather than the main fixture: A done, B blocked by A
     # (satisfied), C blocked by B (not). That is the whole point of the rail in
     # three phases — one gate that opened, one that has not.
@@ -1053,7 +1064,7 @@ def _selftest():
          "tasks": [{"id": "C.1", "title": "t", "status": "pending"}]}]}
     _rh = render_html(_rm, _load_status_lib().rollup(_rm, [], []), "r", None)
     check("rail: a held phase is marked with data-held, beside data-status",
-          _rh.count('data-held="1"') == 2)   # phase C and its one task
+          _markup(_rh).count('data-held="1"') == 2)   # phase C and its one task
     check("rail: it names what holds it, and links there - a closed gate with no "
           "sign on it is just a locked door",
           'class="heldby" href="#phase-B"' in _rh)
@@ -1073,7 +1084,7 @@ def _selftest():
           'class="stamp"' in _rh and ">abc1234<" in _rh
           and "Last commit recorded in this phase" in _rh)
     check("rail: an unsigned phase carries no stamp",
-          _rh.count('class="stamp"') == 1)
+          _markup(_rh).count('class="stamp"') == 1)
     # The verdict is the gate's, not the report's.
     check("verdict: the hero states the same verdict --gate would, with the "
           "conditions that produced it named",
@@ -1335,7 +1346,7 @@ def _selftest():
           and 'value="a@x.io"' in uh and 'value="b@x.io"' in uh)
     check("g2 the date bounds are the union of task dates AND ledger days - "
           "one range scopes both surfaces, so it must span both",
-          uh.count('min="2026-07-09" max="2026-08-02"') == 2)
+          _markup(uh).count('min="2026-07-09" max="2026-08-02"') == 2)
     check("g3 without a ledger the row still offers the task-date range, and "
           "no author select (nothing records an author)",
           'id="audit-gfrom"' in html_out
@@ -1400,7 +1411,8 @@ def _selftest():
           and "'table-row' : 'none'" in _SCRIPT)
     check("c5: the way back out of an empty table does not live only INSIDE the "
           "empty table - the filter panel is drawn over that row",
-          html_out.count('<button type="button" class="btn" data-clear') == 2
+          _markup(html_out).count('<button type="button" class="btn" data-clear')
+          == 2
           and html_out.index("data-clear") < html_out.index('class="phases"'))
     check("c5: the view is a link, written with replaceState so it neither piles "
           "up history per keystroke nor throws on a file:// document",
@@ -1613,10 +1625,15 @@ def _selftest():
     check("cols: a malformed task never silently removes a column",
           _present_columns({"phases": [{"tasks": [{"ado": "not-an-object"}]}]}) is not None)
     # The header, the cells and both colspans have to agree, or the table skews.
+    # Counted over _markup(): report.js legitimately builds `<th>` rows for the
+    # usage heatmap, and counting the whole document read its SOURCE as a
+    # phantom column (F-C-1) -- the v0.36 `'<' + 'th>'` split in report.js
+    # existed only to dodge this pin, and is gone now.
     _fh = render_html(_fresh, _load_status_lib().rollup(_fresh, [], []), "r", None)
+    _fhm = _markup(_fh)
     check("cols: header, colspan and cells agree on the count",
-          _fh.count("<th>") == 3 and 'colspan="3"' in _fh
-          and "<th>ADO</th>" not in _fh)
+          _fhm.count("<th>") == 3 and 'colspan="3"' in _fhm
+          and "<th>ADO</th>" not in _fhm)
     # Scoped to the phases table: the bugs table has its own headers, and counting
     # <th> across the document measured both.
     _phead = html_out[html_out.index('<table class="phases">'):]
@@ -1643,9 +1660,10 @@ def _selftest():
         {"id": "S4", "title": "stuck", "status": "blocked",
          "tasks": [{"id": "S4.1", "title": "t", "status": "blocked"}]}]}
     _sgh = render_html(_sgm, _lib.rollup(_sgm, [], []), "r", None)
+    _sghm = _markup(_sgh)
     check("sg1 a mixed plan renders one seghead per non-empty segment, in "
           "active, pending, done order",
-          _sgh.count('<tr class="seghead"') == 3
+          _sghm.count('<tr class="seghead"') == 3
           and _sgh.index('data-seg="active"') < _sgh.index('data-seg="pending"')
           < _sgh.index('data-seg="done"'))
     check("sg2 phases are grouped under their segments - active rows first, "
@@ -1674,12 +1692,12 @@ def _selftest():
     check("sg5 an all-done plan keeps its archive OPEN - there is nothing left "
           "to keep prominent, and a table that opens empty explains nothing",
           'id="audit-arch"' not in _sgdh
-          and _sgdh.count('<tr class="seghead"') == 1
+          and _markup(_sgdh).count('<tr class="seghead"') == 1
           and 'data-seg="done"' in _sgdh)
     check("sg6 a single-segment plan still gets its one seghead - the home of "
           "the export controls",
-          _fh.count('<tr class="seghead"') == 1
-          and 'id="audit-arch"' not in _fh)
+          _fhm.count('<tr class="seghead"') == 1
+          and 'id="audit-arch"' not in _fhm)
     check("sg7 report.js gates the archive inside refresh() and lifts it while "
           "any filter is active - a search must reach the archived rows",
           "archOpen || anyFilter || pr.__seg !== 'done'" in _SCRIPT
@@ -1703,11 +1721,12 @@ def _selftest():
     # browser is read back and checked.
     check("ex1 every seghead carries its CSV and Print controls, named by "
           "segment",
-          _sgh.count("data-segcsv=") == 3 and _sgh.count("data-segprint=") == 3
-          and 'data-segcsv="done"' in _sgh and 'data-segprint="active"' in _sgh)
+          _sghm.count("data-segcsv=") == 3 and _sghm.count("data-segprint=") == 3
+          and 'data-segcsv="done"' in _sghm and 'data-segprint="active"' in _sghm)
     check("ex2 the bugs table earns a CSV control beside its heading; a "
           "bugless plan renders none",
-          'data-csv="bugs"' in html_out and 'data-csv="bugs"' not in _sgh)
+          'data-csv="bugs"' in _markup(html_out)
+          and 'data-csv="bugs"' not in _sghm)
     check("ex3 the CSV leaves as RFC 4180 with Excel's BOM, through the same "
           "blob-anchor download the .md button uses",
           "replace(/\"/g, '\"\"')" in _SCRIPT and "\\ufeff" in _SCRIPT
@@ -1909,7 +1928,7 @@ def _selftest():
     # testing the markup rather than the guarantee (both wide tables scroll in
     # their own box).
     check("h13 responsive: wide tables wrapped + mobile breakpoint",
-          html_out.count('class="tablewrap"') == 2
+          _markup(html_out).count('class="tablewrap"') == 2
           and ".tablewrap{overflow-x:auto" in html_out
           and "@media (max-width:40rem)" in html_out)
     check("m4 markdown twin has the done column with the completion date",

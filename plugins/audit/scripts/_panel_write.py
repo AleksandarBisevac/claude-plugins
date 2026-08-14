@@ -358,6 +358,30 @@ def _composition_changes(manifest, patch):
     return rows
 
 
+def _heal_phase_status(manifest):
+    """Flip 'pending' phases that already hold an in_progress task, in place.
+
+    v0.37 A4: the validator's "task in_progress but its phase is pending"
+    warning stays as the backstop for hand edits, but a write THIS code makes
+    must not persist an inconsistency it can see -- the phase goes
+    in_progress in the SAME write. Returns the change rows
+    ({target, field, from, to}) for the phases healed; they are journaled
+    with the save and reported to the client apart from `applied`, whose
+    contract is "the echo of what the dialog showed" -- and the dialog did
+    not show this.
+    """
+    rows = []
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict) or ph.get("status") != "pending":
+            continue
+        if any(isinstance(t, dict) and t.get("status") == "in_progress"
+               for t in (ph.get("tasks") or [])):
+            ph["status"] = "in_progress"
+            rows.append({"target": ph.get("id"), "field": "status",
+                         "from": "pending", "to": "in_progress"})
+    return rows
+
+
 def _fmt_change(row):
     """One row as the panel prints it, for the journal's one-line summary.
 
@@ -367,10 +391,15 @@ def _fmt_change(row):
     holding a JSON file, where `True` is not something they can type — the same
     reason the areas validator spells its values in JSON rather than in Python.
     Strings stay bare, because quoting every model name would be noise.
+
+    On a `skills` row, null is not "(unset)": it is the explicit opt-out
+    (v0.37 B1), and a journal line that read `skills: [] -> (unset)` would
+    record the one deliberate answer as an absence.
     """
     def side(v):
         if v is None:
-            return "(unset)"
+            return ("null (opted out)" if row.get("field") == "skills"
+                    else "(unset)")
         if isinstance(v, str):
             return v
         return json.dumps(v, sort_keys=True)
@@ -513,8 +542,13 @@ def apply_composition_patch(manifest, patch):
             t["model"] = tv["model"]
         if "skills" in (tv or {}):
             sk = tv["skills"]
-            if not (isinstance(sk, list) and all(isinstance(x, str) for x in sk)):
-                return "task %s skills must be an array of strings" % tid
+            # null is a legal VALUE, not a missing one (v0.37 B1): the explicit
+            # opt-out that stops the area fallback. It is written as null so the
+            # file says what the chips UI said ("none applies").
+            if sk is not None and not (isinstance(sk, list)
+                                       and all(isinstance(x, str) for x in sk)):
+                return ("task %s skills must be an array of strings, or null "
+                        "to say 'none applies'" % tid)
             t["skills"] = sk
     return None
 
@@ -625,6 +659,11 @@ def apply_composition(project, patch):
     err = apply_composition_patch(assembled, patch)
     if err:
         return {"ok": False, "findings": ["refused: " + err]}
+    # The heal rides a real write only (`applied` non-empty): an unchanged
+    # save writes no file for it to ride, and the validator warning still
+    # names the state for the reader. Validated AFTER healing -- the document
+    # judged is the document written.
+    healed = _heal_phase_status(assembled) if applied else []
     findings, warnings = vm.validate(assembled)
     if findings:
         return {"ok": False, "findings": findings, "warnings": warnings}
@@ -633,12 +672,15 @@ def apply_composition(project, patch):
         # would rewrite shards nobody edited — the exact renormalisation the
         # targeted write-back exists to avoid — to record no change at all.
         return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
-                "unchanged": True, "journaled": False,
+                "healed": [], "unchanged": True, "journaled": False,
                 "journaledWhy": "unchanged", "written": [],
                 "path": os.path.relpath(mpath, project),
                 "layout": "sharded" if _mio.is_sharded(raw_index) else "single"}
 
     touched = _touched_phase_ids(assembled, patch)
+    # A healed phase joins the write: in the sharded layout its status lives
+    # in its own shard, which is only written for touched ids.
+    touched.update(r["target"] for r in healed)
     sharded = _mio.is_sharded(raw_index)
     # Hold the lock across read-patch-write. Checking it and then writing left a
     # window an /audit run could start in; acquiring it closes that window with
@@ -654,11 +696,12 @@ def apply_composition(project, patch):
     finally:
         _release_write_lock(lock)
     out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
+           "healed": healed,
            "path": os.path.relpath(mpath, project),
            "layout": "sharded" if sharded else "single",
            "written": written}
     out.update(_journal(project, config, "composition.write",
-                        out["path"], applied))
+                        out["path"], applied + healed))
     return out
 
 
@@ -725,6 +768,30 @@ def _selftest():
     # a patch that would make the manifest invalid is rejected + not written
     res = apply_composition(proj, {"tasks": {"P1.1": {"skills": "notalist"}}})
     check("bad skills type refused", not res["ok"])
+
+    # v0.37 B1: null is a WRITABLE value — the chips UI's "none applies" — and
+    # it must land in the FILE as null (the opt-out that stops the area
+    # fallback), not be refused as a bad type or flattened to [].
+    res = apply_composition(proj, {"tasks": {"P1.1": {"skills": None}}})
+    _t_null = _read_json(mpath)["phases"][0]["tasks"][0]
+    check("skills null written - the opt-out lands in the file as null",
+          res["ok"] and "skills" in _t_null and _t_null["skills"] is None)
+    check("...and its change row reads list -> null through the view's own "
+          "three-state normaliser",
+          any(r.get("field") == "skills" and r.get("from") == ["user-skill"]
+              and r.get("to") is None for r in res.get("applied") or []))
+    res = apply_composition(proj, {"tasks": {"P1.1": {"skills": None}}})
+    check("null on an already-opted-out task is unchanged, not a change - "
+          "null and [] are two values, not one",
+          res["ok"] and res.get("unchanged") is True)
+    res = apply_composition(proj, {"tasks": {"P1.1": {"skills": []}}})
+    _t_back = _read_json(mpath)["phases"][0]["tasks"][0]
+    check("clearing the opt-out back to [] round-trips, with the row null -> []",
+          res["ok"] and _t_back["skills"] == []
+          and any(r.get("field") == "skills" and r.get("from") is None
+                  and r.get("to") == [] for r in res.get("applied") or []))
+    # Put the fixture back the way the cases below expect it.
+    apply_composition(proj, {"tasks": {"P1.1": {"skills": ["user-skill"]}}})
 
     # lock respected
     open(mpath + ".lock", "w").close()
@@ -1242,6 +1309,82 @@ def _selftest():
         res = apply_composition(proj, {"tasks": {"P1.1": {"model": "opus"}}})
         check("a real save appends one row and reports journaled",
               res["ok"] and res.get("journaled") is True and len(_JStub.rows) == 1)
+
+        # --- the write heals "task in_progress, phase pending" (v0.37 A4) ----
+        # The validator's warning stays as the backstop for hand edits; at the
+        # plugin's own write site the class dies: a manifest a save persists
+        # never leaves a phase 'pending' around a task that is already
+        # running, and the journal row for that write says so.
+        _hproj = tempfile.mkdtemp(prefix="panel-heal-")
+        try:
+            _atomic_write_json(_config_path(_hproj),
+                               {"manifestPath": "docs/audit/audit-plan.json"})
+            _hm = _manifest_path(_hproj, read_config(_hproj))
+            os.makedirs(os.path.dirname(_hm), exist_ok=True)
+            _atomic_write_json(_hm, {
+                "meta": {"version": 2},
+                "phases": [
+                    {"id": "P1", "title": "One", "status": "pending",
+                     "tasks": [{"id": "P1.1", "title": "T1",
+                                "status": "in_progress"}]},
+                    {"id": "P2", "title": "Two", "status": "in_progress",
+                     "tasks": [{"id": "P2.1", "title": "T2",
+                                "status": "in_progress"}]}]})
+            _JStub.rows = []
+            _hres = apply_composition(_hproj,
+                                      {"tasks": {"P1.1": {"model": "opus"}}})
+            _hdoc = _read_json(_hm)
+            check("heal: a save that persists an in_progress task under a "
+                  "pending phase flips the phase in the SAME write",
+                  _hres.get("ok") is True
+                  and _hdoc["phases"][0]["status"] == "in_progress")
+            check("heal: the healed row is reported apart from `applied`, so "
+                  "the confirm-echo comparison keeps meaning what it says",
+                  _hres.get("healed") == [{"target": "P1", "field": "status",
+                                           "from": "pending",
+                                           "to": "in_progress"}]
+                  and all(r.get("field") != "status"
+                          for r in _hres.get("applied") or []))
+            _hsum = (_JStub.rows[-1][1].get("summary")
+                     if _JStub.rows else "") or ""
+            check("heal: the journal row for that write says so",
+                  "P1 status: pending -> in_progress" in _hsum)
+            check("heal: a phase already in_progress is untouched",
+                  _hdoc["phases"][1]["status"] == "in_progress"
+                  and all(r.get("target") != "P2"
+                          for r in _hres.get("healed") or []))
+        finally:
+            _shutil.rmtree(_hproj, ignore_errors=True)
+
+        # Sharded: a phase's status lives in its own shard, so the heal must
+        # write a shard the patch never touched -- or it would claim a heal
+        # the next load cannot see.
+        _hs = tempfile.mkdtemp(prefix="panel-heal-sharded-")
+        try:
+            _atomic_write_json(_config_path(_hs),
+                               {"manifestPath": "docs/audit/audit-plan.json"})
+            _hsm = _manifest_path(_hs, read_config(_hs))
+            os.makedirs(os.path.dirname(_hsm), exist_ok=True)
+            _mio.save_sharded(_hsm, {
+                "meta": {"version": 3},
+                "phases": [
+                    {"id": "P1", "title": "One", "status": "pending",
+                     "tasks": [{"id": "P1.1", "title": "T1",
+                                "status": "pending"}]},
+                    {"id": "P2", "title": "Two", "status": "pending",
+                     "tasks": [{"id": "P2.1", "title": "T2",
+                                "status": "in_progress"}]}]})
+            _hres2 = apply_composition(_hs,
+                                       {"tasks": {"P1.1": {"model": "opus"}}})
+            _hp2 = [p for p in _mio.load_manifest(_hsm)["phases"]
+                    if p["id"] == "P2"][0]
+            check("heal: sharded - the healed phase's shard is written even "
+                  "when the patch never touched that phase",
+                  _hres2.get("ok") is True
+                  and _hp2["status"] == "in_progress"
+                  and any("P2" in w for w in _hres2.get("written") or []))
+        finally:
+            _shutil.rmtree(_hs, ignore_errors=True)
     finally:
         _JOURNAL.clear()
         _JOURNAL.update(_saved_j)
@@ -1316,6 +1459,14 @@ def _selftest():
                        "from": None, "to": "opus"}) == "P1.2 model: (unset) -> opus"
           and _fmt_change({"target": "P1.2", "field": "skills",
                            "from": [], "to": ["a"]}) == 'P1.2 skills: [] -> ["a"]')
+    check("on a skills row, null is the OPT-OUT, not '(unset)' - the journal "
+          "must record the one deliberate answer as an answer",
+          _fmt_change({"target": "P1.2", "field": "skills",
+                       "from": [], "to": None})
+          == "P1.2 skills: [] -> null (opted out)"
+          and _fmt_change({"target": "P1.2", "field": "model",
+                           "from": None, "to": "opus"})
+          == "P1.2 model: (unset) -> opus")
     check("...including a boolean, which the browser spells `true` and str() "
           "spells `True` - a value nobody can type into the JSON file they are "
           "being told about",

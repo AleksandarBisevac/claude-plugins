@@ -135,9 +135,36 @@ _NON_EXEMPT_WRITE_TARGET = re.compile(
     re.IGNORECASE,
 )
 _EXEMPT_WRITE_PATH = re.compile(
-    r"(?:\.claude/|docs/audit/|\.spec\.|\.test\.|\.md['\"\s])",
+    r"(?:\.claude/|docs/audit/|\.md['\"\s])",
     re.IGNORECASE,
 )
+# F-A-1 (v0.37 A1): `\.test\.|\.spec\.` used to live in _EXEMPT_WRITE_PATH, so
+# ANY name containing the suffix walked through the eval-write backstop --
+# `python3 -c "open('tsconfig.test.json','w')..."` was allowed while the same
+# file through Edit is gated. Same data-format carve-out the Edit-path glob
+# lists got in v0.36 A1: a test-suffix NAME whose extension is a pure
+# data/markup format is build configuration, not a test. The authoritative
+# extension list is _config._NON_CODE_TEST_EXTS -- SHARED, not copied: this
+# hook sits in the same hooks package (_config is already its config/manifest
+# core), the leading underscore marks the name internal to that package, and a
+# public alias would be a second name for one list that the two matchers could
+# then drift apart on.
+_TEST_SUFFIX_TOKEN = re.compile(r"[\w.+~/-]*\.(?:test|spec)\.[\w.+-]*",
+                                re.IGNORECASE)
+
+
+def _exempt_eval_write(clause):
+    """True when an eval-write clause names an exempt path (used per clause).
+
+    Exempt: .claude/, docs/audit/, .md targets, and test-suffix names -- but a
+    test-suffix name in a data/markup format (.json/.yaml/.toml/...) is NOT a
+    test file and keeps no exemption.
+    """
+    if _EXEMPT_WRITE_PATH.search(clause):
+        return True
+    return any(
+        not m.group(0).lower().endswith(_config._NON_CODE_TEST_EXTS)
+        for m in _TEST_SUFFIX_TOKEN.finditer(clause))
 
 # --- shell write forms into files (plan-first backstop) --------------------------
 # `>`/`>>`, incl. `1>`/`1>>` (explicit stdout) and `>|`/`>>|` (noclobber
@@ -406,7 +433,7 @@ def _decide_core(data: dict, root, cfg):
                 _INLINE_EVAL.search(cl)
                 and _WRITE_CALL.search(cl)
                 and _NON_EXEMPT_WRITE_TARGET.search(cl)
-                and not _EXEMPT_WRITE_PATH.search(cl)
+                and not _exempt_eval_write(cl)
             ):
                 return ("block",
                         "Writing source files via an inline-eval one-liner "
@@ -609,6 +636,16 @@ def _selftest() -> int:
           bash("python3 -c \"open('.claude/state/x.json','w').write('{}')\""))
     check("w5 node -e write to *.spec.ts allowed", "allow",
           bash("node -e \"fs.writeFileSync('src/foo/a.spec.ts','test')\""))
+    # (w6/w7) F-A-1: the test-suffix exemption stops at data formats, exactly
+    # as the Edit-path glob lists learned in v0.36 A1. `tsconfig.test.json` is
+    # build configuration named like a test; the same file through Edit is
+    # gated, and the eval-write backstop must not be the cheaper door.
+    check("w6 python -c write to tsconfig.test.json blocked - a test-suffix "
+          "name in a data format is config, not a test", "block",
+          bash("python3 -c \"open('tsconfig.test.json','w').write('{}')\""))
+    check("w7 python -c write to cart.test.ts stays exempt - a code-format "
+          "test file keeps the exemption", "allow",
+          bash("python3 -c \"open('cart.test.ts','w').write('x')\""))
 
     # --- shell writes into source files (plan-first backstop) ---
     check("s1 echo > source file blocked", "block",

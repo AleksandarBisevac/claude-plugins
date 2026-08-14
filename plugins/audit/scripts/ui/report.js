@@ -1132,12 +1132,7 @@
               + fmtTokens(val, 2) + ' tokens'
             : r.head + ' - outside the selected range');
         }
-        // '<' + 'th>' and not the literal: render-report's cols: selftest
-        // counts header-cell open tags across whole documents to prove the
-        // table header and its cells agree, and this SCRIPT is embedded in
-        // every one of them — the literal tag spelled out anywhere in here
-        // would count as a column that does not exist.
-        htmlRows.push('<tr><' + 'th>' + r.label + '</' + 'th>'
+        htmlRows.push('<tr><th>' + r.label + '</th>'
           + tds.join('') + '</tr>');
       });
       body.innerHTML = htmlRows.join('');

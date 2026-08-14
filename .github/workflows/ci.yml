@@ -317,12 +317,24 @@ jobs:
           #   cp /tmp/dl/demo-large.html docs/demo-large.html
           python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
           python plugins/audit/scripts/validate-manifest.py /tmp/dl/audit-plan.json
-          if grep -q 'INVALID MANIFEST' docs/demo-large.html; then
-            echo "docs/demo-large.html was rendered from an invalid manifest"; exit 1
-          fi
-          grep -q 'id="usage"' docs/demo-large.html
-          test "$(grep -c 'tr class="phase"' docs/demo-large.html)" = "40"
-          echo "OK: scale demo renders 40 valid phases with a Usage section"
+          # F-A-1 (v0.37): these probes used to grep the WHOLE document, embedded
+          # report.js included - the same blindness render-report's selftest pins
+          # carried (F-C-1, v0.36). Judged over the markup with <script> blocks
+          # stripped, a JS string containing a markup literal can no longer move
+          # a count or trip the invalid-banner probe.
+          python - <<PYEOF
+          import io, re, sys
+          s = io.open("docs/demo-large.html", encoding="utf-8").read()
+          m = re.sub(r"(?is)<script\b.*?</script\s*>", "", s)
+          if "INVALID MANIFEST" in m:
+              sys.exit("docs/demo-large.html was rendered from an invalid manifest")
+          if 'id="usage"' not in m:
+              sys.exit("no Usage section in the markup")
+          n = m.count('tr class="phase"')
+          if n != 40:
+              sys.exit("expected 40 phase rows in the markup, got %d" % n)
+          print("OK: scale demo renders 40 valid phases with a Usage section")
+          PYEOF
       - uses: actions/setup-node@v5
         with:
           node-version: 20
