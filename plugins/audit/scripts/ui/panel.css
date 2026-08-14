@@ -608,43 +608,28 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
  border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}
 .hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
-.hint::after{content:attr(data-tip);position:fixed;left:var(--tipx,0px);top:var(--tipy,0px);z-index:60;
- transform:var(--tipshift,none);width:var(--tipw,17rem);box-sizing:border-box;
+/* THE tip is one element on <body>, not a pseudo inside whatever box carries the
+   ⓘ. Third mechanism, and the shape of the two failures says why it is the last:
+   absolute got buried under the comp table's stacking contexts and grew its
+   scroll frame (0.34, live repo); fixed-as-pseudo still LIVED inside the th —
+   one transformed/filtered/containing ancestor from being demoted to absolute
+   again, invisibly. On <body> there is no ancestor to trap, clip, restack or
+   resize anything: hovering an ⓘ can never grow a scroll frame again, because
+   nothing exists inside one. Geometry (left/top/width) is written ONLY by
+   showTip() in panel.js from the icon's own viewport rect — the sheet owns the
+   skin and deliberately not one coordinate, so a stale stylesheet cannot
+   disagree with the script about where the tip goes. display:none until shown:
+   a tip with no words must draw nothing, not an empty box. */
+#hinttip{position:fixed;z-index:200;display:none;box-sizing:border-box;
  background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
  box-shadow:var(--shadow-md);padding:.5rem .5rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
- white-space:normal;display:none;pointer-events:none}
-.hint:hover::after,.hint:focus::after{display:block}
-/* ...but a hint with no words has nothing to draw. `content:attr(data-tip)` on a
-   missing attribute is the empty string, which is an empty bubble rather than no
-   bubble. */
-.hint:not([data-tip]):hover::after,.hint:not([data-tip]):focus::after{display:none}
-/* The bubble is position:FIXED, and that is the third time this product learned
-   the same lesson: the combo menu (0.34) and the chart tooltip (.utip) both left
-   their anchors after being clipped by a scroll frame or buried by a sibling
-   stacking context — and the ⓘ, still absolute inside `table.comp thead th`
-   (itself a sticky z-index:1 context inside .comptblwrap's scroll frame), was
-   found painted under the model column on a live repo. Fixed positioning
-   answers both failure modes at once, and a fixed box never counts toward
-   scrollable overflow, which is what the old absolute bubble did even hidden
-   (34px of sideways scroll before anyone hovered anything). `display:none`
-   stays: a bubble with no words must draw nothing, not an empty box.
-
-   WHERE it opens is `--tipx`/`--tipy` (viewport coordinates), the width is
-   `--tipw`, and `--tipshift` flips it above the icon near the bottom edge; all
-   are written by placeTip() in panel.js, which clamps the bubble into the viewport.
-   There is deliberately no `max-width` beside them: the width IS the clamp, and a
-   second cap expressed in `vw` would disagree with it by the width of a scrollbar.
-   This rule used to be a choice between two anchors — `left:0`, or `.flip`
-   swapping it for `right:0` — which on a phone has no correct answer at all (F9).
-
-   `box-sizing` is restated here because the sheet's global `*{box-sizing:
-   border-box}` does NOT reach pseudo-elements: `*` matches elements. Without it
-   this box was 17rem of TEXT plus its padding and border — 290px painted for a
-   number that says 272, which is exactly how much the old flip threshold was
-   wrong by as well, and 6px of it still reached the document after the clamp
-   landed. The width JS writes has to be the width the browser paints. */
+ white-space:normal;pointer-events:none}
+/* The clamp itself — TIPW/TIPGUT, viewport edges, the flip above a bottom-edge
+   icon — lives in showTip() with the rest of the geometry. There is deliberately
+   no `max-width` here: the width IS the clamp, and a second cap expressed in
+   `vw` would disagree with it by the width of a scrollbar (F9's lesson, kept). */
 /* custom autocomplete combobox (replaces native datalist).
-   The menu is position:FIXED, placed by JS (comboWrap's place(), the placeTip
+   The menu is position:FIXED, placed by JS (comboWrap's place(), the showTip
    pattern): absolutely-positioned inside the wrap it was clipped by any
    ancestor with an overflow frame of its own — the composition table's
    .comptblwrap scrolls sideways by design and cut the model menu off at the
@@ -653,14 +638,20 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
 .combo{position:relative;flex:1 1 18rem}
 .combo>input{width:100%}
 .combo-menu{position:fixed;z-index:40;background:var(--surface);
- border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;overflow:auto;padding:.25rem}
+ border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;
+ overflow-y:auto;overflow-x:hidden;padding:.25rem}
 /* The overflow footer: a count, not a choice — keyboard nav never reaches it. */
 .combo-more{padding:.35rem .5rem;color:var(--muted);font-size:.72rem;
  font-style:italic;cursor:default;border-top:1px solid var(--border)}
-.combo-it{display:flex;align-items:center;gap:.5rem;padding:.5rem .5rem;border-radius:6px;cursor:pointer}
+/* A menu never scrolls sideways (live feedback: a dropdown with both scrollbars).
+   The name is mono and unbreakable by default — a long model id used to push the
+   row wider than the menu, and overflow:auto drew the horizontal bar. Names may
+   break anywhere, descriptions wrap to their own lines, and the row wraps its
+   parts; the menu clips X outright so nothing regresses this quietly. */
+.combo-it{display:flex;align-items:center;flex-wrap:wrap;gap:.25rem .5rem;padding:.5rem .5rem;border-radius:6px;cursor:pointer}
 .combo-it:hover,.combo-it.active{background:var(--surface-2)}
-.combo-n{font-size:.82rem;flex:0 0 auto}
-.combo-d{color:var(--muted);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+.combo-n{font-size:.82rem;flex:0 0 auto;overflow-wrap:anywhere;min-width:0;max-width:100%}
+.combo-d{color:var(--muted);font-size:.72rem;white-space:normal;overflow-wrap:anywhere;flex:1 1 8rem;min-width:0}
 .chipwrap{display:flex;flex-direction:column;gap:.5rem;flex:1 1 auto}
 .chips{display:flex;gap:.25rem;flex-wrap:wrap}
 /* discovered building-blocks: subtabs + one table */

@@ -402,85 +402,75 @@ function hint(t,ref){if(!t&&!ref)return null;
   h.setAttribute('data-hint',ref.path||ref.comp||('topic:'+ref.topic));
   h.onclick=ev=>{ev.preventDefault();ev.stopPropagation();openHelp(ref);};}
  else h.tabIndex=0;
- // No placement listener here on purpose — see placeTip/placeTips below. Whether
- // the bubble fits still depends on where this particular hint sits, which CSS
- // cannot ask; what changed is that the answer is no longer computed by an event
- // this hint has to be seen to receive.
+ // No listener here on purpose — showTip/hideTip below are delegated on the
+ // document, so a hint that arrives with a re-render is covered without its
+ // author remembering to wire anything.
  return h;}
-// ---------- where the ⓘ bubble opens ----------
-// Two things were wrong with the old version, and the second is the bigger one.
+// ---------- where the ⓘ tip opens ----------
+// One element on <body>, shown on demand — the third mechanism, and the shape of
+// the first two failures is the argument for it. Absolute (0.34) lived inside
+// `table.comp thead th` — a sticky z-index:1 stacking context inside
+// .comptblwrap's scroll frame — where a live repo found it painted under the
+// model column, and where merely SHOWING it grew the frame's scrollable
+// overflow: hover an ⓘ, get scrollbars. Fixed-as-pseudo (early 0.35) escaped
+// the frame but still lived in the th, one transformed/filtered/containing
+// ancestor from silently demoting back to absolute. A node on <body> has no
+// ancestor to be trapped, clipped, restacked or resized by — and nothing exists
+// at all until showTip() runs, so a tip can no longer affect ANY box's size,
+// hovered or not. The pre-computed-placement machinery (per-hint custom
+// properties, the synchronous observer, the before-paint microtask dance) is
+// deleted with the failure class that required it: geometry is computed from
+// the icon's live rect at show time, height MEASURED rather than estimated,
+// and both chart tooltips (tipMove) and the combo menu already work this way.
 //
-// WHEN. It was decided in a `mouseenter` handler, and a pointer can come to rest on
-// a hint without one: scroll the page under a stationary mouse and Chromium updates
-// `:hover` without dispatching it, and the 5s poll re-renders the form under it the
-// same way. Measured on Settings at 390px — a hint whose placement had simply never
-// run opens left-anchored and takes the DOCUMENT 103px sideways.
-//
-// WHERE. The old answer was a choice between two anchors: the hint's left edge, or
-// `.flip` to its right edge. On a phone that choice has no correct answer for 20 of
-// Settings' 27 controls — 272px of bubble in a 375px column overflows the right edge
-// left-anchored (103px of page) and starts at x=-117 flipped, off screen and
-// unreadable. So fixing only the timing would have left a tooltip that is merely
-// impossible to read rather than page-breaking.
-//
-// It is clamped into the viewport instead: the hint's own x wherever that fits, the
-// nearest edge where it does not, and never a jump between the two. Both chart
-// tooltips already clamped exactly this way (tipMove, below) — the ⓘ was the one
-// tooltip in the product that chose an anchor instead.
-//
-// And since 0.35 the bubble is position:FIXED with viewport coordinates, not
-// absolute with an offset. Absolute kept it inside `table.comp thead th` — a
-// sticky z-index:1 stacking context inside .comptblwrap's scroll frame — where a
-// live repo found it painted under the model column. The combo menu crossed this
-// exact bridge in 0.34; the scroll/resize listeners below were already capturing
-// container scrolls, so fixed coordinates stay fresh with no new machinery.
-//
-// TIPW is a BORDER-box width, and the stylesheet says so on the rule itself: the
-// sheet's global `*{box-sizing:border-box}` does not reach a pseudo-element, so
-// 17rem used to mean 290px painted. The old threshold compared against 272 and was
-// wrong by that 18px in the same direction as the bug it was there to prevent.
+// TIPW is a border-box width (the #hinttip rule restates box-sizing) and the
+// clamp is the width: no second cap to disagree with it by a scrollbar.
 const TIPW=272, TIPGUT=12;
-function placeTip(h){const r=h.getBoundingClientRect();
- const vw=document.documentElement.clientWidth,
+let TIPFOR=null,TIPVIA='mouse';
+function tipbox(){let b=document.getElementById('hinttip');
+ if(!b){b=el('div',{id:'hinttip',role:'tooltip'});document.body.append(b);}
+ return b;}
+// `via` is what closes it. A pointer tip dies the moment the pointer rests on
+// anything else — including the SYNTHETIC mouseover Chromium dispatches after a
+// scroll moves new content under a stationary cursor, which is correct: the
+// pointer is no longer on the icon. A focus tip ignores where the mouse happens
+// to be parked (a keyboard user's tooltip must not close because content
+// scrolled under an idle pointer) and closes on focusout instead.
+function showTip(h,via){const t=(h.getAttribute('data-tip')||'').trim();
+ if(!t){hideTip();return;}
+ const b=tipbox();TIPFOR=h;TIPVIA=via||TIPVIA||'mouse';b.textContent=t;
+ const r=h.getBoundingClientRect(),vw=document.documentElement.clientWidth,
    vh=document.documentElement.clientHeight,w=Math.min(TIPW,vw-2*TIPGUT);
- const x=Math.min(Math.max(TIPGUT,r.left),vw-TIPGUT-w);
- h.style.setProperty('--tipx',x+'px');
- h.style.setProperty('--tipw',w+'px');
- // Below the icon by default; above it when the icon sits in the bottom band, so
- // a savebar or table-tail hint cannot open off the bottom edge. The bubble's
- // height is unknowable before it paints (content varies), so the band is sized
- // to the tallest microcopy in the product rather than measured per hover.
- if(r.bottom+220>vh){h.style.setProperty('--tipy',(r.top-6)+'px');
-  h.style.setProperty('--tipshift','translateY(-100%)');}
- else{h.style.setProperty('--tipy',(r.bottom+6)+'px');
-  h.style.setProperty('--tipshift','none');}}
-function placeTips(){document.querySelectorAll('.hint').forEach(placeTip);}
-let TIPQ=0;
-function placeTipsSoon(){if(TIPQ)return;
- TIPQ=requestAnimationFrame(()=>{TIPQ=0;placeTips();});}
-// Every ⓘ in the document, whenever the document changes — rather than whichever one
-// someone is seen to arrive at. The observer is the point, and it is what a longer
-// list of pointer listeners would not have bought: a hint added in a view nobody has
-// written yet is placed without its author remembering to ask.
-//
-// The observer's pass is SYNCHRONOUS. Its callback is a microtask, so it runs after
-// the render that inserted the hints and before the frame that paints them; an rAF
-// there would leave one frame in which a hint that has just re-rendered under a
-// stationary pointer is drawn unplaced, which is the very case this exists for.
-// Scroll and resize are rAF-batched, because those fire per event rather than per
-// batch of them.
-function startTipPlacement(){placeTips();
- // childList: hints arriving. class: a view losing `.hidden`, which moves its hints
- // from a hidden box's zero to their real x. `style` is deliberately NOT watched —
- // that is the attribute placeTip writes, and watching it would call this from
- // inside itself.
- new MutationObserver(placeTips).observe(document.body,
-  {childList:true,subtree:true,attributes:true,attributeFilter:['class']});
- addEventListener('resize',placeTipsSoon);
- // Capture, because a hint can also ride a box that scrolls on its own — the
- // composition table's headers carry ⓘ and it scrolls 185px inside its own frame at
- // 390px — and a scroll event on one of those does not bubble.
- addEventListener('scroll',placeTipsSoon,{capture:true,passive:true});}
+ b.style.width=w+'px';b.style.display='block';
+ b.style.left=Math.min(Math.max(TIPGUT,r.left),vw-TIPGUT-w)+'px';
+ // Below the icon where the MEASURED height fits, above it where it does not —
+ // a savebar hint must not open off the bottom edge, and measuring beats the
+ // 220px estimate this replaced the moment a long microcopy shipped.
+ const mh=b.offsetHeight;
+ b.style.top=((r.bottom+6+mh>vh-TIPGUT&&r.top-6-mh>TIPGUT)
+   ?r.top-6-mh:r.bottom+6)+'px';}
+function hideTip(){const b=document.getElementById('hinttip');
+ if(b)b.style.display='none';TIPFOR=null;TIPVIA='mouse';}
+// Delegated on the document: a hint that arrives with a re-render needs no
+// per-node listener, and there is nothing to pre-place — a tip that is not
+// shown does not exist. Scroll re-anchors an open tip to its icon's new rect
+// (capture: the comp table scrolls inside its own frame); a re-render that
+// replaces the icon under an open tip disconnects it, and the observer hides
+// the tip rather than leaving it orphaned over a node that no longer exists.
+function startTipPlacement(){
+ document.addEventListener('mouseover',e=>{
+  const h=e.target&&e.target.closest?e.target.closest('.hint'):null;
+  if(h){if(h!==TIPFOR)showTip(h,'mouse');}
+  else if(TIPFOR&&TIPVIA==='mouse')hideTip();});
+ document.addEventListener('focusin',e=>{
+  const h=e.target&&e.target.closest?e.target.closest('.hint'):null;
+  if(h)showTip(h,'focus');else if(TIPFOR)hideTip();});
+ document.addEventListener('focusout',()=>hideTip());
+ ['scroll','resize'].forEach(ev=>addEventListener(ev,()=>{
+  if(!TIPFOR)return;
+  TIPFOR.isConnected?showTip(TIPFOR):hideTip();},{capture:true,passive:true}));
+ new MutationObserver(()=>{if(TIPFOR&&!TIPFOR.isConnected)hideTip();})
+  .observe(document.body,{childList:true,subtree:true});}
 function flabel(text,tip,ref){return el('span',{class:'lbl'},text,hint(tip,ref));}
 function h2h(text,tip,ref){return el('h2',{},text,hint(tip,ref));}
 // Heading in the reader's words, with the JSON key beside it for whoever is
@@ -695,7 +685,7 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
  const wrap=el('div',{class:'combo'}),menu=el('div',{class:'combo-menu hidden'});
  let active=-1,shown=[];
  const close=()=>{menu.classList.add('hidden');active=-1;};
- // Fixed-position, like placeTip: the menu used to hang absolutely inside the
+ // Fixed-position, like showTip: the menu used to hang absolutely inside the
  // wrap, and any ancestor with its own overflow frame (.comptblwrap scrolls
  // sideways by design) clipped it at the frame's edge. Placed at the input's
  // own x where that fits, clamped into the viewport where it does not, and

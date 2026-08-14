@@ -208,54 +208,80 @@ async function assertBarsPainted(page, label) {
  */
 async function assertHintsFit(page, label) {
   const boxes = await page.evaluate(() => {
-    const vw = document.documentElement.clientWidth, out = [];
-    const num = (v) => parseFloat(v) || 0;
+    const out = [];
+    const vw = document.documentElement.clientWidth,
+          vh = document.documentElement.clientHeight;
+    const scrollParent = (n) => {
+      for (let p = n.parentElement; p; p = p.parentElement) {
+        const cs = getComputedStyle(p);
+        if (/(auto|scroll)/.test(cs.overflowX + cs.overflowY)) return p;
+      }
+      return document.documentElement;
+    };
     for (const h of document.querySelectorAll('.hint[data-tip]')) {
       const r = h.getBoundingClientRect();
       if (!r.width) continue;                 // a hint in a view that is not showing
-      const cs = getComputedStyle(h, '::after');
-      // The box-sizing the rule resolved to is READ, not assumed: getComputedStyle
-      // hands back the width the pseudo-element asked for, which is its content box
-      // or its border box depending on that property. Assuming it is worth 18px
-      // here — the bubble's own padding and border, which the sheet's global
-      // `*{box-sizing:border-box}` does not reach because `*` matches elements.
-      const extra = cs.boxSizing === 'border-box' ? 0
-        : num(cs.paddingLeft) + num(cs.paddingRight)
-          + num(cs.borderLeftWidth) + num(cs.borderRightWidth);
-      // Fixed since 0.35: cs.left IS the viewport x. Anything else is the old
-      // absolute mechanism coming back — the one a live repo found painted
-      // under the comp table's model column — so its position is reported and
-      // failed on below rather than silently re-anchored in the math here.
-      const left = cs.position === 'fixed' ? num(cs.left) : r.left + num(cs.left);
+      // Only hints inside the vertical viewport: an icon below the fold cannot
+      // be hovered without scrolling, and when the user scrolls, its rect - and
+      // the tip computed from it - is different. Asserting the unhoverable
+      // geometry would fail every long form on facts nobody can reach.
+      if (r.bottom < 0 || r.top > vh) continue;
+      const sp = scrollParent(h);
+      const pre = { dw: document.documentElement.scrollWidth,
+                    dh: document.documentElement.scrollHeight,
+                    pw: sp.scrollWidth, ph: sp.scrollHeight };
+      showTip(h);
+      const b = document.getElementById('hinttip');
+      const br = b.getBoundingClientRect();
+      const cs = getComputedStyle(b);
+      const grewW = document.documentElement.scrollWidth - pre.dw;
+      const grewH = document.documentElement.scrollHeight - pre.dh;
+      const grewPW = sp.scrollWidth - pre.pw;
+      const grewPH = sp.scrollHeight - pre.ph;
       out.push({
         name: h.getAttribute('data-hint')
-          || (h.getAttribute('data-tip') || '').slice(0, 20) + '…',
-        left: Math.round(left), right: Math.round(left + num(cs.width) + extra), vw,
-        pos: cs.position,
+          || (h.getAttribute('data-tip') || '').slice(0, 20) + '\u2026',
+        left: Math.round(br.left), right: Math.round(br.right),
+        top: Math.round(br.top), bottom: Math.round(br.bottom), vw, vh,
+        pos: cs.position, shown: cs.display !== 'none',
+        onBody: b.parentElement === document.body,
+        grew: (grewW || grewH || grewPW || grewPH)
+          ? [grewW, grewH, grewPW, grewPH] : null,
       });
+      hideTip();
     }
     return out;
   });
-  // A view with no ⓘ is not a defect — Usage has none, and pinning WHICH views do
-  // is a list that goes stale the first time one gains a label. What would be a
-  // defect is none anywhere, so the callers sum this across the panel and check
-  // that instead.
-  if (!boxes.length) { note(`${label}: no ⓘ on this view`); return boxes; }
+  // A view with no (i) is not a defect - Usage has none, and pinning WHICH views
+  // do is a list that goes stale the first time one gains a label. What would be
+  // a defect is none anywhere, so the callers sum this across the panel.
+  if (!boxes.length) { note(`${label}: no \u24d8 on this view`); return boxes; }
   const vw = boxes[0].vw;
-  const notFixed = boxes.filter((b) => b.pos !== 'fixed');
-  if (notFixed.length) {
-    fail(`${label}: ${notFixed.length} ⓘ bubble(s) are not position:fixed `
-       + `(${notFixed.slice(0, 3).map((b) => b.name).join('; ')}) — the anchored `
-       + `mechanism is the one that gets clipped by scroll frames and buried `
-       + `under sibling stacking contexts`);
+  const wrong = boxes.filter((b) => !b.shown || b.pos !== 'fixed' || !b.onBody);
+  if (wrong.length) {
+    fail(`${label}: ${wrong.length} tip(s) not shown as a fixed body-level `
+       + `element (${wrong.slice(0, 3).map((b) => b.name).join('; ')}) - a tip `
+       + `living inside any other box is one ancestor away from being trapped, `
+       + `buried or demoted to absolute again`);
   }
-  const bad = boxes.filter((b) => b.left < 0 || b.right > b.vw + 1);
+  // The live-repo defect, asserted directly: SHOWING a tip must not grow any
+  // scroll box - not the document's, not the hint's own scroll frame's.
+  const grew = boxes.filter((b) => b.grew);
+  if (grew.length) {
+    fail(`${label}: showing ${grew.length} tip(s) GREW a scroll box (`
+       + grew.slice(0, 3).map((b) => `${b.name} +${b.grew.join('/')}`).join('; ')
+       + `) - hovering an \u24d8 must never change any box's size`);
+  }
+  const bad = boxes.filter((b) => b.left < 0 || b.right > b.vw + 1
+    || b.top < 0 || b.bottom > b.vh + 1);
   if (bad.length) {
-    fail(`${label}: ${bad.length} of ${boxes.length} ⓘ bubbles open outside the `
-       + `${vw}px viewport — `
-       + bad.slice(0, 3).map((b) => `${b.name} at ${b.left}..${b.right}`).join('; '));
-  } else {
-    note(`${label}: ${boxes.length}/${boxes.length} ⓘ bubbles open inside ${vw}px`);
+    fail(`${label}: ${bad.length} of ${boxes.length} \u24d8 tips open outside `
+       + `the viewport - `
+       + bad.slice(0, 3).map((b) =>
+           `${b.name} at ${b.left}..${b.right},${b.top}..${b.bottom}`).join('; '));
+  } else if (!wrong.length && !grew.length) {
+    note(`${label}: ${boxes.length}/${boxes.length} \u24d8 tips open inside `
+       + `${vw}px, fixed on <body>, growing nothing`);
   }
   return boxes;
 }
@@ -3844,109 +3870,79 @@ async function main() {
       await mob.waitForTimeout(250);
       await assertHintsFit(mob, 'guards back at 390px');
 
-      // F9's own mechanism, which the sweep above cannot see: it measures every
-      // bubble's placement, but a placement that is merely NEVER COMPUTED reads as
-      // the default, and the default used to be the hint's own left edge. So this
-      // arrives at a hint the way the bug did — a pointer parked on nothing, the
-      // page scrolling underneath it. Chromium updates `:hover` for that without
-      // dispatching `mouseenter`, which is what the old placement hung off.
-      //
-      // The hint is asserted to really be hovered before anything is concluded from
-      // it: a step that scrolls to the wrong offset would otherwise report a clean
-      // page and prove only that no tooltip was open (F3's lesson — a check that
-      // goes green for the wrong reason).
+      // The failure this block used to chase - a bubble whose placement was
+      // never computed, opening at its default anchor from inside a :hover no
+      // event announced - is structurally gone: nothing exists until showTip()
+      // runs, and an unshown tip has no box to break the page with. What can
+      // still go wrong is an OPEN tip outliving its anchor, and both ways that
+      // happens are driven for real here.
       await mob.click('.tab[data-t=guards]');
       await mob.waitForTimeout(250);
-      await mob.mouse.move(0, 0);
-      await mob.evaluate(() => window.scrollTo(0, 0));
-      await mob.waitForTimeout(150);
-      const PARK_Y = 400;
-      // A hint whose bubble cannot fit anchored at its own left edge — which is
-      // where an unplaced one opens. Chosen by measurement, not by name: which
-      // control sits where is the field table's business, not this file's.
-      const parked = await mob.evaluate((y) => {
-        const vw = document.documentElement.clientWidth;
+      // (a) the 5s poll re-renders the form under an open tip: the icon node
+      // is replaced, and an orphaned fixed box would float over a node that no
+      // longer exists. The body observer must hide it.
+      const orphan = await mob.evaluate(async () => {
         const h = [...document.querySelectorAll('#guards .hint[data-tip]')]
-          .find((n) => { const r = n.getBoundingClientRect();
-                         return r.width && r.left + 290 > vw; });
+          .find((n) => n.getBoundingClientRect().width);
         if (!h) return null;
-        const r = h.getBoundingClientRect();
-        return { name: h.getAttribute('data-hint'), cx: r.left + r.width / 2,
-                 to: Math.round(r.top + window.scrollY + r.height / 2 - y) };
-      }, PARK_Y);
-      if (!parked) {
-        fail('no ⓘ on Settings at 390px sits far enough right for its bubble to '
-           + 'need placing — this check can no longer see the defect it is for');
+        showTip(h);
+        const b = document.getElementById('hinttip');
+        const before = getComputedStyle(b).display;
+        renderSettings();
+        await new Promise((r) => setTimeout(r, 120));
+        return { before, after: getComputedStyle(b).display };
+      });
+      if (!orphan) {
+        fail('no visible \u24d8 on Settings at 390px to drive the orphan-tip leg on');
+      } else if (orphan.before !== 'block' || orphan.after !== 'none') {
+        fail(`an open tip survived its anchor's re-render (display `
+           + `${orphan.before} -> ${orphan.after}) - an orphaned tip floats `
+           + `over a node that no longer exists`);
       } else {
-        await mob.mouse.move(parked.cx, PARK_Y);      // resting on nothing
-        await mob.waitForTimeout(120);
-        await mob.evaluate((y) => window.scrollTo(0, y), parked.to);
-        await mob.waitForTimeout(250);
-        const rest = async (what) => {
-          const s = await mob.evaluate(() => {
-            const de = document.documentElement;
-            const h = [...document.querySelectorAll('.hint')]
-              .find((n) => n.matches(':hover'));
-            return { over: de.scrollWidth - de.clientWidth,
-                     hovered: h ? (h.getAttribute('data-hint') || '?') : null };
-          });
-          if (s.hovered !== parked.name) {
-            fail(`${what}: the pointer came to rest on ${JSON.stringify(s.hovered)}, `
-               + `not on "${parked.name}" — the hint this step chose for having a `
-               + 'bubble that cannot fit was never reached, so nothing here was '
-               + 'measured');
-            return;
-          }
-          const boxes = await assertHintsFit(mob, what);
-          const it = boxes.find((b) => b.name === s.hovered);
-          if (s.over > 1) {
-            fail(`${what}: the open bubble on "${s.hovered}" takes the document `
-               + `${s.over}px sideways`
-               + (it ? ` (it opens at ${it.left}..${it.right} of ${it.vw})` : ''));
-          } else {
-            note(`${what}: "${s.hovered}" opened under a pointer that never `
-               + `entered it, page clean`
-               + (it ? `, bubble ${it.left}..${it.right} of ${it.vw}` : ''));
-          }
-        };
-        await rest('a hint scrolled under a stationary pointer');
-        // And the other way in: the form re-rendering underneath the same
-        // stationary pointer, which is what the 5s poll does to it every five
-        // seconds. A hint that is REPLACED has never received a pointer event in
-        // its life.
-        await mob.evaluate(() => renderSettings());
-        await mob.waitForTimeout(250);
-        await rest('a hint re-rendered under a stationary pointer');
-
-        // And it must be placed before the frame that PAINTS it, not one frame
-        // later. The observer's callback is a microtask, so this renders and then
-        // yields exactly one turn of the microtask queue — earlier than any
-        // requestAnimationFrame can have run. What it compares is the same property
-        // at two points in time: if the two disagree, there was a frame in which
-        // the bubble was drawn somewhere nobody put it, and on this form that frame
-        // is 103px of document.
-        const early = await mob.evaluate(async (name) => {
-          renderSettings();
-          await Promise.resolve();
-          const h = document.querySelector(`.hint[data-hint="${name}"]`);
-          return h ? h.style.getPropertyValue('--tipx') : null;
-        }, parked.name);
-        await mob.waitForTimeout(250);
-        const settled = await mob.evaluate((name) => {
-          const h = document.querySelector(`.hint[data-hint="${name}"]`);
-          return h ? h.style.getPropertyValue('--tipx') : null;
-        }, parked.name);
-        if (early === null || settled === null) {
-          fail(`"${parked.name}" is no longer on the form, so the placement could `
-             + 'not be read at either point in time');
-        } else if (early !== settled) {
-          fail(`a re-rendered ⓘ is placed a frame late: --tipx is `
-             + `${JSON.stringify(early)} before the first paint and `
-             + `${JSON.stringify(settled)} after it`);
-        } else {
-          note(`placement is settled before the first paint (--tipx ${settled} `
-             + 'both before and after)');
-        }
+        note('a tip whose anchor is re-rendered away hides itself');
+      }
+      // (b) scrolling under an open FOCUS tip: the icon moves, and a fixed tip
+      // that does not follow describes where the icon used to be. Focus is the
+      // path where following is even correct - a pointer tip is SUPPOSED to die
+      // on scroll, because Chromium's synthetic mouseover says the pointer now
+      // rests on something else. A keyboard user's tip must ignore that parked
+      // pointer and ride its anchor instead.
+      const follow = await mob.evaluate(async () => {
+        const h = [...document.querySelectorAll('#guards .hint[data-tip]')]
+          .find((n) => n.getBoundingClientRect().width);
+        if (!h) return null;
+        window.scrollTo(0, 0);
+        await new Promise((r) => setTimeout(r, 60));
+        h.focus();                               // focusin -> showTip(h,'focus')
+        await new Promise((r) => setTimeout(r, 60));
+        const b = document.getElementById('hinttip');
+        const shown = getComputedStyle(b).display === 'block';
+        const t0 = parseFloat(b.style.top);
+        window.scrollBy(0, 40);
+        await new Promise((r) => setTimeout(r, 150));
+        const scrolled = window.scrollY;
+        const still = getComputedStyle(b).display === 'block';
+        const t1 = parseFloat(b.style.top);
+        h.blur();
+        window.scrollTo(0, 0);
+        return { shown, still, t0, t1, scrolled };
+      });
+      if (!follow) {
+        fail('no visible \u24d8 on Settings at 390px to drive the follow leg on');
+      } else if (!follow.shown) {
+        fail('focusing a \u24d8 did not open its tip \u2014 the keyboard path is dead');
+      } else if (!follow.scrolled) {
+        fail('the Settings page at 390px could not scroll 40px, so the '
+           + 'follow-the-anchor leg measured nothing');
+      } else if (!follow.still) {
+        fail('a FOCUS-shown tip was hidden by the scroll \u2014 the parked pointer\'s '
+           + 'synthetic mouseover closed a keyboard user\'s tooltip');
+      } else if (Math.abs((follow.t0 - follow.t1) - follow.scrolled) > 8) {
+        fail(`an open focus tip did not follow its scrolled anchor: top went `
+           + `${follow.t0} -> ${follow.t1} for a ${follow.scrolled}px scroll`);
+      } else {
+        note(`a focus tip follows its anchor through a scroll `
+           + `(${follow.t0} -> ${follow.t1} for ${follow.scrolled}px)`);
       }
 
       // Back where the sweep started, so the shot below is still Overview.

@@ -1005,33 +1005,40 @@ def _selftest():
           ".comptblwrap{border:1px solid var(--border);border-radius:var(--radius);\n"
           " overflow-x:auto" in UI_HTML
           and "@media(max-width:48rem){.comptblwrap{overflow-x:auto}}" not in UI_HTML)
-    check("shell: a closed hint occupies no layout, so it cannot push the page "
-          "sideways before anyone hovers it",
-          "white-space:normal;display:none;pointer-events:none}" in UI_HTML)
-    # F9, both halves. The bubble is 272px and a phone's column is 375px, so
-    # "anchor left, or flip to the right edge" has no correct answer for most of
-    # this form: left-anchored it takes the document sideways, flipped it starts
-    # off the left of the screen. It is clamped into the viewport instead, and the
-    # ONE geometry is stated in JS - the stylesheet only reads the two properties
-    # it writes, so there is nothing for a second cap to disagree with.
-    check("shell: an open hint is clamped into the viewport rather than anchored "
-          "to one of its own edges",
-          "left:var(--tipx,0px)" in UI_HTML
-          and "width:var(--tipw,17rem);box-sizing:border-box;" in UI_HTML
-          and "const x=Math.min(Math.max(TIPGUT,r.left),vw-TIPGUT-w);" in UI_HTML
-          and ".hint.flip" not in UI_HTML and "toggle('flip'" not in UI_HTML)
-    # The other half: WHEN that is decided. A `mouseenter` handler is skippable -
-    # scrolling the page under a stationary pointer updates :hover without
-    # dispatching one - so placement is driven by the document changing, not by a
-    # pointer being seen to arrive.
-    check("shell: hint placement is not hooked to a pointer event, so a hint that "
-          "arrives under a stationary mouse is still placed",
-          "new MutationObserver(placeTips).observe(document.body," in UI_HTML
-          and "attributeFilter:['class']}" in UI_HTML
-          and "addEventListener('scroll',placeTipsSoon,{capture:true,passive:true})"
-          in UI_HTML
-          and "startTipPlacement();}" in UI_HTML
-          and "h.addEventListener('mouseenter'" not in UI_HTML)
+    # The tip is ONE element on <body> (0.35.1, third mechanism): a pseudo inside
+    # the hint's own box was buried by the comp table's stacking contexts as
+    # absolute, and as fixed sat one transformed ancestor from silently demoting
+    # back - a live repo paid for each. On <body> nothing can trap, clip or
+    # resize it, and nothing exists until showTip() runs, so a tip can no longer
+    # grow ANY box's scrollable overflow, hovered or not.
+    check("shell: the hint tip is a single body-level element, not a pseudo "
+          "inside the box that carries the hint",
+          "#hinttip{position:fixed" in UI_HTML
+          and "document.body.append(b)" in UI_HTML
+          and "::after{content:attr(data-tip)" not in UI_HTML)
+    check("shell: an unshown tip does not exist in layout, so it cannot push "
+          "any box sideways before anyone hovers it",
+          "#hinttip{position:fixed;z-index:200;display:none" in UI_HTML)
+    # F9's clamp survives the mechanism change: 272px of tip in a 375px column
+    # still has no correct anchor, so the geometry is computed - the icon's own
+    # x where that fits, the nearest edge where it does not, MEASURED height
+    # deciding below-or-above. All of it in JS: the sheet holds no coordinate,
+    # so a stale stylesheet cannot disagree with the script about placement.
+    check("shell: the open tip is clamped into the viewport with measured "
+          "height, and the stylesheet holds none of the geometry",
+          "Math.min(Math.max(TIPGUT,r.left),vw-TIPGUT-w)" in UI_HTML
+          and "const mh=b.offsetHeight;" in UI_HTML
+          and "--tipx" not in UI_HTML and "--tipshift" not in UI_HTML
+          and ".hint.flip" not in UI_HTML)
+    # An open tip must not outlive its anchor: the 5s poll re-renders forms
+    # under a stationary pointer, replacing the icon node - the observer hides
+    # the orphan, and scroll re-anchors a live one (capture: the comp table
+    # scrolls inside its own frame).
+    check("shell: a tip whose anchor was re-rendered away is hidden, and a "
+          "scrolled anchor re-places its tip",
+          "TIPFOR.isConnected?showTip(TIPFOR):hideTip()" in UI_HTML
+          and "if(TIPFOR&&!TIPFOR.isConnected)hideTip()" in UI_HTML
+          and "startTipPlacement();}" in UI_HTML)
     # F8. Both halves of one rule: a settings row is allowed to shrink, and the
     # words inside it are allowed to wrap. Either one alone leaves the row exactly
     # as wide as its content, which on a 390px screen was 447px of DOCUMENT.
