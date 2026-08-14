@@ -223,6 +223,16 @@
                   "type": "string"
                 }
               }
+            },
+            "identityMap": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Advisory map from a LEDGER identity to that person's ADO identity (email/UPN). Each key is written in the SAME form usage.authorMode records authors and area.owner is written in (git user.email under the default 'email' mode, user.name under 'name') — the ledger identity is the key because it is the identity the plugin already owns (the usage ledger's author column, area owners). /audit:sync reads it in both directions: push PROPOSES --assigned-to for the mapped owner of an item's area (it asks first and never assigns silently); pull reverse-maps a mapped ADO assignee into reportedBy's ledger form (unmapped assignees keep the 'ado:' prefix). Advisory only: nothing gates, refuses or assigns on this map by itself, and absent/null means 'no mapping' — sync simply stops proposing.",
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           }
         },

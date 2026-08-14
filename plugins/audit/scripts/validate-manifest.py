@@ -240,6 +240,62 @@ def _check_ado(obj, where, findings):
                         % (where, ado.get("id")))
 
 
+def _check_identity_map(meta, findings, warnings):
+    """`meta.ado.identityMap` (v0.38) -- the advisory ledger -> ADO identity map.
+
+    Shape only: an object whose KEYS are ledger identities (the form
+    usage.authorMode records authors and area.owner is written in) and whose
+    VALUES are ADO identities (email/UPN). The USE is advisory -- /audit:sync
+    proposes assignments on push and reverse-maps reportedBy on pull, and
+    nothing gates, refuses or assigns on the map by itself -- but a malformed
+    map is a structural defect like any other wrong type in this file (the
+    ar2 rule: shape is not informational). Deliberately NO email-shape
+    policing: an ADO identity is whatever the org's directory says it is,
+    and this validator is an offline shape-checker.
+
+    A DUPLICATE VALUE is a WARNING, never a finding: two ledger identities
+    mapping to one ADO account is usually a paste error, but one person can
+    legitimately hold two ledger identities (usage.authorMode changed
+    mid-project, or commits under two git emails). Values are compared
+    case-insensitively because ADO identities are."""
+    ado = meta.get("ado")
+    if not isinstance(ado, dict) or "identityMap" not in ado:
+        return
+    imap = ado.get("identityMap")
+    if imap is None:
+        return
+    if not isinstance(imap, dict):
+        findings.append("meta.ado.identityMap: must be an object mapping "
+                        "ledger identity -> ADO identity (email/UPN), got %s"
+                        % type(imap).__name__)
+        return
+    targets = {}   # lowercased ADO identity -> [ledger key, ...] in map order
+    shown = {}     # lowercased ADO identity -> first spelling seen
+    for k, v in imap.items():
+        if not isinstance(k, str) or not str(k).strip():
+            findings.append("meta.ado.identityMap: keys must be non-empty "
+                            "ledger identity strings (the form usage."
+                            "authorMode records), got %r" % (k,))
+        if not isinstance(v, str) or not v.strip():
+            findings.append("meta.ado.identityMap[%r]: value must be a "
+                            "non-empty ADO identity string (email/UPN), "
+                            "got %r" % (k, v))
+            continue
+        low = v.strip().lower()
+        targets.setdefault(low, []).append(k)
+        shown.setdefault(low, v.strip())
+    for low, keys in targets.items():
+        if len(keys) > 1:
+            warnings.append(
+                "meta.ado.identityMap: %r is the target of %d ledger "
+                "identities (%s) -- usually a paste error, though one person "
+                "CAN legitimately hold two ledger identities (e.g. "
+                "usage.authorMode changed mid-project); /audit:sync pull "
+                "maps this ADO identity back to the FIRST key in map order"
+                % (shown[low], len(keys),
+                   ", ".join(repr(k) for k in keys)))
+
+
 def _unknown_keys(obj, known, where, warnings):
     """Warn on keys we do not recognize; case-insensitive 'did you mean'."""
     if not isinstance(obj, dict):
@@ -596,6 +652,7 @@ def validate(manifest):
         if not isinstance(version, int) or isinstance(version, bool):
             # bool is an int subclass in Python — `true` must NOT pass as a version.
             f.append("meta.version: missing or not an integer")
+        _check_identity_map(meta, f, w)
 
     _check_areas(manifest, f, w)
 
@@ -1509,6 +1566,54 @@ def _selftest():
     check("sn5 an area-declared skill is a site too, and the warning names it",
           None, lambda m: _sn_base(m, "pyton-conventions", where="area"),
           expect_warning="meta.areas.api")
+
+    # --- im: meta.ado.identityMap shape (v0.38 C) ---
+    # Shape only: the map's USE is advisory (/audit:sync proposes, never
+    # assigns), but a malformed map is a structural defect like any other
+    # wrong type in this file. No email-shape policing -- an ADO identity is
+    # whatever the org's directory says it is.
+    def _with_imap(m, imap):
+        m["meta"]["ado"] = {"organization": "o", "project": "p",
+                            "identityMap": imap}
+
+    m_im1 = copy.deepcopy(_valid_manifest())
+    _with_imap(m_im1, {"alice@corp.dev": "alice@corp.example.com",
+                       "bob@corp.dev": "bob@corp.example.com"})
+    f_im1, w_im1 = validate(m_im1)
+    noise_im1 = [x for x in w_im1 if "identityMap" in x]
+    ok_im1 = f_im1 == [] and noise_im1 == []
+    results.append(ok_im1)
+    print("%s im1 a well-formed identityMap is clean - no finding, no warning (%s)"
+          % ("PASS" if ok_im1 else "FAIL",
+             "clean" if ok_im1 else (f_im1 or noise_im1)))
+    check("im2 identityMap as a string is a finding",
+          "identityMap: must be an object",
+          lambda m: _with_imap(m, "alice=alice@corp.example.com"))
+    check("im3 a non-string value is a finding",
+          "value must be a non-empty ADO identity string",
+          lambda m: _with_imap(m, {"alice@corp.dev": 42}))
+    check("im4 an empty value is a finding",
+          "value must be a non-empty ADO identity string",
+          lambda m: _with_imap(m, {"alice@corp.dev": "  "}))
+    check("im5 an empty key is a finding",
+          "keys must be non-empty ledger identity strings",
+          lambda m: _with_imap(m, {"": "alice@corp.example.com"}))
+    check("im6 two keys sharing one ADO identity warn, and only warn", None,
+          lambda m: _with_imap(m, {"alice@corp.dev": "shared@corp.example.com",
+                                   "bob@corp.dev": "shared@corp.example.com"}),
+          expect_warning="is the target of 2 ledger identities")
+    check("im7 null identityMap is clean (an answer, like ado: null)", None,
+          lambda m: _with_imap(m, None))
+    m_im8 = copy.deepcopy(_valid_manifest())
+    m_im8["meta"]["ado"] = {"organization": "o", "project": "p"}
+    f_im8, w_im8 = validate(m_im8)
+    noise_im8 = [x for x in w_im8 if "identityMap" in x]
+    ok_im8 = f_im8 == [] and noise_im8 == []
+    results.append(ok_im8)
+    print("%s im8 meta.ado without an identityMap draws nothing - the "
+          "back-compat pin (%s)"
+          % ("PASS" if ok_im8 else "FAIL",
+             "clean" if ok_im8 else (f_im8 or noise_im8)))
 
     # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os
