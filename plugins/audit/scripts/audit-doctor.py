@@ -434,13 +434,23 @@ def check_areas(rep, project, cfg, manifest, manifest_rel):
                  "the join never matches")
 
 
-def check_policy(rep, project, cfg, cfg_mod, manifest):
+def check_policy(rep, project, cfg, cfg_mod, manifest, _discover=None):
     """The capability policy against the plan it governs, and against reality (v0.30).
 
     Deliberately does NOT re-report a policy that denies audit's own components:
     `validate_config` calls that a finding and `check_config` above has already
     printed it. Two rows for one defect is the same "second place status lives"
-    problem one size down.
+    problem one size down. Nor a pattern that matches ONLY audit's own: that is
+    the same finding, and the dead-pattern row below counts audit's own names as
+    installed precisely so it cannot restate it.
+
+    v0.38 adds the third question a live environment can answer: does every
+    pattern in the policy still NAME something? `_panel_discovery`'s inventory
+    (skills/agents/MCP, this machine's) plus audit's own always-allowed names,
+    matched by `_policy.dead_patterns` — the same walk the panel's rules view
+    marks `dead` with, so the two surfaces cannot disagree about which rule is
+    inert. One discovery scan per run, batched across kinds. `_discover` is the
+    selftest's seam; None means the real scan.
 
     What is left is the pair of questions only this check can ask:
 
@@ -491,6 +501,41 @@ def check_policy(rep, project, cfg, cfg_mod, manifest):
                  "allow them in policy, or change what the plan asks for - a denied "
                  "review skill fails at phase sign-off, not before")
 
+    # Dead patterns (v0.38): a rule that names nothing THIS machine has is a
+    # quiet no-op - usually a typo, or a tool that was uninstalled. Fail-open,
+    # twice over: a scan that raises says nothing, and a scan that found
+    # NOTHING AT ALL says nothing - a working scan always sees audit's own
+    # plugin tree, so a truly empty inventory means the scanner is broken, and
+    # a doctor warning about every pattern there would be noise about the scan
+    # rather than the policy.
+    dead = []
+    try:
+        scan = _discover or _load("_panel_discovery",
+                                  "_panel_discovery.py").discover
+        found = scan(project)
+    except Exception:
+        found = None
+    if isinstance(found, dict) and any(found.get(k) for k in pol.KINDS):
+        for kind in pol.KINDS:
+            if kind == "mcp":
+                names = ["mcp__%s__*" % s for s in (found.get("mcp") or [])]
+            else:
+                names = [e.get("name") for e in (found.get(kind) or [])
+                         if isinstance(e, dict) and e.get("name")]
+            for tag, listname, pattern in pol.dead_patterns(policy, kind, names):
+                where = ("policy.%s.%s" % (kind, listname) if tag is None
+                         else "policy.%s.areas.%s.%s" % (kind, tag, listname))
+                dead.append("%s %r" % (where, pattern))
+    if dead:
+        rep.warn("policy",
+                 "%d pattern(s) match nothing installed here: %s - a typo, a "
+                 "removed tool, or a tool a teammate has; a pattern that names "
+                 "nothing decides nothing"
+                 % (len(dead), "; ".join(dead[:3])),
+                 "fix the name if it is a typo, or leave it if it is real "
+                 "elsewhere - this is THIS machine's inventory, so a hint and "
+                 "never a gate")
+
     try:
         gc_mod = _load("guard_capabilities", "guard-capabilities.py", _HOOKS)
         marker = os.path.join(str(cfg_mod.state_dir(pathlib.Path(project), cfg)),
@@ -508,7 +553,7 @@ def check_policy(rep, project, cfg, cfg_mod, manifest):
                  "use a skill or subagent in this project and re-run; if the marker "
                  "still does not appear, treat the policy as documentation and "
                  "enforce with Claude Code permission rules instead")
-    elif not refused:
+    elif not refused and not dead:
         # `age_days` cannot be None on this branch today, and the "%.1f" that used
         # to assume it still crashed under a mutation — which is how it was found.
         # A diagnostic that dies computing its own OK line reports the wrong thing
@@ -1543,6 +1588,20 @@ def _selftest():
         # --- the capability policy (v0.30) ------------------------------------
         # The resolution is exercised in _policy.py's selftest; what is checked
         # here is the two things only a doctor standing in the repo can see.
+        # v0.38 fixtures: the dead-pattern check scans a live inventory, and
+        # discovery reads the PROJECT's .claude as well as the real home - so
+        # the names the existing cases deny are installed here as project
+        # skills. Those cases are about refusal and enforcement, not deadness,
+        # and this keeps them live-patterned on any machine, a bare CI runner
+        # (no ~/.claude at all) included.
+        for _sk in ("nothing-uses-this", "house-review"):
+            _skd = os.path.join(tmp, ".claude", "skills", _sk)
+            os.makedirs(_skd, exist_ok=True)
+            with open(os.path.join(_skd, "SKILL.md"), "w", encoding="utf-8") as fh:
+                fh.write("---\nname: %s\ndescription: doctor fixture.\n---\n" % _sk)
+        with open(os.path.join(tmp, ".mcp.json"), "w", encoding="utf-8") as fh:
+            json.dump({"mcpServers": {"fixsrv": {"command": "x"}}}, fh)
+
         def with_policy(policy, phases=None, seen=None):
             with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
                 json.dump({"meta": {"version": 2, "reviewSkill": "house-review"},
@@ -1633,6 +1692,87 @@ def _selftest():
               and "not deniable" in detail(rep, "config")
               and not any("not deniable" in r["detail"] for r in rep.rows
                           if r["check"] == "policy"), detail(rep, "policy"))
+        # --- dead patterns (v0.38): a rule that names nothing installed HERE --
+        rep = with_policy({"skills": {"deny": ["zzz-v38-no-such-*",
+                                               "nothing-uses-this"]}}, seen=60)
+        _d = detail(rep, "policy")
+        check("policy: a pattern matching nothing installed here is a WARNING "
+              "with the hedge - the inventory is this machine's, so a typo and "
+              "a teammate's tool are indistinguishable - and never a FINDING",
+              "WARNING" in levels(rep, "policy")
+              and "zzz-v38-no-such-*" in _d
+              and "match nothing installed here" in _d
+              and "teammate" in _d
+              and "FINDING" not in levels(rep, "policy")
+              and rep.exit_code() == 0, _d)
+        check("policy: ...while the installed name beside it in the same list "
+              "stays unmentioned - dead is judged per pattern, not per list",
+              "nothing-uses-this" not in _d, _d)
+        rep = with_policy({"skills": {"deny": ["nothing-uses-this"],
+                                      "allow": ["zzz-v38-dead-allow-*"]}},
+                          seen=60)
+        check("policy: an allow pattern is walked too - the validator already "
+              "calls an allow under default:allow inert, but only a surface "
+              "with the inventory can say it also names nothing installed",
+              "zzz-v38-dead-allow-*" in detail(rep, "policy")
+              and "policy.skills.allow" in detail(rep, "policy"),
+              detail(rep, "policy"))
+        rep = with_policy({"skills": {"deny": ["nothing-uses-this"],
+                                      "allow": ["audit:*", "audit:next"]}},
+                          seen=60)
+        check("policy: a pattern that names only audit's own components is not "
+              "dead - the plugin ships them, so they are always installed",
+              levels(rep, "policy") == ["OK"], detail(rep, "policy"))
+        rep = with_policy({"skills": {"areas": {"api":
+                                                {"deny": ["zzz-v38-a-*"]}}}},
+                          seen=60)
+        check("policy: an area rule's dead pattern is named with its full path",
+              "policy.skills.areas.api.deny" in detail(rep, "policy")
+              and "zzz-v38-a-*" in detail(rep, "policy"), detail(rep, "policy"))
+        rep = with_policy({"mcp": {"deny": ["mcp__fixsrv__dangerous_tool"]}},
+                          seen=60)
+        check("policy: a rule for one tool of a configured MCP server is alive "
+              "- matched both ways against the server stand-in",
+              levels(rep, "policy") == ["OK"], detail(rep, "policy"))
+        rep = with_policy({"mcp": {"deny": ["mcp__zzz-v38-nosrv__*"]}}, seen=60)
+        check("policy: ...and a rule for a server nobody configured is dead",
+              "mcp__zzz-v38-nosrv__*" in detail(rep, "policy"),
+              detail(rep, "policy"))
+        rep = with_policy({"skills": {"allow": ["zzz-v38-inert-*"]}})
+        check("policy: an inert policy is never scanned - the allow-only block "
+              "already reads 'inert', dead or not, and the validator's "
+              "no-effect warning owns that story",
+              levels(rep, "policy") == ["OK"]
+              and "inert" in detail(rep, "policy"), detail(rep, "policy"))
+        # Fail-open, driven through the seam rather than hoped about: a scan
+        # that raises and a scan that found NOTHING AT ALL both say nothing.
+        # A working scan always sees audit's own plugin tree, so a truly empty
+        # inventory is a broken scanner, not an empty machine - and warning
+        # about every pattern there would be noise about the wrong thing.
+        _pol_cfg = {"manifestPath": "plan.json",
+                    "policy": {"skills": {"deny": ["zzz-v38-no-such-*"]}}}
+        _cm = _load("_config", "_config.py", _HOOKS)
+
+        def _cp_rows(scan):
+            r2 = Report()
+            try:
+                check_policy(r2, tmp, _pol_cfg, _cm, {"phases": []},
+                             _discover=scan)
+            except Exception as exc:               # noqa: BLE001 - the check
+                return "raised %s" % type(exc).__name__
+            return r2.rows
+
+        def _boom(_project):
+            raise RuntimeError("discovery broke")
+
+        _r_raise = _cp_rows(_boom)
+        _r_empty = _cp_rows(lambda _p: {"skills": [], "agents": [], "mcp": []})
+        check("policy: no inventory - a raising scan and an empty one both say "
+              "nothing about dead patterns rather than crying about the scan",
+              isinstance(_r_raise, list) and isinstance(_r_empty, list)
+              and not any("match nothing installed here" in r["detail"]
+                          for r in _r_raise + _r_empty),
+              repr((_r_raise, _r_empty)))
         with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
                   encoding="utf-8") as fh:
             json.dump({"manifestPath": "plan.json"}, fh)

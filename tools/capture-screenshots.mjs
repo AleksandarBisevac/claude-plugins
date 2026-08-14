@@ -3454,6 +3454,52 @@ async function assertPolicyWorks(page, statePath) {
   if (statePath) note(`policy: enforcement marker read from ${statePath}`);
 }
 
+/* v0.38: a saved pattern the server marks dead gets a .mut note near the rules.
+ * The oracle is POLICY.rules[kind][].dead — the server's own verdict, computed by
+ * _policy.dead_patterns beside the guard's matcher — never the renderer's output.
+ * The written block holds BOTH a dead and a live pattern, or presence and absence
+ * could not both be checked and the assertion would prove nothing. The note is a
+ * static .mut line (no hover, no overlay, nothing that can grow a scroll box), so
+ * presence/absence IS the whole assertion. Rewrites the fixture's config, so it
+ * runs last in the policy leg. */
+async function assertDeadPatternNote(page, cfgPath) {
+  const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+  cfg.policy = {
+    onViolation: 'deny',
+    skills: { default: 'allow', deny: ['shell-runner', 'zzz-ghost-*'] },
+  };
+  writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+  await page.reload({ waitUntil: 'load' });
+  await page.click('.tab[data-t=policy]');
+  await page.waitForSelector('#policy .card', { timeout: 15000 });
+  await page.waitForTimeout(250);
+  const got = await page.evaluate(() => ({
+    oracle: (POLICY.rules[PF.kind] || []).map((r) => [r.pattern, !!r.dead]),
+    notes: [...document.querySelectorAll('#policy [data-pdead]')]
+      .map((n) => [n.dataset.pdead, n.textContent]),
+  }));
+  const deadOracle = got.oracle.filter(([, d]) => d).map(([p]) => p);
+  const liveOracle = got.oracle.filter(([, d]) => !d).map(([p]) => p);
+  if (!deadOracle.length || !liveOracle.length) {
+    fail(`policy: the dead-pattern fixture resolves to dead=${JSON.stringify(deadOracle)} `
+       + `live=${JSON.stringify(liveOracle)} — it needs one of each, or presence `
+       + `and absence cannot both be checked`);
+    return;
+  }
+  const noted = got.notes.map(([k]) => k);
+  const missing = deadOracle.filter((p) => !noted.some((k) => k.endsWith(' ' + p)));
+  const extra = got.notes.filter(([k]) => liveOracle.some((p) => k.endsWith(' ' + p)));
+  const worded = got.notes.every(([, t]) => t.includes('matches nothing installed here'));
+  if (missing.length || extra.length || !worded) {
+    fail(`policy: dead-pattern notes ${JSON.stringify(got.notes)} vs the server's `
+       + `dead=${JSON.stringify(deadOracle)} (missing=${JSON.stringify(missing)}, `
+       + `extra=${JSON.stringify(extra.map(([k]) => k))}, worded=${worded})`);
+  } else {
+    note(`policy: dead pattern ${deadOracle[0]} carries its note, live `
+       + `${liveOracle[0]} does not (a static .mut line — nothing to grow)`);
+  }
+}
+
 /**
  * An open dialog is the toast lesson with a longer memory.
  *
@@ -4650,6 +4696,9 @@ async function main() {
         // cs, second half: the description search, on the one registry whose
         // every description this file wrote.
         await assertComboDescriptionSearch(ppage);
+        // v0.38: dead-pattern notes. Rewrites the fixture's policy block, so
+        // it is the leg's last word.
+        await assertDeadPatternNote(ppage, cfgPath);
         await pctx.close();
       }
       // Collected across every tab this run touched, and reported last so the more

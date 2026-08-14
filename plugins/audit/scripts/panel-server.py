@@ -1261,6 +1261,13 @@ def _selftest():
           "with what the server says it matches today",
           "'not saved yet'" in UI_HTML and "'nothing installed matches it today'"
           in UI_HTML and "'data-poladd':'1'" in UI_HTML)
+    check("a saved pattern the server marks dead gets its own .mut note near the "
+          "rules (v0.38) - the verdict is rules[].dead, computed server-side "
+          "beside the guard's matcher; capped like the composition hints, and "
+          "silent while discovery saw nothing at all",
+          "'data-pdead'" in UI_HTML
+          and "matches nothing installed here" in UI_HTML
+          and ".filter(r=>r.dead).slice(0,3)" in UI_HTML)
     check("audit's own components cannot be denied from here, and the row says why",
           "sel.disabled=true;" in UI_HTML
           and "required by audit — the panel refuses to write a policy denying it"

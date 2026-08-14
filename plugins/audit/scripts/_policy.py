@@ -340,6 +340,65 @@ def required_denials(policy, plugin_root=None):
     return out
 
 
+def dead_patterns(policy, kind, names, plugin_root=None):
+    """[(area-or-None, list, pattern), ...] - every pattern in `kind`'s lists
+    that matches NOTHING: no name in `names` (the caller's live inventory for
+    this kind) and none of audit's own (`required_names`, which always count as
+    installed - the plugin ships them, so `audit:*` must never read as dead).
+
+    The inventory is the CALLER's, on purpose: this module stays config-pure
+    (the offline validator imports it and must keep meaning the same thing with
+    no filesystem in hand), so what is installed is discovered elsewhere - the
+    doctor scans, the panel serves - and handed in. One walk here, two surfaces
+    reporting it, zero second opinions about what "matches" means (`matches`,
+    the guard's own matcher).
+
+    `mcp` is matched both ways against the caller's server stand-ins
+    (`mcp__<server>__*`): `mcp__srv__one_tool` names a tool of an installed
+    server (the stand-in glob matches IT), while `mcp__srv__*` matches the
+    stand-in - either direction is proof of life. The true overlap of two globs
+    is not decidable this cheaply; these are the two shapes real policies hold.
+
+    Deny before allow, project before area (tags sorted) - `resolve`'s own
+    reading order, so a report renders top-down as the block is read. A pattern
+    both dead AND redundant (an allow under default:allow) is still reported:
+    `validate_policy`'s no-effect warning is about the default, this is about
+    the inventory, and the two say different things about the same line.
+    Never raises; junk shapes and junk entries are skipped, not judged.
+    """
+    out = []
+    try:
+        if kind not in KINDS:
+            return out
+        pol = policy if isinstance(policy, dict) else {}
+        kcfg = pol.get(kind) if isinstance(pol.get(kind), dict) else {}
+        own = list(required_names(plugin_root).get(kind) or [])
+        live = [n for n in (names or []) if isinstance(n, str) and n]
+        lists = [(None, "deny", kcfg.get("deny")),
+                 (None, "allow", kcfg.get("allow"))]
+        areas = kcfg.get("areas") if isinstance(kcfg.get("areas"), dict) else {}
+        for tag in sorted(str(t) for t in areas):
+            rule = areas.get(tag)
+            if isinstance(rule, dict):
+                lists.append((tag, "deny", rule.get("deny")))
+                lists.append((tag, "allow", rule.get("allow")))
+        for tag, listname, patterns in lists:
+            if not isinstance(patterns, list):
+                continue
+            for pat in patterns:
+                if not isinstance(pat, str) or not pat.strip():
+                    continue
+                pat = pat.strip()
+                if any(matches(n, [pat]) for n in live + own):
+                    continue
+                if kind == "mcp" and any(matches(pat, [n]) for n in live):
+                    continue
+                out.append((tag, listname, pat))
+    except Exception:                             # pragma: no cover - defensive
+        return out
+    return out
+
+
 # --- validation ---------------------------------------------------------------
 def validate_policy(policy, where="policy"):
     """(findings, warnings) for a `policy` value. Never raises.
@@ -696,6 +755,51 @@ def _selftest():
           required_denials({"skills": {"deny": ["dataviz", "mcp__x__*"]}}) == [])
     check("d4 hostile shapes report nothing rather than raising",
           required_denials(None) == [] and required_denials({"skills": 3}) == [])
+
+    # --- dead patterns: a rule that names nothing installed (v0.38) --------------
+    dp = dead_patterns({"skills": {"deny": ["zzz-*"]}}, "skills", ["real-skill"])
+    check("i1 a pattern matching nothing in the inventory and nothing of audit's "
+          "own is dead, reported with its list",
+          dp == [(None, "deny", "zzz-*")], repr(dp))
+    check("i2 a pattern the inventory satisfies is not dead",
+          dead_patterns({"skills": {"deny": ["real-*"]}}, "skills",
+                        ["real-skill"]) == [])
+    check("i3 a pattern that names only audit's own components is not dead - the "
+          "plugin ships them, so they are always installed; for deny that is "
+          "already the required-denial finding, for allow a legal no-op, and "
+          "either way this check is about the INVENTORY",
+          dead_patterns({"skills": {"deny": ["audit:*"],
+                                    "allow": ["audit:next"]}}, "skills", []) == [])
+    dp = dead_patterns({"agents": {"areas": {"api": {"deny": ["ghost-*"]}}}},
+                       "agents", ["real-agent"])
+    check("i4 an area rule's dead pattern carries its area tag",
+          dp == [("api", "deny", "ghost-*")], repr(dp))
+    check("i5 allow lists are walked too - a dead allow is as quiet a no-op as a "
+          "dead deny, whatever the default says",
+          dead_patterns({"skills": {"allow": ["ghost-*"]}}, "skills",
+                        ["real-skill"]) == [(None, "allow", "ghost-*")])
+    check("i6 mcp is matched BOTH ways against the server stand-ins: a rule for "
+          "one tool of an installed server is alive, a rule for an absent server "
+          "is dead",
+          dead_patterns({"mcp": {"deny": ["mcp__srv__one_tool"]}}, "mcp",
+                        ["mcp__srv__*"]) == []
+          and dead_patterns({"mcp": {"deny": ["mcp__gone__*"]}}, "mcp",
+                            ["mcp__srv__*"])
+          == [(None, "deny", "mcp__gone__*")])
+    check("i7 deny before allow, project before area - resolve's own reading "
+          "order, so a report renders top-down as the block is read",
+          dead_patterns({"skills": {"allow": ["g2-*"], "deny": ["g1-*"],
+                                    "areas": {"b": {"deny": ["g4-*"]},
+                                              "a": {"allow": ["g3-*"]}}}},
+                        "skills", ["real-skill"])
+          == [(None, "deny", "g1-*"), (None, "allow", "g2-*"),
+              ("a", "allow", "g3-*"), ("b", "deny", "g4-*")])
+    check("i8 hostile shapes report nothing rather than raising, and junk "
+          "entries are skipped, not judged",
+          dead_patterns(None, "skills", ["x"]) == []
+          and dead_patterns({"skills": 3}, "skills", ["x"]) == []
+          and dead_patterns({"skills": {"deny": [7, "  "]}}, "skills", ["x"]) == []
+          and dead_patterns({"tools": {"deny": ["a"]}}, "tools", ["x"]) == [])
 
     # --- validation --------------------------------------------------------------
     f, w = validate_policy(None)

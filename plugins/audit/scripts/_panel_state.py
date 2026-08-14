@@ -459,9 +459,22 @@ def _policy_rules(policy, kind, names):
 
     Deny before allow, and project before area, because that is the order `resolve`
     reads them in — a list in resolution order can be read top-down as the reason.
+
+    v0.38: each row carries `dead` — `_policy.dead_patterns`' verdict that the
+    pattern matches neither a discovered name of this kind nor one of audit's own
+    (`n: 0` alone cannot say that: `audit:*` covers no DISCOVERED name on a bare
+    machine yet names components the plugin ships). Computed here so the client
+    renders the flag and never matches a pattern itself — the same bargain the
+    verdict column strikes — and so the doctor, which calls the same function
+    over the same walk, cannot disagree with this page about which rule is inert.
     """
     out = []
     kcfg = policy.get(kind) if isinstance(policy.get(kind), dict) else {}
+    dead = set()
+    try:
+        dead = set(_policy.dead_patterns(policy, kind, names))
+    except Exception:
+        dead = set()
 
     def add(scope, listname, patterns):
         # A LIST, not merely something iterable. `"deny": "nope"` is a shape the
@@ -475,7 +488,8 @@ def _policy_rules(policy, kind, names):
                 continue
             hits = [n for n in names if _policy.matches(n, [pat])]
             out.append({"scope": scope, "list": listname, "pattern": pat,
-                        "matches": hits[:6], "n": len(hits)})
+                        "matches": hits[:6], "n": len(hits),
+                        "dead": (scope, listname, pat.strip()) in dead})
 
     add(None, "deny", kcfg.get("deny"))
     add(None, "allow", kcfg.get("allow"))
@@ -1326,7 +1340,26 @@ def _selftest():
           _policy_rules({"skills": {"deny": ["  ", "", 7, "real"]}},
                         "skills", []) == [
               {"scope": None, "list": "deny", "pattern": "real",
-               "matches": [], "n": 0}])
+               "matches": [], "n": 0, "dead": True}])
+    # v0.38: the dead flag - the server's own "names nothing" verdict, computed
+    # by _policy.dead_patterns beside the guard's matcher, so the client renders
+    # it and never matches a pattern itself.
+    check("a pattern matching nothing discovered and nothing of audit's own is "
+          "marked dead; a name the inventory satisfies is not",
+          [(r["pattern"], r["dead"]) for r in _policy_rules(
+              {"skills": {"deny": ["ghost-*", "real-skill"]}}, "skills",
+              ["real-skill"])]
+          == [("ghost-*", True), ("real-skill", False)])
+    check("a pattern that names only audit's own components is not dead - the "
+          "plugin ships them, so they are always installed",
+          _policy_rules({"skills": {"deny": ["x"], "allow": ["audit:*"]}},
+                        "skills", [])[1]["dead"] is False)
+    check("mcp rules are judged both ways against the server stand-ins - a rule "
+          "for one tool of an installed server is alive, one for an absent "
+          "server is dead",
+          [r["dead"] for r in _policy_rules(
+              {"mcp": {"deny": ["mcp__srv__one_tool", "mcp__gone__*"]}},
+              "mcp", ["mcp__srv__*"])] == [False, True])
     # Called through a wrapper so the failure is a named FAIL and not a
     # traceback: this endpoint feeds a form, a form's job is to survive a file
     # somebody hand-edited, and an assertion that dies while proving that

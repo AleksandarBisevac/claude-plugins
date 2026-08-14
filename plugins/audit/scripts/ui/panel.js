@@ -2067,6 +2067,18 @@ function renderPolicy(){
    'The block for this kind, in the order the guard reads it: deny before allow, '
    +'project before area. The switches above write exact names here; a pattern can '
    +'only be written and removed here.')));
+ // v0.38: dead patterns — the server's own "names nothing" verdict (rules[].dead,
+ // computed by _policy.dead_patterns beside the guard's matcher; this client only
+ // renders it). Shaped like the composition tab's skillHints: a capped .mut note,
+ // data- attributed for the browser checks, and silent while discovery saw nothing
+ // at all — against an empty inventory every pattern would read dead, and the
+ // note would be noise about the scan rather than the policy.
+ if(['skills','agents','mcp'].some(k=>((POLICY.resolved||{})[k]||[]).length))
+  ((POLICY.rules||{})[kind]||[]).filter(r=>r.dead).slice(0,3).forEach(r=>card.append(
+   el('div',{class:'mut small','data-pdead':(r.scope||'project')+' '+r.list+' '+r.pattern},
+    'policy.'+kind+'.'+(r.scope?'areas.'+r.scope+'.':'')+r.list+' "'+r.pattern
+    +'" matches nothing installed here — a typo, a removed tool, or a teammate’s; '
+    +'a pattern that names nothing '+(r.list==='deny'?'refuses':'allows')+' nothing.')));
  const srv=pServerRules(kind),drafted=pDraftRules(kind);
  if(!drafted.length)card.append(el('div',{class:'mut','data-polnorules':'1'},
    'No rules for '+PKLABEL[kind].toLowerCase()+'. With the default at '
