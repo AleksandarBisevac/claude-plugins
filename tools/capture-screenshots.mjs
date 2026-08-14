@@ -222,11 +222,16 @@ async function assertHintsFit(page, label) {
       const extra = cs.boxSizing === 'border-box' ? 0
         : num(cs.paddingLeft) + num(cs.paddingRight)
           + num(cs.borderLeftWidth) + num(cs.borderRightWidth);
-      const left = r.left + num(cs.left);
+      // Fixed since 0.35: cs.left IS the viewport x. Anything else is the old
+      // absolute mechanism coming back — the one a live repo found painted
+      // under the comp table's model column — so its position is reported and
+      // failed on below rather than silently re-anchored in the math here.
+      const left = cs.position === 'fixed' ? num(cs.left) : r.left + num(cs.left);
       out.push({
         name: h.getAttribute('data-hint')
           || (h.getAttribute('data-tip') || '').slice(0, 20) + '…',
         left: Math.round(left), right: Math.round(left + num(cs.width) + extra), vw,
+        pos: cs.position,
       });
     }
     return out;
@@ -237,6 +242,13 @@ async function assertHintsFit(page, label) {
   // that instead.
   if (!boxes.length) { note(`${label}: no ⓘ on this view`); return boxes; }
   const vw = boxes[0].vw;
+  const notFixed = boxes.filter((b) => b.pos !== 'fixed');
+  if (notFixed.length) {
+    fail(`${label}: ${notFixed.length} ⓘ bubble(s) are not position:fixed `
+       + `(${notFixed.slice(0, 3).map((b) => b.name).join('; ')}) — the anchored `
+       + `mechanism is the one that gets clipped by scroll frames and buried `
+       + `under sibling stacking contexts`);
+  }
   const bad = boxes.filter((b) => b.left < 0 || b.right > b.vw + 1);
   if (bad.length) {
     fail(`${label}: ${bad.length} of ${boxes.length} ⓘ bubbles open outside the `
@@ -2003,6 +2015,65 @@ async function assertModelCombo(page, project) {
   await page.unroute(RUNSTATUS_URL);
   await page.evaluate(() => pollRunStatus());
   await page.waitForTimeout(400);
+}
+
+/* ---- (wn) the why-note beside a phase whose rows all read done --------------
+ *
+ * A real state that reads like a contradiction: every task done, badge still
+ * "In progress", because sign-off is part of the phase — and on a live repo it
+ * DID read as one. The note names the reason where the eye trips on it. Driven
+ * through renderComp() with an injected composition, both legs: the note must
+ * be earned by ALL tasks being done, and must leave when one is not.
+ */
+async function assertPhaseWhyNote(page) {
+  await page.click('.tab[data-t=comp]');
+  await page.waitForSelector('#comp table', { timeout: 15000 });
+  // Freeze the poll for the step — an untimely refetch would swap STATE under
+  // the injection (the F-C-1 class), and the injected phase with it.
+  const frozen = await page.evaluate(() => api('GET', '/api/runstatus'));
+  await page.route(RUNSTATUS_URL, (r) => r.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(frozen) }));
+  await page.evaluate(async () => { await pollRunStatus(); await refreshFromDisk(); });
+  await page.waitForTimeout(300);
+  const got = await page.evaluate(() => {
+    const saved = JSON.stringify(STATE.composition);
+    const comp = STATE.composition;
+    const ph = comp.phases[0];
+    ph.status = 'in_progress';
+    const mine = comp.tasks.filter((t) => t.phaseId === ph.id);
+    mine.forEach((t) => { t.status = 'done'; });
+    renderComp();
+    const noteOf = () => {
+      const row = [...document.querySelectorAll('#comp tr.phase')]
+        .find((r) => (r.textContent || '').includes(ph.id));
+      const n = row && row.querySelector('.whynote');
+      return n ? n.textContent : null;
+    };
+    const earned = noteOf();
+    if (mine[0]) mine[0].status = 'in_progress';
+    renderComp();
+    const unearned = noteOf();
+    STATE.composition = JSON.parse(saved);
+    renderComp();
+    return { earned, unearned, tasks: mine.length };
+  });
+  if (!got.tasks) {
+    fail('composition: the fixture\'s first phase has no tasks to drive the '
+       + 'why-note legs on');
+  } else if (!got.earned || !/awaiting sign-off/.test(got.earned)) {
+    fail(`composition: a phase with every task done and status in_progress `
+       + `carries no why-note (${JSON.stringify(got.earned)}) — the badge reads `
+       + `like a contradiction with nothing naming the sign-off`);
+  } else if (got.unearned) {
+    fail('composition: the why-note stays up while a task is still running — '
+       + 'it must be earned by ALL tasks being done, not decorate the badge');
+  } else {
+    note('composition: the awaiting-sign-off note appears exactly when every '
+       + 'task is done and the phase is not');
+  }
+  await page.unroute(RUNSTATUS_URL);
+  await page.evaluate(() => pollRunStatus());
+  await page.waitForTimeout(300);
 }
 
 /* ---- v0.34 C3 (sv): the save-result card's lifecycle ------------------------
@@ -4022,6 +4093,7 @@ async function main() {
       // manifest's shard straight on disk — so both run after everything that
       // measures the fixture as generated, and live-data runs dead last.
       await assertModelCombo(page, big);
+      await assertPhaseWhyNote(page);
       await assertComboSearchCount(page);
       await assertFilterPersistence(page, browser, panel.url);
       await assertSaveNoteLifecycle(page);

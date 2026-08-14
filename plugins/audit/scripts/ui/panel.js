@@ -428,16 +428,32 @@ function hint(t,ref){if(!t&&!ref)return null;
 // tooltips already clamped exactly this way (tipMove, below) — the ⓘ was the one
 // tooltip in the product that chose an anchor instead.
 //
+// And since 0.35 the bubble is position:FIXED with viewport coordinates, not
+// absolute with an offset. Absolute kept it inside `table.comp thead th` — a
+// sticky z-index:1 stacking context inside .comptblwrap's scroll frame — where a
+// live repo found it painted under the model column. The combo menu crossed this
+// exact bridge in 0.34; the scroll/resize listeners below were already capturing
+// container scrolls, so fixed coordinates stay fresh with no new machinery.
+//
 // TIPW is a BORDER-box width, and the stylesheet says so on the rule itself: the
 // sheet's global `*{box-sizing:border-box}` does not reach a pseudo-element, so
 // 17rem used to mean 290px painted. The old threshold compared against 272 and was
 // wrong by that 18px in the same direction as the bug it was there to prevent.
 const TIPW=272, TIPGUT=12;
 function placeTip(h){const r=h.getBoundingClientRect();
- const vw=document.documentElement.clientWidth,w=Math.min(TIPW,vw-2*TIPGUT);
+ const vw=document.documentElement.clientWidth,
+   vh=document.documentElement.clientHeight,w=Math.min(TIPW,vw-2*TIPGUT);
  const x=Math.min(Math.max(TIPGUT,r.left),vw-TIPGUT-w);
- h.style.setProperty('--tipx',(x-r.left)+'px');
- h.style.setProperty('--tipw',w+'px');}
+ h.style.setProperty('--tipx',x+'px');
+ h.style.setProperty('--tipw',w+'px');
+ // Below the icon by default; above it when the icon sits in the bottom band, so
+ // a savebar or table-tail hint cannot open off the bottom edge. The bubble's
+ // height is unknowable before it paints (content varies), so the band is sized
+ // to the tallest microcopy in the product rather than measured per hover.
+ if(r.bottom+220>vh){h.style.setProperty('--tipy',(r.top-6)+'px');
+  h.style.setProperty('--tipshift','translateY(-100%)');}
+ else{h.style.setProperty('--tipy',(r.bottom+6)+'px');
+  h.style.setProperty('--tipshift','none');}}
 function placeTips(){document.querySelectorAll('.hint').forEach(placeTip);}
 let TIPQ=0;
 function placeTipsSoon(){if(TIPQ)return;
@@ -1228,6 +1244,13 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
     (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
     el('span',{class:'st','data-status':ph.status||''},label(ph.status)),
     el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
+    // Every row below reads done while the badge says in progress — a real
+    // state (sign-off is part of the phase) that reads like a contradiction,
+    // and on a live repo it did. Name the reason where the eye trips on it.
+    (ph.status==='in_progress'&&tasks.length>0&&tasks.every(t=>t.status==='done'))
+      ?el('span',{class:'count whynote'},
+          'all tasks done — awaiting sign-off (/audit:review)')
+      :null,
     el('span',{class:'comp-review'},flabel('review',MDESC.phaseReviewModel,
       {comp:'phaseReviewModel',label:'Phase review model'}),revCombo))));
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
