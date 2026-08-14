@@ -972,6 +972,34 @@ def enforce_always(cfg):
 
 
 # --- gate events feed -----------------------------------------------------------
+LOCAL_IGNORE_MARKER = "# audit plugin: local state - do not commit\n*\n"
+
+
+def ensure_local_dir(path):
+    """mkdir -p a plugin-managed LOCAL directory and make it self-ignoring:
+    a `.gitignore` holding `*` is dropped inside on creation (and re-created
+    if missing). state/, logs/ and the usage ledger hold a live panel token,
+    person identities and session scratch - none of it belongs in git, and
+    the help-text advice to "gitignore them" demonstrably went unread on a
+    real repo while `git add .claude` sat one keystroke away.
+
+    An existing marker is never overwritten (the file is the user's once it
+    exists), and a tracked file is immune to ignore rules anyway, so a team
+    that deliberately `git add -f`s the ledger loses nothing. NEVER call this
+    for docs/audit - the journal is the opposite kind of artifact: its git
+    history is one of the trail's three anchors and it must stay tracked.
+    Never raises: hook context. Returns the Path either way."""
+    d = Path(path)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        marker = d / ".gitignore"
+        if not marker.exists():
+            marker.write_text(LOCAL_IGNORE_MARKER, encoding="utf-8")
+    except Exception:
+        pass
+    return d
+
+
 GATE_EVENTS_FILE = "plan-gate-events.jsonl"
 _GATE_EVENTS_MAX_BYTES = 512 * 1024
 _GATE_EVENTS_KEEP_LINES = 400
@@ -996,8 +1024,7 @@ def append_gate_event(logs_dir, event):
     Self-trim: past ~512KB the newest ~400 lines are rewritten through a temp
     file + os.replace (atomic on POSIX and Windows alike), fail-open."""
     try:
-        logs = Path(logs_dir)
-        logs.mkdir(parents=True, exist_ok=True)
+        logs = ensure_local_dir(logs_dir)
         path = logs / GATE_EVENTS_FILE
         row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
         for key in _GATE_EVENT_KEYS:
@@ -1539,6 +1566,39 @@ def _selftest() -> int:
                         os.environ[k] = v
     finally:
         shutil.rmtree(tmp_h, ignore_errors=True)
+
+    # (i) ensure_local_dir: plugin-managed local dirs are self-ignoring --------
+    # state/, logs/ and the ledger hold live tokens, person identities and
+    # session scratch; none of it belongs in git. The dirs make THEMSELVES
+    # ignored (a `*` .gitignore inside), because advising the user in help
+    # text demonstrably did not happen on a real repo.
+    tmp_i = Path(tempfile.mkdtemp(prefix="config-ignore-selftest-"))
+    try:
+        d_i = ensure_local_dir(tmp_i / "state")
+        check("i1 ensure_local_dir creates the dir and a `*` .gitignore",
+              d_i.is_dir() and (d_i / ".gitignore").read_text(
+                  encoding="utf-8").splitlines()[-1] == "*")
+        (d_i / ".gitignore").write_text("custom\n", encoding="utf-8")
+        ensure_local_dir(d_i)
+        check("i2 an existing marker is never overwritten - the file is the "
+              "user's once it exists",
+              (d_i / ".gitignore").read_text(encoding="utf-8") == "custom\n")
+        (d_i / ".gitignore").unlink()
+        ensure_local_dir(d_i)
+        check("i3 a deleted marker returns on the next call - tracked files "
+              "are immune to ignore rules, so this cannot override a "
+              "deliberate `git add -f` tracking decision",
+              (d_i / ".gitignore").exists())
+        blocker = tmp_i / "blocker"
+        blocker.write_text("", encoding="utf-8")
+        got_i = ensure_local_dir(blocker / "sub")     # parent is a FILE
+        check("i4 an uncreatable path never raises - hook context",
+              isinstance(got_i, Path))
+        append_gate_event(str(tmp_i / "logs"), {"event": "deny"})
+        check("i5 append_gate_event's logs dir carries the marker",
+              (tmp_i / "logs" / ".gitignore").exists())
+    finally:
+        shutil.rmtree(tmp_i, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

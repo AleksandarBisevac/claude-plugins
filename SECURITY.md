@@ -239,7 +239,7 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    not its subagents — performs all manifest writes and commits; since 0.6.0
    the plugin ships its own agents with PINNED tool lists (`audit-explorer`
    has no Edit/Write/Bash at all, `audit-executor` no web tools,
-   `audit-reviewer` no edit tools, and since 0.31.0 `audit-guide` only
+   `audit-reviewer` no edit tools, and since 0.31.0 `guide` only
    Read/Grep/Glob) — a hard boundary that does not depend on
    hook inheritance; subagent prompts still restate the hard rules.
 3. **Self-modification.** `guard-edits` denies edits to the installed plugin's

@@ -31,8 +31,8 @@ the capability policy, "tamper-evident, not tamper-proof" — a topic NAMES it a
 cites where it is stated. It does not restate it. That is the same reason the two
 skills are thin: two copies of a claim is one copy and one lie.
 
-THE GUIDE AGENT'S CARD IS READ OFF THE AGENT. `agents/audit-guide.md` is a file
-with frontmatter; `guide_card()` parses it, so a drawer offering "Ask audit-guide"
+THE GUIDE AGENT'S CARD IS READ OFF THE AGENT. `agents/guide.md` is a file
+with frontmatter; `guide_card()` parses it, so a drawer offering "Ask audit:guide"
 cannot advertise tools the agent does not have — and `guide_is_read_only()` fails
 the build if that agent ever gains one that writes.
 
@@ -504,7 +504,10 @@ def topics(root=None):
 
 
 # --- the guide agent -------------------------------------------------------------
-GUIDE = "audit-guide"
+# Renamed from "audit-guide" in 0.35: the plugin prefix made the qualified
+# name stutter (audit:audit-guide), and this is the one agent humans invoke
+# by name. Policy configs naming the old id get a validator warning.
+GUIDE = "guide"
 
 
 def front_matter(text):
@@ -588,7 +591,7 @@ def agent_cards(root=None):
 
 
 def guide_card(root=None):
-    """The card the drawer's "Ask audit-guide" hint is built from, or None.
+    """The card the drawer's "Ask audit:guide" hint is built from, or None.
 
     None rather than a stub when the agent is absent: a hint offering an agent
     this install does not ship is a dead end, and the drawer can simply not draw
@@ -596,7 +599,7 @@ def guide_card(root=None):
     for card in agent_cards(root):
         if card["name"] == GUIDE:
             card = dict(card)
-            card["invoke"] = "Ask for the `audit-guide` subagent by name."
+            card["invoke"] = "Ask for the `audit:guide` subagent by name."
             card["readOnly"] = sorted(card["tools"]) == sorted(READ_ONLY_TOOLS)
             return card
     return None
@@ -989,13 +992,13 @@ def _selftest():
           (guide or {}).get("model") == "haiku"
           and (guide or {}).get("effort") == "low", repr(guide))
     check("g5 it is spelled the way a policy or a Task call would name it",
-          (guide or {}).get("qualified") == "audit:audit-guide")
+          (guide or {}).get("qualified") == "audit:guide")
     check("g6 an install without the agent gets None, not a hint pointing at "
           "nothing", guide_card(os.path.join(_HERE, "_nope")) is None)
     check("g7 the guide is REQUIRED by the policy resolver, because it is read "
           "off the agents directory - so a deny-all policy cannot switch off the "
           "one thing that explains the policy",
-          "audit:audit-guide" in _policy.required_names()["agents"])
+          "audit:guide" in _policy.required_names()["agents"])
 
     # --- agent enumeration in the docs --------------------------------------------
     adrift = agent_doc_drift()

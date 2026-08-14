@@ -110,7 +110,7 @@ def _load_state(state_dir: Path, session_id: str) -> dict:
 
 def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
     try:
-        state_dir.mkdir(parents=True, exist_ok=True)
+        _config.ensure_local_dir(state_dir)
         with open(_state_file(state_dir, session_id), "w", encoding="utf-8") as fh:
             json.dump(state, fh)
     except Exception:
@@ -605,6 +605,19 @@ def _selftest() -> int:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
     else:
         os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+
+    # (i) session state lands in a self-ignoring dir
+    import shutil as _sh
+    tmp_i = Path(tempfile.mkdtemp(prefix="gbw-ignore-"))
+    try:
+        _save_state(tmp_i / "state", "s-i",
+                    {"toolEdited": [], "seenDirty": [], "warned": []})
+        _ok_i = (tmp_i / "state" / ".gitignore").exists()
+        results.append(_ok_i)
+        print("%s i1 _save_state's dir carries a `*` .gitignore"
+              % ("PASS" if _ok_i else "FAIL"))
+    finally:
+        _sh.rmtree(tmp_i, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

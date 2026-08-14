@@ -230,7 +230,7 @@ feels generic" is not, and is not a reason to spend a rename.
 
 Help ships in two halves, and the split is the decision. `GET /api/help` extracts every field
 description from the two schemas at request time and adds four concept pages derived from the
-code that executes each rule — it costs nothing to ask and nothing to answer. `agents/audit-guide.md`
+code that executes each rule — it costs nothing to ask and nothing to answer. `agents/guide.md`
 answers the rest conversationally, from the plugin's own documents, with a citation per claim.
 
 A third option was available and rejected: a skill, which would auto-trigger on "how does the

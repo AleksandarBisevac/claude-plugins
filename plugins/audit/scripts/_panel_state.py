@@ -396,7 +396,7 @@ def help_state():
     the two shipped schemas at request time, so the drawer cannot drift from the
     document a reader is told to trust, and the concept pages derive every
     executable rule from the code that executes it (`_help` states which). The
-    conversational half — the `audit-guide` agent — is a card in this payload
+    conversational half — the `audit:guide` agent — is a card in this payload
     rather than something the panel spawns: a question a static page already
     answers should not silently bill for a model.
 

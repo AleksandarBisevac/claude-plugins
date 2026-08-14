@@ -174,7 +174,7 @@ page behind it, read against the form rather than instead of it. All of it is
   instead of free-form ones: `audit-explorer` is **mechanically read-only** (no Edit/Write/
   Bash in its tool list — not a prompt request, a hard boundary), `audit-executor` has no
   web tools and no nested agents, `audit-reviewer` can analyze but cannot edit. Commands
-  fall back to general subagents on older Claude Code versions. A fourth, `audit-guide`,
+  fall back to general subagents on older Claude Code versions. A fourth, `guide`,
   is invoked by **you** rather than by the pipeline: it answers questions about the plugin
   from the plugin's own documents, with a citation per claim. See
   [Asking it how it works](#asking-it-how-it-works).
@@ -336,8 +336,8 @@ means the same as `planGate: "deny"`, `planGate` wins when both are set, and a t
 
 **Gate events.** Every verdict the plan gate reaches — a deny, a warn, an observe line, an
 approved ask, a bypass armed / consumed / expired — leaves one JSON line in
-`<logsDir>/plan-gate-events.jsonl` (it lives with the rest of `logsDir`, which you already
-gitignore; self-trimming past ~512KB; writing it never blocks anything). The panel's
+`<logsDir>/plan-gate-events.jsonl` (it lives with the rest of `logsDir`, which ignores
+itself — a `*` .gitignore inside; self-trimming past ~512KB; writing it never blocks anything). The panel's
 Overview tab reads it: a **Plan gate** card naming the active tier and where it came from,
 whether a bypass is armed right now, and the latest events — so what the gate has been
 deciding on your behalf is a glance, not an archaeology dig. And when the gate warns instead
@@ -454,7 +454,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `planGate` | Pin the plan gate to one tier: `observe` \| `warn` \| `ask` (hold each out-of-plan edit for approval) \| `deny`. Unset → the graded ladder: observe → warn → deny (see above). Wins over `enforce`; an unknown value falls back to the ladder | unset |
 | `enforce` | Legacy (pre-0.34): `true` = always-deny, the same as `planGate: "deny"` — which wins when both are set | `false` |
 | `trivialLineThreshold` | Max change magnitude for the 1st free code file/session | `80` |
-| `stateDir` / `logsDir` | Where state + bypass log live (add both to `.gitignore`; the journal is the opposite: never ignore it) | `.claude/state` / `.claude/logs` |
+| `stateDir` / `logsDir` | Where state + bypass log live (both self-ignore — a `*` .gitignore is written inside; the journal is the opposite: never ignore it) | `.claude/state` / `.claude/logs` |
 | `bypassKeyword` | Single-use plan-first opt-out keyword | `#no-plan` |
 | `secretPatterns.extra` | Extra secret-path regexes (added to the built-in set) | `[]` |
 | `guardEdits.tokenVars` | Identifier names treated as auth tokens | `accessToken`, `refreshToken`, `idToken` |
@@ -848,8 +848,10 @@ written, so changing the table never rewrites history.
 **Privacy.** Rows carry counts, model ids, timestamps, branch and author — never prompt content.
 Transcripts are read-only. `usage.authorMode` accepts `email` (default), `name`, `hash`
 (pseudonymous but still groupable) or `none`; `usage.enabled: false` turns the whole thing off.
-The ledger is gitignored by default (unlike the journal, which must be tracked) — to share it
-across a team, un-ignore it and add
+The ledger ignores itself by default — every writer drops a `*` .gitignore inside the dir
+(unlike the journal, which must be tracked). To share it across a team, `git add -f` the
+monthly `*.jsonl` files once — tracked files are immune to the marker, while `.cursors`
+stays local, which is what you want — and add
 `*.jsonl merge=union` to `.gitattributes` (append-only NDJSON merges cleanly, and the per-row
 author is what makes cross-developer analytics work).
 
@@ -1019,12 +1021,12 @@ field that belongs to one of the four pages offers it. A path into your own docu
 (`usage.pricing.<name>.in`) **by the server** — the browser is handed an answer rather than the
 machinery to compute one, so a second matcher cannot drift into disagreeing with the first.
 
-**`audit-guide` is the conversational half.** A subagent (`Read`/`Grep`/`Glob`, `model: haiku`)
+**`audit:guide` is the conversational half.** A subagent (`Read`/`Grep`/`Glob`, `model: haiku`)
 that answers questions about this plugin from this plugin's documents — README, `reference/`,
 the schemas, `commands/*.md`, and [SECURITY.md](../../SECURITY.md) — with a file-and-line
 citation for every claim, and "the documents do not say" when they do not. Ask for it by name:
 
-> Use the audit-guide subagent: what does `planGate: "ask"` change, and what stays graded?
+> Use the audit:guide subagent: what does `planGate: "ask"` change, and what stays graded?
 
 It is **mechanically read-only** — no Edit, no Write, no Bash — so it explains the command to
 run and never claims to have run it. And it is deliberately **not** a skill: a skill
@@ -1042,7 +1044,8 @@ free. You choose when it is worth a model.
 - **Guards don't fire at all.** Ensure Python is reachable (`python3`, `python`, or `py`) and, on
   Windows, that you're in Git Bash (see Requirements). A missing interpreter makes the blocking guards
   prompt for manual approval rather than silently passing.
-- **`.claude/state` / `.claude/logs` showing up as untracked.** Add them to `.gitignore`; the plugin
+- **`.claude/state` / `.claude/logs` showing up as untracked.** Any hook run makes them
+  self-ignore (a `*` .gitignore inside; `/audit:doctor`'s hygiene check verifies it); the plugin
   garbage-collects entries older than 7 days but never commits them.
 - **Journal files showing up as untracked.** The opposite case: untracked journal files are work
   not yet committed, not clutter — stage and commit them (the orchestrator does this with each

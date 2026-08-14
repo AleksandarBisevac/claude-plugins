@@ -515,11 +515,34 @@ def load_cursor(ledger_dir, session_id):
         return {}
 
 
+LOCAL_IGNORE_MARKER = "# audit plugin: local state - do not commit\n*\n"
+
+
+def ensure_ledger_dir(ledger_dir):
+    """mkdir -p the ledger dir and make it self-ignoring: a `*` .gitignore
+    dropped inside on creation (re-created if deleted; an existing marker is
+    never overwritten, and tracked files are immune to ignore rules, so a
+    deliberate `git add -f` loses nothing). The ledger holds person identities
+    and per-machine cursors - never git material. Scripts-side twin of
+    hooks/_config.ensure_local_dir; the two sides do not import each other
+    by design. makedirs errors propagate (callers already handle them); a
+    marker that cannot be written is skipped, not an error."""
+    os.makedirs(ledger_dir, exist_ok=True)
+    marker = os.path.join(ledger_dir, ".gitignore")
+    try:
+        if not os.path.exists(marker):
+            with open(marker, "w", encoding="utf-8") as fh:
+                fh.write(LOCAL_IGNORE_MARKER)
+    except Exception:
+        pass
+
+
 def save_cursor(ledger_dir, session_id, cursor):
     """Atomic (temp + os.replace) so a killed hook can never leave a half-written
     cursor that would re-scan from zero and double-count."""
     path = cursor_path(ledger_dir, session_id)
     try:
+        ensure_ledger_dir(ledger_dir)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
@@ -543,7 +566,7 @@ def append_rows(ledger_dir, rows):
         by_month.setdefault(bucket_month(row.get("ts")), []).append(row)
     written = 0
     try:
-        os.makedirs(ledger_dir, exist_ok=True)
+        ensure_ledger_dir(ledger_dir)
     except Exception:
         return 0
     for month, group in by_month.items():
@@ -693,7 +716,7 @@ def rewrite_month(ledger_dir, month, rows):
     path = os.path.join(ledger_dir, "%s.jsonl" % month)
     tmp = path + ".tmp"
     try:
-        os.makedirs(ledger_dir, exist_ok=True)
+        ensure_ledger_dir(ledger_dir)
         with open(tmp, "w", encoding="utf-8") as fh:
             for row in rows:
                 fh.write(json.dumps(row, separators=(",", ":"),
@@ -2290,6 +2313,30 @@ def _selftest():
         check("coverage: empty ledger is not a crash", coverage([])["total"] == 0)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- ig: the ledger dir is self-ignoring --------------------------------
+    # It holds person identities and per-machine cursors; a `*` .gitignore
+    # written by every dir-creating writer keeps `git add .claude` from
+    # publishing either. An existing marker is the user's file - preserved.
+    _ig_tmp = tempfile.mkdtemp(prefix="ledger-ignore-")
+    try:
+        _ig = os.path.join(_ig_tmp, "ledger")
+        append_rows(_ig, [{"ts": "2026-08-01T09", "out": 5}])
+        check("ig1 append_rows drops a `*` .gitignore beside the monthly file",
+              os.path.exists(os.path.join(_ig, ".gitignore")))
+        _ig2 = os.path.join(_ig_tmp, "ledger2")
+        save_cursor(_ig2, "s-ig", {"pos": 1})
+        check("ig2 save_cursor marks the LEDGER ROOT self-ignoring, covering "
+              ".cursors beneath it",
+              os.path.exists(os.path.join(_ig2, ".gitignore")))
+        with open(os.path.join(_ig, ".gitignore"), "w", encoding="utf-8") as fh:
+            fh.write("custom\n")
+        rewrite_month(_ig, "2026-08", [{"ts": "2026-08-01T09", "out": 5}])
+        check("ig3 an existing marker is preserved by every writer",
+              open(os.path.join(_ig, ".gitignore"),
+                   encoding="utf-8").read() == "custom\n")
+    finally:
+        shutil.rmtree(_ig_tmp, ignore_errors=True)
 
     passed = sum(1 for _, ok, _ in cases if ok)
     for label, ok, detail in cases:

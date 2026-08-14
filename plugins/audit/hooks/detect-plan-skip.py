@@ -91,8 +91,8 @@ def _arm_bypass(state_dir: Path, logs_dir: Path, session_id: str,
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
     snippet = " ".join(prompt.split())[:120]
     minutes = _config.BYPASS_TTL_SECONDS // 60
-    state_dir.mkdir(parents=True, exist_ok=True)
-    logs_dir.mkdir(parents=True, exist_ok=True)
+    _config.ensure_local_dir(state_dir)
+    _config.ensure_local_dir(logs_dir)
     with open(state_dir / ("plan-bypass-%s.json" % session_id), "w",
               encoding="utf-8") as fh:
         json.dump({"ts": ts, "reason": snippet,
@@ -185,7 +185,7 @@ def main() -> None:
             flag = state_dir / ("config-error-notified-%s.json" % session_id)
             if not flag.exists():
                 try:
-                    state_dir.mkdir(parents=True, exist_ok=True)
+                    _config.ensure_local_dir(state_dir)
                     flag.write_text(json.dumps({"error": str(err)}),
                                     encoding="utf-8")
                 except Exception:
@@ -371,6 +371,18 @@ def _selftest() -> int:
           "(v0.34 B3) - the arm was previously visible only in the bypass log",
           len(bevents) == 1 and bevents[0].get("event") == "bypass.armed"
           and bevents[0].get("sessionId") == "sess-b", repr(bevents))
+
+    # (i) local dirs are self-ignoring - state/logs never belong in git
+    import shutil as _sh
+    tmp_i = Path(tempfile.mkdtemp(prefix="dps-ignore-"))
+    try:
+        _arm_bypass(tmp_i / "state", tmp_i / "logs", "s-i",
+                    "#no-plan", "#no-plan quick fix")
+        check("i1 arming the bypass leaves self-ignoring state and logs dirs",
+              (tmp_i / "state" / ".gitignore").exists()
+              and (tmp_i / "logs" / ".gitignore").exists())
+    finally:
+        _sh.rmtree(tmp_i, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

@@ -104,10 +104,9 @@ def _change_magnitude(tool: str, ti: dict) -> int:
 
 
 def _ensure_dir(p: Path) -> None:
-    try:
-        p.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
+    # ensure_local_dir also drops the `*` .gitignore marker - every dir this
+    # hook creates (state, logs) is local scratch that must not reach git.
+    _config.ensure_local_dir(p)
 
 
 def _append_log(logs: Path, line: str) -> None:
@@ -1465,6 +1464,17 @@ def _selftest() -> int:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
     else:
         os.environ["CLAUDE_PROJECT_DIR"] = _prev_project_dir
+
+    # (i) _ensure_dir yields self-ignoring local dirs
+    tmp_ig = Path(tempfile.mkdtemp(prefix="rp-ignore-"))
+    try:
+        _ensure_dir(tmp_ig / "state")
+        _ok_ig = (tmp_ig / "state" / ".gitignore").exists()
+        results.append(_ok_ig)
+        print("%s i1 _ensure_dir drops a `*` .gitignore - state and logs "
+              "never belong in git" % ("PASS" if _ok_ig else "FAIL"))
+    finally:
+        shutil.rmtree(tmp_ig, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

@@ -1,5 +1,5 @@
 ---
-name: audit-guide
+name: guide
 description: 'Answers questions about the audit plugin itself — what a config key does, how the plan gate grades, how the capability policy resolves, what the journal can and cannot prove — from the plugin''s own README, reference docs, schemas and SECURITY.md, with a citation for every claim. Mechanically read-only (Read/Grep/Glob only) and cheap by design. Invoke it by name when the panel''s help drawer does not answer the question; it never changes anything.'
 tools: Read, Grep, Glob
 model: haiku
@@ -21,7 +21,7 @@ Where the documents are, in order of what to try:
 
 1. `${CLAUDE_PLUGIN_ROOT}` above is the plugin root when the harness substituted
    it. If it still reads as that literal text, it did not.
-2. Otherwise find it: `Glob` for `**/agents/audit-guide.md` — that file is you,
+2. Otherwise find it: `Glob` for `**/agents/guide.md` — that file is you,
    and its grandparent directory is the plugin root. If the project itself is the
    plugin's own repository, the root is `plugins/audit/`.
 

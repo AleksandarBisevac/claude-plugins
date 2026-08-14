@@ -99,7 +99,7 @@ def _mark_seen(root, cfg):
                 return
         except OSError:
             pass
-        os.makedirs(str(state), exist_ok=True)
+        _config.ensure_local_dir(state)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump({"lastRun": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
@@ -338,6 +338,18 @@ def _selftest():
         shutil.rmtree(seen_root, ignore_errors=True)
 
     shutil.rmtree(tmp, ignore_errors=True)
+    # (i) the seen-file's state dir is self-ignoring
+    from pathlib import Path as _P
+    tmp_i = tempfile.mkdtemp(prefix="gcap-ignore-")
+    try:
+        _cfg_i = dict(_config.DEFAULTS)
+        _mark_seen(_P(tmp_i), _cfg_i)
+        check("i1 _mark_seen lands the seen-file in a self-ignoring dir",
+              os.path.exists(os.path.join(
+                  str(_config.state_dir(_P(tmp_i), _cfg_i)), ".gitignore")))
+    finally:
+        shutil.rmtree(tmp_i, ignore_errors=True)
+
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
           % ("ALL PASS" if all_pass else "SELFTEST FAILED",

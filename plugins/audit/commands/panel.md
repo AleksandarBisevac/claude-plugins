@@ -80,9 +80,9 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   with the description its **schema** gives it — extracted at request time, so the panel and the
   file your editor validates cannot say different things — plus four concept pages (how the plan
   gate grades, how an area resolves a reviewer, how a policy reaches a verdict, what the journal
-  proves) and the `audit-guide` agent's card. There is **no drawer for it yet**; say so rather
+  proves) and the `audit:guide` agent's card. There is **no drawer for it yet**; say so rather
   than sending someone clicking for an ⓘ that is not there. For a question the schema does not
-  answer, ask for the `audit-guide` subagent by name — it reads the plugin's own docs and cites
+  answer, ask for the `audit:guide` subagent by name — it reads the plugin's own docs and cites
   them, and it is read-only.
 - **Nothing is written without showing you what** — on both Settings and Composition. Save
   opens a dialog listing every change as `P1.2 · model · sonnet → opus`, together with any

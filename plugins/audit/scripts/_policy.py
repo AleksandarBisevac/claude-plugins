@@ -418,6 +418,34 @@ def validate_policy(policy, where="policy"):
                 for key in ("allow", "deny"):
                     _check_list(rule.get(key), "%s.%s" % (awhere, key), key in rule,
                                 findings)
+    # The 0.35 guide rename: `audit-guide` became `guide` (qualified
+    # `audit:guide`). A pattern written for the old id is legal and matches
+    # nothing - exactly the kind of quiet no-op this validator exists to name.
+    # Substring match on purpose: it catches the literal id and glob variants
+    # like `*audit-guide*` alike, and cannot touch the new id.
+    def _warn_stale_guide(rule, rwhere):
+        if not isinstance(rule, dict):
+            return
+        for key in ("allow", "deny"):
+            pats = rule.get(key)
+            if not isinstance(pats, list):
+                continue
+            for pat in pats:
+                if isinstance(pat, str) and "audit-guide" in pat:
+                    warnings.append(
+                        "%s.%s: %r names the pre-0.35 agent id - the guide "
+                        "agent is now `audit:guide`, so this pattern no "
+                        "longer matches it" % (rwhere, key, pat))
+    for kind in KINDS:
+        kcfg = policy.get(kind)
+        if not isinstance(kcfg, dict):
+            continue
+        _warn_stale_guide(kcfg, "%s.%s" % (where, kind))
+        areas = kcfg.get("areas")
+        if isinstance(areas, dict):
+            for tag, rule in areas.items():
+                _warn_stale_guide(rule, "%s.%s.areas.%s" % (where, kind, tag))
+
     # A FINDING rather than a warning, and the grading is the point. This
     # validator reserves FINDING for a config that would be MISREAD, and that is
     # exactly what this is: the rule does not take effect (step 1 of `resolve`
@@ -718,6 +746,19 @@ def _selftest():
     _, w = validate_policy({"//comment": "why", "_note": 1})
     check("v15 the `//` comment convention this repo's template uses is not an "
           "unknown key", not w, repr(w))
+
+    # (g) the 0.35 guide rename: a pattern for the old id is legal and matches
+    # nothing - the quiet no-op this validator exists to name.
+    _, w = validate_policy({"agents": {"allow": ["audit:audit-guide"]}})
+    check("g1 a pattern naming the pre-0.35 guide id gets a rename warning",
+          any("audit:guide" in x and "audit-guide" in x for x in w), repr(w))
+    _, w = validate_policy({"agents": {"areas": {"api": {
+        "deny": ["*audit-guide*"]}}}})
+    check("g2 ...including inside an area rule, glob variants too",
+          any("areas.api" in x and "audit:guide" in x for x in w), repr(w))
+    _, w = validate_policy({"agents": {"allow": ["audit:guide", "myteam-*"]}})
+    check("g3 the NEW id and unrelated patterns stay silent",
+          not any("audit-guide" in x for x in w), repr(w))
 
     print(("ALL PASS: %d/%d cases passed" if not bad else
            "SELFTEST FAILED: %d/%d cases passed") % (ok, ok + bad))

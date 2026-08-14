@@ -62,7 +62,7 @@ claude-plugins/                           # this repo (personal, public)
         audit-explorer.md                 # mechanically read-only auditor (no Edit/Write/Bash)
         audit-executor.md                 # task executor (no web tools, no nested agents)
         audit-reviewer.md                 # sign-off reviewer (no edit tools)
-        audit-guide.md                    # answers questions about the plugin (Read/Grep/Glob, haiku)
+        guide.md                          # answers questions about the plugin (Read/Grep/Glob, haiku)
       hooks/
         hooks.json                        # wires the 9 hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
@@ -334,12 +334,12 @@ boundary that does not depend on subagent hook inheritance (#43772); the agent s
 prompts carry the invariants (no commits, no stash, red-first discipline, JSON return
 shapes) while spawn prompts add the per-task specifics.
 
-The fourth, `audit-guide` (Read/Grep/Glob, `model: haiku`), is invoked by a **human**, not by
+The fourth, `guide` (qualified `audit:guide`; Read/Grep/Glob, `model: haiku`), is invoked by a **human**, not by
 the pipeline: it answers questions about the plugin from the plugin's own README, reference
 docs, schemas and SECURITY.md, with a citation per claim. It is deliberately not a skill —
 a skill auto-triggers, and billing a model for a question `/api/help` already answers for
 free is the failure mode this whole feature exists to avoid. `scripts/_help.py` reads its
-frontmatter, so the panel's "Ask audit-guide" hint cannot advertise a tool the agent does not
+frontmatter, so the panel's "Ask audit:guide" hint cannot advertise a tool the agent does not
 hold, and the build fails if it ever gains one that writes.
 
 ### `plugins/audit/hooks/guard-secrets-read.py`
@@ -684,7 +684,7 @@ restated by hand — a second copy of that prose is a second thing to drift, whi
 already shipped once. Topics are derived from the executable rule where one exists (the plan
 gate's tiers from `_config.plan_gate_mode`, area resolution from `_areas`' own pinned sentences,
 policy precedence from a worked `_policy.resolve` example) and are pointers, not restatements,
-where the rule lives only in prose. `guide_card()` reads `agents/audit-guide.md`'s frontmatter
+where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
 so the panel cannot advertise a tool that agent does not hold.
 
 ### `plugins/audit/scripts/validate-config.py`

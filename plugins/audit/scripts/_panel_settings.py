@@ -84,8 +84,10 @@ FIELD_HELP = {
         "Default '.' — this directory IS the git root.",
     "stateDir":
         "Where the hooks keep their per-session state files. They are local scratch, "
-        "garbage-collected after 7 days; gitignore them.",
-    "logsDir": "Where the hooks write the bypass log. Local scratch; gitignore it.",
+        "garbage-collected after 7 days; the dir ignores itself (a `*` .gitignore "
+        "is written inside).",
+    "logsDir": "Where the hooks write the bypass log. Local scratch; self-ignoring "
+               "like stateDir.",
     "bypassKeyword":
         "Type this in a prompt to arm a ONE-OFF plan-first bypass for the next edit. "
         "It is consumed by that edit and logged.",

@@ -332,10 +332,11 @@ def _read_pidfile(project):
 def _redact_token(url):
     """Same URL with the `t=` value replaced, for anything that gets kept.
 
-    The token is a live credential for a localhost server, and this plugin already
-    treats it as one: the pidfile holding it is gitignored with the note "Never
-    history". Printing it to a terminal that Claude Code transcribes was the same
-    leak by a different route.
+    The token is a live credential for a localhost server, and this plugin
+    treats it as one: the pidfile holding it gets its ignore rule written by
+    _ensure_pidfile_ignored (claimed-but-never-written until 0.35 - found on
+    a real repo by `git check-ignore`). Printing it to a terminal that Claude
+    Code transcribes was the same leak by a different route.
 
     Matches `t=` at the start of the string as well as after `?`/`&`. A redactor that
     passes its input through unchanged when the shape is unexpected is worse than no
@@ -348,9 +349,46 @@ def _redact_token(url):
         return "http://127.0.0.1/?t=<hidden>"
 
 
+def _ensure_pidfile_ignored(project):
+    """Write the ignore rule the status line used to merely CLAIM existed.
+
+    The pidfile carries a live session token, and "it is gitignored; keep it
+    that way" shipped for versions while nothing anywhere wrote the rule —
+    `git check-ignore` on a real repo came back empty, one `git add .claude`
+    from putting the token in history. The rule is a single targeted line in
+    `.claude/.gitignore`; never a blanket ignore, because audit.config.json
+    and settings.json beside it are exactly what a team SHOULD commit (the
+    file itself is committable and shares the hygiene). Returns True when the
+    rule is in place, False when it could not be ensured — callers must warn
+    then, not claim."""
+    try:
+        path = _pidfile(project)
+        base = os.path.basename(path)
+        gi = os.path.join(os.path.dirname(path), ".gitignore")
+        try:
+            with open(gi, "r", encoding="utf-8") as fh:
+                content = fh.read()
+        except OSError:
+            content = None
+        if content is not None \
+                and base in [ln.strip() for ln in content.splitlines()]:
+            return True
+        with open(gi, "a", encoding="utf-8") as fh:
+            if content is None:
+                fh.write("# audit plugin: the panel pidfile holds a live "
+                         "session token\n")
+            elif content and not content.endswith("\n"):
+                fh.write("\n")
+            fh.write(base + "\n")
+        return True
+    except Exception:
+        return False
+
+
 def _write_pidfile(project, info):
     path = _pidfile(project)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    _ensure_pidfile_ignored(project)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(info, fh, indent=2)
 
@@ -382,8 +420,14 @@ def status_panel(project):
         # --status answers "is it running", which needs the port but not the token.
         print("panel RUNNING: %s (PID %s)"
               % (_redact_token(info.get("url")), info.get("pid")))
-        print("the full URL (with its session token) is in "
-              ".claude/audit-panel.json — it is gitignored; keep it that way")
+        if _ensure_pidfile_ignored(project):
+            print("the full URL (with its session token) is in "
+                  ".claude/audit-panel.json — it is gitignored; keep it that way")
+        else:
+            print("the full URL (with its session token) is in "
+                  ".claude/audit-panel.json — WARNING: could not write the "
+                  "ignore rule; add `audit-panel.json` to .claude/.gitignore "
+                  "before anything commits it")
         return 0
     _rm_pidfile(project)   # stale/none
     print("panel not running (project: %s)" % project)
@@ -452,10 +496,10 @@ def serve(project, port=0, open_browser=True):
     atexit.register(_rm_pidfile, project)
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))  # --stop → clean exit
     # The URL carries a live session token. Printing it put that token in terminal
-    # scrollback and in the Claude transcript — the same value whose pidfile is
-    # gitignored with the note "Never history". So it is printed only when the
-    # caller has to open the URL by hand (--no-open); in the default flow the
-    # browser is handed the URL directly and the terminal shows a redacted form.
+    # scrollback and in the Claude transcript — the same value whose pidfile gets
+    # its ignore rule written by _ensure_pidfile_ignored. So it is printed only
+    # when the caller has to open the URL by hand (--no-open); in the default flow
+    # the browser is handed the URL directly and the terminal shows a redacted form.
     if open_browser:
         print("audit control panel: %s  (token hidden)" % _redact_token(url))
         print("project: %s" % project)
@@ -642,8 +686,8 @@ def _selftest():
           == ["areas", "gate-tiers", "journal", "policy"]
           and all(t["title"] and t["paragraphs"] for t in _help_pay["topics"]))
     check("the guide agent's card rides along with the tools its own file grants, "
-          "so an 'Ask audit-guide' hint cannot offer a capability it does not have",
-          (_help_pay["agent"] or {}).get("name") == "audit-guide"
+          "so an 'Ask audit:guide' hint cannot offer a capability it does not have",
+          (_help_pay["agent"] or {}).get("name") == "guide"
           and (_help_pay["agent"] or {}).get("readOnly") is True
           and (_help_pay["agent"] or {}).get("model") == "haiku")
     check("the payload is documentation, not state: it names no path on this "
@@ -2199,6 +2243,45 @@ def _selftest():
     _write_pidfile(proj, {"pid": 2147483000, "port": 1, "url": "http://x"})
     check("stop clears a stale pidfile", stop_panel(proj) == 0
           and _read_pidfile(proj) is None)
+
+    # --- (i) the pidfile ignore rule is WRITTEN, not just claimed ---------------
+    # The status line has said "it is gitignored; keep it that way" since the
+    # panel learned to redact the URL - but nothing ever wrote the rule, and on
+    # a real repo `git check-ignore` proved the token file one `git add .claude`
+    # away from history. The plugin now ensures the rule itself.
+    _gi = os.path.join(proj, ".claude", ".gitignore")
+    try:
+        os.remove(_gi)
+    except OSError:
+        pass
+    _write_pidfile(proj, {"pid": 1, "port": 1, "url": "http://x"})
+    _gi_lines = []
+    try:
+        with open(_gi, encoding="utf-8") as fh:
+            _gi_lines = [ln.strip() for ln in fh.read().splitlines()]
+    except OSError:
+        pass
+    check("i1 writing the pidfile ensures a targeted .claude/.gitignore rule",
+          "audit-panel.json" in _gi_lines)
+    check("i2 the rule is targeted - nothing else in .claude is ignored",
+          not any("*" == ln or "audit.config.json" in ln or "settings" in ln
+                  for ln in _gi_lines))
+    with open(_gi, "w", encoding="utf-8") as fh:
+        fh.write("node_modules")            # pre-existing, NO trailing newline
+    check("i3 appending to a newline-less .gitignore does not glue lines",
+          _ensure_pidfile_ignored(proj)
+          and open(_gi, encoding="utf-8").read().splitlines()[0] == "node_modules")
+    _n_before = open(_gi, encoding="utf-8").read().count("audit-panel.json")
+    _ensure_pidfile_ignored(proj)
+    check("i4 re-ensuring is idempotent - no duplicate lines",
+          open(_gi, encoding="utf-8").read().count("audit-panel.json")
+          == _n_before == 1)
+    _proj_bad = os.path.join(tmp, "badproj")
+    os.makedirs(_proj_bad, exist_ok=True)
+    with open(os.path.join(_proj_bad, ".claude"), "w", encoding="utf-8") as fh:
+        fh.write("")                        # .claude is a FILE: rule unwritable
+    check("i5 an unwritable rule reports False so callers warn instead of "
+          "claiming", _ensure_pidfile_ignored(_proj_bad) is False)
 
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

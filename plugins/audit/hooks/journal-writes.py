@@ -215,7 +215,7 @@ def pre_cache(data, *, cfg=None, root=None):
                 content = raw.decode("utf-8", "replace")
         except OSError:
             pass                   # no such file yet: the slot records that too
-        os.makedirs(os.path.dirname(slot), exist_ok=True)
+        _config.ensure_local_dir(os.path.dirname(slot))
         with open(slot, "w", encoding="utf-8") as fh:
             json.dump({"path": rel,
                        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -491,7 +491,7 @@ def record_plugin_write(root, cfg, data, written_path):
             pass
         if rel not in wrote:
             wrote.append(rel)
-            os.makedirs(os.path.dirname(slot), exist_ok=True)
+            _config.ensure_local_dir(os.path.dirname(slot))
             with open(slot, "w", encoding="utf-8") as fh:
                 json.dump({"pluginWrote": wrote}, fh)
         return slot
@@ -1041,6 +1041,19 @@ def _selftest() -> int:
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # (i) the sidecar's state dir is self-ignoring
+    tmp_i = tempfile.mkdtemp(prefix="jw-ignore-")
+    try:
+        _cfg_i = dict(_config.DEFAULTS)
+        record_plugin_write(tmp_i, _cfg_i, {"session_id": "s-i"},
+                            os.path.join(tmp_i, "docs", "audit", "journal",
+                                         "j.jsonl"))
+        check("i1 record_plugin_write's state dir carries a `*` .gitignore",
+              os.path.exists(os.path.join(
+                  tmp_i, str(_cfg_i["stateDir"]), ".gitignore")))
+    finally:
+        shutil.rmtree(tmp_i, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
