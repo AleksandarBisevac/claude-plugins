@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: print manifest status — phases, tasks, bugs, the ready-now list and what each pending task is waiting on. Read-only, no locks, no mutations.'
-argument-hint: '[--json]'
+argument-hint: '[--json] [--color auto|always|never]'
 allowed-tools: Bash
 ---
 

@@ -206,6 +206,22 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
 .tb-id .meta{font-size:.72rem}
 .tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
+/* The global filter row (C1/C2): a second line of the SAME sticky bar, never a
+   separate floating element — the full argument lives on the Python builder
+   (_report_html._global_filter_row). Geometry cost is absorbed by the measured
+   --topbar-h, print cost is zero (the whole .topbar is dropped from paper by a
+   pinned rule), and on a phone the row wraps under the title like any flex
+   line. flex-basis:100% is what makes it a row of the bar rather than one more
+   item competing with the actions for the first line. */
+.gfilters{flex-basis:100%;display:flex;align-items:center;gap:.3rem .5rem;
+  flex-wrap:wrap;padding-top:.45rem;border-top:1px solid var(--border)}
+.gfilters .gf{display:inline-flex;align-items:center;gap:.3rem}
+.gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
+  padding:.28rem .4rem;color:var(--text);background:var(--bg);
+  border:1px solid var(--border);border-radius:var(--radius);max-width:11rem}
+.gfilters select:focus,.gfilters input[type=date]:focus{outline:none;
+  border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
   max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
 .content{min-width:0}
@@ -692,6 +708,63 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
    committed example produced seven 595x842 pages, i.e. portrait, every time.
    The margin stays. That is a request about ink and about the reader's eye;
    the sheet and which way round it goes belong to whoever holds the printer. */
+/* ---- ready now (C4) ------------------------------------------------------
+   A definition list: the term is the task (id, title, its phase's area tags in
+   the chip style areas wear everywhere), the definition is why it is ready.
+   Kept quiet — a left rule and a hanging indent, no cards: this section is a
+   work queue, and twenty framed boxes would out-shout the phases table. */
+dl.ready{margin:.25rem 0 0;padding:0}
+dl.ready dt{padding:.35rem 0 0;display:flex;align-items:baseline;gap:.5rem;
+  flex-wrap:wrap}
+dl.ready dt code{font-family:var(--mono);font-size:.8rem;
+  font-variant-numeric:tabular-nums;color:var(--accent)}
+dl.ready dt strong{font-weight:600}
+dl.ready dd{margin:.1rem 0 .35rem;padding:0 0 .35rem 1.1rem;
+  border-left:2px solid var(--border);font-size:.78rem;color:var(--muted)}
+@media print{dl.ready dd{break-inside:avoid}}
+
+/* ---- segments (D1) --------------------------------------------------------
+   The phases table renders in three blocks — active, pending, done — each
+   introduced by a full-width header row. The header is quiet chrome, not a
+   status chip: a tinted band with an uppercase label, the phase count, and
+   (D2) the segment's export controls hung off its right edge. The done
+   segment's header is the ARCHIVE toggle; report.js collapses the done rows
+   under it at load so a long finished run stops burying the work in motion.
+
+   Deliberately NOT a per-segment vertical scroll box: the segments live in
+   ONE table (splitting it would re-measure the columns per segment and skew
+   every row against the shared thead), and table rows cannot be
+   height-clipped without display:block, which breaks that same alignment.
+   The archive collapse is what delivers the scanning win instead; the house
+   rule the table does keep is horizontal — .tablewrap owns any sideways
+   overflow, and the page never scrolls sideways. */
+tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);padding:.45rem .75rem;
+  font-size:.72rem;color:var(--muted)}
+.segname{font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text)}
+.segn{margin-left:.5rem}
+/* The export cluster: on the header's right edge, out of the label's way. */
+.segx{float:right;display:inline-flex;gap:.3rem}
+.segbtn{font-size:.68rem;padding:.25rem .5rem}
+/* The usage exports sit under the trend heading as their own right-aligned
+   row — the h3 above them is a nav anchor whose exact bytes render-report
+   rewrites, so nothing may ride inside it. */
+.usx{float:none;display:flex;justify-content:flex-end;gap:.3rem;
+  margin:.2rem 0 0}
+.segtoggle{cursor:pointer;font:inherit;font-size:.72rem;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--text);
+  background:none;border:0;padding:0;display:inline-flex;align-items:center;
+  gap:.4em}
+.segtoggle::after{content:"\25BE";color:var(--muted)}
+.segtoggle[aria-expanded="true"]::after{content:"\25B4"}
+.segtoggle:hover{color:var(--accent)}
+.segtoggle:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* The advisory owner suffix on an area tag (D4): same chip, quieter voice —
+   the tag is the identifier, the owner is a note about it. */
+.area-tag .aown{font-weight:400;letter-spacing:normal;text-transform:none;
+  opacity:.8}
+
 @page{margin:1.4cm}
 @media print{
   /* color-scheme comes with the colours. Overriding the tokens alone would print
@@ -802,6 +875,13 @@ h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
 .cols{width:100%;height:210px;display:block;overflow:visible}
 .cols .grid{stroke:var(--border);stroke-width:1;fill:none}
 .cols .col{fill:var(--viz-1)}
+/* C1: columns outside the active date range recede rather than vanish — the
+   geometry never moves (deterministic render, stable x axis) and the excluded
+   context stays honestly visible as context. Same treatment for the tick
+   labels under them. Prints as it shows; #audit-urange names the range. */
+.cols .col.dimout{opacity:.15}
+.colswrap .xt.dimout{opacity:.35}
+.urange{font-variant-numeric:tabular-nums}
 .colswrap .yt,.colswrap .xt{position:absolute;font-size:.62rem;color:var(--muted);
   font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;
   pointer-events:none}
@@ -923,15 +1003,36 @@ details.more>summary:hover{color:var(--text)}
 .seg{min-width:2px;border-radius:1px}
 .seg:last-child{border-radius:1px 4px 4px 1px}
 /* day x hour heatmap */
+/* C3: the calendar navigation row above the grid. Chips share the .fchip
+   grammar (they are pressable); the period label NAMES what the grid shows,
+   because "which week is this" must never be implied by cell tooltips alone.
+   A disabled arrow is muted and inert rather than hidden: at the edge of the
+   data the control still says where the edge is. */
+.hmnav{display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap;
+  margin:var(--sp-1) 0}
+#audit-hm-gran{display:inline-flex;gap:.25rem;flex-wrap:wrap;margin-right:var(--sp-1)}
+.hmperiod{font-size:.78rem;color:var(--text);font-variant-numeric:tabular-nums;
+  min-width:11rem;text-align:center}
+.hmarrow{padding:.3rem .55rem;line-height:1}
+.hmarrow[disabled]{opacity:.35;cursor:default;pointer-events:none;transform:none;
+  box-shadow:none}
+@media print{.hmnav .fchip,.hmarrow{display:none!important}}
 .hmwrap{overflow-x:auto}
-.hm{border-collapse:separate;border-spacing:2px;font-size:.62rem;color:var(--muted)}
+/* Full width (C3): the grid is the section's second-largest reading surface and
+   drew at a fixed 20px per cell — half the column the trend chart uses. Fixed
+   layout hands the 24 hour columns equal shares of the row; the min-width keeps
+   a cell from collapsing below legibility on a phone, where .hmwrap already
+   scrolls the grid inside its own frame instead of widening the page. */
+.hm{border-collapse:separate;border-spacing:2px;font-size:.62rem;color:var(--muted);
+  width:100%;table-layout:fixed;min-width:42rem}
+.hm .hmc{width:4.8rem}
 /* The report's global `thead th` is sticky for the long phases table; a 7-row
    heatmap must opt out or its hour ruler detaches and floats over the grid. */
 .hm thead th{position:static;background:none;border:0;padding:0 var(--sp-0)}
 .hm th{font-weight:500;color:var(--muted);padding:0 var(--sp-0);text-align:right;
   white-space:nowrap}
 .hm td{padding:0}
-.hm i{display:block;width:20px;height:15px;border-radius:2px;background:var(--hm-0);
+.hm i{display:block;width:auto;height:22px;border-radius:2px;background:var(--hm-0);
   cursor:help}
 /* 168 cells, each with a tooltip naming its day, hour and token count, and no cell
    ever indicated that. An OUTLINE rather than a border or a transform: outlines are
@@ -953,10 +1054,53 @@ details.more>summary:hover{color:var(--text)}
   .mm{grid-template-columns:.62rem 1fr}
   .mm .spark{grid-column:1/-1}
 }
+
+/* ---- segment print rules (D1) ----------------------------------------------
+   A page break lands before every segment header, so each segment starts its
+   own sheet — except the first, which would otherwise print a blank page
+   ahead of the whole table. The header itself is forced visible: a filter
+   may have hidden it inline on screen, and paper prints the plan whole (the
+   pinned tr.phase/tr.task rule two blocks up), so the landmark each break
+   lands on has to be there.
+
+   THE ARCHIVE PRINTS EXPANDED, not as a summary. Chosen because the pinned
+   whole-plan rule (`tr.phase,tr.task{display:table-row!important}`) is the
+   Save-as-PDF button's standing promise — paper gets every row, filtered or
+   collapsed or not — and an archive that printed as one count line would be
+   the first exception to it: a PDF silently missing the signed-off record it
+   exists to archive. The reader who wants less paper has the per-segment
+   Print buttons instead. */
+@media print{
+  tr.seghead{break-before:page;display:table-row!important}
+  #phases tbody tr.seghead:first-child{break-before:auto}
+  /* The export controls are screen furniture; on paper they are dead ink. */
+  .segx,.secx{display:none!important}
+  /* The archive header prints as a plain segment title: every row under it
+     is already on the page, so a disclosure arrow would be a control that
+     lies (the .tri rule's own argument). */
+  .segtoggle::after{content:""}
+}
+
+/* ---- one segment on paper (D2) ---------------------------------------------
+   The per-segment Print button stamps body[data-printseg="<seg>"], opens the
+   print dialog, and afterprint takes the attribute back off. Under it, print
+   CSS isolates the segment: everything in the main column except the phases
+   section goes (the hero, usage, bugs, ready — each would print a statement
+   about the WHOLE plan on a sheet claiming to be one segment), and inside
+   the table every row of the other segments goes, seghead included. Higher
+   specificity than the pinned whole-plan rule, and later in the sheet, so
+   these !important rules win exactly where the attribute says they should. */
+@media print{
+  body[data-printseg] .content>*:not(#phases){display:none!important}
+  body[data-printseg="active"] #phases tr[data-seg]:not([data-seg="active"]),
+  body[data-printseg="pending"] #phases tr[data-seg]:not([data-seg="pending"]),
+  body[data-printseg="done"] #phases tr[data-seg]:not([data-seg="done"]){
+    display:none!important}
+}
 </style>
 <div id="audit-nojs" class="nojs" role="status"><strong>This report is interactive, and its scripts are not running here.</strong> Filtering, search, sorting and expanding a phase all need them. An IDE preview pane usually blocks inline scripts — open this file in a real browser and it will work.</div>
-<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-14 08:55 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.35.1</span></p></div>
-<div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — the whole plan, every phase expanded. Paper size and orientation are yours to pick in the print dialog.">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div></header>
+<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-14 11:34 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.36.0</span></p></div>
+<div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — the whole plan, every phase expanded. Paper size and orientation are yours to pick in the print dialog.">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div><div class="gfilters" role="group" aria-label="Global filters"><label class="gf"><span class="tbl">Author</span><select id="audit-au-select" aria-label="Scope the Usage section&#39;s per-author views to one author"><option value="">All authors</option><option value="milos@acme.example">milos@acme.example</option><option value="alex@acme.example">alex@acme.example</option><option value="sara@acme.example">sara@acme.example</option></select></label><label class="gf"><span class="tbl">Area</span><select id="audit-area-select" aria-label="Show only phases tagged with this area"><option value="">All areas</option><option value="auth">auth</option><option value="storefront">storefront</option><option value="checkout">checkout</option></select></label><label class="gf"><span class="tbl">From</span><input type="date" id="audit-gfrom" aria-label="Start of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><label class="gf"><span class="tbl">to</span><input type="date" id="audit-gto" aria-label="End of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><button type="button" class="btn" id="audit-gclear" hidden title="Clear the date range - back to all time">All time</button></div></header>
 <div class="shell"><nav class="snav" aria-label="Report sections"><p class="snav-title">Contents</p><ol><li class="item"><a href="#gate">Gate</a></li><li class="item"><a href="#phases">Phases<span class="n">4</span></a></li><li class="item"><a href="#usage">Usage</a></li><li class="sub-item"><a href="#usage-trend">Tokens per day</a></li><li class="sub-item"><a href="#usage-budget">Budget</a></li><li class="item"><a href="#bugs">Bugs<span class="n">3</span></a></li><li class="item"><a href="#ready">Ready now<span class="n">1</span></a></li></ol></nav><main class="content">
 <div class="topgrid">
 <section class="overall" id="gate" data-gate="blocked" aria-label="Gate verdict"><p class="vd-eyebrow">Gate</p><p class="vd-word">Blocked</p><p class="vd-why">1 blocked task</p><p class="vd-basis"><span title="audit-status.py --gate --fail-on invalid,open-high-bugs,blocked-tasks">Checks manifest validity, high-severity bugs, blocked tasks. Spend is deliberately not one of them.</span></p><div class="vd-next"><span class="tbl">Next</span> <code class="vd-run">/audit:run P2.4</code><button type="button" class="btn btn-copy" data-copy="/audit:run P2.4">Copy</button></div><div class="vd-stats"><span class="bar"><span class="fill" style="--w:40%"></span></span> <span class="muted">4/10</span><span class="muted">4 tasks done · 1 of 4 phases signed off · 3 open bugs</span></div></section>
@@ -965,72 +1109,75 @@ details.more>summary:hover{color:var(--text)}
 <section id="phases" class="sec">
 <div class="toolbar sectools" role="search" aria-label="Filter the phases table"><input id="audit-q" type="search" aria-label="Filter phases and tasks by text" placeholder="Filter phases &amp; tasks by text…"><span class="tbl">Phase status:</span><span id="audit-phase-status"><button type="button" class="fchip" data-ps="done" aria-pressed="false">Done</button><button type="button" class="fchip" data-ps="in_progress" aria-pressed="false">In progress</button><button type="button" class="fchip" data-ps="pending" aria-pressed="false">Pending</button></span><details class="fdetails"><summary aria-label="More filters">More filters<span class="fcount" id="audit-fcount"></span></summary><div class="filterpanel"><div class="frow"><span class="tbl">Area:</span><span id="audit-areas"><button type="button" class="fchip" data-a="auth" aria-pressed="false">auth</button><button type="button" class="fchip" data-a="storefront" aria-pressed="false">storefront</button><button type="button" class="fchip" data-a="checkout" aria-pressed="false">checkout</button></span></div><div class="frow"><span class="tbl">Model:</span><span id="audit-model"><button type="button" class="fchip" data-m="haiku" aria-pressed="false">haiku</button><button type="button" class="fchip" data-m="opus" aria-pressed="false">opus</button><button type="button" class="fchip" data-m="sonnet" aria-pressed="false">sonnet</button></span></div><div class="frow"><span class="tbl">Worked between:</span><input type="date" id="audit-from" aria-label="Show tasks worked on or after this date" min="2026-06-02" max="2026-07-21"><span class="tbl">and</span><input type="date" id="audit-to" aria-label="Show tasks worked on or before this date" min="2026-06-02" max="2026-07-21"></div><div class="frow"><span class="tbl">Last:</span><span id="audit-presets"><button type="button" class="fchip" data-days="7" aria-pressed="false">7 days</button><button type="button" class="fchip" data-days="30" aria-pressed="false">30 days</button><button type="button" class="fchip" data-days="all" aria-pressed="false">All</button></span></div><p class="fnote">Counted back from 2026-07-21, the last day this plan recorded work — not from today.</p></div></details><button type="button" id="audit-expand" class="btn">expand all</button><button type="button" class="btn" data-clear hidden>Clear filters</button><span id="audit-count" class="muted"></span><noscript><span class="tbl">Filtering and collapsing need JavaScript — every row is shown.</span></noscript></div>
 <div class="tablewrap"><table class="phases"><thead><tr><th>id</th><th>title</th><th>status</th><th>model</th><th>risk</th><th>commit</th><th>done</th><th>ADO</th><th>outcome</th></tr></thead><tbody>
-<tr class="phase" id="phase-P1" data-phase="P1" data-status="done" data-area="auth" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P1</span> <strong>Auth hardening</strong> <span class="area-tag">auth</span> <span class="chip" data-status="done">Done</span><span class="stamp" title="Last commit recorded in this phase">b2d7e58</span> <span class="bar"><span class="fill" style="--w:100%"></span></span> <span class="muted">2/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Credentials are stored and checked safely: modern password hashing and a rate-limited login path. · branch audit/p1-auth-hardening · merged 2026-06-10T11:05:00Z · Argon2id replaces the legacy MD5 hashing and the login endpoint is now rate-limited. Meets the desired outcome; verified by new tests and a passing review.</div></td></tr>
-<tr class="taskfilter" data-phase="P1"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button></span></td></tr>
-<tr class="task" data-phase="P1" data-status="done" data-model="opus" data-started="2026-06-02" data-completed="2026-06-02"><td class="mono tid">P1.1</td><td>Hash passwords with Argon2id</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>9a1f0c2</td><td class=when><span title="started 2026-06-02T09:10:00Z · completed 2026-06-02T15:40:00Z">2026-06-02</span></td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1421">#1421</a></td><td class=muted>Passwords are now stored with a modern, memory-hard hash.</td></tr>
-<tr class="task" data-phase="P1" data-status="done" data-model="sonnet" data-started="2026-06-08" data-completed="2026-06-09"><td class="mono tid">P1.2</td><td>Rate-limit the login endpoint</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>b2d7e58</td><td class=when><span title="started 2026-06-08T10:00:00Z · completed 2026-06-09T12:20:00Z">2026-06-09</span></td><td><span class="muted">—</span></td><td class=muted>Repeated failed logins are now throttled.</td></tr>
-<tr class="phase" id="phase-P2" data-phase="P2" data-status="in_progress" data-area="storefront checkout" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P2</span> <strong>Input validation</strong> <span class="area-tag">storefront</span> <span class="area-tag">checkout</span> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:25%"></span></span> <span class="muted">1/4</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template. · branch audit/p2-input-validation</div></td></tr>
-<tr class="taskfilter" data-phase="P2"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="blocked" aria-pressed="false">Blocked</button><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button><button type="button" class="tf-chip" data-ts="in_progress" aria-pressed="false">In progress</button><button type="button" class="tf-chip" data-ts="pending" aria-pressed="false">Pending</button></span></td></tr>
-<tr class="task" data-phase="P2" data-status="done" data-model="sonnet" data-started="2026-06-22" data-completed="2026-06-23"><td class="mono tid">P2.1</td><td>Validate the checkout payload</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>c4a11b9</td><td class=when><span title="started 2026-06-22T09:30:00Z · completed 2026-06-23T16:10:00Z">2026-06-23</span></td><td><span class="muted">—</span></td><td class=muted>Malformed checkouts are turned away early.</td></tr>
-<tr class="task" data-phase="P2" data-status="in_progress" data-model="opus" data-started="2026-07-06"><td class="mono tid">P2.2</td><td>Sanitize the product-search query</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-06T09:00:00Z · completed —">started 2026-07-06</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="task" data-phase="P2" data-status="blocked" data-model="sonnet" data-started="2026-07-13"><td class="mono tid">P2.3</td><td>Escape server-rendered template output</td><td><span class="chip" data-status="blocked">Blocked</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-13T09:15:00Z · completed —">started 2026-07-13</span></td><td><span class="muted">—</span></td><td class=muted>Blocked pending a cross-cutting escaping-helper decision.</td></tr>
-<tr class="task" data-phase="P2" data-status="pending" data-model="haiku"><td class="mono tid">P2.4</td><td>Add zod schemas for cart mutations</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="phase" id="phase-P3" data-phase="P3" data-status="pending" data-held="1" data-area="storefront" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P3</span> <strong>Performance pass</strong> <span class="area-tag">storefront</span> <span class="chip" data-status="pending">Pending</span><a class="heldby" href="#phase-P2" title="This phase is held until P2 is done">held by P2</a> <span class="bar"><span class="fill" style="--w:0%"></span></span> <span class="muted">0/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: The catalog and product pages render without the known redundant work and heavy above-the-fold images.</div></td></tr>
-<tr class="taskfilter" data-phase="P3"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="pending" aria-pressed="false">Pending</button></span></td></tr>
-<tr class="task" data-phase="P3" data-status="pending" data-held="1" data-model="haiku"><td class="mono tid">P3.1</td><td>Memoize the product-list selector</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="task" data-phase="P3" data-status="pending" data-held="1" data-model="haiku"><td class="mono tid">P3.2</td><td>Lazy-load below-the-fold images</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="phase" id="phase-BF1" data-phase="BF1" data-status="in_progress" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">BF1</span> <strong>Bugfix batch 1</strong> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:50%"></span></span> <span class="muted">1/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Reported bugs are reproduced red-first and fixed. · branch audit/bf1-bugfix-batch-1</div></td></tr>
-<tr class="taskfilter" data-phase="BF1"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button><button type="button" class="tf-chip" data-ts="in_progress" aria-pressed="false">In progress</button></span></td></tr>
-<tr class="task" data-phase="BF1" data-status="in_progress" data-model="sonnet" data-started="2026-07-20"><td class="mono tid">BF1.1</td><td>Fix BUG-3: cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-20T11:00:00Z · completed —">started 2026-07-20</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
-<tr class="task" data-phase="BF1" data-status="done" data-model="opus" data-started="2026-07-21" data-completed="2026-07-21"><td class="mono tid">BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>a1b2c3d</td><td class=when><span title="started 2026-07-21T09:40:00Z · completed 2026-07-21T18:05:00Z">2026-07-21</span></td><td><span class="muted">—</span></td><td class=muted>Logging out now actually ends the session.</td></tr>
+<tr class="seghead" data-seg="active"><td colspan="9"><span class="segname">Active</span><span class="segn">2 phases</span><span class="segx"><button type="button" class="btn segbtn" data-segcsv="active" title="Download this segment&#39;s phases and tasks as CSV — the data, not the filtered view">CSV</button><button type="button" class="btn segbtn" data-segprint="active" title="Print only this segment — the print dialog opens scoped to it">Print</button></span></td></tr>
+<tr class="phase" id="phase-P2" data-phase="P2" data-status="in_progress" data-seg="active" data-area="storefront checkout" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P2</span> <strong>Input validation</strong> <span class="area-tag">storefront</span> <span class="area-tag">checkout</span> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:25%"></span></span> <span class="muted">1/4</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template. · branch audit/p2-input-validation</div></td></tr>
+<tr class="taskfilter" data-phase="P2" data-seg="active"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="blocked" aria-pressed="false">Blocked</button><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button><button type="button" class="tf-chip" data-ts="in_progress" aria-pressed="false">In progress</button><button type="button" class="tf-chip" data-ts="pending" aria-pressed="false">Pending</button></span></td></tr>
+<tr class="task" data-phase="P2" data-seg="active" data-status="done" data-model="sonnet" data-started="2026-06-22" data-completed="2026-06-23"><td class="mono tid">P2.1</td><td>Validate the checkout payload</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>c4a11b9</td><td class=when><span title="started 2026-06-22T09:30:00Z · completed 2026-06-23T16:10:00Z">2026-06-23</span></td><td><span class="muted">—</span></td><td class=muted>Malformed checkouts are turned away early.</td></tr>
+<tr class="task" data-phase="P2" data-seg="active" data-status="in_progress" data-model="opus" data-started="2026-07-06"><td class="mono tid">P2.2</td><td>Sanitize the product-search query</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-06T09:00:00Z · completed —">started 2026-07-06</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="task" data-phase="P2" data-seg="active" data-status="blocked" data-model="sonnet" data-started="2026-07-13"><td class="mono tid">P2.3</td><td>Escape server-rendered template output</td><td><span class="chip" data-status="blocked">Blocked</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-13T09:15:00Z · completed —">started 2026-07-13</span></td><td><span class="muted">—</span></td><td class=muted>Blocked pending a cross-cutting escaping-helper decision.</td></tr>
+<tr class="task" data-phase="P2" data-seg="active" data-status="pending" data-model="haiku"><td class="mono tid">P2.4</td><td>Add zod schemas for cart mutations</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="phase" id="phase-BF1" data-phase="BF1" data-status="in_progress" data-seg="active" data-area="" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">BF1</span> <strong>Bugfix batch 1</strong> <span class="chip" data-status="in_progress">In progress</span> <span class="bar"><span class="fill" style="--w:50%"></span></span> <span class="muted">1/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Reported bugs are reproduced red-first and fixed. · branch audit/bf1-bugfix-batch-1</div></td></tr>
+<tr class="taskfilter" data-phase="BF1" data-seg="active"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button><button type="button" class="tf-chip" data-ts="in_progress" aria-pressed="false">In progress</button></span></td></tr>
+<tr class="task" data-phase="BF1" data-seg="active" data-status="in_progress" data-model="sonnet" data-started="2026-07-20"><td class="mono tid">BF1.1</td><td>Fix BUG-3: cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>—</td><td class=when><span class="muted" title="started 2026-07-20T11:00:00Z · completed —">started 2026-07-20</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="task" data-phase="BF1" data-seg="active" data-status="done" data-model="opus" data-started="2026-07-21" data-completed="2026-07-21"><td class="mono tid">BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>a1b2c3d</td><td class=when><span title="started 2026-07-21T09:40:00Z · completed 2026-07-21T18:05:00Z">2026-07-21</span></td><td><span class="muted">—</span></td><td class=muted>Logging out now actually ends the session.</td></tr>
+<tr class="seghead" data-seg="pending"><td colspan="9"><span class="segname">Pending</span><span class="segn">1 phase</span><span class="segx"><button type="button" class="btn segbtn" data-segcsv="pending" title="Download this segment&#39;s phases and tasks as CSV — the data, not the filtered view">CSV</button><button type="button" class="btn segbtn" data-segprint="pending" title="Print only this segment — the print dialog opens scoped to it">Print</button></span></td></tr>
+<tr class="phase" id="phase-P3" data-phase="P3" data-status="pending" data-held="1" data-seg="pending" data-area="storefront" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P3</span> <strong>Performance pass</strong> <span class="area-tag">storefront</span> <span class="chip" data-status="pending">Pending</span><a class="heldby" href="#phase-P2" title="This phase is held until P2 is done">held by P2</a> <span class="bar"><span class="fill" style="--w:0%"></span></span> <span class="muted">0/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: The catalog and product pages render without the known redundant work and heavy above-the-fold images.</div></td></tr>
+<tr class="taskfilter" data-phase="P3" data-seg="pending"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="pending" aria-pressed="false">Pending</button></span></td></tr>
+<tr class="task" data-phase="P3" data-seg="pending" data-status="pending" data-held="1" data-model="haiku"><td class="mono tid">P3.1</td><td>Memoize the product-list selector</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="task" data-phase="P3" data-seg="pending" data-status="pending" data-held="1" data-model="haiku"><td class="mono tid">P3.2</td><td>Lazy-load below-the-fold images</td><td><span class="chip" data-status="pending">Pending</span></td><td>haiku</td><td><span class="rchip" data-risk="low">low</span></td><td class=mono>—</td><td class=when><span class="muted">—</span></td><td><span class="muted">—</span></td><td class=muted></td></tr>
+<tr class="seghead" data-seg="done"><td colspan="9"><button type="button" class="segtoggle" id="audit-arch" aria-expanded="false" data-count="1">Archive — 1 done phase</button><span class="segx"><button type="button" class="btn segbtn" data-segcsv="done" title="Download this segment&#39;s phases and tasks as CSV — the data, not the filtered view">CSV</button><button type="button" class="btn segbtn" data-segprint="done" title="Print only this segment — the print dialog opens scoped to it">Print</button></span></td></tr>
+<tr class="phase" id="phase-P1" data-phase="P1" data-status="done" data-seg="done" data-area="auth" tabindex="0" aria-expanded="false"><td colspan="9"><span class="tri"></span> <span class="mono">P1</span> <strong>Auth hardening</strong> <span class="area-tag">auth</span> <span class="chip" data-status="done">Done</span><span class="stamp" title="Last commit recorded in this phase">b2d7e58</span> <span class="bar"><span class="fill" style="--w:100%"></span></span> <span class="muted">2/2</span><span class="pmatch" hidden></span><div class="pmeta muted">Desired: Credentials are stored and checked safely: modern password hashing and a rate-limited login path. · branch audit/p1-auth-hardening · merged 2026-06-10T11:05:00Z · Argon2id replaces the legacy MD5 hashing and the login endpoint is now rate-limited. Meets the desired outcome; verified by new tests and a passing review.</div></td></tr>
+<tr class="taskfilter" data-phase="P1" data-seg="done"><td colspan="9"><span class="tf-label">Filter tasks by status:</span><span class="tf-chips"><button type="button" class="tf-chip" data-ts="done" aria-pressed="false">Done</button></span></td></tr>
+<tr class="task" data-phase="P1" data-seg="done" data-status="done" data-model="opus" data-started="2026-06-02" data-completed="2026-06-02"><td class="mono tid">P1.1</td><td>Hash passwords with Argon2id</td><td><span class="chip" data-status="done">Done</span></td><td>opus</td><td><span class="rchip" data-risk="high">high</span></td><td class=mono>9a1f0c2</td><td class=when><span title="started 2026-06-02T09:10:00Z · completed 2026-06-02T15:40:00Z">2026-06-02</span></td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1421">#1421</a></td><td class=muted>Passwords are now stored with a modern, memory-hard hash.</td></tr>
+<tr class="task" data-phase="P1" data-seg="done" data-status="done" data-model="sonnet" data-started="2026-06-08" data-completed="2026-06-09"><td class="mono tid">P1.2</td><td>Rate-limit the login endpoint</td><td><span class="chip" data-status="done">Done</span></td><td>sonnet</td><td><span class="rchip" data-risk="med">med</span></td><td class=mono>b2d7e58</td><td class=when><span title="started 2026-06-08T10:00:00Z · completed 2026-06-09T12:20:00Z">2026-06-09</span></td><td><span class="muted">—</span></td><td class=muted>Repeated failed logins are now throttled.</td></tr>
 </tbody><tbody><tr class="norows"><td colspan="9">No phase matches these filters.<button type="button" class="btn" data-clear>Clear filters</button></td></tr></tbody></table></div></section>
-<h2 id="usage">Usage</h2><p class="uctx">3 phases · 3 people · 4 models · 4 sessions · 2026-06-02 to 2026-07-21 · rates as of 2026-08-06</p><div class="tiles"><div class="tile"><div class="k">tokens</div><div class="v">93.1M<span class="dl up">+79%</span></div><div class="s">899 messages</div></div><div class="tile"><div class="k">equivalent cost</div><div class="v">$103.65<span class="dl up">+127%</span></div><div class="s">not a bill — subscription plans have no per-token charge</div></div><div class="tile"><div class="k">cache hit</div><div class="v">94%</div><div class="s">input side bills at 18% of fresh-token rates</div></div><div class="tile"><div class="k">cost per task</div><div class="v">$15.77</div><div class="s">4 task(s) completed</div></div><div class="tile"><div class="k">attributed</div><div class="v">95%</div><div class="s">88% down to a specific task</div></div></div><h3 class="sub" id="usage-trend">Tokens per day</h3><p class="muted small" style="margin:0 0 var(--sp-1)">Deltas above compare 2026-06-22 to 2026-07-21 with the 30 days before it.</p><div class="colswrap"><svg class="cols" viewBox="0 0 720 210" preserveAspectRatio="none" role="img" aria-label="Tokens per day, peak 34.1M"><line class="grid" x1="0" y1="14.0" x2="720" y2="14.0" vector-effect="non-scaling-stroke"></line><line class="grid" x1="0" y1="101.0" x2="720" y2="101.0" vector-effect="non-scaling-stroke"></line><path class="col" d="M3.7 188.0L3.7 136.4Q3.7 132.4 7.7 132.4L23.7 132.4Q27.7 132.4 27.7 136.4L27.7 188.0Z"><title>2026-06-02
+<h2 id="usage">Usage</h2><p class="uctx">3 phases · 3 people · 4 models · 4 sessions · 2026-06-02 to 2026-07-21 · rates as of 2026-08-06</p><div class="tiles"><div class="tile"><div class="k">tokens</div><div class="v">93.1M<span class="dl up">+79%</span></div><div class="s">899 messages</div></div><div class="tile"><div class="k">equivalent cost</div><div class="v">$103.65<span class="dl up">+127%</span></div><div class="s">not a bill — subscription plans have no per-token charge</div></div><div class="tile"><div class="k">cache hit</div><div class="v">94%</div><div class="s">input side bills at 18% of fresh-token rates</div></div><div class="tile"><div class="k">cost per task</div><div class="v">$15.77</div><div class="s">4 task(s) completed</div></div><div class="tile"><div class="k">attributed</div><div class="v">95%</div><div class="s">88% down to a specific task</div></div></div><p class="uctx urange" id="audit-urange" hidden></p><h3 class="sub" id="usage-trend">Tokens per day</h3><p class="muted small" style="margin:0 0 var(--sp-1)">Deltas above compare 2026-06-22 to 2026-07-21 with the 30 days before it.</p><div class="colswrap"><svg class="cols" viewBox="0 0 720 210" preserveAspectRatio="none" role="img" aria-label="Tokens per day, peak 34.1M"><line class="grid" x1="0" y1="14.0" x2="720" y2="14.0" vector-effect="non-scaling-stroke"></line><line class="grid" x1="0" y1="101.0" x2="720" y2="101.0" vector-effect="non-scaling-stroke"></line><path class="col" data-d="2026-06-02" d="M3.7 188.0L3.7 136.4Q3.7 132.4 7.7 132.4L23.7 132.4Q27.7 132.4 27.7 136.4L27.7 188.0Z"><title>2026-06-02
 tokens	10.88M
-cost	$12.38</title></path><path class="col" d="M35.0 188.0L35.0 188.0Q35.0 186.9 36.1 186.9L57.9 186.9Q59.0 186.9 59.0 188.0L59.0 188.0Z"><title>2026-06-04
+cost	$12.38</title></path><path class="col" data-d="2026-06-04" d="M35.0 188.0L35.0 188.0Q35.0 186.9 36.1 186.9L57.9 186.9Q59.0 186.9 59.0 188.0L59.0 188.0Z"><title>2026-06-04
 tokens	214.62K
-cost	$0.32</title></path><path class="col" d="M66.3 188.0L66.3 188.0Q66.3 187.0 67.3 187.0L89.3 187.0Q90.3 187.0 90.3 188.0L90.3 188.0Z"><title>2026-06-06
+cost	$0.32</title></path><path class="col" data-d="2026-06-06" d="M66.3 188.0L66.3 188.0Q66.3 187.0 67.3 187.0L89.3 187.0Q90.3 187.0 90.3 188.0L90.3 188.0Z"><title>2026-06-06
 tokens	93.16K
-cost	$0.19</title></path><path class="col" d="M97.6 188.0L97.6 135.3Q97.6 131.3 101.6 131.3L117.6 131.3Q121.6 131.3 121.6 135.3L121.6 188.0Z"><title>2026-06-08
+cost	$0.19</title></path><path class="col" data-d="2026-06-08" d="M97.6 188.0L97.6 135.3Q97.6 131.3 101.6 131.3L117.6 131.3Q121.6 131.3 121.6 135.3L121.6 188.0Z"><title>2026-06-08
 tokens	11.11M
-cost	$8.73</title></path><path class="col" d="M128.9 188.0L128.9 143.8Q128.9 139.8 132.9 139.8L148.9 139.8Q152.9 139.8 152.9 143.8L152.9 188.0Z"><title>2026-06-09
+cost	$8.73</title></path><path class="col" data-d="2026-06-09" d="M128.9 188.0L128.9 143.8Q128.9 139.8 132.9 139.8L148.9 139.8Q152.9 139.8 152.9 143.8L152.9 188.0Z"><title>2026-06-09
 tokens	9.44M
-cost	$7.71</title></path><path class="col" d="M160.2 188.0L160.2 188.0Q160.2 187.0 161.2 187.0L183.2 187.0Q184.2 187.0 184.2 188.0L184.2 188.0Z"><title>2026-06-10
+cost	$7.71</title></path><path class="col" data-d="2026-06-10" d="M160.2 188.0L160.2 188.0Q160.2 187.0 161.2 187.0L183.2 187.0Q184.2 187.0 184.2 188.0L184.2 188.0Z"><title>2026-06-10
 tokens	174.32K
-cost	$0.47</title></path><path class="col" d="M191.5 188.0L191.5 188.0Q191.5 186.0 193.5 186.0L213.5 186.0Q215.5 186.0 215.5 188.0L215.5 188.0Z"><title>2026-06-12
+cost	$0.47</title></path><path class="col" data-d="2026-06-12" d="M191.5 188.0L191.5 188.0Q191.5 186.0 193.5 186.0L213.5 186.0Q215.5 186.0 215.5 188.0L215.5 188.0Z"><title>2026-06-12
 tokens	395.21K
-cost	$0.23</title></path><path class="col" d="M222.8 188.0L222.8 188.0Q222.8 186.8 224.0 186.8L245.6 186.8Q246.8 186.8 246.8 188.0L246.8 188.0Z"><title>2026-06-14
+cost	$0.23</title></path><path class="col" data-d="2026-06-14" d="M222.8 188.0L222.8 188.0Q222.8 186.8 224.0 186.8L245.6 186.8Q246.8 186.8 246.8 188.0L246.8 188.0Z"><title>2026-06-14
 tokens	234.38K
-cost	$0.32</title></path><path class="col" d="M254.1 188.0L254.1 188.0Q254.1 186.9 255.2 186.9L277.0 186.9Q278.1 186.9 278.1 188.0L278.1 188.0Z"><title>2026-06-16
+cost	$0.32</title></path><path class="col" data-d="2026-06-16" d="M254.1 188.0L254.1 188.0Q254.1 186.9 255.2 186.9L277.0 186.9Q278.1 186.9 278.1 188.0L278.1 188.0Z"><title>2026-06-16
 tokens	222.39K
-cost	$0.37</title></path><path class="col" d="M285.4 188.0L285.4 188.0Q285.4 186.2 287.2 186.2L307.6 186.2Q309.4 186.2 309.4 188.0L309.4 188.0Z"><title>2026-06-18
+cost	$0.37</title></path><path class="col" data-d="2026-06-18" d="M285.4 188.0L285.4 188.0Q285.4 186.2 287.2 186.2L307.6 186.2Q309.4 186.2 309.4 188.0L309.4 188.0Z"><title>2026-06-18
 tokens	347.15K
-cost	$0.39</title></path><path class="col" d="M316.7 188.0L316.7 188.0Q316.7 186.7 318.0 186.7L339.3 186.7Q340.7 186.7 340.7 188.0L340.7 188.0Z"><title>2026-06-20
+cost	$0.39</title></path><path class="col" data-d="2026-06-20" d="M316.7 188.0L316.7 188.0Q316.7 186.7 318.0 186.7L339.3 186.7Q340.7 186.7 340.7 188.0L340.7 188.0Z"><title>2026-06-20
 tokens	263.63K
-cost	$0.64</title></path><path class="col" d="M348.0 188.0L348.0 182.0Q348.0 178.0 352.0 178.0L368.0 178.0Q372.0 178.0 372.0 182.0L372.0 188.0Z"><title>2026-06-22
+cost	$0.64</title></path><path class="col" data-d="2026-06-22" d="M348.0 188.0L348.0 182.0Q348.0 178.0 352.0 178.0L368.0 178.0Q372.0 178.0 372.0 182.0L372.0 188.0Z"><title>2026-06-22
 tokens	1.97M
-cost	$7.04</title></path><path class="col" d="M379.3 188.0L379.3 184.0Q379.3 180.0 383.3 180.0L399.3 180.0Q403.3 180.0 403.3 184.0L403.3 188.0Z"><title>2026-06-23
+cost	$7.04</title></path><path class="col" data-d="2026-06-23" d="M379.3 188.0L379.3 184.0Q379.3 180.0 383.3 180.0L399.3 180.0Q403.3 180.0 403.3 184.0L403.3 188.0Z"><title>2026-06-23
 tokens	1.56M
-cost	$6.55</title></path><path class="col" d="M410.6 188.0L410.6 188.0Q410.6 186.0 412.6 186.0L432.6 186.0Q434.6 186.0 434.6 188.0L434.6 188.0Z"><title>2026-06-24
+cost	$6.55</title></path><path class="col" data-d="2026-06-24" d="M410.6 188.0L410.6 188.0Q410.6 186.0 412.6 186.0L432.6 186.0Q434.6 186.0 434.6 188.0L434.6 188.0Z"><title>2026-06-24
 tokens	394.88K
-cost	$0.49</title></path><path class="col" d="M441.9 188.0L441.9 188.0Q441.9 186.5 443.4 186.5L464.4 186.5Q465.9 186.5 465.9 188.0L465.9 188.0Z"><title>2026-06-26
+cost	$0.49</title></path><path class="col" data-d="2026-06-26" d="M441.9 188.0L441.9 188.0Q441.9 186.5 443.4 186.5L464.4 186.5Q465.9 186.5 465.9 188.0L465.9 188.0Z"><title>2026-06-26
 tokens	294.64K
-cost	$0.43</title></path><path class="col" d="M473.2 188.0L473.2 188.0Q473.2 186.6 474.7 186.6L495.8 186.6Q497.2 186.6 497.2 188.0L497.2 188.0Z"><title>2026-06-28
+cost	$0.43</title></path><path class="col" data-d="2026-06-28" d="M473.2 188.0L473.2 188.0Q473.2 186.6 474.7 186.6L495.8 186.6Q497.2 186.6 497.2 188.0L497.2 188.0Z"><title>2026-06-28
 tokens	281.55K
-cost	$0.43</title></path><path class="col" d="M504.5 188.0L504.5 188.0Q504.5 186.6 505.9 186.6L527.1 186.6Q528.5 186.6 528.5 188.0L528.5 188.0Z"><title>2026-06-30
+cost	$0.43</title></path><path class="col" data-d="2026-06-30" d="M504.5 188.0L504.5 188.0Q504.5 186.6 505.9 186.6L527.1 186.6Q528.5 186.6 528.5 188.0L528.5 188.0Z"><title>2026-06-30
 tokens	276.68K
-cost	$0.80</title></path><path class="col" d="M535.8 188.0L535.8 188.0Q535.8 186.4 537.4 186.4L558.3 186.4Q559.8 186.4 559.8 188.0L559.8 188.0Z"><title>2026-07-02
+cost	$0.80</title></path><path class="col" data-d="2026-07-02" d="M535.8 188.0L535.8 188.0Q535.8 186.4 537.4 186.4L558.3 186.4Q559.8 186.4 559.8 188.0L559.8 188.0Z"><title>2026-07-02
 tokens	305.29K
-cost	$0.25</title></path><path class="col" d="M567.1 188.0L567.1 188.0Q567.1 186.7 568.5 186.7L589.8 186.7Q591.1 186.7 591.1 188.0L591.1 188.0Z"><title>2026-07-04
+cost	$0.25</title></path><path class="col" data-d="2026-07-04" d="M567.1 188.0L567.1 188.0Q567.1 186.7 568.5 186.7L589.8 186.7Q591.1 186.7 591.1 188.0L591.1 188.0Z"><title>2026-07-04
 tokens	262.83K
-cost	$0.32</title></path><path class="col" d="M598.4 188.0L598.4 179.7Q598.4 175.7 602.4 175.7L618.4 175.7Q622.4 175.7 622.4 179.7L622.4 188.0Z"><title>2026-07-06
+cost	$0.32</title></path><path class="col" data-d="2026-07-06" d="M598.4 188.0L598.4 179.7Q598.4 175.7 602.4 175.7L618.4 175.7Q622.4 175.7 622.4 179.7L622.4 188.0Z"><title>2026-07-06
 tokens	2.41M
-cost	$13.12</title></path><path class="col" d="M629.7 188.0L629.7 182.5Q629.7 178.5 633.7 178.5L649.7 178.5Q653.7 178.5 653.7 182.5L653.7 188.0Z"><title>2026-07-13
+cost	$13.12</title></path><path class="col" data-d="2026-07-13" d="M629.7 188.0L629.7 182.5Q629.7 178.5 633.7 178.5L649.7 178.5Q653.7 178.5 653.7 182.5L653.7 188.0Z"><title>2026-07-13
 tokens	1.86M
-cost	$6.33</title></path><path class="col" d="M661.0 188.0L661.0 109.8Q661.0 105.8 665.0 105.8L681.0 105.8Q685.0 105.8 685.0 109.8L685.0 188.0Z"><title>2026-07-20
+cost	$6.33</title></path><path class="col" data-d="2026-07-20" d="M661.0 188.0L661.0 109.8Q661.0 105.8 665.0 105.8L681.0 105.8Q685.0 105.8 685.0 109.8L685.0 188.0Z"><title>2026-07-20
 tokens	16.09M
-cost	$8.71</title></path><path class="col" d="M692.3 188.0L692.3 18.0Q692.3 14.0 696.3 14.0L712.3 14.0Q716.3 14.0 716.3 18.0L716.3 188.0Z"><title>2026-07-21
+cost	$8.71</title></path><path class="col" data-d="2026-07-21" d="M692.3 188.0L692.3 18.0Q692.3 14.0 696.3 14.0L712.3 14.0Q716.3 14.0 716.3 18.0L716.3 188.0Z"><title>2026-07-21
 tokens	34.06M
-cost	$27.45</title></path></svg><span class="yt" style="top:1.429%">34.1M</span><span class="yt" style="top:42.857%">17.0M</span><div class="xts"><span class="xt" style="left:0;transform:none">06-02</span><span class="xt" style="left:10.870%">06-06</span><span class="xt" style="left:19.565%">06-09</span><span class="xt" style="left:28.261%">06-12</span><span class="xt" style="left:36.957%">06-16</span><span class="xt" style="left:45.652%">06-20</span><span class="xt" style="left:54.348%">06-23</span><span class="xt" style="left:63.043%">06-26</span><span class="xt" style="left:71.739%">06-30</span><span class="xt" style="left:80.435%">07-04</span><span class="xt" style="left:89.130%">07-13</span><span class="xt" style="right:0;left:auto;transform:none">07-21</span></div></div><div class="auchips" id="audit-authors"><button type="button" class="fchip" data-au="milos@acme.example" data-tokens="47.8M" data-cost="$48.06" data-msgs="246" data-share="51%" aria-pressed="false">milos@acme.example</button><button type="button" class="fchip" data-au="alex@acme.example" data-tokens="25.3M" data-cost="$31.74" data-msgs="479" data-share="27%" aria-pressed="false">alex@acme.example</button><button type="button" class="fchip" data-au="sara@acme.example" data-tokens="20.0M" data-cost="$23.85" data-msgs="174" data-share="21%" aria-pressed="false">sara@acme.example</button></div><p class="muted small">Author chips scope the per-author views of this section (the By author list, and the per-author panels in Detail) &mdash; the tiles and trend above stay project-wide, and the task table records no author to filter by. The panel has the full drill-down.</p><p class="muted small aunote" id="audit-au-note" hidden></p><div class="ranks"><div class="rankgrp"><h3 class="sub">By phase</h3><div class="rank" title="BF1 Bugfix batch 1
+cost	$27.45</title></path></svg><span class="yt" style="top:1.429%">34.1M</span><span class="yt" style="top:42.857%">17.0M</span><div class="xts"><span class="xt" data-d="2026-06-02" style="left:0;transform:none">06-02</span><span class="xt" data-d="2026-06-06" style="left:10.870%">06-06</span><span class="xt" data-d="2026-06-09" style="left:19.565%">06-09</span><span class="xt" data-d="2026-06-12" style="left:28.261%">06-12</span><span class="xt" data-d="2026-06-16" style="left:36.957%">06-16</span><span class="xt" data-d="2026-06-20" style="left:45.652%">06-20</span><span class="xt" data-d="2026-06-23" style="left:54.348%">06-23</span><span class="xt" data-d="2026-06-26" style="left:63.043%">06-26</span><span class="xt" data-d="2026-06-30" style="left:71.739%">06-30</span><span class="xt" data-d="2026-07-04" style="left:80.435%">07-04</span><span class="xt" data-d="2026-07-13" style="left:89.130%">07-13</span><span class="xt" data-d="2026-07-21" style="right:0;left:auto;transform:none">07-21</span></div></div><div class="secx usx"><button type="button" class="btn segbtn" data-csv="usage" title="Download the per-day usage rows (date, tokens, cost, msgs) as CSV — the whole recorded span">CSV</button><button type="button" class="btn segbtn" data-png="trend" title="Download this chart as a PNG image, redrawn from the data">PNG</button></div><div class="auchips" id="audit-authors"><button type="button" class="fchip" data-au="milos@acme.example" data-tokens="47.8M" data-cost="$48.06" data-msgs="246" data-share="51%" aria-pressed="false">milos@acme.example</button><button type="button" class="fchip" data-au="alex@acme.example" data-tokens="25.3M" data-cost="$31.74" data-msgs="479" data-share="27%" aria-pressed="false">alex@acme.example</button><button type="button" class="fchip" data-au="sara@acme.example" data-tokens="20.0M" data-cost="$23.85" data-msgs="174" data-share="21%" aria-pressed="false">sara@acme.example</button></div><p class="muted small">Author chips scope the per-author views of this section (the By author list, and the per-author panels in Detail) &mdash; the tiles and trend above stay project-wide, and the task table records no author to filter by. The panel has the full drill-down.</p><p class="muted small aunote" id="audit-au-note" hidden></p><div class="ranks"><div class="rankgrp"><h3 class="sub">By phase</h3><div class="rank" title="BF1 Bugfix batch 1
 tokens	50.15M
 share	54%
 cost	$36.16
@@ -1074,7 +1221,7 @@ messages	479"><span class="nm">alex@acme.example</span><span class="track"><i st
 tokens	20.00M
 share	21%
 cost	$23.85
-messages	174"><span class="nm">sara@acme.example</span><span class="track"><i style="width:41.8%;background:var(--bar-neutral)"></i></span><span class="amt">20.0M &middot; $23.85</span></div></div></div><h3 class="sub" id="usage-budget">Budget</h3><div class="buds"><div class="bud over"><span class="nm"><span class="mono">P2</span> Input validation</span><span class="track"><i style="width:100.0%"></i></span><span class="pct">130%</span><span class="amt">$32.53 of $25.00 &middot; over</span></div><div class="bud"><span class="nm"><span class="mono">P1</span> Auth hardening</span><span class="track"><i style="width:70.5%"></i></span><span class="pct">70%</span><span class="amt">$28.22 of $40.00</span></div><div class="bud total"><span class="nm">All budgeted phases</span><span class="track"></span><span class="pct"></span><span class="amt">$60.74 of $65.00</span></div></div><p class="muted small">2 phase(s) have no <code>budgetUSD</code> set and are not shown here — they are not phases at zero.</p><details class="more"><summary>Detail — monthly activity, per-author split, phase composition, unit economics, model routing, hourly pattern</summary><h4 class="sub">Month by month</h4><p class="muted small">Ledger columns are this ledger's spend by calendar month. Plan columns count the whole project by event month &mdash; a task in its <code>completedAt</code> month, a bug in its <code>reportedAt</code> month, a fix in the month its linked task completed (the same derivation the bug list uses), a phase in its <code>mergedAt</code> month.</p><div class="tablewrap"><table class="data"><thead><tr><th>month</th><th>tokens</th><th>cost</th><th>msgs</th><th>tasks done</th><th>bugs</th><th>fixed</th><th>merged</th></tr></thead><tbody><tr><td class=mono>2026-06</td><td class=mono>38.1M</td><td class=mono>$47.47</td><td>640</td><td>3</td><td>3</td><td>0</td><td>1</td></tr><tr><td class=mono>2026-07</td><td class=mono>55.0M</td><td class=mono>$56.18</td><td>259</td><td>1</td><td>2</td><td>1</td><td>0</td></tr></tbody></table></div><h4 class="sub">Each author, by model</h4><p class="muted small">Every panel shares one axis (2026-06-02 to 2026-07-21, one column per day) and one scale (peak 34.1M tokens per column), so heights and positions compare directly across people. A column too small to draw shows as a hairline — some spend, below this chart's resolution; hover it for the dates and the count.</p><div class="smgrid"><div class="smcell" data-author="milos@acme.example" data-top="1"><h4>milos@acme.example</h4><div class="mm"><span class="mk" style="background:var(--viz-1)"></span><span class="mn">claude-fable-5</span><svg class="spark" viewBox="0 0 140 30" preserveAspectRatio="none" aria-hidden="true" style="--sc:var(--viz-1)"><rect x="12.17" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="30.43" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="115.65" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect class="hit" x="12.17" y="0" width="5.09" height="30"><title>2026-06-06
+messages	174"><span class="nm">sara@acme.example</span><span class="track"><i style="width:41.8%;background:var(--bar-neutral)"></i></span><span class="amt">20.0M &middot; $23.85</span></div></div></div><h3 class="sub" id="usage-budget">Budget</h3><div class="buds"><div class="bud over"><span class="nm"><span class="mono">P2</span> Input validation</span><span class="track"><i style="width:100.0%"></i></span><span class="pct">130%</span><span class="amt">$32.53 of $25.00 &middot; over</span></div><div class="bud"><span class="nm"><span class="mono">P1</span> Auth hardening</span><span class="track"><i style="width:70.5%"></i></span><span class="pct">70%</span><span class="amt">$28.22 of $40.00</span></div><div class="bud total"><span class="nm">All budgeted phases</span><span class="track"></span><span class="pct"></span><span class="amt">$60.74 of $65.00</span></div></div><p class="muted small">2 phase(s) have no <code>budgetUSD</code> set and are not shown here — they are not phases at zero.</p><details class="more"><summary>Detail — monthly activity, per-author split, phase composition, unit economics, model routing, hourly pattern</summary><h4 class="sub">Month by month</h4><p class="muted small">Ledger columns are this ledger's spend by calendar month. Plan columns count the whole project by event month &mdash; a task in its <code>completedAt</code> month, a bug in its <code>reportedAt</code> month, a fix in the month its linked task completed (the same derivation the bug list uses), a phase in its <code>mergedAt</code> month.</p><div class="tablewrap"><table class="data"><thead><tr><th>month</th><th>tokens</th><th>cost</th><th>msgs</th><th>tasks done</th><th>bugs</th><th>fixed</th><th>merged</th></tr></thead><tbody><tr data-um="2026-06"><td class=mono>2026-06</td><td class=mono>38.1M</td><td class=mono>$47.47</td><td>640</td><td>3</td><td>3</td><td>0</td><td>1</td></tr><tr data-um="2026-07"><td class=mono>2026-07</td><td class=mono>55.0M</td><td class=mono>$56.18</td><td>259</td><td>1</td><td>2</td><td>1</td><td>0</td></tr></tbody></table></div><h4 class="sub">Each author, by model</h4><p class="muted small">Every panel shares one axis (2026-06-02 to 2026-07-21, one column per day) and one scale (peak 34.1M tokens per column), so heights and positions compare directly across people. A column too small to draw shows as a hairline — some spend, below this chart's resolution; hover it for the dates and the count.</p><div class="smgrid"><div class="smcell" data-author="milos@acme.example" data-top="1"><h4>milos@acme.example</h4><div class="mm"><span class="mk" style="background:var(--viz-1)"></span><span class="mn">claude-fable-5</span><svg class="spark" viewBox="0 0 140 30" preserveAspectRatio="none" aria-hidden="true" style="--sc:var(--viz-1)"><rect x="12.17" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="30.43" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="115.65" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect class="hit" x="12.17" y="0" width="5.09" height="30"><title>2026-06-06
 claude-fable-5	34.35K</title></rect><rect class="hit" x="30.43" y="0" width="5.09" height="30"><title>2026-06-10
 claude-fable-5	79.02K</title></rect><rect class="hit" x="115.65" y="0" width="5.09" height="30"><title>2026-07-06
 claude-fable-5	64.16K</title></rect></svg></div><div class="mm"><span class="mk" style="background:var(--viz-2)"></span><span class="mn">claude-haiku-4-5</span><svg class="spark" viewBox="0 0 140 30" preserveAspectRatio="none" aria-hidden="true" style="--sc:var(--viz-2)"><rect x="6.09" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="36.52" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="48.70" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="97.39" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect x="109.57" y="29.00" width="5.09" height="1.00" rx="1"></rect><rect class="hit" x="6.09" y="0" width="5.09" height="30"><title>2026-06-04
@@ -1124,12 +1271,12 @@ claude-opus-5	2.02M</title></rect></svg></div><div class="mm"><span class="mk" s
 claude-sonnet-5	200.34K</title></rect><rect class="hit" x="91.30" y="0" width="5.09" height="30"><title>2026-06-28
 claude-sonnet-5	180.72K</title></rect><rect class="hit" x="103.48" y="0" width="5.09" height="30"><title>2026-07-02
 claude-sonnet-5	187.76K</title></rect><rect class="hit" x="127.83" y="0" width="5.09" height="30"><title>2026-07-20
-claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Phase composition by model</h4><div class="legend"><b><i style="background:var(--viz-1)"></i>claude-fable-5</b><b><i style="background:var(--viz-2)"></i>claude-haiku-4-5</b><b><i style="background:var(--viz-3)"></i>claude-opus-5</b><b><i style="background:var(--viz-4)"></i>claude-sonnet-5</b></div><div class="uphase"><span class="nm"><span class="mono">BF1</span> Bugfix batch 1</span><span class="stack" style="width:100.0%" role="img" aria-label="BF1: 50.1M tokens"><i class="seg" style="flex:36073971 0 0;background:var(--viz-3)" title="BF1 - claude-opus-5 - 36.07M tokens"></i><i class="seg" style="flex:14072365 0 0;background:var(--viz-4)" title="BF1 - claude-sonnet-5 - 14.07M tokens"></i></span><span class="amt">50.1M</span></div><div class="uphase"><span class="nm"><span class="mono">P1</span> Auth hardening</span><span class="stack" style="width:61.5%" role="img" aria-label="P1: 30.8M tokens"><i class="seg" style="flex:12642324 0 0;background:var(--viz-3)" title="P1 - claude-opus-5 - 12.64M tokens"></i><i class="seg" style="flex:18203248 0 0;background:var(--viz-4)" title="P1 - claude-sonnet-5 - 18.20M tokens"></i></span><span class="amt">30.8M</span></div><div class="uphase"><span class="nm"><span class="mono">P2</span> Input validation</span><span class="stack" style="width:15.0%" role="img" aria-label="P2: 7.5M tokens"><i class="seg" style="flex:2743746 0 0;background:var(--viz-3)" title="P2 - claude-opus-5 - 2.74M tokens"></i><i class="seg" style="flex:4778259 0 0;background:var(--viz-4)" title="P2 - claude-sonnet-5 - 4.78M tokens"></i></span><span class="amt">7.5M</span></div><div class="uphase"><span class="nm"><span class="mono">--</span> unattributed</span><span class="stack" style="width:9.2%" role="img" aria-label="--: 4.6M tokens"><i class="seg" style="flex:655243 0 0;background:var(--viz-1)" title="-- - claude-fable-5 - 655.24K tokens"></i><i class="seg" style="flex:1957149 0 0;background:var(--viz-2)" title="-- - claude-haiku-4-5 - 1.96M tokens"></i><i class="seg" style="flex:924932 0 0;background:var(--viz-3)" title="-- - claude-opus-5 - 924.93K tokens"></i><i class="seg" style="flex:1075560 0 0;background:var(--viz-4)" title="-- - claude-sonnet-5 - 1.08M tokens"></i></span><span class="amt">4.6M</span></div><h4 class="sub">Unit economics</h4><p class="muted small">Projection needs 5 completed tasks to mean anything; there are 4. A forecast off a smaller sample would be noise.</p><p class="fact">$5.82 on tasks that needed more than one attempt (1 task(s), 6% of spend) &middot; <strong>$5.82</strong> on tasks that ended blocked (1 task(s)).</p><p class="muted small">Retried spend is not the same as wasted spend: the ledger buckets by hour, not by attempt, so a task that retried and then landed did not burn every attempt for nothing. Only the blocked figure is spend with no outcome (the same task is in both figures here).</p><h4 class="sub">Most expensive tasks</h4><p class="muted small">No cost band yet — it calibrates from this project's own completed tasks and needs 5, of which there are 4. Set <code>usage.bands.highUSD</code> and <code>usage.bands.outlierUSD</code> to band against a fixed budget instead.</p><div class="tablewrap"><table class="data"><thead><tr><th>id</th><th>title</th><th>cost band</th><th>cost</th><th>attempts</th></tr></thead><tbody><tr><td class=mono>BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td>&mdash;</td><td class=mono>$26.56</td><td>1</td></tr><tr><td class=mono>P1.2</td><td>Rate-limit the login endpoint</td><td>&mdash;</td><td class=mono>$13.76</td><td>1</td></tr><tr><td class=mono>P2.2</td><td>Sanitize the product-search query</td><td>&mdash;</td><td class=mono>$12.10</td><td>1</td></tr><tr><td class=mono>P1.1</td><td>Hash passwords with Argon2id</td><td>&mdash;</td><td class=mono>$11.42</td><td>1</td></tr><tr><td class=mono>P2.1</td><td>Validate the checkout payload</td><td>&mdash;</td><td class=mono>$11.33</td><td>1</td></tr></tbody></table></div><h4 class="sub">Model cost within each risk band</h4><p class="muted small">Compared inside a band on purpose. Hard work is routed to the stronger model deliberately, so a raw spend-per-task comparison across bands would flag that working system as a fault.</p><div class="tablewrap"><table class="data"><thead><tr><th>risk</th><th>model</th><th>tasks</th><th>cost/task</th><th>mean attempts</th></tr></thead><tbody><tr><td>high</td><td class=mono>claude-opus-5</td><td>3</td><td class=mono>$16.69</td><td class=mono>1.0</td></tr><tr><td>med</td><td class=mono>claude-sonnet-5</td><td>4</td><td class=mono>$9.50</td><td class=mono>1.5</td></tr></tbody></table></div><h4 class="sub">When the tokens are spent (UTC)</h4><div class="hmwrap"><table class="hm"><thead><tr><th></th><th>00</th><th></th><th></th><th></th><th></th><th></th><th>06</th><th></th><th></th><th></th><th></th><th></th><th>12</th><th></th><th></th><th></th><th></th><th></th><th>18</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody><tr><th>Mon</th><td><i data-l="0" title="Mon 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 08:00 - 0 tokens"></i></td><td><i data-l="1" title="Mon 09:00 - 757.88K tokens"></i></td><td><i data-l="2" title="Mon 10:00 - 2.44M tokens"></i></td><td><i data-l="3" title="Mon 11:00 - 2.93M tokens"></i></td><td><i data-l="3" title="Mon 12:00 - 3.95M tokens"></i></td><td><i data-l="2" title="Mon 13:00 - 1.74M tokens"></i></td><td><i data-l="5" title="Mon 14:00 - 5.52M tokens"></i></td><td><i data-l="4" title="Mon 15:00 - 4.31M tokens"></i></td><td><i data-l="3" title="Mon 16:00 - 3.65M tokens"></i></td><td><i data-l="3" title="Mon 17:00 - 3.35M tokens"></i></td><td><i data-l="1" title="Mon 18:00 - 528.10K tokens"></i></td><td><i data-l="1" title="Mon 19:00 - 1.34M tokens"></i></td><td><i data-l="1" title="Mon 20:00 - 923.78K tokens"></i></td><td><i data-l="1" title="Mon 21:00 - 484.68K tokens"></i></td><td><i data-l="1" title="Mon 22:00 - 1.11M tokens"></i></td><td><i data-l="1" title="Mon 23:00 - 402.96K tokens"></i></td></tr><tr><th>Tue</th><td><i data-l="1" title="Tue 00:00 - 544.30K tokens"></i></td><td><i data-l="1" title="Tue 01:00 - 983.99K tokens"></i></td><td><i data-l="1" title="Tue 02:00 - 682.43K tokens"></i></td><td><i data-l="1" title="Tue 03:00 - 776.74K tokens"></i></td><td><i data-l="1" title="Tue 04:00 - 1.20M tokens"></i></td><td><i data-l="1" title="Tue 05:00 - 681.72K tokens"></i></td><td><i data-l="1" title="Tue 06:00 - 582.51K tokens"></i></td><td><i data-l="2" title="Tue 07:00 - 1.74M tokens"></i></td><td><i data-l="1" title="Tue 08:00 - 1.17M tokens"></i></td><td><i data-l="3" title="Tue 09:00 - 2.85M tokens"></i></td><td><i data-l="5" title="Tue 10:00 - 5.86M tokens"></i></td><td><i data-l="5" title="Tue 11:00 - 5.44M tokens"></i></td><td><i data-l="5" title="Tue 12:00 - 5.59M tokens"></i></td><td><i data-l="6" title="Tue 13:00 - 6.72M tokens"></i></td><td><i data-l="4" title="Tue 14:00 - 5.23M tokens"></i></td><td><i data-l="5" title="Tue 15:00 - 6.35M tokens"></i></td><td><i data-l="3" title="Tue 16:00 - 3.84M tokens"></i></td><td><i data-l="5" title="Tue 17:00 - 6.19M tokens"></i></td><td><i data-l="0" title="Tue 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 23:00 - 0 tokens"></i></td></tr><tr><th>Wed</th><td><i data-l="0" title="Wed 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Wed 11:00 - 307.50K tokens"></i></td><td><i data-l="0" title="Wed 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Wed 16:00 - 261.70K tokens"></i></td><td><i data-l="0" title="Wed 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 23:00 - 0 tokens"></i></td></tr><tr><th>Thu</th><td><i data-l="0" title="Thu 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Thu 11:00 - 383.24K tokens"></i></td><td><i data-l="0" title="Thu 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Thu 16:00 - 483.82K tokens"></i></td><td><i data-l="0" title="Thu 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 23:00 - 0 tokens"></i></td></tr><tr><th>Fri</th><td><i data-l="0" title="Fri 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Fri 11:00 - 307.04K tokens"></i></td><td><i data-l="0" title="Fri 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Fri 16:00 - 382.81K tokens"></i></td><td><i data-l="0" title="Fri 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 23:00 - 0 tokens"></i></td></tr><tr><th>Sat</th><td><i data-l="0" title="Sat 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Sat 11:00 - 366.42K tokens"></i></td><td><i data-l="0" title="Sat 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Sat 16:00 - 253.20K tokens"></i></td><td><i data-l="0" title="Sat 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 23:00 - 0 tokens"></i></td></tr><tr><th>Sun</th><td><i data-l="0" title="Sun 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Sun 11:00 - 284.54K tokens"></i></td><td><i data-l="0" title="Sun 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Sun 16:00 - 231.38K tokens"></i></td><td><i data-l="0" title="Sun 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 23:00 - 0 tokens"></i></td></tr></tbody></table></div><p class="hmkey">0 <i style="background:var(--hm-0)"></i><i style="background:var(--hm-1)"></i><i style="background:var(--hm-2)"></i><i style="background:var(--hm-3)"></i><i style="background:var(--hm-4)"></i><i style="background:var(--hm-5)"></i><i style="background:var(--hm-6)"></i> 6.7M tokens/hour</p></details>
-<h2 id="bugs">Bugs</h2>
+claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Phase composition by model</h4><div class="legend"><b><i style="background:var(--viz-1)"></i>claude-fable-5</b><b><i style="background:var(--viz-2)"></i>claude-haiku-4-5</b><b><i style="background:var(--viz-3)"></i>claude-opus-5</b><b><i style="background:var(--viz-4)"></i>claude-sonnet-5</b></div><div class="uphase"><span class="nm"><span class="mono">BF1</span> Bugfix batch 1</span><span class="stack" style="width:100.0%" role="img" aria-label="BF1: 50.1M tokens"><i class="seg" style="flex:36073971 0 0;background:var(--viz-3)" title="BF1 - claude-opus-5 - 36.07M tokens"></i><i class="seg" style="flex:14072365 0 0;background:var(--viz-4)" title="BF1 - claude-sonnet-5 - 14.07M tokens"></i></span><span class="amt">50.1M</span></div><div class="uphase"><span class="nm"><span class="mono">P1</span> Auth hardening</span><span class="stack" style="width:61.5%" role="img" aria-label="P1: 30.8M tokens"><i class="seg" style="flex:12642324 0 0;background:var(--viz-3)" title="P1 - claude-opus-5 - 12.64M tokens"></i><i class="seg" style="flex:18203248 0 0;background:var(--viz-4)" title="P1 - claude-sonnet-5 - 18.20M tokens"></i></span><span class="amt">30.8M</span></div><div class="uphase"><span class="nm"><span class="mono">P2</span> Input validation</span><span class="stack" style="width:15.0%" role="img" aria-label="P2: 7.5M tokens"><i class="seg" style="flex:2743746 0 0;background:var(--viz-3)" title="P2 - claude-opus-5 - 2.74M tokens"></i><i class="seg" style="flex:4778259 0 0;background:var(--viz-4)" title="P2 - claude-sonnet-5 - 4.78M tokens"></i></span><span class="amt">7.5M</span></div><div class="uphase"><span class="nm"><span class="mono">--</span> unattributed</span><span class="stack" style="width:9.2%" role="img" aria-label="--: 4.6M tokens"><i class="seg" style="flex:655243 0 0;background:var(--viz-1)" title="-- - claude-fable-5 - 655.24K tokens"></i><i class="seg" style="flex:1957149 0 0;background:var(--viz-2)" title="-- - claude-haiku-4-5 - 1.96M tokens"></i><i class="seg" style="flex:924932 0 0;background:var(--viz-3)" title="-- - claude-opus-5 - 924.93K tokens"></i><i class="seg" style="flex:1075560 0 0;background:var(--viz-4)" title="-- - claude-sonnet-5 - 1.08M tokens"></i></span><span class="amt">4.6M</span></div><h4 class="sub">Unit economics</h4><p class="muted small">Projection needs 5 completed tasks to mean anything; there are 4. A forecast off a smaller sample would be noise.</p><p class="fact">$5.82 on tasks that needed more than one attempt (1 task(s), 6% of spend) &middot; <strong>$5.82</strong> on tasks that ended blocked (1 task(s)).</p><p class="muted small">Retried spend is not the same as wasted spend: the ledger buckets by hour, not by attempt, so a task that retried and then landed did not burn every attempt for nothing. Only the blocked figure is spend with no outcome (the same task is in both figures here).</p><h4 class="sub">Most expensive tasks</h4><p class="muted small">No cost band yet — it calibrates from this project's own completed tasks and needs 5, of which there are 4. Set <code>usage.bands.highUSD</code> and <code>usage.bands.outlierUSD</code> to band against a fixed budget instead.</p><div class="tablewrap"><table class="data"><thead><tr><th>id</th><th>title</th><th>cost band</th><th>cost</th><th>attempts</th></tr></thead><tbody><tr><td class=mono>BF1.2</td><td>Fix BUG-4: logout leaves the session cookie</td><td>&mdash;</td><td class=mono>$26.56</td><td>1</td></tr><tr><td class=mono>P1.2</td><td>Rate-limit the login endpoint</td><td>&mdash;</td><td class=mono>$13.76</td><td>1</td></tr><tr><td class=mono>P2.2</td><td>Sanitize the product-search query</td><td>&mdash;</td><td class=mono>$12.10</td><td>1</td></tr><tr><td class=mono>P1.1</td><td>Hash passwords with Argon2id</td><td>&mdash;</td><td class=mono>$11.42</td><td>1</td></tr><tr><td class=mono>P2.1</td><td>Validate the checkout payload</td><td>&mdash;</td><td class=mono>$11.33</td><td>1</td></tr></tbody></table></div><h4 class="sub">Model cost within each risk band</h4><p class="muted small">Compared inside a band on purpose. Hard work is routed to the stronger model deliberately, so a raw spend-per-task comparison across bands would flag that working system as a fault.</p><div class="tablewrap"><table class="data"><thead><tr><th>risk</th><th>model</th><th>tasks</th><th>cost/task</th><th>mean attempts</th></tr></thead><tbody><tr><td>high</td><td class=mono>claude-opus-5</td><td>3</td><td class=mono>$16.69</td><td class=mono>1.0</td></tr><tr><td>med</td><td class=mono>claude-sonnet-5</td><td>4</td><td class=mono>$9.50</td><td class=mono>1.5</td></tr></tbody></table></div><h4 class="sub">When the tokens are spent (UTC)</h4><div class="hmnav"><span id="audit-hm-gran"><button type="button" class="fchip" data-g="all" aria-pressed="false">All</button><button type="button" class="fchip" data-g="year" aria-pressed="false">Year</button><button type="button" class="fchip" data-g="month" aria-pressed="false">Month</button><button type="button" class="fchip" data-g="week" aria-pressed="false">Week</button><button type="button" class="fchip" data-g="day" aria-pressed="false">Day</button></span><button type="button" class="btn btn-icon hmarrow" id="audit-hm-prev" aria-label="Previous period" disabled>&lsaquo;</button><span class="hmperiod" id="audit-hm-period">All data &middot; 2026-06-02 to 2026-07-21</span><button type="button" class="btn btn-icon hmarrow" id="audit-hm-next" aria-label="Next period" disabled>&rsaquo;</button><button type="button" class="btn segbtn" data-png="heatmap" title="Download this heatmap as a PNG image, redrawn from the data">PNG</button></div><div class="hmwrap"><table class="hm"><thead><tr><th class="hmc"></th><th>00</th><th></th><th></th><th></th><th></th><th></th><th>06</th><th></th><th></th><th></th><th></th><th></th><th>12</th><th></th><th></th><th></th><th></th><th></th><th>18</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody id="audit-hm-body"><tr><th>Mon</th><td><i data-l="0" title="Mon 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Mon 08:00 - 0 tokens"></i></td><td><i data-l="1" title="Mon 09:00 - 757.88K tokens"></i></td><td><i data-l="2" title="Mon 10:00 - 2.44M tokens"></i></td><td><i data-l="3" title="Mon 11:00 - 2.93M tokens"></i></td><td><i data-l="3" title="Mon 12:00 - 3.95M tokens"></i></td><td><i data-l="2" title="Mon 13:00 - 1.74M tokens"></i></td><td><i data-l="5" title="Mon 14:00 - 5.52M tokens"></i></td><td><i data-l="4" title="Mon 15:00 - 4.31M tokens"></i></td><td><i data-l="3" title="Mon 16:00 - 3.65M tokens"></i></td><td><i data-l="3" title="Mon 17:00 - 3.35M tokens"></i></td><td><i data-l="1" title="Mon 18:00 - 528.10K tokens"></i></td><td><i data-l="1" title="Mon 19:00 - 1.34M tokens"></i></td><td><i data-l="1" title="Mon 20:00 - 923.78K tokens"></i></td><td><i data-l="1" title="Mon 21:00 - 484.68K tokens"></i></td><td><i data-l="1" title="Mon 22:00 - 1.11M tokens"></i></td><td><i data-l="1" title="Mon 23:00 - 402.96K tokens"></i></td></tr><tr><th>Tue</th><td><i data-l="1" title="Tue 00:00 - 544.30K tokens"></i></td><td><i data-l="1" title="Tue 01:00 - 983.99K tokens"></i></td><td><i data-l="1" title="Tue 02:00 - 682.43K tokens"></i></td><td><i data-l="1" title="Tue 03:00 - 776.74K tokens"></i></td><td><i data-l="1" title="Tue 04:00 - 1.20M tokens"></i></td><td><i data-l="1" title="Tue 05:00 - 681.72K tokens"></i></td><td><i data-l="1" title="Tue 06:00 - 582.51K tokens"></i></td><td><i data-l="2" title="Tue 07:00 - 1.74M tokens"></i></td><td><i data-l="1" title="Tue 08:00 - 1.17M tokens"></i></td><td><i data-l="3" title="Tue 09:00 - 2.85M tokens"></i></td><td><i data-l="5" title="Tue 10:00 - 5.86M tokens"></i></td><td><i data-l="5" title="Tue 11:00 - 5.44M tokens"></i></td><td><i data-l="5" title="Tue 12:00 - 5.59M tokens"></i></td><td><i data-l="6" title="Tue 13:00 - 6.72M tokens"></i></td><td><i data-l="4" title="Tue 14:00 - 5.23M tokens"></i></td><td><i data-l="5" title="Tue 15:00 - 6.35M tokens"></i></td><td><i data-l="3" title="Tue 16:00 - 3.84M tokens"></i></td><td><i data-l="5" title="Tue 17:00 - 6.19M tokens"></i></td><td><i data-l="0" title="Tue 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Tue 23:00 - 0 tokens"></i></td></tr><tr><th>Wed</th><td><i data-l="0" title="Wed 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Wed 11:00 - 307.50K tokens"></i></td><td><i data-l="0" title="Wed 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Wed 16:00 - 261.70K tokens"></i></td><td><i data-l="0" title="Wed 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Wed 23:00 - 0 tokens"></i></td></tr><tr><th>Thu</th><td><i data-l="0" title="Thu 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Thu 11:00 - 383.24K tokens"></i></td><td><i data-l="0" title="Thu 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Thu 16:00 - 483.82K tokens"></i></td><td><i data-l="0" title="Thu 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Thu 23:00 - 0 tokens"></i></td></tr><tr><th>Fri</th><td><i data-l="0" title="Fri 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Fri 11:00 - 307.04K tokens"></i></td><td><i data-l="0" title="Fri 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Fri 16:00 - 382.81K tokens"></i></td><td><i data-l="0" title="Fri 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Fri 23:00 - 0 tokens"></i></td></tr><tr><th>Sat</th><td><i data-l="0" title="Sat 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Sat 11:00 - 366.42K tokens"></i></td><td><i data-l="0" title="Sat 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Sat 16:00 - 253.20K tokens"></i></td><td><i data-l="0" title="Sat 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Sat 23:00 - 0 tokens"></i></td></tr><tr><th>Sun</th><td><i data-l="0" title="Sun 00:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 01:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 02:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 03:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 04:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 05:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 06:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 07:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 08:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 09:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 10:00 - 0 tokens"></i></td><td><i data-l="1" title="Sun 11:00 - 284.54K tokens"></i></td><td><i data-l="0" title="Sun 12:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 13:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 14:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 15:00 - 0 tokens"></i></td><td><i data-l="1" title="Sun 16:00 - 231.38K tokens"></i></td><td><i data-l="0" title="Sun 17:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 18:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 19:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 20:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 21:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 22:00 - 0 tokens"></i></td><td><i data-l="0" title="Sun 23:00 - 0 tokens"></i></td></tr></tbody></table></div><p class="hmkey">0 <i style="background:var(--hm-0)"></i><i style="background:var(--hm-1)"></i><i style="background:var(--hm-2)"></i><i style="background:var(--hm-3)"></i><i style="background:var(--hm-4)"></i><i style="background:var(--hm-5)"></i><i style="background:var(--hm-6)"></i> <span id="audit-hm-peak">6.7M</span> tokens/hour</p></details><script>window.AUDIT_USAGE={"days":{"2026-06-02":[10875676,12.375067,77,[0,0,0,0,0,0,0,0,0,777039,1481820,2136896,1985473,919849,1719364,1654894,200341,0,0,0,0,0,0,0]],"2026-06-04":[214615,0.31761,12,[0,0,0,0,0,0,0,0,0,0,0,57265,0,0,0,0,157350,0,0,0,0,0,0,0]],"2026-06-06":[93157,0.190703,10,[0,0,0,0,0,0,0,0,0,0,0,34355,0,0,0,0,58802,0,0,0,0,0,0,0]],"2026-06-08":[11107172,8.727452,122,[0,0,0,0,0,0,0,0,0,0,1707850,1265546,734847,572229,774201,641084,865001,408053,418043,1243649,754385,376982,1003723,341579]],"2026-06-09":[9436297,7.709402,89,[367198,875111,624514,594968,1137854,599909,465236,1670964,1083561,310621,532849,834815,338697,0,0,0,0,0,0,0,0,0,0,0]],"2026-06-10":[174325,0.468608,11,[0,0,0,0,0,0,0,0,0,0,0,95305,0,0,0,0,79020,0,0,0,0,0,0,0]],"2026-06-12":[395207,0.231799,5,[0,0,0,0,0,0,0,0,0,0,0,192107,0,0,0,0,203100,0,0,0,0,0,0,0]],"2026-06-14":[234377,0.316319,7,[0,0,0,0,0,0,0,0,0,0,0,103827,0,0,0,0,130550,0,0,0,0,0,0,0]],"2026-06-16":[222386,0.369703,15,[0,0,0,0,0,0,0,0,0,0,0,77832,0,0,0,0,144554,0,0,0,0,0,0,0]],"2026-06-18":[347154,0.391306,10,[0,0,0,0,0,0,0,0,0,0,0,208443,0,0,0,0,138711,0,0,0,0,0,0,0]],"2026-06-20":[263627,0.640132,12,[0,0,0,0,0,0,0,0,0,0,0,162764,0,0,0,0,100863,0,0,0,0,0,0,0]],"2026-06-22":[1966958,7.043891,108,[0,0,0,0,0,0,0,0,0,189572,141901,163532,165943,105521,135994,136742,217483,57682,110060,93898,169394,107700,110158,61378]],"2026-06-23":[1558383,6.547137,123,[177098,108879,57912,181769,60853,81808,117276,66459,88753,112594,48265,123994,94379,75136,69426,93782,0,0,0,0,0,0,0,0]],"2026-06-24":[394876,0.485673,16,[0,0,0,0,0,0,0,0,0,0,0,212194,0,0,0,0,182682,0,0,0,0,0,0,0]],"2026-06-26":[294642,0.428929,11,[0,0,0,0,0,0,0,0,0,0,0,114931,0,0,0,0,179711,0,0,0,0,0,0,0]],"2026-06-28":[281546,0.427129,7,[0,0,0,0,0,0,0,0,0,0,0,180717,0,0,0,0,100829,0,0,0,0,0,0,0]],"2026-06-30":[276681,0.795866,5,[0,0,0,0,0,0,0,0,0,0,0,92603,0,0,0,0,184078,0,0,0,0,0,0,0]],"2026-07-02":[305293,0.251635,17,[0,0,0,0,0,0,0,0,0,0,0,117531,0,0,0,0,187762,0,0,0,0,0,0,0]],"2026-07-04":[262834,0.316738,7,[0,0,0,0,0,0,0,0,0,0,0,169296,0,0,0,0,93538,0,0,0,0,0,0,0]],"2026-07-06":[2412056,13.117084,56,[0,0,0,0,0,0,0,0,0,341598,331193,333512,396193,282526,314699,347482,64853,0,0,0,0,0,0,0]],"2026-07-13":[1863199,6.333481,61,[0,0,0,0,0,0,0,0,0,226707,261469,249225,227178,291474,357653,249493,0,0,0,0,0,0,0,0]],"2026-07-20":[16089682,8.707462,53,[0,0,0,0,0,0,0,0,0,0,0,917183,2428769,484198,3933454,2939242,2503018,2883818,0,0,0,0,0,0]],"2026-07-21":[34056654,27.454855,65,[0,0,0,0,0,0,0,0,0,1644941,3801066,2172267,3166802,5721247,3438341,4602223,3315790,6193977,0,0,0,0,0,0]]},"max":"2026-07-21","min":"2026-06-02","showCost":true};</script>
+<h2 id="bugs">Bugs<span class="segx"><button type="button" class="btn segbtn" data-csv="bugs" title="Download the bugs table as CSV">CSV</button></span></h2>
 <div class="tablewrap"><table class="data bugs"><thead><tr><th>id</th><th>title</th><th>status</th><th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th></tr></thead><tbody><tr data-status="open"><td class=mono>BUG-1</td><td>Product images 404 intermittently on Safari</td><td><span class="chip" data-status="open">Open</span></td><td>med</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="triaged"><td class=mono>BUG-2</td><td>Checkout is slow on 3G mobile</td><td><span class="chip" data-status="triaged">Triaged</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="in_progress"><td class=mono>BUG-3</td><td>Cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>med</td><td class=mono>BF1.1</td><td class=mono>—</td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1508">#1508</a></td></tr><tr data-status="fixed"><td class=mono>BUG-4</td><td>Logout does not clear the session cookie</td><td><span class="chip" data-status="fixed">Fixed</span></td><td>high</td><td class=mono>BF1.2</td><td class=mono>a1b2c3d</td><td><span class="muted">—</span></td></tr><tr data-status="wontfix"><td class=mono>BUG-5</td><td>Dark-mode label contrast below AA</td><td><span class="chip" data-status="wontfix">Won’t fix</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr></tbody></table></div>
-<h2 id="ready">Ready now</h2><p class=mono>P2.4</p>
+<h2 id="ready">Ready now</h2><dl class="ready"><dt><code class="mono">P2.4</code> <strong>Add zod schemas for cart mutations</strong> <span class="area-tag">storefront</span> <span class="area-tag">checkout</span></dt><dd>In <span class="mono">P2</span> — Input validation. Cleared: depends on P2.1 (done)</dd></dl>
 </main></div>
-<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTE0IDA4OjU1IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgLS0gfCA0LjZNIHwgJDYuNzQgfCAxOTQgfAoKIyMjIEJ5IG1vZGVsCgp8IG1vZGVsIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IGNsYXVkZS1vcHVzLTUgfCA1Mi40TSB8ICQ2MC44MCB8IDM1NiB8CnwgY2xhdWRlLXNvbm5ldC01IHwgMzguMU0gfCAkMzkuMTIgfCA0MjEgfAp8IGNsYXVkZS1oYWlrdS00LTUgfCAyLjBNIHwgJDAuNzUgfCA4NSB8CnwgY2xhdWRlLWZhYmxlLTUgfCA2NTUuMksgfCAkMi45OCB8IDM3IHwKCiMjIyBCeSBhdXRob3IKCnwgYXV0aG9yIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IG1pbG9zQGFjbWUuZXhhbXBsZSB8IDQ3LjhNIHwgJDQ4LjA2IHwgMjQ2IHwKfCBhbGV4QGFjbWUuZXhhbXBsZSB8IDI1LjNNIHwgJDMxLjc0IHwgNDc5IHwKfCBzYXJhQGFjbWUuZXhhbXBsZSB8IDIwLjBNIHwgJDIzLjg1IHwgMTc0IHwKCiMjIyBNb250aCBieSBtb250aAoKUGxhbiBjb2x1bW5zIGNvdW50IHRoZSB3aG9sZSBwcm9qZWN0IGJ5IGV2ZW50IG1vbnRoICh0YXNrIGNvbXBsZXRlZEF0LCBidWcgcmVwb3J0ZWRBdCwgdGhlIGxpbmtlZCB0YXNrJ3MgY29tcGxldGVkQXQgZm9yIGEgZml4LCBwaGFzZSBtZXJnZWRBdCkuCgp8IG1vbnRoIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfCB0YXNrcyBkb25lIHwgYnVncyB8IGZpeGVkIHwgbWVyZ2VkIHwKfC0tLXwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fAp8IDIwMjYtMDYgfCAzOC4xTSB8ICQ0Ny40NyB8IDY0MCB8IDMgfCAzIHwgMCB8IDEgfAp8IDIwMjYtMDcgfCA1NS4wTSB8ICQ1Ni4xOCB8IDI1OSB8IDEgfCAyIHwgMSB8IDAgfAoKIyMjIEVjb25vbWljcwoKLSAqKkNhY2hlOioqIDk0JSBoaXQ7IHRoZSBpbnB1dCBzaWRlIGJpbGxzIGF0IDE4JSBvZiBmcmVzaC10b2tlbiByYXRlcy4KLSAqKkxvd2VzdCBjYWNoZSBwaGFzZToqKiBQMiBhdCA2MiUuCi0gKipBdHRyaWJ1dGlvbjoqKiA5NSUgb2Ygc3BlbmQgYXR0cmlidXRlZCAoODglIHRvIGEgc3BlY2lmaWMgdGFzaykuCi0gKipDb3N0IHBlciBjb21wbGV0ZWQgdGFzazoqKiAkMTUuNzcgYWNyb3NzIDQgdGFzayhzKS4KLSAqKlByb2plY3Rpb246Kiogc3VwcHJlc3NlZCDigJQgbmVlZHMgNSBjb21wbGV0ZWQgdGFza3MsIGhhcyA0LgotICoqUmV0cmllZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpICg2JSBvZiBzcGVuZCkuIE5vdCB0aGUgc2FtZSBhcyB3YXN0ZWQgc3BlbmQg4oCUIHRoZSBsZWRnZXIgYnVja2V0cyBieSBob3VyLCBub3QgYnkgYXR0ZW1wdC4KLSAqKkJsb2NrZWQgdGFza3M6KiogJDUuODIgYWNyb3NzIDEgdGFzayhzKSDigJQgc3BlbmQgd2l0aCBubyBvdXRjb21lLgoKIyMjIE1vZGVsIGNvc3Qgd2l0aGluIGVhY2ggcmlzayBiYW5kCgpDb21wYXJlZCBpbnNpZGUgYSBiYW5kIG9uIHB1cnBvc2U6IGhhcmQgd29yayBpcyByb3V0ZWQgdG8gdGhlIHN0cm9uZ2VyIG1vZGVsIGRlbGliZXJhdGVseSwgc28gYSByYXcgc3BlbmQtcGVyLXRhc2sgY29tcGFyaXNvbiBhY3Jvc3MgYmFuZHMgd291bGQgZmxhZyB0aGF0IHdvcmtpbmcgc3lzdGVtIGFzIGEgZmF1bHQuCgp8IHJpc2sgfCBtb2RlbCB8IHRhc2tzIHwgY29zdC90YXNrIHwgbWVhbiBhdHRlbXB0cyB8CnwtLS18LS0tfC0tLTp8LS0tOnwtLS06fAp8IGhpZ2ggfCBjbGF1ZGUtb3B1cy01IHwgMyB8ICQxNi42OSB8IDEuMCB8CnwgbWVkIHwgY2xhdWRlLXNvbm5ldC01IHwgNCB8ICQ5LjUwIHwgMS41IHwK";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
+<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTE0IDExOjM0IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgLS0gfCA0LjZNIHwgJDYuNzQgfCAxOTQgfAoKIyMjIEJ5IG1vZGVsCgp8IG1vZGVsIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IGNsYXVkZS1vcHVzLTUgfCA1Mi40TSB8ICQ2MC44MCB8IDM1NiB8CnwgY2xhdWRlLXNvbm5ldC01IHwgMzguMU0gfCAkMzkuMTIgfCA0MjEgfAp8IGNsYXVkZS1oYWlrdS00LTUgfCAyLjBNIHwgJDAuNzUgfCA4NSB8CnwgY2xhdWRlLWZhYmxlLTUgfCA2NTUuMksgfCAkMi45OCB8IDM3IHwKCiMjIyBCeSBhdXRob3IKCnwgYXV0aG9yIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfAp8LS0tfC0tLTp8LS0tOnwtLS06fAp8IG1pbG9zQGFjbWUuZXhhbXBsZSB8IDQ3LjhNIHwgJDQ4LjA2IHwgMjQ2IHwKfCBhbGV4QGFjbWUuZXhhbXBsZSB8IDI1LjNNIHwgJDMxLjc0IHwgNDc5IHwKfCBzYXJhQGFjbWUuZXhhbXBsZSB8IDIwLjBNIHwgJDIzLjg1IHwgMTc0IHwKCiMjIyBNb250aCBieSBtb250aAoKUGxhbiBjb2x1bW5zIGNvdW50IHRoZSB3aG9sZSBwcm9qZWN0IGJ5IGV2ZW50IG1vbnRoICh0YXNrIGNvbXBsZXRlZEF0LCBidWcgcmVwb3J0ZWRBdCwgdGhlIGxpbmtlZCB0YXNrJ3MgY29tcGxldGVkQXQgZm9yIGEgZml4LCBwaGFzZSBtZXJnZWRBdCkuCgp8IG1vbnRoIHwgdG9rZW5zIHwgY29zdCB8IG1zZ3MgfCB0YXNrcyBkb25lIHwgYnVncyB8IGZpeGVkIHwgbWVyZ2VkIHwKfC0tLXwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fAp8IDIwMjYtMDYgfCAzOC4xTSB8ICQ0Ny40NyB8IDY0MCB8IDMgfCAzIHwgMCB8IDEgfAp8IDIwMjYtMDcgfCA1NS4wTSB8ICQ1Ni4xOCB8IDI1OSB8IDEgfCAyIHwgMSB8IDAgfAoKIyMjIEVjb25vbWljcwoKLSAqKkNhY2hlOioqIDk0JSBoaXQ7IHRoZSBpbnB1dCBzaWRlIGJpbGxzIGF0IDE4JSBvZiBmcmVzaC10b2tlbiByYXRlcy4KLSAqKkxvd2VzdCBjYWNoZSBwaGFzZToqKiBQMiBhdCA2MiUuCi0gKipBdHRyaWJ1dGlvbjoqKiA5NSUgb2Ygc3BlbmQgYXR0cmlidXRlZCAoODglIHRvIGEgc3BlY2lmaWMgdGFzaykuCi0gKipDb3N0IHBlciBjb21wbGV0ZWQgdGFzazoqKiAkMTUuNzcgYWNyb3NzIDQgdGFzayhzKS4KLSAqKlByb2plY3Rpb246Kiogc3VwcHJlc3NlZCDigJQgbmVlZHMgNSBjb21wbGV0ZWQgdGFza3MsIGhhcyA0LgotICoqUmV0cmllZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpICg2JSBvZiBzcGVuZCkuIE5vdCB0aGUgc2FtZSBhcyB3YXN0ZWQgc3BlbmQg4oCUIHRoZSBsZWRnZXIgYnVja2V0cyBieSBob3VyLCBub3QgYnkgYXR0ZW1wdC4KLSAqKkJsb2NrZWQgdGFza3M6KiogJDUuODIgYWNyb3NzIDEgdGFzayhzKSDigJQgc3BlbmQgd2l0aCBubyBvdXRjb21lLgoKIyMjIE1vZGVsIGNvc3Qgd2l0aGluIGVhY2ggcmlzayBiYW5kCgpDb21wYXJlZCBpbnNpZGUgYSBiYW5kIG9uIHB1cnBvc2U6IGhhcmQgd29yayBpcyByb3V0ZWQgdG8gdGhlIHN0cm9uZ2VyIG1vZGVsIGRlbGliZXJhdGVseSwgc28gYSByYXcgc3BlbmQtcGVyLXRhc2sgY29tcGFyaXNvbiBhY3Jvc3MgYmFuZHMgd291bGQgZmxhZyB0aGF0IHdvcmtpbmcgc3lzdGVtIGFzIGEgZmF1bHQuCgp8IHJpc2sgfCBtb2RlbCB8IHRhc2tzIHwgY29zdC90YXNrIHwgbWVhbiBhdHRlbXB0cyB8CnwtLS18LS0tfC0tLTp8LS0tOnwtLS06fAp8IGhpZ2ggfCBjbGF1ZGUtb3B1cy01IHwgMyB8ICQxNi42OSB8IDEuMCB8CnwgbWVkIHwgY2xhdWRlLXNvbm5ldC01IHwgNCB8ICQ5LjUwIHwgMS41IHwK";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
 <script>
 (function () {
   var q = document.getElementById('audit-q');
@@ -1330,6 +1477,42 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   var smCells = [].slice.call(document.querySelectorAll('.smcell'));
   var auRows = [].slice.call(document.querySelectorAll('.rank[data-author]'));
 
+  // The global filter row (C1/C2) — a second line of the sticky top bar. Each
+  // control is a compact twin of a filter that already exists (author chips,
+  // area chips, the panel's date pair) over the SAME state variables, so the
+  // two presentations can never disagree about what is filtered.
+  var gFrom = document.getElementById('audit-gfrom');
+  var gTo = document.getElementById('audit-gto');
+  var gClear = document.getElementById('audit-gclear');
+  var auSelect = document.getElementById('audit-au-select');
+  var areaSelect = document.getElementById('audit-area-select');
+  // The per-day data layer both C1 (range scoping) and C3 (heatmap calendar
+  // navigation) read: {min, max, showCost, days: {date: [tokens, cost, msgs,
+  // [24 hour counts]]}}. Absent on a report without a ledger.
+  var U = window.AUDIT_USAGE || null;
+
+  // Client-side mirrors of _fmt.py's formatters, for text this script has to
+  // compose itself (the range summary line, the re-rendered heatmap tips).
+  // Same table, same shapes: magnitudes compact ("3.2M"), countables keep
+  // their thousands separators, real-but-sub-cent spend never reads $0.00.
+  function fmtTokens(n, dp) {
+    n = Math.trunc(n || 0);
+    var a = Math.abs(n);
+    var t = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (var i = 0; i < t.length; i++) {
+      if (a >= t[i][0]) return (n / t[i][0]).toFixed(dp) + t[i][1];
+    }
+    return String(n);
+  }
+  function fmtCost(x) {
+    x = x || 0;
+    if (x && Math.abs(x) < 0.01) return '<$0.01';
+    return '$' + x.toFixed(2);
+  }
+  function fmtInt(n) {
+    return String(Math.trunc(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
   // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
   // refresh() calls them inside a loop over phases — so one keystroke in the filter
   // ran 200 selector queries across a 4200-row tbody, roughly 840,000 node visits,
@@ -1358,6 +1541,21 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // Resolved once, with everything else that refresh() would otherwise have to
   // look up per phase per keystroke.
   phaseRows.forEach(function (pr) { pr.__pmatch = pr.querySelector('.pmatch'); });
+  // Segments (D1), indexed once like everything else refresh() reads. The
+  // archive starts collapsed exactly when the renderer emitted the toggle:
+  // the server decides (done phases exist AND something else does too), this
+  // script only obeys — a second copy of that decision here would be the two
+  // drifting apart.
+  var segRows = grouped
+    ? [].slice.call(grouped.querySelectorAll('tbody tr.seghead')) : [];
+  segRows.forEach(function (sh) { sh.__seg = sh.getAttribute('data-seg'); });
+  var archN = 0;
+  phaseRows.forEach(function (pr) {
+    pr.__seg = pr.getAttribute('data-seg') || '';
+    if (pr.__seg === 'done') archN++;
+  });
+  var archBtn = document.getElementById('audit-arch');
+  var archOpen = !archBtn;
   function tasksOf(pid) { return TASKS[pid] || []; }
   function tfOf(pid) { return TFROW[pid] || null; }
   // Lowercased once per row and kept. The text of a rendered report never changes,
@@ -1449,6 +1647,7 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     var anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
     var visP = 0, visT = 0, totT = 0;
+    var segVis = {};   // visible phases per segment, for the seghead painter
     phaseRows.forEach(function (pr) {
       var pid = pr.getAttribute('data-phase');
       var tasks = tasksOf(pid);
@@ -1472,9 +1671,18 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       var showP = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
                   && areaOk(pr)
                   && (term === '' || pText || anyTaskText)
-                  && (!narrows || nMatch > 0);
+                  && (!narrows || nMatch > 0)
+                  // The archive gate (D1): done rows sit collapsed under
+                  // their seghead until the toggle opens them — but only at
+                  // REST. Any active filter lifts the gate, because a search
+                  // that silently skipped the archive would report "0 of 40"
+                  // over rows that match.
+                  && (archOpen || anyFilter || pr.__seg !== 'done');
       pr.style.display = showP ? '' : 'none';
-      if (showP) { visP++; visT += nMatch; }
+      if (showP) {
+        visP++; visT += nMatch;
+        segVis[pr.__seg] = (segVis[pr.__seg] || 0) + 1;
+      }
       // Manual state, and ONLY manual state. This used to OR the search term and
       // the per-phase task filter into the condition, so one character typed
       // into the filter threw every matching phase open at once: the page grew by
@@ -1501,6 +1709,15 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
         if (wanted) badge.textContent = nMatch + ' of ' + tasks.length + ' match';
         badge.hidden = !wanted;
       }
+    });
+    // A segment header follows its rows: a header over nothing says nothing —
+    // except the collapsed archive's, whose whole job is to announce the rows
+    // it is hiding (the count rides in its own label), so at rest it stays.
+    segRows.forEach(function (sh) {
+      var keep = (segVis[sh.__seg] || 0) > 0
+        || (sh.__seg === 'done' && archBtn && !archOpen && !anyFilter
+            && archN > 0);
+      sh.style.display = keep ? '' : 'none';
     });
     bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
 
@@ -1529,6 +1746,9 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
       expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
     }
+    // The usage views follow the same range the table just filtered by. Cheap
+    // on a keystroke: it no-ops unless the range actually changed.
+    applyUsageRange();
     syncHash();
   }
 
@@ -1668,13 +1888,42 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // highlight() paints exactly one active value; these chips hold a set, so
   // their painter reads membership instead.
   function paintAreas() {
-    if (!areaBar) return;
-    [].forEach.call(areaBar.children, function (x) {
-      var on = areaFilter.indexOf(x.getAttribute('data-a')) !== -1;
-      x.classList.toggle('on', on);
-      x.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
+    if (areaBar) {
+      [].forEach.call(areaBar.children, function (x) {
+        var on = areaFilter.indexOf(x.getAttribute('data-a')) !== -1;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    // The global select shows the same selection. A select can only say one
+    // thing, and the chips can hold several — so a multi-selection gets a
+    // synthetic "N areas" option rather than the select naming one tag and
+    // silently misdescribing the rest.
+    if (areaSelect) {
+      var multi = areaSelect.querySelector('option[data-multi]');
+      if (areaFilter.length > 1) {
+        if (!multi) {
+          multi = document.createElement('option');
+          multi.setAttribute('data-multi', '');
+          multi.value = '~multi';
+          areaSelect.appendChild(multi);
+        }
+        multi.textContent = areaFilter.length + ' areas';
+        areaSelect.value = '~multi';
+      } else {
+        if (multi && multi.parentNode) multi.parentNode.removeChild(multi);
+        areaSelect.value = areaFilter[0] || '';
+      }
+    }
   }
+  // The global area select: one tag or all. Multi-select stays where it always
+  // was (the chips in More filters); picking here replaces the selection.
+  if (areaSelect) areaSelect.addEventListener('change', function () {
+    if (areaSelect.value === '~multi') return;   // the synthetic summary option
+    areaFilter = areaSelect.value ? [areaSelect.value] : [];
+    paintAreas();
+    refresh();
+  });
   wireChips(areaBar, 'data-a', function (val) {
     var i = areaFilter.indexOf(val);
     if (i === -1) areaFilter.push(val); else areaFilter.splice(i, 1);
@@ -1689,6 +1938,7 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // the renderer stamped on the top-8 cells, so a release is exact rather
   // than a re-render's guess.
   function applyAuthor() {
+    if (auSelect) auSelect.value = auFilter;   // the global twin says the same
     smCells.forEach(function (c) {
       c.hidden = auFilter ? c.getAttribute('data-author') !== auFilter
                           : !c.hasAttribute('data-top');
@@ -1726,6 +1976,12 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     highlight(host, attr, auFilter);
     applyAuthor();
   });
+  // The authors dropdown (C2) drives the same state the chips do; both paint.
+  if (auSelect) auSelect.addEventListener('change', function () {
+    auFilter = auSelect.value;
+    if (authorBar) highlight(authorBar, 'data-au', auFilter);
+    applyAuthor();
+  });
 
   // The More-filters panel closes on an outside click and on Escape. A <details>
   // natively closes only through its own summary, so a reader who opens it,
@@ -1759,17 +2015,36 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   function paintDates() {
     if (fromInput) fromInput.value = dFrom;
     if (toInput) toInput.value = dTo;
+    // The global pair mirrors the same state, so editing either pair repaints
+    // both — two controls, one range, never two answers.
+    if (gFrom) gFrom.value = dFrom;
+    if (gTo) gTo.value = dTo;
+    if (gClear) gClear.hidden = !(dFrom || dTo);
     if (presetBar) highlight(presetBar, 'data-days', preset);
   }
-  function onDateInput() {
-    dFrom = fromInput ? fromInput.value : '';
-    dTo = toInput ? toInput.value : '';
-    preset = '';                       // a hand-picked range is no longer a preset
-    if (presetBar) highlight(presetBar, 'data-days', '');
+  // One entry point for every control that sets the range: panel inputs,
+  // global inputs, the All-time reset. A hand-picked range is no longer a
+  // preset, so the chip row unlights.
+  function setRange(f, t) {
+    dFrom = f || '';
+    dTo = t || '';
+    preset = '';
+    paintDates();
     refresh();
+  }
+  function onDateInput() {
+    setRange(fromInput ? fromInput.value : '', toInput ? toInput.value : '');
   }
   if (fromInput) fromInput.addEventListener('change', onDateInput);
   if (toInput) toInput.addEventListener('change', onDateInput);
+  function onGDateInput() {
+    setRange(gFrom ? gFrom.value : '', gTo ? gTo.value : '');
+  }
+  if (gFrom) gFrom.addEventListener('change', onGDateInput);
+  if (gTo) gTo.addEventListener('change', onGDateInput);
+  // Clearing returns to all-time (C1): one press, both pairs blank, every
+  // scoped view back to the whole record.
+  if (gClear) gClear.addEventListener('click', function () { setRange('', ''); });
 
   // Relative spans, measured back from the plan's last recorded day (DMAX) rather
   // than from today — see DMAX above for why the wall clock is not an option here.
@@ -1919,6 +2194,267 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     });
   })();
 
+  // --- the date range over the usage views (C1) -----------------------------
+  // The tables filter their own rows; the usage section is drawings, so the
+  // range treats it differently: trend columns outside the range RECEDE (the
+  // geometry never moves — hiding bars would silently re-scale a chart whose
+  // committed render is byte-compared), months wholly outside the range hide,
+  // the heatmap re-renders from the per-day payload, and one line names the
+  // span with that span's own totals. That line is also what reaches paper:
+  // the sticky bar carrying the pickers never prints, and a scoped chart on a
+  // sheet with no visible scope would be a chart that lies.
+  var hmApply = null;          // set by the heatmap module below, when present
+  var hmView = null;           // ...and its current view as data, for the PNG
+  var lastRange = '|';         // sentinel: "no range applied yet"
+  function applyUsageRange() {
+    var key = dFrom + '|' + dTo;
+    if (key === lastRange) return;
+    lastRange = key;
+    var active = !!(dFrom || dTo);
+    [].forEach.call(document.querySelectorAll('.cols [data-d], .xts [data-d]'),
+      function (el) {
+        var d = el.getAttribute('data-d');
+        var out = active && ((dFrom && d < dFrom) || (dTo && d > dTo));
+        // SVG 1.1 elements have no classList in some engines; setAttribute is
+        // universal and the stylesheet only needs the class present/absent.
+        var cls = (el.getAttribute('class') || '').replace(/\s*\bdimout\b/, '');
+        el.setAttribute('class', out ? cls + ' dimout' : cls);
+      });
+    [].forEach.call(document.querySelectorAll('tr[data-um]'), function (r) {
+      var m = r.getAttribute('data-um');
+      var out = active && ((dFrom && m < dFrom.slice(0, 7))
+                           || (dTo && m > dTo.slice(0, 7)));
+      r.style.display = out ? 'none' : '';
+    });
+    var note = document.getElementById('audit-urange');
+    if (note) {
+      if (active && U) {
+        var f = dFrom || U.min, t = dTo || U.max;
+        var tok = 0, cost = 0, msgs = 0;
+        for (var d2 in U.days) {
+          if (d2 >= f && d2 <= t) {
+            tok += U.days[d2][0]; cost += U.days[d2][1]; msgs += U.days[d2][2];
+          }
+        }
+        var sep = ' · ';
+        note.textContent = 'Date range ' + f + ' to ' + t + ': '
+          + fmtTokens(tok, 1) + ' tokens'
+          + (U.showCost !== false ? sep + fmtCost(cost) : '')
+          + sep + fmtInt(msgs) + ' msgs. The tiles above stay all-time; the '
+          + 'trend, monthly and hourly views below are scoped to this range.';
+        note.hidden = false;
+      } else {
+        note.hidden = true;
+        note.textContent = '';
+      }
+    }
+    if (hmApply) hmApply();
+  }
+
+  // --- heatmap calendar navigation (C3) --------------------------------------
+  // The server renders the all-data 7x24 grid; this re-renders the tbody from
+  // the embedded per-day payload for one day / week / month / year at a time,
+  // prev/next strictly bounded by the data (an arrow at the edge is disabled
+  // and muted, never a dead click), and the period on display NAMED in the
+  // label. The custom range IS C1's range control: while a range is active the
+  // heatmap's whole universe is that range — granularity navigation clamps to
+  // it, and "All" reads "Custom range" with the span. One range, one meaning.
+  (function () {
+    var body = document.getElementById('audit-hm-body');
+    var granBar = document.getElementById('audit-hm-gran');
+    var prevBtn = document.getElementById('audit-hm-prev');
+    var nextBtn = document.getElementById('audit-hm-next');
+    var periodEl = document.getElementById('audit-hm-period');
+    var peakEl = document.getElementById('audit-hm-peak');
+    if (!U || !body || !granBar || !prevBtn || !nextBtn || !periodEl) return;
+    var DAY = 86400000;
+    var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    var MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+               'August', 'September', 'October', 'November', 'December'];
+    var gran = 'all';
+    var anchor = '';             // period start (ISO day) when gran !== 'all'
+    function dParse(d) { return Date.parse(d + 'T00:00:00Z'); }
+    function dIso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+    function wdayOf(d) { return (new Date(dParse(d)).getUTCDay() + 6) % 7; }
+    function bounds() {
+      var lo = U.min, hi = U.max;
+      if (dFrom && dFrom > lo) lo = dFrom;
+      if (dTo && dTo < hi) hi = dTo;
+      return lo > hi ? null : { lo: lo, hi: hi };
+    }
+    function startOf(g, day) {
+      if (g === 'week') return dIso(dParse(day) - wdayOf(day) * DAY);
+      if (g === 'month') return day.slice(0, 7) + '-01';
+      if (g === 'year') return day.slice(0, 4) + '-01-01';
+      return day;
+    }
+    function endOf(g, s) {
+      if (g === 'week') return dIso(dParse(s) + 6 * DAY);
+      if (g === 'month') {
+        return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7), 0));
+      }
+      if (g === 'year') return s.slice(0, 4) + '-12-31';
+      return s;
+    }
+    function shift(g, s, dir) {
+      if (g === 'day') return dIso(dParse(s) + dir * DAY);
+      if (g === 'week') return dIso(dParse(s) + dir * 7 * DAY);
+      if (g === 'month') {
+        return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1 + dir, 1));
+      }
+      if (g === 'year') return (+s.slice(0, 4) + dir) + '-01-01';
+      return s;
+    }
+    function hasData(from, to) {
+      for (var d in U.days) { if (d >= from && d <= to) return true; }
+      return false;
+    }
+    // The next period in `dir` that is inside the bounds AND records anything
+    // — "never navigate into empty periods" is a rule about data, not about
+    // the calendar, so gap days between two worked weeks are stepped OVER.
+    function seek(g, s, dir, b) {
+      for (var i = 0; i < 4000; i++) {
+        s = shift(g, s, dir);
+        var en = endOf(g, s);
+        if (en < b.lo || s > b.hi) return null;
+        var lo = s < b.lo ? b.lo : s;
+        var hi = en > b.hi ? b.hi : en;
+        if (hasData(lo, hi)) return s;
+      }
+      return null;
+    }
+    function labelOf(g, s, b) {
+      if (g === 'day') return WD[wdayOf(s)] + ' ' + s;
+      if (g === 'week') return 'Week of ' + s + ' to ' + endOf('week', s);
+      if (g === 'month') return MON[+s.slice(5, 7) - 1] + ' ' + s.slice(0, 4);
+      if (g === 'year') return s.slice(0, 4);
+      return ((dFrom || dTo) ? 'Custom range' : 'All data')
+        + ' · ' + b.lo + ' to ' + b.hi;
+    }
+    function hoursOf(d) { return (U.days[d] || [0, 0, 0, []])[3] || []; }
+    // The current view as DATA — rows, peak, label — split from the DOM paint
+    // so the PNG export (D2) can redraw exactly what is on screen without
+    // touching it. The anchor clamp lives here because the view is what the
+    // clamp is FOR: render() paints whatever this returns.
+    function view() {
+      var b = bounds();
+      if (!b) return null;
+      if (gran !== 'all') {
+        if (!anchor) anchor = startOf(gran, b.hi);
+        var aEnd = endOf(gran, anchor);
+        if (aEnd < b.lo || anchor > b.hi) anchor = startOf(gran, b.hi);
+      }
+      var s = gran === 'all' ? b.lo : anchor;
+      var en = gran === 'all' ? b.hi : endOf(gran, s);
+      var lo = s < b.lo ? b.lo : s;
+      var hi = en > b.hi ? b.hi : en;
+      // rows: [{label, days:[iso|null x cells]}] — day/week keep the calendar
+      // (one row per date), coarser grains aggregate by weekday like the
+      // server's all-data view.
+      var rows = [];
+      if (gran === 'day') {
+        rows.push({ label: WD[wdayOf(lo)] + ' ' + lo.slice(5), cells: hoursOf(lo).slice(),
+                    head: WD[wdayOf(lo)] + ' ' + lo });
+      } else if (gran === 'week') {
+        for (var ms = dParse(s); ms <= dParse(en); ms += DAY) {
+          var d = dIso(ms);
+          var inR = d >= lo && d <= hi;
+          rows.push({ label: WD[wdayOf(d)] + ' ' + d.slice(5),
+                      cells: inR ? hoursOf(d).slice() : null,
+                      head: WD[wdayOf(d)] + ' ' + d });
+        }
+      } else {
+        var agg = [];
+        for (var w = 0; w < 7; w++) agg.push([]);
+        for (var dd in U.days) {
+          if (dd < lo || dd > hi) continue;
+          var vec = hoursOf(dd);
+          var tgt = agg[wdayOf(dd)];
+          for (var h = 0; h < 24; h++) tgt[h] = (tgt[h] || 0) + (vec[h] || 0);
+        }
+        for (var w2 = 0; w2 < 7; w2++) {
+          rows.push({ label: WD[w2], cells: agg[w2], head: WD[w2] });
+        }
+      }
+      var peak = 0;
+      rows.forEach(function (r) {
+        (r.cells || []).forEach(function (v) { if (v > peak) peak = v; });
+      });
+      return { rows: rows, peak: peak, s: s, b: b,
+               label: labelOf(gran, s, b) };
+    }
+    function render() {
+      var v = view();
+      var setArrow = function (btn, ok) {
+        if (ok) btn.removeAttribute('disabled');
+        else btn.setAttribute('disabled', '');
+      };
+      if (!v) {
+        body.innerHTML = '';
+        periodEl.textContent = 'No recorded usage in this range';
+        if (peakEl) peakEl.textContent = '0';
+        setArrow(prevBtn, false); setArrow(nextBtn, false);
+        return;
+      }
+      var htmlRows = [], tips = [];
+      v.rows.forEach(function (r) {
+        var tds = [];
+        for (var h2 = 0; h2 < 24; h2++) {
+          var val = r.cells ? (r.cells[h2] || 0) : 0;
+          var lv = (!val || !v.peak) ? 0
+            : Math.min(6, 1 + Math.floor(5 * val / v.peak));
+          tds.push('<td><i data-l="' + lv + '"></i></td>');
+          // Same one-line shape the server's titles use; a day the range
+          // excludes says so instead of claiming a zero it cannot know.
+          tips.push(r.cells
+            ? r.head + ' ' + (h2 < 10 ? '0' : '') + h2 + ':00 - '
+              + fmtTokens(val, 2) + ' tokens'
+            : r.head + ' - outside the selected range');
+        }
+        // '<' + 'th>' and not the literal: render-report's cols: selftest
+        // counts header-cell open tags across whole documents to prove the
+        // table header and its cells agree, and this SCRIPT is embedded in
+        // every one of them — the literal tag spelled out anywhere in here
+        // would count as a column that does not exist.
+        htmlRows.push('<tr><' + 'th>' + r.label + '</' + 'th>'
+          + tds.join('') + '</tr>');
+      });
+      body.innerHTML = htmlRows.join('');
+      [].forEach.call(body.querySelectorAll('i'), function (cell, i) {
+        cell.__tip = tips[i];
+      });
+      if (peakEl) peakEl.textContent = fmtTokens(v.peak, 1);
+      periodEl.textContent = v.label;
+      var canStep = gran !== 'all';
+      setArrow(prevBtn, canStep && seek(gran, v.s, -1, v.b) !== null);
+      setArrow(nextBtn, canStep && seek(gran, v.s, 1, v.b) !== null);
+    }
+    function step(dir) {
+      var b = bounds();
+      if (!b || gran === 'all') return;
+      var s2 = seek(gran, anchor, dir, b);
+      if (!s2) return;
+      anchor = s2;
+      render();
+    }
+    prevBtn.addEventListener('click', function () { step(-1); });
+    nextBtn.addEventListener('click', function () { step(1); });
+    wireChips(granBar, 'data-g', function (val) {
+      if (val === gran) return;
+      gran = val;
+      var b = bounds();
+      anchor = (val === 'all' || !b) ? '' : startOf(val, b.hi);
+      highlight(granBar, 'data-g', gran);
+      render();
+    });
+    highlight(granBar, 'data-g', gran);   // 'all' is lit from the start
+    // Called when the global range moves: clamp the current period into the
+    // new bounds and redraw. The initial no-range state deliberately keeps the
+    // server-rendered tbody untouched.
+    hmApply = render;
+    hmView = view;
+  })();
+
   // Download the Markdown twin (embedded as base64, decoded to a Blob).
   // Copy the run command. clipboard.writeText is unavailable on file:// in some
   // browsers, which is exactly where this report is most often opened, so the
@@ -1954,6 +2490,244 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {}
+  });
+
+  // The archive toggle (D1). State lives here, not in the hash: which way the
+  // archive folds is view furniture like the per-phase task chips, not a view
+  // someone would send as a link.
+  if (archBtn) archBtn.addEventListener('click', function () {
+    archOpen = !archOpen;
+    archBtn.setAttribute('aria-expanded', archOpen ? 'true' : 'false');
+    refresh();
+  });
+
+  // --- per-segment and per-section exports (D2) ------------------------------
+  // CSV of the DATA — never the filtered view: a file named "phases-active"
+  // that silently held whatever the search box happened to leave visible
+  // would be a different file every download. PNG of the charts, REDRAWN from
+  // window.AUDIT_USAGE onto a canvas: the marks are bars on a grid, and
+  // DOM-to-canvas serialisation is exactly the dependency this
+  // zero-external-fetch file cannot take. And a print mode that isolates one
+  // segment. Every button is server-rendered (the chips rule); this only
+  // attaches behaviour.
+  var BASE = String(window.AUDIT_MD_NAME || 'audit-report.md').replace(/\.md$/, '');
+  function csvQuote(v) {
+    // RFC 4180, the same rule the panel's export uses: quote anything that
+    // carries a comma, a quote or a newline, and double the quotes inside.
+    var s = v == null ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function download(name, blob) {
+    // The .md button's own mechanism: a temporary object URL on an anchor,
+    // revoked LATE — some engines have not started reading the blob when
+    // click() returns, and a revoked URL there is a download that fails with
+    // no error anywhere.
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+  function csvDownload(name, rows) {
+    var text = rows.map(function (r) { return r.map(csvQuote).join(','); })
+      .join('\r\n') + '\r\n';
+    // U+FEFF: without the BOM Excel reads a UTF-8 CSV in the local 8-bit
+    // codepage. As an escape, never the character — an invisible literal in
+    // the source is unreviewable (the panel export's own rule).
+    download(name, new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' }));
+  }
+  // Column names read once off the table's own header — the export must not
+  // restate _present_columns, or the two would disagree the first time a
+  // column appears.
+  var COLNAMES = grouped
+    ? [].slice.call(grouped.querySelectorAll('thead th')).map(function (h) {
+        return h.textContent.trim();
+      }).slice(3)
+    : [];
+  function segCsv(seg) {
+    var rows = [['phase', 'phase title', 'phase status',
+                 'task', 'task title', 'task status'].concat(COLNAMES)];
+    phaseRows.forEach(function (pr) {
+      if (pr.__seg !== seg) return;
+      var pid = pr.getAttribute('data-phase');
+      var strongEl = pr.querySelector('strong');
+      var head = [pid, strongEl ? strongEl.textContent : '',
+                  pr.getAttribute('data-status') || ''];
+      var tasks = tasksOf(pid);
+      if (!tasks.length) {   // a phase with no tasks is still a data row
+        rows.push(head.concat(['', '', ''])
+          .concat(COLNAMES.map(function () { return ''; })));
+        return;
+      }
+      tasks.forEach(function (t) {
+        // Machine statuses from the data attributes; prose from the cells.
+        var line = head.concat([cell(t, 0), cell(t, 1),
+                                t.getAttribute('data-status') || '']);
+        for (var ci = 0; ci < COLNAMES.length; ci++) line.push(cell(t, 3 + ci));
+        rows.push(line);
+      });
+    });
+    csvDownload(BASE + '-phases-' + seg + '.csv', rows);
+  }
+  function bugsCsv() {
+    var rows = [['id', 'title', 'status', 'severity', 'task', 'fixedIn', 'ADO']];
+    bugRows.forEach(function (b) {
+      rows.push([cell(b, 0), cell(b, 1),
+                 b.getAttribute('data-status') || cell(b, 2),
+                 cell(b, 3), cell(b, 4), cell(b, 5), cell(b, 6)]);
+    });
+    csvDownload(BASE + '-bugs.csv', rows);
+  }
+  function usageCsv() {
+    if (!U) return;
+    var showCost = U.showCost !== false;
+    var rows = [['date', 'tokens'].concat(showCost ? ['costUSD'] : [])
+      .concat(['msgs'])];
+    var days = [];
+    for (var ud in U.days) days.push(ud);
+    days.sort();
+    days.forEach(function (d) {
+      var v = U.days[d];
+      // Raw numbers on purpose: '3,230,000' lands in a spreadsheet as text
+      // and every sum over the column is then wrong, silently.
+      var line = [d, v[0]];
+      if (showCost) line.push(v[1]);
+      line.push(v[2]);
+      rows.push(line);
+    });
+    csvDownload(BASE + '-usage-daily.csv', rows);
+  }
+  [].slice.call(document.querySelectorAll('[data-segcsv]')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      segCsv(b.getAttribute('data-segcsv'));
+    });
+  });
+  [].slice.call(document.querySelectorAll('[data-csv]')).forEach(function (b) {
+    b.addEventListener('click',
+      b.getAttribute('data-csv') === 'bugs' ? bugsCsv : usageCsv);
+  });
+
+  function cssColor(token, fallback) {
+    // Resolved through a live element rather than read raw off the root:
+    // several tokens are color-mix() expressions, and what a canvas needs is
+    // the colour the browser actually computed.
+    var probe = document.createElement('i');
+    probe.style.color = 'var(' + token + ',' + fallback + ')';
+    document.body.appendChild(probe);
+    var c = getComputedStyle(probe).color;
+    document.body.removeChild(probe);
+    return c || fallback;
+  }
+  function pngCanvas(w, h) {
+    var c = document.createElement('canvas');
+    // 2x, so the file survives being pasted into a document at print density.
+    c.width = w * 2; c.height = h * 2;
+    var ctx = c.getContext('2d');
+    ctx.scale(2, 2);
+    return { el: c, ctx: ctx };
+  }
+  function pngDownload(name, canvas) {
+    // toDataURL rather than a blob: synchronous, and the payload is small.
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  function trendPng() {
+    if (!U) return;
+    var days = [];
+    for (var td in U.days) days.push(td);
+    days.sort();
+    if (!days.length) return;
+    var peak = 0;
+    days.forEach(function (d) { if (U.days[d][0] > peak) peak = U.days[d][0]; });
+    // Bar width follows the span so a three-year ledger still fits one image.
+    var barW = Math.max(1, Math.min(10, Math.floor(1100 / days.length)));
+    var left = 58, top = 44, bottom = 34;
+    var W = left + days.length * (barW + 1) + 14, H = 280;
+    var g = pngCanvas(W, H), ctx = g.ctx;
+    var ink = cssColor('--text', '#111827');
+    var mut = cssColor('--muted', '#6b7280');
+    ctx.fillStyle = cssColor('--surface', '#ffffff');
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = ink;
+    ctx.font = '600 13px sans-serif';
+    ctx.fillText('Tokens per day · ' + days[0] + ' to '
+      + days[days.length - 1], 10, 20);
+    var plot = H - top - bottom;
+    ctx.strokeStyle = cssColor('--border', '#d1d5db');
+    ctx.fillStyle = mut;
+    ctx.font = '11px sans-serif';
+    [0, 0.5, 1].forEach(function (f) {
+      var y = top + plot * f;
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(W - 6, y); ctx.stroke();
+      ctx.fillText(fmtTokens(peak * (1 - f), 1), 8, y + 4);
+    });
+    ctx.fillStyle = cssColor('--accent-solid', '#4f46e5');
+    days.forEach(function (d, i) {
+      var v = U.days[d][0];
+      var bh = peak ? Math.max(1, plot * v / peak) : 1;
+      ctx.fillRect(left + i * (barW + 1), top + plot - bh, barW, bh);
+    });
+    ctx.fillStyle = mut;
+    ctx.fillText(days[0], left, H - 12);
+    var lastD = days[days.length - 1];
+    ctx.fillText(lastD, W - 8 - ctx.measureText(lastD).width, H - 12);
+    pngDownload(BASE + '-trend.png', g.el);
+  }
+  function heatmapPng() {
+    // hmView is set by the heatmap module below; it answers with the CURRENT
+    // view — granularity, period, range — so the file shows what the screen
+    // shows, not a second implementation's idea of it.
+    var v = hmView ? hmView() : null;
+    if (!v) return;
+    var cellW = 26, cellH = 18, gap = 2, labelW = 96, top = 44;
+    var W = labelW + 24 * (cellW + gap) + 12;
+    var H = top + v.rows.length * (cellH + gap) + 30;
+    var g = pngCanvas(W, H), ctx = g.ctx;
+    ctx.fillStyle = cssColor('--surface', '#ffffff');
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = cssColor('--text', '#111827');
+    ctx.font = '600 13px sans-serif';
+    ctx.fillText('Tokens by hour (UTC) · ' + v.label, 10, 20);
+    var ramp = [];
+    for (var lv0 = 0; lv0 <= 6; lv0++) ramp.push(cssColor('--hm-' + lv0, '#eeeeee'));
+    ctx.font = '11px sans-serif';
+    v.rows.forEach(function (r, ri) {
+      var y = top + ri * (cellH + gap);
+      ctx.fillStyle = cssColor('--muted', '#6b7280');
+      ctx.fillText(r.label, 8, y + cellH - 5);
+      for (var h2 = 0; h2 < 24; h2++) {
+        var val = r.cells ? (r.cells[h2] || 0) : 0;
+        var lv = (!val || !v.peak) ? 0
+          : Math.min(6, 1 + Math.floor(5 * val / v.peak));
+        ctx.fillStyle = ramp[lv];
+        ctx.fillRect(labelW + h2 * (cellW + gap), y, cellW, cellH);
+      }
+    });
+    ctx.fillStyle = cssColor('--muted', '#6b7280');
+    for (var tk = 0; tk < 24; tk += 6) {
+      ctx.fillText((tk < 10 ? '0' : '') + tk, labelW + tk * (cellW + gap), H - 10);
+    }
+    pngDownload(BASE + '-heatmap.png', g.el);
+  }
+  [].slice.call(document.querySelectorAll('[data-png]')).forEach(function (b) {
+    b.addEventListener('click',
+      b.getAttribute('data-png') === 'trend' ? trendPng : heatmapPng);
+  });
+
+  // Print one segment (D2): stamp the attribute the print CSS keys on, open
+  // the dialog, and let afterprint take it back off — the same event the
+  // details-reopening handler above already rides, so a cancelled dialog
+  // restores exactly like a completed one.
+  [].slice.call(document.querySelectorAll('[data-segprint]')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.body.setAttribute('data-printseg', b.getAttribute('data-segprint'));
+      window.print();
+    });
+  });
+  window.addEventListener('afterprint', function () {
+    document.body.removeAttribute('data-printseg');
   });
 
   wireSort(grouped, true);

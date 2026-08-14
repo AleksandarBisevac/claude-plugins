@@ -41,6 +41,7 @@ Pass `$ARGUMENTS` through unchanged. Nothing here needs interpreting on your sid
 | `--top N` | cap TOP TASKS (default 10) |
 | `--no-cost` | tokens only, no dollar figures |
 | `--format md\|ascii` | `md` (the default above) renders pipe tables for this chat surface; `ascii` is the fixed-width terminal shape for pipes, logs and CI |
+| `--color auto\|always\|never` | ANSI color for humans at a real terminal (`auto` = TTY with `NO_COLOR` unset; this chat surface is a pipe, so it stays plain; `md` never colors) |
 | `--json` | machine-readable, for CI |
 | `--backfill` | re-read every transcript and rebuild the ledger |
 

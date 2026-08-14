@@ -206,7 +206,9 @@ page behind it, read against the form rather than instead of it. All of it is
   - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — blocks reading secret files
     (`.env`, credentials, signing material) directly or indirectly (`git show`, `source`,
     `cp`/`mv`), dumping env/token values, and shell writes into source files
-    (`sed -i`, `tee`, `>` redirects) that bypass the plan gate.
+    (`sed -i`, `tee`, `>` redirects) that bypass the plan gate. Multi-clause commands are
+    judged per clause (a redirect in one clause plus an eval in another is not an
+    eval-write), and its verdicts land in the same gate events feed the panel reads.
   - `guard-edits.py` (PreToolUse: edits) — blocks token-logging, project-defined banned
     patterns, edits of the installed plugin's own files, and bypass-state forgery.
   - `guard-capabilities.py` (PreToolUse: Skill/Task/Agent/`mcp__*`) — enforces the
@@ -351,7 +353,10 @@ agent reading it is asked to relay it, not to weigh it silently.
 **Only the plan gate is graded.** The secret-read guard, the token-logging ban and the
 shell-write secret checks deny by default at every tier: reading `.env` is wrong whether or
 not a plan exists, so those guards need no evidence to be right. Docs (`**/*.md`), tests
-(`**/*.spec.*`, `**/*.test.*`), `docs/audit/**` and `.claude/**` are always exempt.
+(`**/*.spec.*`, `**/*.test.*`), `docs/audit/**` and `.claude/**` are always exempt — but a
+test-suffix glob only claims CODE: `tsconfig.test.json` is a build config that happens to be
+named like a test, and since 0.36 the matcher refuses to exempt a data/markup format
+(.json/.yaml/.toml/...) on a test glob's say-so, in every guard at once.
 
 Scope or turn it off:
 
@@ -450,7 +455,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 |---|---|---|
 | `manifestPath` | Path to the manifest | `docs/audit/audit-plan.json` |
 | `gitRoot` | Git repo root relative to the project dir (set when git/the workspace is in a subdir; keep in sync with manifest `meta.gitRoot`) | `.` |
-| `exemptGlobs` | Globs exempt from plan-first | `docs/audit/**`, `**/*.md`, `.claude/**`, `**/*.spec.*`, `**/*.test.*` |
+| `exemptGlobs` | Globs exempt from plan-first (a test-suffix glob never claims a data/markup file — `tsconfig.test.json` is not a test) | `docs/audit/**`, `**/*.md`, `.claude/**`, `**/*.spec.*`, `**/*.test.*` |
 | `planGate` | Pin the plan gate to one tier: `observe` \| `warn` \| `ask` (hold each out-of-plan edit for approval) \| `deny`. Unset → the graded ladder: observe → warn → deny (see above). Wins over `enforce`; an unknown value falls back to the ladder | unset |
 | `enforce` | Legacy (pre-0.34): `true` = always-deny, the same as `planGate: "deny"` — which wins when both are set | `false` |
 | `trivialLineThreshold` | Max change magnitude for the 1st free code file/session | `80` |
@@ -459,7 +464,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `secretPatterns.extra` | Extra secret-path regexes (added to the built-in set) | `[]` |
 | `guardEdits.tokenVars` | Identifier names treated as auth tokens | `accessToken`, `refreshToken`, `idToken` |
 | `guardEdits.customRules` | Project banned patterns `{pathPrefix, bannedPattern, message}`. `pathPrefix` is matched as a **substring** of the path the edit tool reported (usually absolute) — `realtime/` covers every `realtime/` directory in the tree, not only one root | `[]` |
-| `bashWriteCheck.enabled` | PostToolUse git-status diff check for shell writes into source | `true` |
+| `bashWriteCheck.enabled` | PostToolUse git-status diff check for shell writes into source (a session's first pass baselines pre-existing dirt silently — only NEW dirt is attributed) | `true` |
 | `tddReminder.enabled` | Master switch for the non-blocking TDD nudge | `true` |
 | `tddReminder.sourceGlobs` / `testGlobs` | What counts as source vs test files (source also feeds the shell-write guard) | common code (incl. `.ipynb`) / test patterns |
 | `tddReminder.throttleMinutes` | Minimum gap between nudges | `10` |
@@ -870,11 +875,18 @@ already answer the filtered question.
 | [![the report's usage section with one author chip pressed: the summary line names them and the per-author views narrow to their row](../../docs/screenshots/authors.png)](../../docs/screenshots/authors.png) | [![the panel's usage tab with an author selected: a person header states their all-time footprint and touched work above the filtered tiles](../../docs/screenshots/panel-person.png)](../../docs/screenshots/panel-person.png) |
 
 The same data drives a **Usage section in `/audit:report`** (stat tiles, per-phase stacked bars by
-model, a daily trend, a day x hour heatmap, author chips and the month-by-month table) and a
-**Usage tab in `/audit:panel`** with live
+model, a daily trend, a day x hour heatmap with **calendar navigation** — day/week/month/year,
+arrows bounded by the data, the shown period always named — author chips and the month-by-month
+table) and a **Usage tab in `/audit:panel`** with live
 filtering by model, author, phase, task, agent, attribution, area, free text and an absolute date
-window, sparklined KPI tiles with a trend against the previous period, and **Export CSV** of
-exactly the rows behind the current view.
+window, sparklined KPI tiles with a trend against the previous period, **the same
+calendar-navigated heatmap** driven by the persisted filters, and **Export CSV** of
+exactly the rows behind the current view. The report adds a **global filter row** in its sticky
+top bar (author, area, from/to date range — every choice a shareable `#` link that prints as a
+named line), renders **Ready now as a definition list** (id, title, area chips, what cleared it),
+splits long plans into **active / pending / done-archive segments** with per-segment **CSV
+export, chart PNG export (redrawn from data) and print-to-PDF of one segment**, and shows each
+area's registered **owner** beside its tag — advisory, the panel's own wording.
 
 ## Audit trail
 

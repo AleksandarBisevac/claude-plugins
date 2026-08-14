@@ -4,6 +4,30 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.36.0] - 2026-08-14
+
+**The gate stops blaming the innocent, and the report learns time.** Five trust repairs from
+live reports: a test-suffix glob no longer exempts a data/markup file (`tsconfig.test.json`
+is a build config, not a test — fixed once, in the shared matcher, for every guard);
+guard-bash-writes baselines a session's pre-existing dirt silently instead of blaming the
+first command for it; guard-secrets-read judges multi-clause commands per clause (a redirect
+in one clause plus an eval in another is no longer a false DENY) and its verdicts finally
+land in the gate events feed; a declared non-string `reviewSkill` normalizes instead of
+leaking onto display surfaces.
+
+The report gains a global filter row in its sticky top bar — authors dropdown, area select
+and a from/to date range scoping every time-based view, each choice a shareable link that
+prints as a named line; the tokens heatmap grows to full width with calendar navigation
+(day/week/month/year, arrows bounded by the data, the period always named); Ready now becomes
+a definition list with area chips and what cleared each task; long plans split into
+active / pending / done-archive segments with per-segment CSV export, chart PNGs redrawn
+from data, and print-to-PDF of one segment; area owners ride the tags, advisory. The panel's
+Usage tab gets the same calendar-navigated heatmap, driven by its persisted filters, with
+zero payload changes. And the CLIs learn `--color auto|always|never` through one shared
+helper — plain output stays byte-identical, `NO_COLOR` respected, an explicit `always`
+outranking it — while the executor agent's "verified" now requires the exact command and
+exit code, or it counts as not done.
+
 ## [0.35.1] - 2026-08-14
 
 **A tip that does not exist cannot break anything.** 0.35.0's fixed-position ⓘ bubble still
