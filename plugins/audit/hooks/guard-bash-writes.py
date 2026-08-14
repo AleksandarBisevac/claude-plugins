@@ -19,7 +19,11 @@ Two branches by tool_name:
       sidestepped the plan gate.
 
 State: <stateDir>/bash-writes-<session_id>.json
-  {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...]}
+  {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...],
+   "baselined": bool}
+  `baselined` marks that the session's FIRST Bash pass has seeded seenDirty
+  with the tree's pre-existing dirt (silently) — only dirt appearing after
+  that baseline is ever attributed to a shell command.
 Read-only sidecar: <stateDir>/bash-writes-plugin-<sid>.json {"pluginWrote": [rel]}
   — journal files the plugin ITSELF appended to (written by journal-writes.py,
   the single writer; hooks on one event run in parallel). Those rels are
@@ -102,10 +106,11 @@ def _load_state(state_dir: Path, session_id: str) -> dict:
         if isinstance(data, dict):
             return {"toolEdited": list(data.get("toolEdited") or []),
                     "seenDirty": list(data.get("seenDirty") or []),
-                    "warned": list(data.get("warned") or [])}
+                    "warned": list(data.get("warned") or []),
+                    "baselined": bool(data.get("baselined"))}
     except Exception:
         pass
-    return {"toolEdited": [], "seenDirty": [], "warned": []}
+    return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False}
 
 
 def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
@@ -198,6 +203,25 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
     prefix = _config.git_root_rel(cfg)
     if prefix:
         dirty = [prefix + "/" + p for p in dirty]
+
+    # A2 (v0.36): the FIRST Bash pass of a session cannot know which dirty paths
+    # existed before its command ran — PostToolUse only ever sees the after-state.
+    # It used to attribute the WHOLE pre-existing dirty set to that command (live
+    # find: a real repo's standing dirt, blamed on the session's first shell
+    # call). So the first pass seeds the baseline: everything already dirty is
+    # recorded as seen, silently, and only dirt appearing AFTER the baseline is
+    # attributed. Accepted blind spot: a source write made by the very first Bash
+    # command of a session lands inside the baseline unwarned — the alternative
+    # blames every session for its predecessors' leftovers, which teaches people
+    # to ignore the guard. A flag rather than "state file exists": the edit
+    # branch above creates the file too, and an Edit-first session must not lose
+    # its baseline pass.
+    if not state.get("baselined"):
+        state["baselined"] = True
+        state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))
+        _save_state(sd, session_id, state)
+        return ("silent", "baseline seeded: %d pre-existing dirty path(s)"
+                % len(dirty))
 
     new = [f for f in dirty if f not in state["seenDirty"]]
     state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))
@@ -326,8 +350,20 @@ def _selftest() -> int:
         print("%s %s (expected %s, got %s)"
               % ("PASS" if ok else "FAIL", name, expected, verdict))
 
+    def seed(sid, *, use_cfg=None, state_dir=None, cwd=None, dirty=()):
+        """Run the session's baseline pass (A2) with a known dirty set, so each
+        case below tests ATTRIBUTION of new dirt, not the baseline itself
+        (which the (m) group pins)."""
+        data = payload("Bash", sid=sid)
+        if cwd is not None:
+            data["cwd"] = str(cwd)
+        decide(data, cfg=use_cfg or cfg,
+               state_dir=state_dir if state_dir is not None else sd,
+               dirty=list(dirty))
+
     # (a) a bash-only new source file → warn once, then stays silent
     s = "bw-a"
+    seed(s)
     check("a1 new dirty source file warns", "warn",
           payload("Bash", sid=s), dirty=["src/shell.ts"])
     check("a2 same file again is silent", "silent",
@@ -335,6 +371,7 @@ def _selftest() -> int:
 
     # (b) tool-edited files never warn (they went through the gates)
     s = "bw-b"
+    seed(s)
     check("b1 Edit records", "record",
           payload("Edit", sid=s, file_path="src/tool.ts"))
     check("b2 dirty tool-edited file is silent", "silent",
@@ -342,6 +379,8 @@ def _selftest() -> int:
 
     # (c) exempt / non-source / manifest / lock → silent
     s = "bw-c"
+    for _sid in (s, "bw-c2", "bw-c3", "bw-c4"):
+        seed(_sid)
     check("c1 exempt .md silent", "silent",
           payload("Bash", sid=s), dirty=["NOTES.md"])
     check("c2 non-source ext silent", "silent",
@@ -363,11 +402,13 @@ def _selftest() -> int:
              "files": ["src/covered/mod.ts"], "tests": {"mode": "gate-only"}},
         ]}],
     }), encoding="utf-8")
+    seed("bw-d")
     check("d1 in_progress-covered file silent", "silent",
           payload("Bash", sid="bw-d"), dirty=["src/covered/mod.ts"])
 
     # (e) two new files → one warn naming both; disabled config → silent
     s = "bw-e"
+    seed(s)
     try:
         verdict, detail = decide(payload("Bash", sid=s), cfg=cfg, state_dir=sd,
                                  dirty=["src/one.py", "src/two.py"])
@@ -381,9 +422,31 @@ def _selftest() -> int:
     check("e2 disabled config silent", "silent",
           payload("Bash", sid="bw-e2"), dirty=["src/x.ts"], use_cfg=cfg_off)
 
+    # (m) A2 (v0.36): pre-existing dirt is the session's BASELINE, not the first
+    # command's crime. On the first Bash pass of a session the guard cannot know
+    # which dirty paths predate the command, so it seeds seenDirty silently and
+    # only attributes dirt that appears AFTER that (live find: a real repo's
+    # standing dirty files were all blamed on the session's first command).
+    s = "bw-m1"
+    check("m1 first pass: a pre-existing dirty source file is baseline, silent",
+          "silent", payload("Bash", sid=s), dirty=["src/preexisting.ts"])
+    check("m2 a NEW dirty file on a later pass is attributed and warned", "warn",
+          payload("Bash", sid=s), dirty=["src/preexisting.ts", "src/fresh.ts"])
+    s = "bw-m4"
+    check("m4a an Edit-first session records through the edit branch", "record",
+          payload("Edit", sid=s, file_path="src/tool-first.ts"))
+    check("m4b ...and its first BASH pass still seeds the baseline silently - "
+          "the flag lives in state, not in the state file's existence",
+          "silent", payload("Bash", sid=s), dirty=["src/left-by-others.ts"])
+    check("m4c ...while dirt after the baseline is still caught", "warn",
+          payload("Bash", sid=s),
+          dirty=["src/left-by-others.ts", "src/mine.ts"])
+
     # (j) the append-only journal. guard-edits REFUSES an edit tool here; a shell
     # write is the same act through the door that cannot be locked, so the only
     # honest thing left is to say it happened.
+    for _sid in ("bw-j1", "bw-j4", "bw-j5"):
+        seed(_sid)
     try:
         verdict, detail = decide(payload("Bash", sid="bw-j1"), cfg=cfg,
                                  state_dir=sd,
@@ -450,6 +513,8 @@ def _selftest() -> int:
              "cwd": str(kproj)}
     os.environ["CLAUDE_PROJECT_DIR"] = str(kproj)
     try:
+        for _sid in (ksid, "bw-k2"):
+            seed(_sid, use_cfg=kcfg, state_dir=ksd, cwd=kproj)
         _jmod = _config._load_journal_lib()
         _entries = _jw.post_entries(kdata, cfg=kcfg, root=str(kproj))
         _written = []
@@ -501,6 +566,9 @@ def _selftest() -> int:
     try:
         subprocess.run(["git", "init", "-q"], cwd=str(gitrepo), check=True,
                        capture_output=True, timeout=10)
+        # baseline pass BEFORE the shell write exists (real git, no injection)
+        decide({"tool_name": "Bash", "tool_input": {"command": "x"},
+                "session_id": s, "cwd": str(gitrepo)}, cfg=cfg, state_dir=sd)
         (gitrepo / "src" / "made-by-shell.go").write_text("package x\n",
                                                           encoding="utf-8")
         data = {"tool_name": "Bash", "tool_input": {"command": "x"},
@@ -537,6 +605,11 @@ def _selftest() -> int:
                        "sessionId": "sess-A", "note": "phase P1",
                        "startedAt": _time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                                    _time.gmtime())}, fh)
+        # baseline passes BEFORE the shard write exists (real git, no injection)
+        for _sid in ("sess-B", "sess-B2"):
+            decide({"tool_name": "Bash", "tool_input": {"command": "x"},
+                    "session_id": _sid, "cwd": str(lockrepo)},
+                   cfg=cfg_lock, state_dir=sd)
         (lockrepo / "audit" / "phases" / "P1.json").write_text(
             '{"id":"P1"}\n', encoding="utf-8")
         data = {"tool_name": "Bash", "tool_input": {"command": "sed -i ..."},
@@ -585,6 +658,10 @@ def _selftest() -> int:
     try:
         subprocess.run(["git", "init", "-q"], cwd=str(sub), check=True,
                        capture_output=True, timeout=10)
+        # baseline pass BEFORE the shell write exists (real git, no injection)
+        decide({"tool_name": "Bash", "tool_input": {"command": "x"},
+                "session_id": "bw-h", "cwd": str(proj)},
+               cfg=cfg_nested, state_dir=sd)
         (sub / "src" / "shellmade.ts").write_text("export const x=1\n",
                                                   encoding="utf-8")
         data = {"tool_name": "Bash", "tool_input": {"command": "x"},

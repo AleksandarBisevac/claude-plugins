@@ -716,6 +716,16 @@ def _selftest() -> int:
     check("a3 *.spec.ts", "allow",
           payload("Write", "src/foo/bar.spec.ts", content="test('x',()=>{})"))
 
+    # (q) A1 (v0.36): a build config named like a test is NOT a test file. With
+    # the gate enforced, `tsconfig.test.json` used to ride the `**/*.test.*`
+    # exemption straight through; a real test file keeps it.
+    check("q1 tsconfig.test.json is gated - config, not a test", "block",
+          payload("Edit", "tsconfig.test.json", new_string=big,
+                  sid="selftest-session-q1"))
+    check("q2 a real test file stays exempt", "allow",
+          payload("Edit", "src/foo/cart.test.ts", new_string=big,
+                  sid="selftest-session-q1"))
+
     # (a4-a6) the manifest + its lock are never gated, even with a custom
     # manifestPath OUTSIDE the exempt globs
     cfg_custom = dict(cfg)

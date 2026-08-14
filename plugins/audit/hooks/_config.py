@@ -88,6 +88,7 @@ import copy
 import fnmatch
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -597,14 +598,47 @@ def rel_path(root, file_path):
     return rel.replace("\\", "/")
 
 
+# --- the test-file exemption stops at data formats ----------------------------
+# `tsconfig.test.json` matched `**/*.test.*` and was exempted as a "test file"
+# (live find, v0.36 A1) — but it is BUILD CONFIGURATION named like a test, and
+# the same shape covers tsconfig.spec.json, docker-compose.test.yml and
+# test_config.yaml. The carve-out is by FILE FORMAT, not by narrowing the globs
+# to an allow-list of code extensions: the width of these globs is deliberate
+# (multi-language — *.test.js, test_*.py, cart_test.go, cart_spec.rb,
+# cart_test.exs) and a per-language allow-list has already been this exemption's
+# opposite bug once, when it recognised only the JavaScript spelling. Tests are
+# written in CODE; a file whose extension is a pure data/markup format cannot be
+# one, whatever its name says — and the data-format list is small and stable
+# where a code-extension list grows with every language.
+#
+# Applied ONLY to test-suffix-shaped globs (`*.test.*`, `*_spec.*`, `test_*.*`,
+# ...): an explicit glob a project writes (`**/tsconfig.*`) still exempts
+# exactly what it names, and the directory globs (`**/tests/**`,
+# `**/__tests__/**`) still cover data fixtures that live with their tests.
+# A JSON fixture named `cart.test.json` OUTSIDE such a directory loses its
+# exemption — accepted: the gate fails closed and says so, which beats handing
+# build configs a silent bypass.
+_TEST_SUFFIX_GLOB = re.compile(
+    r"(?:[.*_](?:test|spec)[.*_]|(?:^|/)test_)", re.IGNORECASE)
+_NON_CODE_TEST_EXTS = (".json", ".jsonc", ".json5", ".yaml", ".yml", ".toml",
+                       ".ini", ".cfg", ".conf", ".xml", ".properties")
+
+
 def matches_exempt(rel, globs):
     """Generic glob matcher that understands the common `**` forms.
 
     Handles:  `dir/**` (recursive prefix), `**/*.ext` (basename), and plain fnmatch.
+
+    One carve-out: a test-suffix-shaped glob never claims a file in a pure
+    data/markup format (see _TEST_SUFFIX_GLOB / _NON_CODE_TEST_EXTS above) —
+    `tsconfig.test.json` is a compiler config, not a test.
     """
     base = rel.split("/")[-1]
+    non_code = base.lower().endswith(_NON_CODE_TEST_EXTS)
     for g in globs or ():
         g = str(g)
+        if non_code and _TEST_SUFFIX_GLOB.search(g):
+            continue
         if fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(base, g):
             return True
         # `some/dir/**` → recursive prefix match
@@ -1599,6 +1633,29 @@ def _selftest() -> int:
               (tmp_i / "logs" / ".gitignore").exists())
     finally:
         shutil.rmtree(tmp_i, ignore_errors=True)
+
+    # (q) A1 (v0.36): the test-file exemption stops at data formats.
+    # `tsconfig.test.json` matched `**/*.test.*` and slipped the plan gate as a
+    # "test file" (live find) — but it is build CONFIGURATION named like a test.
+    # Tests are code; a pure data/markup format cannot be one, whatever its
+    # name says.
+    _eg_q = DEFAULTS["exemptGlobs"]
+    for _rel_q in ("tsconfig.test.json", "conf/tsconfig.spec.json",
+                   "docker-compose.test.yml", "ops/test_config.yaml",
+                   "fixtures/test_data.json"):
+        check("q1 %s is NOT exempt - a config/data file named like a test is "
+              "not a test file" % _rel_q, not matches_exempt(_rel_q, _eg_q))
+    for _rel_q in ("src/cart.test.ts", "src/Cart.spec.tsx", "tests/test_cart.py",
+                   "pkg/cart_test.go", "spec/cart_spec.rb", "test/cart_test.exs"):
+        check("q2 %s STAYS exempt - the multi-language width of the globs is "
+              "deliberate" % _rel_q, matches_exempt(_rel_q, _eg_q))
+    check("q3 a data fixture inside a test DIRECTORY still matches the "
+          "directory globs - the carve-out is per-glob, not per-file",
+          matches_exempt("app/tests/fixture.json",
+                         DEFAULTS["tddReminder"]["testGlobs"]))
+    check("q4 an explicit non-test glob still exempts the config it names - "
+          "only test-suffix-shaped globs are carved out",
+          matches_exempt("tsconfig.test.json", ["**/tsconfig.*"]))
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

@@ -259,6 +259,16 @@ def _selftest() -> int:
           payload("notebooks/train.ipynb", sid="tdd-session-g",
                   tool="NotebookEdit"))
 
+    # (h) A1 (v0.36): a build config named like a test must not SATISFY the
+    # discipline. `tsconfig.test.json` matched testGlobs' `**/*.test.*`, so one
+    # config edit marked the whole session as having touched tests and every
+    # later source edit went unreminded.
+    sess_h = "tdd-session-h"
+    check("h1 tsconfig.test.json is not a test touch", "silent",
+          payload("tsconfig.test.json", sid=sess_h))
+    check("h2 ...so a later source edit in the same session still warns", "warn",
+          payload("src/foo/h.ts", sid=sess_h))
+
     # (f) warn detail is valid additionalContext JSON when serialized
     verdict, detail = decide(payload("src/foo/f.ts", sid="tdd-session-f"),
                              cfg=cfg, state_dir=sd, now=t0)

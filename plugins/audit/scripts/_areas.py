@@ -110,6 +110,19 @@ def root_of(entry):
 
 
 # --- review skill resolution --------------------------------------------------
+def _declared_skill(val):
+    """A declared reviewSkill as resolution returns it: a non-empty trimmed
+    string, or None. An explicit null is an answer ("not this one") and stays
+    None; a NON-STRING is the validator's finding (`must be a skill name or
+    null`) and must not reach display surfaces raw — `reviewSkill: 3` used to
+    come out of the lookup as the integer 3 (v0.36 A5). Same hardening
+    `owner_of` got in group o: invalid -> None, the basis still names the level
+    that declared it."""
+    if isinstance(val, str):
+        return val.strip() or None
+    return None
+
+
 def resolve_review_skill(manifest, phase):
     """(skill, basis) for a phase's sign-off reviewer.
 
@@ -120,19 +133,21 @@ def resolve_review_skill(manifest, phase):
 
     A level that is present and explicitly null is an answer, not a miss: setting
     `phase.reviewSkill: null` on one phase of a reviewed project is how you say
-    "not this one", and falling through to the area would ignore it.
+    "not this one", and falling through to the area would ignore it. A declared
+    value that is not a string is treated the same way (see _declared_skill):
+    the level answered, the answer is None, and the validator names the typo.
     """
     phase = phase if isinstance(phase, dict) else {}
     if "reviewSkill" in phase:
-        return (phase.get("reviewSkill") or None), "phase"
+        return _declared_skill(phase.get("reviewSkill")), "phase"
     for tag in areas_of(phase.get("area")):
         entry = entry_of(manifest, tag)
         if "reviewSkill" in entry:
-            return (entry.get("reviewSkill") or None), "area %s" % tag
+            return _declared_skill(entry.get("reviewSkill")), "area %s" % tag
     meta = (manifest or {}).get("meta")
     meta = meta if isinstance(meta, dict) else {}
     if "reviewSkill" in meta:
-        return (meta.get("reviewSkill") or None), "meta"
+        return _declared_skill(meta.get("reviewSkill")), "meta"
     return None, ""
 
 
@@ -604,6 +619,28 @@ def _selftest():
     check("o11 an explicit null owner is legal and quiet - and NOTHING here asks "
           "the ledger whether the identity exists; that is the doctor's question",
           not f and not w, repr((f, w)))
+
+    # --- (n) declared non-string reviewSkill values (v0.36 A5) -------------------
+    # The validator flags `reviewSkill: 3` as a finding; resolution must not hand
+    # the raw junk to display surfaces meanwhile — it reached the panel as the
+    # integer 3. Same hardening owner_of got in group o: invalid -> None, the
+    # basis still names the level that declared it.
+    sk, basis = resolve_review_skill({"meta": {"areas": {"x": {"reviewSkill": 3}}}},
+                                     {"area": "x"})
+    check("n1 a non-string area reviewSkill resolves to None but keeps its "
+          "basis - the o6 hardening, applied to the reviewer lookup",
+          (sk, basis) == (None, "area x"), repr((sk, basis)))
+    check("n2 ...and at the phase level",
+          resolve_review_skill({}, {"reviewSkill": 3}) == (None, "phase"))
+    check("n3 ...and at the meta level",
+          resolve_review_skill({"meta": {"reviewSkill": ["x"]}}, {})
+          == (None, "meta"))
+    check("n4 a padded skill name arrives trimmed, like every other value here",
+          resolve_review_skill({}, {"reviewSkill": " backend-review "})
+          == ("backend-review", "phase"))
+    check("n5 an empty string reads as None with the declaring basis - it was "
+          "already falsy, pinned now",
+          resolve_review_skill({}, {"reviewSkill": ""}) == (None, "phase"))
 
     # --- registry validation -----------------------------------------------------
     f, w = validate_registry(MAN["meta"]["areas"])

@@ -201,6 +201,57 @@ def _hits_extra(text, extras):
     return any(rx.search(text) for rx in extras)
 
 
+def _clauses(cmd: str):
+    """Split a shell command into clauses on `;`, `|`, `&` OUTSIDE quotes (F-B-1).
+
+    The inline-eval heuristics must judge each clause on its own facts:
+    `x.py --selftest >/tmp/out; python3 -c "json.load(open('a.json'))"` is a
+    redirect in one clause and an eval in another, and reading them as one
+    command manufactured a deny neither clause earns (reproduced live).
+
+    Deliberately simple, and FAIL-SAFE about its own limits: quote tracking
+    covers '...', "..." and backslash escapes; when the quoting cannot be
+    tracked (unbalanced at end of string) the WHOLE command is returned as one
+    clause, so an unparseable command is judged exactly as strictly as before
+    the split existed. A single-clause command comes back unchanged either way
+    — the split can only narrow multi-clause false positives, never widen what
+    one clause may do. Separators inside `$( )` are an accepted imprecision:
+    full shell parsing is out of scope here (see the header's trade-off note),
+    and each fragment is still judged by the same regexes."""
+    parts, buf, quote = [], [], None
+    i, n = 0, len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if quote:
+            buf.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < n:
+                buf.append(cmd[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch == "\\" and i + 1 < n:
+            buf.append(ch)
+            buf.append(cmd[i + 1])
+            i += 2
+            continue
+        elif ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+        elif ch in (";", "|", "&"):
+            if "".join(buf).strip():
+                parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    if quote is not None:
+        return [cmd]  # unbalanced quoting: unsure, so judge it as ONE clause
+    if "".join(buf).strip():
+        parts.append("".join(buf))
+    return parts or [cmd]
+
+
 def _shell_write_targets(cmd: str):
     """Best-effort extraction of file paths a shell command WRITES to."""
     targets = []
@@ -249,13 +300,50 @@ def _source_write_hit(cmd: str, root, cfg):
     return None
 
 
+def _append_verdict_event(root, cfg, data, verdict, msg):
+    """One line into the gate events feed for a deny/ask verdict (v0.36 A4).
+
+    require-plan's verdicts have fed <logsDir>/plan-gate-events.jsonl since
+    v0.34 B3; this guard's denials left no trace in the same feed, so "what has
+    the gate been doing" had an answer with a hole in it. Same shape, same
+    writer (_config.append_gate_event); the reason is prefixed with this hook's
+    name so the two sources stay tellable apart. Telemetry only: never raises,
+    never blocks, never changes the verdict."""
+    try:
+        ti = (data or {}).get("tool_input", {}) or {}
+        target = (ti.get("file_path") or ti.get("path") or ti.get("glob")
+                  or ti.get("command") or "")
+        first_line = str(msg or "").splitlines()[0] if msg else ""
+        _config.append_gate_event(
+            _config.logs_dir(root, cfg),
+            {"event": "deny" if verdict == "block" else "ask.shown",
+             "file": str(target),
+             "mode": "deny" if verdict == "block" else "ask",
+             "reason": "guard-secrets-read: %s" % first_line,
+             "sessionId": (data or {}).get("session_id")})
+    except Exception:
+        pass
+
+
 # --- decision core (pure; returns ("allow"|"block", message) for testability) ---
 def decide(data: dict, *, cfg=None):
-    tool = data.get("tool_name", "")
-    ti = data.get("tool_input", {}) or {}
+    """Resolve config, decide, and leave a gate event for deny/ask verdicts.
+
+    The decision itself lives in _decide_core; this wrapper is the ONE choke
+    point every verdict passes through, so no deny branch — present or future —
+    can miss the events feed."""
     root = _config.repo_root(data)
     if cfg is None:
         cfg = _config.load(root)
+    verdict, msg = _decide_core(data, root, cfg)
+    if verdict in ("block", "ask"):
+        _append_verdict_event(root, cfg, data, verdict, msg)
+    return (verdict, msg)
+
+
+def _decide_core(data: dict, root, cfg):
+    tool = data.get("tool_name", "")
+    ti = data.get("tool_input", {}) or {}
     extras = _extra_patterns(cfg)
 
     if tool == "Read":
@@ -300,25 +388,32 @@ def decide(data: dict, *, cfg=None):
                     "Reading, sourcing or copying a secret file via shell is blocked "
                     "(Rule #1). Reading file names is fine; contents are not — and "
                     "copying/moving a secret only relocates the leak.")
-        if _INLINE_EVAL.search(cmd) and (SECRET_TOKEN_RE.search(cmd)
-                                         or _hits_extra(cmd, extras)):
-            return ("block",
-                    "Reading a secret file via an inline-eval one-liner "
-                    "(python -c / node -e / ruby/perl -e …) is blocked (Rule #1). "
-                    "Listing names is fine; reading contents is not. Ask the user to "
-                    "paste any value you actually need.")
-        if (
-            _INLINE_EVAL.search(cmd)
-            and _WRITE_CALL.search(cmd)
-            and _NON_EXEMPT_WRITE_TARGET.search(cmd)
-            and not _EXEMPT_WRITE_PATH.search(cmd)
-        ):
-            return ("block",
-                    "Writing source files via an inline-eval one-liner "
-                    "(python -c / node -e …) bypasses the plan-first gate.\n"
-                    "Use the Edit/Write tools so guard-edits and require-plan can review "
-                    "the change. This is a best-effort backstop — full Bash-write "
-                    "coverage needs a PostToolUse diff check.")
+        # F-B-1: the two inline-eval heuristics run PER CLAUSE. Over the whole
+        # command, a redirect in clause one plus an eval in clause two used to
+        # combine into a deny neither clause earns. A single-clause command is
+        # judged exactly as before (see _clauses).
+        clauses = _clauses(cmd)
+        for cl in clauses:
+            if _INLINE_EVAL.search(cl) and (SECRET_TOKEN_RE.search(cl)
+                                            or _hits_extra(cl, extras)):
+                return ("block",
+                        "Reading a secret file via an inline-eval one-liner "
+                        "(python -c / node -e / ruby/perl -e …) is blocked (Rule #1). "
+                        "Listing names is fine; reading contents is not. Ask the user to "
+                        "paste any value you actually need.")
+        for cl in clauses:
+            if (
+                _INLINE_EVAL.search(cl)
+                and _WRITE_CALL.search(cl)
+                and _NON_EXEMPT_WRITE_TARGET.search(cl)
+                and not _EXEMPT_WRITE_PATH.search(cl)
+            ):
+                return ("block",
+                        "Writing source files via an inline-eval one-liner "
+                        "(python -c / node -e …) bypasses the plan-first gate.\n"
+                        "Use the Edit/Write tools so guard-edits and require-plan can review "
+                        "the change. This is a best-effort backstop — full Bash-write "
+                        "coverage needs a PostToolUse diff check.")
         hit = _source_write_hit(cmd, root, cfg)
         if hit:
             # This is a PLAN gate, so it is graded on the same evidence
@@ -661,6 +756,26 @@ def _selftest() -> int:
           % ("PASS" if _ok else "FAIL", "" if _ok else " (%r)" % _m))
     _sh2.rmtree(tmp / "docs", ignore_errors=True)
 
+    # (s23+) F-B-1: the inline-eval heuristics judge each CLAUSE on its own
+    # facts. A redirect in clause one plus an eval in clause two used to be read
+    # as one command and denied — reproduced live with exactly s23's command
+    # (a selftest run redirected to a log, then a harmless one-liner).
+    check("s23 redirect in one clause + eval in another is NOT an eval-write",
+          "allow",
+          bash('python3 x.py --selftest >/tmp/out; '
+               'python3 -c "import json; json.load(open(\'a.json\'))"'))
+    check("s24 a genuine eval-write WITH a redirect in the same clause still "
+          "denies", "block",
+          bash('python3 -c "open(\'src/foo/gen.ts\',\'w\').write(\'x\')" '
+               '>/tmp/out.log'))
+    check("s25 a semicolon INSIDE the eval's quotes does not split the clause "
+          "- the splitter is quote-aware, never looser for one clause", "block",
+          bash('python3 -c "import os; '
+               'open(\'src/foo/gen2.ts\',\'w\').write(\'x\')"'))
+    check("s26 an eval-write that is the SECOND clause is still caught", "block",
+          bash('echo x >/tmp/o; '
+               'python3 -c "open(\'src/foo/gen3.ts\',\'w\').write(\'x\')"'))
+
     # The ask payload's SHAPE is the pinned contract (the dialog cannot be
     # driven by a selftest) - mirror of require-plan's g9 and of j1 below.
     _ap = json.loads(json.dumps(_ask_payload("why")))
@@ -695,6 +810,63 @@ def _selftest() -> int:
               "[guard-secrets-read]"))
     results.append(ok)
     print("%s j1 deny payload is canonical PreToolUse JSON" % ("PASS" if ok else "FAIL"))
+
+    # (t) A4 (v0.36): deny/ask verdicts leave one line in the gate events feed,
+    # require-plan's shape (v0.34 B3) — this guard's denials were invisible in
+    # the feed the panel reads. Telemetry only: an allow writes nothing, and
+    # the writer never raises into the hook.
+    import shutil as _sh_t
+    tmp_t = Path(tempfile.mkdtemp(prefix="guard-secrets-events-"))
+    _prev_t = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(tmp_t)
+    try:
+        _feed = tmp_t / ".claude" / "logs" / "plan-gate-events.jsonl"
+
+        def _rows():
+            try:
+                return [json.loads(x) for x in
+                        _feed.read_text(encoding="utf-8").splitlines()]
+            except Exception:
+                return []
+
+        _v, _ = decide({"tool_name": "Read",
+                        "tool_input": {"file_path": "apps/x/.env"},
+                        "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        _ok = (_v == "block" and len(_rw) == 1
+               and _rw[-1].get("event") == "deny"
+               and _rw[-1].get("mode") == "deny"
+               and _rw[-1].get("file") == "apps/x/.env"
+               and _rw[-1].get("sessionId") == "sess-t"
+               and str(_rw[-1].get("reason", "")).startswith(
+                   "guard-secrets-read:"))
+        results.append(_ok)
+        print("%s t1 a deny leaves ONE gate event line, named as this guard's%s"
+              % ("PASS" if _ok else "FAIL", "" if _ok else " (%r)" % _rw))
+        _v, _ = decide({"tool_name": "Read",
+                        "tool_input": {"file_path": "src/ok.ts"},
+                        "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _ok = _v == "allow" and len(_rows()) == 1
+        results.append(_ok)
+        print("%s t2 an allow writes nothing - the feed records verdicts, not "
+              "traffic" % ("PASS" if _ok else "FAIL"))
+        _v, _ = decide({"tool_name": "Bash",
+                        "tool_input": {"command": "sed -i 's/a/b/' src/t-ask.ts"},
+                        "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg_ask)
+        _rw = _rows()
+        _ok = (_v == "ask" and len(_rw) == 2
+               and _rw[-1].get("event") == "ask.shown"
+               and _rw[-1].get("mode") == "ask")
+        results.append(_ok)
+        print("%s t3 an ask verdict is recorded as ask.shown, the same event "
+              "require-plan writes%s"
+              % ("PASS" if _ok else "FAIL", "" if _ok else " (%r)" % _rw))
+    finally:
+        if _prev_t is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev_t
+        _sh_t.rmtree(tmp_t, ignore_errors=True)
 
     if _prev_project_dir is None:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
