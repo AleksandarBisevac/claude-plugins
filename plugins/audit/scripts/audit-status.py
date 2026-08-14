@@ -8,6 +8,7 @@ any Claude session involved.
 
 Usage:
   audit-status.py <manifest> [--json] [--gate] [--phase <id>]
+                             [--color auto|always|never]
                              [--fail-on <c1,c2,...>]
   audit-status.py --selftest
 
@@ -46,6 +47,7 @@ import _areas  # noqa: E402  (meta.areas registry + the resolution every surface
 import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6 — no indirection needed)
+import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 
 # --- config / loading -----------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
@@ -398,17 +400,21 @@ def _short(sha):
     return s[:7] if s else "-"
 
 
-def render_status(manifest, summary, width=18, only_phase=None):
+def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
     Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
-    selftest enforces on its own output, so this reads in any terminal."""
+    selftest enforces on its own output, so this reads in any terminal. `pt` is
+    a _cli_fmt.Painter; None (every pre-color caller) means plain, and a
+    disabled painter returns its input unchanged, so plain mode stays
+    byte-identical to the pre-color render."""
     au = _load_usage_fmt()
+    pt = pt or _cli_fmt.PLAIN
     meta = (manifest or {}).get("meta") or {}
     lines = []
     title = meta.get("title") or "audit"
     repo = meta.get("repo") or "-"
-    lines.append("AUDIT  %s   repo %s" % (title, repo))
+    lines.append(pt.paint("AUDIT  %s   repo %s" % (title, repo), "header"))
     lines.append("")
 
     t_total = summary["tasks"]["total"]
@@ -421,20 +427,22 @@ def render_status(manifest, summary, width=18, only_phase=None):
                  % (au.bar(frac, width), t_done, t_total, ph_done,
                     len(summary["phases"]), bugs["open"], len(summary["ready"])))
     if not summary["valid"]:
-        lines.append("  INVALID MANIFEST: %d validator finding(s) - fix before "
-                     "running a phase" % summary["findings"])
+        lines.append(pt.paint(
+            "  INVALID MANIFEST: %d validator finding(s) - fix before "
+            "running a phase" % summary["findings"], "finding"))
     # A park-all /audit:init leaves a valid plan with zero phases. Without this
     # line that plan reads as "nothing to do" on the one surface everyone
     # checks first, when the actual state is "everything is waiting for you".
     props_sum = summary.get("proposals") or {}
     if not summary["phases"] and props_sum.get("parked"):
-        lines.append("  empty plan - %d parked proposal(s) waiting: "
-                     "/audit:propose list" % props_sum["parked"])
+        lines.append(pt.paint("  empty plan - %d parked proposal(s) waiting: "
+                              "/audit:propose list" % props_sum["parked"],
+                              "warn"))
 
     usage = summary.get("usage")
     if usage:
         lines.append("  " + _usage_line(summary, usage))
-        lines += _budget_lines(au, summary, usage)
+        lines += _budget_lines(au, summary, usage, pt=pt)
 
     unmet = unmet_refs(manifest)
     ready = set(summary["ready"])
@@ -516,10 +524,11 @@ def render_status(manifest, summary, width=18, only_phase=None):
         # a list nobody reads. Fold it, and SAY the count — a silent cap would read
         # as "that is all of them", which is the worse failure.
         shown = ready_list[:READY_LIST_MAX]
-        lines.append("  READY NOW  %d task(s)%s"
-                     % (len(ready_list),
-                        "" if len(shown) == len(ready_list)
-                        else ", first %d shown" % len(shown)))
+        lines.append(pt.paint("  READY NOW  %d task(s)%s"
+                              % (len(ready_list),
+                                 "" if len(shown) == len(ready_list)
+                                 else ", first %d shown" % len(shown)),
+                              "header"))
         task_by_id = {t.get("id"): t for p in (manifest.get("phases") or [])
                       if isinstance(p, dict)
                       for t in (p.get("tasks") or []) if isinstance(t, dict)}
@@ -532,13 +541,14 @@ def render_status(manifest, summary, width=18, only_phase=None):
             lines.append("    ... and %d more - /audit:next runs the first in order"
                          % (len(ready_list) - len(shown)))
     else:
-        lines.append("  READY NOW  nothing - every pending task is waiting on "
-                     "something, or the plan is complete")
+        lines.append(pt.paint("  READY NOW  nothing - every pending task is "
+                              "waiting on something, or the plan is complete",
+                              "header"))
 
-    lines += _area_lines(au, summary)
-    lines += _bug_lines(manifest, summary)
-    lines += _proposal_lines(manifest, summary)
-    lines += _resumable_lines(manifest, summary)
+    lines += _area_lines(au, summary, pt=pt)
+    lines += _bug_lines(manifest, summary, pt=pt)
+    lines += _proposal_lines(manifest, summary, pt=pt)
+    lines += _resumable_lines(manifest, summary, pt=pt)
     return "\n".join(lines)
 
 
@@ -617,7 +627,7 @@ def _usage_line(summary, usage):
     return " - ".join(parts)
 
 
-def _budget_lines(au, summary, usage):
+def _budget_lines(au, summary, usage, pt=None):
     """Budget lines, and only for phases that actually declare one.
 
     Renders nothing when no phase carries a `budgetUSD`, which is the common case —
@@ -630,14 +640,15 @@ def _budget_lines(au, summary, usage):
     rows = [p for p in (budgets.get("phases") or []) if p.get("budget")]
     if not rows:
         return []
+    pt = pt or _cli_fmt.PLAIN
     out = []
     for p in sorted(rows, key=lambda x: -(x.get("pct") or 0)):
         pct = p.get("pct") or 0.0
         flag = ""
         if pct >= 100.0:
-            flag = "  OVER"
+            flag = "  " + pt.paint("OVER", "finding")
         elif pct >= BUDGET_WARN_PCT:
-            flag = "  WARN"
+            flag = "  " + pt.paint("WARN", "warn")
         out.append("  budget %-5s %s %3.0f%%  %s of %s%s"
                    % (p.get("id") or "?", au.bar(pct / 100.0, 12), pct,
                       _fmt.fmt_cost(p.get("spent")), _fmt.fmt_cost(p.get("budget")),
@@ -649,7 +660,7 @@ def _budget_lines(au, summary, usage):
     return out
 
 
-def _area_lines(au, summary):
+def _area_lines(au, summary, pt=None):
     """`BY AREA` — the per-area rollup, printed instead of only shipped in --json.
 
     `summary["areas"]` has been computed (and carried in --json) since the tags
@@ -668,6 +679,7 @@ def _area_lines(au, summary):
     areas = summary.get("areas") or {}
     if not areas:
         return []
+    pt = pt or _cli_fmt.PLAIN
     phases = [p for p in (summary.get("phases") or []) if isinstance(p, dict)]
     untagged = [p for p in phases if not p.get("area")]
     rows = [(tag, g.get("phases", 0), g.get("done", 0), g.get("total", 0),
@@ -677,8 +689,9 @@ def _area_lines(au, summary):
         rows.append(("untagged", len(untagged),
                      sum(p.get("done", 0) for p in untagged),
                      sum(p.get("total", 0) for p in untagged), None))
-    out = ["", "  BY AREA  %d tag(s) - %d of %d phase(s) tagged"
-           % (len(areas), len(phases) - len(untagged), len(phases))]
+    out = ["", pt.paint("  BY AREA  %d tag(s) - %d of %d phase(s) tagged"
+                        % (len(areas), len(phases) - len(untagged),
+                           len(phases)), "header")]
     w = max(len(r[0]) for r in rows)
     for tag, n_ph, done, total, owner in rows:
         frac = (float(done) / total) if total else 0.0
@@ -695,17 +708,18 @@ def _area_lines(au, summary):
     return out
 
 
-def _bug_lines(manifest, summary):
+def _bug_lines(manifest, summary, pt=None):
     bugs = [b for b in ((manifest or {}).get("bugs") or []) if isinstance(b, dict)]
     if not bugs:
         return []
+    pt = pt or _cli_fmt.PLAIN
     tasks = {t.get("id"): t for p in (manifest.get("phases") or [])
              if isinstance(p, dict)
              for t in (p.get("tasks") or []) if isinstance(t, dict)}
     ready = set(summary["ready"])
-    out = ["", "  BUGS  %d total - %d open (%d high severity)"
-           % (summary["bugs"]["total"], summary["bugs"]["open"],
-              summary["bugs"]["openHighSeverity"])]
+    out = ["", pt.paint("  BUGS  %d total - %d open (%d high severity)"
+                        % (summary["bugs"]["total"], summary["bugs"]["open"],
+                           summary["bugs"]["openHighSeverity"]), "header")]
     for b in bugs:
         eff = effective_bug_status(b, tasks)
         if eff in CLOSED_BUG:
@@ -720,7 +734,7 @@ def _bug_lines(manifest, summary):
     return out
 
 
-def _proposal_lines(manifest, summary):
+def _proposal_lines(manifest, summary, pt=None):
     """Parked proposals — phases synthesized by /audit:init but not materialized.
 
     Listed only while parked (status 'proposed'): a materialized proposal is
@@ -741,9 +755,11 @@ def _proposal_lines(manifest, summary):
               if x.get("status") not in ("proposed", "materialized", "dropped")]
     if not parked and not legacy:
         return []
+    pt = pt or _cli_fmt.PLAIN
     sp = summary.get("proposals") or {}
-    out = ["", "  PROPOSALS  %d total - %d parked"
-           % (sp.get("total", len(props)), len(parked))]
+    out = ["", pt.paint("  PROPOSALS  %d total - %d parked"
+                        % (sp.get("total", len(props)), len(parked)),
+                        "header")]
     for x in parked:
         payload = x.get("payload") if isinstance(x.get("payload"), dict) else {}
         ph = payload.get("phase") if isinstance(payload.get("phase"), dict) else {}
@@ -764,8 +780,9 @@ def _proposal_lines(manifest, summary):
     return out
 
 
-def _resumable_lines(manifest, summary):
+def _resumable_lines(manifest, summary, pt=None):
     """Flag an interrupted run, which is the one state a reader must not miss."""
+    pt = pt or _cli_fmt.PLAIN
     for p in ((manifest or {}).get("phases") or []):
         if not isinstance(p, dict):
             continue
@@ -773,10 +790,12 @@ def _resumable_lines(manifest, summary):
                          if isinstance(t, dict) and t.get("status") == "in_progress"]
         if p.get("status") == "in_progress" or running_tasks:
             where = " on %s" % p["branch"] if p.get("branch") else ""
-            return ["", "  RESUMABLE  phase %s is %s%s - interrupted? "
-                    "run /audit:resume"
-                    % (p.get("id") or "?",
-                       (_theme.label("in_progress") or "in progress").lower(), where)]
+            return ["", pt.paint(
+                "  RESUMABLE  phase %s is %s%s - interrupted? "
+                "run /audit:resume"
+                % (p.get("id") or "?",
+                   (_theme.label("in_progress") or "in progress").lower(),
+                   where), "warn")]
     return []
 
 
@@ -885,6 +904,14 @@ def main(argv):
     if git_root_prefix == "__MISSING__":
         sys.stderr.write("usage: --git-root <prefix>\n")
         return 2
+    # --color auto|always|never: ANSI for the human render only (--json and
+    # --gate output stay plain). Resolution lives in _cli_fmt - the one place
+    # CLI color lives.
+    color = _extract_opt(args, "--color")
+    if color is not None and color not in _cli_fmt.MODES:
+        sys.stderr.write("usage: --color <%s>\n" % "|".join(_cli_fmt.MODES))
+        return 2
+    pt = _cli_fmt.painter(color or "auto")
 
     conditions = list(DEFAULT_GATE)
     if "--fail-on" in args:
@@ -902,7 +929,8 @@ def main(argv):
     if len(args) != 1:
         sys.stderr.write(
             "usage: audit-status.py <manifest> [--json] [--gate] [--phase <id>] "
-            "[--fail-on <c1,c2,...>] [--submodules <.gitmodules> [--git-root <prefix>]]\n")
+            "[--color auto|always|never] [--fail-on <c1,c2,...>] "
+            "[--submodules <.gitmodules> [--git-root <prefix>]]\n")
         return 2
 
     try:
@@ -972,7 +1000,7 @@ def main(argv):
                                  % (only_phase, args[0], ", ".join(
                                      str(k) for k in known)))
                 return 2
-        print(render_status(manifest, summary, only_phase=only_phase))
+        print(render_status(manifest, summary, only_phase=only_phase, pt=pt))
 
     if want_gate:
         failed = summary["gate"]["failed"]
@@ -1292,6 +1320,28 @@ def _selftest():
     check("s31 a short list is not annotated as folded",
           "more" not in render_status(_few, rollup(_few, [], []))
           .split("READY NOW")[1].split("BUGS")[0])
+
+    # --- (col) color: --color through _cli_fmt -----------------------------------
+    # Plain mode must stay byte-identical to the pre-color render: a disabled
+    # painter is the identity, and every pre-color caller (this selftest
+    # included) passes no painter at all. --json and --gate output stay plain.
+    check("col1 a never/off painter renders byte-identically to the "
+          "pre-color render",
+          render_status(_fx, _sum, pt=_cli_fmt.painter("never")) == _txt)
+    _painted = render_status(_fx, _sum, pt=_cli_fmt.painter("always"))
+    check("col2 a painted render carries ANSI and strips back to the plain "
+          "bytes exactly - painting never changes content",
+          "\033[" in _painted and _cli_fmt.strip(_painted) == _txt)
+    check("col3 the paint lands on the section headers (bold AUDIT title, "
+          "bold READY NOW)",
+          _painted.startswith("\033[1mAUDIT")
+          and "\033[1m  READY NOW" in _painted)
+    check("col4 the invalid-manifest banner is painted as a finding",
+          "\033[31m  INVALID MANIFEST" in render_status(
+              _fx, rollup(_fx, ["boom"], []), pt=_cli_fmt.painter("always")))
+    check("col5 painted output is still pure ASCII (ANSI escapes are ASCII, "
+          "so the cp1252 leg keeps passing)",
+          all(ord(c) < 128 for c in _painted))
 
     # --- (h) the words a person reads (v0.28) -----------------------------------
     # `in_progress` is how a status travels; it is not how it should ever arrive.
@@ -1689,6 +1739,33 @@ def _selftest():
           main([mpath, "--submodules", gm]) == 0)
     os.unlink(mpath)
     os.unlink(gm)
+
+    # (cc) the --color flag end to end through main()
+    fd, cpath = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)
+    import contextlib as _ctx
+    import io as _io
+
+    def _cli_out(argv):
+        buf = _io.StringIO()
+        with _ctx.redirect_stdout(buf):
+            code = main(argv)
+        return code, buf.getvalue()
+
+    _c_def, _o_def = _cli_out([cpath])
+    _c_nev, _o_nev = _cli_out([cpath, "--color", "never"])
+    _c_alw, _o_alw = _cli_out([cpath, "--color", "always"])
+    check("cc1 CLI --color never output is byte-identical to the default "
+          "piped render (auto through a pipe is already plain)",
+          _c_def == 0 and _c_nev == 0 and _o_def == _o_nev
+          and "\033" not in _o_def)
+    check("cc2 CLI --color always paints and strips back to the plain bytes",
+          _c_alw == 0 and "\033[" in _o_alw
+          and _cli_fmt.strip(_o_alw) == _o_def)
+    check("cc3 an unknown --color value is a usage error (exit 2)",
+          main([cpath, "--color", "sometimes"]) == 2)
+    os.unlink(cpath)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

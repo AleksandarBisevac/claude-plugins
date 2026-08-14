@@ -39,6 +39,7 @@ sys.path.insert(0, _HERE)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
 import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
+import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 
 
 def _load(name, filename):
@@ -256,7 +257,7 @@ def apply_filters(rows, args, tags_by_phase=None):
 
 
 # --- rendering ------------------------------------------------------------------
-def render(rows, args, manifest, window, show_cost):
+def render(rows, args, manifest, window, show_cost, pt=None):
     phase_titles, task_titles = titles_of(manifest)
     tot = ul.totals(rows)
     repo = next((r.get("repo") for r in rows if r.get("repo")), "-")
@@ -264,11 +265,18 @@ def render(rows, args, manifest, window, show_cost):
 
     fmt = getattr(args, "format", "ascii") or "ascii"
     md = fmt == "md"
+    # `pt` is a _cli_fmt.Painter; None (every pre-color caller) means plain.
+    # md NEVER colors regardless of the flag: a markdown surface is not a
+    # terminal, and the /audit:usage command echoes this output into a
+    # renderer that would print the escapes as garbage.
+    if pt is None or md:
+        pt = _cli_fmt.PLAIN
 
     # The md header is a bullet list because markdown merges adjacent plain
     # lines into one paragraph — three aligned lines would render as a blob.
-    out.append(("**USAGE**  repo %s - window %s" if md
-                else "USAGE  repo %s   window %s") % (repo, window))
+    out.append(("**USAGE**  repo %s - window %s" % (repo, window)) if md
+               else pt.paint("USAGE  repo %s   window %s" % (repo, window),
+                             "header"))
     out.append("")
     sep = " - " if md else "   "
     head = ("- **Total** %s tokens" if md
@@ -301,7 +309,7 @@ def render(rows, args, manifest, window, show_cost):
             else "undated rates - set usage.pricingAsOf"))
     if not rows:
         out.append("")
-        out.append("  No usage recorded for this window.")
+        out.append(pt.paint("  No usage recorded for this window.", "warn"))
         out.append("  Metering starts once the plugin's hooks have run at least "
                    "one turn; `/audit:usage --backfill` reads existing transcripts.")
         return "\n".join(out)
@@ -346,14 +354,17 @@ def render(rows, args, manifest, window, show_cost):
             if extra:
                 row.append(extra[1](key, v))
             body.append(tuple(row))
-        return [""] + table(body, headers, aligns, fmt=fmt)
+        rendered = table(body, headers, aligns, fmt=fmt)
+        if rendered and not md:
+            rendered[0] = pt.paint(rendered[0], "header")
+        return [""] + rendered
 
     if args.by:
         out += group_table(args.by, args.by.upper(), limit=args.top)
         return "\n".join(out)
 
     out += group_table("phase", "BY PHASE")
-    out += render_by_area(manifest, rows, tot, show_cost, fmt=fmt)
+    out += render_by_area(manifest, rows, tot, show_cost, fmt=fmt, pt=pt)
     if ul.aggregate(rows, "author") and tot["authors"] > 0:
         out += group_table("author", "BY AUTHOR")
     out += group_table("model", "BY MODEL")
@@ -372,17 +383,17 @@ def render(rows, args, manifest, window, show_cost):
         else:
             out += group_table("task", "TOP TASKS", limit=args.top)
         out.append("")
-        out.append(("" if md else "  ") + band_note(bands))
+        out.append(("" if md else "  ") + pt.paint(band_note(bands), "dim"))
         out += routing_advice_lines(
             ul.routing(manifest, rows,
                        (meta_usage or {}).get("pricing")).get("advice") or [],
-            fmt=fmt)
-    out += render_monthly(manifest, rows, show_cost, fmt=fmt)
-    out += render_trend(rows, fmt=fmt)
+            fmt=fmt, pt=pt)
+    out += render_monthly(manifest, rows, show_cost, fmt=fmt, pt=pt)
+    out += render_trend(rows, fmt=fmt, pt=pt)
     return "\n".join(out)
 
 
-def render_by_area(manifest, rows, tot, show_cost, fmt="ascii"):
+def render_by_area(manifest, rows, tot, show_cost, fmt="ascii", pt=None):
     """BY AREA table: ledger spend joined to `phase.area` tags at read time
     (usage_ledger.aggregate_area over _areas.phase_tags), rendered only when the
     plan tags anything at all — a project that never wrote an area keeps today's
@@ -419,15 +430,20 @@ def render_by_area(manifest, rows, tot, show_cost, fmt="ascii"):
         row += [fmt_int(v["msgs"]), str(v["phases"]),
                 "%s %4s" % (bar(v["tokens"] / float(grand)), pct)]
         body.append(tuple(row))
-    out = [""] + table(body, headers, aligns, fmt=fmt)
+    pt = pt or _cli_fmt.PLAIN
+    rendered = table(body, headers, aligns, fmt=fmt)
+    if rendered and fmt != "md":
+        rendered[0] = pt.paint(rendered[0], "header")
+    out = [""] + rendered
     if any(len(tags) > 1 for tags in tags_by_phase.values()):
         note = ("a phase tagged with several areas counts under each of "
                 "its tags, so area rows can sum past the total")
-        out += ["", "*%s*" % note] if fmt == "md" else ["  " + note]
+        out += ["", "*%s*" % note] if fmt == "md" \
+            else ["  " + pt.paint(note, "dim")]
     return out
 
 
-def render_monthly(manifest, rows, show_cost, fmt="ascii"):
+def render_monthly(manifest, rows, show_cost, fmt="ascii", pt=None):
     """Calendar-month table: ledger spend beside plan progress, one row per
     month, from usage_ledger.monthly_activity — the same computation site the
     report table and the panel card read, so the three surfaces cannot drift.
@@ -459,15 +475,20 @@ def render_monthly(manifest, rows, show_cost, fmt="ascii"):
                 str(plan["bugsReported"]), str(plan["bugsFixed"]),
                 str(plan["phasesMerged"])]
         body.append(tuple(row))
-    out = [""] + table(body, headers, aligns, fmt=fmt)
+    pt = pt or _cli_fmt.PLAIN
+    rendered = table(body, headers, aligns, fmt=fmt)
+    if rendered and fmt != "md":
+        rendered[0] = pt.paint(rendered[0], "header")
+    out = [""] + rendered
     note = ("plan columns count the whole project by event month (task "
             "completed, bug reported, linked fix task completed, phase "
             "merged) - they do not follow the filters above")
-    out += ["", "*%s*" % note] if fmt == "md" else ["  " + note]
+    out += ["", "*%s*" % note] if fmt == "md" \
+        else ["  " + pt.paint(note, "dim")]
     return out
 
 
-def routing_advice_lines(advice, fmt="ascii"):
+def routing_advice_lines(advice, fmt="ascii", pt=None):
     """The one recommendation the CLI makes. Silent unless the ledger's own
     evidence clears every gate — which on a well-routed project is normal.
     md nests the two evidence lines under their advice bullet; markdown
@@ -475,8 +496,9 @@ def routing_advice_lines(advice, fmt="ascii"):
     if not advice:
         return []
     md = fmt == "md"
+    pt = pt or _cli_fmt.PLAIN
     out = ["", "**WHAT THE EVIDENCE SUPPORTS**" if md
-           else "  WHAT THE EVIDENCE SUPPORTS"]
+           else pt.paint("  WHAT THE EVIDENCE SUPPORTS", "header")]
     if md:
         out.append("")
     for a in advice:
@@ -494,7 +516,7 @@ def routing_advice_lines(advice, fmt="ascii"):
                                       a["evidenceAttempts"] or 0))
     caveat = ("upper bound, not a forecast: the same tokens re-priced at the "
               "other model's rates")
-    out += ["", "*%s*" % caveat] if md else ["  " + caveat]
+    out += ["", "*%s*" % caveat] if md else ["  " + pt.paint(caveat, "dim")]
     return out
 
 
@@ -514,7 +536,7 @@ def band_note(bands):
                fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
 
 
-def render_trend(rows, width=28, fmt="ascii"):
+def render_trend(rows, width=28, fmt="ascii", pt=None):
     """Daily column chart plus the peak/quiet read the trend is actually for.
     md renders it as a day/tokens/trend table — a bare `#` column would lose
     its leading alignment in a markdown renderer and the bars would float."""
@@ -523,6 +545,7 @@ def render_trend(rows, width=28, fmt="ascii"):
     if not days:
         return []
     md = fmt == "md"
+    pt = pt or _cli_fmt.PLAIN
     peak = max(daily[d]["tokens"] for d in days) or 1
     if md:
         out = ["", "**TREND**  daily tokens", ""]
@@ -536,7 +559,7 @@ def render_trend(rows, width=28, fmt="ascii"):
         out += table(body, ["day", "tokens", "trend"], ["<", ">", "<"],
                      fmt="md")
     else:
-        out = ["", "  TREND  daily tokens"]
+        out = ["", pt.paint("  TREND  daily tokens", "header")]
         for d in days[-30:]:
             n = daily[d]["tokens"]
             marker = "   peak %s" % fmt_tokens(n) if n == peak else ""
@@ -732,6 +755,10 @@ def build_parser():
                    help="md renders pipe tables and bullets for surfaces that "
                         "display markdown (the /audit:usage command passes it); "
                         "ascii is the terminal/pipe shape")
+    p.add_argument("--color", choices=list(_cli_fmt.MODES), default="auto",
+                   help="ANSI color for the ascii render (auto colors only a "
+                        "TTY and respects NO_COLOR; --format md and --json "
+                        "never color)")
     p.add_argument("--no-cost", action="store_true",
                    help="tokens only; omit equivalent cost")
     p.add_argument("--json", action="store_true", dest="as_json")
@@ -795,7 +822,8 @@ def main(argv):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    print(render(rows, args, manifest, window, show_cost))
+    print(render(rows, args, manifest, window, show_cost,
+                 pt=_cli_fmt.painter(args.color)))
     return 0
 
 
@@ -1216,6 +1244,36 @@ def _selftest():
         check("md12 --json is format-agnostic - the payload stays json",
               code4 == 0
               and json.loads(buf4.getvalue())["totals"]["out"] == 3500)
+
+        # --- color (co): --color through _cli_fmt ---------------------------
+        # Plain mode must stay byte-identical to the pre-color dashboard: a
+        # disabled painter is the identity, and every pre-color caller (this
+        # selftest included) passes no painter at all. md never colors.
+        check("co1 --color defaults to auto and accepts the three modes",
+              build_parser().parse_args([]).color == "auto"
+              and build_parser().parse_args(["--color", "always"]).color
+              == "always"
+              and build_parser().parse_args(["--color", "never"]).color
+              == "never")
+        check("co2 a never/off painter renders byte-identically to the "
+              "pre-color dashboard",
+              render(loaded, args, manifest, "all time", True,
+                     pt=_cli_fmt.painter("never")) == text)
+        _painted = render(loaded, args, manifest, "all time", True,
+                          pt=_cli_fmt.painter("always"))
+        check("co3 a painted dashboard carries ANSI and strips back to the "
+              "plain bytes exactly - painting never changes content",
+              "\033[" in _painted and _cli_fmt.strip(_painted) == text)
+        check("co4 painted output is still pure ASCII (ANSI escapes are "
+              "ASCII, so the cp1252 leg keeps passing)",
+              all(ord(c) < 128 for c in _painted))
+        check("co5 --format md never colors, even with an always painter - "
+              "byte-identical to the unpainted md render",
+              render(loaded, args_md, manifest, "all time", True,
+                     pt=_cli_fmt.painter("always")) == md_text)
+        check("co6 the paint lands on the section headers and notes (bold "
+              "BY PHASE header row, dim band note)",
+              "\033[1m  BY PHASE" in _painted and "\033[2m" in _painted)
 
         # backfill on a project with no transcripts must fail cleanly, not crash
         args_b = build_parser().parse_args(["--backfill"])

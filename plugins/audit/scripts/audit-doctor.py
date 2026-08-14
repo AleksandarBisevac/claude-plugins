@@ -43,6 +43,7 @@ _HOOKS = os.path.join(os.path.dirname(_HERE), "hooks")
 sys.path.insert(0, _HERE)
 sys.path.insert(0, _HOOKS)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 
 # The interpreters py-launch.sh tries, in its order. Kept in sync deliberately:
 # what matters is the interpreter the HOOKS will find, not the one running this.
@@ -1128,13 +1129,21 @@ def diagnose(project, deep=False):
     return rep
 
 
-def render(rep, project):
-    """Plain ASCII, printed verbatim by the command - no re-formatting needed."""
+def render(rep, project, pt=None):
+    """Plain ASCII, printed verbatim by the command - no re-formatting needed.
+
+    `pt` is a _cli_fmt.Painter; None (every pre-color caller) means plain.
+    Only the [OK]/[WARNING]/[FINDING] level tokens are painted - restrained
+    on purpose - and a disabled painter returns its input unchanged, so
+    plain mode stays byte-identical to the pre-color render."""
+    pt = pt or _cli_fmt.PLAIN
+    role = {"OK": "ok", "WARNING": "warn", "FINDING": "finding"}
     lines = ["AUDIT DOCTOR  %s" % project, ""]
     width = max([len(r["check"]) for r in rep.rows] or [7])
     for r in rep.rows:
-        lines.append("  [%-7s] %-*s  %s" % (r["level"], width, r["check"],
-                                            r["detail"]))
+        lines.append("  %s %-*s  %s" % (
+            pt.paint("[%-7s]" % r["level"], role.get(r["level"], "")),
+            width, r["check"], r["detail"]))
         if r["fix"]:
             lines.append("  %s  %s-> %s" % (" " * 9, " " * width, r["fix"]))
     c = rep.counts()
@@ -1159,6 +1168,10 @@ def main(argv):
     ap.add_argument("--deep", action="store_true",
                     help="also verify each task commit carries the journal "
                          "file that records it (read-only, slower)")
+    ap.add_argument("--color", choices=list(_cli_fmt.MODES), default="auto",
+                    help="ANSI color for the terminal render (auto colors "
+                         "only a TTY and respects NO_COLOR; --json never "
+                         "colors)")
     args = ap.parse_args(argv)
 
     project = os.path.abspath(args.project)
@@ -1171,7 +1184,7 @@ def main(argv):
         print(json.dumps({"project": project, "counts": rep.counts(),
                           "checks": rep.rows}, indent=2))
     else:
-        print(render(rep, project))
+        print(render(rep, project, pt=_cli_fmt.painter(args.color)))
     return rep.exit_code()
 
 
@@ -1981,6 +1994,30 @@ def _selftest():
         check("CLI exits 2 on a non-directory",
               main(["--project", os.path.join(tmp, "nope")]) == 2)
         check("CLI --json emits parseable JSON", _json_ok(tmp))
+
+        # color (--color through _cli_fmt). Plain mode must stay byte-identical
+        # to the pre-color render; painting wraps the level tokens and nothing
+        # else, and strips back to the exact plain bytes.
+        check("color: --color never renders byte-identically to the plain "
+              "default",
+              render(rep, tmp, pt=_cli_fmt.painter("never")) == text)
+        painted = render(rep, tmp, pt=_cli_fmt.painter("always"))
+        check("color: a painted render marks the level tokens - FINDING red, "
+              "OK green",
+              "\033[31m[FINDING]\033[0m" in painted
+              and "\033[32m[OK     ]\033[0m" in painted, painted[:200])
+        check("color: painted output strips back to the plain render byte "
+              "for byte", _cli_fmt.strip(painted) == text)
+        check("color: painted output is still pure ASCII (ANSI escapes are "
+              "ASCII)", all(ord(c) < 128 for c in painted))
+        import contextlib as _ctx
+        import io as _io
+        _jbuf = _io.StringIO()
+        with _ctx.redirect_stdout(_jbuf):
+            main(["--project", tmp, "--json", "--color", "always"])
+        check("color: --json ignores --color entirely (parseable, no escapes)",
+              "\033" not in _jbuf.getvalue()
+              and isinstance(json.loads(_jbuf.getvalue()).get("checks"), list))
 
         # --- local artifacts hygiene (the ignore that was only ever claimed) -
         if have_git:

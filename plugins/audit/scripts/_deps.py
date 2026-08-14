@@ -56,8 +56,8 @@ LAYERS = (
     ("_output",),
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
     # other member of this layer - so it belongs beside them, not in a layer of its own.
-    ("_ui_theme", "_loader", "_fmt", "_manifest_io", "_areas", "_policy", "usage_ledger",
-     "_deps"),
+    ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
+     "usage_ledger", "_deps"),
     ("_panel_settings", "_panel_ui", "_report_html", "_report_ui"),
     ("_help", "_report_usage"),
     ("_panel_discovery",),

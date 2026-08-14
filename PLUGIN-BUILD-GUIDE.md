@@ -88,6 +88,7 @@ claude-plugins/                           # this repo (personal, public)
         _policy.py                        # capability policy: shape, validation, required -> deny -> allow -> default
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
+        _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
         _loader.py                        # the one way scripts/ loads a sibling script as a library, one cache policy
         _ui_theme.py                      # shared visual tokens (colour/spacing/type/labels) for report + panel
         _deps.py                          # the module layer table, checked against the real import graph every run
@@ -145,6 +146,7 @@ L0:
 
 L1:
   _areas -> _output
+  _cli_fmt -> _output
   _deps -> _output
   _fmt -> _output
   _loader -> _output
@@ -173,11 +175,11 @@ L6:
   _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy
 
 L7:
-  audit-doctor -> _loader, _output
+  audit-doctor -> _cli_fmt, _loader, _output
   audit-journal -> _output
   audit-lock -> _output
-  audit-status -> _areas, _fmt, _loader, _manifest_io, _output, _ui_theme
-  audit-usage -> _areas, _fmt, _loader, _output
+  audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _output, _ui_theme
+  audit-usage -> _areas, _cli_fmt, _fmt, _loader, _output
   gen-demo-manifest -> _loader, _output
   gen-demo-usage -> _loader, _output
   migrate-manifest -> _loader, _manifest_io, _output
@@ -439,6 +441,16 @@ report's label-vs-tooltip need; `fmt_cost`/`_fmt_cost` share the "never render r
 $0.00" rounding rule; `fmt_int` is the thousands-grouped form for countables that should never
 be compacted. Golden values from both call sites were frozen into the selftest before either
 was touched.
+
+### `plugins/audit/scripts/_cli_fmt.py`
+The one place CLI color lives, consumed by `audit-usage.py`, `audit-status.py` and
+`audit-doctor.py` (each grew a `--color auto|always|never` flag, default auto). Mode
+resolution: `never` is plain; `always` paints even under `NO_COLOR` (the flag is the more
+explicit signal — pinned in the selftest); `auto` paints only when stdout is a TTY and
+`NO_COLOR` is absent or empty, so the model-facing pipe stays plain. Five roles
+(`ok`/`warn`/`finding`/`header`/`dim`), pure-ASCII SGR escapes, and a disabled `Painter`
+that returns its input unchanged — which is what keeps every consumer's plain mode
+byte-identical to its pre-color output (`strip(paint(x)) == x` is pinned).
 
 ### `plugins/audit/scripts/_loader.py`
 The one way `scripts/` loads a sibling script as a library, replacing roughly fourteen

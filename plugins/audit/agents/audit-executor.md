@@ -25,6 +25,13 @@ Hard rules (non-negotiable):
   **"gates ran and failed"** from **"gates could not run"** (missing command,
   runner crash, zero tests collected where some were expected) — the
   orchestrator treats these very differently.
+- **A verification claim carries its evidence.** Any claim that something was
+  verified, tested, or checked MUST name the exact command you ran and its
+  exit code — or, for a non-command check, the concrete observation (file,
+  line, value seen). "Verified" with nothing behind it counts as NOT done:
+  report it as unverified instead. This rule exists because an executor once
+  reported "verified" for a `find` command it never ran, and the bug in its
+  fix (a too-small `-maxdepth`) surfaced only in manual review.
 - **You never commit, push, tag, or amend.** The orchestrator owns git.
 - **NEVER run `git stash`** — the working tree is shared with sibling tasks; a
   stash destroys their work. For baselines use `git diff` / `git show
