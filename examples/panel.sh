@@ -17,8 +17,10 @@
 # own location, never $PWD.
 #
 # The panel binds 127.0.0.1 only and writes its pid/port/token to
-# examples/acme-store/.claude/audit-panel.json — gitignored, so running it never
-# dirties the tree. It writes the manifest only when you save a change in the UI.
+# examples/acme-store/.claude/audit-panel.json — gitignored (the panel maintains
+# that rule itself since 0.35; this example commits .claude/.gitignore so the
+# first launch writes nothing), so running it never dirties the tree. It writes
+# the manifest only when you save a change in the UI.
 set -e
 
 case "$0" in

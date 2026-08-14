@@ -63,14 +63,19 @@ that's the point, and `git checkout examples/acme-store` undoes it.
 
 It binds `127.0.0.1` only and requires a per-launch token. The pidfile holding
 that token (`acme-store/.claude/audit-panel.json`) is gitignored, so running the
-panel never dirties the tree.
+panel never dirties the tree. Since 0.35 the panel maintains that ignore rule
+itself — and this example ships `acme-store/.claude/.gitignore` committed, so
+the first launch finds the rule already in place and writes nothing.
 
 ### `report.sh` — the report
 
 Validates the manifest, then renders `acme-store-audit.html` + `.md` next to it
 (the filenames come from `meta.reportBasename`), under the same
 `CLAUDE_PROJECT_DIR` CI uses so the **Usage** section reads the example's
-committed ledger.
+committed ledger. (A committed ledger is also exactly what `/audit:doctor`'s
+hygiene check warns about — per-machine usage data does not normally belong in
+git. The example keeps it on purpose as demo data, so the warning here is the
+check working, not the example broken.)
 
 It also refreshes **`docs/index.html`**, which CI requires to be a byte copy of
 the committed example report — re-rendering and forgetting that copy is how the
