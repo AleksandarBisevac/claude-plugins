@@ -272,7 +272,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
-| `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task interactively — allocates the id, initializes all orchestrator fields, updates the `fileIndex`, and revalidates. The task is then executable via `/audit:run`. |
+| `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
 | `/audit:sync` | `push [bugs\|tasks\|all] \| pull \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
 
@@ -587,6 +587,9 @@ Three things resolve against it:
   first level that is **present** answers; an explicit `null` is an answer (skip review), not a
   fall-through.
 - **Executor skills** — the area's `skills` first, then `task.skills`, deduped, area first.
+  `task.skills: null` is the explicit opt-out — an answer, not a miss — and STOPS the area
+  default; `[]` or absent means unconsidered, and the validator warns (never refuses) when a
+  task resolves to zero skills without having answered.
 - **Advisory owner** — `meta.areas[tag].owner`, written the way `usage.authorMode` records authors
   (git `user.email` under the default mode): who to coordinate with, never an assignee. Advisory
   only — when someone else edits a covered file in an owned area, the plan gate adds a
@@ -969,7 +972,12 @@ per-file check only for files with uncommitted changes, so a year of history doe
 the doctor slower. There is deliberately **no compactor**: each file's chain is seeded from
 its own basename and every row's hash covers its `prev`, so merging or rewriting old files
 would be indistinguishable from the forgery the chain exists to catch. If a directory of
-years-old files ever bothers you, leave them where they are — they are the record.
+years-old files ever bothers you, retire them without touching a byte:
+`audit-journal.py archive [--before YYYY-MM]` moves whole month-files into
+`journal/archive/` with `git mv` — the chain seeds from the basename and survives only
+untouched bytes, which is exactly what a move preserves — and `verify` and the doctor
+follow them there (reported as `archive/<name>`). The current month never archives, and
+an untracked file moves by plain rename (it has no committed history for git to carry).
 
 ## Azure DevOps (optional)
 

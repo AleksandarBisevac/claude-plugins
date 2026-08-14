@@ -4,6 +4,28 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.37.0] - 2026-08-14
+
+**Skills learn the difference between "none applies" and "nobody asked", and the journal
+learns to retire its months.** `skills: null` is now a conscious opt-out in reviewSkill's
+exact idiom — an answer, not a miss — stopping the area fallback, while `[]` stays
+"unconsidered" with the area default in force; the panel shows all three states, the
+validator warns (never refuses) on tasks that resolve to nothing without having answered,
+a near-miss detector catches one-letter skill typos, and untagged phases in an
+area-registered project get one aggregated advisory line. `/audit:task add` stops
+hand-templating fifteen fields: the new `audit-task.py` allocates the id under the index
+lock, initializes everything exactly once, revalidates from disk with byte-for-byte
+rollback, and journals beside the NAMED manifest (its one mid-round misroute was caught by
+this repo's own bash-write-guard — the gate guarding its author). `/audit:init` suggests
+skills per task at approval, real names only. `audit-journal.py archive` retires old
+month-files into `journal/archive/` by `git mv` — the chain seeds from the basename and
+survives only untouched bytes, which is exactly what a move preserves — with verify and
+doctor following them there. And the checker debt from 0.36 is paid: the inline-eval
+backstop shares the gate's definition of a test file, whole-document pins (selftest AND
+the CI step's three probes) judge markup with scripts stripped, the panel-CSV assertion
+parses instead of pattern-matching, and a task in progress under a pending phase heals at
+the write site instead of nagging after it.
+
 ## [0.36.0] - 2026-08-14
 
 **The gate stops blaming the innocent, and the report learns time.** Five trust repairs from
