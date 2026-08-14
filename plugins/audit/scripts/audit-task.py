@@ -442,7 +442,9 @@ def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
     try:
         ok = bool(mod.append(project, {
             "action": "task.add",
-            "target": os.path.relpath(mpath, project),
+            # Persisted row: "/" separators regardless of platform, like every
+            # other journal path (n3 pins it; Windows relpath says backslash).
+            "target": os.path.relpath(mpath, project).replace(os.sep, "/"),
             "summary": summary,
             "details": {"taskId": task_id, "phaseId": phase_id},
             "actor": {"author": _panel_write._viewer(project,
