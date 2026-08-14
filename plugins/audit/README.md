@@ -153,8 +153,9 @@ page behind it, read against the form rather than instead of it. All of it is
 - **`/audit:propose`** — the parked-phase lifecycle: `list` what init parked,
   `materialize` a proposal into a live phase (a move, not a re-synthesis), `drop` one
   with a recorded reason.
-- **`/audit:task`** — add a tracked task interactively (id allocation, field initialization,
-  fileIndex maintenance, revalidation).
+- **`/audit:task`** — add a tracked task: the command gathers answers (including a skills
+  step fed by `audit-status --json --discovery`, with the explicit `null — none applies`
+  choice) and calls `scripts/audit-task.py` for the write itself.
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
   task** (the repro test must fail before the fix) executed by `/audit:run`.
 - **`/audit:sync`** — mirror bugs/tasks into **Azure DevOps work items** (`push`), import
@@ -521,6 +522,11 @@ Resolution, in order — and every verdict prints the rule that produced it:
 3. **allow** — project-wide, or from any active area (several active areas *union* their allow
    lists: the more permissive answer, deliberately).
 4. **default** for the kind.
+
+A pattern that matches nothing installed here is a quiet no-op — usually a typo or a removed
+tool. `/audit:doctor` warns about such **dead patterns** (against this machine's discovered
+inventory, with the honest hedge that a teammate may have the tool), and the panel's Policy
+tab marks them beside the rules as written. Advisory both places, never a refusal.
 
 `areas` rules are scoped to a `meta.areas` tag and are in force **only while a phase carrying that
 tag has work `in_progress`** — a hook sees a tool name, not a directory, so "in this area" can only
@@ -986,8 +992,17 @@ Add `meta.ado` to the manifest and `/audit:sync` links the tracker to your board
 ```json
 "ado": { "organization": "<org>", "project": "<project>",
          "areaPath": null, "iterationPath": null,
-         "types": { "bug": "Bug", "task": "Task" } }
+         "types": { "bug": "Bug", "task": "Task" },
+         "identityMap": { "ana@corp.com": "ana.k@company.com" } }
 ```
+
+`identityMap` (optional) maps a **ledger identity** — the same form `usage.authorMode`
+records authors and `meta.areas[*].owner` is written in — to that person's ADO email/UPN.
+Advisory in every direction: `push` **proposes** `--assigned-to` for a create whose area
+owner is mapped (one batched question per person; never silently, never on updates), `pull`
+reverse-maps a known assignee into `reportedBy`'s ledger form (existing rows are never
+rewritten), `status` shows mapped/unmapped coverage. The validator checks shape only and
+warns on duplicate values.
 
 - `/audit:sync push` — create/update work items from manifest bugs (add `tasks`/`all` for
   tasks); shows the plan and asks before the first write; write-back `ado: {id, url,

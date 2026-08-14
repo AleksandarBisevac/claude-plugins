@@ -4,6 +4,23 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.38.0] - 2026-08-15
+
+**A pattern that names nothing decides nothing — and now something says so.** The capability
+policy's dead patterns (a glob matching nothing installed on this machine) surface as
+advisories on the two surfaces that can see the inventory: `/audit:doctor` warns with the
+honest hedge that a teammate may have the tool, and the panel's Policy tab marks the rule
+where it gets edited — one implementation, config-pure, never a refusal. `/audit:init` and
+`/audit:task` stop scanning the filesystem for skills themselves: `audit-status --json
+--discovery` is the one mechanical source (the bare payload stays byte-identical — pinned),
+fail-open when discovery breaks. `meta.ado.identityMap` maps ledger identities to ADO
+emails, advisory in every direction — push proposes assignment one batched question per
+person and never on updates, pull reverse-maps new imports without ever rewriting existing
+rows, status shows coverage, and the validator checks shape only. And the tag history is
+whole again: every released version from 0.10.0 on carries its annotated tag on the exact
+release commit — except v0.20.0, whose deleted tag remains the honest record of a release
+that never happened, exactly as CONTRIBUTING tells it.
+
 ## [0.37.0] - 2026-08-14
 
 **Skills learn the difference between "none applies" and "nobody asked", and the journal
