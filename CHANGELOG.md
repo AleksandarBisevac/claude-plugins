@@ -4,6 +4,30 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.35.0] - 2026-08-14
+
+**What the plugin claims, the plugin now does.** The panel had told every repo its token file
+was gitignored while nothing anywhere wrote the rule — found on a live repo one `git add
+.claude` away from publishing a live session token beside a ledger of person identities. Now
+every local artifact makes ITSELF ignorable: state, logs and the usage ledger drop a `*`
+.gitignore into their own directories as they are created, the panel writes a targeted rule
+for its pidfile and claims only what it verified, and a new doctor **hygiene** check names
+anything already tracked — loudest for the token, with the rotation step spelled out. The
+release requires no manual configuration change anywhere, which is now the standing rule:
+an update either automates its migration or names the one thing it will not do for you
+(untracking already-committed history stays a human decision, and doctor hands you the command).
+
+Also here: `/audit:usage` renders markdown pipe tables on the chat surface (`--format ascii`
+keeps the fixed-width shape for terminals, pipes and CI); the guide agent sheds its stutter —
+`audit:audit-guide` is now **`audit:guide`**, with a `/audit:guide` command to match, a
+registry that renames itself and a validator warning for any policy pattern still naming the
+old id; the composition table says WHY a phase with every task done still reads in progress
+("all tasks done — awaiting sign-off"); and the ⓘ tooltip joins the product's fixed-position
+family after a live repo found it painted under the model column — clipped and buried by the
+same scroll-frame/stacking-context class the combo menu crossed in 0.34. Every new behaviour
+proven red first; three sabotage proofs restored byte-identically; 40/40 suites in both
+encodings; the full browser check three times over.
+
 ## [0.34.0] - 2026-08-13
 
 **A gate that cannot explain itself gets worked around; this release makes the plan gate speak
