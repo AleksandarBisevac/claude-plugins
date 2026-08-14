@@ -128,7 +128,12 @@ def _demo_areas():
              "infra": "Build and deploy passes"}
     out = {}
     for i, tag in enumerate(AREAS):
-        entry = {"root": "src/%s" % tag, "description": blurb[tag]}
+        entry = {"root": "src/%s" % tag, "description": blurb[tag],
+                 # v0.37 B1/B2: every area declares a house default, so every
+                 # task RESOLVES to something (area-first merge on show in the
+                 # panel) and the unresolved-skills advisory has nothing to say
+                 # about a fixture that is supposed to validate silently.
+                 "skills": [SKILL_POOL[i % len(SKILL_POOL)]]}
         if tag != "infra":
             entry["owner"] = authors[i % len(authors)]
         out[tag] = entry
@@ -169,8 +174,12 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
                 "maxAttempts": 3,
             }
             # Only some tasks carry skills, so the panel's "needs skills" filter has
-            # both sides to show.
-            if (pi + ti) % 3 == 0:
+            # both sides to show. Exactly ONE task (P1.1) is explicitly opted
+            # out (v0.37 B1): `skills: null` is the answer "none applies" that
+            # also stops the area default, and the demo shows all three states.
+            if pi == 1 and ti == 1:
+                task["skills"] = None
+            elif (pi + ti) % 3 == 0:
                 task["skills"] = [SKILL_POOL[(pi + ti) % len(SKILL_POOL)]]
             # A within-phase dependency chain, so the readiness rule has real work.
             if ti > 1 and (pi + ti) % 5 == 0:
@@ -444,6 +453,17 @@ def _selftest():
     check("some tasks have skills and some do not",
           any("skills" in t for p in m["phases"] for t in p["tasks"])
           and any("skills" not in t for p in m["phases"] for t in p["tasks"]))
+    # v0.37 B1: the fixture shows all three skill states - a list, the absent
+    # key ("unconsidered"), and exactly one explicit null (the opt-out), so the
+    # panel's opted-out chip and the needs-skills distinction have a live
+    # subject in the committed screenshots.
+    check("exactly one task is explicitly opted out of skills (null)",
+          sum(1 for p in m["phases"] for t in p["tasks"]
+              if "skills" in t and t["skills"] is None) == 1)
+    check("every area declares a default skill, so the unresolved-skills "
+          "advisory stays silent on a fixture meant to validate quietly",
+          all(isinstance(v.get("skills"), list) and v["skills"]
+              for v in m["meta"]["areas"].values()))
     budgets = [p.get("budgetUSD") for p in m["phases"] if p.get("budgetUSD")]
     check("some phases carry a budget and some do not",
           budgets and len(budgets) < len(m["phases"]))

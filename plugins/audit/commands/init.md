@@ -169,8 +169,44 @@ Proposed plan — 4 phases, 23 tasks (size appetite: M)
   deferred: 3 item(s) (reasons below) - open questions: 2
 ```
 
-"Key tasks" = the 2–3 highest-risk task titles per phase. Then ask ONE
-AskUserQuestion:
+"Key tasks" = the 2–3 highest-risk task titles per phase.
+
+### 6.1 Skill suggestions (per task)
+
+Before the gate, propose a `skills` list for every synthesized task — only when this
+repo has anything to offer; a repo with no registered areas and no discoverable
+skills skips this sub-step entirely and never mentions skills:
+
+- **Area default first** — when the task's phase carries an `area` tag registered in
+  `meta.areas` with `skills` (match `task.files` against the registered area
+  `root`s), those are the baseline: they load first for every task in the area
+  anyway, so do not repeat them on the task — suggest only ADDITIONS.
+- **Inventory match** — skills you can actually see (`.claude/skills/`,
+  `~/.claude/skills/`, installed plugin skills): suggest one when its name or
+  description matches the task's `files` (language, framework, path under an area
+  root) or its subject (a security finding → a security-review skill). Offer REAL
+  names only — never invent one.
+
+Show every suggestion in the printed plan, one compact line per task that has any:
+
+```
+    P1.2  parameterize SQL in orders    skills: web-security (+ area default: backend-conventions)
+```
+
+When any suggestions exist, ask ONE AskUserQuestion (multi-select, all suggestions
+pre-selected): **"Keep these per-task skill suggestions?"** — deselecting one drops
+it from that task. Approved suggestions land in the materialized tasks as
+`skills: [...]` (and travel inside parked payloads, so materialization preserves
+them).
+
+**The three-states rule — apply it as written, do not improvise:** a task with
+nothing suggested or nothing approved is written with `skills: []` —
+"unconsidered", the area default stays in force. Write `skills: null` ONLY when
+the human explicitly says no skills apply to that task — null is the conscious
+opt-out that STOPS the area fallback, and an init that invents opt-outs silently
+turns the area defaults off.
+
+Then ask ONE AskUserQuestion:
 
 1. **Materialize all N phases** (Recommended) — write the manifest exactly as
    assembled; this is the pre-gate behavior.

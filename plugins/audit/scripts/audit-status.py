@@ -316,6 +316,10 @@ def rollup(manifest, findings, warnings, usage=None):
         if "owner" in entry:
             o = entry.get("owner")
             g["owner"] = o.strip() if isinstance(o, str) and o.strip() else None
+    # Whether meta.areas registers anything at all (v0.37 B3): the fact that
+    # decides if an UNTAGGED phase is a blind spot (defaults exist and skip it)
+    # or just a phase in a free-text-tagging project (nothing to miss).
+    areas_registered = bool(reg)
     props = [x for x in (manifest.get("proposals") or []) if isinstance(x, dict)]
     out = {
         "valid": not findings,
@@ -323,6 +327,7 @@ def rollup(manifest, findings, warnings, usage=None):
         "warnings": len(warnings),
         "phases": phase_entries,
         "areas": areas,
+        "areasRegistered": areas_registered,
         "tasks": {"total": len(tasks), "byStatus": _by_status(tasks)},
         "bugs": {"total": len(bugs), "byStatus": _by_status_values(bug_eff),
                  "open": len(open_bugs),
@@ -689,6 +694,15 @@ def _area_lines(au, summary, pt=None):
         rows.append(("untagged", len(untagged),
                      sum(p.get("done", 0) for p in untagged),
                      sum(p.get("total", 0) for p in untagged), None))
+    # The cross-cutting blind spot (v0.37 B3), said HERE and said ONCE. The
+    # surface was a choice among three: the VALIDATOR would print a line per
+    # untagged phase (a wall on a plan where untagged is common and perfectly
+    # legal), a PANEL per-phase-row note repeats itself fifty times at fifty
+    # phases, and this rollup is the one place a reader is already comparing
+    # tags against phases - directly under the untagged row it explains.
+    # Aggregated by construction (one line however many phases), and gated on
+    # the registry existing: with no meta.areas there are no defaults to miss.
+    advisory = bool(untagged) and bool(summary.get("areasRegistered"))
     out = ["", pt.paint("  BY AREA  %d tag(s) - %d of %d phase(s) tagged"
                         % (len(areas), len(phases) - len(untagged),
                            len(phases)), "header")]
@@ -702,6 +716,10 @@ def _area_lines(au, summary, pt=None):
             # person to coordinate with, never an assignee.
             line += " - %s" % owner
         out.append(line)
+    if advisory:
+        out.append("    note: area defaults (skills, reviewer, owner) do not "
+                   "apply to untagged phases - tag them, or leave them out of "
+                   "the areas system on purpose")
     if any(len(p.get("area") or []) > 1 for p in phases):
         out.append("    note: a phase with several tags counts under each - "
                    "per-area sums can exceed the plan total")
@@ -1117,6 +1135,30 @@ def _selftest():
           and s_dup["areas"]["backend"]["phases"] == 1
           and s_dup["areas"]["backend"]["total"] == s_dup["phases"][0]["total"],
           repr(s_dup["areas"]))
+
+    # (ut) the cross-cutting blind spot (v0.37 B3): a phase with NO area tag in
+    # a project that REGISTERS areas is a phase every area default (skills,
+    # reviewer, owner) silently skips. ONE aggregated advisory line in BY AREA,
+    # never one per phase.
+    m_ut = copy.deepcopy(_fixture())
+    m_ut["meta"]["areas"] = {"backend": {"root": "src", "skills": ["conv"]}}
+    m_ut["phases"][0]["area"] = "backend"          # P2 stays untagged
+    _txt_ut = render_status(m_ut, rollup(m_ut, [], []))
+    check("ut1 a registered-areas project with untagged phases gets ONE "
+          "advisory line - area defaults do not apply there",
+          _txt_ut.count("area defaults (skills, reviewer, owner) do not apply")
+          == 1, _txt_ut)
+    m_ufree = copy.deepcopy(_fixture())
+    m_ufree["phases"][0]["area"] = "backend"       # free-text tag, no registry
+    _txt_ufree = render_status(m_ufree, rollup(m_ufree, [], []))
+    check("ut2 free-text tagging with NO registry stays quiet - there are no "
+          "defaults to miss", "do not apply" not in _txt_ufree)
+    m_uall = copy.deepcopy(m_ut)
+    for _p in m_uall["phases"]:
+        _p["area"] = "backend"
+    _txt_uall = render_status(m_uall, rollup(m_uall, [], []))
+    check("ut3 every phase tagged -> no advisory and no untagged row",
+          "do not apply" not in _txt_uall and "untagged" not in _txt_uall)
 
     # (u) usage block — absent unless a ledger exists, so every existing consumer
     # keeps working untouched

@@ -98,6 +98,7 @@ claude-plugins/                           # this repo (personal, public)
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
         audit-doctor.py                   # /audit:doctor: read-only "is this working?" diagnostics
         audit-lock.py                     # the /audit concurrency lock as an executable acquire/release/status
+        audit-task.py                     # /audit:task add doer: id allocation, full template init, lock+journal
         audit-usage.py                    # /audit:usage: token spend, attributed
         render-report.py                  # self-contained HTML+MD report (CI artifact)
         _report_ui.py                     # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
@@ -179,6 +180,7 @@ L7:
   audit-journal -> _output
   audit-lock -> _output
   audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _output, _ui_theme
+  audit-task -> _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _output
   gen-demo-manifest -> _loader, _output
   gen-demo-usage -> _loader, _output
@@ -563,6 +565,23 @@ The `/audit` concurrency lock as an executable decision instead of orchestrator 
 running is refused (exit 3); a holder that is not alive can be seized with `--takeover`
 (exit 4) — because the old "older than 60 minutes = crashed" rule was wrong in both
 directions. `--session`/`--pid` override the identity written into the lock for testing.
+
+### `plugins/audit/scripts/audit-task.py` (v0.37.0)
+The non-interactive `/audit:task add` doer. The command used to dictate the conventions'
+15-field new-task template into the model's hands per add — a class of error (a missed field,
+a misspelled enum, a fileIndex nobody extended) this script deletes: the command gathers
+answers, the script writes them the same way every time. `add "<title>"` allocates the id
+under the INDEX lock (`<phaseId>.<n>` over the whole assembled manifest plus parked-proposal
+reservations; gaps are never re-minted), initializes every template field exactly once,
+extends `fileIndex` for `--files`, heals a pending phase holding an in_progress task
+(v0.37 A4, reused from `_panel_write`), writes through `_manifest_io` with
+`_panel_write._write_back`'s footprint (touched shard + index only when fileIndex changed),
+re-validates FROM DISK and rolls every written file back byte-for-byte on findings (exit 1),
+and appends a `task.add` journal row in-process (the journal-writes hook only sees edit
+TOOLS, not `os.replace` — same blindness `_panel_write._journal` covers). `--phase` absent
+resolves the single in_progress phase or exits 2 naming the choices; `--skills null` writes
+the explicit JSON-null opt-out (v0.37 B1); a held lock prints audit-lock's own message
+(exit 3 live / 4 stale, `--takeover` to seize what a human confirmed dead).
 
 ### `plugins/audit/scripts/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box

@@ -14,41 +14,78 @@ Unknown/empty subcommand → print usage and stop.
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
-This command mutates the manifest — hold the **concurrency lock** (see conventions →
-Concurrency lock) around your writes and release it before reporting.
+`add` writes through `scripts/audit-task.py`, which takes and releases the **index lock**
+itself; hold the lock by hand (conventions → Concurrency lock) only around writes YOU make
+with Edit — the `move` subcommand, and the new-phase creation in `add` step 1.
 
 ## Subcommand: `add "<title>" [--phase <id>]`
 
+The add is a SCRIPT call, not a hand-templated edit. `scripts/audit-task.py` allocates
+the id under the index lock, initializes every orchestrator field from the conventions'
+new-task template exactly once, extends `fileIndex`, revalidates from disk (rolling the
+write back on findings) and journals a `task.add` row. Your job is to gather the answers
+and pass them as flags — NEVER hand-write the task JSON; hand-templating fifteen fields
+per add is the class of error the script exists to delete.
+
 1. **Target phase**:
-   - `--phase <id>` given → use it. If that phase's `status == "done"`, REFUSE
-     (done phases are immutable history) and offer the alternatives below.
-   - Otherwise ask (AskUserQuestion): one of the existing non-`done` phases, or
-     **new phase**. A new phase gets the conventions doc's new-phase template
-     (id continues the `P<n>` sequence, counting live phases AND every reserved
-     `proposals[].payload` phase id — see conventions → ID allocation; ask for
-     its title; `testGate` from `meta.buildCommands` keys).
+   - `--phase <id>` given → pass it through. The script refuses a `done` phase
+     (immutable history) and a phase id reserved by a parked proposal (pointing to
+     `/audit:propose materialize`) — relay those refusals, then offer the
+     alternatives below.
+   - Otherwise call without `--phase`: the script defaults to the single
+     `in_progress` phase, or exits 2 NAMING the choices. On that exit 2, ask
+     (AskUserQuestion): one of the named phases, or **new phase**. A new phase gets
+     the conventions doc's new-phase template (id continues the `P<n>` sequence,
+     counting live phases AND every reserved `proposals[].payload` phase id — see
+     conventions → ID allocation; ask for its title; `testGate` from
+     `meta.buildCommands` keys); create it with Edit under the **index lock**,
+     release, then re-run the script with `--phase <newId>`.
    - When a still-parked proposal (`proposals[]`, status `proposed`) already
      covers this work (title/scope overlap), say so and offer
      `/audit:propose materialize <PROP-id>` as the alternative before creating a
      parallel task by hand.
-2. **Gather the task** (ask only for what's missing; propose sensible defaults):
-   - `description` — problem, approach, key decisions.
-   - `files` — repo-relative paths this task touches (Glob/Grep to verify they exist;
-     warn on misses but allow new-file paths).
-   - `tests` — `mode` (`tdd` for incorrect current behavior / `regression` for
-     behavior-preserving / `gate-only` for mechanical), `add` descriptions,
-     `expectRedFirst` (true iff tdd), `gate` entries (default: the phase's `testGate`).
-   - `model` (default `sonnet` — the floor for all fix work; `opus` for `risk: "high"`; do NOT
-     use `haiku` for audit-fix work), `risk`
-     (`low`/`med`/`high`), `skills`, `blockedBy`/`dependsOn` (default `[]`).
-3. **Allocate the id**: `<phaseId>.<max existing numeric suffix + 1>`.
-4. **Write** (Edit): append the task with ALL initialized fields from the new-task
-   template; extend the top-level `fileIndex` with every entry in `files`.
-5. **Revalidate**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` —
-   fix and re-run until clean.
-6. **Report**: the created task (id, phase, tests.mode, model, risk), whether it is
-   **ready now** (evaluate the orchestrator's readiness rule), and the handoff:
-   `/audit:run <taskId>` (or what blocks it).
+2. **Gather the answers** (ask only for what's missing; propose sensible defaults):
+   - `--description` — problem, approach, key decisions.
+   - `--files a,b` — repo-relative paths this task touches (Glob/Grep to verify they
+     exist; the script notes misses but allows new-file paths).
+   - `--tests-mode` (`tdd` for incorrect current behavior / `regression` for
+     behavior-preserving / `gate-only` for mechanical — the script sets
+     `expectRedFirst` true iff tdd), `--tests-add "<desc>"` (repeatable, one test
+     description each), `--gate "<entry>"` (repeatable; default: the phase's
+     `testGate`).
+   - `--model` (default `sonnet` — the floor for all fix work; the script escalates
+     `risk: high` to `opus` when no model is passed; do NOT use `haiku` for
+     audit-fix work), `--risk` (`low`/`med`/`high`).
+   - **Skills** — ask "which skills should the executor load for this task?"
+     (AskUserQuestion), offering:
+     - the phase's **area default skills** from the `meta.areas` registry — mark
+       them as the default (they load first for every task in the area anyway;
+       naming them on the task is a no-op kept for readability);
+     - skills from the discovery inventory you can see (`.claude/skills/`,
+       `~/.claude/skills/`, installed plugin skills) whose names/descriptions match
+       the task's files and subject — offer real names only, never invented ones;
+     - **"null — none applies"** — the explicit opt-out, written as JSON `null`:
+       it STOPS the area fallback so nothing loads. Distinct from leaving skills
+       unconsidered (`[]`, the default), where the area default stays in force.
+     Then `--skills a,b`, `--skills null`, or omit the flag for unconsidered.
+   - `--blocked-by` / `--depends-on` — comma-separated ids (omit when none).
+3. **Run it** (Bash):
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-task.py" add "<title>" \
+           --phase <id> --description "<why & how>" --files a,b \
+           --tests-mode regression --risk low --skills a,b
+   ```
+   **Print the script's output verbatim — validator findings and warnings
+   included. Do NOT re-format, summarize, or "improve" it.** The report already
+   names the id, what was written, the journal outcome, and whether the task is
+   ready now (with the `/audit:run <taskId>` handoff).
+4. **Exit codes**: `0` done. `2` usage — the message names the choices (ambiguous
+   phase, done phase, reserved id, missing manifest): ask the human, adjust, re-run.
+   `1` the add would leave the manifest invalid — it was rolled back byte-for-byte
+   and the findings are printed; fix the inputs (e.g. a `--blocked-by` id that does
+   not resolve) and re-run. `3` the index lock is held by a live run — stop; do not
+   take it over. `4` the lock looks abandoned — confirm with the human
+   (AskUserQuestion), then re-run the same add with `--takeover`.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

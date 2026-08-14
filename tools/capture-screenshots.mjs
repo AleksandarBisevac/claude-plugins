@@ -35,7 +35,7 @@ import { mkdtempSync, rmSync, mkdirSync, readFileSync, statSync,
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPTS = path.join(REPO, 'plugins', 'audit', 'scripts');
@@ -59,6 +59,53 @@ const RUNSTATUS_URL = '**/api/runstatus';
 const problems = [];
 const note = (m) => console.log(`  ${m}`);
 const fail = (m) => { problems.push(m); console.log(`  FAIL ${m}`); };
+
+/**
+ * One CSV record as fields, double-quote escaping respected (RFC 4180).
+ *
+ * F-D-1 (v0.37 A3): the borrowed substring regex this replaces
+ * (`/"?\d+,\d{3}[,."]/`) read a legitimate 3-digit count after a date field
+ * ("…-13,123,…" across a field boundary) as a thousands separator —
+ * reproduced on a real ledger. Structure cannot be fooled that way: parse the
+ * record into fields, then judge only the fields that claim to be numbers.
+ * The report-side export check in tools/check-report-interactive.mjs is the
+ * precedent. Exported so a probe can drive the assertion without a browser.
+ */
+export const csvFields = (line) => {
+  const out = [];
+  let cur = '';
+  let q = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i];
+    if (q) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i += 1; }
+      else if (c === '"') q = false;
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+};
+
+/**
+ * First data line whose named numeric columns carry anything but a raw
+ * number (grouping separators included), or whose field count disagrees with
+ * the header — a spreadsheet reads either as text and every sum over the
+ * column is then silently wrong. `lines` is header-first, BOM/CRLF stripped.
+ * Returns null when every line is clean.
+ */
+export const firstNonRawNumberLine = (lines, numericCols) => {
+  const head = csvFields(lines[0] || '');
+  const idx = numericCols.map((c) => head.indexOf(c)).filter((i) => i >= 0);
+  for (const line of lines.slice(1)) {
+    const f = csvFields(line);
+    if (f.length !== head.length) return line;
+    if (idx.some((i) => !/^\d+(\.\d+)?$/.test(f[i]))) return line;
+  }
+  return null;
+};
 
 function py(args, env = {}) {
   return execFileSync(PY, args, {
@@ -1276,13 +1323,19 @@ async function assertUsageWorks(page) {
     const text = await readFile(await dl.path(), 'utf8');
     const lines = text.replace(/^\uFEFF/, '').trim().split('\r\n');
     const want = (await oracle('true')).n;
+    // Structural, not substring: the borrowed regex that stood here read
+    // "…-13,123,…" (a date field, then a legitimate 3-digit count) as a
+    // thousands separator. Parse the record; judge only the numeric fields.
+    const badNum = firstNonRawNumberLine(lines.slice(0, 201),
+      ['tokens', 'costUSD', 'msgs']);
     if (lines.length !== want + 1) {
       fail(`usage: CSV has ${lines.length - 1} data rows for ${want} facts`);
     } else if (!/^ts,phase,task,model,author,agent,attr,tokens,costUSD,msgs$/.test(lines[0])) {
       fail(`usage: CSV header is "${lines[0]}"`);
-    } else if (lines.slice(1, 200).some((l) => /"?\d+,\d{3}[,."]/.test(l))) {
-      fail('usage: CSV numbers carry thousands separators — a spreadsheet reads '
-         + 'those as text and every sum over the column is then wrong');
+    } else if (badNum) {
+      fail(`usage: CSV numeric fields are not raw numbers ("${badNum}") — a `
+         + 'spreadsheet reads grouped values as text and every sum over the '
+         + 'column is then wrong');
     } else if (!/hourly|daily/.test(dl.suggestedFilename())) {
       fail(`usage: CSV filename "${dl.suggestedFilename()}" does not say what `
          + `resolution the rows are at`);
@@ -1911,6 +1964,178 @@ async function assertConfirmFlowWorks(page) {
       note(`journal: ${jr.verify.rows} row(s) chain cleanly; newest is `
          + `"${newest.summary}" by ${newest.actor.author || 'unknown'}`);
     }
+  }
+}
+
+/* ---- (sk3) the three skill states — chips, filter, and the null round trip --
+ *
+ * v0.37 B1: `skills: null` is an explicit answer ("none applies") that stops
+ * the area default; `[]`/absent is "unconsidered". The panel must keep the
+ * three apart everywhere a reader looks: the chips area (an opted-out task
+ * SAYS so, muted, instead of showing the same empty row), the "needs skills"
+ * filter (an answered task is not a need), and the WRITE path (the "none
+ * applies" control writes a real null into the manifest, and the chip's ×
+ * clears it back to []). Driven through the real UI and the real save flow;
+ * the on-disk oracle is /api/state, whose composition view ships the three
+ * states apart on purpose (_panel_state._skills_of).
+ */
+async function assertSkillTriState(page) {
+  await page.click('.tab[data-t=comp]');
+  await page.waitForSelector('#comp table', { timeout: 15000 });
+  await page.waitForTimeout(300);
+  // Drain any in-flight poll hand-off before editing (the model-combo rule).
+  await page.evaluate(async () => { await pollRunStatus(); await refreshFromDisk(); });
+  await page.waitForTimeout(200);
+  // A phase holding TWO tasks with empty skills: one becomes the opt-out, the
+  // other stays [] so the filter check has both sides in one viewport.
+  const pick = await page.evaluate(() => {
+    const byP = {};
+    ((STATE.composition || {}).tasks || []).forEach((t) => {
+      (byP[t.phaseId] = byP[t.phaseId] || []).push(t);
+    });
+    for (const pid of Object.keys(byP)) {
+      const empty = byP[pid].filter((t) => Array.isArray(t.skills) && !t.skills.length);
+      if (empty.length >= 2) return { pid, optId: empty[0].id, refId: empty[1].id };
+    }
+    return null;
+  });
+  if (!pick) {
+    fail('skills: the fixture has no phase with two empty-skills tasks to drive');
+    return;
+  }
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.evaluate((pid) => openInComp(pid), pick.pid);
+  await page.waitForTimeout(300);
+  const rowOf = (id) => page.locator('#comp tr.task').filter({
+    has: page.locator('td.tid', { hasText: new RegExp(`^${esc(id)}$`) }) });
+  if (!(await rowOf(pick.optId).count()) || !(await rowOf(pick.refId).count())) {
+    fail(`skills: no rows for ${pick.optId}/${pick.refId} after opening ${pick.pid}`);
+    return;
+  }
+  // --- state 1: an empty list offers the "none applies" affordance -----------
+  const noneBtn = rowOf(pick.optId).locator('.tskills button.optnone');
+  if (!(await noneBtn.count())) {
+    fail(`skills: ${pick.optId} has empty skills and no "none applies" control — `
+       + `null cannot be written from the UI`);
+    return;
+  }
+  await noneBtn.click();
+  await page.waitForTimeout(200);
+  const afterClick = await page.evaluate((o) => {
+    const r = [...document.querySelectorAll('#comp tr.task')].find((x) =>
+      (x.querySelector('.tid') || {}).textContent === o.id);
+    const c = r && r.querySelector('.tskills .chip.optout');
+    return { text: c ? c.textContent : null,
+             rows: editRows('comp').map((x) => x.target + ' ' + x.field) };
+  }, { id: pick.optId });
+  if (!/none — opted out/.test(afterClick.text || '')) {
+    fail(`skills: clicking "none applies" rendered ${JSON.stringify(afterClick.text)} `
+       + `— the opted-out state is not visibly distinct from an empty row`);
+  } else if (!afterClick.rows.includes(pick.optId + ' skills')) {
+    fail(`skills: the opt-out registered no change row `
+       + `(${JSON.stringify(afterClick.rows)})`);
+  } else {
+    note('skills: "none applies" renders the muted opt-out chip and one change row');
+  }
+  // --- the needs-skills filter: an answer is not a need -----------------------
+  const needsBtn = page.locator('#comp').getByRole('button', { name: 'needs skills' });
+  await needsBtn.click();
+  await page.waitForTimeout(250);
+  const vis = await page.evaluate((o) => {
+    const st = (id) => {
+      const r = [...document.querySelectorAll('#comp tr.task')].find((x) =>
+        (x.querySelector('.tid') || {}).textContent === id);
+      return r ? r.style.display !== 'none' : null;
+    };
+    return { opt: st(o.opt), ref: st(o.ref) };
+  }, { opt: pick.optId, ref: pick.refId });
+  await needsBtn.click();       // filter off again
+  await page.waitForTimeout(200);
+  if (vis.opt !== false || vis.ref !== true) {
+    fail(`skills: with "needs skills" on, the opted-out task shows=${vis.opt} and `
+       + `the []-task shows=${vis.ref} — null is being counted as a need (or the `
+       + `real need dropped)`);
+  } else {
+    note('skills: "needs skills" keeps the []-task and drops the opted-out one');
+  }
+  // --- save: the dialog names the answer, the file holds a real null ----------
+  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save composition' });
+  await saveBtn.click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  const dlg = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog.confirm tbody tr')]
+      .map((r) => [...r.children].map((c) => c.textContent.trim())));
+  const skRow = dlg.find((r) => r[1] === 'skills');
+  if (!skRow || !/none — opted out \(null\)/.test(skRow[2] || '')) {
+    fail(`skills: the confirm dialog lists ${JSON.stringify(dlg)} — null must read `
+       + `as the opt-out, not as "not set"`);
+  }
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+  const onDisk = await page.evaluate(async (id) => {
+    const s = await api('GET', '/api/state');
+    const t = (s.composition.tasks || []).find((x) => x.id === id);
+    return t ? (t.skills === null ? 'null' : JSON.stringify(t.skills)) : 'missing';
+  }, pick.optId);
+  const shown = await page.evaluate((id) => {
+    const r = [...document.querySelectorAll('#comp tr.task')].find((x) =>
+      (x.querySelector('.tid') || {}).textContent === id);
+    return { optout: !!(r && r.querySelector('.tskills .chip.optout')),
+             dirty: editRows('comp').length };
+  }, pick.optId);
+  if (onDisk !== 'null') {
+    fail(`skills: after saving the opt-out, ${pick.optId}.skills on disk is `
+       + `${onDisk} — null did not round-trip through the save`);
+  } else if (!shown.optout || shown.dirty !== 0) {
+    fail(`skills: the saved opt-out re-rendered as optout=${shown.optout} with `
+       + `${shown.dirty} dirty row(s) — the state does not survive the disk round trip`);
+  } else {
+    note(`skills: ${pick.optId}.skills saved as null and re-read as the opt-out chip`);
+  }
+  // --- and back: the chip's × clears the answer to [] -------------------------
+  await rowOf(pick.optId).locator('.tskills .chip.optout button').click();
+  await page.waitForTimeout(200);
+  await saveBtn.click();
+  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+  const back = await page.evaluate(async (id) => {
+    const s = await api('GET', '/api/state');
+    const t = (s.composition.tasks || []).find((x) => x.id === id);
+    return t && Array.isArray(t.skills) && t.skills.length === 0;
+  }, pick.optId);
+  if (!back) {
+    fail(`skills: clearing the opt-out did not write [] back for ${pick.optId}`);
+  } else {
+    note('skills: the opt-out clears back to [] through the same save flow');
+  }
+  // --- the inventory hint (v0.37 B3): a name discovery does not know ----------
+  // Injected rather than relied on: the fixture pool's names are real public
+  // skills that may exist on the machine running this, and a hint that depends
+  // on what someone has installed is exactly the flake F4 forbids.
+  const hint = await page.evaluate(() => {
+    if (!REG.skills || !REG.skills.length) return 'no-inventory';
+    const t = (STATE.composition.tasks || []).find((x) => Array.isArray(x.skills));
+    if (!t) return 'no-task';
+    t.skills = (t.skills || []).concat('0-no-such-skill-probe');
+    renderComp();
+    const seen = !!document.querySelector('#comp [data-skhint="0-no-such-skill-probe"]');
+    t.skills = t.skills.filter((s) => s !== '0-no-such-skill-probe');
+    renderComp();
+    const gone = !document.querySelector('#comp [data-skhint="0-no-such-skill-probe"]');
+    return { seen, gone };
+  });
+  if (hint === 'no-inventory') {
+    note('skills: discovery found no skills on this machine — the inventory-hint '
+       + 'leg is skipped (the hint is silent by design with nothing to compare)');
+  } else if (hint === 'no-task') {
+    fail('skills: no task row to hang the inventory-hint probe on');
+  } else if (!hint.seen || !hint.gone) {
+    fail(`skills: a manifest-only skill name drew hint=${hint.seen} and cleanup `
+       + `left it=${!hint.gone} — the skillHints note is not tracking the manifest`);
+  } else {
+    note('skills: a manifest-only name draws the "discovery knows no such skill" '
+       + 'note, and leaves with it');
   }
 }
 
@@ -4290,6 +4515,9 @@ async function main() {
       // Last of all: it writes to the fixture's manifest and its config, so every
       // check above sees the state it was generated with.
       await assertConfirmFlowWorks(page);
+      // v0.37 B1: writes too (a null and its clearing), so it lives in the same
+      // writes-last block.
+      await assertSkillTriState(page);
       // v0.34 panel UX (C1-C5). Same writes-last discipline: the save-note
       // lifecycle saves the config twice, and the live-data check writes the
       // manifest's shard straight on disk — so both run after everything that
@@ -4458,4 +4686,10 @@ async function main() {
   console.log(CHECK ? '\nOK: capture preconditions hold' : '\nOK: screenshots captured');
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+// Run only when invoked as a CLI: the exported CSV helpers above are imported
+// by red-first probes, and an import that launched a full capture would make
+// every probe a screenshot run.
+if (process.argv[1]
+    && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((err) => { console.error(err); process.exit(1); });
+}

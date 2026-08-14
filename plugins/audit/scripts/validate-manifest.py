@@ -362,6 +362,158 @@ def _check_model_typos(manifest, warnings):
                 "or intended" % (sites[val][0], val, near[0], near[1]))
 
 
+def _skills_in_use(manifest):
+    """True iff the manifest uses executor skills DELIBERATELY, anywhere.
+
+    Evidence: a task whose `skills` key holds a non-empty list, an explicit
+    null (the opt-out is use), or a wrong-typed value (someone tried); or a
+    registered area declaring a non-empty default list. `skills: []` alone is
+    NOT evidence -- generators initialize empty lists on every task, and a
+    project that ignores the feature must get zero new warnings from it."""
+    if not isinstance(manifest, dict):
+        return False
+    for phase in _safe_list(manifest.get("phases")):
+        if not isinstance(phase, dict):
+            continue
+        for task in _safe_list(phase.get("tasks")):
+            if isinstance(task, dict) and "skills" in task:
+                v = task.get("skills")
+                if v is None or (isinstance(v, list) and v) \
+                        or not isinstance(v, list):
+                    return True
+    for entry in _areas.registry(manifest).values():
+        v = entry.get("skills")
+        if isinstance(v, list) and v:
+            return True
+    return False
+
+
+def _check_skills(manifest, warnings):
+    """Unresolved-skills advisory (v0.37 B2). WARNING only, never a finding.
+
+    A task whose RESOLVED skills are empty while the manifest uses skills
+    elsewhere is usually an oversight -- the executor for that one task loads
+    no conventions while its siblings do. The warning names what was consulted
+    (the task's own value, the phase's areas) and the three exits: set
+    task.skills, register defaults on an area, or write `"skills": null` to
+    say 'none applies' -- the explicit opt-out that stops the area fallback
+    and this warning with it (_areas.skills_opted_out).
+
+    GATED on _skills_in_use: a manifest that never touches the feature gets
+    zero new lines, which is the whole back-compat contract here."""
+    if not _skills_in_use(manifest):
+        return
+    for phase in _safe_list(manifest.get("phases")):
+        if not isinstance(phase, dict):
+            continue
+        tags = _areas.areas_of(phase.get("area"))
+        for task in _safe_list(phase.get("tasks")):
+            if not isinstance(task, dict):
+                continue
+            twhere = "task %s" % (task.get("id") or "?")
+            if _areas.skills_opted_out(task):
+                continue
+            tv = task.get("skills")
+            if "skills" in task and not isinstance(tv, list):
+                # tv is not None here: null is the opt-out, handled above.
+                warnings.append("%s: skills must be an array of skill names or "
+                                "null, got %s -- resolution loads nothing "
+                                "from it" % (twhere, type(tv).__name__))
+            if _areas.resolve_skills(manifest, phase, task):
+                continue
+            if "skills" not in task:
+                tpart = "task has no skills key"
+            elif isinstance(tv, list):
+                tpart = ("task skills []" if not tv
+                         else "task skills list no usable name")
+            else:
+                tpart = "task skills is not a list"
+            apart = ("phase has no area tag" if not tags
+                     else "area(s) %s declare none" % ", ".join(tags))
+            warnings.append(
+                "%s: no skills resolve (%s; %s) -- set task.skills, register "
+                "default skills on an area in meta.areas, or write "
+                "\"skills\": null to say 'none applies'"
+                % (twhere, tpart, apart))
+
+
+def _skill_near_miss(a, b):
+    """True iff two skill names are one slip apart, or two on names long
+    enough to carry them.
+
+    One slip is _model_near_miss verbatim (case-only difference, one
+    substitution/insertion/deletion, adjacent transposition). Two slips are
+    allowed only when BOTH names are 6+ characters: on short names two edits
+    can turn one real word into another ('web' -> 'wasm' is distance 2) and
+    every hit would be noise -- the same false-positive discipline the md
+    detector keeps by capping itself at one slip."""
+    if _model_near_miss(a, b):
+        return True
+    x, y = a.lower(), b.lower()
+    if min(len(x), len(y)) < 6 or abs(len(x) - len(y)) > 2:
+        return False
+    # Banded Levenshtein, capped at 2 -- rows whose minimum exceeds the cap
+    # cannot recover, so the walk stops early.
+    prev = list(range(len(y) + 1))
+    for i, cx in enumerate(x, 1):
+        cur = [i]
+        for j, cy in enumerate(y, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1,
+                           prev[j - 1] + (cx != cy)))
+        if min(cur) > 2:
+            return False
+        prev = cur
+    return prev[-1] <= 2
+
+
+def _check_skill_typos(manifest, warnings):
+    """Intra-manifest skill-name near-miss detector (WARNING only) -- the md
+    model detector applied to skill names.
+
+    Flags a name used EXACTLY ONCE beside a near-miss neighbour used two or
+    more times anywhere in the manifest (task.skills or meta.areas defaults).
+    A spelling used twice is an established choice, never flagged. And it is
+    deliberately intra-manifest: whether a name exists in the DISCOVERY
+    inventory is the panel's hint (the modelHints precedent) -- this validator
+    stays an offline shape-checker with no inventory in hand."""
+    sites = {}   # skill name -> [where, ...] in document order
+
+    def note_use(val, where):
+        if isinstance(val, str) and val.strip():
+            sites.setdefault(val.strip(), []).append(where)
+
+    for phase in _safe_list(manifest.get("phases")
+                            if isinstance(manifest, dict) else None):
+        if not isinstance(phase, dict):
+            continue
+        for task in _safe_list(phase.get("tasks")):
+            if not isinstance(task, dict):
+                continue
+            twhere = "task %s" % (task.get("id") or "?")
+            sk = task.get("skills")
+            for s in (sk if isinstance(sk, list) else []):
+                note_use(s, twhere)
+    for tag, entry in _areas.registry(manifest).items():
+        sk = entry.get("skills")
+        for s in (sk if isinstance(sk, list) else []):
+            note_use(s, "meta.areas.%s" % tag)
+
+    for val in sorted(sites):
+        if len(sites[val]) != 1:
+            continue
+        # The most-used neighbour is the established spelling -- the warning
+        # names the likeliest intended name, exactly as md does.
+        for other in sorted(sites, key=lambda v: (-len(sites[v]), v)):
+            if other != val and len(sites[other]) > 1 \
+                    and _skill_near_miss(val, other):
+                warnings.append(
+                    "%s: skill '%s' is used once and is a near-miss of '%s' "
+                    "(used %d times elsewhere in this manifest) -- a one-slip "
+                    "skill name names a skill that never loads"
+                    % (sites[val][0], val, other, len(sites[other])))
+                break
+
+
 def _cycle_findings(phases, findings):
     """Detect dependency cycles over the waits-on graph.
 
@@ -606,6 +758,8 @@ def validate(manifest):
 
     _cycle_findings(phases, f)
     _check_model_typos(manifest, w)
+    _check_skills(manifest, w)
+    _check_skill_typos(manifest, w)
 
     # -- fileIndex integrity (both directions) -----------------------------------
     file_index = manifest.get("fileIndex")
@@ -1258,6 +1412,103 @@ def _selftest():
             t["model"] = "claude-opus-5"
     check("md6 a phase review model near-missing the task model warns, "
           "naming the phase", None, _mk_md6, expect_warning="phase P0 review")
+
+    # --- sk: unresolved-skills advisory (v0.37 B2) ---
+    # WARNING only, and GATED: it exists only in a manifest that uses skills
+    # somewhere (a non-empty task.skills, an explicit null, or an area that
+    # declares defaults). A project ignoring the feature gets zero new lines --
+    # and `skills: []` alone does NOT switch it on, because generators
+    # initialize empty lists on every task.
+    m_sk0 = copy.deepcopy(_valid_manifest())
+    f_sk0, w_sk0 = validate(m_sk0)
+    ok_sk0 = f_sk0 == [] and not any("skills" in x for x in w_sk0)
+    results.append(ok_sk0)
+    print("%s sk1 a manifest that uses no skills anywhere draws no skills "
+          "warning - the gate, and the back-compat pin (%s)"
+          % ("PASS" if ok_sk0 else "FAIL",
+             "clean" if ok_sk0 else (f_sk0 or w_sk0)))
+    check("sk2 with skills in use, a task resolving to nothing warns, naming "
+          "what was consulted and the three exits", None,
+          lambda m: m["phases"][0]["tasks"][0].update(skills=["conv"]),
+          expect_warning="task P0.2: no skills resolve")
+    m_sk3 = copy.deepcopy(_valid_manifest())
+    m_sk3["phases"][0]["tasks"][0]["skills"] = ["conv"]
+    m_sk3["phases"][0]["tasks"][1]["skills"] = None
+    f_sk3, w_sk3 = validate(m_sk3)
+    ok_sk3 = f_sk3 == [] and not any("no skills resolve" in x for x in w_sk3)
+    results.append(ok_sk3)
+    print("%s sk3 an explicit null is an ANSWER - the opted-out task is not "
+          "'unresolved' and draws nothing (%s)"
+          % ("PASS" if ok_sk3 else "FAIL",
+             "clean" if ok_sk3 else (f_sk3 or w_sk3)))
+    m_sk4 = copy.deepcopy(_valid_manifest())
+    m_sk4["meta"]["areas"] = {"api": {"root": "src", "skills": ["conv"]}}
+    m_sk4["phases"][0]["area"] = "api"
+    f_sk4, w_sk4 = validate(m_sk4)
+    ok_sk4 = f_sk4 == [] and not any("no skills resolve" in x for x in w_sk4)
+    results.append(ok_sk4)
+    print("%s sk4 an area default RESOLVES - tasks under a skills-declaring "
+          "area are covered, not warned about (%s)"
+          % ("PASS" if ok_sk4 else "FAIL",
+             "clean" if ok_sk4 else (f_sk4 or w_sk4)))
+    check("sk5 the registry alone arms the gate: areas declare skills but the "
+          "phase is untagged, so nothing reaches its tasks", None,
+          lambda m: m["meta"].update(
+              areas={"api": {"root": "src", "skills": ["conv"]}}),
+          expect_warning="phase has no area tag")
+    check("sk6 a wrong-typed task.skills warns (and only warns) - it is use "
+          "evidence, and resolution loads nothing from it", None,
+          lambda m: m["phases"][0]["tasks"][0].update(skills="conv"),
+          expect_warning="skills must be an array")
+
+    # --- sn: intra-manifest skill-name near-miss (the md detector, applied
+    #     to skill names; inventory-based hints stay the panel's) ---
+    def _sn_base(m, once, where="task"):
+        t = m["phases"][0]["tasks"]
+        t[0]["skills"] = ["python-conventions"]
+        t[1]["skills"] = ["python-conventions"]
+        if where == "task":
+            t.append({"id": "P0.3", "title": "typo", "status": "pending",
+                      "skills": [once]})
+        else:
+            m["meta"]["areas"] = {"api": {"root": "src", "skills": [once]}}
+    check("sn1 a once-used skill one slip from an established one warns",
+          None, lambda m: _sn_base(m, "pyton-conventions"),
+          expect_warning="'pyton-conventions'")
+    check("sn2 two slips warn too, on names long enough to carry them",
+          None, lambda m: _sn_base(m, "pyton-conventons"),
+          expect_warning="'pyton-conventons'")
+    m_sn3 = copy.deepcopy(_valid_manifest())
+    t_sn3 = m_sn3["phases"][0]["tasks"]
+    t_sn3[0]["skills"] = ["web"]
+    t_sn3[1]["skills"] = ["web"]
+    t_sn3.append({"id": "P0.3", "title": "x", "status": "pending",
+                  "skills": ["wasm"]})
+    f_sn3, w_sn3 = validate(m_sn3)
+    ok_sn3 = f_sn3 == [] and not any("near-miss" in x for x in w_sn3)
+    results.append(ok_sn3)
+    print("%s sn3 two slips on SHORT names stay silent - 'web' vs 'wasm' is "
+          "distance 2 and pure noise (%s)"
+          % ("PASS" if ok_sn3 else "FAIL",
+             "clean" if ok_sn3 else (f_sn3 or w_sn3)))
+    m_sn4 = copy.deepcopy(_valid_manifest())
+    t_sn4 = m_sn4["phases"][0]["tasks"]
+    t_sn4[0]["skills"] = ["python-conventions"]
+    t_sn4[1]["skills"] = ["python-conventions"]
+    t_sn4.append({"id": "P0.3", "title": "x", "status": "pending",
+                  "skills": ["pyton-conventions"]})
+    t_sn4.append({"id": "P0.4", "title": "y", "status": "pending",
+                  "skills": ["pyton-conventions"]})
+    f_sn4, w_sn4 = validate(m_sn4)
+    ok_sn4 = f_sn4 == [] and not any("near-miss" in x for x in w_sn4)
+    results.append(ok_sn4)
+    print("%s sn4 a spelling used twice is established, never flagged - the "
+          "md5 rule (%s)"
+          % ("PASS" if ok_sn4 else "FAIL",
+             "clean" if ok_sn4 else (f_sn4 or w_sn4)))
+    check("sn5 an area-declared skill is a site too, and the warning names it",
+          None, lambda m: _sn_base(m, "pyton-conventions", where="area"),
+          expect_warning="meta.areas.api")
 
     # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os

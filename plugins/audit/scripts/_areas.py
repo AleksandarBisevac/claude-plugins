@@ -179,6 +179,19 @@ def owner_of(manifest, phase):
 
 
 # --- skills resolution --------------------------------------------------------
+def skills_opted_out(task):
+    """True iff the task carries an explicit `skills: null` — the opt-out.
+
+    Null is an ANSWER ("no skills apply to this task") and STOPS the area
+    fallback, mirroring reviewSkill and owner. It is distinguishable from `[]`
+    and from an absent key, which both mean "unconsidered" and leave the area
+    default in force. A junk-typed value is neither: not an answer (the
+    validator names it), not an opt-out. This predicate is how display surfaces
+    name the state ("none — opted out") instead of rendering it as empty."""
+    t = task if isinstance(task, dict) else {}
+    return "skills" in t and t.get("skills") is None
+
+
 def resolve_skills(manifest, phase, task):
     """The skills an executor subagent loads: area defaults first, then the task's.
 
@@ -187,13 +200,27 @@ def resolve_skills(manifest, phase, task):
     reads the specifics before the conventions has already made the decisions the
     conventions were meant to inform. Deduped, first occurrence wins, so naming a
     skill in both places is a no-op rather than a double load.
+
+    `task.skills: null` is a conscious opt-out and resolves to [] REGARDLESS of
+    what the areas declare — stopping the fallback is the point, the same
+    answer-not-a-miss rule reviewSkill and owner follow; `skills_opted_out` is
+    the basis a display can name. `[]`/absent stays "unconsidered": the area
+    default applies. An area-level null contributes nothing and stops nothing —
+    the area IS the fallback, so at that level null and [] are equivalent (the
+    schema says so too). A non-list container (a bare string, say) contributes
+    nothing rather than iterating per character, which is what `or []` used to
+    let it do.
     """
+    if skills_opted_out(task):
+        return []
     out = []
     for tag in areas_of((phase or {}).get("area")):
-        for skill in entry_of(manifest, tag).get("skills") or []:
+        skills = entry_of(manifest, tag).get("skills")
+        for skill in (skills if isinstance(skills, list) else []):
             if isinstance(skill, str) and skill.strip() and skill.strip() not in out:
                 out.append(skill.strip())
-    for skill in (task or {}).get("skills") or []:
+    tskills = (task or {}).get("skills")
+    for skill in (tskills if isinstance(tskills, list) else []):
         if isinstance(skill, str) and skill.strip() and skill.strip() not in out:
             out.append(skill.strip())
     return out
@@ -537,6 +564,33 @@ def _selftest():
     check("s5 junk entries are dropped, not rendered",
           resolve_skills({"meta": {"areas": {"a": {"skills": ["ok", 3, "  "]}}}},
                          {"area": "a"}, {"skills": [None, " y "]}) == ["ok", "y"])
+
+    # --- (e) explicit-null opt-out (v0.37 B1) ------------------------------------
+    # `task.skills: null` is an ANSWER — "no skills apply to this task" — and
+    # STOPS the area fallback, mirroring reviewSkill (v5/v6) and owner (o4).
+    # `[]`/absent stays "unconsidered": the area default applies, as before.
+    check("e1 task.skills null loads NOTHING - the area default is stopped, "
+          "not merged",
+          resolve_skills(MAN, MAN["phases"][0], {"skills": None}) == [])
+    check("e2 skills_opted_out tells null (an answer) from []/absent/junk (not)",
+          skills_opted_out({"skills": None}) is True
+          and skills_opted_out({"skills": []}) is False
+          and skills_opted_out({}) is False
+          and skills_opted_out(None) is False
+          and skills_opted_out({"skills": "x"}) is False)
+    check("e3 [] and absent still take the area default - the two unconsidered "
+          "shapes did not change meaning",
+          resolve_skills(MAN, MAN["phases"][0], {"skills": []}) == ["python-conv"]
+          and resolve_skills(MAN, MAN["phases"][0], {}) == ["python-conv"])
+    check("e4 an area-level null contributes nothing and stops nothing - the "
+          "area IS the fallback; there is no level beneath it to stop",
+          resolve_skills({"meta": {"areas": {"a": {"skills": None}}}},
+                         {"area": "a"}, {"skills": ["t"]}) == ["t"])
+    check("e5 a junk skills CONTAINER contributes nothing - a bare string used "
+          "to load one 'skill' per character (found during v0.37 B, fixed here)",
+          resolve_skills({}, {}, {"skills": "my-skill"}) == []
+          and resolve_skills({"meta": {"areas": {"a": {"skills": "conv"}}}},
+                             {"area": "a"}, None) == [])
 
     # --- conflicts + unregistered tags -------------------------------------------
     check("c1 two areas declaring DIFFERENT reviewers is a conflict worth naming",

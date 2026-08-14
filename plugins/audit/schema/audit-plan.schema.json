@@ -271,11 +271,14 @@
           "description": "Default sign-off reviewer for phases tagged with this area, between phase.reviewSkill (wins) and meta.reviewSkill (fallback). Explicit null means 'tests are the signer here' and STOPS the fallback — it is an answer, not a miss."
         },
         "skills": {
-          "type": "array",
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "type": "string"
           },
-          "description": "Skills every executor subagent working in this area loads BEFORE the task's own — house conventions first, task specifics second. Merged with task.skills and deduped, area first."
+          "description": "Skills every executor subagent working in this area loads BEFORE the task's own — house conventions first, task specifics second. Merged with task.skills and deduped, area first. Explicit null is allowed for symmetry with task.skills and is EQUIVALENT to []: the area is itself the fallback, so there is nothing beneath it for a null to stop — it reads as 'this area deliberately declares no defaults', and resolution treats both as contributing nothing."
         },
         "owner": {
           "type": [
@@ -465,8 +468,11 @@
           "$ref": "#/$defs/model"
         },
         "skills": {
-          "type": "array",
-          "description": "Skills the executor subagent loads (via the Skill tool) before writing code for this task. The area's skills load first, then these, deduped — so a house convention cannot be displaced by a task-specific one.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Skills the executor subagent loads (via the Skill tool) before writing code for this task. The area's skills load first, then these, deduped — so a house convention cannot be displaced by a task-specific one. Explicit null means 'no skills apply to this task' and STOPS the area fallback — nothing loads even when the area declares defaults; it is an answer, not a miss, exactly like reviewSkill. [] or absent means unconsidered: the area default still applies.",
           "items": {
             "type": "string"
           }

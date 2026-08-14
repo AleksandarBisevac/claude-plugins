@@ -235,15 +235,19 @@ def _bugs_view(manifest):
 
 
 def _skills_of(task):
-    """A task's skills as the panel SHOWS them: a list, always.
+    """A task's skills as the panel SHOWS them — the THREE states kept apart.
 
-    Absent and `null` both render as an empty chip row, so this is the value the
-    reader is looking at — which is what a change row has to be written against.
-    Reading the raw `None` here instead would be a truer reading of the file and a
-    false mismatch against the form: adding one skill would make the client say
-    `[] -> [a]` and the server `null -> [a]`, and the panel would warn about a
-    disagreement that is only a normalisation.
+    Explicit `null` is a conscious opt-out ("none applies" — it stops the area
+    fallback, v0.37 B1) and stays None, so every display can say so instead of
+    rendering it as empty. `[]` and an absent key both mean "unconsidered" and
+    read as []; a junk-typed value reads as [] too (the validator names it).
+    This is also the value a change row is written against: the client's form
+    holds the same three states, so `[] -> [a]` and `null -> [a]` stay two
+    different edits rather than a normalisation disagreement — which is the
+    original reason this normaliser exists.
     """
+    if isinstance(task, dict) and "skills" in task and task["skills"] is None:
+        return None
     v = (task or {}).get("skills")
     return v if isinstance(v, list) else []
 
@@ -267,9 +271,20 @@ def _composition_view(manifest):
                 "model": t.get("model"),
                 "skills": _skills_of(t),
             })
+    # Every skill name the AREAS declare, deduped in registry order — the other
+    # half of what the manifest spells (task rows carry their own). Shipped so
+    # the client's inventory hint (skillHints, the modelHints analog) can see
+    # a name that lives only in meta.areas without a second endpoint.
+    area_skills = []
+    for entry in _areas.registry(manifest).values():
+        sk = entry.get("skills")
+        for s in (sk if isinstance(sk, list) else []):
+            if isinstance(s, str) and s.strip() and s.strip() not in area_skills:
+                area_skills.append(s.strip())
     return {
         "meta": {"reviewSkill": meta.get("reviewSkill"),
                  "buildCommands": meta.get("buildCommands")},
+        "areaSkills": area_skills,
         "phases": phases_out, "tasks": tasks_out,
     }
 
@@ -1111,7 +1126,7 @@ def build_state(project):
     manifest, exists = None, os.path.isfile(mpath)
     rollup, m_findings = None, []
     composition = {"meta": {"reviewSkill": None, "buildCommands": None},
-                   "phases": [], "tasks": []}
+                   "areaSkills": [], "phases": [], "tasks": []}
     bugs = []
     if exists:
         try:
@@ -1189,6 +1204,28 @@ def _selftest():
     check("_areas_of normalizes string/list/absent",
           _areas_of("x") == ["x"] and _areas_of(["a", "b"]) == ["a", "b"]
           and _areas_of(None) == [])
+
+    # --- v0.37 B1: the three skill states, as the panel payload carries them ----
+    # Explicit null is an ANSWER ("none applies" — it stops the area fallback)
+    # and the view must ship it AS null; flattening it to [] made the opt-out
+    # indistinguishable from "unconsidered" on every panel surface.
+    check("_skills_of keeps the three states apart: null stays None, absent "
+          "and junk read as []",
+          _skills_of({"skills": None}) is None
+          and _skills_of({}) == []
+          and _skills_of({"skills": "x"}) == []
+          and _skills_of({"skills": ["a"]}) == ["a"])
+    _cv3 = _composition_view({
+        "meta": {"areas": {"api": {"root": "src", "skills": ["conv", "sec"]},
+                           "web": {"root": "w", "skills": ["conv"]}}},
+        "phases": [{"id": "PX", "title": "p", "status": "pending",
+                    "tasks": [{"id": "PX.1", "title": "t", "status": "pending",
+                               "skills": None}]}]})
+    check("the composition view ships the opt-out as null, not as []",
+          _cv3["tasks"][0]["skills"] is None)
+    check("...and carries the area-declared skill names, deduped, so the "
+          "client's inventory hint sees every name the manifest spells",
+          _cv3.get("areaSkills") == ["conv", "sec"])
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with.

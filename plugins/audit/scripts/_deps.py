@@ -65,7 +65,7 @@ LAYERS = (
     ("_panel_write",),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",
-     "gen-demo-manifest", "gen-demo-usage", "migrate-manifest"),
+     "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task"),
 )
 
 # No allow-list. There was one, for exactly one import, and it is gone with the import (F11);

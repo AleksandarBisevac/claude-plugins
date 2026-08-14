@@ -236,8 +236,12 @@ let CFDLG=null;
 // Absent, empty-list and empty-string are three different values and the dialog
 // says so. Collapsing them into one "not set" made a real change read as a no-op —
 // "not set → not set" — which is precisely the row a reader would skim past.
-function cfVal(v,cls){
+// On a `skills` row null is not "not set" either: it is the explicit opt-out
+// (v0.37 B1), the one deliberate answer, and it renders as one.
+function cfVal(v,cls,field){
  const none=v===null||v===undefined;
+ if(none&&field==='skills')
+  return el('span',{class:'cfv '+cls},'none — opted out (null)');
  const empty=none||v===''||(Array.isArray(v)&&!v.length);
  return el('span',{class:'cfv '+cls+(empty?' unset':'')},
    none?'not set'
@@ -295,8 +299,8 @@ function confirmChanges(o){
   const tb=el('tbody');
   o.rows.forEach(r=>tb.append(el('tr',{'data-cfrow':r.target+' '+r.field},
     el('td',{class:'tgt'},r.target),el('td',{class:'fld'},r.field),
-    el('td',{},cfVal(r.from,'was'),el('span',{class:'cfarr'},'→'),
-      cfVal(r.to,'now')))));
+    el('td',{},cfVal(r.from,'was',r.field),el('span',{class:'cfarr'},'→'),
+      cfVal(r.to,'now',r.field)))));
   d.append(el('div',{class:'cflist'},el('table',{class:'cftbl'},
     el('thead',{},el('tr',{},el('th',{},'what'),el('th',{},'field'),
       el('th',{},'change'))),tb)));
@@ -1154,15 +1158,45 @@ function modelHints(){
   const near=[...other].filter(o=>mdNear(m,o)).sort();
   if(near.length)out.push({model:m,near:near[0]});});
  return out;}
+// The inventory half of the skills story (v0.37 B3): a name the manifest
+// spells — in task.skills or in an area's defaults (comp.areaSkills, shipped
+// by _composition_view) — that the DISCOVERY scan does not know. modelHints'
+// shape on purpose: same .mut note, same cap, a hint and never a gate. No
+// near-miss requirement here — the validator already runs the intra-manifest
+// typo check offline; what only the panel can see is the inventory. Silent
+// when discovery found nothing at all: against an empty inventory every name
+// would read "unknown", and the note would be noise about the scan, not the
+// manifest.
+function skillHints(){
+ if(!REG.skills||!REG.skills.length)return[];
+ const known=new Set(REG.skills.map(s=>s.name));
+ const comp=(STATE&&STATE.composition)||{tasks:[]};
+ const spelled=new Set();
+ (comp.tasks||[]).forEach(t=>{(Array.isArray(t.skills)?t.skills:[]).forEach(s=>spelled.add(s));});
+ (comp.areaSkills||[]).forEach(s=>spelled.add(s));
+ return [...spelled].sort().filter(n=>!known.has(n));}
 function skillPicker(current,onChange){
  const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)'});
  inp.addEventListener('input',()=>onChange(inp.value.trim()||null));
  return comboWrap(inp,()=>REG.skills,(name,close)=>{inp.value=name;onChange(name);close();});}
+// Three states in one control (v0.37 B1): a list of chips, an EMPTY row (with
+// the "none applies" affordance that writes the explicit null), and the
+// opted-out state itself — a muted chip saying so, never an empty row that
+// looks unconsidered. Adding a skill from the opted-out state replaces the
+// null (changed my mind); the × on the opt-out chip clears it back to [].
 function skillChips(getArr,setArr){
  const box=el('div',{class:'chipwrap'}),chips=el('div',{class:'chips'});
  const inp=el('input',{placeholder:'search a skill to add…'});
- const draw=()=>{chips.textContent='';(getArr()||[]).forEach((v,i)=>chips.append(
-   el('span',{class:'chip'},v,el('button',{onmousedown:e=>{e.preventDefault();const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×'))));};
+ const draw=()=>{chips.textContent='';const cur=getArr();
+   if(cur===null){chips.append(el('span',{class:'chip optout'},'none — opted out',
+     el('button',{title:'clear the opt-out (back to unconsidered)',
+       onmousedown:e=>{e.preventDefault();setArr([]);draw();}},'×')));
+    return;}
+   (cur||[]).forEach((v,i)=>chips.append(
+    el('span',{class:'chip'},v,el('button',{onmousedown:e=>{e.preventDefault();const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×'))));
+   if(!(cur||[]).length)chips.append(el('button',{class:'chip ghosted optnone',type:'button',
+     title:'write skills: null — "no skills apply here" is an answer, and it also stops the area default',
+     onmousedown:e=>{e.preventDefault();setArr(null);draw();}},'none applies'));};
  const add=(name,close)=>{const n=(name||'').trim();
    if(n){const a=(getArr()||[]).slice();if(!a.includes(n)){a.push(n);setArr(a);draw();}}
    inp.value='';if(close)close();};
@@ -1197,7 +1231,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    {comp:'taskSkills',label:'Task skills'}));
  const q=el('input',{type:'search',placeholder:'filter phases & tasks…',value:COMPF.q});
  const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
- const needsBtn=el('button',{class:'filt',type:'button','aria-pressed':'false',title:'only tasks with no skills yet'},'needs skills');
+ const needsBtn=el('button',{class:'filt',type:'button','aria-pressed':'false',title:'only tasks with no skills yet — an explicit "none applies" (null) is an answer, not a need'},'needs skills');
  const expandBtn=el('button',{class:'btn small',type:'button'},'expand all');
  const count=el('span',{class:'count',style:'margin-left:auto'});
  tcard.append(el('div',{class:'comptools'},q,el('span',{class:'filtlbl'},'phase:'),statusBar,needsBtn,expandBtn,count));
@@ -1207,6 +1241,11 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    'model "'+h.model+'" is spelled only in this manifest; the rate table / '
    +'ledger know "'+h.near+'" — one slip apart. A hint, not a gate: if "'
    +h.model+'" is intended, it meters at _default rates until it is priced.')));
+ // sk: the inventory hint for skills (see skillHints). A note, not a gate.
+ skillHints().slice(0,3).forEach(n=>tcard.append(
+  el('div',{class:'mut small','data-skhint':n},
+   'skill "'+n+'" is spelled only in this manifest; discovery knows no such '
+   +'skill — a hint, not a gate: a name that never resolves simply loads nothing.')));
  const tbody=el('tbody');
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
    // The two editable columns carry the reference for the whole column. A ⓘ per
@@ -1253,7 +1292,9 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    // mc: choosing from the menu writes the SAME patch the keystroke writes.
    const modelCombo=comboWrap(model,modelItems,(name,close)=>{
      model.value=name;setModel(name);close();});
-   const getSkills=()=>tp.skills!==undefined?tp.skills:(t.skills||[]);
+   // Three-state read: an explicit null (opt-out) must SURVIVE this accessor —
+   // `||[]` would flatten the one deliberate answer into "unconsidered".
+   const getSkills=()=>tp.skills!==undefined?tp.skills:(t.skills===null?null:(t.skills||[]));
    const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(COMPF.needs)refresh();});
    const tr=el('tr',{class:'task','data-status':t.status||''});
    tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle',title:t.title||''},t.title||''),
@@ -1285,7 +1326,9 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
   phaseEls.forEach(P=>{
    const pText=hit(P.id+' '+P.title+' '+P.area,term);let anyT=false;
    P.tasks.forEach(T=>{const tHit=pText||hit(T.id+' '+T.title,term);
-    const needHit=!COMPF.needs||((T.getSkills()||[]).length===0);T._m=tHit&&needHit;if(T._m)anyT=true;});
+    // null is an ANSWER, not a need: only a real empty list counts as "needs".
+    const sv=T.getSkills();
+    const needHit=!COMPF.needs||(Array.isArray(sv)&&sv.length===0);T._m=tHit&&needHit;if(T._m)anyT=true;});
    const showP=(!COMPF.status||P.status===COMPF.status)&&(pText||anyT)&&(!COMPF.needs||anyT);
    P.tr.style.display=showP?'':'none';if(showP)visP++;
    const isOpen=showP&&(forced||!!open[P.id]);P.tr.classList.toggle('open',isOpen);
