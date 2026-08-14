@@ -4,6 +4,21 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.35.1] - 2026-08-14
+
+**A tip that does not exist cannot break anything.** 0.35.0's fixed-position ⓘ bubble still
+lived inside the box that carried the icon — one transformed or containing ancestor from
+silently demoting to absolute, where showing it grew the scroll frame: hover an ⓘ, get
+scrollbars, which is exactly what a live repo got. The tip is now one element on
+`document.body` — no ancestor can trap, clip or resize anything, nothing exists until it is
+shown, its height is measured rather than estimated, and every coordinate lives in the script.
+It also learned how it was opened: a pointer tip closes when the pointer rests elsewhere
+(including Chromium's synthetic mouseover after a scroll), a keyboard user's focus tip ignores
+the parked pointer and follows its anchor. The browser checks gained the assertion this bug
+proved missing — showing a tip must never grow any scroll box. And the combo menus (skills and
+models) wrap instead of scrolling sideways: names may break anywhere, descriptions take their
+own line when they need one, and the menu clips the X axis outright.
+
 ## [0.35.0] - 2026-08-14
 
 **What the plugin claims, the plugin now does.** The panel had told every repo its token file
