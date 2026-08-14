@@ -174,18 +174,35 @@ Proposed plan — 4 phases, 23 tasks (size appetite: M)
 ### 6.1 Skill suggestions (per task)
 
 Before the gate, propose a `skills` list for every synthesized task — only when this
-repo has anything to offer; a repo with no registered areas and no discoverable
-skills skips this sub-step entirely and never mentions skills:
+repo has anything to offer; a repo with no registered areas and an empty discovery
+inventory skips this sub-step entirely and never mentions skills.
+
+**Do not scan the filesystem for skills yourself — there is ONE mechanical source.**
+Write the assembled candidate manifest (step 5.4) to a TEMP file (`mktemp` — never
+`manifestPath`; the gate below still decides what lands on disk), run
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <tmpfile> --json --discovery
+```
+
+and delete the temp file. The payload's `discovery` block is the inventory:
+`{"skills": [{"name", "description", "source"}, …], "agents": […]}` — every skill
+and agent this project can actually see (project `.claude/`, user `~/.claude/`,
+installed plugins). A `discovery.error` key means the scan failed and the lists are
+empty (fail-open, not wrong): say so and skip inventory suggestions rather than
+guessing. Suggest from that output:
 
 - **Area default first** — when the task's phase carries an `area` tag registered in
-  `meta.areas` with `skills` (match `task.files` against the registered area
-  `root`s), those are the baseline: they load first for every task in the area
-  anyway, so do not repeat them on the task — suggest only ADDITIONS.
-- **Inventory match** — skills you can actually see (`.claude/skills/`,
-  `~/.claude/skills/`, installed plugin skills): suggest one when its name or
-  description matches the task's `files` (language, framework, path under an area
-  root) or its subject (a security finding → a security-review skill). Offer REAL
-  names only — never invent one.
+  `meta.areas` with `skills` (match `task.files` against the registered area `root`
+  prefixes — roots and default skills come from the candidate's own `meta.areas`,
+  which you assembled in step 3.5; the payload's `areas` block carries the per-tag
+  rollup and advisory `owner`, not the roots), those are the baseline: they load
+  first for every task in the area anyway, so do not repeat them on the task —
+  suggest only ADDITIONS.
+- **Inventory match** — suggest a `discovery.skills` name when its `name` or
+  `description` matches the task's `files` (language, framework, path under an area
+  root) or its subject (a security finding → a security-review skill). Offer names
+  the payload carries and NOTHING else — never invent one.
 
 Show every suggestion in the printed plan, one compact line per task that has any:
 

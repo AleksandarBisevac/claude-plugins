@@ -7,13 +7,18 @@ pass/fail signal — so a pipeline can block a merge on manifest state without
 any Claude session involved.
 
 Usage:
-  audit-status.py <manifest> [--json] [--gate] [--phase <id>]
+  audit-status.py <manifest> [--json [--discovery]] [--gate] [--phase <id>]
                              [--color auto|always|never]
                              [--fail-on <c1,c2,...>]
   audit-status.py --selftest
 
 Modes: a bare invocation renders a human report; --json is for machines.
   --json    print the rollup as JSON
+  --discovery  with --json only: add a `discovery` block (the skills/agents this
+            project can actually see) so /audit:init and /audit:task suggest from
+            ONE mechanical source instead of each scanning the filesystem in
+            prose. Without the flag the --json payload is byte-identical to the
+            pre-flag output (pinned by selftest dv1).
   --phase   scope the human render to one phase (totals stay whole-plan)
   --gate    evaluate fail conditions; exit 1 when any trips (prints a summary)
 
@@ -274,6 +279,55 @@ def usage_summary(manifest, manifest_path, project_dir=None):
         }
     except Exception:
         return None
+
+
+# --- discovery (--json --discovery only) ----------------------------------------
+# The init/task suggestion helper (v0.38 B): ONE mechanical source for "which
+# skills/agents exist here", so commands/init.md step 6.1 and commands/task.md's
+# skills step offer real names from a payload instead of each scanning the
+# filesystem in prose. Opt-in behind --discovery because the bare --json payload
+# is a pinned machine surface (selftest dv1); the import is lazy AND inside the
+# try so a broken discovery module can never take down the status/gate surface
+# it merely enriches.
+
+# Mirrors _panel_discovery._entry's own description cap; re-applied here so THIS
+# payload's bound does not silently follow a future discovery-side change.
+DISCOVERY_DESC_CAP = 280
+
+
+def discovery_block(project, home=None):
+    """{"skills": [{name, description, source}], "agents": [...]} for `project`.
+
+    Rows come from _panel_discovery.discover (the panel's own scan: project
+    .claude/, user ~/.claude/, installed plugins, this repo's plugins tree)
+    trimmed to the three keys a suggestion needs -- `path` is dropped on
+    purpose: an absolute path is machine-specific noise in a payload meant to
+    be read back as names. Descriptions are clipped to DISCOVERY_DESC_CAP, the
+    same cap discovery itself applies at ingest. An empty inventory is empty
+    lists, never an error; ANY failure is {"skills": [], "agents": [],
+    "error": "<one line>"} -- fail-open, because a status surface must keep
+    answering when an enrichment cannot."""
+    try:
+        import _panel_discovery
+        found = _panel_discovery.discover(project, home=home) or {}
+
+        def rows(kind):
+            out = []
+            for e in found.get(kind) or []:
+                if isinstance(e, dict):
+                    out.append({
+                        "name": e.get("name"),
+                        "description": (e.get("description")
+                                        or "")[:DISCOVERY_DESC_CAP],
+                        "source": e.get("source"),
+                    })
+            return out
+
+        return {"skills": rows("skills"), "agents": rows("agents")}
+    except Exception as exc:
+        msg = " ".join(("%s: %s" % (type(exc).__name__, exc)).split())
+        return {"skills": [], "agents": [],
+                "error": (msg or type(exc).__name__)[:200]}
 
 
 def rollup(manifest, findings, warnings, usage=None):
@@ -903,9 +957,14 @@ def main(argv):
     args = list(argv)
     want_json = "--json" in args
     want_gate = "--gate" in args
-    for flag in ("--json", "--gate"):
+    want_discovery = "--discovery" in args
+    for flag in ("--json", "--gate", "--discovery"):
         while flag in args:
             args.remove(flag)
+    if want_discovery and not want_json:
+        sys.stderr.write("usage: --discovery requires --json (it enriches the "
+                         "machine payload only)\n")
+        return 2
 
     # --submodules <.gitmodules path> [--git-root <prefix>]: preflight guard,
     # exits 1 when a task file lives inside a submodule. Standalone mode.
@@ -946,8 +1005,8 @@ def main(argv):
         del args[i:i + 2]
     if len(args) != 1:
         sys.stderr.write(
-            "usage: audit-status.py <manifest> [--json] [--gate] [--phase <id>] "
-            "[--color auto|always|never] [--fail-on <c1,c2,...>] "
+            "usage: audit-status.py <manifest> [--json [--discovery]] [--gate] "
+            "[--phase <id>] [--color auto|always|never] [--fail-on <c1,c2,...>] "
             "[--submodules <.gitmodules> [--git-root <prefix>]]\n")
         return 2
 
@@ -995,6 +1054,14 @@ def main(argv):
 
     summary = rollup(manifest, findings, warnings,
                      usage=usage_summary(manifest, args[0]))
+
+    if want_discovery:
+        # CLAUDE_PROJECT_DIR is how Claude Code names the project on every
+        # invocation it makes; a plain CLI run means "here". The manifest is NOT
+        # the anchor on purpose - it may live under docs/audit/ while the skills
+        # live at the project root.
+        summary["discovery"] = discovery_block(
+            os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
     if want_gate:
         failed = evaluate_gate(summary, conditions)
@@ -1808,6 +1875,75 @@ def _selftest():
     check("cc3 an unknown --color value is a usage error (exit 2)",
           main([cpath, "--color", "sometimes"]) == 2)
     os.unlink(cpath)
+
+    # --- (dv) --json --discovery: the init/task suggestion helper (v0.38 B) ------
+    # The bare --json payload is a machine surface other tooling already parses;
+    # dv1 pins it BYTE-for-byte to the pure rollup dump so the new flag can never
+    # leak into it. Everything discovery-shaped hides behind --discovery.
+    fd, dpath = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)
+    _m_dv = _mio.load_manifest(dpath)
+    _f_dv, _w_dv = vm.validate(_m_dv)
+    _exp_dv = json.dumps(rollup(_m_dv, _f_dv, _w_dv,
+                                usage=usage_summary(_m_dv, dpath)),
+                         indent=2) + "\n"
+    _c_dj, _o_dj = _cli_out([dpath, "--json"])
+    check("dv1 bare --json output is byte-identical to the pure rollup dump - "
+          "the pre-flag payload, pinned",
+          _c_dj == 0 and _o_dj == _exp_dv)
+    check("dv2 bare --json payload carries no discovery key",
+          "discovery" not in json.loads(_o_dj))
+    _c_dd, _o_dd = _cli_out([dpath, "--json", "--discovery"])
+    _blob_dd = json.loads(_o_dd) if _c_dd == 0 else {}
+    check("dv3 --json --discovery is valid JSON and gains the discovery block "
+          "with skills and agents lists",
+          _c_dd == 0 and isinstance(_blob_dd.get("discovery"), dict)
+          and isinstance(_blob_dd["discovery"].get("skills"), list)
+          and isinstance(_blob_dd["discovery"].get("agents"), list),
+          _o_dd[:200])
+    check("dv4 apart from the discovery key the flagged payload is the bare "
+          "payload exactly - the flag only ADDS",
+          {k: v for k, v in _blob_dd.items() if k != "discovery"}
+          == json.loads(_o_dj))
+    check("dv5 --discovery without --json is a usage error (exit 2) - it "
+          "enriches the machine payload only",
+          main([dpath, "--discovery"]) == 2)
+    os.unlink(dpath)
+
+    # hermetic project/home fixtures for the block itself
+    _dtmp = tempfile.mkdtemp(prefix="audit-status-disc-")
+    try:
+        _dproj = os.path.join(_dtmp, "proj")
+        _dhome = os.path.join(_dtmp, "home")
+        os.makedirs(_dproj)
+        os.makedirs(_dhome)
+        check("dv6 an empty inventory is empty lists, never an error",
+              discovery_block(_dproj, home=_dhome)
+              == {"skills": [], "agents": []})
+        _dsk = os.path.join(_dproj, ".claude", "skills", "big-skill")
+        os.makedirs(_dsk)
+        with open(os.path.join(_dsk, "SKILL.md"), "w", encoding="utf-8") as fh:
+            fh.write("---\nname: big-skill\ndescription: "
+                     + "x" * 5000 + "\n---\n")
+        _drows = discovery_block(_dproj, home=_dhome)["skills"]
+        check("dv7 a discovered row carries exactly name/description/source "
+              "(no path leak) with the description clipped to discovery's cap",
+              bool(_drows)
+              and set(_drows[0]) == {"name", "description", "source"}
+              and _drows[0]["name"] == "big-skill"
+              and len(_drows[0]["description"]) <= DISCOVERY_DESC_CAP,
+              repr(_drows[:1]))
+        _dfail = discovery_block(None)
+        check("dv8 a discovery failure fails OPEN: empty lists plus a one-line "
+              "error, never an exception through the status surface",
+              set(_dfail) == {"skills", "agents", "error"}
+              and _dfail["skills"] == [] and _dfail["agents"] == []
+              and isinstance(_dfail["error"], str) and _dfail["error"]
+              and "\n" not in _dfail["error"], repr(_dfail))
+    finally:
+        import shutil as _sh_dv
+        _sh_dv.rmtree(_dtmp, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

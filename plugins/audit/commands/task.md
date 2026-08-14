@@ -56,14 +56,25 @@ per add is the class of error the script exists to delete.
    - `--model` (default `sonnet` — the floor for all fix work; the script escalates
      `risk: high` to `opus` when no model is passed; do NOT use `haiku` for
      audit-fix work), `--risk` (`low`/`med`/`high`).
-   - **Skills** — ask "which skills should the executor load for this task?"
-     (AskUserQuestion), offering:
-     - the phase's **area default skills** from the `meta.areas` registry — mark
-       them as the default (they load first for every task in the area anyway;
-       naming them on the task is a no-op kept for readability);
-     - skills from the discovery inventory you can see (`.claude/skills/`,
-       `~/.claude/skills/`, installed plugin skills) whose names/descriptions match
-       the task's files and subject — offer real names only, never invented ones;
+   - **Skills** — do not scan the filesystem for skills yourself; there is ONE
+     mechanical source. Run (Bash):
+     ```bash
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> --json --discovery
+     ```
+     The payload's `discovery` block lists every skill this project can actually
+     see (`{"skills": [{"name", "description", "source"}, …]}` — project
+     `.claude/`, user `~/.claude/`, installed plugins). A `discovery.error` key
+     means the scan failed and the lists are empty (fail-open, not wrong): say
+     so and offer only the area defaults below. Then ask "which skills should
+     the executor load for this task?" (AskUserQuestion), offering:
+     - the phase's **area default skills** from the `meta.areas` registry (the
+       manifest you already read: match the task's `--files` against the area
+       `root` prefixes) — mark them as the default (they load first for every
+       task in the area anyway; naming them on the task is a no-op kept for
+       readability);
+     - **discovery names as options** — `discovery.skills` entries whose
+       names/descriptions match the task's files and subject — offer names the
+       payload carries and nothing else, never invented ones;
      - **"null — none applies"** — the explicit opt-out, written as JSON `null`:
        it STOPS the area fallback so nothing loads. Distinct from leaving skills
        unconsidered (`[]`, the default), where the area default stays in force.

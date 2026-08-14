@@ -179,7 +179,7 @@ L7:
   audit-doctor -> _cli_fmt, _loader, _output
   audit-journal -> _output
   audit-lock -> _output
-  audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _output, _ui_theme
+  audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _output, _panel_discovery, _ui_theme
   audit-task -> _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _output
   gen-demo-manifest -> _loader, _output
