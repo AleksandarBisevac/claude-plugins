@@ -63,6 +63,22 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
 .tb-id .meta{font-size:.72rem}
 .tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
+/* The global filter row (C1/C2): a second line of the SAME sticky bar, never a
+   separate floating element — the full argument lives on the Python builder
+   (_report_html._global_filter_row). Geometry cost is absorbed by the measured
+   --topbar-h, print cost is zero (the whole .topbar is dropped from paper by a
+   pinned rule), and on a phone the row wraps under the title like any flex
+   line. flex-basis:100% is what makes it a row of the bar rather than one more
+   item competing with the actions for the first line. */
+.gfilters{flex-basis:100%;display:flex;align-items:center;gap:.3rem .5rem;
+  flex-wrap:wrap;padding-top:.45rem;border-top:1px solid var(--border)}
+.gfilters .gf{display:inline-flex;align-items:center;gap:.3rem}
+.gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
+  padding:.28rem .4rem;color:var(--text);background:var(--bg);
+  border:1px solid var(--border);border-radius:var(--radius);max-width:11rem}
+.gfilters select:focus,.gfilters input[type=date]:focus{outline:none;
+  border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
   max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
 .content{min-width:0}
@@ -549,6 +565,63 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
    committed example produced seven 595x842 pages, i.e. portrait, every time.
    The margin stays. That is a request about ink and about the reader's eye;
    the sheet and which way round it goes belong to whoever holds the printer. */
+/* ---- ready now (C4) ------------------------------------------------------
+   A definition list: the term is the task (id, title, its phase's area tags in
+   the chip style areas wear everywhere), the definition is why it is ready.
+   Kept quiet — a left rule and a hanging indent, no cards: this section is a
+   work queue, and twenty framed boxes would out-shout the phases table. */
+dl.ready{margin:.25rem 0 0;padding:0}
+dl.ready dt{padding:.35rem 0 0;display:flex;align-items:baseline;gap:.5rem;
+  flex-wrap:wrap}
+dl.ready dt code{font-family:var(--mono);font-size:.8rem;
+  font-variant-numeric:tabular-nums;color:var(--accent)}
+dl.ready dt strong{font-weight:600}
+dl.ready dd{margin:.1rem 0 .35rem;padding:0 0 .35rem 1.1rem;
+  border-left:2px solid var(--border);font-size:.78rem;color:var(--muted)}
+@media print{dl.ready dd{break-inside:avoid}}
+
+/* ---- segments (D1) --------------------------------------------------------
+   The phases table renders in three blocks — active, pending, done — each
+   introduced by a full-width header row. The header is quiet chrome, not a
+   status chip: a tinted band with an uppercase label, the phase count, and
+   (D2) the segment's export controls hung off its right edge. The done
+   segment's header is the ARCHIVE toggle; report.js collapses the done rows
+   under it at load so a long finished run stops burying the work in motion.
+
+   Deliberately NOT a per-segment vertical scroll box: the segments live in
+   ONE table (splitting it would re-measure the columns per segment and skew
+   every row against the shared thead), and table rows cannot be
+   height-clipped without display:block, which breaks that same alignment.
+   The archive collapse is what delivers the scanning win instead; the house
+   rule the table does keep is horizontal — .tablewrap owns any sideways
+   overflow, and the page never scrolls sideways. */
+tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);padding:.45rem .75rem;
+  font-size:.72rem;color:var(--muted)}
+.segname{font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text)}
+.segn{margin-left:.5rem}
+/* The export cluster: on the header's right edge, out of the label's way. */
+.segx{float:right;display:inline-flex;gap:.3rem}
+.segbtn{font-size:.68rem;padding:.25rem .5rem}
+/* The usage exports sit under the trend heading as their own right-aligned
+   row — the h3 above them is a nav anchor whose exact bytes render-report
+   rewrites, so nothing may ride inside it. */
+.usx{float:none;display:flex;justify-content:flex-end;gap:.3rem;
+  margin:.2rem 0 0}
+.segtoggle{cursor:pointer;font:inherit;font-size:.72rem;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--text);
+  background:none;border:0;padding:0;display:inline-flex;align-items:center;
+  gap:.4em}
+.segtoggle::after{content:"\25BE";color:var(--muted)}
+.segtoggle[aria-expanded="true"]::after{content:"\25B4"}
+.segtoggle:hover{color:var(--accent)}
+.segtoggle:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* The advisory owner suffix on an area tag (D4): same chip, quieter voice —
+   the tag is the identifier, the owner is a note about it. */
+.area-tag .aown{font-weight:400;letter-spacing:normal;text-transform:none;
+  opacity:.8}
+
 @page{margin:1.4cm}
 @media print{
   /* color-scheme comes with the colours. Overriding the tokens alone would print
@@ -659,6 +732,13 @@ h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
 .cols{width:100%;height:210px;display:block;overflow:visible}
 .cols .grid{stroke:var(--border);stroke-width:1;fill:none}
 .cols .col{fill:var(--viz-1)}
+/* C1: columns outside the active date range recede rather than vanish — the
+   geometry never moves (deterministic render, stable x axis) and the excluded
+   context stays honestly visible as context. Same treatment for the tick
+   labels under them. Prints as it shows; #audit-urange names the range. */
+.cols .col.dimout{opacity:.15}
+.colswrap .xt.dimout{opacity:.35}
+.urange{font-variant-numeric:tabular-nums}
 .colswrap .yt,.colswrap .xt{position:absolute;font-size:.62rem;color:var(--muted);
   font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;
   pointer-events:none}
@@ -780,15 +860,36 @@ details.more>summary:hover{color:var(--text)}
 .seg{min-width:2px;border-radius:1px}
 .seg:last-child{border-radius:1px 4px 4px 1px}
 /* day x hour heatmap */
+/* C3: the calendar navigation row above the grid. Chips share the .fchip
+   grammar (they are pressable); the period label NAMES what the grid shows,
+   because "which week is this" must never be implied by cell tooltips alone.
+   A disabled arrow is muted and inert rather than hidden: at the edge of the
+   data the control still says where the edge is. */
+.hmnav{display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap;
+  margin:var(--sp-1) 0}
+#audit-hm-gran{display:inline-flex;gap:.25rem;flex-wrap:wrap;margin-right:var(--sp-1)}
+.hmperiod{font-size:.78rem;color:var(--text);font-variant-numeric:tabular-nums;
+  min-width:11rem;text-align:center}
+.hmarrow{padding:.3rem .55rem;line-height:1}
+.hmarrow[disabled]{opacity:.35;cursor:default;pointer-events:none;transform:none;
+  box-shadow:none}
+@media print{.hmnav .fchip,.hmarrow{display:none!important}}
 .hmwrap{overflow-x:auto}
-.hm{border-collapse:separate;border-spacing:2px;font-size:.62rem;color:var(--muted)}
+/* Full width (C3): the grid is the section's second-largest reading surface and
+   drew at a fixed 20px per cell — half the column the trend chart uses. Fixed
+   layout hands the 24 hour columns equal shares of the row; the min-width keeps
+   a cell from collapsing below legibility on a phone, where .hmwrap already
+   scrolls the grid inside its own frame instead of widening the page. */
+.hm{border-collapse:separate;border-spacing:2px;font-size:.62rem;color:var(--muted);
+  width:100%;table-layout:fixed;min-width:42rem}
+.hm .hmc{width:4.8rem}
 /* The report's global `thead th` is sticky for the long phases table; a 7-row
    heatmap must opt out or its hour ruler detaches and floats over the grid. */
 .hm thead th{position:static;background:none;border:0;padding:0 var(--sp-0)}
 .hm th{font-weight:500;color:var(--muted);padding:0 var(--sp-0);text-align:right;
   white-space:nowrap}
 .hm td{padding:0}
-.hm i{display:block;width:20px;height:15px;border-radius:2px;background:var(--hm-0);
+.hm i{display:block;width:auto;height:22px;border-radius:2px;background:var(--hm-0);
   cursor:help}
 /* 168 cells, each with a tooltip naming its day, hour and token count, and no cell
    ever indicated that. An OUTLINE rather than a border or a transform: outlines are
@@ -809,4 +910,47 @@ details.more>summary:hover{color:var(--text)}
   .rank .track{display:none}
   .mm{grid-template-columns:.62rem 1fr}
   .mm .spark{grid-column:1/-1}
+}
+
+/* ---- segment print rules (D1) ----------------------------------------------
+   A page break lands before every segment header, so each segment starts its
+   own sheet — except the first, which would otherwise print a blank page
+   ahead of the whole table. The header itself is forced visible: a filter
+   may have hidden it inline on screen, and paper prints the plan whole (the
+   pinned tr.phase/tr.task rule two blocks up), so the landmark each break
+   lands on has to be there.
+
+   THE ARCHIVE PRINTS EXPANDED, not as a summary. Chosen because the pinned
+   whole-plan rule (`tr.phase,tr.task{display:table-row!important}`) is the
+   Save-as-PDF button's standing promise — paper gets every row, filtered or
+   collapsed or not — and an archive that printed as one count line would be
+   the first exception to it: a PDF silently missing the signed-off record it
+   exists to archive. The reader who wants less paper has the per-segment
+   Print buttons instead. */
+@media print{
+  tr.seghead{break-before:page;display:table-row!important}
+  #phases tbody tr.seghead:first-child{break-before:auto}
+  /* The export controls are screen furniture; on paper they are dead ink. */
+  .segx,.secx{display:none!important}
+  /* The archive header prints as a plain segment title: every row under it
+     is already on the page, so a disclosure arrow would be a control that
+     lies (the .tri rule's own argument). */
+  .segtoggle::after{content:""}
+}
+
+/* ---- one segment on paper (D2) ---------------------------------------------
+   The per-segment Print button stamps body[data-printseg="<seg>"], opens the
+   print dialog, and afterprint takes the attribute back off. Under it, print
+   CSS isolates the segment: everything in the main column except the phases
+   section goes (the hero, usage, bugs, ready — each would print a statement
+   about the WHOLE plan on a sheet claiming to be one segment), and inside
+   the table every row of the other segments goes, seghead included. Higher
+   specificity than the pinned whole-plan rule, and later in the sheet, so
+   these !important rules win exactly where the attribute says they should. */
+@media print{
+  body[data-printseg] .content>*:not(#phases){display:none!important}
+  body[data-printseg="active"] #phases tr[data-seg]:not([data-seg="active"]),
+  body[data-printseg="pending"] #phases tr[data-seg]:not([data-seg="pending"]),
+  body[data-printseg="done"] #phases tr[data-seg]:not([data-seg="done"]){
+    display:none!important}
 }

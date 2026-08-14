@@ -87,6 +87,65 @@ def _areas_of(area):
     return []
 
 
+# --- advisory area owners (D4, v0.36) ----------------------------------------
+def _owner_map(manifest):
+    """{tag: owner} for every registered area declaring a non-null string owner.
+
+    The same filter _panel_state.usage_state ships to the panel: an explicit
+    `owner: null` ("nobody owns this") and an undeclared owner read the same to
+    a surface that only displays, and a non-string owner is the validator's
+    finding, not this map's problem. Fail-soft to {} — the report renders from
+    manifests the validator has only warned about."""
+    try:
+        out = {}
+        for tag, entry in _areas.registry(manifest).items():
+            o = entry.get("owner")
+            if isinstance(o, str) and o.strip():
+                out[tag] = o.strip()
+        return out
+    except Exception:
+        return {}
+
+
+def _area_tag_span(tag, owners):
+    """One area tag chip, wearing its advisory owner when one is registered.
+
+    The suffix is display, not assignment — the same claim the manifest makes,
+    no more — and the title spells it the way the panel's area select already
+    does (`owner: <who>`), so the two surfaces teach one habit. A tag with no
+    owner emits EXACTLY the bytes it always did; the bare shape is pinned by
+    name in the rd2/ready selftests and must not grow an empty suffix."""
+    own = (owners or {}).get(tag)
+    if not own:
+        return '<span class="area-tag">%s</span>' % e(tag)
+    return ('<span class="area-tag" title="owner: %s">%s'
+            '<span class="aown"> — %s</span></span>'
+            % (e(own), e(tag), e(own)))
+
+
+# --- segments (D1, v0.36) -----------------------------------------------------
+# The order the segments render in: the work in motion first, then the queue,
+# then the archive. A dict, not an if-chain, so the emitter and the selftest
+# read one table.
+SEG_ORDER = ("active", "pending", "done")
+SEG_LABEL = {"active": "Active", "pending": "Pending", "done": "Done"}
+
+
+def _seg_of(status):
+    """Which segment a phase files under, from its ROLLED-UP status.
+
+    in_progress and blocked are both "someone is (or should be) on this now";
+    done is the archive; everything else — pending, an unknown vocabulary
+    value, a phase with no status at all — is work still to come. Unknowns
+    land in pending on purpose: a segment that silently swallowed a typo'd
+    status would hide the phase the validator is about to flag."""
+    if status == "done":
+        return "done"
+    if status in ("in_progress", "blocked"):
+        return "active"
+    return "pending"
+
+
 # --- fragment builders ------------------------------------------------------
 def _bug_view(b, task_by_id):
     """Derived (status, fixedIn) for a bug — mirrors audit-status.effective_bug_status:
@@ -101,7 +160,7 @@ def _bug_view(b, task_by_id):
     return stored, (fixed_in or "—")
 
 
-def _chip_buttons(statuses, attr, cls, humanize=True):
+def _chip_buttons(statuses, attr, cls, humanize=True, titles=None):
     """Toggle buttons for a set of values — machine value in `attr`, words shown.
 
     `aria-pressed` is what makes a toggle's state readable; without it "which
@@ -112,10 +171,18 @@ def _chip_buttons(statuses, attr, cls, humanize=True):
     is a string someone types into a manifest and reads back out of a bill, and
     running it through label() gave a chip reading "Opus" beside a table cell
     reading `opus` — two spellings of one value, in one table.
+
+    `titles` (D4) maps a value to a native-tooltip string — the area chips use
+    it to carry the advisory owner. A value without an entry emits EXACTLY the
+    bytes it always did: the untitled shape is pinned by name in more than one
+    selftest, and an empty title attribute would be a different chip.
     """
     return "".join(
-        '<button type="button" class="%s" %s="%s" aria-pressed="false">%s</button>'
-        % (cls, attr, e(s), e(_theme.label(s) if humanize else s))
+        '<button type="button" class="%s" %s="%s"%s aria-pressed="false">%s</button>'
+        % (cls, attr, e(s),
+           (' title="%s"' % e((titles or {}).get(s))) if (titles or {}).get(s)
+           else "",
+           e(_theme.label(s) if humanize else s))
         for s in statuses)
 
 
@@ -233,9 +300,15 @@ def _filter_panel(manifest):
     # because a tag is an identifier someone typed into the manifest, exactly
     # like a model name (see _chip_buttons).
     if tags:
+        # The advisory owner rides each chip as a native tooltip (D4) — the
+        # same `owner: <who>` the panel's area select options carry. Tags with
+        # no registered owner keep the pinned untitled shape.
+        _owners = _owner_map(manifest)
         rows.append('<div class="frow"><span class="tbl">Area:</span>'
                     '<span id="audit-areas">%s</span></div>'
-                    % _chip_buttons(tags, "data-a", "fchip", humanize=False))
+                    % _chip_buttons(tags, "data-a", "fchip", humanize=False,
+                                    titles={t: "owner: %s" % _owners[t]
+                                            for t in tags if t in _owners}))
     if models:
         rows.append('<div class="frow"><span class="tbl">Model:</span>'
                     '<span id="audit-model">%s</span></div>'
@@ -272,6 +345,135 @@ def _filter_panel(manifest):
     return ('<details class="fdetails"><summary aria-label="More filters">'
             'More filters<span class="fcount" id="audit-fcount"></span></summary>'
             '<div class="filterpanel">%s</div></details>' % "".join(rows))
+
+
+# --- global filter row (C1/C2) ----------------------------------------------
+def _global_filter_row(authors, tags, dmin, dmax, owners=None):
+    """The compact global filter row — author, area, date range — or "".
+
+    DESIGN DECISION (C2, delegated): this row is a second line INSIDE the
+    existing sticky `.topbar`, not a separate floating/anchored bar. Three
+    reasons, in the order they decided it:
+
+      * The report is long and its sticky stack is already measured geometry —
+        `--topbar-h` (written by measureStack() in report.js) is what the side
+        nav, the strip, the phases filter bar and every anchor offset hang off.
+        Growing the bar the stack already measures keeps ONE sticky stack; a
+        new independently-stuck row would be a fourth layer needing its own
+        z-index token, its own offset in --sticky-*, and its own stuck-state
+        handling for zero extra reachability.
+      * Print must never show floating chrome mid-page: `.topbar` is already
+        `display:none!important` in the print sheet (a pinned rule), so the row
+        can never reach paper — the active range prints instead as the named
+        line in the Usage section (#audit-urange).
+      * Mobile width exists: inside the topbar the row wraps under the title
+        with `flex-wrap` and compact controls, and the measured `--topbar-h`
+        absorbs the extra height at every width — no breakpoint-specific
+        arithmetic, because there is no second bar to place.
+
+    Server-rendered like every other filter control (the chips rule): built in
+    JS it would be missing wherever scripts do not run, and "the filters are
+    gone" is indistinguishable from "the filters are broken". The controls are
+    selects and date inputs rather than chip rows on purpose — this row stays
+    one line; the full multi-select vocabulary lives where it always did (area
+    chips in More filters, author chips in Usage), and report.js keeps the two
+    presentations of each filter in sync over one state.
+
+    `authors` arrives ordered (by spend, matching the Usage chips); `tags` in
+    first-seen order (matching the panel chips). An author set smaller than two
+    renders no select — one author has nothing to filter."""
+    bits = []
+    if len(authors or []) >= 2:
+        opts = '<option value="">All authors</option>' + "".join(
+            '<option value="%s">%s</option>' % (e(a), e(a)) for a in authors)
+        bits.append('<label class="gf"><span class="tbl">Author</span>'
+                    '<select id="audit-au-select" aria-label="Scope the Usage '
+                    'section&#39;s per-author views to one author">%s</select>'
+                    "</label>" % opts)
+    if tags:
+        # Each option titles its advisory owner (D4) — exactly the panel's
+        # area-select behaviour, so a habit learned there reads here too.
+        opts = '<option value="">All areas</option>' + "".join(
+            '<option value="%s"%s>%s</option>'
+            % (e(t),
+               (' title="owner: %s"' % e((owners or {}).get(t)))
+               if (owners or {}).get(t) else "",
+               e(t))
+            for t in tags)
+        bits.append('<label class="gf"><span class="tbl">Area</span>'
+                    '<select id="audit-area-select" aria-label="Show only '
+                    'phases tagged with this area">%s</select></label>' % opts)
+    if dmin and dmax:
+        span = ' min="%s" max="%s"' % (e(dmin), e(dmax))
+        bits.append(
+            '<label class="gf"><span class="tbl">From</span>'
+            '<input type="date" id="audit-gfrom" aria-label="Start of the date '
+            'range scoping the task table and the usage charts"%s></label>'
+            '<label class="gf"><span class="tbl">to</span>'
+            '<input type="date" id="audit-gto" aria-label="End of the date '
+            'range scoping the task table and the usage charts"%s></label>'
+            '<button type="button" class="btn" id="audit-gclear" hidden '
+            'title="Clear the date range - back to all time">All time</button>'
+            % (span, span))
+    if not bits:
+        return ""
+    return ('<div class="gfilters" role="group" aria-label="Global filters">'
+            "%s</div>" % "".join(bits))
+
+
+# --- ready now (C4) ----------------------------------------------------------
+def _ready_now_dl(manifest, ready_ids):
+    """The Ready-now section as a definition list: each ready task is a term
+    (id, title, its phase's area tags in the same chip style areas wear
+    everywhere else), and the definition says WHY it is ready — the blockers
+    that have cleared, or that nothing ever blocked it.
+
+    The old rendering was a comma-joined id list in monospace: correct, and
+    unreadable past five entries — a reader had to look every id up by hand to
+    learn what any of them was. This carries the lookup with the id.
+
+    Renders "" for an empty list; the caller already omits the section then
+    (the hero's "Nothing ready / nothing left to run" line is the empty state,
+    and a heading over an empty list would say less than that line does)."""
+    if not ready_ids:
+        return ""
+    owners = _owner_map(manifest)   # tags here wear their advisory owner too
+    task_of, phase_of = {}, {}
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("id"):
+                task_of[t["id"]] = t
+                phase_of[t["id"]] = ph
+    items = []
+    for rid in ready_ids:
+        t = task_of.get(rid) or {}
+        ph = phase_of.get(rid) or {}
+        tags = "".join(" " + _area_tag_span(a, owners)
+                       for a in _areas_of(ph.get("area")))
+        title = (' <strong>%s</strong>' % e(t["title"])) if t.get("title") else ""
+        cleared = []
+        for word, refs in (("depends on", t.get("dependsOn")),
+                           ("blocked by", t.get("blockedBy")),
+                           ("phase blocked by", ph.get("blockedBy"))):
+            names = [r for r in (refs or []) if isinstance(r, str) and r]
+            if names:
+                cleared.append("%s %s (done)"
+                               % (word, ", ".join(e(r) for r in names)))
+        # A ready task's blockers are all satisfied by definition (that is what
+        # ready MEANS), so listing them with "(done)" states the evidence
+        # rather than re-deriving it.
+        why = ("Cleared: " + " · ".join(cleared)) if cleared \
+            else "Nothing blocked it — ready from the start."
+        where = ""
+        if ph.get("id"):
+            where = 'In <span class="mono">%s</span>%s. ' % (
+                e(ph["id"]),
+                (" — %s" % e(ph["title"])) if ph.get("title") else "")
+        items.append('<dt><code class="mono">%s</code>%s%s</dt><dd>%s%s</dd>'
+                     % (e(rid), title, tags, where, why))
+    return '<dl class="ready">%s</dl>' % "".join(items)
 
 
 # --- risk + progress fragments ----------------------------------------------
@@ -456,6 +658,131 @@ def _selftest():
           and ">backend</button>" in _area_panel)
     check("_filter_panel omits the Area row for a plan without tags",
           'id="audit-areas"' not in _filter_panel(_withmodel))
+
+    # --- _global_filter_row(): the sticky bar's compact filter line (C1/C2) ----
+    _grow = _global_filter_row(["b@x.io", "a@x.io"], ["api", "web"],
+                               "2026-07-01", "2026-08-02")
+    check("_global_filter_row renders author select, area select and the date "
+          "pair with the data's own bounds",
+          'id="audit-au-select"' in _grow and 'id="audit-area-select"' in _grow
+          and 'id="audit-gfrom"' in _grow and 'id="audit-gto"' in _grow
+          and _grow.count('min="2026-07-01" max="2026-08-02"') == 2)
+    check("_global_filter_row keeps the callers' ordering (authors by spend, "
+          "tags first-seen) instead of re-sorting identifiers",
+          _grow.index('value="b@x.io"') < _grow.index('value="a@x.io"')
+          and _grow.index('value="api"') < _grow.index('value="web"'))
+    check("_global_filter_row offers the way back from a range (the All time "
+          "reset, hidden until a range is on)",
+          'id="audit-gclear" hidden' in _grow)
+    check("_global_filter_row renders no author select for a single author "
+          "(a set of one has nothing to filter)",
+          'id="audit-au-select"' not in
+          _global_filter_row(["only@x.io"], ["api"], None, None))
+    check("_global_filter_row is '' with nothing to filter by",
+          _global_filter_row([], [], None, None) == "")
+    check("_global_filter_row escapes a hostile tag before it reaches an "
+          "attribute",
+          "&lt;script&gt;" in _global_filter_row([], ["<script>"], None, None))
+
+    # --- _ready_now_dl(): the Ready-now definition list (C4) --------------------
+    _rm = {"phases": [
+        {"id": "P1", "title": "Alpha", "status": "done", "area": ["api", "web"],
+         "tasks": [{"id": "P1.1", "title": "done dep", "status": "done"}]},
+        {"id": "P2", "title": "Beta", "status": "pending",
+         "blockedBy": ["P1"],
+         "tasks": [
+             {"id": "P2.1", "title": "cleared one", "status": "pending",
+              "blockedBy": ["P1.1"], "dependsOn": ["P1.1"]},
+             {"id": "P2.2", "title": "free one", "status": "pending"}]}]}
+    _rdl = _ready_now_dl(_rm, ["P2.1", "P2.2"])
+    check("_ready_now_dl is a definition list with one term per ready task, "
+          "id and title both named",
+          _rdl.startswith('<dl class="ready">')
+          and _rdl.count("<dt>") == 2 and _rdl.count("<dd>") == 2
+          and ">P2.1</code>" in _rdl and "<strong>cleared one</strong>" in _rdl)
+    check("_ready_now_dl states the blockers that cleared, with the evidence",
+          "depends on P1.1 (done)" in _rdl
+          and "blocked by P1.1 (done)" in _rdl
+          and "phase blocked by P1 (done)" in _rdl)
+    _rdl_area = _ready_now_dl(
+        {"phases": [{"id": "P1", "area": "api",
+                     "tasks": [{"id": "P1.1", "title": "t",
+                                "status": "pending"}]}]}, ["P1.1"])
+    # P2.2 above does NOT earn this line: its own list is empty but its PHASE
+    # cleared a blocker, and that context is the more useful sentence. Only a
+    # task with no blockers anywhere says nothing ever blocked it.
+    check("_ready_now_dl says when nothing ever blocked a task, and only when "
+          "nothing did (a cleared phase blocker still counts as context)",
+          "Nothing blocked it" in _rdl_area
+          and "Nothing blocked it" not in _rdl)
+    check("_ready_now_dl carries the phase's area tags in the same chip style "
+          "areas wear everywhere else",
+          '<span class="area-tag">api</span>' in _rdl_area)
+    check("_ready_now_dl names the phase the task sits in",
+          'In <span class="mono">P2</span>' in _rdl)
+    check("_ready_now_dl is '' for an empty list (the hero line is the empty "
+          "state)", _ready_now_dl(_rm, []) == "")
+    check("_ready_now_dl escapes a hostile title",
+          "&lt;script&gt;" in _ready_now_dl(
+              {"phases": [{"id": "P1", "tasks": [
+                  {"id": "P1.1", "title": "<script>", "status": "pending"}]}]},
+              ["P1.1"]))
+
+    # --- _owner_map() / _area_tag_span(): advisory area owners (D4, v0.36) ------
+    _own_m = {"meta": {"areas": {"api": {"owner": " ana@x.io "},
+                                 "web": {"owner": None},
+                                 "db": {"owner": 3},
+                                 "ops": {"description": "no owner key"}}}}
+    check("_owner_map keeps only tags declaring a non-empty string owner, "
+          "trimmed - null, junk and undeclared all read as nobody",
+          _owner_map(_own_m) == {"api": "ana@x.io"})
+    check("_owner_map is {} for a manifest without a registry",
+          _owner_map({}) == {} and _owner_map(None) == {})
+    check("_area_tag_span with no owner is byte-identical to the bare chip",
+          _area_tag_span("web", {"api": "a@x.io"})
+          == '<span class="area-tag">web</span>')
+    check("_area_tag_span with an owner wears the advisory suffix and the "
+          "panel's exact title wording",
+          _area_tag_span("api", {"api": "ana@x.io"})
+          == '<span class="area-tag" title="owner: ana@x.io">api'
+             '<span class="aown"> — ana@x.io</span></span>')
+    check("_area_tag_span escapes a hostile owner",
+          "&lt;script&gt;" in _area_tag_span("api", {"api": "<script>"})
+          and "<script>" not in _area_tag_span("api", {"api": "<script>"}))
+    check("_chip_buttons titles: an entry in `titles` becomes the chip's title "
+          "attribute, and an untitled chip keeps the pinned untitled shape",
+          '<button type="button" class="fchip" data-a="api" '
+          'title="owner: a@x.io" aria-pressed="false">api</button>'
+          == _chip_buttons(["api"], "data-a", "fchip", humanize=False,
+                           titles={"api": "owner: a@x.io"})
+          and '<button type="button" class="fchip" data-a="api" '
+              'aria-pressed="false">api</button>'
+          == _chip_buttons(["api"], "data-a", "fchip", humanize=False))
+    check("_filter_panel titles its area chips from the registry",
+          'data-a="backend" title="owner: bo@x.io"' in _filter_panel(
+              dict(_witharea, meta={"areas": {"backend": {"owner": "bo@x.io"}}}))
+          and 'title="owner:' not in _area_panel)
+    check("_global_filter_row titles its options the same way, and only where "
+          "an owner is declared",
+          '<option value="api" title="owner: ana@x.io">api</option>'
+          in _global_filter_row([], ["api", "web"], None, None,
+                                owners={"api": "ana@x.io"})
+          and '<option value="web">web</option>'
+          in _global_filter_row([], ["api", "web"], None, None,
+                                owners={"api": "ana@x.io"}))
+    check("_ready_now_dl wears the same suffix on its tags",
+          '<span class="aown"> — ro@x.io</span>' in _ready_now_dl(
+              {"meta": {"areas": {"api": {"owner": "ro@x.io"}}},
+               "phases": [{"id": "P1", "area": "api",
+                           "tasks": [{"id": "P1.1", "title": "t",
+                                      "status": "pending"}]}]}, ["P1.1"]))
+
+    # --- _seg_of(): the segment a phase row files under (D1, v0.36) -------------
+    check("_seg_of maps in_progress and blocked to active, done to done, and "
+          "everything else - pending, unknown, None - to pending",
+          _seg_of("in_progress") == "active" and _seg_of("blocked") == "active"
+          and _seg_of("done") == "done" and _seg_of("pending") == "pending"
+          and _seg_of("weird") == "pending" and _seg_of(None) == "pending")
 
     # --- _phase_meta_div() / _bar() ----------------------------------------------
     check("_phase_meta_div is '' with nothing to say",

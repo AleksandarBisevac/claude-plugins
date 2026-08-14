@@ -113,6 +113,8 @@ const REQUIRED = [
   ['#audit-q', 'the filter box'],
   ['#audit-expand', 'the expand-all button'],
   ['#audit-phase-status', 'the status chip row'],
+  ['table.phases tbody tr.seghead', 'the segment header rows (D1)'],
+  ['tr.seghead [data-segcsv]', 'the per-segment CSV export (D2)'],
 ];
 const gone = [];
 for (const [sel, what] of REQUIRED) if (!(await page.$(sel))) gone.push([sel, what]);
@@ -150,8 +152,71 @@ if (load.total < 2) {
   await browser.close();
   process.exit(2);
 }
-expect('on load, every phase is listed', load.phases, load.total);
+
+// D1 (v0.36): the table renders in segments — active, pending, done — and the
+// done segment is the ARCHIVE, collapsed at load whenever the renderer emitted
+// its toggle (#audit-arch, i.e. done phases exist beside other work). This
+// deliberately ALTERS the old "on load, every phase is listed" pin: collapsing
+// the finished run is exactly the behaviour D1 asked for, so the expectation
+// now reads the document's own contract — toggle present and closed means the
+// done rows are hidden and everything else is listed; no toggle means the old
+// promise holds unchanged (single-segment and all-done plans).
+const seg0 = await page.evaluate(() => {
+  const heads = [...document.querySelectorAll('table.phases tbody tr.seghead')]
+    .map((h) => h.getAttribute('data-seg'));
+  const arch = document.getElementById('audit-arch');
+  const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+  // Every phase row must sit under a seghead carrying ITS segment: walk the
+  // rows in order, tracking the last header seen.
+  let cur = null, misfiled = 0;
+  for (const r of document.querySelectorAll('table.phases tbody tr')) {
+    if (r.classList.contains('seghead')) cur = r.getAttribute('data-seg');
+    else if (r.classList.contains('phase')
+             && r.getAttribute('data-seg') !== cur) misfiled++;
+  }
+  return {
+    heads,
+    misfiled,
+    done: rows.filter((r) => r.getAttribute('data-seg') === 'done').length,
+    collapsed: !!arch && arch.getAttribute('aria-expanded') === 'false',
+    count: arch ? +arch.getAttribute('data-count') : null,
+  };
+});
+const SEG_ORDER = ['active', 'pending', 'done'];
+expect('the segment headers come in active, pending, done order',
+  seg0.heads.join(','),
+  SEG_ORDER.filter((s) => seg0.heads.includes(s)).join(','));
+expect('every phase row sits under the seghead of its own segment', seg0.misfiled, 0);
+if (seg0.collapsed) {
+  expect(`the archive toggle names the count of rows it hides (${seg0.done} done)`,
+    seg0.count, seg0.done);
+  expect('on load the active and pending phases are listed and the done ones '
+    + 'sit in the collapsed archive', load.phases, load.total - seg0.done);
+} else {
+  expect('on load, every phase is listed (no collapsed archive in this plan)',
+    load.phases, load.total);
+}
 expect('on load, tasks are collapsed', load.tasks, 0);
+
+// Opening the archive is an EXPANDER, so it answers the standing rule: it may
+// not grow any scroll box sideways. Left open afterwards, so every later
+// count in this file keeps meaning what it always did.
+if (seg0.collapsed) {
+  const preW = await page.evaluate(() => document.documentElement.scrollWidth);
+  await page.click('#audit-arch');
+  await page.waitForTimeout(250);
+  const opened0 = await page.evaluate(() => ({
+    phases: [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .filter((r) => r.style.display !== 'none').length,
+    aria: document.getElementById('audit-arch').getAttribute('aria-expanded'),
+    dw: document.documentElement.scrollWidth,
+    cw: document.documentElement.clientWidth,
+  }));
+  expect('opening the archive lists every phase', opened0.phases, load.total);
+  expect('...and the toggle reports itself open', opened0.aria, 'true');
+  expect(`...growing no horizontal scroll box (scrollWidth ${preW} -> ${opened0.dw})`,
+    opened0.dw <= Math.max(preW, opened0.cw + 1), true);
+}
 
 // The no-script banner. It is rendered into the HTML and removed by the script's
 // very first statement, so its ABSENCE is live proof that the script ran — and
@@ -496,6 +561,565 @@ if (areaParts.length) {
   expect('...and the chip stops reporting itself as on', areaOff.pressed, 'false');
   expect('...and a= leaves the URL', /[!&]a=/.test(areaOff.hash), false);
 } else notes.push('ok   (no phase in this plan carries an area tag — area chips skipped)');
+
+// 6d. The global filter row (C1/C2): a second line of the sticky top bar
+//     carrying an authors dropdown, an area dropdown and the date range. Each
+//     control is a twin of a filter that already exists elsewhere in the
+//     document, so the gates here are PAIRINGS, not a version sweep: a report
+//     that renders the panel's date pair but no global range, or author chips
+//     but no authors dropdown, is missing half of one feature — that is a
+//     FAIL, the same shape as the model-chips-without-a-panel case above.
+if (await page.$('#audit-from') && !(await page.$('#audit-gfrom'))) {
+  failures.push('FAIL the report renders the panel date pair but no global date range in the top bar');
+}
+if (await page.$('#audit-authors .fchip') && !(await page.$('#audit-au-select'))) {
+  failures.push('FAIL the report renders author chips but no authors dropdown in the top bar');
+}
+if (await page.$('#audit-areas .fchip') && !(await page.$('#audit-area-select'))) {
+  failures.push('FAIL the report renders area chips but no area dropdown in the top bar');
+}
+if (await page.$('#audit-gfrom')) {
+  // Reachable while scrolled — the entire point of putting it in the sticky
+  // bar. Asserted as BEHAVIOUR: scroll deep, then the control must still be
+  // inside the viewport and usable from there.
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await page.waitForTimeout(300);
+  const reach = await page.evaluate(() => {
+    const el = document.getElementById('audit-gfrom');
+    const b = el.getBoundingClientRect();
+    return { top: Math.round(b.top), visible: b.top >= 0 && b.bottom <= window.innerHeight && b.width > 0 };
+  });
+  expect('scrolled 1500px down, the global date input is still on screen (sticky bar)',
+    reach.visible, true);
+
+  // A mid-span range, taken from the report's own data (payload if present,
+  // else the panel's min/max), applied FROM the scrolled position.
+  const range = await page.evaluate(() => {
+    const U = window.AUDIT_USAGE;
+    const gf = document.getElementById('audit-gfrom');
+    const lo = (U && U.min) || gf.min, hi = (U && U.max) || gf.max;
+    if (!lo || !hi) return null;
+    const mid = new Date((Date.parse(lo + 'T00:00:00Z') + Date.parse(hi + 'T00:00:00Z')) / 2)
+      .toISOString().slice(0, 10);
+    return { lo, hi, mid, hasU: !!U };
+  });
+  if (!range) {
+    failures.push('FAIL the global date inputs carry no min/max bounds from the data');
+  } else {
+    await page.fill('#audit-gfrom', range.lo);
+    await page.fill('#audit-gto', range.mid);
+    await page.waitForTimeout(300);
+    const on = await page.evaluate(() => ({
+      hash: location.hash,
+      panelFrom: (document.getElementById('audit-from') || {}).value,
+      panelTo: (document.getElementById('audit-to') || {}).value,
+      gclear: !(document.getElementById('audit-gclear') || {}).hidden,
+      count: (document.getElementById('audit-count') || {}).textContent || '',
+    }));
+    expect('the global range is a link (from= and to= in the hash)',
+      /[!&]from=/.test(on.hash) && /[!&]to=/.test(on.hash), true);
+    expect('the panel date pair mirrors the same range — two controls, one state',
+      on.panelFrom === range.lo && on.panelTo === range.mid, true);
+    expect('a live range offers the way back (the All time reset shows)',
+      on.gclear, true);
+    if (!/\d+ of \d+ tasks/.test(on.count)) {
+      failures.push(`FAIL a date range narrows the task table and the count says so: got "${on.count}"`);
+    } else notes.push(`ok   a date range narrows the task table: "${on.count}"`);
+
+    // The usage views follow the same range (only on a report with the
+    // per-day payload — without a ledger there is nothing to scope).
+    if (range.hasU) {
+      const usage = await page.evaluate(() => {
+        const cols = [...document.querySelectorAll('.cols .col')];
+        const dim = cols.filter((c) => /\bdimout\b/.test(c.getAttribute('class') || ''));
+        const note = document.getElementById('audit-urange');
+        const per = document.getElementById('audit-hm-period');
+        return {
+          cols: cols.length, dim: dim.length,
+          dimOp: dim.length ? getComputedStyle(dim[0]).opacity : null,
+          litOp: cols.length > dim.length
+            ? getComputedStyle(cols.find((c) => !/\bdimout\b/.test(c.getAttribute('class') || ''))).opacity : null,
+          note: note && !note.hidden ? note.textContent : '',
+          period: per ? per.textContent : '',
+        };
+      });
+      if (usage.cols && !(usage.dim > 0 && usage.dim < usage.cols)) {
+        failures.push(`FAIL a mid-span range dims some trend columns and keeps others: ${usage.dim} of ${usage.cols} dimmed`);
+      } else if (usage.cols) {
+        notes.push(`ok   the trend recedes outside the range: ${usage.dim} of ${usage.cols} columns dimmed`);
+        expect('...and dimming is real paint, not a class name (opacity < 1)',
+          usage.dimOp !== null && parseFloat(usage.dimOp) < 1, true);
+        expect('...while in-range columns stay at full opacity',
+          usage.litOp === null || parseFloat(usage.litOp) === 1, true);
+      }
+      if (!usage.note.includes(range.lo) || !usage.note.includes(range.mid)) {
+        failures.push(`FAIL the range line names the active span: got "${usage.note}"`);
+      } else notes.push(`ok   the range line names the span: "${usage.note.slice(0, 72)}..."`);
+      if (usage.period && !/Custom range/.test(usage.period)) {
+        failures.push(`FAIL with a range active the heatmap period reads as the custom range: got "${usage.period}"`);
+      } else if (usage.period) notes.push(`ok   the heatmap period names the custom range: "${usage.period}"`);
+
+      // C1's print requirement: the active range is a LINE ON PAPER, not an
+      // implication. The bar carrying the pickers never prints (asserted with
+      // the other paper facts below); this line is what prints instead.
+      await page.emulateMedia({ media: 'print' });
+      await page.waitForTimeout(100);
+      const paperRange = await page.evaluate(() => {
+        const n = document.getElementById('audit-urange');
+        const row = document.querySelector('.gfilters');
+        return {
+          shown: !!n && getComputedStyle(n).display !== 'none' && !n.hidden,
+          text: n ? n.textContent : '',
+          barGone: !row || row.offsetParent === null,
+        };
+      });
+      await page.emulateMedia({ media: null });
+      expect('the active range prints as a line naming it', paperRange.shown
+        && paperRange.text.includes(range.lo) && paperRange.text.includes(range.mid), true);
+      expect('...while the picker row itself never reaches paper', paperRange.barGone, true);
+    } else notes.push('ok   (no usage payload — the range scopes only the task table here)');
+
+    // Clearing returns to all-time: one press, every scoped view back. The
+    // click is guarded on the button actually showing — its absence has
+    // already failed the way-back assertion above, and clicking a hidden
+    // element is a 30-second timeout, not a verdict.
+    const gclearBtn = await page.$('#audit-gclear:not([hidden])');
+    if (gclearBtn) await gclearBtn.click();
+    else await page.evaluate(() => {   // fall back so later checks still run
+      const gf = document.getElementById('audit-gfrom');
+      const gt = document.getElementById('audit-gto');
+      if (gf) gf.value = ''; if (gt) gt.value = '';
+    });
+    await page.waitForTimeout(300);
+    const off = await page.evaluate(() => ({
+      hash: location.hash,
+      phases: [...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((r) => r.style.display !== 'none').length,
+      dims: [...document.querySelectorAll('.cols .col')]
+        .filter((c) => /\bdimout\b/.test(c.getAttribute('class') || '')).length,
+      noteHidden: (document.getElementById('audit-urange') || { hidden: true }).hidden,
+    }));
+    expect('All time restores every phase', off.phases, load.total);
+    expect('...takes from=/to= out of the URL', /[!&](from|to)=/.test(off.hash), false);
+    expect('...undims every trend column', off.dims, 0);
+    expect('...and the range line leaves with it', off.noteHidden, true);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+} else if (!(await page.$('#audit-from'))) {
+  notes.push('ok   (this plan records no dates — global date range skipped)');
+}
+
+// The authors dropdown drives the same state as the chips.
+if (await page.$('#audit-au-select')) {
+  const who = await page.evaluate(() =>
+    document.querySelector('#audit-au-select option[value]:not([value=""])').value);
+  await page.selectOption('#audit-au-select', who);
+  await page.waitForTimeout(250);
+  const auOn = await page.evaluate(() => ({
+    vis: [...document.querySelectorAll('.smcell')].filter((c) => !c.hidden).length,
+    hash: location.hash,
+    chipOn: (document.querySelector('#audit-authors .fchip.on') || {}).textContent || '',
+  }));
+  expect(`the authors dropdown narrows the per-author panels to one (picked ${who})`,
+    auOn.vis, 1);
+  expect('the dropdown selection is a link (au= in the hash)', /[!&]au=/.test(auOn.hash), true);
+  if (await page.$('#audit-authors .fchip')) {
+    expect('...and the author chips light the same selection', auOn.chipOn, who);
+  }
+  await page.selectOption('#audit-au-select', '');
+  await page.waitForTimeout(250);
+  const auOff = await page.evaluate(() => ({
+    vis: [...document.querySelectorAll('.smcell')].filter((c) => !c.hidden).length,
+    top: document.querySelectorAll('.smcell[data-top]').length,
+    hash: location.hash,
+  }));
+  expect('All authors restores the top-8 default', auOff.vis, auOff.top);
+  expect('...and au= leaves the URL', /[!&]au=/.test(auOff.hash), false);
+}
+
+// The area dropdown replaces the chip selection with one tag (or none).
+if (await page.$('#audit-area-select')) {
+  const pickTag = await page.evaluate(() =>
+    document.querySelector('#audit-area-select option[value]:not([value=""])').value);
+  await page.selectOption('#audit-area-select', pickTag);
+  await page.waitForTimeout(250);
+  const arOn = await page.evaluate((tag) => {
+    const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+    const tagsOf = (r) => (r.getAttribute('data-area') || '').split(/\s+/).filter(Boolean);
+    const shown = rows.filter((r) => r.style.display !== 'none');
+    return {
+      offTag: shown.filter((r) => !tagsOf(r).includes(tag)).length,
+      shown: shown.length,
+      hash: location.hash,
+    };
+  }, pickTag);
+  expect(`the area dropdown keeps only "${pickTag}"-tagged phases (${arOn.shown} shown)`,
+    arOn.offTag, 0);
+  expect('the dropdown selection is a link (a= in the hash)', /[!&]a=/.test(arOn.hash), true);
+  await page.selectOption('#audit-area-select', '');
+  await page.waitForTimeout(250);
+  expect('All areas restores every phase',
+    (await state()).phases, load.total);
+}
+
+// The new chrome must not grow any scroll box (the assertHintsFit rule): the
+// filter row lives in the sticky bar at every width, so at no width may the
+// PAGE scroll sideways because of it. 390px is the width that found the last
+// such defect (the filter panel).
+for (const w of [1512, 390]) {
+  await page.setViewportSize({ width: w, height: w > 700 ? 945 : 780 });
+  await page.waitForTimeout(250);
+  const grow = await page.evaluate(() => ({
+    dw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth,
+    row: !!document.querySelector('.gfilters'),
+  }));
+  if (grow.row) {
+    expect(`at ${w}px the global filter row does not push the page sideways `
+      + `(scrollWidth ${grow.dw} vs client ${grow.cw})`, grow.dw <= grow.cw + 1, true);
+  }
+}
+await page.setViewportSize({ width: 1512, height: 945 });
+await page.waitForTimeout(200);
+
+// 6e. Heatmap calendar navigation (C3). Same pairing gate: a report that draws
+//     the heatmap but renders no navigation for it is missing half of one
+//     feature. The nav itself only functions with the per-day payload.
+if (await page.$('.hm') && !(await page.$('#audit-hm-gran'))) {
+  failures.push('FAIL the report draws the tokens heatmap but no calendar navigation for it');
+} else if (await page.$('#audit-hm-gran') && await page.evaluate(() => !!window.AUDIT_USAGE)) {
+  const hmDays = await page.evaluate(() => Object.keys(window.AUDIT_USAGE.days).sort());
+  const hm0 = await page.evaluate(() => ({
+    period: document.getElementById('audit-hm-period').textContent,
+    rows: document.querySelectorAll('#audit-hm-body tr').length,
+    prevOff: (document.getElementById('audit-hm-prev') || {}).disabled,
+    nextOff: (document.getElementById('audit-hm-next') || {}).disabled,
+  }));
+  expect('at rest the heatmap NAMES its period: all data with the span',
+    hm0.period.includes('All data') && hm0.period.includes(hmDays[0])
+    && hm0.period.includes(hmDays[hmDays.length - 1]), true);
+  expect('...with both arrows disabled (nothing to step through at all-data)',
+    hm0.prevOff === true && hm0.nextOff === true, true);
+  expect('...and the grid is proportional to the other charts, not a thumbnail: '
+    + 'it fills the column like the trend does', await page.evaluate(() => {
+      const hm = document.querySelector('.hm');
+      const cols = document.querySelector('.cols');
+      if (!hm) return false;
+      const hw = hm.getBoundingClientRect().width;
+      const cw = cols ? cols.getBoundingClientRect().width
+        : hm.closest('.hmwrap').getBoundingClientRect().width;
+      return hw >= cw * 0.9;
+    }), true);
+
+  // The heatmap lives inside the Detail disclosure; a reader opens it to
+  // reach the nav, and so does this. Driven like the reader would, via the
+  // summary, not by poking the open property.
+  const moreOpen = await page.evaluate(() => !!document.querySelector('details.more[open]'));
+  if (!moreOpen) {
+    await page.click('details.more > summary');
+    await page.waitForTimeout(150);
+  }
+  await page.evaluate(() => document.getElementById('audit-hm-gran')
+    .scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(200);
+  await page.click('#audit-hm-gran [data-g="day"]');
+  await page.waitForTimeout(250);
+  const lastDay = hmDays[hmDays.length - 1];
+  const day1 = await page.evaluate(() => ({
+    period: document.getElementById('audit-hm-period').textContent,
+    rows: document.querySelectorAll('#audit-hm-body tr').length,
+    prevOff: (document.getElementById('audit-hm-prev') || {}).disabled,
+    nextOff: (document.getElementById('audit-hm-next') || {}).disabled,
+    nextMuted: parseFloat(getComputedStyle(document.getElementById('audit-hm-next')).opacity),
+  }));
+  expect('Day granularity draws exactly one row', day1.rows, 1);
+  expect(`...opens on the LAST recorded day and names it (${lastDay})`,
+    day1.period.includes(lastDay), true);
+  expect('...the next arrow is disabled at the data edge', day1.nextOff, true);
+  expect('...and visibly muted, not just inert', day1.nextMuted < 1, true);
+  if (hmDays.length > 1) {
+    expect('...while prev can still step back', day1.prevOff, false);
+    // Clicked only when enabled: a broken page that leaves it disabled has
+    // already failed the line above, and clicking it anyway buys a 30-second
+    // Playwright timeout that reads as the CHECKER dying (the rule this file
+    // opens with).
+    if (!day1.prevOff) {
+      await page.click('#audit-hm-prev');
+      await page.waitForTimeout(250);
+      const prevDay = hmDays[hmDays.length - 2];
+      const day2 = await page.evaluate(() => ({
+        period: document.getElementById('audit-hm-period').textContent,
+        nextOff: (document.getElementById('audit-hm-next') || {}).disabled,
+      }));
+      expect(`prev steps to the previous day WITH data (${prevDay}), skipping any gap`,
+        day2.period.includes(prevDay), true);
+      expect('...and next re-enables away from the edge', day2.nextOff, false);
+    }
+  }
+
+  // Tooltips survive the re-render: the styled hover layer must speak for
+  // JS-built cells exactly as it does for server-rendered ones.
+  await page.hover('#audit-hm-body tr:first-child td:nth-child(10) i');
+  await page.waitForTimeout(200);
+  const tip = await page.evaluate(() => {
+    const b = document.querySelector('.rtip');
+    return { shown: !!b && !b.hidden, text: b ? b.textContent : '' };
+  });
+  if (!tip.shown || !/tokens|outside/.test(tip.text)) {
+    failures.push(`FAIL hovering a re-rendered heatmap cell still shows the tooltip: shown=${tip.shown}, text="${tip.text}"`);
+  } else notes.push(`ok   the tooltip layer survives a heatmap re-render: "${tip.text}"`);
+
+  await page.click('#audit-hm-gran [data-g="week"]');
+  await page.waitForTimeout(250);
+  expect('Week granularity draws the seven days of one week',
+    await page.evaluate(() => document.querySelectorAll('#audit-hm-body tr').length), 7);
+  await page.click('#audit-hm-gran [data-g="month"]');
+  await page.waitForTimeout(250);
+  const mon = await page.evaluate(() => ({
+    period: document.getElementById('audit-hm-period').textContent,
+    rows: document.querySelectorAll('#audit-hm-body tr').length,
+  }));
+  const monName = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+    'August', 'September', 'October', 'November', 'December'][+lastDay.slice(5, 7) - 1];
+  expect(`Month granularity names the month (${monName} ${lastDay.slice(0, 4)})`,
+    mon.period.includes(monName) && mon.period.includes(lastDay.slice(0, 4)), true);
+  expect('...aggregated back to weekday rows', mon.rows, 7);
+  await page.click('#audit-hm-gran [data-g="year"]');
+  await page.waitForTimeout(250);
+  expect('Year granularity names the year',
+    await page.evaluate(() => document.getElementById('audit-hm-period').textContent),
+    lastDay.slice(0, 4));
+
+  // None of that navigation may widen the page (its wrap owns any overflow).
+  const hmGrow = await page.evaluate(() => ({
+    dw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth,
+  }));
+  expect(`heatmap navigation grew no page scroll box (scrollWidth ${hmGrow.dw})`,
+    hmGrow.dw <= hmGrow.cw + 1, true);
+
+  await page.click('#audit-hm-gran [data-g="all"]');
+  await page.waitForTimeout(250);
+  expect('back at All the period names all data again',
+    await page.evaluate(() => /All data/.test(
+      document.getElementById('audit-hm-period').textContent)), true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+} else if (await page.$('#audit-hm-gran')) {
+  notes.push('ok   (heatmap nav present but no payload — nothing to navigate)');
+} else notes.push('ok   (no heatmap in this report — calendar navigation skipped)');
+
+// 6f. Ready now as a definition list (C4). The pairing gate: a report whose
+//     nav still links a #ready section must render it as the list.
+if (await page.$('#ready') && !(await page.$('dl.ready'))) {
+  failures.push('FAIL the report has a Ready now section but no definition list in it');
+} else if (await page.$('dl.ready')) {
+  const ready = await page.evaluate(() => {
+    const dl = document.querySelector('dl.ready');
+    const dts = [...dl.querySelectorAll('dt')];
+    const dds = [...dl.querySelectorAll('dd')];
+    const navN = document.querySelector('.snav a[href="#ready"] .n');
+    // Cross-check every term against the phase its own definition names: a
+    // tagged phase's task must wear the same tags in the list.
+    let tagChecked = 0, tagWrong = 0;
+    dts.forEach((dt, i) => {
+      const dd = dds[i];
+      const m = dd && dd.textContent.match(/In (\S+)/);
+      if (!m) return;
+      const ph = document.getElementById('phase-' + m[1]);
+      if (!ph) return;
+      const tags = (ph.getAttribute('data-area') || '').split(/\s+/).filter(Boolean);
+      if (!tags.length) return;
+      tagChecked++;
+      // The tag's IDENTITY is its first text node; D4 may append an advisory
+      // owner suffix (.aown) inside the same chip, which is part of the chip
+      // but not part of the tag name being compared here.
+      const worn = [...dt.querySelectorAll('.area-tag')]
+        .map((t) => (t.firstChild ? t.firstChild.textContent : '').trim());
+      if (!tags.every((t) => worn.includes(t))) tagWrong++;
+    });
+    return {
+      dts: dts.length, dds: dds.length,
+      navN: navN ? +navN.textContent : null,
+      ids: dts.every((d) => !!d.querySelector('code')),
+      whys: dds.every((d) => d.textContent.trim().length > 0),
+      tagChecked, tagWrong,
+    };
+  });
+  expect('every ready task is a term with a definition', ready.dts === ready.dds
+    && ready.dts > 0, true);
+  if (ready.navN !== null) {
+    expect(`the list carries as many terms as the nav count (${ready.navN})`,
+      ready.dts, ready.navN);
+  }
+  expect('every term names its task id', ready.ids, true);
+  expect('every definition says why the task is ready', ready.whys, true);
+  if (ready.tagChecked) {
+    expect(`tasks of tagged phases wear the area chips (${ready.tagChecked} checked)`,
+      ready.tagWrong, 0);
+  } else notes.push('ok   (no ready task sits in a tagged phase — chip cross-check skipped)');
+} else notes.push('ok   (nothing is ready in this plan — Ready now skipped)');
+
+// 6g. Per-segment exports (D2): CSV of the data, PNG of the charts, print
+//     scoped to one segment. The downloads are read back off disk and checked
+//     against the document's own counts — a button that downloads the wrong
+//     rows, or an empty PNG, is indistinguishable from a working one in any
+//     string pin. The segment CSV exports the segment's DATA (every row of
+//     the segment), never the filtered view, so the oracle is the row count
+//     of that segment, not what happens to be visible.
+{
+  const segBtn = await page.$('tr.seghead [data-segcsv]');
+  const segName = await segBtn.getAttribute('data-segcsv');
+  const segOracle = await page.evaluate((s) => {
+    const phases = [...document.querySelectorAll(
+      `table.phases tbody tr.phase[data-seg="${s}"]`)];
+    const tasks = [...document.querySelectorAll(
+      `table.phases tbody tr.task[data-seg="${s}"]`)];
+    const taskless = phases.filter((p) => !tasks.some((t) =>
+      t.getAttribute('data-phase') === p.getAttribute('data-phase'))).length;
+    return { rows: tasks.length + taskless };
+  }, segName);
+  try {
+    const wait = page.waitForEvent('download', { timeout: 15000 });
+    await segBtn.click();
+    const dl = await wait;
+    const text = readFileSync(await dl.path(), 'utf8');
+    const lines = text.replace(/^\uFEFF/, '').trim().split('\r\n');
+    if (!/^phase,phase title,phase status,task,task title,task status/.test(lines[0])) {
+      failures.push(`FAIL the segment CSV header names its columns: got "${lines[0]}"`);
+    } else notes.push('ok   the segment CSV header names its columns');
+    expect(`the "${segName}" segment CSV carries one row per task (plus taskless phases)`,
+      lines.length - 1, segOracle.rows);
+    expect('...and the filename names the segment',
+      dl.suggestedFilename().includes(`-phases-${segName}.csv`), true);
+  } catch (e) {
+    failures.push(`FAIL the segment CSV button produced no download (${String(e).split('\n')[0]})`);
+  }
+
+  // Bugs CSV — paired with the table it exports.
+  const bugsTable = await page.$('table.bugs');
+  const bugsBtn = await page.$('[data-csv="bugs"]');
+  if (bugsTable && !bugsBtn) {
+    failures.push('FAIL the report has a bugs table but no CSV control for it');
+  } else if (bugsBtn) {
+    try {
+      const wait = page.waitForEvent('download', { timeout: 15000 });
+      await bugsBtn.click();
+      const dl = await wait;
+      const lines = readFileSync(await dl.path(), 'utf8')
+        .replace(/^\uFEFF/, '').trim().split('\r\n');
+      const want = await page.evaluate(() =>
+        document.querySelectorAll('table.bugs tbody tr').length);
+      expect('the bugs CSV carries one row per bug', lines.length - 1, want);
+    } catch (e) {
+      failures.push(`FAIL the bugs CSV produced no download (${String(e).split('\n')[0]})`);
+    }
+  } else notes.push('ok   (no bugs table in this plan — bugs CSV skipped)');
+
+  // Usage daily CSV + the chart PNGs — paired with the payload they read.
+  const hasU = await page.evaluate(() => !!window.AUDIT_USAGE);
+  const usageBtn = await page.$('[data-csv="usage"]');
+  if (hasU && !usageBtn) {
+    failures.push('FAIL the report embeds the usage payload but offers no daily CSV');
+  } else if (usageBtn) {
+    try {
+      const wait = page.waitForEvent('download', { timeout: 15000 });
+      await usageBtn.click();
+      const dl = await wait;
+      const lines = readFileSync(await dl.path(), 'utf8')
+        .replace(/^\uFEFF/, '').trim().split('\r\n');
+      const want = await page.evaluate(() =>
+        Object.keys(window.AUDIT_USAGE.days).length);
+      expect('the usage CSV carries one row per recorded day', lines.length - 1, want);
+      // Raw numbers, checked structurally rather than by the panel's substring
+      // regex — which read a legitimate 3-digit token count after the date
+      // ("…-10,167,…") as a thousands separator. No field in this CSV is ever
+      // quoted (dates and numbers only), so a separator would ADD a field.
+      const nf = lines[0].split(',').length;
+      const bad = lines.slice(1).filter((l) => l.split(',').length !== nf
+        || !l.split(',').slice(1).every((v) => /^\d+(\.\d+)?$/.test(v)));
+      if (bad.length) {
+        failures.push(`FAIL the usage CSV ships non-raw numbers or ragged rows: `
+          + `"${bad[0]}"`);
+      } else notes.push('ok   the usage CSV ships raw numbers');
+    } catch (e) {
+      failures.push(`FAIL the usage CSV produced no download (${String(e).split('\n')[0]})`);
+    }
+  }
+  const pngIsReal = (buf) => buf.length > 2000
+    && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  for (const kind of ['trend', 'heatmap']) {
+    const btn = await page.$(`[data-png="${kind}"]`);
+    if (hasU && !btn && kind === 'trend') {
+      failures.push('FAIL the report embeds the usage payload but offers no trend PNG');
+      continue;
+    }
+    if (!btn) { notes.push(`ok   (no ${kind} PNG control in this report — skipped)`); continue; }
+    try {
+      const wait = page.waitForEvent('download', { timeout: 15000 });
+      await btn.click();
+      const dl = await wait;
+      const buf = readFileSync(await dl.path());
+      expect(`the ${kind} PNG is a real image, redrawn from the data `
+        + `(${buf.length} bytes)`, pngIsReal(buf), true);
+    } catch (e) {
+      failures.push(`FAIL the ${kind} PNG produced no download (${String(e).split('\n')[0]})`);
+    }
+  }
+
+  // Print one segment: the button stamps body[data-printseg], the print sheet
+  // shows only that segment, and afterprint restores the page. window.print
+  // is stubbed — a real dialog would hang a headless run — and afterprint is
+  // dispatched by hand, which is the same event a closed dialog fires.
+  const pBtn = await page.$(`tr.seghead [data-segprint="${segName}"]`);
+  if (!pBtn) {
+    failures.push(`FAIL the "${segName}" seghead carries a CSV control but no Print control`);
+  } else {
+    await page.evaluate(() => {
+      window.__printed = 0;
+      window.print = () => { window.__printed++; };
+    });
+    const preW = await page.evaluate(() => document.documentElement.scrollWidth);
+    await pBtn.click();
+    await page.waitForTimeout(150);
+    const stamped = await page.evaluate(() => ({
+      seg: document.body.getAttribute('data-printseg'),
+      printed: window.__printed,
+    }));
+    expect('the Print button stamps the segment on the body', stamped.seg, segName);
+    expect('...and opens the print dialog', stamped.printed, 1);
+    await page.emulateMedia({ media: 'print' });
+    await page.waitForTimeout(150);
+    const isolated = await page.evaluate((s) => {
+      const vis = (el) => el && getComputedStyle(el).display !== 'none';
+      const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+      return {
+        shown: rows.filter(vis).length,
+        inSeg: rows.filter((r) => vis(r) && r.getAttribute('data-seg') === s).length,
+        wantSeg: rows.filter((r) => r.getAttribute('data-seg') === s).length,
+        usageGone: !vis(document.getElementById('usage')),
+        otherHeads: [...document.querySelectorAll('tr.seghead')]
+          .filter((h) => vis(h) && h.getAttribute('data-seg') !== s).length,
+      };
+    }, segName);
+    await page.emulateMedia({ media: null });
+    expect(`one segment on paper: every "${segName}" phase prints`,
+      isolated.inSeg, isolated.wantSeg);
+    expect('...and nothing from the other segments does',
+      isolated.shown, isolated.inSeg);
+    expect('...their headers included', isolated.otherHeads, 0);
+    expect('...and the other sections stay off the sheet', isolated.usageGone, true);
+    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    await page.waitForTimeout(100);
+    const after = await page.evaluate(() => ({
+      seg: document.body.getAttribute('data-printseg'),
+      dw: document.documentElement.scrollWidth,
+      cw: document.documentElement.clientWidth,
+    }));
+    expect('afterprint takes the stamp back off', after.seg, null);
+    expect(`...and the whole round trip grew no scroll box (scrollWidth ${preW} -> ${after.dw})`,
+      after.dw <= Math.max(preW, after.cw + 1), true);
+  }
+}
 
 // 7. Paper — the one output nobody looks at before shipping, and the only part
 //    of the report a string pin genuinely cannot check: whether the print rules

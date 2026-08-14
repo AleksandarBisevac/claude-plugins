@@ -141,6 +141,10 @@ async function assertBarsPainted(page, label) {
   const bars = await page.evaluate(() => {
     const out = [];
     document.querySelectorAll('.fill').forEach((el) => {
+      // Only bars that are laid out at all: a bar inside the report's
+      // collapsed done-archive (D1) sits in a display:none row, and 0px is
+      // the CORRECT paint for it. offsetParent is null exactly then.
+      if (el.offsetParent === null) return;
       const cs = getComputedStyle(el);
       out.push({
         declared: el.getAttribute('style') || '',
@@ -1066,6 +1070,198 @@ async function assertUsageWorks(page) {
         renderUsage();
       });
       await page.waitForTimeout(250);
+    }
+  }
+
+  // --- D3 (v0.36): the tokens heatmap ----------------------------------------
+  // Day-of-week x hour, derived CLIENT-side from the hourly fact timestamps,
+  // inheriting the report's C3 semantics: granularity chips, prev/next
+  // bounded by the data (disabled AND muted at an edge, stepping over gap
+  // days), the period NAMED, and the custom range being the panel's own day
+  // filter rather than a second range control. Every expected number is
+  // recomputed here from USAGE.facts — the same join the renderer makes, a
+  // different implementation of it.
+  {
+    await clear();
+    const rolled = await page.evaluate(() => !!USAGE.rolled);
+    const hmCount = await page.locator('#usage table.uhm').count();
+    if (rolled) {
+      if (hmCount) {
+        fail('usage: the ledger is rolled to daily buckets and a heatmap '
+           + 'rendered anyway — there is no hour left to draw');
+      } else {
+        note('usage: rolled ledger; the heatmap correctly stays away');
+      }
+    } else if (!hmCount) {
+      fail('usage: hourly facts and no tokens heatmap rendered');
+    } else {
+      const rest = await page.evaluate(() => {
+        const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
+        const agg = {};
+        for (const f of USAGE.facts) {
+          const wd = (new Date(f[F.ts].slice(0, 10) + 'T00:00:00Z').getUTCDay() + 6) % 7;
+          const k = wd + ':' + f[F.ts].slice(11, 13);
+          agg[k] = (agg[k] || 0) + f[F.tokens];
+        }
+        const t = document.querySelector('#usage table.uhm');
+        const wrap = t.closest('.uhmwrap');
+        const chart = document.querySelector('#usage .chartslot');
+        return {
+          rows: t.querySelectorAll('tbody tr').length,
+          cells: t.querySelector('tbody tr').querySelectorAll('td').length,
+          peakAttr: +t.getAttribute('data-hmpeak'),
+          peak: Math.max(0, ...Object.values(agg)),
+          lo: days[0], hi: days[days.length - 1], nDays: days.length,
+          period: document.querySelector('#usage [data-uhmperiod]').textContent,
+          prevOff: document.querySelector('#usage [data-uhm=prev]').disabled,
+          nextOff: document.querySelector('#usage [data-uhm=next]').disabled,
+          w: wrap ? wrap.getBoundingClientRect().width : 0,
+          cw: chart ? chart.getBoundingClientRect().width : 0,
+        };
+      });
+      if (rest.rows !== 7 || rest.cells !== 24) {
+        fail(`usage: the heatmap at rest draws ${rest.rows}x${rest.cells}, `
+           + `want the 7x24 weekday grid`);
+      } else if (rest.peakAttr !== rest.peak) {
+        fail(`usage: the heatmap claims peak ${rest.peakAttr}, the facts say `
+           + `${rest.peak}`);
+      } else if (!rest.period.includes('All data')
+                 || !rest.period.includes(rest.lo) || !rest.period.includes(rest.hi)) {
+        fail(`usage: at rest the heatmap period reads "${rest.period}" — it `
+           + `must name all data and the span ${rest.lo} to ${rest.hi}`);
+      } else if (!rest.prevOff || !rest.nextOff) {
+        fail(`usage: at all-data the arrows must both be disabled (prev `
+           + `${rest.prevOff}, next ${rest.nextOff}) — there is no period to step to`);
+      } else if (rest.cw && rest.w < rest.cw * 0.9) {
+        fail(`usage: the heatmap is a thumbnail — ${Math.round(rest.w)}px beside `
+           + `a ${Math.round(rest.cw)}px chart; it should fill the card like the `
+           + `other charts`);
+      } else {
+        note(`usage: heatmap at rest — 7x24 grid, peak ${rest.peakAttr} matches `
+           + `the facts, period "${rest.period}", arrows parked`);
+      }
+
+      // Day granularity: opens on the LAST recorded day; next is disabled AND
+      // muted at the edge; prev steps to the previous day WITH data.
+      await page.click('#usage [data-uhg=day]');
+      await page.waitForTimeout(300);
+      const day1 = await page.evaluate(() => {
+        const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
+        const next = document.querySelector('#usage [data-uhm=next]');
+        return {
+          last: days[days.length - 1], prev: days[days.length - 2] || null,
+          rows: document.querySelectorAll('#usage table.uhm tbody tr').length,
+          period: document.querySelector('#usage [data-uhmperiod]').textContent,
+          prevOff: document.querySelector('#usage [data-uhm=prev]').disabled,
+          nextOff: next.disabled,
+          nextOp: parseFloat(getComputedStyle(next).opacity),
+        };
+      });
+      if (day1.rows !== 1 || !day1.period.includes(day1.last)) {
+        fail(`usage: Day granularity draws ${day1.rows} row(s) for "${day1.period}" `
+           + `— want one row named ${day1.last}`);
+      } else if (!day1.nextOff || !(day1.nextOp < 1)) {
+        fail(`usage: at the data's edge the next arrow is disabled=${day1.nextOff} `
+           + `opacity=${day1.nextOp} — it must be both inert and visibly muted`);
+      } else {
+        note(`usage: Day opens on ${day1.last}, next arrow parked and muted `
+           + `(opacity ${day1.nextOp})`);
+      }
+      if (day1.prev) {
+        if (day1.prevOff) {
+          fail('usage: more than one recorded day and the prev arrow is disabled');
+        } else {
+          await page.click('#usage [data-uhm=prev]');
+          await page.waitForTimeout(300);
+          const day2 = await page.evaluate(() => ({
+            period: document.querySelector('#usage [data-uhmperiod]').textContent,
+            nextOff: document.querySelector('#usage [data-uhm=next]').disabled,
+          }));
+          if (!day2.period.includes(day1.prev)) {
+            fail(`usage: prev stepped to "${day2.period}", want the previous `
+               + `day with data (${day1.prev})`);
+          } else if (day2.nextOff) {
+            fail('usage: away from the edge the next arrow stays disabled');
+          } else {
+            note(`usage: prev steps to ${day1.prev} and next re-enables`);
+          }
+        }
+      }
+
+      // Month names the month; the grid aggregates back to weekday rows.
+      await page.click('#usage [data-uhg=month]');
+      await page.waitForTimeout(300);
+      const mon = await page.evaluate(() => {
+        const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
+        const last = days[days.length - 1];
+        const name = ['January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November',
+          'December'][+last.slice(5, 7) - 1];
+        return {
+          want: name + ' ' + last.slice(0, 4),
+          period: document.querySelector('#usage [data-uhmperiod]').textContent,
+          rows: document.querySelectorAll('#usage table.uhm tbody tr').length,
+        };
+      });
+      if (!mon.period.includes(mon.want) || mon.rows !== 7) {
+        fail(`usage: Month granularity reads "${mon.period}" with ${mon.rows} `
+           + `rows — want "${mon.want}" over 7 weekday rows`);
+      } else {
+        note(`usage: Month names "${mon.want}" over weekday rows`);
+      }
+
+      // None of that navigation may grow a page scroll box (assertHintsFit's
+      // standing rule): the wrap owns any sideways overflow.
+      const hmGrow = await page.evaluate(() => ({
+        dw: document.documentElement.scrollWidth,
+        cw: document.documentElement.clientWidth,
+      }));
+      if (hmGrow.dw > hmGrow.cw + 1) {
+        fail(`usage: heatmap navigation grew the page sideways `
+           + `(scrollWidth ${hmGrow.dw} vs ${hmGrow.cw})`);
+      } else {
+        note('usage: heatmap navigation grew no page scroll box');
+      }
+
+      // The custom range IS the panel's day filter: scope to a mid..end
+      // window and the heatmap's whole universe becomes that window.
+      await page.click('#usage [data-uhg=all]');
+      await page.waitForTimeout(200);
+      const win = await page.evaluate(() => {
+        const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
+        const mid = days[Math.floor(days.length / 2)];
+        uSetDays(mid, '');
+        return { mid, end: (USAGE.counts || {}).to };
+      });
+      await page.waitForTimeout(300);
+      const ranged = await page.evaluate(([mid, end]) => {
+        const agg = {};
+        for (const f of USAGE.facts) {
+          const d = f[F.ts].slice(0, 10);
+          if (d < mid || d > end) continue;
+          const wd = (new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7;
+          const k = wd + ':' + f[F.ts].slice(11, 13);
+          agg[k] = (agg[k] || 0) + f[F.tokens];
+        }
+        const t = document.querySelector('#usage table.uhm');
+        return {
+          period: document.querySelector('#usage [data-uhmperiod]').textContent,
+          peakAttr: t ? +t.getAttribute('data-hmpeak') : null,
+          peak: Math.max(0, ...Object.values(agg)),
+        };
+      }, [win.mid, win.end]);
+      if (!/Custom range/.test(ranged.period)
+          || !ranged.period.includes(win.mid) || !ranged.period.includes(win.end)) {
+        fail(`usage: with the day filter on, the heatmap period reads `
+           + `"${ranged.period}" — want "Custom range" naming ${win.mid} to ${win.end}`);
+      } else if (ranged.peakAttr !== ranged.peak) {
+        fail(`usage: the ranged heatmap claims peak ${ranged.peakAttr}, the `
+           + `facts inside ${win.mid}..${win.end} say ${ranged.peak}`);
+      } else {
+        note(`usage: the day filter scopes the heatmap — "${ranged.period}", `
+           + `peak ${ranged.peak} matches`);
+      }
+      await clear();
     }
   }
 
@@ -3217,12 +3413,22 @@ async function main() {
           await shot(page, 'areas');
           await page.click(`#audit-areas .fchip[data-a="${pick.tag}"]`);
           await page.waitForTimeout(250);
-          const back = await page.evaluate(() =>
-            [...document.querySelectorAll('table.phases tbody tr.phase')]
-              .filter((r) => r.style.display !== 'none').length);
-          if (back !== pick.total) {
+          // Releasing the chip returns to the AT-REST view, and since D1 the
+          // rest state may hold done phases collapsed under the archive —
+          // the expectation reads the document's own contract (the toggle's
+          // state) rather than assuming every row shows.
+          const back = await page.evaluate(() => {
+            const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+            const arch = document.getElementById('audit-arch');
+            const archived = (arch && arch.getAttribute('aria-expanded') === 'false')
+              ? rows.filter((r) => r.getAttribute('data-seg') === 'done').length : 0;
+            return { shown: rows.filter((r) => r.style.display !== 'none').length,
+                     want: rows.length - archived };
+          });
+          if (back.shown !== back.want) {
             fail(`report: releasing the "${pick.tag}" area chip left `
-               + `${back}/${pick.total} phase rows`);
+               + `${back.shown}/${pick.total} phase rows (want ${back.want} — `
+               + `the rest sit in the collapsed archive)`);
           }
           await page.click('.fdetails > summary');
           await page.waitForTimeout(120);

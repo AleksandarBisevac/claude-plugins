@@ -235,6 +235,45 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
    already follows (.btblwrap, .dtblwrap, .poltblwrap). */
 .umwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .umwrap .utbl{min-width:34rem}
+/* ---- tokens heatmap (D3) ---------------------------------------------------
+   Proportions follow the tab's other charts: full card width, cells sized so
+   seven rows land near the 190px the line chart owns. The ramp is built from
+   the accent by color-mix — no new theme tokens, so light and dark cannot
+   drift apart. Level 0 recedes into the surface the way an empty spark does. */
+.uhmnav{display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap;
+ margin:var(--sp-1) 0}
+.uhmperiod{font-size:.78rem;color:var(--text);font-variant-numeric:tabular-nums;
+ min-width:11rem;text-align:center}
+.uhmarrow[disabled]{opacity:.35;cursor:default;pointer-events:none;
+ transform:none;box-shadow:none}
+.uhmwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.uhmwrap .uhm{min-width:34rem}
+.uhm{border-collapse:separate;border-spacing:2px;width:100%;
+ table-layout:fixed;font-size:.62rem;color:var(--muted)}
+.uhm th{font-weight:500;color:var(--muted);text-align:right;
+ padding:0 var(--sp-0);white-space:nowrap;border:0;text-transform:none;
+ letter-spacing:normal}
+.uhm .uhmc{width:6.2rem}
+.uhm thead th{text-align:left}
+.uhm td{padding:0}
+.uhm td i{display:block;height:20px;border-radius:2px;
+ background:color-mix(in srgb,var(--text) 6%,transparent);cursor:help}
+.uhm td i:hover{outline:2px solid var(--text);outline-offset:1px}
+.uhm i[data-l="1"]{background:color-mix(in srgb,var(--accent-solid) 18%,transparent)}
+.uhm i[data-l="2"]{background:color-mix(in srgb,var(--accent-solid) 32%,transparent)}
+.uhm i[data-l="3"]{background:color-mix(in srgb,var(--accent-solid) 47%,transparent)}
+.uhm i[data-l="4"]{background:color-mix(in srgb,var(--accent-solid) 63%,transparent)}
+.uhm i[data-l="5"]{background:color-mix(in srgb,var(--accent-solid) 80%,transparent)}
+.uhm i[data-l="6"]{background:var(--accent-solid)}
+.uhmkey{display:flex;align-items:center;gap:var(--sp-0);margin-top:var(--sp-0)}
+.uhmkey i{display:inline-block;width:1rem;height:.65rem;border-radius:2px;
+ background:color-mix(in srgb,var(--text) 6%,transparent)}
+.uhmkey i[data-l="1"]{background:color-mix(in srgb,var(--accent-solid) 18%,transparent)}
+.uhmkey i[data-l="2"]{background:color-mix(in srgb,var(--accent-solid) 32%,transparent)}
+.uhmkey i[data-l="3"]{background:color-mix(in srgb,var(--accent-solid) 47%,transparent)}
+.uhmkey i[data-l="4"]{background:color-mix(in srgb,var(--accent-solid) 63%,transparent)}
+.uhmkey i[data-l="5"]{background:color-mix(in srgb,var(--accent-solid) 80%,transparent)}
+.uhmkey i[data-l="6"]{background:var(--accent-solid)}
 .utbl th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
  letter-spacing:.06em;color:var(--muted);font-weight:500;
  padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}

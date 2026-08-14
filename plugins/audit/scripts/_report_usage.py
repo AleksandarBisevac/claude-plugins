@@ -29,6 +29,7 @@ Imports go one way only: _report_html -> _report_usage -> render-report. This
 module may use _loader (to load usage_ledger.py), _fmt, _ui_theme and
 _report_html; it must never import render-report.
 """
+import json
 import os
 import re
 import sys
@@ -70,6 +71,27 @@ def _pricing_stale(as_of, until, max_days=90):
         return (t_until - t_as_of) > max_days * 86400
     except Exception:
         return False
+
+
+def _hourly(rows, ul):
+    """rows -> {"YYYY-MM-DD": [24 ints]} — tokens per hour per calendar date.
+
+    The ledger already keys rows by hour bucket (`YYYY-MM-DDTHH`), so this is a
+    straight regrouping, not a new derivation. Days appear only when they carry
+    at least one parseable row; absent days are absent keys, and the client
+    treats a missing day as 24 zeros."""
+    out = {}
+    for row in rows:
+        bucket = row.get("ts")
+        day = ul.bucket_date(bucket)
+        hour = ul.bucket_hour(bucket)
+        if not day or hour is None:
+            continue
+        vec = out.get(day)
+        if vec is None:
+            vec = out[day] = [0] * 24
+        vec[hour] += sum(int(row.get(k) or 0) for k in ul.TOKEN_KEYS)
+    return out
 
 
 def load_usage(manifest, manifest_path, project_dir=None):
@@ -145,6 +167,15 @@ def load_usage(manifest, manifest_path, project_dir=None):
                       if k != "unknown"},
             "dailyCost": {k: v["costUSD"] for k, v in ul.aggregate(rows, "day").items()
                           if k != "unknown"},
+            "dailyMsgs": {k: v["msgs"] for k, v in ul.aggregate(rows, "day").items()
+                          if k != "unknown"},
+            # Per-date hour vectors (C1/C3): {"YYYY-MM-DD": [24 ints]}. The 7x24
+            # heatmap aggregates AWAY the calendar, so it cannot be navigated by
+            # day/week/month/year after the fact — this keeps the calendar. It is
+            # embedded into the page (see _usage_payload) for the report's own
+            # date-range and heatmap navigation, both of which run client-side in
+            # a file with no server to ask.
+            "hourly": _hourly(rows, ul),
             "heatmap": ul.heatmap(rows),
             # the analytics layer — every one of these carries its own honesty guard
             "compare": ul.compare(rows, since, until) if since else None,
@@ -385,18 +416,20 @@ def _usage_trend(u):
             d, [("tokens", _fmt_tokens(n, 2)),
                 ("cost", _fmt_cost((u.get("dailyCost") or {}).get(d, 0.0))
                  if u.get("showCost", True) else None)])
+        # data-d is the filter hook (C1): the global date range dims the columns
+        # outside it CLIENT-side, so the mark has to say which day it draws.
         if bw < 6.0:
             # Below ~6px a two-corner rounded cap is a 1px curve nobody can see,
             # and the nine-point path costs three times a plain rect. Long spans
             # are exactly where that difference adds up.
-            bars.append('<rect class="col" x="%.1f" y="%.1f" width="%.1f" '
-                        'height="%.1f" rx="%.1f">%s</rect>'
-                        % (x, y, bw, bh, r, tip))
+            bars.append('<rect class="col" data-d="%s" x="%.1f" y="%.1f" '
+                        'width="%.1f" height="%.1f" rx="%.1f">%s</rect>'
+                        % (e(d), x, y, bw, bh, r, tip))
         else:
             bars.append(
-                '<path class="col" d="M%.1f %.1fL%.1f %.1fQ%.1f %.1f %.1f %.1f'
-                'L%.1f %.1fQ%.1f %.1f %.1f %.1fL%.1f %.1fZ">%s</path>'
-                % (x, y + bh, x, y + r, x, y, x + r, y,
+                '<path class="col" data-d="%s" d="M%.1f %.1fL%.1f %.1fQ%.1f '
+                '%.1f %.1f %.1fL%.1f %.1fQ%.1f %.1f %.1f %.1fL%.1f %.1fZ">%s</path>'
+                % (e(d), x, y + bh, x, y + r, x, y, x + r, y,
                    x + bw - r, y, x + bw, y, x + bw, y + r, x + bw, y + bh, tip))
         if i % every == 0 or i == len(days) - 1:
             # Percent of the plot width, so the tick tracks its column at any
@@ -406,8 +439,8 @@ def _usage_trend(u):
             side = ("left:0;transform:none" if i == 0
                     else "right:0;left:auto;transform:none"
                     if i == len(days) - 1 else "left:%.3f%%" % pos)
-            labels.append('<span class="xt" style="%s">%s</span>'
-                          % (side, e(d[5:])))
+            labels.append('<span class="xt" data-d="%s" style="%s">%s</span>'
+                          % (e(d), side, e(d[5:])))
     # vector-effect keeps the hairline exactly 1px however the x axis is stretched.
     grid = "".join(
         '<line class="grid" x1="0" y1="%.1f" x2="%d" y2="%.1f" '
@@ -722,10 +755,12 @@ def _monthly_block(u):
         pl = plan.get(m) or {}
         cost_cell = ("<td class=mono>%s</td>"
                      % e(_fmt_cost(lg.get("costUSD", 0.0)))) if show_cost else ""
+        # data-um is the month's own key (C1): the global date range hides the
+        # rows for months wholly outside it, client-side.
         rows.append(
-            "<tr><td class=mono>%s</td><td class=mono>%s</td>%s<td>%s</td>"
+            '<tr data-um="%s"><td class=mono>%s</td><td class=mono>%s</td>%s<td>%s</td>'
             "<td>%d</td><td>%d</td><td>%d</td><td>%d</td></tr>"
-            % (e(m), e(_fmt_tokens(lg.get("tokens", 0))), cost_cell,
+            % (e(m), e(m), e(_fmt_tokens(lg.get("tokens", 0))), cost_cell,
                "{:,}".format(lg.get("msgs", 0)),
                pl.get("tasksCompleted", 0), pl.get("bugsReported", 0),
                pl.get("bugsFixed", 0), pl.get("phasesMerged", 0)))
@@ -929,7 +964,17 @@ _WDAY = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 def _usage_heatmap(u):
     """Day-of-week x hour grid on a single-hue sequential ramp (never a rainbow).
-    Zero recedes into the surface; a scale key makes the encoding readable."""
+    Zero recedes into the surface; a scale key makes the encoding readable.
+
+    C3 adds calendar navigation on top: granularity chips (all/year/month/week/
+    day) with prev/next arrows, server-rendered like every other chip row so
+    the controls exist on paper and without scripts — report.js attaches the
+    behaviour and re-renders the tbody from the embedded per-date hour vectors
+    (see _usage_payload). The static render IS the "all data" view, so a page
+    that runs no script still shows a true heatmap; the period label under the
+    heading names what is on screen rather than leaving it implied. Both arrows
+    start disabled: at "all data" there is no previous period to step to, and
+    an arrow that cannot act must say so rather than do nothing."""
     grid = u.get("heatmap") or []
     if len(grid) != 7:
         return ""
@@ -948,11 +993,68 @@ def _usage_heatmap(u):
     ticks = "".join("<th>%s</th>" % (str(h).zfill(2) if h % 6 == 0 else "")
                     for h in range(24))
     key = "".join('<i style="background:var(--hm-%d)"></i>' % i for i in range(7))
-    return ('<h4 class="sub">When the tokens are spent (UTC)</h4>'
-            '<div class="hmwrap"><table class="hm"><thead><tr><th></th>%s</tr>'
-            "</thead><tbody>%s</tbody></table></div>"
-            '<p class="hmkey">0 %s %s tokens/hour</p>'
-            % (ticks, "".join(rows), key, e(_fmt_tokens(peak))))
+    days = sorted(u.get("daily") or {})
+    span = ("%s to %s" % (days[0], days[-1])) if days else "every recorded day"
+    gran_chips = "".join(
+        '<button type="button" class="fchip" data-g="%s" aria-pressed="false">'
+        "%s</button>" % (g, label)
+        for g, label in (("all", "All"), ("year", "Year"), ("month", "Month"),
+                         ("week", "Week"), ("day", "Day")))
+    # D2: the PNG export, gated on the per-day payload — report.js redraws the
+    # CURRENT view (granularity, period, range) from window.AUDIT_USAGE onto a
+    # canvas; without the payload the button would download nothing.
+    png_btn = ('<button type="button" class="btn segbtn" data-png="heatmap" '
+               'title="Download this heatmap as a PNG image, redrawn from '
+               'the data">PNG</button>' if u.get("daily") else "")
+    nav = ('<div class="hmnav">'
+           '<span id="audit-hm-gran">%s</span>'
+           '<button type="button" class="btn btn-icon hmarrow" id="audit-hm-prev" '
+           'aria-label="Previous period" disabled>&lsaquo;</button>'
+           '<span class="hmperiod" id="audit-hm-period">All data &middot; %s</span>'
+           '<button type="button" class="btn btn-icon hmarrow" id="audit-hm-next" '
+           'aria-label="Next period" disabled>&rsaquo;</button>'
+           "%s</div>" % (gran_chips, e(span), png_btn))
+    return ('<h4 class="sub">When the tokens are spent (UTC)</h4>%s'
+            '<div class="hmwrap"><table class="hm"><thead><tr>'
+            '<th class="hmc"></th>%s</tr>'
+            '</thead><tbody id="audit-hm-body">%s</tbody></table></div>'
+            '<p class="hmkey">0 %s <span id="audit-hm-peak">%s</span> tokens/hour</p>'
+            % (nav, ticks, "".join(rows), key, e(_fmt_tokens(peak))))
+
+
+def _usage_payload(u):
+    """The per-day data layer (C1/C3), embedded as one JSON blob.
+
+    `window.AUDIT_USAGE` = {"min", "max", "days": {date: [tokens, costUSD,
+    msgs, [24 hourly token counts]]}} — everything report.js needs to scope
+    the time-based views to a date range and to navigate the heatmap by
+    calendar period, in a file that has no server to ask. Same embedding
+    precedent as `window.AUDIT_MD_B64` in render-report.
+
+    Deterministic on purpose (sorted keys, compact separators, costs rounded
+    to 6dp): the committed example report is byte-compared by CI. The payload
+    is data about dates and integers, so it cannot contain "</script>" or an
+    external URL — render-report's x5 zero-fetch pin scans it like everything
+    else."""
+    daily = u.get("daily") or {}
+    if not daily:
+        return ""
+    show_cost = bool(u.get("showCost", True))
+    cost = u.get("dailyCost") or {}
+    msgs = u.get("dailyMsgs") or {}
+    hourly = u.get("hourly") or {}
+    days = {}
+    for d in sorted(daily):
+        # showCost off zeroes the cost column: a page that shows no dollars
+        # must not smuggle them in through its own data layer.
+        days[d] = [int(daily.get(d) or 0),
+                   round(float(cost.get(d) or 0.0), 6) if show_cost else 0,
+                   int(msgs.get(d) or 0),
+                   [int(n) for n in (hourly.get(d) or [0] * 24)]]
+    blob = json.dumps({"min": min(daily), "max": max(daily),
+                       "showCost": show_cost, "days": days},
+                      sort_keys=True, separators=(",", ":"))
+    return "<script>window.AUDIT_USAGE=%s;</script>" % blob
 
 
 # --- section assembly ---------------------------------------------------------
@@ -971,6 +1073,15 @@ def _usage_section(u):
     out.append(_usage_notices(u))
     out.append(_usage_context(u))
     out.append(_usage_tiles(u))
+    # The active date range, said in one line (C1). Filled by report.js when a
+    # range is on: it names the span, gives that span's own totals, and says
+    # which views are scoped — the tiles above deliberately stay all-time,
+    # because sessions and cache economics cannot be recomputed from per-day
+    # data and a partly-true tile is worse than a labelled all-time one. This
+    # line is also the print story: the scoped charts print as scoped, and the
+    # sheet needs the range NAMED on it rather than implied (the sticky bar
+    # carrying the pickers never reaches paper).
+    out.append('<p class="uctx urange" id="audit-urange" hidden></p>')
 
     win = u.get("compareWindow") or {}
     out.append('<h3 class="sub">Tokens per day</h3>')
@@ -979,6 +1090,19 @@ def _usage_section(u):
                    "Deltas above compare %s to %s with the 30 days before it.</p>"
                    % (e(win.get("since") or "?"), e(win.get("until") or "?")))
     out.append(_usage_trend(u))
+    # D2: the daily rows and the trend leave as files — CSV of the per-day
+    # data and a PNG redrawn from it, both generated client-side from
+    # window.AUDIT_USAGE (the same payload the range scoping reads), so both
+    # are gated on the daily series existing at all.
+    if u.get("daily"):
+        out.append(
+            '<div class="secx usx">'
+            '<button type="button" class="btn segbtn" data-csv="usage" '
+            'title="Download the per-day usage rows (date, tokens, cost, '
+            'msgs) as CSV — the whole recorded span">CSV</button>'
+            '<button type="button" class="btn segbtn" data-png="trend" '
+            'title="Download this chart as a PNG image, redrawn from the '
+            'data">PNG</button></div>')
 
     out.append(_author_chips(u))
     out.append('<div class="ranks">%s%s%s</div>' % (
@@ -1000,6 +1124,7 @@ def _usage_section(u):
                    "activity, per-author split, phase composition, unit "
                    "economics, model routing, hourly pattern</summary>"
                    "%s</details>" % detail)
+    out.append(_usage_payload(u))
     return "".join(out)
 
 
@@ -1269,6 +1394,97 @@ def _selftest():
                          "background:var(--viz-2)"))
     check("u9 daily column chart and heatmap render",
           'class="cols"' in uh and 'class="hm"' in uh)
+
+    # --- ug: the date-range data layer (C1) ------------------------------------
+    # ug1: _hourly regroups ledger rows by calendar date and hour. Fed through a
+    # shim so the case tests the regrouping, not the ledger loader.
+    class _UlShim(object):
+        TOKEN_KEYS = ("in", "out")
+
+        @staticmethod
+        def bucket_date(b):
+            return b[:10] if isinstance(b, str) and len(b) >= 10 else ""
+
+        @staticmethod
+        def bucket_hour(b):
+            try:
+                return int(b[11:13])
+            except (TypeError, ValueError, IndexError):
+                return None
+    _hrows = [{"ts": "2026-08-01T09", "in": 5, "out": 7},
+              {"ts": "2026-08-01T09", "in": 1, "out": 0},
+              {"ts": "2026-08-02T23", "in": 2, "out": 2},
+              {"ts": "garbage", "in": 9, "out": 9}]
+    _hout = _hourly(_hrows, _UlShim)
+    check("ug1 _hourly regroups rows into per-date 24-hour vectors and drops "
+          "the unparseable",
+          set(_hout) == {"2026-08-01", "2026-08-02"}
+          and _hout["2026-08-01"][9] == 13
+          and sum(_hout["2026-08-01"]) == 13
+          and _hout["2026-08-02"][23] == 4)
+    # ug2: the payload script is embedded, deterministic, and carries min/max.
+    check("ug2 the per-day payload is embedded as window.AUDIT_USAGE with the "
+          "data bounds",
+          "window.AUDIT_USAGE=" in uh
+          and '"min":"2026-08-01"' in uh and '"max":"2026-08-02"' in uh)
+    check("ug2b the payload is byte-deterministic across two renders",
+          _usage_payload(_u) == _usage_payload(dict(_u)))
+    # ug3: no daily data, no payload — and a payload never carries a fetch.
+    check("ug3 no daily series renders no payload at all",
+          _usage_payload(dict(_u, daily={})) == "")
+    _uhr = dict(_u, hourly={"2026-08-01": [0] * 9 + [123456] + [0] * 14})
+    check("ug4 the payload carries the hour vector for a day that has one",
+          ",123456," in _usage_payload(_uhr))
+    check("ug4b showCost=false zeroes the payload's costs - no dollars reach a "
+          "page that shows none",
+          '"2026-08-01":[900000,0,' in _usage_payload(dict(_uhr, showCost=False))
+          and '"showCost":false' in _usage_payload(dict(_uhr, showCost=False)))
+    # ug5: every trend column and tick label says which day it draws — the hook
+    # the client-side range dimming filters by.
+    check("ug5 trend columns and tick labels carry data-d for the range filter",
+          'data-d="2026-08-01"' in _usage_trend(_u)
+          and _usage_trend(_u).count('data-d="2026-08-02"') >= 2)
+    # ug6: monthly rows carry their month key for the same reason.
+    check("ug6 monthly rows carry data-um",
+          'data-um="2026-07"' in _monthly_block(_u)
+          and 'data-um="2026-08"' in _monthly_block(_u))
+    # ug7: the range line exists (empty + hidden at rest; report.js fills it
+    # when a range is active — it is the print story for a scoped chart).
+    check("ug7 the range summary line is in the document, hidden at rest",
+          'id="audit-urange" hidden' in uh)
+
+    # --- uh: heatmap calendar navigation (C3) ----------------------------------
+    check("uh1 the heatmap nav renders all five granularity chips",
+          'id="audit-hm-gran"' in uh
+          and all('data-g="%s"' % g in uh
+                  for g in ("all", "year", "month", "week", "day")))
+    check("uh2 both arrows start disabled - at 'all data' there is no period "
+          "to step to, and an arrow that cannot act must say so",
+          'aria-label="Previous period" disabled>' in uh
+          and 'aria-label="Next period" disabled>' in uh)
+    check("uh3 the period on display is NAMED, not implied, and the tbody and "
+          "peak carry the ids the re-renderer drives",
+          'id="audit-hm-period">All data &middot; 2026-08-01 to 2026-08-02<' in uh
+          and 'id="audit-hm-body"' in uh and 'id="audit-hm-peak"' in uh)
+    _no_hm = dict(_u, heatmap=[])
+    check("uh4 no heatmap, no nav - the controls never outlive the grid",
+          'id="audit-hm-gran"' not in _usage_section(_no_hm))
+
+    # --- ux: usage export controls (D2, v0.36) ---------------------------------
+    # The daily CSV and the chart PNGs are generated CLIENT-side from the
+    # embedded payload (window.AUDIT_USAGE) - these pins only prove the
+    # controls exist where the data does, and nowhere else. The downloads
+    # themselves are driven in tools/check-report-interactive.mjs.
+    check("ux1 with a daily series the usage section offers the daily CSV and "
+          "the trend PNG, beside the chart they export",
+          'data-csv="usage"' in uh and 'data-png="trend"' in uh)
+    check("ux2 the heatmap nav carries its own PNG control",
+          'data-png="heatmap"' in _usage_heatmap(_u))
+    _no_daily = _usage_section(dict(_u, daily={}))
+    check("ux3 no daily series, no usage export controls - a button whose "
+          "payload is missing would download nothing",
+          'data-csv="usage"' not in _no_daily
+          and "data-png=" not in _no_daily)
     check("u11 every chart mark carries a title for hover/AT",
           uh.count("<title>") >= 2 and 'role="img"' in uh)
     check("u13 md twin lists authors only when there is more than one",

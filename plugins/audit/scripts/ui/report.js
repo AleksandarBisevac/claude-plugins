@@ -198,6 +198,42 @@
   var smCells = [].slice.call(document.querySelectorAll('.smcell'));
   var auRows = [].slice.call(document.querySelectorAll('.rank[data-author]'));
 
+  // The global filter row (C1/C2) — a second line of the sticky top bar. Each
+  // control is a compact twin of a filter that already exists (author chips,
+  // area chips, the panel's date pair) over the SAME state variables, so the
+  // two presentations can never disagree about what is filtered.
+  var gFrom = document.getElementById('audit-gfrom');
+  var gTo = document.getElementById('audit-gto');
+  var gClear = document.getElementById('audit-gclear');
+  var auSelect = document.getElementById('audit-au-select');
+  var areaSelect = document.getElementById('audit-area-select');
+  // The per-day data layer both C1 (range scoping) and C3 (heatmap calendar
+  // navigation) read: {min, max, showCost, days: {date: [tokens, cost, msgs,
+  // [24 hour counts]]}}. Absent on a report without a ledger.
+  var U = window.AUDIT_USAGE || null;
+
+  // Client-side mirrors of _fmt.py's formatters, for text this script has to
+  // compose itself (the range summary line, the re-rendered heatmap tips).
+  // Same table, same shapes: magnitudes compact ("3.2M"), countables keep
+  // their thousands separators, real-but-sub-cent spend never reads $0.00.
+  function fmtTokens(n, dp) {
+    n = Math.trunc(n || 0);
+    var a = Math.abs(n);
+    var t = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (var i = 0; i < t.length; i++) {
+      if (a >= t[i][0]) return (n / t[i][0]).toFixed(dp) + t[i][1];
+    }
+    return String(n);
+  }
+  function fmtCost(x) {
+    x = x || 0;
+    if (x && Math.abs(x) < 0.01) return '<$0.01';
+    return '$' + x.toFixed(2);
+  }
+  function fmtInt(n) {
+    return String(Math.trunc(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
   // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
   // refresh() calls them inside a loop over phases — so one keystroke in the filter
   // ran 200 selector queries across a 4200-row tbody, roughly 840,000 node visits,
@@ -226,6 +262,21 @@
   // Resolved once, with everything else that refresh() would otherwise have to
   // look up per phase per keystroke.
   phaseRows.forEach(function (pr) { pr.__pmatch = pr.querySelector('.pmatch'); });
+  // Segments (D1), indexed once like everything else refresh() reads. The
+  // archive starts collapsed exactly when the renderer emitted the toggle:
+  // the server decides (done phases exist AND something else does too), this
+  // script only obeys — a second copy of that decision here would be the two
+  // drifting apart.
+  var segRows = grouped
+    ? [].slice.call(grouped.querySelectorAll('tbody tr.seghead')) : [];
+  segRows.forEach(function (sh) { sh.__seg = sh.getAttribute('data-seg'); });
+  var archN = 0;
+  phaseRows.forEach(function (pr) {
+    pr.__seg = pr.getAttribute('data-seg') || '';
+    if (pr.__seg === 'done') archN++;
+  });
+  var archBtn = document.getElementById('audit-arch');
+  var archOpen = !archBtn;
   function tasksOf(pid) { return TASKS[pid] || []; }
   function tfOf(pid) { return TFROW[pid] || null; }
   // Lowercased once per row and kept. The text of a rendered report never changes,
@@ -317,6 +368,7 @@
     var anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
     var visP = 0, visT = 0, totT = 0;
+    var segVis = {};   // visible phases per segment, for the seghead painter
     phaseRows.forEach(function (pr) {
       var pid = pr.getAttribute('data-phase');
       var tasks = tasksOf(pid);
@@ -340,9 +392,18 @@
       var showP = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
                   && areaOk(pr)
                   && (term === '' || pText || anyTaskText)
-                  && (!narrows || nMatch > 0);
+                  && (!narrows || nMatch > 0)
+                  // The archive gate (D1): done rows sit collapsed under
+                  // their seghead until the toggle opens them — but only at
+                  // REST. Any active filter lifts the gate, because a search
+                  // that silently skipped the archive would report "0 of 40"
+                  // over rows that match.
+                  && (archOpen || anyFilter || pr.__seg !== 'done');
       pr.style.display = showP ? '' : 'none';
-      if (showP) { visP++; visT += nMatch; }
+      if (showP) {
+        visP++; visT += nMatch;
+        segVis[pr.__seg] = (segVis[pr.__seg] || 0) + 1;
+      }
       // Manual state, and ONLY manual state. This used to OR the search term and
       // the per-phase task filter into the condition, so one character typed
       // into the filter threw every matching phase open at once: the page grew by
@@ -369,6 +430,15 @@
         if (wanted) badge.textContent = nMatch + ' of ' + tasks.length + ' match';
         badge.hidden = !wanted;
       }
+    });
+    // A segment header follows its rows: a header over nothing says nothing —
+    // except the collapsed archive's, whose whole job is to announce the rows
+    // it is hiding (the count rides in its own label), so at rest it stays.
+    segRows.forEach(function (sh) {
+      var keep = (segVis[sh.__seg] || 0) > 0
+        || (sh.__seg === 'done' && archBtn && !archOpen && !anyFilter
+            && archN > 0);
+      sh.style.display = keep ? '' : 'none';
     });
     bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
 
@@ -397,6 +467,9 @@
       var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
       expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
     }
+    // The usage views follow the same range the table just filtered by. Cheap
+    // on a keystroke: it no-ops unless the range actually changed.
+    applyUsageRange();
     syncHash();
   }
 
@@ -536,13 +609,42 @@
   // highlight() paints exactly one active value; these chips hold a set, so
   // their painter reads membership instead.
   function paintAreas() {
-    if (!areaBar) return;
-    [].forEach.call(areaBar.children, function (x) {
-      var on = areaFilter.indexOf(x.getAttribute('data-a')) !== -1;
-      x.classList.toggle('on', on);
-      x.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
+    if (areaBar) {
+      [].forEach.call(areaBar.children, function (x) {
+        var on = areaFilter.indexOf(x.getAttribute('data-a')) !== -1;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    // The global select shows the same selection. A select can only say one
+    // thing, and the chips can hold several — so a multi-selection gets a
+    // synthetic "N areas" option rather than the select naming one tag and
+    // silently misdescribing the rest.
+    if (areaSelect) {
+      var multi = areaSelect.querySelector('option[data-multi]');
+      if (areaFilter.length > 1) {
+        if (!multi) {
+          multi = document.createElement('option');
+          multi.setAttribute('data-multi', '');
+          multi.value = '~multi';
+          areaSelect.appendChild(multi);
+        }
+        multi.textContent = areaFilter.length + ' areas';
+        areaSelect.value = '~multi';
+      } else {
+        if (multi && multi.parentNode) multi.parentNode.removeChild(multi);
+        areaSelect.value = areaFilter[0] || '';
+      }
+    }
   }
+  // The global area select: one tag or all. Multi-select stays where it always
+  // was (the chips in More filters); picking here replaces the selection.
+  if (areaSelect) areaSelect.addEventListener('change', function () {
+    if (areaSelect.value === '~multi') return;   // the synthetic summary option
+    areaFilter = areaSelect.value ? [areaSelect.value] : [];
+    paintAreas();
+    refresh();
+  });
   wireChips(areaBar, 'data-a', function (val) {
     var i = areaFilter.indexOf(val);
     if (i === -1) areaFilter.push(val); else areaFilter.splice(i, 1);
@@ -557,6 +659,7 @@
   // the renderer stamped on the top-8 cells, so a release is exact rather
   // than a re-render's guess.
   function applyAuthor() {
+    if (auSelect) auSelect.value = auFilter;   // the global twin says the same
     smCells.forEach(function (c) {
       c.hidden = auFilter ? c.getAttribute('data-author') !== auFilter
                           : !c.hasAttribute('data-top');
@@ -594,6 +697,12 @@
     highlight(host, attr, auFilter);
     applyAuthor();
   });
+  // The authors dropdown (C2) drives the same state the chips do; both paint.
+  if (auSelect) auSelect.addEventListener('change', function () {
+    auFilter = auSelect.value;
+    if (authorBar) highlight(authorBar, 'data-au', auFilter);
+    applyAuthor();
+  });
 
   // The More-filters panel closes on an outside click and on Escape. A <details>
   // natively closes only through its own summary, so a reader who opens it,
@@ -627,17 +736,36 @@
   function paintDates() {
     if (fromInput) fromInput.value = dFrom;
     if (toInput) toInput.value = dTo;
+    // The global pair mirrors the same state, so editing either pair repaints
+    // both — two controls, one range, never two answers.
+    if (gFrom) gFrom.value = dFrom;
+    if (gTo) gTo.value = dTo;
+    if (gClear) gClear.hidden = !(dFrom || dTo);
     if (presetBar) highlight(presetBar, 'data-days', preset);
   }
-  function onDateInput() {
-    dFrom = fromInput ? fromInput.value : '';
-    dTo = toInput ? toInput.value : '';
-    preset = '';                       // a hand-picked range is no longer a preset
-    if (presetBar) highlight(presetBar, 'data-days', '');
+  // One entry point for every control that sets the range: panel inputs,
+  // global inputs, the All-time reset. A hand-picked range is no longer a
+  // preset, so the chip row unlights.
+  function setRange(f, t) {
+    dFrom = f || '';
+    dTo = t || '';
+    preset = '';
+    paintDates();
     refresh();
+  }
+  function onDateInput() {
+    setRange(fromInput ? fromInput.value : '', toInput ? toInput.value : '');
   }
   if (fromInput) fromInput.addEventListener('change', onDateInput);
   if (toInput) toInput.addEventListener('change', onDateInput);
+  function onGDateInput() {
+    setRange(gFrom ? gFrom.value : '', gTo ? gTo.value : '');
+  }
+  if (gFrom) gFrom.addEventListener('change', onGDateInput);
+  if (gTo) gTo.addEventListener('change', onGDateInput);
+  // Clearing returns to all-time (C1): one press, both pairs blank, every
+  // scoped view back to the whole record.
+  if (gClear) gClear.addEventListener('click', function () { setRange('', ''); });
 
   // Relative spans, measured back from the plan's last recorded day (DMAX) rather
   // than from today — see DMAX above for why the wall clock is not an option here.
@@ -787,6 +915,267 @@
     });
   })();
 
+  // --- the date range over the usage views (C1) -----------------------------
+  // The tables filter their own rows; the usage section is drawings, so the
+  // range treats it differently: trend columns outside the range RECEDE (the
+  // geometry never moves — hiding bars would silently re-scale a chart whose
+  // committed render is byte-compared), months wholly outside the range hide,
+  // the heatmap re-renders from the per-day payload, and one line names the
+  // span with that span's own totals. That line is also what reaches paper:
+  // the sticky bar carrying the pickers never prints, and a scoped chart on a
+  // sheet with no visible scope would be a chart that lies.
+  var hmApply = null;          // set by the heatmap module below, when present
+  var hmView = null;           // ...and its current view as data, for the PNG
+  var lastRange = '|';         // sentinel: "no range applied yet"
+  function applyUsageRange() {
+    var key = dFrom + '|' + dTo;
+    if (key === lastRange) return;
+    lastRange = key;
+    var active = !!(dFrom || dTo);
+    [].forEach.call(document.querySelectorAll('.cols [data-d], .xts [data-d]'),
+      function (el) {
+        var d = el.getAttribute('data-d');
+        var out = active && ((dFrom && d < dFrom) || (dTo && d > dTo));
+        // SVG 1.1 elements have no classList in some engines; setAttribute is
+        // universal and the stylesheet only needs the class present/absent.
+        var cls = (el.getAttribute('class') || '').replace(/\s*\bdimout\b/, '');
+        el.setAttribute('class', out ? cls + ' dimout' : cls);
+      });
+    [].forEach.call(document.querySelectorAll('tr[data-um]'), function (r) {
+      var m = r.getAttribute('data-um');
+      var out = active && ((dFrom && m < dFrom.slice(0, 7))
+                           || (dTo && m > dTo.slice(0, 7)));
+      r.style.display = out ? 'none' : '';
+    });
+    var note = document.getElementById('audit-urange');
+    if (note) {
+      if (active && U) {
+        var f = dFrom || U.min, t = dTo || U.max;
+        var tok = 0, cost = 0, msgs = 0;
+        for (var d2 in U.days) {
+          if (d2 >= f && d2 <= t) {
+            tok += U.days[d2][0]; cost += U.days[d2][1]; msgs += U.days[d2][2];
+          }
+        }
+        var sep = ' · ';
+        note.textContent = 'Date range ' + f + ' to ' + t + ': '
+          + fmtTokens(tok, 1) + ' tokens'
+          + (U.showCost !== false ? sep + fmtCost(cost) : '')
+          + sep + fmtInt(msgs) + ' msgs. The tiles above stay all-time; the '
+          + 'trend, monthly and hourly views below are scoped to this range.';
+        note.hidden = false;
+      } else {
+        note.hidden = true;
+        note.textContent = '';
+      }
+    }
+    if (hmApply) hmApply();
+  }
+
+  // --- heatmap calendar navigation (C3) --------------------------------------
+  // The server renders the all-data 7x24 grid; this re-renders the tbody from
+  // the embedded per-day payload for one day / week / month / year at a time,
+  // prev/next strictly bounded by the data (an arrow at the edge is disabled
+  // and muted, never a dead click), and the period on display NAMED in the
+  // label. The custom range IS C1's range control: while a range is active the
+  // heatmap's whole universe is that range — granularity navigation clamps to
+  // it, and "All" reads "Custom range" with the span. One range, one meaning.
+  (function () {
+    var body = document.getElementById('audit-hm-body');
+    var granBar = document.getElementById('audit-hm-gran');
+    var prevBtn = document.getElementById('audit-hm-prev');
+    var nextBtn = document.getElementById('audit-hm-next');
+    var periodEl = document.getElementById('audit-hm-period');
+    var peakEl = document.getElementById('audit-hm-peak');
+    if (!U || !body || !granBar || !prevBtn || !nextBtn || !periodEl) return;
+    var DAY = 86400000;
+    var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    var MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+               'August', 'September', 'October', 'November', 'December'];
+    var gran = 'all';
+    var anchor = '';             // period start (ISO day) when gran !== 'all'
+    function dParse(d) { return Date.parse(d + 'T00:00:00Z'); }
+    function dIso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+    function wdayOf(d) { return (new Date(dParse(d)).getUTCDay() + 6) % 7; }
+    function bounds() {
+      var lo = U.min, hi = U.max;
+      if (dFrom && dFrom > lo) lo = dFrom;
+      if (dTo && dTo < hi) hi = dTo;
+      return lo > hi ? null : { lo: lo, hi: hi };
+    }
+    function startOf(g, day) {
+      if (g === 'week') return dIso(dParse(day) - wdayOf(day) * DAY);
+      if (g === 'month') return day.slice(0, 7) + '-01';
+      if (g === 'year') return day.slice(0, 4) + '-01-01';
+      return day;
+    }
+    function endOf(g, s) {
+      if (g === 'week') return dIso(dParse(s) + 6 * DAY);
+      if (g === 'month') {
+        return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7), 0));
+      }
+      if (g === 'year') return s.slice(0, 4) + '-12-31';
+      return s;
+    }
+    function shift(g, s, dir) {
+      if (g === 'day') return dIso(dParse(s) + dir * DAY);
+      if (g === 'week') return dIso(dParse(s) + dir * 7 * DAY);
+      if (g === 'month') {
+        return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1 + dir, 1));
+      }
+      if (g === 'year') return (+s.slice(0, 4) + dir) + '-01-01';
+      return s;
+    }
+    function hasData(from, to) {
+      for (var d in U.days) { if (d >= from && d <= to) return true; }
+      return false;
+    }
+    // The next period in `dir` that is inside the bounds AND records anything
+    // — "never navigate into empty periods" is a rule about data, not about
+    // the calendar, so gap days between two worked weeks are stepped OVER.
+    function seek(g, s, dir, b) {
+      for (var i = 0; i < 4000; i++) {
+        s = shift(g, s, dir);
+        var en = endOf(g, s);
+        if (en < b.lo || s > b.hi) return null;
+        var lo = s < b.lo ? b.lo : s;
+        var hi = en > b.hi ? b.hi : en;
+        if (hasData(lo, hi)) return s;
+      }
+      return null;
+    }
+    function labelOf(g, s, b) {
+      if (g === 'day') return WD[wdayOf(s)] + ' ' + s;
+      if (g === 'week') return 'Week of ' + s + ' to ' + endOf('week', s);
+      if (g === 'month') return MON[+s.slice(5, 7) - 1] + ' ' + s.slice(0, 4);
+      if (g === 'year') return s.slice(0, 4);
+      return ((dFrom || dTo) ? 'Custom range' : 'All data')
+        + ' · ' + b.lo + ' to ' + b.hi;
+    }
+    function hoursOf(d) { return (U.days[d] || [0, 0, 0, []])[3] || []; }
+    // The current view as DATA — rows, peak, label — split from the DOM paint
+    // so the PNG export (D2) can redraw exactly what is on screen without
+    // touching it. The anchor clamp lives here because the view is what the
+    // clamp is FOR: render() paints whatever this returns.
+    function view() {
+      var b = bounds();
+      if (!b) return null;
+      if (gran !== 'all') {
+        if (!anchor) anchor = startOf(gran, b.hi);
+        var aEnd = endOf(gran, anchor);
+        if (aEnd < b.lo || anchor > b.hi) anchor = startOf(gran, b.hi);
+      }
+      var s = gran === 'all' ? b.lo : anchor;
+      var en = gran === 'all' ? b.hi : endOf(gran, s);
+      var lo = s < b.lo ? b.lo : s;
+      var hi = en > b.hi ? b.hi : en;
+      // rows: [{label, days:[iso|null x cells]}] — day/week keep the calendar
+      // (one row per date), coarser grains aggregate by weekday like the
+      // server's all-data view.
+      var rows = [];
+      if (gran === 'day') {
+        rows.push({ label: WD[wdayOf(lo)] + ' ' + lo.slice(5), cells: hoursOf(lo).slice(),
+                    head: WD[wdayOf(lo)] + ' ' + lo });
+      } else if (gran === 'week') {
+        for (var ms = dParse(s); ms <= dParse(en); ms += DAY) {
+          var d = dIso(ms);
+          var inR = d >= lo && d <= hi;
+          rows.push({ label: WD[wdayOf(d)] + ' ' + d.slice(5),
+                      cells: inR ? hoursOf(d).slice() : null,
+                      head: WD[wdayOf(d)] + ' ' + d });
+        }
+      } else {
+        var agg = [];
+        for (var w = 0; w < 7; w++) agg.push([]);
+        for (var dd in U.days) {
+          if (dd < lo || dd > hi) continue;
+          var vec = hoursOf(dd);
+          var tgt = agg[wdayOf(dd)];
+          for (var h = 0; h < 24; h++) tgt[h] = (tgt[h] || 0) + (vec[h] || 0);
+        }
+        for (var w2 = 0; w2 < 7; w2++) {
+          rows.push({ label: WD[w2], cells: agg[w2], head: WD[w2] });
+        }
+      }
+      var peak = 0;
+      rows.forEach(function (r) {
+        (r.cells || []).forEach(function (v) { if (v > peak) peak = v; });
+      });
+      return { rows: rows, peak: peak, s: s, b: b,
+               label: labelOf(gran, s, b) };
+    }
+    function render() {
+      var v = view();
+      var setArrow = function (btn, ok) {
+        if (ok) btn.removeAttribute('disabled');
+        else btn.setAttribute('disabled', '');
+      };
+      if (!v) {
+        body.innerHTML = '';
+        periodEl.textContent = 'No recorded usage in this range';
+        if (peakEl) peakEl.textContent = '0';
+        setArrow(prevBtn, false); setArrow(nextBtn, false);
+        return;
+      }
+      var htmlRows = [], tips = [];
+      v.rows.forEach(function (r) {
+        var tds = [];
+        for (var h2 = 0; h2 < 24; h2++) {
+          var val = r.cells ? (r.cells[h2] || 0) : 0;
+          var lv = (!val || !v.peak) ? 0
+            : Math.min(6, 1 + Math.floor(5 * val / v.peak));
+          tds.push('<td><i data-l="' + lv + '"></i></td>');
+          // Same one-line shape the server's titles use; a day the range
+          // excludes says so instead of claiming a zero it cannot know.
+          tips.push(r.cells
+            ? r.head + ' ' + (h2 < 10 ? '0' : '') + h2 + ':00 - '
+              + fmtTokens(val, 2) + ' tokens'
+            : r.head + ' - outside the selected range');
+        }
+        // '<' + 'th>' and not the literal: render-report's cols: selftest
+        // counts header-cell open tags across whole documents to prove the
+        // table header and its cells agree, and this SCRIPT is embedded in
+        // every one of them — the literal tag spelled out anywhere in here
+        // would count as a column that does not exist.
+        htmlRows.push('<tr><' + 'th>' + r.label + '</' + 'th>'
+          + tds.join('') + '</tr>');
+      });
+      body.innerHTML = htmlRows.join('');
+      [].forEach.call(body.querySelectorAll('i'), function (cell, i) {
+        cell.__tip = tips[i];
+      });
+      if (peakEl) peakEl.textContent = fmtTokens(v.peak, 1);
+      periodEl.textContent = v.label;
+      var canStep = gran !== 'all';
+      setArrow(prevBtn, canStep && seek(gran, v.s, -1, v.b) !== null);
+      setArrow(nextBtn, canStep && seek(gran, v.s, 1, v.b) !== null);
+    }
+    function step(dir) {
+      var b = bounds();
+      if (!b || gran === 'all') return;
+      var s2 = seek(gran, anchor, dir, b);
+      if (!s2) return;
+      anchor = s2;
+      render();
+    }
+    prevBtn.addEventListener('click', function () { step(-1); });
+    nextBtn.addEventListener('click', function () { step(1); });
+    wireChips(granBar, 'data-g', function (val) {
+      if (val === gran) return;
+      gran = val;
+      var b = bounds();
+      anchor = (val === 'all' || !b) ? '' : startOf(val, b.hi);
+      highlight(granBar, 'data-g', gran);
+      render();
+    });
+    highlight(granBar, 'data-g', gran);   // 'all' is lit from the start
+    // Called when the global range moves: clamp the current period into the
+    // new bounds and redraw. The initial no-range state deliberately keeps the
+    // server-rendered tbody untouched.
+    hmApply = render;
+    hmView = view;
+  })();
+
   // Download the Markdown twin (embedded as base64, decoded to a Blob).
   // Copy the run command. clipboard.writeText is unavailable on file:// in some
   // browsers, which is exactly where this report is most often opened, so the
@@ -822,6 +1211,244 @@
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {}
+  });
+
+  // The archive toggle (D1). State lives here, not in the hash: which way the
+  // archive folds is view furniture like the per-phase task chips, not a view
+  // someone would send as a link.
+  if (archBtn) archBtn.addEventListener('click', function () {
+    archOpen = !archOpen;
+    archBtn.setAttribute('aria-expanded', archOpen ? 'true' : 'false');
+    refresh();
+  });
+
+  // --- per-segment and per-section exports (D2) ------------------------------
+  // CSV of the DATA — never the filtered view: a file named "phases-active"
+  // that silently held whatever the search box happened to leave visible
+  // would be a different file every download. PNG of the charts, REDRAWN from
+  // window.AUDIT_USAGE onto a canvas: the marks are bars on a grid, and
+  // DOM-to-canvas serialisation is exactly the dependency this
+  // zero-external-fetch file cannot take. And a print mode that isolates one
+  // segment. Every button is server-rendered (the chips rule); this only
+  // attaches behaviour.
+  var BASE = String(window.AUDIT_MD_NAME || 'audit-report.md').replace(/\.md$/, '');
+  function csvQuote(v) {
+    // RFC 4180, the same rule the panel's export uses: quote anything that
+    // carries a comma, a quote or a newline, and double the quotes inside.
+    var s = v == null ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function download(name, blob) {
+    // The .md button's own mechanism: a temporary object URL on an anchor,
+    // revoked LATE — some engines have not started reading the blob when
+    // click() returns, and a revoked URL there is a download that fails with
+    // no error anywhere.
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+  function csvDownload(name, rows) {
+    var text = rows.map(function (r) { return r.map(csvQuote).join(','); })
+      .join('\r\n') + '\r\n';
+    // U+FEFF: without the BOM Excel reads a UTF-8 CSV in the local 8-bit
+    // codepage. As an escape, never the character — an invisible literal in
+    // the source is unreviewable (the panel export's own rule).
+    download(name, new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' }));
+  }
+  // Column names read once off the table's own header — the export must not
+  // restate _present_columns, or the two would disagree the first time a
+  // column appears.
+  var COLNAMES = grouped
+    ? [].slice.call(grouped.querySelectorAll('thead th')).map(function (h) {
+        return h.textContent.trim();
+      }).slice(3)
+    : [];
+  function segCsv(seg) {
+    var rows = [['phase', 'phase title', 'phase status',
+                 'task', 'task title', 'task status'].concat(COLNAMES)];
+    phaseRows.forEach(function (pr) {
+      if (pr.__seg !== seg) return;
+      var pid = pr.getAttribute('data-phase');
+      var strongEl = pr.querySelector('strong');
+      var head = [pid, strongEl ? strongEl.textContent : '',
+                  pr.getAttribute('data-status') || ''];
+      var tasks = tasksOf(pid);
+      if (!tasks.length) {   // a phase with no tasks is still a data row
+        rows.push(head.concat(['', '', ''])
+          .concat(COLNAMES.map(function () { return ''; })));
+        return;
+      }
+      tasks.forEach(function (t) {
+        // Machine statuses from the data attributes; prose from the cells.
+        var line = head.concat([cell(t, 0), cell(t, 1),
+                                t.getAttribute('data-status') || '']);
+        for (var ci = 0; ci < COLNAMES.length; ci++) line.push(cell(t, 3 + ci));
+        rows.push(line);
+      });
+    });
+    csvDownload(BASE + '-phases-' + seg + '.csv', rows);
+  }
+  function bugsCsv() {
+    var rows = [['id', 'title', 'status', 'severity', 'task', 'fixedIn', 'ADO']];
+    bugRows.forEach(function (b) {
+      rows.push([cell(b, 0), cell(b, 1),
+                 b.getAttribute('data-status') || cell(b, 2),
+                 cell(b, 3), cell(b, 4), cell(b, 5), cell(b, 6)]);
+    });
+    csvDownload(BASE + '-bugs.csv', rows);
+  }
+  function usageCsv() {
+    if (!U) return;
+    var showCost = U.showCost !== false;
+    var rows = [['date', 'tokens'].concat(showCost ? ['costUSD'] : [])
+      .concat(['msgs'])];
+    var days = [];
+    for (var ud in U.days) days.push(ud);
+    days.sort();
+    days.forEach(function (d) {
+      var v = U.days[d];
+      // Raw numbers on purpose: '3,230,000' lands in a spreadsheet as text
+      // and every sum over the column is then wrong, silently.
+      var line = [d, v[0]];
+      if (showCost) line.push(v[1]);
+      line.push(v[2]);
+      rows.push(line);
+    });
+    csvDownload(BASE + '-usage-daily.csv', rows);
+  }
+  [].slice.call(document.querySelectorAll('[data-segcsv]')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      segCsv(b.getAttribute('data-segcsv'));
+    });
+  });
+  [].slice.call(document.querySelectorAll('[data-csv]')).forEach(function (b) {
+    b.addEventListener('click',
+      b.getAttribute('data-csv') === 'bugs' ? bugsCsv : usageCsv);
+  });
+
+  function cssColor(token, fallback) {
+    // Resolved through a live element rather than read raw off the root:
+    // several tokens are color-mix() expressions, and what a canvas needs is
+    // the colour the browser actually computed.
+    var probe = document.createElement('i');
+    probe.style.color = 'var(' + token + ',' + fallback + ')';
+    document.body.appendChild(probe);
+    var c = getComputedStyle(probe).color;
+    document.body.removeChild(probe);
+    return c || fallback;
+  }
+  function pngCanvas(w, h) {
+    var c = document.createElement('canvas');
+    // 2x, so the file survives being pasted into a document at print density.
+    c.width = w * 2; c.height = h * 2;
+    var ctx = c.getContext('2d');
+    ctx.scale(2, 2);
+    return { el: c, ctx: ctx };
+  }
+  function pngDownload(name, canvas) {
+    // toDataURL rather than a blob: synchronous, and the payload is small.
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  function trendPng() {
+    if (!U) return;
+    var days = [];
+    for (var td in U.days) days.push(td);
+    days.sort();
+    if (!days.length) return;
+    var peak = 0;
+    days.forEach(function (d) { if (U.days[d][0] > peak) peak = U.days[d][0]; });
+    // Bar width follows the span so a three-year ledger still fits one image.
+    var barW = Math.max(1, Math.min(10, Math.floor(1100 / days.length)));
+    var left = 58, top = 44, bottom = 34;
+    var W = left + days.length * (barW + 1) + 14, H = 280;
+    var g = pngCanvas(W, H), ctx = g.ctx;
+    var ink = cssColor('--text', '#111827');
+    var mut = cssColor('--muted', '#6b7280');
+    ctx.fillStyle = cssColor('--surface', '#ffffff');
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = ink;
+    ctx.font = '600 13px sans-serif';
+    ctx.fillText('Tokens per day · ' + days[0] + ' to '
+      + days[days.length - 1], 10, 20);
+    var plot = H - top - bottom;
+    ctx.strokeStyle = cssColor('--border', '#d1d5db');
+    ctx.fillStyle = mut;
+    ctx.font = '11px sans-serif';
+    [0, 0.5, 1].forEach(function (f) {
+      var y = top + plot * f;
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(W - 6, y); ctx.stroke();
+      ctx.fillText(fmtTokens(peak * (1 - f), 1), 8, y + 4);
+    });
+    ctx.fillStyle = cssColor('--accent-solid', '#4f46e5');
+    days.forEach(function (d, i) {
+      var v = U.days[d][0];
+      var bh = peak ? Math.max(1, plot * v / peak) : 1;
+      ctx.fillRect(left + i * (barW + 1), top + plot - bh, barW, bh);
+    });
+    ctx.fillStyle = mut;
+    ctx.fillText(days[0], left, H - 12);
+    var lastD = days[days.length - 1];
+    ctx.fillText(lastD, W - 8 - ctx.measureText(lastD).width, H - 12);
+    pngDownload(BASE + '-trend.png', g.el);
+  }
+  function heatmapPng() {
+    // hmView is set by the heatmap module below; it answers with the CURRENT
+    // view — granularity, period, range — so the file shows what the screen
+    // shows, not a second implementation's idea of it.
+    var v = hmView ? hmView() : null;
+    if (!v) return;
+    var cellW = 26, cellH = 18, gap = 2, labelW = 96, top = 44;
+    var W = labelW + 24 * (cellW + gap) + 12;
+    var H = top + v.rows.length * (cellH + gap) + 30;
+    var g = pngCanvas(W, H), ctx = g.ctx;
+    ctx.fillStyle = cssColor('--surface', '#ffffff');
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = cssColor('--text', '#111827');
+    ctx.font = '600 13px sans-serif';
+    ctx.fillText('Tokens by hour (UTC) · ' + v.label, 10, 20);
+    var ramp = [];
+    for (var lv0 = 0; lv0 <= 6; lv0++) ramp.push(cssColor('--hm-' + lv0, '#eeeeee'));
+    ctx.font = '11px sans-serif';
+    v.rows.forEach(function (r, ri) {
+      var y = top + ri * (cellH + gap);
+      ctx.fillStyle = cssColor('--muted', '#6b7280');
+      ctx.fillText(r.label, 8, y + cellH - 5);
+      for (var h2 = 0; h2 < 24; h2++) {
+        var val = r.cells ? (r.cells[h2] || 0) : 0;
+        var lv = (!val || !v.peak) ? 0
+          : Math.min(6, 1 + Math.floor(5 * val / v.peak));
+        ctx.fillStyle = ramp[lv];
+        ctx.fillRect(labelW + h2 * (cellW + gap), y, cellW, cellH);
+      }
+    });
+    ctx.fillStyle = cssColor('--muted', '#6b7280');
+    for (var tk = 0; tk < 24; tk += 6) {
+      ctx.fillText((tk < 10 ? '0' : '') + tk, labelW + tk * (cellW + gap), H - 10);
+    }
+    pngDownload(BASE + '-heatmap.png', g.el);
+  }
+  [].slice.call(document.querySelectorAll('[data-png]')).forEach(function (b) {
+    b.addEventListener('click',
+      b.getAttribute('data-png') === 'trend' ? trendPng : heatmapPng);
+  });
+
+  // Print one segment (D2): stamp the attribute the print CSS keys on, open
+  // the dialog, and let afterprint take it back off — the same event the
+  // details-reopening handler above already rides, so a cancelled dialog
+  // restores exactly like a completed one.
+  [].slice.call(document.querySelectorAll('[data-segprint]')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.body.setAttribute('data-printseg', b.getAttribute('data-segprint'));
+      window.print();
+    });
+  });
+  window.addEventListener('afterprint', function () {
+    document.body.removeAttribute('data-printseg');
   });
 
   wireSort(grouped, true);

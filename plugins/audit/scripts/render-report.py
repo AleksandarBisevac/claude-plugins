@@ -93,9 +93,14 @@ _short_date = _report_html._short_date
 _timing_cell = _report_html._timing_cell
 _filter_attrs = _report_html._filter_attrs
 _filter_panel = _report_html._filter_panel
+_global_filter_row = _report_html._global_filter_row
+_ready_now_dl = _report_html._ready_now_dl
 _risk_chip = _report_html._risk_chip
 _phase_meta_div = _report_html._phase_meta_div
 _bar = _report_html._bar
+_owner_map = _report_html._owner_map
+_area_tag_span = _report_html._area_tag_span
+_seg_of = _report_html._seg_of
 
 
 # The stylesheet lints live beside the stylesheet they police, in _ui_theme,
@@ -247,6 +252,83 @@ def _held_by(ph, done_ids):
 
 
 # --- render_html ----------------------------------------------------------------
+def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners):
+    """One phase's rows — the group row, its task-filter row and its task rows.
+
+    Extracted from render_html's former inline loop when segmentation (D1)
+    made the iteration two levels deep; the MARKUP is byte-identical to what
+    the loop emitted, plus `data-seg` on every row (the hook the archive gate
+    and the per-segment print isolation select whole segments by) and the
+    advisory owner suffix on the area tags (D4)."""
+    pid = psum["id"]
+    areas = psum["area"] if isinstance(psum.get("area"), list) \
+        else _areas_of(ph.get("area"))
+    area_tags = "".join(" " + _area_tag_span(a, owners) for a in areas)
+    held = _held_by(ph, done_ids)
+    out = []
+    # The gate closes only where something actually holds it. A phase that is
+    # merely pending is an OPEN gate nobody has walked through yet, and drawing
+    # those the same way would make the rail a restatement of status rather
+    # than a drawing of dependency.
+    held_mark = "".join(
+        '<a class="heldby" href="#phase-%s" title="This phase is held until %s '
+        'is done">held by %s</a>' % (e(h), e(h), e(h)) for h in held)
+    # The stamp on a signed-off phase: the last commit recorded inside it. The
+    # manifest has no separate sign-off SHA, so this is labelled as what it is
+    # rather than presented as a signature it is not.
+    stamp = ""
+    if psum["status"] == "done":
+        shas = [t.get("commit") for t in (ph.get("tasks") or [])
+                if isinstance(t, dict) and isinstance(t.get("commit"), str)
+                and t["commit"].strip()]
+        if shas:
+            stamp = ('<span class="stamp" title="Last commit recorded in this '
+                     'phase">%s</span>' % e(shas[-1][:7]))
+    out.append(
+        '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
+        'data-seg="%s" data-area="%s" tabindex="0" '
+        'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
+        '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s %s'
+        '<span class="pmatch" hidden></span>%s</td></tr>'
+        % (e(pid), e(pid), e(psum["status"]),
+           ' data-held="1"' if held else "",
+           seg, e(" ".join(areas)), ncol, e(pid), e(psum["title"]),
+           area_tags, _chip(psum["status"]), held_mark, stamp,
+           _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
+    # per-phase task-status filter (shown only when the phase is expanded);
+    # _SCRIPT fills .tf-chips from this phase's own task statuses.
+    _tstat = sorted({t.get("status") for t in (ph.get("tasks") or [])
+                     if isinstance(t, dict) and t.get("status")})
+    out.append('<tr class="taskfilter" data-phase="%s" data-seg="%s">'
+               '<td colspan="%d">'
+               '<span class="tf-label">Filter tasks by status:</span>'
+               '<span class="tf-chips">%s</span></td></tr>'
+               % (e(pid), seg, ncol,
+                  _chip_buttons(_tstat, "data-ts", "tf-chip")))
+    for t in ph.get("tasks") or []:
+        if not isinstance(t, dict):
+            continue
+        cells = {
+            "model": lambda: "<td>%s</td>" % e(t.get("model") or "—"),
+            "risk": lambda: "<td>%s</td>" % _risk_chip(t.get("risk")),
+            "commit": lambda: "<td class=mono>%s</td>"
+            % e((t.get("commit") or "—")[:9]),
+            "done": lambda: "<td class=when>%s</td>" % _timing_cell(t),
+            "ADO": lambda: "<td>%s</td>" % _ado_cell(t),
+            "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
+        }
+        out.append(
+            '<tr class="task" data-phase="%s" data-seg="%s" data-status="%s"%s%s>'
+            '<td class="mono tid">%s</td><td>%s</td><td>%s</td>%s</tr>'
+            % (e(pid), seg, e(t.get("status")),
+               ' data-held="1"' if held else "",
+               _filter_attrs(t),
+               e(t.get("id")), e(t.get("title")),
+               _chip(t.get("status")),
+               "".join(cells[c]() for c in cols)))
+    return "\n".join(out)
+
+
 def render_html(manifest, summary, basename="audit-report", usage=None,
                 fragment=False):
     """The HTML report. `fragment=True` emits it for an embedding host.
@@ -318,7 +400,31 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                   summary["tasks"]["total"], summary["bugs"]["total"], now,
                   (' · <span class="stampv" title="The plugin version that '
                    'rendered this file">audit %s</span>' % e(_ver)) if _ver else ""))
-    out.append("@@TOOLBAR@@</header>")
+    # The global filter row (C1/C2): author, area and the date range, inside
+    # the sticky top bar so they stay reachable however far the reader has
+    # scrolled. Why the bar and not a new floating row is argued where the row
+    # is built (_report_html._global_filter_row). Inputs: authors by spend
+    # (matching the Usage chips' order), tags first-seen (matching the panel
+    # chips), and the date bounds from ALL data actually present — task
+    # timestamps and ledger days both, since the one range scopes both surfaces.
+    _gauthors = [a for a, v in sorted(
+        ((usage or {}).get("byAuthor") or {}).items(),
+        key=lambda kv: -kv[1].get("tokens", 0))]
+    _gdates = []
+    for _ph in (manifest.get("phases") or []):
+        if isinstance(_ph, dict):
+            for _t in (_ph.get("tasks") or []):
+                if isinstance(_t, dict):
+                    for _k in ("startedAt", "completedAt"):
+                        if _t.get(_k):
+                            _gdates.append(_short_date(_t[_k]))
+    _gdates += list(((usage or {}).get("daily") or {}).keys())
+    _owners = _owner_map(manifest)   # advisory area owners (D4) — one lookup
+    out.append("@@TOOLBAR@@%s</header>"
+               % _global_filter_row(_gauthors, _report_html._areas.used_tags(manifest),
+                                    min(_gdates) if _gdates else None,
+                                    max(_gdates) if _gdates else None,
+                                    owners=_owners))
     out.append('<div class="shell">@@NAV@@<main class="content">')
     if not summary["valid"]:
         out.append('<p><strong class="invalid">INVALID MANIFEST: %d '
@@ -444,71 +550,49 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                "<th>id</th><th>title</th><th>status</th>%s</tr></thead><tbody>"
                % "".join("<th>%s</th>" % e(c) for c in cols))
     _done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
-    for ph, psum in zip(
-            [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
-            summary["phases"]):
-        pid = psum["id"]
-        areas = psum["area"] if isinstance(psum.get("area"), list) else _areas_of(ph.get("area"))
-        area_tags = "".join(' <span class="area-tag">%s</span>' % e(a) for a in areas)
-        held = _held_by(ph, _done_ids)
-        # The gate closes only where something actually holds it. A phase that is
-        # merely pending is an OPEN gate nobody has walked through yet, and drawing
-        # those the same way would make the rail a restatement of status rather
-        # than a drawing of dependency.
-        held_mark = "".join(
-            '<a class="heldby" href="#phase-%s" title="This phase is held until %s '
-            'is done">held by %s</a>' % (e(h), e(h), e(h)) for h in held)
-        # The stamp on a signed-off phase: the last commit recorded inside it. The
-        # manifest has no separate sign-off SHA, so this is labelled as what it is
-        # rather than presented as a signature it is not.
-        stamp = ""
-        if psum["status"] == "done":
-            shas = [t.get("commit") for t in (ph.get("tasks") or [])
-                    if isinstance(t, dict) and isinstance(t.get("commit"), str)
-                    and t["commit"].strip()]
-            if shas:
-                stamp = ('<span class="stamp" title="Last commit recorded in this '
-                         'phase">%s</span>' % e(shas[-1][:7]))
-        out.append(
-            '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
-            'data-area="%s" tabindex="0" '
-            'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
-            '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s %s'
-            '<span class="pmatch" hidden></span>%s</td></tr>'
-            % (e(pid), e(pid), e(psum["status"]),
-               ' data-held="1"' if held else "",
-               e(" ".join(areas)), ncol, e(pid), e(psum["title"]),
-               area_tags, _chip(psum["status"]), held_mark, stamp,
-               _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
-        # per-phase task-status filter (shown only when the phase is expanded);
-        # _SCRIPT fills .tf-chips from this phase's own task statuses.
-        _tstat = sorted({t.get("status") for t in (ph.get("tasks") or [])
-                         if isinstance(t, dict) and t.get("status")})
-        out.append('<tr class="taskfilter" data-phase="%s"><td colspan="%d">'
-                   '<span class="tf-label">Filter tasks by status:</span>'
-                   '<span class="tf-chips">%s</span></td></tr>'
-                   % (e(pid), ncol, _chip_buttons(_tstat, "data-ts", "tf-chip")))
-        for t in ph.get("tasks") or []:
-            if not isinstance(t, dict):
-                continue
-            cells = {
-                "model": lambda: "<td>%s</td>" % e(t.get("model") or "—"),
-                "risk": lambda: "<td>%s</td>" % _risk_chip(t.get("risk")),
-                "commit": lambda: "<td class=mono>%s</td>"
-                % e((t.get("commit") or "—")[:9]),
-                "done": lambda: "<td class=when>%s</td>" % _timing_cell(t),
-                "ADO": lambda: "<td>%s</td>" % _ado_cell(t),
-                "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
-            }
-            out.append(
-                '<tr class="task" data-phase="%s" data-status="%s"%s%s>'
-                '<td class="mono tid">%s</td><td>%s</td><td>%s</td>%s</tr>'
-                % (e(pid), e(t.get("status")),
-                   ' data-held="1"' if held else "",
-                   _filter_attrs(t),
-                   e(t.get("id")), e(t.get("title")),
-                   _chip(t.get("status")),
-                   "".join(cells[c]() for c in cols)))
+    # D1: the table renders in SEGMENTS — active (in_progress/blocked) first,
+    # then pending, then done — grouped by rolled-up status, plan order kept
+    # inside each group. The done segment is the ARCHIVE: on a plan that still
+    # has other work its seghead is a toggle and report.js collapses the rows
+    # under it at load, so a long finished run stops burying the work in
+    # motion. When done is the ONLY segment there is nothing to keep prominent
+    # and no toggle is emitted — a table that opens empty explains nothing.
+    # The Markdown twin deliberately keeps manifest order: it is a data table
+    # read by machines, and reordering it would change every diff against an
+    # earlier render for a purely presentational reason.
+    _pairs = list(zip(
+        [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
+        summary["phases"]))
+    _by_seg = {}
+    for _pair in _pairs:
+        _by_seg.setdefault(_seg_of(_pair[1]["status"]), []).append(_pair)
+    _segs = [s for s in _report_html.SEG_ORDER if _by_seg.get(s)]
+    for _seg in _segs:
+        _sn = len(_by_seg[_seg])
+        # D2: every segment header is also the segment's export surface — CSV
+        # of the segment's DATA and a print run scoped to it, wired by
+        # report.js (server-rendered buttons, the chips rule).
+        _exports = (
+            '<span class="segx">'
+            '<button type="button" class="btn segbtn" data-segcsv="%s" '
+            'title="Download this segment&#39;s phases and tasks as CSV — the '
+            'data, not the filtered view">CSV</button>'
+            '<button type="button" class="btn segbtn" data-segprint="%s" '
+            'title="Print only this segment — the print dialog opens scoped '
+            'to it">Print</button></span>' % (_seg, _seg))
+        if _seg == "done" and len(_segs) > 1:
+            _head = ('<button type="button" class="segtoggle" id="audit-arch" '
+                     'aria-expanded="false" data-count="%d">Archive — %s'
+                     "</button>" % (_sn, _plural(_sn, "done phase")))
+        else:
+            _head = ('<span class="segname">%s</span>'
+                     '<span class="segn">%s</span>'
+                     % (_report_html.SEG_LABEL[_seg], _plural(_sn, "phase")))
+        out.append('<tr class="seghead" data-seg="%s"><td colspan="%d">%s%s'
+                   "</td></tr>" % (_seg, ncol, _head, _exports))
+        for ph, psum in _by_seg[_seg]:
+            out.append(_phase_rows(ph, psum, _seg, ncol, cols, _done_ids,
+                                   _owners))
     # Its own <tbody>, so `tbody tr:last-child` keeps meaning the last DATA row —
     # the table's rounded bottom corner and its missing final rule both hang off
     # that selector, and a permanently-present hidden row in the main body would
@@ -517,7 +601,6 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                "No phase matches these filters."
                '<button type="button" class="btn" data-clear>Clear filters'
                "</button></td></tr></tbody></table></div></section>" % ncol)
-
     # Usage is the longest section by far — a chart, five tiles, three ranked
     # lists, a budget block, economics and a heatmap — so its own headings become
     # sub-items. A nav that stops at the section a reader is already inside stops
@@ -537,7 +620,12 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
         task_by_id = _tasks_by_id(manifest)
-        out.append('<h2 id="%s">Bugs</h2>'
+        # D2: the bugs table is tabular data, so it earns the same CSV control
+        # the phase segments carry — server-rendered, wired by report.js.
+        out.append('<h2 id="%s">Bugs<span class="segx">'
+                   '<button type="button" class="btn segbtn" data-csv="bugs" '
+                   'title="Download the bugs table as CSV">CSV</button>'
+                   "</span></h2>"
                    % section("bugs", "Bugs", summary["bugs"]["open"] or None))
         rows = []
         for b in bugs:
@@ -556,9 +644,15 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                    % "".join(rows))
 
     if summary["ready"]:
-        out.append('<h2 id="%s">Ready now</h2><p class=mono>%s</p>'
+        # C4: a definition list, not a comma-joined id string — each ready task
+        # names itself, wears its phase's area tags (same chip style as
+        # everywhere else) and states which blockers cleared. Empty stays as it
+        # was: no section at all, because the hero's "Nothing ready / nothing
+        # left to run" line already IS the empty state, with more context than
+        # a heading over nothing could carry.
+        out.append('<h2 id="%s">Ready now</h2>%s'
                    % (section("ready", "Ready now", len(summary["ready"])),
-                      ", ".join(e(r) for r in summary["ready"])))
+                      _ready_now_dl(manifest, summary["ready"])))
     out.append("</main></div>")   # close .content and .shell
 
     # Embed the Markdown twin as base64 so the "Download .md" button works from a
@@ -1231,6 +1325,58 @@ def _selftest():
           "wireChips(areaBar, 'data-a'" in _SCRIPT
           and "function paintAreas()" in _SCRIPT)
 
+    # --- g: the global filter row (C1/C2) — document-level composition. --------
+    # The row's own markup is pinned in _report_html's selftest; what needs a
+    # whole document is what render_html feeds it and where it lands.
+    check("g1 the sticky top bar carries the global filter row when there is "
+          "anything to filter by, with both authors as options",
+          'class="gfilters"' in uh
+          and uh.index('class="gfilters"') < uh.index('<div class="shell">')
+          and 'value="a@x.io"' in uh and 'value="b@x.io"' in uh)
+    check("g2 the date bounds are the union of task dates AND ledger days - "
+          "one range scopes both surfaces, so it must span both",
+          uh.count('min="2026-07-09" max="2026-08-02"') == 2)
+    check("g3 without a ledger the row still offers the task-date range, and "
+          "no author select (nothing records an author)",
+          'id="audit-gfrom"' in html_out
+          and 'id="audit-au-select"' not in html_out)
+    check("g4 a tagged plan earns the area select",
+          'id="audit-area-select"' in _mah
+          and 'id="audit-area-select"' not in html_out)
+    _bare = {"meta": {"version": 2, "title": "b", "repo": "r"},
+             "phases": [{"id": "P1", "title": "p", "status": "pending",
+                         "tasks": [{"id": "P1.1", "title": "t",
+                                    "status": "pending"}]}]}
+    check("g5 nothing to filter by, no row at all",
+          'class="gfilters"' not in render_html(
+              _bare, _lib.rollup(_bare, [], []), "audit-report", None))
+    check("g6 report.js wires the row over the SAME state as the panel and "
+          "chips - one range entry point, both date pairs painted",
+          "audit-au-select" in _SCRIPT and "audit-area-select" in _SCRIPT
+          and "function setRange(" in _SCRIPT
+          and "gFrom.value = dFrom" in _SCRIPT
+          and "applyUsageRange();" in _SCRIPT.split("function refresh()")[1]
+                                            .split("function natCmp")[0])
+    check("g7 the row is a flex row OF the sticky bar (print drops it with the "
+          "bar - the pinned .topbar print rule - and the range prints instead "
+          "as the named line report.js writes into #audit-urange)",
+          ".gfilters{flex-basis:100%" in _CSS
+          and "audit-urange" in _SCRIPT)
+
+    # --- rd: Ready now as a definition list (C4) --------------------------------
+    check("rd1 Ready now is a definition list naming the ready task, and the "
+          "old comma-joined mono line is gone",
+          '<dl class="ready">' in html_out
+          and ">P1.2</code>" in html_out
+          and "Ready now</h2><p class=mono>" not in html_out)
+    check("rd2 a ready task in a tagged phase wears the area chips inside the "
+          "list (same .area-tag style as everywhere else)",
+          '<dl class="ready">' in _mah
+          and '<span class="area-tag">api</span>'
+              in _mah[_mah.index('<dl class="ready">'):])
+    check("rd3 the list is styled as a quiet queue, not cards",
+          "dl.ready dt" in _CSS and "dl.ready dd" in _CSS)
+
     check("c5: filtering no longer forces its matches open - it offers a reason "
           "to open a row instead",
           "var open = showP && !!expanded[pid];" in _SCRIPT
@@ -1477,6 +1623,144 @@ def _selftest():
     _phead = _phead[:_phead.index("</thead>")]
     check("cols: the full example still renders every column it has data for",
           _phead.count("<th>") == 3 + len(_present_columns(manifest)))
+
+    # --- sg: phase segmentation (D1, v0.36) -----------------------------------
+    # On a large plan the Phases table is one long run. Segmentation groups the
+    # rows into three blocks — active (in_progress/blocked), pending, done — so
+    # the work in motion reads first, and the done run collapses into an
+    # archive the reader can expand. The markup is pinned here; whether the
+    # collapse and the toggle actually behave is asserted in a browser by
+    # tools/check-report-interactive.mjs, because every string below survives a
+    # dead script.
+    _sgm = {"meta": {"title": "seg"}, "bugs": [], "phases": [
+        {"id": "S1", "title": "first done", "status": "done",
+         "tasks": [{"id": "S1.1", "title": "t", "status": "done",
+                    "commit": "abc1234"}]},
+        {"id": "S2", "title": "working", "status": "in_progress",
+         "tasks": [{"id": "S2.1", "title": "t", "status": "in_progress"}]},
+        {"id": "S3", "title": "queued", "status": "pending",
+         "tasks": [{"id": "S3.1", "title": "t", "status": "pending"}]},
+        {"id": "S4", "title": "stuck", "status": "blocked",
+         "tasks": [{"id": "S4.1", "title": "t", "status": "blocked"}]}]}
+    _sgh = render_html(_sgm, _lib.rollup(_sgm, [], []), "r", None)
+    check("sg1 a mixed plan renders one seghead per non-empty segment, in "
+          "active, pending, done order",
+          _sgh.count('<tr class="seghead"') == 3
+          and _sgh.index('data-seg="active"') < _sgh.index('data-seg="pending"')
+          < _sgh.index('data-seg="done"'))
+    check("sg2 phases are grouped under their segments - active rows first, "
+          "then pending, then done - whatever the manifest order",
+          _sgh.index('id="phase-S2"') < _sgh.index('id="phase-S4"')
+          < _sgh.index('id="phase-S3"') < _sgh.index('id="phase-S1"'))
+    check("sg3 phase, taskfilter and task rows all carry data-seg, so the "
+          "archive gate and the print isolation can select whole segments",
+          re.search(r'<tr class="phase" id="phase-S1"[^>]*data-seg="done"', _sgh)
+          is not None
+          and re.search(r'<tr class="taskfilter" data-phase="S1"[^>]*'
+                        r'data-seg="done"', _sgh) is not None
+          and re.search(r'<tr class="task" data-phase="S1"[^>]*data-seg="done"',
+                        _sgh) is not None)
+    check("sg4 the done segment is the archive: its seghead is a toggle that "
+          "names the count and starts collapsed, because other segments exist",
+          re.search(r'<button[^>]*id="audit-arch"[^>]*aria-expanded="false"',
+                    _sgh) is not None
+          and "Archive — 1 done phase<" in _sgh)
+    _sgd = {"meta": {"title": "alldone"}, "bugs": [], "phases": [
+        {"id": "D1", "title": "a", "status": "done",
+         "tasks": [{"id": "D1.1", "title": "t", "status": "done"}]},
+        {"id": "D2", "title": "b", "status": "done",
+         "tasks": [{"id": "D2.1", "title": "t", "status": "done"}]}]}
+    _sgdh = render_html(_sgd, _lib.rollup(_sgd, [], []), "r", None)
+    check("sg5 an all-done plan keeps its archive OPEN - there is nothing left "
+          "to keep prominent, and a table that opens empty explains nothing",
+          'id="audit-arch"' not in _sgdh
+          and _sgdh.count('<tr class="seghead"') == 1
+          and 'data-seg="done"' in _sgdh)
+    check("sg6 a single-segment plan still gets its one seghead - the home of "
+          "the export controls",
+          _fh.count('<tr class="seghead"') == 1
+          and 'id="audit-arch"' not in _fh)
+    check("sg7 report.js gates the archive inside refresh() and lifts it while "
+          "any filter is active - a search must reach the archived rows",
+          "archOpen || anyFilter || pr.__seg !== 'done'" in _SCRIPT
+          and "audit-arch" in _SCRIPT)
+    check("sg8 print: a page break lands before every segment header except "
+          "the first, and the header itself always prints",
+          "tr.seghead{break-before:page;display:table-row!important}" in _print
+          and "#phases tbody tr.seghead:first-child{break-before:auto}"
+          in _print)
+    check("sg9 the archive prints EXPANDED - the pinned whole-plan rule "
+          "already forces every row onto paper, and the stylesheet argues the "
+          "choice where the rules live",
+          "tr.phase,tr.task{display:table-row!important" in _print
+          and "archive prints expanded" in _CSS.lower())
+
+    # --- ex: per-segment export (D2, v0.36) -----------------------------------
+    # CSV of the data, PNG of the charts (redrawn from the embedded data onto a
+    # canvas - never DOM-to-canvas), and a print mode that isolates one
+    # segment. All markup pinned here; the downloads themselves are driven in
+    # tools/check-report-interactive.mjs, where the file that leaves the
+    # browser is read back and checked.
+    check("ex1 every seghead carries its CSV and Print controls, named by "
+          "segment",
+          _sgh.count("data-segcsv=") == 3 and _sgh.count("data-segprint=") == 3
+          and 'data-segcsv="done"' in _sgh and 'data-segprint="active"' in _sgh)
+    check("ex2 the bugs table earns a CSV control beside its heading; a "
+          "bugless plan renders none",
+          'data-csv="bugs"' in html_out and 'data-csv="bugs"' not in _sgh)
+    check("ex3 the CSV leaves as RFC 4180 with Excel's BOM, through the same "
+          "blob-anchor download the .md button uses",
+          "replace(/\"/g, '\"\"')" in _SCRIPT and "\\ufeff" in _SCRIPT
+          and "text/csv;charset=utf-8" in _SCRIPT)
+    check("ex4 the chart exports redraw from data onto a canvas and leave as "
+          "PNG",
+          "toDataURL('image/png')" in _SCRIPT
+          and 'data-png="trend"' in uh and 'data-png="heatmap"' in uh)
+    check("ex5 print-to-PDF per segment: the button stamps body[data-printseg], "
+          "print CSS isolates that segment, and afterprint restores the page",
+          "data-printseg" in _SCRIPT
+          and "body[data-printseg] .content>*:not(#phases){display:none"
+              "!important}" in _print
+          and 'body[data-printseg="active"]' in _print
+          and 'body[data-printseg="pending"]' in _print
+          and 'body[data-printseg="done"]' in _print
+          and "removeAttribute('data-printseg')" in _SCRIPT)
+    check("ex6 the export controls never reach paper",
+          ".segx,.secx{display:none!important}" in _print)
+
+    # --- ow: advisory area owner chips (D4, v0.36) ----------------------------
+    # meta.areas[tag].owner (v0.34, advisory) surfaces wherever the report
+    # shows a tag: a small suffix on the tag chip, and a title on the filter
+    # chip and the global select option - the same `owner: <who>` wording the
+    # panel's area select already uses. Advisory only; an area with no owner
+    # (or an explicit null) shows exactly what it always did.
+    _mo = json.loads(json.dumps(manifest))
+    _mo["phases"][0]["area"] = ["api", "web"]
+    _mo["meta"]["areas"] = {"api": {"owner": "ana@x.io"},
+                            "web": {"owner": None},
+                            "infra": {"description": "unused"}}
+    _moh = render_html(_mo, _lib.rollup(_mo, [], []), "audit-report", None)
+    check("ow1 a registered owner rides the tag as a small advisory suffix on "
+          "the phase row, with the panel's exact title wording",
+          '<span class="area-tag" title="owner: ana@x.io">api'
+          '<span class="aown">' in _moh)
+    check("ow2 the filter chip and the global select option say the same "
+          "through their titles",
+          'data-a="api" title="owner: ana@x.io"' in _moh
+          and '<option value="api" title="owner: ana@x.io">api</option>' in _moh)
+    check("ow3 an area with no owner - or an explicit null - shows exactly "
+          "what it always did",
+          '<span class="area-tag">web</span>' in _moh
+          and 'title="owner:' not in _mah)
+    check("ow4 the Ready-now list wears the same suffix on its tags",
+          '<dl class="ready">' in _moh
+          and 'title="owner: ana@x.io"'
+              in _moh[_moh.index('<dl class="ready">'):])
+    _mx = json.loads(json.dumps(_mo))
+    _mx["meta"]["areas"] = {"api": {"owner": '<script>alert(1)</script>'}}
+    check("ow5 a hostile owner is escaped before it reaches an attribute",
+          "<script>alert" not in render_html(
+              _mx, _lib.rollup(_mx, [], []), "r", None).replace(_SCRIPT, ""))
 
     # --- scale: the filter must not re-query the DOM per phase ----------------
     # Measured on a 200-phase / 4000-task report: one keystroke took 145ms and a

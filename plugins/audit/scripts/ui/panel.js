@@ -2951,6 +2951,135 @@ function uMonthly(facts){
  out.push(el('div',{class:'umwrap'},tbl));
  return out;}
 
+// --- tokens heatmap (D3, v0.36) ---------------------------------------------
+// Day-of-week x hour, derived at render time from the HOURLY fact timestamps
+// (ts is "YYYY-MM-DDTHH" until the server rolls a huge ledger up to daily —
+// then there is no hour left to draw and the section stays away, the same
+// silence the report keeps for a ledger with no hourly grid). Semantics
+// inherit the report's C3 heatmap: granularity all/year/month/week/day,
+// prev/next strictly bounded by the data (disabled AND muted at an edge,
+// stepping OVER gap days), and the period on display NAMED. The custom range
+// is deliberately NOT a new control: uFiltered() has already applied UF.day
+// and UF.range, so the panel's own day filter — the one that persists via
+// localStorage and rides the #/<tab>!from=..&to=.. hash — IS the range, and
+// the label reads "Custom range" while any of it is on. Granularity and
+// anchor are session furniture like SHOWN: deliberately not persisted.
+let UHM={g:'all',a:''};
+const UHM_WD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const UHM_MON=['January','February','March','April','May','June','July',
+ 'August','September','October','November','December'];
+function uHeatmap(facts){
+ if(USAGE.rolled)return[];
+ const perDay=new Map();
+ for(const f of facts){
+  const d=f[F.ts].slice(0,10),h=+f[F.ts].slice(11,13);
+  if(!(h>=0&&h<24))continue;              // daily row: no hour to file under
+  const v=perDay.get(d)||new Array(24).fill(0);
+  v[h]+=f[F.tokens];perDay.set(d,v);}
+ if(!perDay.size)return[];
+ const ds=[...perDay.keys()].sort();
+ const b={lo:ds[0],hi:ds[ds.length-1]};
+ const wday=d=>(new Date(d+'T00:00:00Z').getUTCDay()+6)%7;   // Monday-first
+ const iso=n=>new Date(n*864e5).toISOString().slice(0,10);
+ const startOf=(g,d)=>g==='week'?iso(dnum(d)-wday(d))
+  :g==='month'?d.slice(0,7)+'-01':g==='year'?d.slice(0,4)+'-01-01':d;
+ const endOf=(g,s)=>g==='week'?iso(dnum(s)+6)
+  :g==='month'?s.slice(0,7)+'-'
+    +p2(new Date(Date.UTC(+s.slice(0,4),+s.slice(5,7),0)).getUTCDate())
+  :g==='year'?s.slice(0,4)+'-12-31':s;
+ const shift=(g,s,dir)=>g==='day'?iso(dnum(s)+dir)
+  :g==='week'?iso(dnum(s)+7*dir)
+  :g==='month'?iso(Date.UTC(+s.slice(0,4),+s.slice(5,7)-1+dir,1)/864e5)
+  :(+s.slice(0,4)+dir)+'-01-01';
+ const hasData=(a,z)=>{for(const d of ds)if(d>=a&&d<=z)return true;return false;};
+ // The next period in `dir` that is inside the bounds AND records anything —
+ // "never navigate into empty periods" is a rule about data, not the
+ // calendar, so gap days between two worked weeks are stepped over.
+ const seek=(g,s,dir)=>{for(let i=0;i<4000;i++){s=shift(g,s,dir);
+   const en=endOf(g,s);
+   if(en<b.lo||s>b.hi)return null;
+   const lo=s<b.lo?b.lo:s,hi=en>b.hi?b.hi:en;
+   if(hasData(lo,hi))return s;}
+  return null;};
+ // Clamp the anchor into the CURRENT bounds: a filter change can move the
+ // universe out from under a period picked against the old one.
+ if(UHM.g!=='all'){
+  if(!UHM.a)UHM.a=startOf(UHM.g,b.hi);
+  if(endOf(UHM.g,UHM.a)<b.lo||UHM.a>b.hi)UHM.a=startOf(UHM.g,b.hi);}
+ const s=UHM.g==='all'?b.lo:UHM.a, en=UHM.g==='all'?b.hi:endOf(UHM.g,s);
+ const lo=s<b.lo?b.lo:s, hi=en>b.hi?b.hi:en;
+ // rows: day/week keep the calendar (one row per date); coarser grains
+ // aggregate by weekday, like the report's all-data view.
+ const rows=[];
+ if(UHM.g==='day'){
+  rows.push({label:UHM_WD[wday(lo)]+' '+lo,
+    cells:perDay.get(lo)||new Array(24).fill(0)});}
+ else if(UHM.g==='week'){
+  for(let n=dnum(s);n<=dnum(en);n++){const d=iso(n);
+   rows.push({label:UHM_WD[wday(d)]+' '+d.slice(5),head:UHM_WD[wday(d)]+' '+d,
+     cells:(d>=lo&&d<=hi)?(perDay.get(d)||new Array(24).fill(0)):null});}}
+ else{
+  const agg=[...Array(7)].map(()=>new Array(24).fill(0));
+  for(const[d,v]of perDay){if(d<lo||d>hi)continue;
+   const t=agg[wday(d)];for(let h=0;h<24;h++)t[h]+=v[h];}
+  for(let w=0;w<7;w++)rows.push({label:UHM_WD[w],cells:agg[w]});}
+ let peak=0;rows.forEach(r=>(r.cells||[]).forEach(v=>{if(v>peak)peak=v;}));
+ const label=UHM.g==='day'?UHM_WD[wday(lo)]+' '+lo
+  :UHM.g==='week'?'Week of '+s+' to '+endOf('week',s)
+  :UHM.g==='month'?UHM_MON[+s.slice(5,7)-1]+' '+s.slice(0,4)
+  :UHM.g==='year'?s.slice(0,4)
+  :((UF.day||UF.range!=='all')?'Custom range':'All data')
+    +' · '+b.lo+' to '+b.hi;
+ const out=[el('h2',{},'When the tokens are spent (UTC)')];
+ out.push(el('div',{class:'ucrumb mut'},
+  'Follows the filters above - the date filter is the custom range. '
+  +'Hours are UTC.'));
+ const nav=el('div',{class:'uhmnav'});
+ [['all','All'],['year','Year'],['month','Month'],['week','Week'],
+  ['day','Day']].forEach(([g,l])=>{
+  const on=UHM.g===g;
+  nav.append(el('button',{class:'filt'+(on?' on':''),type:'button',
+    'data-uhg':g,'aria-pressed':on?'true':'false',
+    onclick:()=>{if(UHM.g!==g){UHM.g=g;UHM.a='';renderUsage();}}},l));});
+ const canPrev=UHM.g!=='all'&&seek(UHM.g,s,-1)!==null;
+ const canNext=UHM.g!=='all'&&seek(UHM.g,s,1)!==null;
+ const arrow=(dir,glyph,ok)=>{
+  const a=el('button',{class:'btn small uhmarrow',type:'button',
+    'data-uhm':dir,'aria-label':(dir==='prev'?'Previous':'Next')+' period',
+    onclick:()=>{const s2=seek(UHM.g,UHM.a||s,dir==='prev'?-1:1);
+      if(s2){UHM.a=s2;renderUsage();}}},glyph);
+  if(!ok)a.disabled=true;
+  return a;};
+ nav.append(arrow('prev','‹',canPrev),
+  el('span',{class:'uhmperiod','data-uhmperiod':'1'},label),
+  arrow('next','›',canNext));
+ out.push(nav);
+ const tbl=el('table',{class:'uhm','data-hmpeak':String(peak)});
+ const hd=el('tr',{},el('th',{class:'uhmc'}));
+ for(let h=0;h<24;h++)hd.append(el('th',{},h%6===0?p2(h):''));
+ tbl.append(el('thead',{},hd));
+ const tb=el('tbody');
+ rows.forEach(r=>{
+  const tr=el('tr',{},el('th',{},r.label));
+  for(let h=0;h<24;h++){
+   const v=r.cells?(r.cells[h]||0):0;
+   const lv=(!v||!peak)?0:Math.min(6,1+Math.floor(5*v/peak));
+   // A native title, the area-owner precedent: 168 cells x a bindTip pair
+   // each would be listener spam for one hover at a time.
+   tr.append(el('td',{},el('i',{'data-l':String(lv),
+     title:r.cells?(r.head||r.label)+' '+p2(h)+':00 - '+uTok(v,2)+' tokens'
+       :(r.head||r.label)+' - outside the selected range'})));}
+  tb.append(tr);});
+ tbl.append(tb);
+ // Its own scroll frame: 24 columns must never push the document sideways
+ // (the same rule .umwrap follows, driven for real by the mobile sweep).
+ out.push(el('div',{class:'uhmwrap'},tbl));
+ const key=el('div',{class:'uhmkey mut small'},'0 ');
+ for(let l=0;l<=6;l++)key.append(el('i',{'data-l':String(l)}));
+ key.append(' '+uTok(peak,1)+' tokens/hour');
+ out.push(key);
+ return out;}
+
 // --- person header ----------------------------------------------------------
 // NOT a new tab: UF.author already is the drill-down (the chart flips to
 // models, every bar and budget follows the filter). This is the header for
@@ -3458,6 +3587,7 @@ function renderUsage(){const c=$('#usage');
  card.append(...uBars(facts,'author','By author'));
  card.append(...uBars(facts,'task','By task'));
  card.append(...uMonthly(facts));
+ card.append(...uHeatmap(facts));
 
  // economics - the same honesty caveats the report carries
  card.append(el('h2',{},'Unit economics'));
