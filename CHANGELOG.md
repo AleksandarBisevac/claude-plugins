@@ -4,7 +4,7 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [0.39.0] - 2026-08-15
 
 **The ADO connector grows up: boards, sprints, and a card in the panel.** `/audit:sync`
 learns the whole board: one PBI per phase with parent-linked items (`phaseWorkItems`,
