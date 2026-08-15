@@ -44,6 +44,7 @@ claude-plugins/                           # this repo (personal, public)
   docs/index.html / demo-large.html       # GitHub Pages live demo (rendered reports)
   docs/screenshots/*.png                  # committed report + panel screenshots (tools/capture-screenshots.mjs)
   docs/examples/azure-pipelines.yml       # CI recipe: validate → gate → publish report artifact
+  docs/ado-connector.md                   # ADO connector field guide (user-facing; tracker-sync.md stays the contract)
   examples/                               # worked acme-store example (manifest + rendered report)
 .claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")
@@ -79,6 +80,7 @@ claude-plugins/                           # this repo (personal, public)
       reference/
         orchestrator.md                   # shared execution logic (preflight, lock, Execute-the-task, sign-off)
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
+        tracker-sync.md                   # tracker-sync contract (tracker-neutral half + the ADO binding)
       schema/
         audit-plan.schema.json            # JSON Schema (draft 2020-12) for the manifest
         audit-config.schema.json          # JSON Schema for .claude/audit.config.json (panel validation)

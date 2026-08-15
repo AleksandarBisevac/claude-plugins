@@ -2877,6 +2877,113 @@ async function assertGateCard(page, project) {
   }
 }
 
+/* ---- the ADO connector card (connector v2) ---------------------------------
+ *
+ * The fixture's manifest carries meta.ado plus one linked phase and one linked
+ * task, so the card's banner must read from EVIDENCE ('linked'), never from the
+ * form. The flow exercises the card's own dotted change rows and both of its
+ * dialogs WITHOUT writing: Save is cancelled, Discard restores the saved draft.
+ */
+async function assertAdoCardWorks(page) {
+  await page.click('.tab[data-t=comp]');
+  await page.waitForTimeout(250);
+  const st = await page.evaluate(() => {
+    const b = document.querySelector('#adocard [data-adostate]');
+    return b ? { state: b.getAttribute('data-adostate'),
+                 text: b.textContent } : null;
+  });
+  if (!st) {
+    fail('ado card: #adocard or its banner is not in the Composition tab');
+    return;
+  }
+  if (st.state !== 'linked' || !/1 task/.test(st.text) || !/1 phase/.test(st.text)) {
+    fail(`ado card: expected a 'linked' banner counting 1 task + 1 phase from `
+       + `the fixture's links, got state=${st.state} text=${JSON.stringify(st.text)}`);
+  } else {
+    note(`ado card: the banner reads from manifest evidence — "${st.state}"`);
+  }
+
+  // One toggled switch = one dotted change row, counted by Discard and listed
+  // by the Save dialog.
+  await page.click('#ado-enabled');
+  await page.waitForTimeout(250);
+  const disc = await page.evaluate(() => {
+    const d = document.querySelector('[data-discard=ado]');
+    return d ? { text: d.textContent, disabled: d.disabled } : null;
+  });
+  if (!disc || disc.disabled || disc.text !== 'Discard 1 change') {
+    fail(`ado card: one toggled switch should read 'Discard 1 change', got `
+       + JSON.stringify(disc));
+  } else {
+    note('ado card: the toggle registered as exactly one unsaved change');
+  }
+  await page.click('#adocard .btn.primary');
+  await page.waitForTimeout(250);
+  const row = await page.evaluate(() => {
+    const r = document.querySelector(
+      'dialog.confirm[open] [data-cfrow="meta ado.enabled"]');
+    return r ? r.textContent : null;
+  });
+  if (!row) {
+    fail('ado card: the Save dialog does not list the dotted meta · ado.enabled row');
+  } else {
+    note('ado card: the Save dialog lists the dotted row (meta · ado.enabled)');
+  }
+  await page.evaluate(() =>
+    document.querySelector('dialog.confirm[open] [data-cfcancel]')?.click());
+  await page.waitForTimeout(250);
+  await page.click('[data-discard=ado]');
+  await page.waitForTimeout(250);
+  await page.evaluate(() =>
+    document.querySelector('dialog.confirm[open] [data-cfgo]')?.click());
+  await page.waitForTimeout(350);
+  const after = await page.evaluate(() => ({
+    state: (document.querySelector('#adocard [data-adostate]') || {})
+      .getAttribute?.('data-adostate'),
+    discardDead: (document.querySelector('[data-discard=ado]') || {}).disabled,
+  }));
+  if (after.state !== 'linked' || !after.discardDead) {
+    fail(`ado card: after Discard the card should be back to the saved manifest `
+       + `(banner 'linked', Discard dead), got ${JSON.stringify(after)}`);
+  } else {
+    note('ado card: Discard restored the saved card; nothing was written');
+  }
+
+  // The identityMap pair editor: adding a pair renders a row; a second key
+  // aimed at an ALREADY-MAPPED value raises the duplicate hint the validator
+  // would warn about; Discard clears both. Nothing is saved.
+  await page.evaluate(() => {
+    const ki = document.querySelector('#adocard input[placeholder^="ledger identity"]');
+    const vi = document.querySelector('#adocard input[placeholder^="ADO identity"]');
+    ki.value = 'second@demo.example';
+    vi.value = 'dev@demo-corp.example.com';   // the fixture entry's value → dup
+    document.querySelector('#adocard [data-imadd]').click();
+  });
+  await page.waitForTimeout(250);
+  const im = await page.evaluate(() => ({
+    row: !!document.querySelector('#adocard [data-imrow="second@demo.example"]'),
+    dup: !!document.querySelector('#adocard [data-imdup]'),
+  }));
+  if (!im.row || !im.dup) {
+    fail(`ado card: identityMap add should render its row and, aimed at an `
+       + `already-mapped value, the duplicate hint — got ${JSON.stringify(im)}`);
+  } else {
+    note('ado card: identityMap pair editor adds rows and flags duplicate targets');
+  }
+  await page.click('[data-discard=ado]');
+  await page.waitForTimeout(250);
+  await page.evaluate(() =>
+    document.querySelector('dialog.confirm[open] [data-cfgo]')?.click());
+  await page.waitForTimeout(300);
+  const imAfter = await page.evaluate(() =>
+    !!document.querySelector('#adocard [data-imrow="second@demo.example"]'));
+  if (imAfter) {
+    fail('ado card: Discard left the added identityMap row behind');
+  } else {
+    note('ado card: identityMap edit discarded cleanly');
+  }
+}
+
 /* ---- the help drawer -------------------------------------------------------
  *
  * Every oracle here is `GET /api/help` — the payload itself, fetched inside the
@@ -4558,6 +4665,10 @@ async function main() {
       // Reads only, but it opens a modal over every tab it visits, so it runs
       // where no shutter follows it — the same rule the toast waiter enforces.
       await assertHelpDrawerWorks(page, declared);
+      // Connector v2: opens both of the ADO card's dialogs (Save is cancelled,
+      // Discard restores), so it runs with the other modal-openers where no
+      // shutter follows it; it writes nothing.
+      await assertAdoCardWorks(page);
       // Last of all: it writes to the fixture's manifest and its config, so every
       // check above sees the state it was generated with.
       await assertConfirmFlowWorks(page);

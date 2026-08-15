@@ -219,11 +219,15 @@ never add it to `.gitignore`; anchor (2) only pins committed history.
 The journal's **completion-record actions**:
 
 - `task.complete` — a task's status moved to done (details: taskId, phaseId, from, to, completedAt)
+- `task.blocked` — a task's status moved to blocked (details: taskId, phaseId, from, attempts)
 - `task.commit` — a task's commit moved null → SHA (details: taskId, phaseId, commit)
 - `phase.signoff` — a phase's status moved to done (details: phaseId, from, to, mergedAt)
+- `ado.link` — an item's `ado.id` moved null → id, i.e. /audit:sync linked it to a
+  work item (details: taskId?, phaseId, adoId). `lastSyncedAt` bumps deliberately
+  draw NO row — the plan did not move (see tracker-sync.md → Journal)
 - `task.move` — a task was renumbered into another phase (details: fromId, toId, fromPhase, toPhase)
 
-The first three are emitted by the `journal-writes` hook and by NOTHING else — never
+All but `task.move` are emitted by the `journal-writes` hook and by NOTHING else — never
 append them by hand; two writers means duplicate rows and a doctor that can no longer
 trust the count. `task.move` is written by `/audit:task move` via the journal CLI.
 Tokens are deliberately absent from these rows (metering lands on Stop/SessionEnd);

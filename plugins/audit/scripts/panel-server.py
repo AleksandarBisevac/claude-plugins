@@ -135,6 +135,7 @@ build_state = _panel_state.build_state
 _atomic_write_json = _panel_write._atomic_write_json
 write_policy = _panel_write.write_policy
 write_areas = _panel_write.write_areas
+write_ado = _panel_write.write_ado
 _panel_session = _panel_write._panel_session
 _acquire_write_lock = _panel_write._acquire_write_lock
 _release_write_lock = _panel_write._release_write_lock
@@ -288,6 +289,8 @@ def _make_handler(project, token):
                 self._json(200, apply_composition(project, body)); return
             if path == "/api/areas":
                 self._json(200, write_areas(project, body)); return
+            if path == "/api/ado":
+                self._json(200, write_ado(project, body)); return
             if path == "/api/policy":
                 self._json(200, write_policy(project, body)); return
             self._json(404, {"error": "not found"})
@@ -667,6 +670,10 @@ def _selftest():
     check("GET /api/help is a route, and only a GET: help is a document, and a "
           "drawer that could write one would be a second config writer",
           'if path == "/api/help"' in _get_src and "/api/help" not in _write_src)
+    check("PUT /api/ado is a write route, and only a write - the connector card "
+          "saves through it, mirroring /api/areas; its read side rides "
+          "composition.adoStatus in /api/state",
+          'if path == "/api/ado"' in _write_src and "/api/ado" not in _get_src)
     check("...and it serves _help.payload() rather than a second assembly of the "
           "same thing", _help_pay == _help.payload())
     _hcfg = _help_pay["fields"]["config"]
@@ -1117,7 +1124,8 @@ def _selftest():
           "const EDITS={guards:null,comp:null,policy:null};" in UI_HTML
           and "EDITS.comp=()=>compChanges(patch);" in UI_HTML
           and "EDITS.guards=()=>configChanges(cfg);" in UI_HTML
-          and "EDITS.policy=()=>policyChanges();" in UI_HTML)
+          and "EDITS.policy=()=>policyChanges();" in UI_HTML
+          and "EDITS.ado=()=>adoRows(saved,ADRAFT);" in UI_HTML)
     check("beforeunload interrupts a close only when there is something to lose",
           "addEventListener('beforeunload',ev=>{" in UI_HTML
           and "if(!dirtyRows().length)return;" in UI_HTML)
@@ -1156,8 +1164,8 @@ def _selftest():
           "if(bcBad){toast('meta.buildCommands is not valid JSON" in UI_HTML)
     check("Discard exists on every writable surface, counts what it would throw "
           "away, and is dead while there is nothing to throw",
-          UI_HTML.count("'data-discard':'") == 3
-          and UI_HTML.count("discard.disabled=!n;") == 2
+          UI_HTML.count("'data-discard':'") == 4
+          and UI_HTML.count("discard.disabled=!n;") == 3
           and "discard.disabled=!pending.length;" in UI_HTML)
     check("Usage: my-spend filters on the very string the topbar shows",
           "const me=((STATE||{}).viewer||{}).author;" in UI_HTML

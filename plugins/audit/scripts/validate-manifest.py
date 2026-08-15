@@ -71,11 +71,25 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # legacy (pre-0.3, ignored by the orchestrator):
               "signOffChecklist", "autoMode", "modelPolicy", "testPolicy",
               "reviewPolicy", "skillsPolicy", "statusLegend"}
+# Keys inside meta.ado (the connector config). Enumerated since the v2 connector
+# so a typo like `identitymap` or `statemap` draws a did-you-mean warning instead
+# of silently disabling the feature it was meant to configure.
+KNOWN_ADO = {"organization", "project", "areaPath", "iterationPath", "types",
+             "identityMap",
+             # connector v2:
+             "enabled", "echo", "phaseWorkItems", "stateMap", "onComplete",
+             "comments", "sprint", "pull",
+             # ENH-1: personalizable provenance tag (default "audit-plugin";
+             # null = no tag):
+             "tag"}
 KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "description", "desiredOutcome", "testGate", "baseRef", "branch",
                "mergedAt", "review", "reviewFindings", "summary", "tasks",
                # v0.16: per-phase review skill override + app/team area tag
                "reviewSkill", "area",
+               # connector v2: phase-level work item link, written by /audit:sync
+               # when meta.ado.phaseWorkItems is true:
+               "ado",
                # v0.19: optional spend budget for this phase, in USD. Optional on
                # purpose — most phases will not carry one, and the surfaces render
                # an absent budget as "—" rather than as 0% or 100%.
@@ -294,6 +308,166 @@ def _check_identity_map(meta, findings, warnings):
                 "maps this ADO identity back to the FIRST key in map order"
                 % (shown[low], len(keys),
                    ", ".join(repr(k) for k in keys)))
+
+
+def check_ado_meta(ado):
+    """The full meta.ado connector-config check. Returns (findings, warnings).
+
+    ONE front door on purpose: validate() calls this for the manifest, and the
+    panel's write_ado (PUT /api/ado) calls it for a candidate save -- so the
+    CLI and the panel cannot disagree about what a valid config is.
+
+    null/absent = connector off, an answer -- silent. The v2 keys follow the
+    file's standing philosophy: wrong TYPES are findings (a config that would
+    be misread), unknown KEYS are did-you-mean warnings (the typo catcher --
+    `statemap` configuring nothing is exactly the silence worth naming). The
+    stateMap's status keys get the same warning treatment: a typo'd status
+    silently never fires, which is the area-tag argument all over again."""
+    f, w = [], []
+    if ado is None:
+        return f, w
+    if not isinstance(ado, dict):
+        f.append("meta: ado must be an object or null, got %s"
+                 % type(ado).__name__)
+        return f, w
+    _unknown_keys(ado, KNOWN_ADO, "meta.ado", w)
+    _check_identity_map({"ado": ado}, f, w)
+
+    for key in ("organization", "project"):
+        val = ado.get(key)
+        if key in ado and (not isinstance(val, str) or not val.strip()):
+            f.append("meta.ado.%s: must be a non-empty string, got %r"
+                     % (key, val))
+    for key in ("areaPath", "iterationPath"):
+        val = ado.get(key)
+        if key in ado and val is not None and not isinstance(val, str):
+            f.append("meta.ado.%s: must be a string or null, got %s"
+                     % (key, type(val).__name__))
+    for key in ("enabled", "echo", "phaseWorkItems"):
+        val = ado.get(key)
+        if key in ado and not isinstance(val, bool):
+            f.append("meta.ado.%s: must be true or false, got %r" % (key, val))
+    tag = ado.get("tag")
+    if "tag" in ado and tag is not None and (
+            not isinstance(tag, str) or not tag.strip()):
+        f.append("meta.ado.tag: must be a non-empty string or null (null = "
+                 "no provenance tag; absent = 'audit-plugin'), got %r" % (tag,))
+
+    types = ado.get("types")
+    if "types" in ado and types is not None:
+        if not isinstance(types, dict):
+            f.append("meta.ado.types: must be an object, got %s"
+                     % type(types).__name__)
+        else:
+            for k, v in types.items():
+                if k == "pbi" and v is None:
+                    continue  # null pbi = auto-detect at first phase push
+                if not isinstance(v, str) or not v.strip():
+                    f.append("meta.ado.types: every value must be a work-item "
+                             "type name (non-empty string%s), got %s=%r"
+                             % ("; pbi may be null = auto-detect", k, v))
+
+    sm = ado.get("stateMap")
+    if "stateMap" in ado and sm is not None:
+        if not isinstance(sm, dict):
+            f.append("meta.ado.stateMap: must be an object {task, bug, phase} "
+                     "or null, got %s" % type(sm).__name__)
+        else:
+            # F1 (live gate): phase work items have their OWN state vocabulary
+            # in ADO (a Scrum PBI knows no "In Progress"), so the map carries a
+            # third block, keyed by the same status names phases use.
+            vocab = {"task": STATUS, "bug": BUG_STATUS, "phase": STATUS}
+            _unknown_keys(sm, set(vocab), "meta.ado.stateMap", w)
+            for kind, statuses in vocab.items():
+                block = sm.get(kind)
+                if kind not in sm or block is None:
+                    continue
+                if not isinstance(block, dict):
+                    f.append("meta.ado.stateMap.%s: must be an object of "
+                             "status -> ADO state, got %s"
+                             % (kind, type(block).__name__))
+                    continue
+                _unknown_keys(block, set(statuses),
+                              "meta.ado.stateMap.%s" % kind, w)
+                for st, val in block.items():
+                    if st not in statuses or val is None:
+                        continue  # unknown key already warned; null = never move
+                    if not isinstance(val, str) or not val.strip():
+                        f.append("meta.ado.stateMap.%s.%s: must be an ADO "
+                                 "state name or null (null = never move this "
+                                 "transition), got %r" % (kind, st, val))
+
+    oc = ado.get("onComplete")
+    if "onComplete" in ado and oc is not None:
+        if not isinstance(oc, dict):
+            f.append("meta.ado.onComplete: must be an object or null, got %s"
+                     % type(oc).__name__)
+        else:
+            _unknown_keys(oc, {"remainingWork"}, "meta.ado.onComplete", w)
+            rw = oc.get("remainingWork")
+            if "remainingWork" in oc and rw is not None:
+                if (isinstance(rw, bool) or not isinstance(rw, (int, float))
+                        or rw < 0):
+                    f.append("meta.ado.onComplete.remainingWork: must be a "
+                             "number >= 0 or null (null = never touch the "
+                             "field), got %r" % (rw,))
+
+    cm = ado.get("comments")
+    if "comments" in ado and cm is not None:
+        if not isinstance(cm, dict):
+            f.append("meta.ado.comments: must be an object or null, got %s"
+                     % type(cm).__name__)
+        else:
+            _unknown_keys(cm, {"onBlocked", "onComplete"},
+                          "meta.ado.comments", w)
+            for key in ("onBlocked", "onComplete"):
+                val = cm.get(key)
+                if key in cm and not isinstance(val, bool):
+                    f.append("meta.ado.comments.%s: must be true or false, "
+                             "got %r" % (key, val))
+
+    sp = ado.get("sprint")
+    if "sprint" in ado and sp is not None:
+        if not isinstance(sp, dict):
+            f.append("meta.ado.sprint: must be an object {team, mode} or "
+                     "null, got %s" % type(sp).__name__)
+        else:
+            _unknown_keys(sp, {"team", "mode"}, "meta.ado.sprint", w)
+            team = sp.get("team")
+            if not isinstance(team, str) or not team.strip():
+                f.append("meta.ado.sprint: requires a non-empty 'team' -- "
+                         "the team whose iteration calendar defines "
+                         "'current', got %r" % (team,))
+            mode = sp.get("mode")
+            if "mode" in sp and mode != "current":
+                f.append("meta.ado.sprint.mode: must be 'current' (the only "
+                         "mode today; static paths belong in "
+                         "meta.ado.iterationPath), got %r" % (mode,))
+
+    pl = ado.get("pull")
+    if "pull" in ado and pl is not None:
+        if not isinstance(pl, dict):
+            f.append("meta.ado.pull: must be an object {areaPath, tags} or "
+                     "null, got %s" % type(pl).__name__)
+        else:
+            _unknown_keys(pl, {"areaPath", "tags"}, "meta.ado.pull", w)
+            ap = pl.get("areaPath")
+            if "areaPath" in pl and ap is not None and not isinstance(ap, str):
+                f.append("meta.ado.pull.areaPath: must be a string or null, "
+                         "got %s" % type(ap).__name__)
+            tags = pl.get("tags")
+            if "tags" in pl:
+                if not isinstance(tags, list):
+                    f.append("meta.ado.pull.tags: must be an array of tags, "
+                             "got %s" % type(tags).__name__)
+                else:
+                    bad = [t for t in tags
+                           if not isinstance(t, str) or not t.strip()]
+                    if bad:
+                        f.append("meta.ado.pull.tags: every tag must be a "
+                                 "non-empty string (%d bad: %r)"
+                                 % (len(bad), bad[:3]))
+    return f, w
 
 
 def _unknown_keys(obj, known, where, warnings):
@@ -652,12 +826,14 @@ def validate(manifest):
         if not isinstance(version, int) or isinstance(version, bool):
             # bool is an int subclass in Python — `true` must NOT pass as a version.
             f.append("meta.version: missing or not an integer")
-        # meta.ado shares _check_ado's object-or-null shape rule (F-C-1 v0.38:
-        # "ado": "org" used to sail through and identityMap's check silently
-        # returned on it). The item-level id check inside is a no-op here -
-        # a sync config carries no "id" key.
-        _check_ado(meta, "meta", f)
-        _check_identity_map(meta, f, w)
+        # meta.ado: the whole connector config goes through check_ado_meta --
+        # the ONE front door shared with the panel's write_ado, so the CLI
+        # and the panel cannot disagree. (It keeps F-C-1's object-or-null rule
+        # and folds in _check_identity_map.)
+        if "ado" in meta:
+            af, aw = check_ado_meta(meta.get("ado"))
+            f.extend(af)
+            w.extend(aw)
 
     _check_areas(manifest, f, w)
 
@@ -679,6 +855,8 @@ def validate(manifest):
         pwhere = "phase %s" % (pid or ("phases[%d]" % pi))
         _require_fields(phase, pwhere, f)
         _unknown_keys(phase, KNOWN_PHASE, pwhere, w)
+        # connector v2: phaseWorkItems writes a phase-level adoLink
+        _check_ado(phase, pwhere, f)
         if pid:
             phase_ids.append(pid)
         if phase.get("status") not in STATUS:
@@ -1638,6 +1816,112 @@ def _selftest():
           "back-compat pin (%s)"
           % ("PASS" if ok_im8 else "FAIL",
              "clean" if ok_im8 else (f_im8 or noise_im8)))
+
+    # --- av: meta.ado connector v2 config shape ---
+    # The v2 keys (enabled/echo/phaseWorkItems/stateMap/onComplete/comments/
+    # sprint/pull) are checked by check_ado_meta -- ONE front door shared with
+    # the panel's write_ado, so the CLI and the panel cannot disagree about
+    # what a valid connector config is.
+    def _with_ado(m, **kw):
+        ado = {"organization": "o", "project": "p"}
+        ado.update(kw)
+        m["meta"]["ado"] = ado
+
+    m_av1 = copy.deepcopy(_valid_manifest())
+    _with_ado(m_av1, enabled=True, echo=False, phaseWorkItems=True,
+              types={"bug": "Bug", "task": "Task", "pbi": None},
+              stateMap={"task": {"done": "Review", "blocked": None},
+                        "bug": {"fixed": "Resolved"}},
+              onComplete={"remainingWork": 0},
+              comments={"onBlocked": True, "onComplete": False},
+              sprint={"team": "Web", "mode": "current"},
+              pull={"areaPath": "Proj\\Team", "tags": ["repo-x"]})
+    f_av1, w_av1 = validate(m_av1)
+    noise_av1 = [x for x in w_av1 if "ado" in x]
+    ok_av1 = f_av1 == [] and noise_av1 == []
+    results.append(ok_av1)
+    print("%s av1 a full well-formed v2 connector config is clean - no "
+          "finding, no warning (%s)"
+          % ("PASS" if ok_av1 else "FAIL",
+             "clean" if ok_av1 else (f_av1 or noise_av1)))
+    m_av2 = copy.deepcopy(_valid_manifest())
+    m_av2["meta"]["ado"] = {"organization": "o", "project": "p",
+                            "stateMap": None, "onComplete": None,
+                            "comments": None, "sprint": None, "pull": None}
+    f_av2, w_av2 = validate(m_av2)
+    noise_av2 = [x for x in w_av2 if "ado" in x]
+    ok_av2 = f_av2 == [] and noise_av2 == []
+    results.append(ok_av2)
+    print("%s av2 every nullable v2 key accepts null - an answer, not a "
+          "miss (%s)"
+          % ("PASS" if ok_av2 else "FAIL",
+             "clean" if ok_av2 else (f_av2 or noise_av2)))
+    check("av3 typo 'statemap' warns with did-you-mean", None,
+          lambda m: _with_ado(m, statemap={"task": {"done": "Review"}}),
+          expect_warning="did you mean 'stateMap'")
+    check("av4 typo 'identitymap' warns with did-you-mean", None,
+          lambda m: _with_ado(m, identitymap={"a": "b"}),
+          expect_warning="did you mean 'identityMap'")
+    check("av5 enabled as a string is a finding",
+          "enabled: must be true or false",
+          lambda m: _with_ado(m, enabled="yes"))
+    check("av6 stateMap as a string is a finding",
+          "stateMap: must be an object",
+          lambda m: _with_ado(m, stateMap="done=Closed"))
+    check("av7 a status key outside the vocabulary warns with did-you-mean",
+          None,
+          lambda m: _with_ado(m, stateMap={"task": {"Done": "Closed"}}),
+          expect_warning="did you mean 'done'")
+    check("av8 an empty stateMap value is a finding",
+          "must be an ADO state name or null",
+          lambda m: _with_ado(m, stateMap={"task": {"done": "  "}}))
+    check("av9 negative remainingWork is a finding",
+          "remainingWork: must be a number >= 0 or null",
+          lambda m: _with_ado(m, onComplete={"remainingWork": -1}))
+    check("av10 boolean remainingWork is a finding (bool is not a number "
+          "here)",
+          "remainingWork: must be a number >= 0 or null",
+          lambda m: _with_ado(m, onComplete={"remainingWork": True}))
+    check("av11 sprint without a team is a finding",
+          "sprint: requires a non-empty 'team'",
+          lambda m: _with_ado(m, sprint={"mode": "current"}))
+    check("av12 sprint mode outside the enum is a finding",
+          "sprint.mode: must be 'current'",
+          lambda m: _with_ado(m, sprint={"team": "Web", "mode": "path"}))
+    check("av13 an empty pull tag is a finding",
+          "pull.tags: every tag must be a non-empty string",
+          lambda m: _with_ado(m, pull={"tags": ["repo-x", ""]}))
+    check("av14 comments.onBlocked as a string is a finding",
+          "comments.onBlocked: must be true or false",
+          lambda m: _with_ado(m, comments={"onBlocked": "yes"}))
+    check("av15 a non-string types value is a finding",
+          "types: every value must be a work-item type name",
+          lambda m: _with_ado(m, types={"bug": 42}))
+    # phase-level ado link (phaseWorkItems writes phase.ado)
+    check("av16 a valid phase ado link stays clean", None,
+          lambda m: m["phases"][0].update(
+              ado={"id": 7, "url": None, "lastSyncedAt": None,
+                   "iterationPath": "Proj\\Sprint 9"}))
+    check("av17 phase ado as a string is a finding",
+          "phase P0: ado must be an object",
+          lambda m: m["phases"][0].update(ado="WI-7"))
+    # F1 (live gate): phase PBIs have their OWN state vocabulary - a third
+    # stateMap block, keyed by the same status names tasks use.
+    check("av18 a stateMap.phase block is clean and known", None,
+          lambda m: _with_ado(m, stateMap={"phase": {"done": "Done",
+                                                     "in_progress": None}}))
+    check("av19 an unknown status inside stateMap.phase warns did-you-mean",
+          None,
+          lambda m: _with_ado(m, stateMap={"phase": {"Done": "Done"}}),
+          expect_warning="did you mean 'done'")
+    # ENH-1: the personalizable provenance tag.
+    check("av20 a custom tag is clean and null (no tag) is an answer", None,
+          lambda m: _with_ado(m, tag="repo-storefront"))
+    check("av21 tag null stays clean", None,
+          lambda m: _with_ado(m, tag=None))
+    check("av22 an empty tag string is a finding",
+          "tag: must be a non-empty string or null",
+          lambda m: _with_ado(m, tag="  "))
 
     # --- CLI exit codes: 0 valid · 1 findings · 2 usage/unreadable ---
     import tempfile, os

@@ -4,6 +4,50 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+**The ADO connector grows up: boards, sprints, and a card in the panel.** `/audit:sync`
+learns the whole board: one PBI per phase with parent-linked items (`phaseWorkItems`,
+auto-detecting the process's phase-level type and writing the pick back), a configurable
+`stateMap` (a `null` transition = "the team moves that card by hand"; cards move via
+`System.State` only — a column not backed by a state is reported as unreachable, never
+faked), `onComplete.remainingWork` written on the done move, opt-in generated comments on
+blocked/completed, current-sprint resolution (`sprint.team`) with drift reporting, scoped
+push (`--task`/`--phase`) and a sprint pull that imports a shared sprint's PBIs as parked
+proposals — filtered by `pull.areaPath`/`pull.tags`, refusing to import blind when no
+filter says which items belong to this repo.
+
+**⚠ Default-on echo.** With `meta.ado` configured, the orchestrator now best-effort
+UPDATES already-linked work items on task done/blocked/reopen and phase sign-off
+(state, Remaining Work, comments — update-only, never creates, never blocks a run;
+`/audit:sync push` reconciles anything it missed). Existing `meta.ado` users who want
+manual-only sync set `"echo": false` — one key, links and sync keep working.
+
+The connector is visible: an **ADO card** on the panel's Composition tab (its own
+`PUT /api/ado` through the one composition writer, validated by the same
+`check_ado_meta` the CLI runs; dotted presence-aware change rows; an honesty banner —
+unconfigured / off / unverified / linked — computed from manifest evidence only, no
+network in the panel, plus an identityMap pair editor). The journal gains `task.blocked`
+and `ado.link` rows (a `lastSyncedAt` bump deliberately writes no row), `/audit:doctor`
+gains the operational half (transport, switches, the Scrum-vs-Agile stateMap advisory,
+what the links prove), and the shared contract lives in `reference/tracker-sync.md`,
+written tracker-neutrally so a future `meta.jira` mirrors the same keys 1:1. The
+user-facing story — setup, every key with an example, recipes for Scrum / sprints /
+shared-sprint pulls / identity mapping, the echo contract and troubleshooting — is a
+new field guide at `docs/ado-connector.md`; the README section stays the summary and
+links to it.
+
+Four contract truths came back from the LIVE gate (a real ADO org, both stock
+processes) and are folded in: states are applied by UPDATE, never at create (ADO
+allows only the initial state at creation); phase work items carry a different
+state vocabulary than tasks, so `stateMap` gains a `phase` block; both stock
+processes force-clear Remaining Work at done, so the combined write degrades to
+state-only with a report (and a doctor advisory); and tag writes are read-merge-
+write, because `System.Tags` updates are wholesale and writing blind would erase
+the team's own tags. Plus, user-requested: `meta.ado.tag` — the provenance tag is
+personalizable per repo (default `audit-plugin`, `null` = none), pairing with
+`pull.tags` for per-repo push/pull symmetry on shared sprints.
+
 ## [0.38.1] - 2026-08-15
 
 **The round's own leftovers, swept.** `meta.ado` itself now has a shape — a bare string

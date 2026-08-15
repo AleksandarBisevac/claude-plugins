@@ -712,6 +712,14 @@ table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);colo
  font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:.5rem .75rem;border-bottom:1px solid var(--border)}
 table.regtbl td{padding:.5rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
 table.regtbl tbody tr:hover td{background:var(--surface-2)}
+/* ADO card: the stateMap mini-tables must never widen the document — the
+   390px no-sideways-scroll rule. Fixed layout + collapsible inputs keep the
+   table at its container's width instead of its inputs' intrinsic one. */
+#adocard .f{min-width:0;max-width:100%}
+table.adosm{table-layout:fixed}
+table.adosm td:first-child{width:5.6rem;overflow-wrap:anywhere}
+table.adosm td:last-child{width:4.2rem}
+table.adosm td input[type=text],table.adosm td input:not([type]){width:100%;min-width:0;box-sizing:border-box}
 table.regtbl td.d{color:var(--muted)}
 /* status -> --st (reuses the theme-aware ok/warn/err/muted tokens) */
 [data-status="done"],[data-status="fixed"]{--st:var(--ok)}

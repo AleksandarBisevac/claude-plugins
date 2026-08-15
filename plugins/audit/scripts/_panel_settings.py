@@ -46,13 +46,14 @@ import _loader  # noqa: E402  (the one path-importlib loader for scripts/)
 # takes the lock, validates, journals and patches only the index (meta lives on the
 # index; a registry save must never rewrite a phase shard). /api/areas is a thin
 # front door onto it rather than a second writer.
-_META_KEYS = ("reviewSkill", "buildCommands", "areas")
+_META_KEYS = ("reviewSkill", "buildCommands", "areas", "ado")
 # ...of which these have no control on the Composition form: they are written by
 # their own endpoint, so the confirm dialog's client-side change list must NOT
 # enumerate them or it would compute a row for a field nobody can edit there. The
 # selftest derives the client's list from this pair rather than trusting the two
-# to be kept in step by hand.
-_META_API_ONLY = ("areas",)
+# to be kept in step by hand. (`ado` — the connector card — computes its own
+# dotted rows and saves via PUT /api/ado, mirroring `areas`.)
+_META_API_ONLY = ("areas", "ado")
 _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 _PHASE_KEYS = ("reviewModel",)
 _TASK_KEYS = ("model", "skills")
@@ -211,6 +212,33 @@ COMPOSITION_HELP = {
     "taskModel": "Model the executor uses to implement this task.",
     "taskSkills": "Skills the executor loads (via the Skill tool) before writing code "
                   "for this task.",
+    # The ADO connector card (meta.ado, saved via PUT /api/ado):
+    "adoConnector": "Azure DevOps connector config for /audit:sync and the "
+                    "orchestration echo. Empty = nothing syncs.",
+    "adoEnabled": "Master switch. Off stops sync push/pull and the echo; links are "
+                  "kept and status still reports them.",
+    "adoEcho": "On (the default): the orchestrator updates already-linked work items "
+               "on task done/blocked/reopen and phase sign-off. Never creates items.",
+    "adoPhaseWorkItems": "On (the default): push creates one PBI per phase and "
+                         "parent-links its task/bug items under it.",
+    "adoTypes": "Work-item type names: bug, task, and pbi (empty pbi = auto-detect "
+                "at the first phase push).",
+    "adoTag": "Provenance tag stamped on every pushed/echoed item. Empty = "
+              "'audit-plugin'; a per-repo value pairs with pull tags on shared "
+              "sprints; 'no tag' writes null. Always merged into the item's "
+              "existing tags, never replacing them.",
+    "adoStateMap": "Manifest status → ADO state per transition. Empty cell = the "
+                   "built-in default; 'never move' = the team moves that card by hand.",
+    "adoRemainingWork": "Remaining Work written on a task's done move (default 0). "
+                        "'Don't touch' = the field is never written.",
+    "adoComments": "Generated work-item comments on blocked / completed transitions. "
+                   "Both off by default.",
+    "adoSprint": "Resolve the team's CURRENT iteration at push time and stamp items "
+                 "into it. Empty = the static iteration path (if any).",
+    "adoPull": "Which of a shared sprint's items belong to THIS repo: area path and/or "
+               "tags. With neither, sprint pull refuses to import blind.",
+    "adoIdentityMap": "Ledger identity (git email/name) → ADO identity (email/UPN). "
+                      "Advisory: push proposes assignees, pull labels reporters.",
 }
 
 SETTINGS_GROUPS = (

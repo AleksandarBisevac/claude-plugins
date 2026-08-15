@@ -211,7 +211,7 @@
             },
             "types": {
               "type": "object",
-              "description": "Work-item type mapping. Defaults: bug -> 'Bug', task -> 'Task'.",
+              "description": "Work-item type mapping. Defaults: bug -> 'Bug', task -> 'Task', pbi -> auto-detect.",
               "additionalProperties": {
                 "type": "string"
               },
@@ -221,6 +221,13 @@
                 },
                 "task": {
                   "type": "string"
+                },
+                "pbi": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Phase-level work item type, used when phaseWorkItems is true. null/absent = auto-detect at the first phase push (Product Backlog Item > User Story > Requirement > Issue, whichever the project's process defines) and write the pick back here under /audit:sync's confirm gate — so it is deterministic after the first run and visible in the file."
                 }
               }
             },
@@ -232,6 +239,209 @@
               "description": "Advisory map from a LEDGER identity to that person's ADO identity (email/UPN). Each key is written in the SAME form usage.authorMode records authors and area.owner is written in (git user.email under the default 'email' mode, user.name under 'name') — the ledger identity is the key because it is the identity the plugin already owns (the usage ledger's author column, area owners). /audit:sync reads it in both directions: push PROPOSES --assigned-to for the mapped owner of an item's area (it asks first and never assigns silently); pull reverse-maps a mapped ADO assignee into reportedBy's ledger form (unmapped assignees keep the 'ado:' prefix). Advisory only: nothing gates, refuses or assigns on this map by itself, and absent/null means 'no mapping' — sync simply stops proposing.",
               "additionalProperties": {
                 "type": "string"
+              }
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "Master switch for the connector. Absent = on (an existing meta.ado keeps working unchanged). false stops /audit:sync push and pull and the orchestration echo; links already written are kept, and /audit:sync status still runs, reporting the linked items as frozen. Set true or remove the key to turn back on."
+            },
+            "tag": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The provenance tag stamped on every pushed/echoed work item. Absent = 'audit-plugin'; a custom value (e.g. a per-repo tag) pairs naturally with pull.tags so a shared sprint's push and pull are symmetric per repo; explicit null = no tag at all. Tag writes always READ-MERGE-WRITE the item's tag list (System.Tags updates are wholesale — writing blind would erase the team's own tags). The `blocked` marker is separate and fixed: a state signal, not branding."
+            },
+            "echo": {
+              "type": "boolean",
+              "description": "Orchestration echo switch. Absent = ON: when a linked task goes done or blocked (or a done task is reopened via /audit:run) and at phase sign-off, the orchestrator best-effort UPDATES the already-linked work item — state per stateMap, Remaining Work per onComplete, comments per comments. The echo never creates work items and never asks questions; creation happens only in /audit:sync push behind its confirm gate, and a failed echo is one report line healed by the next /audit:sync push. false = manual-only sync."
+            },
+            "phaseWorkItems": {
+              "type": "boolean",
+              "description": "Absent = ON: /audit:sync push creates one types.pbi work item per phase and parent-links each of the phase's task/bug work items under it (System.LinkTypes.Hierarchy), writing phase.ado. The push plan lists the PBI creates and is confirm-gated, so nothing appears in ADO unseen. false = flat push, no phase-level items."
+            },
+            "stateMap": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Manifest status -> ADO state name, per item kind. Absent/null = the built-in defaults (task: pending>New, in_progress>Active, blocked>Active+tag, done>Closed; bug: open>New, triaged/in_progress>Active, fixed>Resolved, wontfix>Closed; phase: the task defaults). A key set to null means 'never move state for this transition' — the team moves that card by hand. NOTE the built-in defaults name Agile-process states; Scrum tasks use To Do/In Progress/Done, so Scrum projects should set this map. The `phase` block exists because phase work items (PBI/User Story) carry a DIFFERENT state vocabulary than tasks — a Scrum PBI knows New/Approved/Committed/Done and no 'In Progress'. States are applied by UPDATE after create (ADO allows only the initial state at creation), and a state the process rejects degrades per item. Cards move via System.State only — a board column not backed by a state is unreachable, and sync says so rather than faking it.",
+              "additionalProperties": false,
+              "properties": {
+                "phase": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pending": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "in_progress": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "blocked": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "done": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "task": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pending": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "in_progress": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "blocked": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "done": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "bug": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "open": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "triaged": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "in_progress": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "fixed": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "wontfix": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "onComplete": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "What a task's done-transition writes besides state. Absent/null = touch nothing.",
+              "properties": {
+                "remainingWork": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Written to Microsoft.VSTS.Scheduling.RemainingWork in the same update as the done move (task-category types only — PBIs do not carry the field in most processes). Default when onComplete is present without this key: 0. Explicit null = never touch the field."
+                }
+              }
+            },
+            "comments": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Generated work-item comments. Absent/null = none. (The legacy 'Fixed in <sha>' comment on a bug closed with fixedIn is part of the field mapping and unaffected by this key.)",
+              "properties": {
+                "onBlocked": {
+                  "type": "boolean",
+                  "description": "Default false. When a linked task goes blocked, comment with attempts, the last outcome and the blockers digest."
+                },
+                "onComplete": {
+                  "type": "boolean",
+                  "description": "Default false. On the done move, comment with the sign-off note and the task's commit sha."
+                }
+              }
+            },
+            "sprint": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Dynamic iteration resolution. Absent/null = the static meta.ado.iterationPath (or no stamp). When set, /audit:sync resolves the team's CURRENT iteration at push time, stamps System.IterationPath on created/updated items and records phase.ado.iterationPath; a failed resolution falls back to iterationPath with one warning and never aborts the run.",
+              "properties": {
+                "team": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The ADO team whose iteration calendar defines 'current'."
+                },
+                "mode": {
+                  "enum": [
+                    "current"
+                  ],
+                  "description": "Only 'current' today; the enum leaves room."
+                }
+              }
+            },
+            "pull": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Scoping filters for sprint pull — one sprint can span multiple repos, and these say which items belong to THIS repo's manifest. Filters AND-compose; either alone suffices. With NO filter configured, pull refuses to import blind: it lists the sprint's items, requires explicit selection, and offers to persist the chosen filter here. Regardless of filters, pull always confirms the candidate list before writing proposals.",
+              "properties": {
+                "areaPath": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "WIQL 'UNDER' filter for sprint pull. Absent/null = fall back to meta.ado.areaPath."
+                },
+                "tags": {
+                  "type": "array",
+                  "description": "System.Tags CONTAINS filters, e.g. a per-repo tag.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
               }
             }
           }
@@ -324,6 +534,13 @@
             "null"
           ],
           "description": "ISO timestamp of the last successful sync of this item."
+        },
+        "iterationPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The iteration this item was last stamped into by /audit:sync (sprint mode 'current'). Recorded so status can report sprint drift after a rollover. Absent until a sprint-mode push."
         }
       }
     },
@@ -408,6 +625,10 @@
             "null"
           ],
           "description": "ISO timestamp after ff-merge to the development branch."
+        },
+        "ado": {
+          "$ref": "#/$defs/adoLink",
+          "description": "Azure DevOps link for this phase's work item (created when meta.ado.phaseWorkItems is true). Written only by /audit:sync, like every adoLink."
         },
         "reviewSkill": {
           "type": [

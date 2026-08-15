@@ -166,6 +166,32 @@ def write_areas(project, body):
     return res
 
 
+def write_ado(project, body):
+    """`PUT /api/ado` — replace `meta.ado` (the connector config) wholesale.
+
+    The `areas` pattern applied to the second API-only meta key. The shape is
+    checked HERE, before anything is written — and through the manifest
+    validator's OWN `check_ado_meta`, not a local copy, so the panel and the
+    CLI cannot disagree about what a valid connector config is. The write then
+    goes through `apply_composition`, the one writer: lock, re-validate,
+    index-only patch (meta lives there), change rows, journal.
+
+    `{"ado": null}` is a legal PUT — the connector reads off. Item links are
+    sync's records, not this config's, and stay untouched.
+    """
+    vm, _, _, _ = _cores()
+    if not isinstance(body, dict):
+        return {"ok": False, "findings": ["body must be a JSON object"]}
+    ado = body.get("ado") if "ado" in body else body
+    findings, warnings = vm.check_ado_meta(ado)
+    if findings:
+        return {"ok": False, "findings": findings, "warnings": warnings}
+    res = apply_composition(project, {"meta": {"ado": ado}})
+    if res.get("ok"):
+        res["warnings"] = list(res.get("warnings") or []) + warnings
+    return res
+
+
 # --- write locking ---------------------------------------------------------------
 def _panel_session():
     """This panel's lock identity. A pid the OS can vouch for is what lets a
@@ -293,6 +319,24 @@ def _flat_paths(obj, prefix=""):
     return out
 
 
+def _ado_rows(was, now):
+    """Dotted, presence-aware rows for a meta.ado save. null/absent flattens to
+    no leaves, so configuring rows every leaf in and null-ing rows each one
+    away; a transition both sides of which flatten empty (e.g. null -> {})
+    still gets one whole-key row rather than silence."""
+    a = _flat_paths(was) if isinstance(was, dict) else {}
+    b = _flat_paths(now) if isinstance(now, dict) else {}
+    rows = []
+    for p in sorted(set(a) | set(b)):
+        if (p in a) == (p in b) and a.get(p) == b.get(p):
+            continue
+        rows.append({"target": "meta", "field": "ado." + p,
+                     "from": a.get(p), "to": b.get(p)})
+    if not rows:
+        rows.append({"target": "meta", "field": "ado", "from": was, "to": now})
+    return rows
+
+
 def _config_changes(before, after):
     """Rows for a config save: one per dotted leaf path that actually differs."""
     a, b = _flat_paths(before or {}), _flat_paths(after or {})
@@ -326,8 +370,15 @@ def _composition_changes(manifest, patch):
     for k in _META_KEYS:
         if k in (patch.get("meta") or {}):
             was, now = meta.get(k), patch["meta"][k]
-            if was != now:
-                rows.append({"target": "meta", "field": k, "from": was, "to": now})
+            if was == now:
+                continue
+            if k == "ado":
+                # The one NESTED meta key: dotted, presence-aware rows
+                # (_config_changes' rule), so the confirm dialog prints
+                # `ado.enabled true -> false` instead of two whole objects.
+                rows.extend(_ado_rows(was, now))
+                continue
+            rows.append({"target": "meta", "field": k, "from": was, "to": now})
     by_pid = {p.get("id"): p for p in (manifest.get("phases") or [])
               if isinstance(p, dict)}
     for pid, pv in sorted((patch.get("phases") or {}).items()):
@@ -952,6 +1003,67 @@ def _selftest():
               _res["ok"] and not areas_state(_aproj)["tags"][0]["rootExists"])
     finally:
         _shutil.rmtree(_aproj, ignore_errors=True)
+
+    # --- connector v2: meta.ado over HTTP ---------------------------------------
+    # The `areas` pattern applied to the second API-only meta key: validated by
+    # the SAME check_ado_meta the CLI validator runs (one front door — the panel
+    # and the CLI cannot disagree), written through the one composition writer,
+    # index-only on a sharded manifest, DOTTED presence-aware change rows so the
+    # card's confirm list and the server's echo are two readings of one edit.
+    _oproj = tempfile.mkdtemp(prefix="panel-ado-")
+    try:
+        _atomic_write_json(_config_path(_oproj),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+        _om = _manifest_path(_oproj, read_config(_oproj))
+        os.makedirs(os.path.dirname(_om), exist_ok=True)
+        _mio.save_sharded(_om, {
+            "meta": {"version": 3},
+            "phases": [{"id": "P1", "title": "One", "status": "pending",
+                        "tasks": [{"id": "P1.1", "title": "T1",
+                                   "status": "pending"}]}]})
+        _oidx = _read_json(_om)
+        _oshard = os.path.join(os.path.dirname(_om),
+                               _oidx["phases"][0]["shard"])
+        _oshard_before = open(_oshard, "rb").read()
+
+        _bad = write_ado(_oproj, {"ado": {"organization": "o", "project": "p",
+                                          "sprint": {"mode": "current"}}})
+        check("ado PUT refuses through the validator's own front door "
+              "(check_ado_meta), naming the defect",
+              not _bad["ok"] and any("sprint: requires a non-empty 'team'" in f
+                                     for f in _bad["findings"]))
+        check("...and a refused ado PUT wrote nothing",
+              "ado" not in _read_json(_om)["meta"])
+        _res = write_ado(_oproj, {"ado": {"organization": "o", "project": "p",
+                                          "enabled": False}})
+        check("ado PUT writes through the one composition writer, INDEX only",
+              _res["ok"]
+              and _res.get("written") == [os.path.relpath(_om, _oproj)]
+              and open(_oshard, "rb").read() == _oshard_before
+              and _read_json(_om)["meta"]["ado"]["enabled"] is False)
+        check("ado PUT echoes DOTTED rows, one per leaf that moved",
+              sorted(r["field"] for r in _res.get("applied") or [])
+              == ["ado.enabled", "ado.organization", "ado.project"])
+        _res2 = write_ado(_oproj, {"ado": {"organization": "o",
+                                           "project": "p"}})
+        check("dropping a key is presence-aware - enabled deleted draws its "
+              "own row (deleting the key is how 'use the default' is written)",
+              _res2["ok"]
+              and [r["field"] for r in _res2.get("applied") or []]
+              == ["ado.enabled"]
+              and "enabled" not in _read_json(_om)["meta"]["ado"])
+        check("an ado save that changes nothing writes nothing",
+              write_ado(_oproj, {"ado": {"organization": "o", "project": "p"}}
+                        ).get("unchanged") is True)
+        check("ado PUT accepts the bare object as well as {ado: ...}",
+              write_ado(_oproj, {"organization": "o2", "project": "p"})["ok"]
+              and _read_json(_om)["meta"]["ado"]["organization"] == "o2")
+        _res3 = write_ado(_oproj, {"ado": None})
+        check("ado: null is a legal PUT - the connector reads off; item links "
+              "are sync's records, not this config's, and stay",
+              _res3["ok"] and _read_json(_om)["meta"]["ado"] is None)
+    finally:
+        _shutil.rmtree(_oproj, ignore_errors=True)
 
     # --- v0.30: the capability policy ------------------------------------------
     # The rule-listing cases that are a pure function of the block, and the

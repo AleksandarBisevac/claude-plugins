@@ -261,6 +261,7 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
       spend still lands on the claimed phase; write this one so the record is consistent.
 2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the phase's manifest file — the shard when sharded).
    If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
+   A task entering `blocked` gets the **ADO echo** (section below).
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
    `subagent_type: "audit:audit-executor"`, `model = task.model`, and **`description` starting with
    the task id** (e.g. `"P3.2 shard writer"`). The id prefix is what makes token metering exact:
@@ -330,8 +331,11 @@ Each phase gets a **local** branch so work is isolated, reviewable, and resumabl
           merge clean. (`/audit:bug close` still records a human `wontfix`/`fixed` on the index, under
           the index lock — a structural decision, not part of a run.)
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
+     d. **ADO echo** — now that the SHA is captured, echo the done transition (section below;
+        an `onComplete` comment carries this `task.commit`).
    - **test failure** (gates RAN and are red) → leave `status = "in_progress"` (or `"blocked"` if attempts
      exhausted), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not commit.
+     A transition to `blocked` gets the **ADO echo** (section below).
    - **infrastructure failure** (gates could NOT run: missing command, runner crash before tests,
      zero tests collected where `tests.add` expects some) → this is NOT the task's failure:
      **revert the `attempts` increment from step 2** (Edit it back down), record the cause in
@@ -380,8 +384,55 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
          `task.commit` SHA (and the `bug.fixedIn` derived from it) valid.
       2. **Stop** — leave the branch unmerged for manual resolution.
       **Never rebase the phase branch** — rebasing rewrites the SHAs recorded in the manifest.
-   d. Write `phase.mergedAt = <ISO now>` (Edit on the now-merged branch).
+   d. Write `phase.mergedAt = <ISO now>` (Edit on the now-merged branch). Then **ADO echo** the
+      phase: its PBI (when `phase.ado` is linked) moves to the done-state (section below).
    e. Optionally clean up: `git branch -d <branch>` (safe after a completed merge).
+
+## ADO echo (best-effort, linked items only)
+
+The automatic half of the ADO connector. `/audit:sync` creates and reconciles links
+behind its confirm gate; the echo keeps the board current between syncs by UPDATING
+work items that are ALREADY linked. Contract and ADO mechanics:
+`${CLAUDE_PLUGIN_ROOT}/reference/tracker-sync.md` (read it on the first echo of a run).
+
+**Runs iff ALL of**: `meta.ado` exists · `meta.ado.enabled` is not `false` ·
+`meta.ado.echo` is not `false` · the item has `ado.id`. Anything else → skip
+**silently** (unlinked items are sync's business, not a warning per task).
+
+**Hard rules** (weaker than sync, on purpose):
+- **Update-only.** Never create work items, never touch unlinked items — creation is
+  consent-gated in `/audit:sync push`; an echoed update inherits that consent because
+  the link it updates was created under the confirm gate.
+- **Never ask, never block, never retry.** No AskUserQuestion, no aborting or delaying
+  the run; a failed echo is ONE report line. Two narrow exceptions, both from
+  tracker-sync.md: a rejected STATE retries once without State, and a field-rule
+  refusal of Remaining Work (stock processes force-clear it at done) retries
+  state-only and reports the field skip.
+- **One combined call per item** (`az boards work-item update` via Bash, or the
+  `wit_*` MCP tools when available): state + fields + tags together. Tag writes
+  READ-MERGE-WRITE the item's tag list (provenance tag from `meta.ado.tag`, absent
+  = `audit-plugin`, null = none; plus `blocked` where the transition calls for it)
+  — `System.Tags` updates are wholesale, and writing blind erases the team's tags.
+- **No iteration stamping** — the sprint stamp is sync's job; the echo touches state,
+  Remaining Work, tags and comments only.
+
+**Per transition** (states from `meta.ado.stateMap`, defaults in the sync field map;
+a `null` mapping = skip State for that transition):
+- task → `done`: done-state; `meta.ado.onComplete` present → write `remainingWork`
+  (default 0, explicit null = never) in the SAME call; `comments.onComplete` true →
+  comment with the sign-off note and `task.commit`.
+- task → `blocked`: blocked-state + tag `blocked`; `comments.onBlocked` true →
+  comment with `attempts`, the last `outcome.technical` and the blockers.
+- task reopened (`/audit:run` re-open, human-confirmed): pending-state + comment
+  `reopened by /audit:run` — the board move inherits the reopen's confirmation.
+- phase sign-off: the phase PBI (`phase.ado`) moves to the done-state.
+
+**Manifest footprint**: bump the item's `ado.lastSyncedAt` **riding the same shard
+edit the transition already makes** — never a separate lock cycle, never the index.
+
+**Reporting**: one line at the end of the run —
+`ADO echo: N updated, M skipped (unlinked — /audit:sync push to link), K failed`.
+Omit the line entirely when the echo never applied (no `meta.ado`, or disabled).
 
 ## Resume after interruption
 

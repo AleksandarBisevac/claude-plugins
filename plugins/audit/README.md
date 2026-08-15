@@ -563,7 +563,7 @@ commands. All fields are optional except `version`; the orchestrator resolves th
 | `nodePreamble` | Shell prefix run before build gates (e.g. `nvm use`). | `null` |
 | `commit` | `{type, coauthor}` commit-message conventions. | `{chore, null}` |
 | `buildCommands` | Map so gate entries like `test` resolve to a real command. | — |
-| `ado` | Azure DevOps sync config for `/audit:sync` (never store credentials). | `null` |
+| `ado` | Azure DevOps connector for `/audit:sync` + the orchestration echo — states, sprints, Remaining Work, comments; editable in the panel's ADO card (never store credentials). | `null` |
 | `reportSummary` | Narrative shown in the report's **Summary** box (usually supplied read-only via `--summary-file`). | `null` |
 | `reportBasename` | Custom report filename, e.g. `q3-audit` → `q3-audit.html/.md`. | `audit-report` |
 
@@ -987,7 +987,14 @@ an untracked file moves by plain rename (it has no committed history for git to 
 
 ## Azure DevOps (optional)
 
-Add `meta.ado` to the manifest and `/audit:sync` links the tracker to your board:
+> The detailed field guide — setup walkthrough, every key with an example, recipes
+> (Scrum, sprints, shared-sprint pull, identity mapping), the echo contract and
+> troubleshooting — lives in [`docs/ado-connector.md`](../../docs/ado-connector.md).
+> This section is the summary.
+
+Add `meta.ado` to the manifest — or fill in the **ADO connector card** on the panel's
+Composition tab, which edits the same block — and `/audit:sync` links the tracker to
+your board:
 
 ```json
 "ado": { "organization": "<org>", "project": "<project>",
@@ -995,6 +1002,21 @@ Add `meta.ado` to the manifest and `/audit:sync` links the tracker to your board
          "types": { "bug": "Bug", "task": "Task" },
          "identityMap": { "ana@corp.com": "ana.k@company.com" } }
 ```
+
+That minimal block behaves as it always has. The connector v2 keys (all optional,
+all editable in the panel card; contract in `reference/tracker-sync.md`):
+
+| Key | What it does |
+|---|---|
+| `enabled` | master switch; `false` freezes push/pull/echo, keeps links, `status` still reports |
+| `echo` | **absent = ON**: the orchestrator best-effort UPDATES already-linked items on task done/blocked/reopen and phase sign-off — state, Remaining Work, comments. Never creates items; `/audit:sync push` reconciles whatever it missed |
+| `phaseWorkItems` | absent = ON: push creates one PBI per phase (`types.pbi`; null = auto-detect per process template, written back) and parent-links its items |
+| `stateMap` | manifest status → ADO state per transition and kind (`task`/`bug`/`phase` — phase items carry a different vocabulary). A `null` value = never move that card. Defaults name **Agile** states — Scrum projects should set it (doctor carries the advisory) |
+| `tag` | provenance tag on pushed/echoed items (default `audit-plugin`; `null` = none). Always merged into existing tags, never replacing; pairs with `pull.tags` for per-repo symmetry on shared sprints |
+| `onComplete.remainingWork` | written on a task's done move (e.g. `0`); `null` = never touch the field |
+| `comments` | opt-in generated comments: `onBlocked` (attempts + outcome + blockers), `onComplete` (sign-off note + commit) |
+| `sprint` | `{ "team": "<team>" }` — resolve the team's CURRENT iteration at push time and stamp items into it; drift is reported and restamped after rollover |
+| `pull` | sprint-pull scoping for shared sprints: `areaPath` and/or `tags` say which items belong to THIS repo; with neither, `pull sprint` refuses to import blind |
 
 `identityMap` (optional) maps a **ledger identity** — the same form `usage.authorMode`
 records authors and `meta.areas[*].owner` is written in — to that person's ADO email/UPN.
@@ -1004,15 +1026,20 @@ reverse-maps a known assignee into `reportedBy`'s ledger form (existing rows are
 rewritten), `status` shows mapped/unmapped coverage. The validator checks shape only and
 warns on duplicate values.
 
-- `/audit:sync push` — create/update work items from manifest bugs (add `tasks`/`all` for
-  tasks); shows the plan and asks before the first write; write-back `ado: {id, url,
-  lastSyncedAt}` per item makes re-runs converge.
-- `/audit:sync pull` — import assigned, unlinked ADO bugs as manifest bugs (you pick which).
-- `/audit:sync status` — read-only drift table (manifest state vs ADO state).
+- `/audit:sync push [bugs|tasks|all] [--task <id> | --phase <id>]` — create/update work
+  items (PBIs per phase when `phaseWorkItems`); shows the plan and asks before the first
+  write; write-back `ado: {id, url, lastSyncedAt}` per item makes re-runs converge.
+- `/audit:sync pull [bugs|sprint]` — import unlinked ADO bugs, or the current sprint's
+  PBIs/tasks as **parked proposals** (`/audit:propose materialize` moves them into the
+  live plan; a re-pull imports nothing).
+- `/audit:sync status` — read-only drift table (manifest state vs ADO state, sprint
+  drift, enabled/echo line).
 
-Auth belongs to `az login` (locally) or the `AZURE_DEVOPS_EXT_PAT` variable (CI) — the
-plugin never stores or prints credentials. For pipelines, `docs/examples/azure-pipelines.yml`
-shows the validate → gate → report flow.
+Cards move via `System.State` only — a board column not backed by a state is reported
+as unreachable, never faked. Link creation is journaled (`ado.link`); `lastSyncedAt`
+bumps deliberately are not. Auth belongs to `az login` (locally) or the
+`AZURE_DEVOPS_EXT_PAT` variable (CI) — the plugin never stores or prints credentials.
+For pipelines, `docs/examples/azure-pipelines.yml` shows the validate → gate → report flow.
 
 ## Git repo in a subdirectory (monorepo / workspace)
 

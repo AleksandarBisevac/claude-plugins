@@ -338,6 +338,15 @@ def semantic_diff(old_obj, new_obj):
                                        "from": ov, "to": nv,
                                        "completedAt":
                                        new_task.get("completedAt")}})
+                if field == "status" and nv == "blocked" and ov != "blocked":
+                    events.append({"action": "task.blocked",
+                                   "summary": "%s blocked" % tid,
+                                   "details": {
+                                       "taskId": tid,
+                                       "phaseId": new_owner.get(tid),
+                                       "from": ov,
+                                       "attempts":
+                                       new_task.get("attempts")}})
                 if (field == "commit" and ov is None
                         and isinstance(nv, str) and nv):
                     events.append({"action": "task.commit",
@@ -345,6 +354,25 @@ def semantic_diff(old_obj, new_obj):
                                    "details": {"taskId": tid,
                                                "phaseId": new_owner.get(tid),
                                                "commit": nv}})
+            # `ado` is deliberately NOT in TASK_FIELDS: only the ID is compared,
+            # so a sync/echo lastSyncedAt bump writes no row (the plan did not
+            # move), while the link itself - the tamper-evident half - is.
+            oa, na = old_task.get("ado"), new_task.get("ado")
+            ov_id = oa.get("id") if isinstance(oa, dict) else None
+            nv_id = na.get("id") if isinstance(na, dict) else None
+            if ov_id != nv_id:
+                changes.append({"id": tid, "field": "ado.id",
+                                "from": _render(ov_id), "to": _render(nv_id)})
+                frags.append("ado.id set" if ov_id is None else
+                             ("ado.id cleared" if nv_id is None
+                              else "ado.id changed"))
+                if ov_id is None and isinstance(nv_id, int):
+                    events.append({"action": "ado.link",
+                                   "summary": "%s linked to ADO #%s"
+                                   % (tid, nv_id),
+                                   "details": {"taskId": tid,
+                                               "phaseId": new_owner.get(tid),
+                                               "adoId": nv_id}})
             if frags:
                 phrases.append("%s: %s" % (tid, ", ".join(frags)))
         for pid, new_phase in new_phases.items():
@@ -371,6 +399,23 @@ def semantic_diff(old_obj, new_obj):
                                                "from": ov, "to": nv,
                                                "mergedAt":
                                                new_phase.get("mergedAt")}})
+            # phase PBI link (meta.ado.phaseWorkItems) - same id-only rule as
+            # the task loop above.
+            oa, na = old_phase.get("ado"), new_phase.get("ado")
+            ov_id = oa.get("id") if isinstance(oa, dict) else None
+            nv_id = na.get("id") if isinstance(na, dict) else None
+            if ov_id != nv_id:
+                changes.append({"id": pid, "field": "ado.id",
+                                "from": _render(ov_id), "to": _render(nv_id)})
+                frags.append("ado.id set" if ov_id is None else
+                             ("ado.id cleared" if nv_id is None
+                              else "ado.id changed"))
+                if ov_id is None and isinstance(nv_id, int):
+                    events.append({"action": "ado.link",
+                                   "summary": "%s linked to ADO #%s"
+                                   % (pid, nv_id),
+                                   "details": {"phaseId": pid,
+                                               "adoId": nv_id}})
             if frags:
                 phrases.append("%s: %s" % (pid, ", ".join(frags)))
         if not changes:
@@ -853,6 +898,57 @@ def _selftest() -> int:
               len(sign) == 1 and sign[0]["details"] == {
                   "phaseId": "P1", "from": "in_progress", "to": "done",
                   "mergedAt": "2026-08-11T01:00:00Z"}, repr(sign))
+
+        # --- i: connector v2 events (task.blocked + ado.link) ------------------
+        # Derived from the same diff as everything else, tested on the core
+        # directly. D-1 rule: `ado` is NOT in TASK_FIELDS - only the id is
+        # compared, so an echo's lastSyncedAt bump writes no row at all.
+        i_base = manifest_doc(status="in_progress")
+        i_blocked = manifest_doc(status="blocked")
+        i_blocked["phases"][0]["tasks"][0]["attempts"] = 3
+        d_i1 = semantic_diff(i_base, i_blocked)
+        blk = [e for e in (d_i1 or {}).get("events", [])
+               if e.get("action") == "task.blocked"]
+        check("i1 a task entering blocked yields a task.blocked row - "
+              "symmetric with task.complete",
+              len(blk) == 1 and blk[0]["details"] == {
+                  "taskId": "P1.1", "phaseId": "P1",
+                  "from": "in_progress", "attempts": 3},
+              repr(d_i1 and d_i1.get("events")))
+        d_i2 = semantic_diff(i_blocked, i_base)
+        check("i2 LEAVING blocked is a change row only, never a task.blocked "
+              "event",
+              d_i2 is not None and not [e for e in d_i2.get("events", [])
+                                        if e.get("action") == "task.blocked"])
+        i_linked = manifest_doc(status="in_progress")
+        i_linked["phases"][0]["tasks"][0]["ado"] = {
+            "id": 7, "url": "u", "lastSyncedAt": "t1"}
+        d_i3 = semantic_diff(i_base, i_linked)
+        link_rows = [e for e in (d_i3 or {}).get("events", [])
+                     if e.get("action") == "ado.link"]
+        check("i3 a task link (ado.id None->int) yields an ado.link row and "
+              "an ado.id change row",
+              len(link_rows) == 1 and link_rows[0]["details"] == {
+                  "taskId": "P1.1", "phaseId": "P1", "adoId": 7}
+              and any(c.get("field") == "ado.id" for c in d_i3["changes"]),
+              repr(d_i3))
+        i_bumped = json.loads(json.dumps(i_linked))
+        i_bumped["phases"][0]["tasks"][0]["ado"]["lastSyncedAt"] = "t2"
+        check("i4 a lastSyncedAt-only bump is NO row at all - the plan did "
+              "not move, and the echo must not spam the journal",
+              semantic_diff(i_linked, i_bumped) is None)
+        i_ph = manifest_doc(status="in_progress")
+        i_ph["phases"][0]["ado"] = {"id": 9, "url": "u", "lastSyncedAt": "t"}
+        d_i5 = semantic_diff(i_base, i_ph)
+        ph_rows = [e for e in (d_i5 or {}).get("events", [])
+                   if e.get("action") == "ado.link"]
+        check("i5 a phase PBI link yields an ado.link row too",
+              len(ph_rows) == 1 and ph_rows[0]["details"] == {
+                  "phaseId": "P1", "adoId": 9}, repr(d_i5))
+        i_garbage = manifest_doc(status="in_progress")
+        i_garbage["phases"][0]["tasks"][0]["ado"] = "WI-7"
+        check("i6 a non-dict ado never crashes the diff and never links",
+              semantic_diff(i_base, i_garbage) is None)
 
         write_manifest(manifest_doc())
         entries = post_entries(payload("Edit", man_rel, sid="pp-5"), cfg=cfg,

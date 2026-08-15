@@ -21,6 +21,9 @@ Execute exactly `<taskId>`, with status guards:
    `outcome`, `completedAt`, `verifiedBy` — and **if `task.bugId` is set, reopen the linked bug too**
    (its `bugs[]` entry back to `status: "in_progress"`, clear `fixedIn`) so a re-opened bugfix task
    never leaves its bug marked `fixed` at a stale SHA — then execute. Never silently re-run a done task.
+   A reopened task with an `ado` link gets the **ADO echo** (orchestrator.md → "ADO echo"): its card
+   moves back to the pending-state with the comment `reopened by /audit:run` — the reopen was
+   human-confirmed, so the board move inherits that consent.
 2. `status == "blocked"` → refuse: report why (exhausted attempts / blockers). Offer a confirmed
    reset of `attempts` to 0 (back to `pending`), then execute.
 3. `status == "in_progress"` → warn: likely an interrupted run — point to `/audit:resume`.

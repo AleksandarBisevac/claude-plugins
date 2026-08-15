@@ -79,6 +79,19 @@ COMPOSITION_PATHS = {
     "phaseReviewModel": "phases[].review.model",
     "taskModel": "phases[].tasks[].model",
     "taskSkills": "phases[].tasks[].skills",
+    # The ADO connector card (PUT /api/ado):
+    "adoConnector": "meta.ado",
+    "adoEnabled": "meta.ado.enabled",
+    "adoEcho": "meta.ado.echo",
+    "adoPhaseWorkItems": "meta.ado.phaseWorkItems",
+    "adoTypes": "meta.ado.types",
+    "adoTag": "meta.ado.tag",
+    "adoStateMap": "meta.ado.stateMap",
+    "adoRemainingWork": "meta.ado.onComplete.remainingWork",
+    "adoComments": "meta.ado.comments",
+    "adoSprint": "meta.ado.sprint",
+    "adoPull": "meta.ado.pull",
+    "adoIdentityMap": "meta.ado.identityMap",
 }
 
 # Which concept page a field belongs to, by path prefix. Longest prefix wins, so a

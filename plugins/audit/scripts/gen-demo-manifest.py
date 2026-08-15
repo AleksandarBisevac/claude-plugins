@@ -236,6 +236,19 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
             phase["blockedBy"] = ["P%d" % max(1, pi - 1)]
         phases.append(phase)
 
+    # Connector v2 (meta.ado): a linked phase and task, so the panel's ADO card
+    # renders its 'linked' banner from EVIDENCE (links sync would have written)
+    # and the browser check can assert it. Deterministic values on purpose —
+    # the demo is regenerated, never stored.
+    phases[0]["ado"] = {
+        "id": 4700,
+        "url": "https://dev.azure.com/demo-org/%s/_workitems/edit/4700" % repo,
+        "lastSyncedAt": "2026-08-06T12:00:00Z"}
+    phases[0]["tasks"][0]["ado"] = {
+        "id": 4711,
+        "url": "https://dev.azure.com/demo-org/%s/_workitems/edit/4711" % repo,
+        "lastSyncedAt": "2026-08-06T12:05:00Z"}
+
     manifest = {
         "meta": {
             "version": 3,
@@ -263,6 +276,13 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
             "usage": {"ledgerDir": ".claude/usage", "showCost": True,
                       "pricingAsOf": "2026-08-06"},
             "areas": _demo_areas(),
+            # Connector v2: configured so the ADO card has a form to show; the
+            # links above make its banner read 'linked' rather than 'unverified'.
+            "ado": {"organization": "demo-org", "project": repo,
+                    "areaPath": None, "iterationPath": None,
+                    "types": {"bug": "Bug", "task": "Task"},
+                    "identityMap": {"dev@demo.example":
+                                    "dev@demo-corp.example.com"}},
         },
         "phases": phases,
         "fileIndex": file_index,

@@ -252,6 +252,46 @@ def _skills_of(task):
     return v if isinstance(v, list) else []
 
 
+def _ado_status(manifest):
+    """The ADO card's honesty-banner facts — MANIFEST EVIDENCE only, no network.
+
+    The policy tab's rule applied to a second feature: the panel reports what
+    the file proves (links /audit:sync wrote), never what the connector claims.
+    `enabled`/`echo` are EFFECTIVE values (absent = on; a disabled connector
+    reads echo off too) because the banner answers "what happens now", not
+    "what is typed". Links count only int ids — the same shape the validator
+    enforces — so junk never inflates the count."""
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    ado = meta.get("ado")
+    configured = isinstance(ado, dict)
+    ado = ado if configured else {}
+    enabled = configured and ado.get("enabled") is not False
+    linked = {"tasks": 0, "bugs": 0, "phases": 0}
+    last = [None]
+
+    def note(item, kind):
+        link = item.get("ado") if isinstance(item, dict) else None
+        if isinstance(link, dict) and isinstance(link.get("id"), int) \
+                and not isinstance(link.get("id"), bool):
+            linked[kind] += 1
+            ts = link.get("lastSyncedAt")
+            if isinstance(ts, str) and (last[0] is None or ts > last[0]):
+                last[0] = ts
+
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        note(ph, "phases")
+        for t in (ph.get("tasks") or []):
+            note(t, "tasks")
+    for b in (manifest.get("bugs") or []):
+        note(b, "bugs")
+    return {"configured": configured,
+            "enabled": enabled,
+            "echo": enabled and ado.get("echo") is not False,
+            "linked": linked, "lastSyncedAt": last[0]}
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     phases_out, tasks_out = [], []
@@ -283,8 +323,10 @@ def _composition_view(manifest):
                 area_skills.append(s.strip())
     return {
         "meta": {"reviewSkill": meta.get("reviewSkill"),
-                 "buildCommands": meta.get("buildCommands")},
+                 "buildCommands": meta.get("buildCommands"),
+                 "ado": meta.get("ado")},
         "areaSkills": area_skills,
+        "adoStatus": _ado_status(manifest),
         "phases": phases_out, "tasks": tasks_out,
     }
 
@@ -1139,8 +1181,15 @@ def build_state(project):
     mpath = _manifest_path(project, config)
     manifest, exists = None, os.path.isfile(mpath)
     rollup, m_findings = None, []
-    composition = {"meta": {"reviewSkill": None, "buildCommands": None},
-                   "areaSkills": [], "phases": [], "tasks": []}
+    composition = {"meta": {"reviewSkill": None, "buildCommands": None,
+                            "ado": None},
+                   "areaSkills": [],
+                   "adoStatus": {"configured": False, "enabled": False,
+                                 "echo": False,
+                                 "linked": {"tasks": 0, "bugs": 0,
+                                            "phases": 0},
+                                 "lastSyncedAt": None},
+                   "phases": [], "tasks": []}
     bugs = []
     if exists:
         try:
@@ -1240,6 +1289,55 @@ def _selftest():
     check("...and carries the area-declared skill names, deduped, so the "
           "client's inventory hint sees every name the manifest spells",
           _cv3.get("areaSkills") == ["conv", "sec"])
+
+    # --- connector v2: the ADO card's read side ---------------------------------
+    # adoStatus is MANIFEST EVIDENCE only (links /audit:sync wrote) — the panel
+    # reports what the file proves, never what the connector claims; the policy
+    # tab's rule, applied to a second feature. No network in the panel, ever.
+    check("the composition view ships meta.ado verbatim - the card's form source",
+          _composition_view({"meta": {"ado": {"organization": "o"}},
+                             "phases": []})["meta"]["ado"]
+          == {"organization": "o"})
+    _as1 = _ado_status({"meta": {}, "phases": []})
+    check("adoStatus: an unconfigured manifest reads configured=false, "
+          "nothing linked, no effective switches",
+          _as1 == {"configured": False, "enabled": False, "echo": False,
+                   "linked": {"tasks": 0, "bugs": 0, "phases": 0},
+                   "lastSyncedAt": None})
+    _as2 = _ado_status({"meta": {"ado": {"organization": "o",
+                                         "enabled": False}}, "phases": []})
+    check("adoStatus: enabled:false reads off (echo effectively off too) "
+          "while staying configured",
+          _as2["configured"] is True and _as2["enabled"] is False
+          and _as2["echo"] is False)
+    _as3 = _ado_status({"meta": {"ado": {"organization": "o"}}, "phases": []})
+    check("adoStatus: absent switches read as their defaults - enabled on, "
+          "echo on",
+          _as3["configured"] is True and _as3["enabled"] is True
+          and _as3["echo"] is True
+          and _as3["linked"] == {"tasks": 0, "bugs": 0, "phases": 0})
+    _as4 = _ado_status({
+        "meta": {"ado": {"organization": "o", "echo": False}},
+        "phases": [{"id": "P1", "title": "p", "status": "pending",
+                    "ado": {"id": 9, "lastSyncedAt": "2026-08-02T00:00:00Z"},
+                    "tasks": [{"id": "P1.1", "title": "t", "status": "done",
+                               "ado": {"id": 7,
+                                       "lastSyncedAt": "2026-08-03T00:00:00Z"}},
+                              {"id": "P1.2", "title": "t", "status": "pending",
+                               "ado": "junk"}]}],
+        "bugs": [{"id": "BUG-1", "title": "b", "status": "open",
+                  "ado": {"id": 8, "lastSyncedAt": "2026-08-01T00:00:00Z"}},
+                 {"id": "BUG-2", "title": "b", "status": "open",
+                  "ado": {"id": "x"}}]})
+    check("adoStatus: linked counts by kind with junk shapes skipped "
+          "(int ids only), the newest lastSyncedAt wins, echo:false honoured",
+          _as4["linked"] == {"tasks": 1, "bugs": 1, "phases": 1}
+          and _as4["lastSyncedAt"] == "2026-08-03T00:00:00Z"
+          and _as4["echo"] is False and _as4["enabled"] is True)
+    check("the composition view carries adoStatus (and a manifest with no "
+          "meta.ado still gets the full shape)",
+          _composition_view({"meta": {}, "phases": []})
+          .get("adoStatus", {}).get("configured") is False)
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with.

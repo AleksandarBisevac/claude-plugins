@@ -653,6 +653,128 @@ def _leading_executable(cmd):
 
 
 # --- checks: hooks, ledger & trail ----------------------------------------------
+def check_ado(rep, project, manifest):
+    """The ADO connector's OPERATIONAL half (connector v2).
+
+    The SHAPE of meta.ado is the validator's job (check_ado_meta) and reaches
+    this report through check_manifest; what a shape-checker cannot see is
+    covered here: whether the transport is present, which switches are in
+    effect, whether the shipped state defaults aim at a process that may not
+    define them, and what the manifest's links actually prove. Offline on
+    purpose - a doctor that phoned ADO would be a doctor that needs
+    credentials. Real states live in ADO, so the state-map row is exactly
+    what it says: advisory."""
+    meta = (manifest or {}).get("meta")
+    ado = meta.get("ado") if isinstance(meta, dict) else None
+    if ado is None:
+        rep.ok("ado", "connector not configured (meta.ado absent) - "
+               "/audit:sync and the orchestration echo are off")
+        return
+    if not isinstance(ado, dict):
+        return  # a shape defect; check_manifest already carries the finding
+
+    enabled = ado.get("enabled") is not False
+    echo = enabled and ado.get("echo") is not False
+    pbi = ado.get("phaseWorkItems") is not False
+    sprint = ado.get("sprint") if isinstance(ado.get("sprint"), dict) else None
+    if not enabled:
+        rep.warn("ado",
+                 "connector DISABLED (meta.ado.enabled: false) - push/pull "
+                 "and the echo do nothing; links are kept and /audit:sync "
+                 "status still reports them",
+                 "re-enable in the panel's ADO card, or delete the key")
+    else:
+        pbi_note = ""
+        if pbi and not (ado.get("types") or {}).get("pbi"):
+            pbi_note = " (types.pbi auto-detected at the first phase push)"
+        rep.ok("ado",
+               "connector on (org %s, project %s) - echo %s, PBI-per-phase "
+               "%s%s, sprint %s"
+               % (ado.get("organization") or "?", ado.get("project") or "?",
+                  "on" if echo else "off", "on" if pbi else "off", pbi_note,
+                  ("resolves team %r" % sprint.get("team")) if sprint
+                  else "static (iterationPath)"))
+
+    # Transport: what a headless / CLI run stands on. MCP may still carry an
+    # interactive session, which is why a missing az is a warning, never a
+    # finding.
+    if not shutil.which("az"):
+        rep.warn("ado transport",
+                 "az CLI is not on PATH - /audit:sync can still use the ADO "
+                 "MCP tools when the session has them, else it stops",
+                 "install azure-cli, then: az extension add --name azure-devops")
+    else:
+        try:
+            out = subprocess.run(["az", "extension", "list", "--output",
+                                  "json"], capture_output=True, text=True,
+                                 timeout=15)
+            names = [e.get("name") for e in json.loads(out.stdout or "[]")
+                     if isinstance(e, dict)]
+            if "azure-devops" in names:
+                rep.ok("ado transport", "az + azure-devops extension present")
+            else:
+                rep.warn("ado transport",
+                         "az is on PATH but the azure-devops extension is "
+                         "not installed",
+                         "az extension add --name azure-devops")
+        except Exception as exc:
+            rep.warn("ado transport",
+                     "az is on PATH but `az extension list` did not answer "
+                     "(%s) - transport unverified" % exc)
+
+    # Live-gate F3: both stock processes force-clear Remaining Work at their
+    # done state, so a configured write degrades to state-only there. Advisory
+    # - the goal ("0 left") is met by the process itself.
+    oc = ado.get("onComplete")
+    if isinstance(oc, dict) and oc.get("remainingWork", 0) is not None:
+        rep.warn("ado remaining work",
+                 "onComplete.remainingWork is configured, but stock processes "
+                 "(Scrum Done, Agile Closed) force-clear the field at done - "
+                 "the write degrades to state-only there, and the process "
+                 "empties the field by itself. The key matters only for "
+                 "custom processes without the clear rule. Advisory only")
+
+    # The Agile-only truth baked into the shipped defaults (D-7).
+    if ado.get("stateMap") is None:
+        rep.warn("ado state map",
+                 "no meta.ado.stateMap: the built-in defaults name "
+                 "Agile-process states (task done > Closed). Scrum tasks use "
+                 "To Do/In Progress/Done, so a Scrum project should set the "
+                 "map. Advisory only: real states live in ADO",
+                 "set meta.ado.stateMap in the panel's ADO card")
+
+    # What the links prove - int ids only, the validator's shape.
+    linked = {"task": 0, "bug": 0, "phase": 0}
+    newest = [None]
+
+    def _note(item, kind):
+        link = item.get("ado") if isinstance(item, dict) else None
+        if isinstance(link, dict) and isinstance(link.get("id"), int) \
+                and not isinstance(link.get("id"), bool):
+            linked[kind] += 1
+            ts = link.get("lastSyncedAt")
+            if isinstance(ts, str) and (newest[0] is None or ts > newest[0]):
+                newest[0] = ts
+
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        _note(ph, "phase")
+        for t in (ph.get("tasks") or []):
+            _note(t, "task")
+    for b in (manifest.get("bugs") or []):
+        _note(b, "bug")
+    if not sum(linked.values()):
+        rep.ok("ado links",
+               "no item linked yet - configuration, not evidence; "
+               "/audit:sync push writes the first links")
+    else:
+        rep.ok("ado links",
+               "%d task(s), %d bug(s), %d phase(s) linked%s"
+               % (linked["task"], linked["bug"], linked["phase"],
+                  (" - newest sync %s" % newest[0]) if newest[0] else ""))
+
+
 def check_hooks_fired(rep, project, cfg, cfg_mod):
     """Have the hooks ever actually run here?
 
@@ -1184,6 +1306,7 @@ def diagnose(project, deep=False):
     check_areas(rep, project, cfg, manifest, manifest_rel)
     check_policy(rep, project, cfg, cfg_mod, manifest)
     check_build_commands(rep, project, manifest)
+    check_ado(rep, project, manifest)
     check_hooks_fired(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
     check_journal(rep, project, cfg, cfg_mod, git_root)
@@ -1320,6 +1443,84 @@ def _selftest():
               "exists but holds no rows yet" in detail(rep_led, "usage ledger"),
               detail(rep_led, "usage ledger"))
         sh.rmtree(os.path.join(tmp, ".claude", "usage"))
+
+        # --- connector v2: the ADO card's operational half -------------------
+        # check_ado is exercised directly, with shutil.which stubbed so the
+        # verdicts do not depend on whether THIS machine has az installed.
+        def _ado_rep(manifest, which):
+            r = Report()
+            _saved_which = shutil.which
+            shutil.which = which
+            try:
+                check_ado(r, tmp, manifest)
+            finally:
+                shutil.which = _saved_which
+            return r
+
+        def _no_az(_name):
+            return None
+
+        r_a1 = _ado_rep({"meta": {}}, _no_az)
+        check("ado: absent config is one OK row - not configured is not sick",
+              levels(r_a1, "ado") == ["OK"]
+              and "not configured" in detail(r_a1, "ado"), repr(r_a1.rows))
+        r_a2 = _ado_rep({"meta": {"ado": {"organization": "o", "project": "p",
+                                          "enabled": False}}}, _no_az)
+        check("ado: enabled:false is a WARNING naming the freeze, never a "
+              "finding",
+              levels(r_a2, "ado") == ["WARNING"]
+              and "DISABLED" in detail(r_a2, "ado"), repr(r_a2.rows))
+        r_a3 = _ado_rep({"meta": {"ado": {"organization": "o",
+                                          "project": "p"}}}, _no_az)
+        check("ado: no stateMap draws the Scrum-vs-Agile advisory and says "
+              "real states live in ADO",
+              levels(r_a3, "ado state map") == ["WARNING"]
+              and "Scrum" in detail(r_a3, "ado state map")
+              and "real states live in ADO" in detail(r_a3, "ado state map"),
+              repr(r_a3.rows))
+        check("ado: a missing az is a WARNING with the install fix, not a "
+              "finding - MCP transport may still carry a session",
+              levels(r_a3, "ado transport") == ["WARNING"]
+              and "az" in detail(r_a3, "ado transport"), repr(r_a3.rows))
+        r_a4 = _ado_rep({"meta": {"ado": {"organization": "o", "project": "p",
+                                          "stateMap": {"task":
+                                                       {"done": "Done"}}}}},
+                        _no_az)
+        check("ado: a written stateMap silences the advisory",
+              not [r for r in r_a4.rows if r["check"] == "ado state map"],
+              repr(r_a4.rows))
+        r_a5 = _ado_rep(
+            {"meta": {"ado": {"organization": "o", "project": "p"}},
+             "phases": [{"id": "P1",
+                         "ado": {"id": 7,
+                                 "lastSyncedAt": "2026-08-03T00:00:00Z"},
+                         "tasks": [{"id": "P1.1", "ado": {"id": 8}}]}],
+             "bugs": [{"id": "BUG-1", "ado": {"id": "x"}}]}, _no_az)
+        check("ado: links count by kind with int ids only (junk skipped), and "
+              "the newest sync stamp is named",
+              "1 task" in detail(r_a5, "ado links")
+              and "0 bug" in detail(r_a5, "ado links")
+              and "1 phase" in detail(r_a5, "ado links")
+              and "2026-08-03T00:00:00Z" in detail(r_a5, "ado links"),
+              repr(r_a5.rows))
+        check("ado: an unlinked config reads 'configuration, not evidence'",
+              "configuration, not evidence" in detail(r_a3, "ado links"),
+              repr(r_a3.rows))
+        r_a6 = _ado_rep({"meta": {"ado": "org-as-string"}}, _no_az)
+        check("ado: a shape defect adds NO ado rows - the validator already "
+              "owns that finding",
+              not [r for r in r_a6.rows if r["check"].startswith("ado")],
+              repr(r_a6.rows))
+        r_a7 = _ado_rep({"meta": {"ado": {"organization": "o", "project": "p",
+                                          "onComplete": {"remainingWork": 0}}}},
+                        _no_az)
+        check("ado: a configured remainingWork draws the force-clear advisory "
+              "(stock processes empty the field at done by themselves)",
+              any("force-clear" in r["detail"] for r in r_a7.rows
+                  if r["check"] == "ado remaining work"), repr(r_a7.rows))
+        check("ado: ...and no remainingWork config draws no such row",
+              not [r for r in r_a3.rows
+                   if r["check"] == "ado remaining work"], repr(r_a3.rows))
         if have_git:
             check("fresh repo: a fresh setup yields no findings",
                   rep.counts()["FINDING"] == 0,

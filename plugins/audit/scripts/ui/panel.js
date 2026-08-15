@@ -1385,6 +1385,7 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
  if(!STATE.manifestExists)tcard.append(el('div',{class:'findings warn'},'No manifest yet — run /audit:init first.'));
  if(STATE.manifestLocked)tcard.append(el('div',{class:'findings warn'},'Manifest is locked by a running /audit command.'));
  c.append(tcard);
+ renderAdoCard(c);
  // building blocks — one table, sub-tabs switch context (skills / agents / mcp)
  const bb=el('div',{class:'card'});
  bb.append(h2h('Available building blocks (discovered)',
@@ -1403,6 +1404,239 @@ function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.compo
    onclick:e=>{cur=k;[...subtabs.children].forEach(x=>x.classList.toggle('on',x===e.currentTarget));drawTbl();}},
    k+' ('+(datasets[k]||[]).length+')')));
  drawTbl();bb.append(subtabs,host);c.append(bb);}
+
+// --- the ADO connector card (meta.ado; saves via PUT /api/ado) -------------------
+// A card inside the Composition tab, NOT a row of its form: `ado` is API-only meta
+// (_META_API_ONLY server-side), so the composition dialog must never describe an
+// edit its form cannot make. The card computes its OWN dotted rows — adoRows
+// mirrors _ado_rows in _panel_write.py (presence-aware, dotted, sorted) — so its
+// confirm dialog and the server's `applied` echo are two readings of one edit.
+function adoRows(was,now){
+ const flat=v=>(v&&typeof v==='object'&&!Array.isArray(v))?cfFlat(v):{};
+ const a=flat(was),b=flat(now),rows=[];
+ [...new Set([...Object.keys(a),...Object.keys(b)])].sort().forEach(p=>{
+  const ina=(p in a),inb=(p in b);
+  if(ina===inb&&cfSame(a[p],b[p]))return;
+  rows.push(cfRow('meta','ado.'+p,ina?a[p]:null,inb?b[p]:null));});
+ if(!rows.length&&!cfSame(was,now))rows.push(cfRow('meta','ado',was,now));
+ return rows;}
+let ADRAFT=null;
+function renderAdoCard(c){
+ const comp=STATE.composition||{},saved=(comp.meta||{}).ado??null;
+ const st=comp.adoStatus||{configured:false,enabled:false,echo:false,
+   linked:{tasks:0,bugs:0,phases:0},lastSyncedAt:null};
+ ADRAFT=saved===null?null:JSON.parse(JSON.stringify(saved));
+ const card=el('div',{class:'card',id:'adocard'});
+ card.append(h2h('Azure DevOps connector (meta.ado)',MDESC.adoConnector,
+   {comp:'adoConnector',label:'ADO connector'}));
+ // The honesty banner: manifest EVIDENCE (links /audit:sync wrote), never a
+ // network probe and never the form — the policy tab's data-pstate rule,
+ // applied to the connector. It describes the FILE as saved.
+ const n=st.linked.tasks+st.linked.bugs+st.linked.phases;
+ const banner=!st.configured
+  ?['unconfigured','warn','Not configured. Nothing syncs and nothing echoes. '
+    +'Fill in organization + project below, or see /audit:sync.']
+  :!st.enabled
+  ?['off','warn','Turned off. Sync push/pull and the orchestration echo do '
+    +'nothing; '+n+' linked item'+(n===1?'':'s')+' stay frozen, links kept.']
+  :!n
+  ?['unverified','warn','Configured, but no item has ever synced — everything '
+    +'below is configuration, not evidence. Run /audit:sync push to link work '
+    +'items.']
+  :['linked','ok','Linked: '+st.linked.tasks+' task'+(st.linked.tasks===1?'':'s')
+    +' · '+st.linked.bugs+' bug'+(st.linked.bugs===1?'':'s')+' · '
+    +st.linked.phases+' phase'+(st.linked.phases===1?'':'s')
+    +(st.lastSyncedAt?(' · last synced '+st.lastSyncedAt):'')
+    +(st.echo?' · echo on':' · echo off')];
+ card.append(el('div',{class:'findings '+banner[1],'data-adostate':banner[0]},
+   banner[2]));
+ // --- draft plumbing. Deleting a key is how "use the default" is written
+ // (delPath's rule); an emptied draft reads as null — connector removed.
+ const A=()=>(ADRAFT=ADRAFT||{});
+ const pruneTop=()=>{if(ADRAFT&&!Object.keys(ADRAFT).length)ADRAFT=null;};
+ const txt=(path,ph,lbl,help)=>{
+  const i=el('input',{value:getPath(ADRAFT||{},path)??'',placeholder:ph||''});
+  i.oninput=()=>{const v=i.value.trim();
+   if(v)setPath(A(),path,v);else if(ADRAFT)delPath(ADRAFT,path);pruneTop();};
+  return el('label',{class:'f'},flabel(lbl,help),i);};
+ // absent = ON for these three; the checkbox writes false or deletes the key.
+ const onoff=(key,lbl,help)=>{
+  const cb=el('input',{type:'checkbox',id:'ado-'+key});
+  cb.checked=!ADRAFT||ADRAFT[key]!==false;
+  cb.onchange=()=>{if(cb.checked){if(ADRAFT)delete ADRAFT[key];}
+   else A()[key]=false;pruneTop();};
+  return el('label',{class:'f cbf'},cb,flabel(lbl,help));};
+ card.append(el('div',{class:'row'},
+   onoff('enabled','Connector enabled',MDESC.adoEnabled),
+   onoff('echo','Echo on task/phase transitions',MDESC.adoEcho),
+   onoff('phaseWorkItems','PBI per phase',MDESC.adoPhaseWorkItems)));
+ card.append(el('div',{class:'row'},
+   txt('organization','<org> or https://dev.azure.com/<org>','Organization'),
+   txt('project','project name','Project'),
+   txt('areaPath','optional','Area path'),
+   txt('iterationPath','optional (static)','Iteration path')));
+ // ENH-1: the provenance tag — absent = audit-plugin, explicit null = none.
+ const tagCur=ADRAFT?ADRAFT.tag:undefined;
+ const tagIn=el('input',{id:'ado-tag',
+   value:typeof tagCur==='string'?tagCur:'',placeholder:'audit-plugin'});
+ const tagNone=el('input',{type:'checkbox',title:'no provenance tag at all'});
+ tagNone.checked=tagCur===null;tagIn.disabled=tagCur===null;
+ const tagApply=()=>{
+  if(tagNone.checked){A().tag=null;tagIn.value='';tagIn.disabled=true;}
+  else{tagIn.disabled=false;const v=tagIn.value.trim();
+   if(v)A().tag=v;else if(ADRAFT)delete ADRAFT.tag;}
+  pruneTop();};
+ tagIn.oninput=tagApply;tagNone.onchange=tagApply;
+ card.append(el('div',{class:'row'},
+   txt('types.bug','Bug','Bug type'),
+   txt('types.task','Task','Task type'),
+   txt('types.pbi','auto-detect at first phase push','Phase (PBI) type',
+     MDESC.adoTypes),
+   el('label',{class:'f'},flabel('Provenance tag',MDESC.adoTag),
+     el('span',{class:'inl'},tagIn,
+       el('label',{class:'inl'},tagNone,'no tag')))));
+ // --- stateMap: one fixed row per manifest status. Empty box = the built-in
+ // default (its placeholder); "never" writes null — the team moves that card.
+ // The phase block exists because phase work items carry a DIFFERENT state
+ // vocabulary (a Scrum PBI knows no "In Progress") — live-gate F1.
+ const SMDEF={phase:{pending:'New',in_progress:'Active',
+     blocked:'Active',done:'Closed'},
+   task:{pending:'New',in_progress:'Active',
+     blocked:'Active + tag blocked',done:'Closed'},
+   bug:{open:'New',triaged:'Active',in_progress:'Active',fixed:'Resolved',
+     wontfix:'Closed'}};
+ const smTbl=kind=>{
+  const tb=el('tbody');
+  Object.keys(SMDEF[kind]).forEach(stt=>{
+   const cur=getPath(ADRAFT||{},'stateMap.'+kind+'.'+stt);
+   const i=el('input',{value:typeof cur==='string'?cur:'',
+     placeholder:SMDEF[kind][stt]});
+   const nv=el('input',{type:'checkbox',
+     title:'never move state on this transition'});
+   nv.checked=cur===null;i.disabled=cur===null;
+   const apply=()=>{
+    if(nv.checked){setPath(A(),'stateMap.'+kind+'.'+stt,null);
+     i.value='';i.disabled=true;}
+    else{i.disabled=false;const v=i.value.trim();
+     if(v)setPath(A(),'stateMap.'+kind+'.'+stt,v);
+     else if(ADRAFT)delPath(ADRAFT,'stateMap.'+kind+'.'+stt);}
+    pruneTop();};
+   i.oninput=apply;nv.onchange=apply;
+   tb.append(el('tr',{},el('td',{class:'mono'},stt),el('td',{},i),
+     el('td',{},el('label',{class:'inl'},nv,'never'))));});
+  return el('div',{class:'f'},flabel(kind+' states',MDESC.adoStateMap),
+    el('table',{class:'regtbl adosm'},tb));};
+ card.append(el('div',{class:'row'},smTbl('phase'),smTbl('task'),smTbl('bug')));
+ // --- the done move: Remaining Work + generated comments
+ const rwCur=getPath(ADRAFT||{},'onComplete.remainingWork');
+ const rw=el('input',{type:'number',min:'0',step:'any',id:'ado-rw',
+   value:typeof rwCur==='number'?String(rwCur):'',placeholder:'not written'});
+ const rwNever=el('input',{type:'checkbox',
+   title:'never touch Remaining Work'});
+ rwNever.checked=rwCur===null;rw.disabled=rwCur===null;
+ const rwApply=()=>{
+  if(rwNever.checked){setPath(A(),'onComplete.remainingWork',null);
+   rw.value='';rw.disabled=true;}
+  else{rw.disabled=false;
+   if(rw.value!=='')setPath(A(),'onComplete.remainingWork',Number(rw.value));
+   else if(ADRAFT)delPath(ADRAFT,'onComplete.remainingWork');}
+  pruneTop();};
+ rw.oninput=rwApply;rwNever.onchange=rwApply;
+ const cflag=(key,lbl)=>{const cb=el('input',{type:'checkbox'});
+  cb.checked=!!getPath(ADRAFT||{},'comments.'+key);
+  cb.onchange=()=>{if(cb.checked)setPath(A(),'comments.'+key,true);
+   else if(ADRAFT)delPath(ADRAFT,'comments.'+key);pruneTop();};
+  return el('label',{class:'f cbf'},cb,flabel(lbl,MDESC.adoComments));};
+ card.append(el('div',{class:'row'},
+   el('label',{class:'f'},flabel('Remaining Work on done',
+     MDESC.adoRemainingWork),
+     el('span',{class:'inl'},rw,el('label',{class:'inl'},rwNever,
+       "don't touch"))),
+   cflag('onBlocked','Comment when blocked'),
+   cflag('onComplete','Comment on completion')));
+ // --- sprint + pull scoping
+ const team=el('input',{value:getPath(ADRAFT||{},'sprint.team')??'',
+   placeholder:'empty = static iteration path'});
+ team.oninput=()=>{const v=team.value.trim();
+  if(v)setPath(A(),'sprint.team',v);
+  else if(ADRAFT)delPath(ADRAFT,'sprint');pruneTop();};
+ const tags=listEditor(()=>getPath(ADRAFT||{},'pull.tags')||[],
+   a=>{if(a.length)setPath(A(),'pull.tags',a);
+    else if(ADRAFT)delPath(ADRAFT,'pull.tags');pruneTop();},'tag…');
+ card.append(el('div',{class:'row'},
+   el('label',{class:'f'},flabel('Sprint team (current iteration)',
+     MDESC.adoSprint),team),
+   txt('pull.areaPath','falls back to Area path','Pull area path',
+     MDESC.adoPull),
+   el('label',{class:'f'},flabel('Pull tags',MDESC.adoPull),tags)));
+ // --- identityMap: a pair editor, edited directly — NEVER through delPath,
+ // whose dotted paths would split the ledger keys (emails carry dots).
+ const imWrap=el('div',{});
+ const imDraw=()=>{imWrap.textContent='';
+  const m=getPath(ADRAFT||{},'identityMap')||{};
+  Object.keys(m).forEach(k=>imWrap.append(el('div',
+    {class:'row','data-imrow':k},
+    el('span',{class:'mono'},k),el('span',{class:'cfarr'},'→'),
+    el('span',{class:'mono'},m[k]),
+    el('button',{class:'btn small',type:'button','aria-label':'remove '+k,
+      onclick:()=>{const im=A().identityMap||{};delete im[k];
+       if(!Object.keys(im).length)delete ADRAFT.identityMap;
+       pruneTop();imDraw();}},'×'))));
+  const vals={};Object.keys(m).forEach(k=>{
+   const lo=String(m[k]).toLowerCase();(vals[lo]=vals[lo]||[]).push(k);});
+  const dup=Object.values(vals).find(a=>a.length>1);
+  if(dup)imWrap.append(el('div',{class:'mut small','data-imdup':'1'},
+   'two ledger identities share one ADO identity ('+dup.join(', ')
+   +') — pull maps it back to the FIRST in map order'));
+  const ki=el('input',{placeholder:'ledger identity (git email/name)'}),
+    vi=el('input',{placeholder:'ADO identity (email/UPN)'});
+  imWrap.append(el('div',{class:'row'},ki,vi,
+    el('button',{class:'btn small',type:'button','data-imadd':'1',
+      onclick:()=>{const k=ki.value.trim(),v=vi.value.trim();
+       if(!k||!v)return;const o=A();o.identityMap=o.identityMap||{};
+       o.identityMap[k]=v;ki.value='';vi.value='';imDraw();}},'add')));};
+ imDraw();
+ card.append(el('div',{class:'f'},flabel('Identity map (ledger → ADO)',
+   MDESC.adoIdentityMap),imWrap));
+ // --- save / discard. EDITS.ado feeds beforeunload and the disk-refresh
+ // dirtiness check; the buttons listen on the CARD directly — re-registering
+ // the comp view's shared updater from here would abort the composition
+ // form's own listener.
+ EDITS.ado=()=>adoRows(saved,ADRAFT);
+ const save=el('button',{class:'btn primary',onclick:async()=>{
+   const rows=adoRows(saved,ADRAFT);
+   if(!rows.length){toast('nothing to save — no values changed');return;}
+   if(!await confirmChanges({title:'Save ADO connector',rows,scope:'comp',
+     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     note:'writes '+STATE.manifestPath}))return;
+   const res=await api('PUT','/api/ado',{ado:ADRAFT});
+   if(!res.ok){
+    card.querySelector('.findings-slot').replaceChildren(findingsBox(res));
+    saveOutcome(res,rows,'the manifest',null);return;}
+   STATE=await api('GET','/api/state');renderComp();renderOver();
+   const slot=$('#adocard .findings-slot');
+   if(slot)slot.replaceChildren(findingsBox(res));
+   saveOutcome(res,rows,'the manifest',slot);}},'Save ADO connector');
+ const discard=el('button',{class:'btn small','data-discard':'ado',
+   type:'button',onclick:async()=>{
+   const rows=adoRows(saved,ADRAFT);
+   if(!rows.length)return;
+   if(!await confirmChanges({title:'Discard unsaved connector edits',rows,
+     danger:1,lock:false,
+     verb:'Discard '+rows.length+' change'+(rows.length===1?'':'s'),
+     note:'nothing is written; the card goes back to the saved manifest'}))
+    return;
+   renderComp();toast('discarded — the card is back to the saved manifest');}},
+   'Discard');
+ const upd=()=>{const n=adoRows(saved,ADRAFT).length;
+  discard.disabled=!n;
+  discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';};
+ ['input','change','click'].forEach(e=>
+  card.addEventListener(e,()=>requestAnimationFrame(upd)));
+ upd();
+ card.append(el('div',{class:'row',style:'margin-top:.9rem'},save,discard),
+   el('div',{class:'findings-slot'}));
+ c.append(card);}
 // One malformed manifest can emit a finding PER phase, per task and per indexed
 // file: a 300-phase repo produced 1009 of them, joined into a single paragraph
 // that filled the screen and told the reader nothing. But 1009 findings are not
@@ -1510,7 +1744,10 @@ function staleNote(id){const slot=$('#'+id+' .findings-slot');
 async function refreshFromDisk(){
  // Dirtiness is judged BEFORE the state swap: the EDITS closures compare each
  // form against STATE, and a swapped STATE would misjudge every open form.
- const dirty={guards:editRows('guards').length>0,comp:editRows('comp').length>0,
+ // The ADO card lives inside #comp, so its unsaved edits keep that view dirty
+ // too — a disk refresh must not eat them any more than the form's own.
+ const dirty={guards:editRows('guards').length>0,
+   comp:editRows('comp').length>0||editRows('ado').length>0,
    policy:editRows('policy').length>0};
  const y=window.scrollY;
  try{
