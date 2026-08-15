@@ -652,6 +652,11 @@ def validate(manifest):
         if not isinstance(version, int) or isinstance(version, bool):
             # bool is an int subclass in Python — `true` must NOT pass as a version.
             f.append("meta.version: missing or not an integer")
+        # meta.ado shares _check_ado's object-or-null shape rule (F-C-1 v0.38:
+        # "ado": "org" used to sail through and identityMap's check silently
+        # returned on it). The item-level id check inside is a no-op here -
+        # a sync config carries no "id" key.
+        _check_ado(meta, "meta", f)
         _check_identity_map(meta, f, w)
 
     _check_areas(manifest, f, w)
@@ -1575,6 +1580,25 @@ def _selftest():
     def _with_imap(m, imap):
         m["meta"]["ado"] = {"organization": "o", "project": "p",
                             "identityMap": imap}
+
+    # (ma) meta.ado itself has a shape - "ado": "org" used to draw neither
+    # finding nor warning ("ado" sits in KNOWN_META; _check_ado covered only
+    # item-level links), so _check_identity_map inherited the blind spot by
+    # silently returning on a non-dict. F-C-1 of the v0.38 round.
+    m_ma1 = copy.deepcopy(_valid_manifest())
+    m_ma1["meta"]["ado"] = "my-org"
+    f_ma1, _ = validate(m_ma1)
+    ok_ma1 = any("meta: ado must be an object or null" in x for x in f_ma1)
+    results.append(ok_ma1)
+    print("%s ma1 meta.ado as a bare string is a FINDING - a config that "
+          "would be misread" % ("PASS" if ok_ma1 else "FAIL"))
+    m_ma2 = copy.deepcopy(_valid_manifest())
+    m_ma2["meta"]["ado"] = None
+    f_ma2, w_ma2 = validate(m_ma2)
+    ok_ma2 = not any("ado" in x for x in f_ma2 + w_ma2)
+    results.append(ok_ma2)
+    print("%s ma2 meta.ado null (and absent) stays silent - an answer, not "
+          "a miss" % ("PASS" if ok_ma2 else "FAIL"))
 
     m_im1 = copy.deepcopy(_valid_manifest())
     _with_imap(m_im1, {"alice@corp.dev": "alice@corp.example.com",

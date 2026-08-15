@@ -91,8 +91,14 @@ If something matched, ask (AskUserQuestion, multi-select, all detected areas pre
   `<tag> — <root>`. Deselecting one is normal: vendored, generated and archived packages are exactly
   what this list will surface.
 - Then, per selected area, ask only what you cannot detect: an optional **review skill** (default
-  none — `meta.reviewSkill` applies) and optional **area skills** (default none). Offer the skills
-  discovered in `.claude/skills/` and `~/.claude/skills/`; do not invent names.
+  none — `meta.reviewSkill` applies) and optional **area skills** (default none). Do not scan the
+  filesystem for skills yourself — use the same ONE mechanical source step 6.1 uses: no manifest
+  exists yet at this step, so write a stub to a temp file (`mktemp`; content
+  `{"meta": {"version": 2}, "phases": []}`), run
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <tmpfile> --json --discovery`, delete
+  the temp file, and offer names from `discovery.skills` only — never invented ones. A
+  `discovery.error` key means the scan failed and the list is empty (fail-open): say so and skip
+  skill offers rather than guessing.
 
 Derive each `tag` from the package/module name, lowercased, non-alphanumerics collapsed to `-`
 (`@acme/mobile-app` → `mobile-app`). Roots are **project-dir-relative**, like `task.files`.

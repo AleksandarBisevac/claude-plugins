@@ -4,6 +4,15 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.38.1] - 2026-08-15
+
+**The round's own leftovers, swept.** `meta.ado` itself now has a shape — a bare string
+there used to draw neither finding nor warning while the identityMap check silently stepped
+around it; the item-level rule ("an object or null") simply applies at meta level too. And
+`/audit:init`'s workspace step stops scanning the filesystem for area skills: it feeds a stub
+manifest to the same `audit-status --json --discovery` source every other skills step already
+uses — one inventory, fail-open, real names only.
+
 ## [0.38.0] - 2026-08-15
 
 **A pattern that names nothing decides nothing — and now something says so.** The capability
