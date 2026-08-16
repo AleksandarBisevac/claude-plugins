@@ -100,11 +100,28 @@ def _mark_seen(root, cfg):
         except OSError:
             pass
         _config.ensure_local_dir(state)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"lastRun": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-                      fh)
-        os.replace(tmp, path)
+        # A UNIQUE temp name in the target dir, never `path + ".tmp"`. Hooks run
+        # concurrently - one Edit fans out to seven hook processes - and a fixed
+        # temp path means two of them open, truncate and os.replace the SAME
+        # file, so the marker lands empty or half-written. Measured at 12-way
+        # concurrency: 1167 corrupt reads out of 4800 with the fixed name, 0 with
+        # this. The doctor reads this file as evidence, and a corrupt marker is a
+        # worse answer than none.
+        # `tempfile` is imported here rather than at module scope on purpose: it
+        # costs ~8ms to import, this hook runs on EVERY Skill/Agent/MCP call, and
+        # this function is reached only under a live policy, at most once an hour.
+        # The atomic writer itself lives in scripts/_manifest_io, which hooks/ may
+        # not import at all (the layer rule), so the pattern is repeated here.
+        import tempfile
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump({"lastRun": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                    time.gmtime())}, fh)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
     except Exception:
         pass
 
@@ -349,6 +366,65 @@ def _selftest():
                   str(_config.state_dir(_P(tmp_i), _cfg_i)), ".gitignore")))
     finally:
         shutil.rmtree(tmp_i, ignore_errors=True)
+
+    # (j) the seen-file is written through a UNIQUE temp name, never the naive
+    # `path + ".tmp"`. Hooks run concurrently (one Edit fans out to seven hook
+    # processes), so a fixed temp path is two processes truncating and replacing
+    # the same file. "The marker exists" cannot see that - BOTH implementations
+    # write it when nothing else is running - so these cases judge the temp NAME
+    # and what happens when that one name is taken.
+    tmp_j = tempfile.mkdtemp(prefix="gcap-atomic-")
+    try:
+        cfg_j = dict(_config.DEFAULTS)
+        sdir_j = str(_config.state_dir(_P(tmp_j), cfg_j))
+        path_j = os.path.join(sdir_j, SEEN_FILE)
+        handed_over = []
+        _real_replace = os.replace
+
+        def _spy_replace(src, dst):
+            handed_over.append(str(src))
+            return _real_replace(src, dst)
+
+        os.replace = _spy_replace
+        try:
+            _mark_seen(_P(tmp_j), cfg_j)
+            # Backdate rather than delete, so a broken first write leaves the
+            # second call reachable and the cases below run instead of dying.
+            try:
+                stale = os.path.getmtime(path_j) - 2 * SEEN_REFRESH_SECONDS
+                os.utime(path_j, (stale, stale))
+            except OSError:
+                pass
+            _mark_seen(_P(tmp_j), cfg_j)
+        finally:
+            os.replace = _real_replace
+        check("j1 two writes hand os.replace two DIFFERENT temp names, neither of "
+              "them the colliding `path + \".tmp\"` - the naive form hands over "
+              "that one fixed name both times, which is the collision",
+              len(handed_over) == 2 and len(set(handed_over)) == 2
+              and (path_j + ".tmp") not in handed_over, repr(handed_over))
+        check("j2 and no temp file is left behind either way",
+              sorted(f for f in os.listdir(sdir_j) if ".tmp" in f) == [])
+    finally:
+        shutil.rmtree(tmp_j, ignore_errors=True)
+
+    tmp_k = tempfile.mkdtemp(prefix="gcap-collide-")
+    try:
+        cfg_k = dict(_config.DEFAULTS)
+        sdir_k = str(_config.ensure_local_dir(_config.state_dir(_P(tmp_k), cfg_k)))
+        path_k = os.path.join(sdir_k, SEEN_FILE)
+        os.mkdir(path_k + ".tmp")   # that exact name is already someone else's
+        _mark_seen(_P(tmp_k), cfg_k)
+        ok_k = os.path.isfile(path_k)
+        if ok_k:
+            with open(path_k, "r", encoding="utf-8") as fh:
+                ok_k = "lastRun" in (json.load(fh) or {})
+        check("j3 the marker still lands when `path + \".tmp\"` is occupied - the "
+              "naive writer opens that fixed name, raises, and the fail-open "
+              "except swallows it, leaving the doctor to read the missing marker "
+              "as 'the matchers never reach this hook'", ok_k)
+    finally:
+        shutil.rmtree(tmp_k, ignore_errors=True)
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

@@ -72,7 +72,12 @@ def _load_state(state_dir: Path, session_id: str) -> dict:
 
 def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
     try:
-        state_dir.mkdir(parents=True, exist_ok=True)
+        # ensure_local_dir, never a bare mkdir: it also drops the `*` .gitignore
+        # marker every other dir-creating writer leaves. Without it this hook was
+        # the one creator of stateDir that made it unprotected, and
+        # audit-doctor.check_local_artifacts then reported the plugin's own
+        # directory as a hygiene finding. Never raises (hook context).
+        _config.ensure_local_dir(state_dir)
         with open(_state_file(state_dir, session_id), "w", encoding="utf-8") as fh:
             json.dump(state, fh)
     except Exception:
@@ -268,6 +273,28 @@ def _selftest() -> int:
           payload("tsconfig.test.json", sid=sess_h))
     check("h2 ...so a later source edit in the same session still warns", "warn",
           payload("src/foo/h.ts", sid=sess_h))
+
+    # (i) the state dir this hook creates must be SELF-IGNORING. It used to be
+    # made with a bare mkdir, which left stateDir as the one local dir with no
+    # `*` .gitignore inside, and audit-doctor.check_local_artifacts then reported
+    # the plugin's own directory as a hygiene finding. A fresh dir is used on
+    # purpose: the marker has to be created by the hook, not inherited. The
+    # state-file half of the assertion is the other-direction guard - a "fix"
+    # that made the directory and stopped writing the state would pass the
+    # marker check alone, and every later case in this file would still pass
+    # because they use a different state dir.
+    sd_i = tmp / "state-selfignoring"          # deliberately NOT pre-created
+    sess_i = "tdd-session-i"
+    verdict_i, _ = decide(payload("src/foo/i.ts", sid=sess_i),
+                          cfg=cfg, state_dir=sd_i, now=t0)
+    marker_i = sd_i / ".gitignore"
+    ok = (verdict_i == "warn"
+          and marker_i.is_file()
+          and marker_i.read_text(encoding="utf-8") == _config.LOCAL_IGNORE_MARKER
+          and _state_file(sd_i, sess_i).is_file())
+    results.append(ok)
+    print("%s i1 the state dir it creates carries the `*` .gitignore marker "
+          "(and the state file still lands in it)" % ("PASS" if ok else "FAIL"))
 
     # (f) warn detail is valid additionalContext JSON when serialized
     verdict, detail = decide(payload("src/foo/f.ts", sid="tdd-session-f"),
