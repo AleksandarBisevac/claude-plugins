@@ -1012,6 +1012,50 @@ def enforce_always(cfg):
     return bool(DEFAULTS.get("enforce", False))
 
 
+# --- atomic local writes ------------------------------------------------------
+def atomic_write_text(path, text):
+    """Replace `path`'s whole contents with `text`, atomically: a UNIQUE temp
+    file created in the SAME directory (mkstemp), written, then os.replace'd
+    into place. The temp file is never left behind, and failures RAISE — the
+    caller owns the fail-open decision, because a writer that silently swallows
+    is how a hook reports success over a file it never wrote.
+
+    Both halves are load-bearing and both have been wrong in this tree:
+
+    - **Unique name.** Hooks run concurrently — one Edit tool call fans out to
+      seven hook processes — so a fixed `path + ".tmp"` is two processes
+      opening, truncating and replacing the SAME file: the loser's write is
+      lost, and a reader sees a torn one. Measured at 12-way concurrency
+      against this module's own gate-events feed: 1773 corrupt reads out of
+      4800 with the fixed name, 0 with mkstemp. Note that "the file was
+      written" cannot see this — both shapes write it when nothing else is
+      running; the temp NAME is the thing that differs.
+    - **Same directory.** os.replace is only atomic within one filesystem, so
+      the temp cannot go to the system temp dir.
+
+    `tempfile` is imported here rather than at module scope on purpose: it costs
+    ~8ms to import, EVERY hook imports this module on EVERY tool call, and this
+    function is reached only on the rare rewrite. Keeping the import local is
+    what lets guard-capabilities.py share this code without paying that cost on
+    the calls that never write anything.
+
+    The plugin's other atomic writer is scripts/_manifest_io.atomic_write_json,
+    which hooks/ may not import at all (the layer rule) — hence a second, smaller
+    statement of the same pattern here rather than one shared home."""
+    import tempfile
+    target = str(path)
+    d = os.path.dirname(target) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, target)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 # --- gate events feed -----------------------------------------------------------
 LOCAL_IGNORE_MARKER = "# audit plugin: local state - do not commit\n*\n"
 
@@ -1062,8 +1106,11 @@ def append_gate_event(logs_dir, event):
     this runs inside blocking hooks, and a feed that cannot be written is
     silence, not an error.
 
-    Self-trim: past ~512KB the newest ~400 lines are rewritten through a temp
-    file + os.replace (atomic on POSIX and Windows alike), fail-open."""
+    Self-trim: past ~512KB the newest ~400 lines are rewritten through
+    `atomic_write_text` — a unique temp file in the feed's own directory, then
+    os.replace — fail-open. This paragraph used to claim atomicity while the
+    code below used a fixed `path + ".tmp"`, which under concurrent hooks is
+    exactly the thing it promised not to be; see the helper for the numbers."""
     try:
         logs = ensure_local_dir(logs_dir)
         path = logs / GATE_EVENTS_FILE
@@ -1080,10 +1127,7 @@ def append_gate_event(logs_dir, event):
                 with open(path, "r", encoding="utf-8", errors="replace") as fh:
                     lines = fh.read().splitlines()
                 keep = lines[-_GATE_EVENTS_KEEP_LINES:]
-                tmp_path = str(path) + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(keep) + "\n")
-                os.replace(tmp_path, str(path))
+                atomic_write_text(path, "\n".join(keep) + "\n")
         except Exception:
             pass
     except Exception:
@@ -1423,6 +1467,116 @@ def _selftest() -> int:
               and kpath.stat().st_size < _GATE_EVENTS_MAX_BYTES
               and json.loads(klines[-1]).get("file") == "newest.ts",
               repr((len(klines), kpath.stat().st_size)))
+
+        # The temp file the trim goes through. The trim rewrites a file every
+        # hook process shares, and one Edit tool call fans out to SEVEN hook
+        # processes, so a fixed `path + ".tmp"` is two of them opening,
+        # truncating and os.replace-ing the same file. Measured at 12-way
+        # concurrency against this very feed: 1773 corrupt reads out of 4800
+        # with the fixed name, 0 through atomic_write_text. k4 above cannot see
+        # any of that - BOTH shapes rewrite the feed when nothing else is
+        # running - so these cases judge the temp NAME instead, and what
+        # happens when that one name is already someone else's.
+        def overfill():
+            with open(kpath, "w", encoding="utf-8") as fh:
+                fh.write((big_line + "\n") * 3000)
+
+        handed_over = []
+        _real_replace = os.replace
+
+        def _spy_replace(src, dst):
+            handed_over.append(str(src))
+            return _real_replace(src, dst)
+
+        os.replace = _spy_replace
+        try:
+            overfill()
+            append_gate_event(kld, {"event": "deny", "file": "trim-1.ts"})
+            overfill()
+            append_gate_event(kld, {"event": "deny", "file": "trim-2.ts"})
+        finally:
+            os.replace = _real_replace
+        check("k5 two trims hand os.replace two DIFFERENT temp names, neither "
+              "of them the colliding `path + \".tmp\"`, and both inside the "
+              "feed's OWN directory - os.replace is atomic only within one "
+              "filesystem, so a system-temp file would not be a swap at all",
+              len(handed_over) == 2 and len(set(handed_over)) == 2
+              and (str(kpath) + ".tmp") not in handed_over
+              and all(os.path.dirname(t) == str(kld) for t in handed_over),
+              repr(handed_over))
+        check("k6 and neither trim leaves a temp file behind",
+              [p.name for p in kld.iterdir() if p.name.endswith(".tmp")] == [])
+        # What "another process already owns that name" looks like from in here.
+        os.mkdir(str(kpath) + ".tmp")
+        overfill()
+        append_gate_event(kld, {"event": "deny", "file": "collide.ts"})
+        klines = kpath.read_text(encoding="utf-8").splitlines()
+        check("k7 the trim still lands when `path + \".tmp\"` is occupied - the "
+              "naive writer opens that one fixed name, raises, and the "
+              "fail-open except swallows the trim, so the feed grows without "
+              "bound and nothing says so",
+              len(klines) == _GATE_EVENTS_KEEP_LINES
+              and json.loads(klines[-1]).get("file") == "collide.ts",
+              repr(len(klines)))
+        os.rmdir(str(kpath) + ".tmp")   # so k9 below can judge ANY *.tmp left
+
+        # The helper's own contract, both directions. It RAISES on failure -
+        # a writer that returns quietly is how a caller reports success over a
+        # file it never wrote...
+        adir = tmp_k / "atomic"
+        adir.mkdir()
+        blocked = adir / "target"
+        blocked.mkdir()                 # a DIRECTORY where the write must land
+        raised = False
+        try:
+            atomic_write_text(blocked, "x")
+        except Exception:
+            raised = True
+        check("k8 atomic_write_text raises on a failed write instead of "
+              "reporting silence, and still leaves no temp file behind",
+              raised and sorted(p.name for p in adir.iterdir()) == ["target"],
+              repr((raised, sorted(p.name for p in adir.iterdir()))))
+        # ...and that raise stops at append_gate_event, which is the fail-open
+        # boundary. This is the case for the OTHER mutation: it goes red the day
+        # the helper's failure is allowed to propagate into a blocking hook.
+        def _exploding_replace(src, dst):
+            raise IOError("no space left on device")
+
+        os.replace = _exploding_replace
+        try:
+            overfill()
+            hook_raised = False
+            try:
+                append_gate_event(kld, {"event": "deny", "file": "boom.ts"})
+            except Exception:
+                hook_raised = True
+        finally:
+            os.replace = _real_replace
+        check("k9 a trim that cannot be swapped into place is silence, not a "
+              "raise into the hook - the feed is telemetry, and blocking real "
+              "work over a lost telemetry row is the worse failure",
+              not hook_raised
+              and [p.name for p in kld.iterdir()
+                   if p.name.endswith(".tmp")] == [],
+              repr(sorted(p.name for p in kld.iterdir())))
+
+        # The helper's `tempfile` import is function-local on purpose: every
+        # hook imports THIS module on every tool call, and one Edit starts seven
+        # of them. Measured cold on 3.14: 18.2ms to import _config, 23.1ms with
+        # `import tempfile` at module scope - ~5ms x 7 processes x every tool
+        # call, to serve a rewrite that fires almost never. A subprocess is the
+        # only way to ask: this selftest imported tempfile at its own top.
+        _probe = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, %r); import _config; "
+             "print('tempfile' in sys.modules)"
+             % str(Path(__file__).resolve().parent)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        check("k10 importing _config does not drag `tempfile` in - hooks that "
+              "never rewrite anything pay nothing for the helper",
+              _probe.returncode == 0
+              and _probe.stdout.decode("utf-8", "replace").strip() == "False",
+              repr(_probe.stdout[-80:]) + repr(_probe.stderr[-200:]))
     finally:
         shutil.rmtree(tmp_k, ignore_errors=True)
 

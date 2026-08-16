@@ -107,21 +107,14 @@ def _mark_seen(root, cfg):
         # concurrency: 1167 corrupt reads out of 4800 with the fixed name, 0 with
         # this. The doctor reads this file as evidence, and a corrupt marker is a
         # worse answer than none.
-        # `tempfile` is imported here rather than at module scope on purpose: it
-        # costs ~8ms to import, this hook runs on EVERY Skill/Agent/MCP call, and
-        # this function is reached only under a live policy, at most once an hour.
-        # The atomic writer itself lives in scripts/_manifest_io, which hooks/ may
-        # not import at all (the layer rule), so the pattern is repeated here.
-        import tempfile
-        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"lastRun": time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                                    time.gmtime())}, fh)
-            os.replace(tmp, path)
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
+        # The write itself is _config's, not a second copy here: the same defect
+        # was live in its gate-events trim, and one statement of the pattern is
+        # what stops the next fix from landing in only one of them. It costs this
+        # hook nothing - the ~8ms `tempfile` import stays INSIDE that helper, so
+        # it is paid only on the rare call that reaches here (at most once an
+        # hour), never on the every-tool-call import of _config.
+        _config.atomic_write_text(path, json.dumps(
+            {"lastRun": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
     except Exception:
         pass
 
