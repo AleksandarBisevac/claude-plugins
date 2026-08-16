@@ -43,6 +43,32 @@ if (!existsSync(path)) {
 
 const failures = [];
 const notes = [];
+// RFC 4180 field split. The checks below index a CSV row BY COLUMN, and a naive
+// `split(',')` lands on the wrong field for any row whose earlier column is a
+// quoted field carrying a comma. That is not hypothetical: this repo's own
+// manifest has 13 task titles with commas in them and the acme example has none,
+// so the sha and stamp assertions passed on every fixture CI rendered and went
+// red only against the one plan whose titles read like prose — accusing the
+// export of a defect that was in the diagnosis. A checker that reports the wrong
+// thing is worse than one that reports nothing.
+function csvFields(line) {
+  const out = [];
+  let cur = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quoted) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cur += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
 function expect(label, actual, wanted) {
   const ok = actual === wanted;
   (ok ? notes : failures).push(`${ok ? 'ok  ' : 'FAIL'} ${label}: got ${actual}, want ${wanted}`);
@@ -1148,21 +1174,22 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
     // screen — the commit is cut to nine characters and wears a Copy control,
     // the done cell is cut to the minute, the outcome is cut at seventy — and
     // the export used to take the cell text, Copy included.
-    const head = lines[0].split(',');
+    const head = csvFields(lines[0]);
     const iCommit = head.indexOf('commit');
     const iDone = head.indexOf('done');
     const iOut = head.indexOf('outcome');
     const body = lines.slice(1);
     // Every data row must carry as many fields as the header names — an
     // appended column with no value pushed into the row is how a CSV silently
-    // shifts every later column by one. (Quoted fields may contain commas, so
-    // rows with quotes are counted by the parser rather than by split.)
+    // shifts every later column by one. Quoted rows used to be skipped here
+    // rather than parsed, which meant the rows most likely to shift a column
+    // were the only ones exempt from the check.
     expect('every CSV row has as many fields as the header names',
-      body.every((l) => /"/.test(l) || l.split(',').length === head.length), true);
+      body.every((l) => csvFields(l).length === head.length), true);
     expect('the CSV never exports a control as if it were data',
       body.some((l) => /,?"?[^,]*Copy[^,]*"?,/.test(l)), false);
     if (iCommit >= 0) {
-      const shas = body.map((l) => (l.split(',')[iCommit] || '')).filter(Boolean);
+      const shas = body.map((l) => (csvFields(l)[iCommit] || '')).filter(Boolean);
       // The oracle is THIS segment's shas: the file is one segment, and the
       // document holds them all.
       const shown = await page.evaluate((sg) =>
@@ -1175,7 +1202,7 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
         true);
     }
     if (iDone >= 0) {
-      const stamps = body.map((l) => (l.split(',')[iDone] || '')).filter(Boolean);
+      const stamps = body.map((l) => (csvFields(l)[iDone] || '')).filter(Boolean);
       expect('every exported completion is the full ISO stamp, not the minute '
         + 'the cell shows',
         stamps.every((x) => /T/.test(x)), true);
