@@ -25,6 +25,13 @@ whole-tree work (validate, rollup, readiness, render) assembles here, in Python,
 model's context — so `audit-status.rollup` / `validate-manifest.validate` etc. keep their
 pure `dict -> summary` contract unchanged.
 
+This module also owns READING that shape once it is assembled — `iter_tasks`,
+`tasks_by_id`, `phase_of_task` and `effective_bug_status`. It is not a second
+responsibility: those answers were being re-derived by hand in twenty files, and a
+re-derivation of a shape is a second opinion about that shape. Owning the layout and
+owning the traversal of it is one job, and layer 1 is the only place both the layer-2
+report fragments and the layer-7 commands can reach.
+
 I/O contract: `load_manifest` raises (like open()/json.load) on a missing or invalid
 index/shard, so existing callers' `try/except -> exit 2` keeps working. Hooks that must
 never raise use `load_manifest_safe` (returns {} on any error).
@@ -109,6 +116,107 @@ def load_manifest_safe(path):
         return result if isinstance(result, dict) else {}
     except Exception:
         return {}
+
+
+# --- traversal ------------------------------------------------------------------
+# Malformed entries are SKIPPED here, not reported. That is deliberate and it is the
+# behaviour every hand-rolled loop already had: a non-dict phase or a non-dict task is
+# a VALIDATOR finding — `validate-manifest` names it, with its path — and a traversal
+# helper that raised instead would take down every read-only consumer (status, report,
+# panel, doctor) of a manifest the validator is already about to fail. Skipping is not
+# a silent pass because a louder reader owns exactly this class of defect.
+
+
+def iter_tasks(manifest):
+    """Yield `(phase, task)` for every task in the manifest, in document order.
+
+    Exists so consumers stop re-deriving "every task, and which phase it came
+    from". The PAIR is the point: the phase carries the area, the branch and the
+    review, so a loop that yielded bare tasks had to look its phase back up by id —
+    which is how a second, subtly different index gets built.
+
+    A phase with no tasks yields NOTHING — there is no `(phase, None)` pair — so a
+    caller counting or listing phases must read `manifest["phases"]` and not this.
+    That covers a missing `tasks` key, an empty list, and a `tasks` value that is
+    not a list at all.
+
+    A non-dict `manifest` (a JSON document whose root is a list survives
+    `load_manifest` unchanged) yields nothing rather than raising AttributeError,
+    matching `audit-status.rollup`'s stance on a non-object root.
+    """
+    if not isinstance(manifest, dict):
+        return
+    for phase in (manifest.get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        for task in (phase.get("tasks") or []):
+            if isinstance(task, dict):
+                yield phase, task
+
+
+def tasks_by_id(manifest):
+    """`{task id: task}` — the ONE id -> task index.
+
+    Three files built this by hand and a fourth built it WITHOUT the truthy-id
+    filter, so a task missing its `id` became a `None` key that a bug carrying no
+    `taskId` could then match. Tasks with a falsy id are excluded for that reason:
+    an index is a lookup BY IDENTITY, and an entry with no identity has no place in
+    one — it is a validator finding, not a key.
+
+    A duplicate id resolves LAST-wins, the plain dict-comprehension semantics every
+    hand-rolled copy already had. This does not reconcile duplicates and must not:
+    `validate-manifest` is what reports them, and a lookup that silently merged two
+    tasks would hide the thing being reported.
+    """
+    return {t["id"]: t for _, t in iter_tasks(manifest) if t.get("id")}
+
+
+def phase_of_task(manifest):
+    """`{task id: phase id}` — which phase owns each task.
+
+    Kept apart from `tasks_by_id` because the answer wanted here is an ID, not a
+    phase body: a caller that only needs "where does this task live" (a bug row's
+    phase link, a readiness line) would otherwise hold every phase dict — tasks
+    included — alive to read one field out of it.
+
+    Same truthy-id filter and same LAST-wins duplicate rule as `tasks_by_id`, so
+    the two indexes always have an identical key set; a caller may zip them.
+    """
+    return {t["id"]: p.get("id") for p, t in iter_tasks(manifest) if t.get("id")}
+
+
+# --- derived bug status ---------------------------------------------------------
+def effective_bug_status(bug, task_by_id):
+    """A bug's status, DERIVING 'fixed' from its linked task.
+
+    Lives at layer 1 because the rule had two homes that could drift:
+    `audit-status.effective_bug_status` (layer 7) and `_report_html._bug_view`
+    (layer 2), whose own docstring says it "mirrors" the other. Layer 2 cannot
+    import layer 7, so that copy was STRUCTURAL rather than lazy — the only place
+    one implementation can serve both readers is underneath them.
+
+    The rule itself: the orchestrator never writes `bugs[]` during a run (that
+    leaves the shared index untouched, so parallel phase branches merge clean), so
+    a bug materialized into a task (`bug.taskId` <-> `task.bugId`) reads 'fixed'
+    once that task is done. A human-set 'wontfix' always wins; an un-materialized
+    bug keeps its reported status (open / triaged / in_progress).
+
+    `task_by_id` is a parameter rather than something derived here so one caller
+    builds the index once for a whole `bugs[]` sweep; `tasks_by_id(manifest)` is
+    the index to pass.
+    """
+    stored = bug.get("status")
+    if stored == "wontfix":
+        return "wontfix"
+    tid = bug.get("taskId")
+    # The `if tid` guard is load-bearing, not defensive noise. An index built
+    # WITHOUT the truthy-id filter (audit-status.py's ready-list index is one such)
+    # carries a `None` key, and a bug with no `taskId` would then look that key up,
+    # find a task, and read 'fixed'. `_report_html._bug_view` omits this guard.
+    task = task_by_id.get(tid) if tid else None
+    if isinstance(task, dict) and task.get("status") == "done":
+        return "fixed"
+    return stored
 
 
 # --- writer (split a manifest into index + per-phase shards) ---------------------
@@ -404,6 +512,136 @@ def _selftest():
         # 10. read_json round-trip
         check("read_json: round-trips atomic_write_json output",
               read_json(ascii_path) == ref)
+
+        # 11. traversal: iter_tasks / tasks_by_id / phase_of_task.
+        #
+        # The fixture is the case here, so it is built to SEPARATE implementations
+        # rather than to look tidy:
+        #   * P1's tasks are listed out of id order (P1.2 before P1.1), so an
+        #     implementation that sorts is distinguishable from one that keeps
+        #     document order;
+        #   * "P1.1" appears TWICE, in two different phases, with a different title
+        #     AND a different status, so LAST-wins and FIRST-wins disagree on a
+        #     VALUE, not merely on dict identity;
+        #   * P2 has no `tasks` key at all, P3 carries a non-dict task entry and a
+        #     task with no id, and the phases list carries a non-dict phase.
+        trav = {
+            "meta": {"version": 2},
+            "phases": [
+                {"id": "P1", "title": "Alpha", "tasks": [
+                    {"id": "P1.2", "title": "listed first", "status": "done",
+                     "commit": "sha-p12"},
+                    {"id": "P1.1", "title": "shadowed original", "status": "pending"},
+                    {"id": "P1.3", "title": "still running", "status": "in_progress"},
+                ]},
+                {"id": "P2", "title": "Beta"},               # no `tasks` key at all
+                {"id": "P3", "title": "Gamma", "tasks": [
+                    "not-a-dict",                            # malformed task entry
+                    {"title": "no id at all", "status": "done"},
+                    {"id": "P1.1", "title": "duplicate wins", "status": "done"},
+                ]},
+                "not-a-phase",                               # malformed phase entry
+            ],
+        }
+
+        trav_pairs = list(iter_tasks(trav))
+        check("iter_tasks: 5 pairs - malformed entries skipped and the phase with "
+              "no tasks contributes none",
+              len(trav_pairs) == 5)
+        check("iter_tasks: every pair is (dict, dict)",
+              all(isinstance(p, dict) and isinstance(t, dict)
+                  for p, t in trav_pairs))
+        check("iter_tasks: each pair carries its OWN phase",
+              [p.get("id") for p, _ in trav_pairs] == ["P1", "P1", "P1", "P3", "P3"])
+        check("iter_tasks: document order, not id order; an id-less task still yields",
+              [t.get("id") for _, t in trav_pairs]
+              == ["P1.2", "P1.1", "P1.3", None, "P1.1"])
+        check("iter_tasks: a phase with no `tasks` key yields NO (phase, None) pair",
+              all(p.get("id") != "P2" for p, _ in trav_pairs))
+        check("iter_tasks: an empty or non-list `tasks` yields nothing",
+              list(iter_tasks({"phases": [{"id": "A", "tasks": []},
+                                          {"id": "B", "tasks": "nope"}]})) == [])
+        check("iter_tasks: a non-dict manifest yields nothing rather than raising",
+              list(iter_tasks(["not", "a", "manifest"])) == [])
+
+        trav_idx = tasks_by_id(trav)
+        check("tasks_by_id: keys are exactly the tasks carrying an id - no falsy "
+              "key for the id-less one",
+              set(trav_idx) == {"P1.1", "P1.2", "P1.3"})
+        check("tasks_by_id: a duplicate id resolves LAST-wins",
+              trav_idx["P1.1"].get("title") == "duplicate wins")
+        check("tasks_by_id: the value IS the task dict, not a copy or a stub",
+              trav_idx["P1.2"] is trav["phases"][0]["tasks"][0])
+
+        trav_pot = phase_of_task(trav)
+        check("phase_of_task: a task maps to the id of the phase that owns it",
+              trav_pot.get("P1.2") == "P1")
+        check("phase_of_task: the duplicate resolves LAST-wins, to the OTHER phase",
+              trav_pot.get("P1.1") == "P3")
+        check("phase_of_task: values are phase IDs, never phase dicts",
+              all(isinstance(v, str) for v in trav_pot.values()))
+        check("phase_of_task: same key set as tasks_by_id (callers may zip them)",
+              set(trav_pot) == set(trav_idx))
+
+        # The SAME manifest stored the OTHER way must traverse identically -
+        # traversal reads the assembled dict, so the storage format must not show.
+        tdir = os.path.join(tmp, "traversal-sharded")
+        os.makedirs(tdir)
+        tpath = os.path.join(tdir, "audit-plan.json")
+        save_sharded(tpath, trav)
+        trav_sharded = load_manifest(tpath)
+        check("traversal: sharded storage yields the identical (phase, task) id pairs",
+              [(p.get("id"), t.get("id")) for p, t in iter_tasks(trav_sharded)]
+              == [(p.get("id"), t.get("id")) for p, t in trav_pairs])
+        check("traversal: sharded storage yields the identical id -> phase map",
+              phase_of_task(trav_sharded) == trav_pot)
+
+        # 12. effective_bug_status - the rule that had two homes.
+        check("effective_bug_status: a bug whose linked task is done reads 'fixed'",
+              effective_bug_status({"id": "B1", "status": "open", "taskId": "P1.2"},
+                                   trav_idx) == "fixed")
+        check("effective_bug_status: resolves through the same LAST-wins index "
+              "(P1.1's winning task is the done one)",
+              effective_bug_status({"id": "B2", "status": "open", "taskId": "P1.1"},
+                                   trav_idx) == "fixed")
+        # SECOND-DIRECTION case: this is the one that goes red if the derivation
+        # ever becomes unconditional - "has a taskId" must not be enough, the task
+        # has to be DONE. It reads as vacuous and it is the only case that catches
+        # a fix that always fires.
+        #
+        # Every "keeps its reported status" case below stores something OTHER than
+        # "open" on purpose. An implementation that gave up and returned a constant
+        # "open" for everything it could not derive is a real way to get this wrong,
+        # and an "open" fixture cannot tell that version from this one.
+        check("effective_bug_status: a bug on a task that is NOT done keeps its "
+              "reported status",
+              effective_bug_status({"id": "B3", "status": "triaged",
+                                    "taskId": "P1.3"}, trav_idx) == "triaged")
+        check("effective_bug_status: 'wontfix' wins over a done task",
+              effective_bug_status({"id": "B4", "status": "wontfix",
+                                    "taskId": "P1.2"}, trav_idx) == "wontfix")
+        check("effective_bug_status: an un-materialized bug keeps its reported status",
+              effective_bug_status({"id": "B5", "status": "triaged"}, trav_idx)
+              == "triaged")
+        check("effective_bug_status: a dangling taskId keeps the reported status",
+              effective_bug_status({"id": "B6", "status": "in_progress",
+                                    "taskId": "P9.9"}, trav_idx) == "in_progress")
+        check("effective_bug_status: no stored status returns None, never a "
+              "fabricated 'open'",
+              effective_bug_status({"id": "B7", "taskId": "P1.3"}, trav_idx) is None)
+        # The falsy-taskId guard, pinned. Given an index that was NOT filtered on a
+        # truthy id (audit-status.py builds one such for its ready list), a bug with
+        # no - or an empty - taskId must not resolve through the falsy key.
+        # `_report_html._bug_view` omits this guard and reads 'fixed' for both.
+        unfiltered_idx = {None: {"id": None, "status": "done"},
+                          "": {"id": "", "status": "done"}}
+        check("effective_bug_status: no taskId never matches a None key in an "
+              "unfiltered index",
+              effective_bug_status({"id": "B8", "status": "triaged"}, unfiltered_idx)
+              == "triaged")
+        check("effective_bug_status: an EMPTY taskId never matches an '' key either",
+              effective_bug_status({"id": "B9", "status": "in_progress",
+                                    "taskId": ""}, unfiltered_idx) == "in_progress")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
