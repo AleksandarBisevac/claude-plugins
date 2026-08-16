@@ -111,6 +111,7 @@ claude-plugins/                           # this repo (personal, public)
         migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
         _panel_ui.py                      # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
+        _panel_page.py                    # the assembled page: the substitution chain -> UI_HTML + UI_TEMPLATE
         _panel_discovery.py               # discovers skills/agents/MCP servers this project can reach
         _panel_settings.py                # the Settings form's schema + the write-path key allow-lists
         _panel_state.py                   # the panel's READ side: everything GET /api/* answers with
@@ -173,6 +174,7 @@ L3:
 
 L4:
   _panel_discovery -> _help, _manifest_io, _output
+  _panel_page -> _help, _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _report_usage -> _fmt, _loader, _output, _report_html, _ui_theme
 
 L5:
@@ -191,7 +193,7 @@ L7:
   gen-demo-manifest -> _loader, _output
   gen-demo-usage -> _loader, _output
   migrate-manifest -> _loader, _manifest_io, _output
-  panel-server -> _help, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _panel_ui, _panel_write, _ui_theme
+  panel-server -> _help, _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _loader, _manifest_io, _output, _report_html, _report_ui, _report_usage, _ui_theme
   validate-config -> _loader, _output, _policy
   validate-manifest -> _areas, _manifest_io, _output
@@ -703,6 +705,21 @@ looked at it). `raw_template()` reads the three files and splices css/js back in
 insertion markers in the HTML, returning the exact string `panel-server.py`'s own
 `.replace()` substitution chain (theme tokens, labels, settings, field help, config enums)
 still runs on — byte-for-byte, before per-request values like the audit token are filled in.
+
+### `plugins/audit/scripts/_panel_page.py`
+The panel's assembled page, moved out of `panel-server.py`: the eight-substitution chain that
+turns `_panel_ui.raw_template()` into what the browser gets, exporting the two names the server
+imports — `UI_HTML` (the finished page wearing the default theme, which every page selftest
+reads) and `UI_TEMPLATE` (the same page with the `/*__THEME_TOKENS__*/` marker intact, so
+`do_GET` can dress it in the requesting project's theme per request). The order is load-bearing
+and stated where it happens: the snapshot `UI_TEMPLATE = UI_HTML` sits *after* the last
+substitution and *before* the theme one, and case `pg1` is what goes red if it moves. It also
+holds the ~283 selftest cases that assert about the CSS and JavaScript in
+`scripts/ui/panel.{css,js}` — three quarters of `panel-server.py` before the split, and claims
+about the front end rather than about an HTTP server. Layer 4: it reaches `usage_ledger` (L3,
+for `COST_BAND_PARAMS`), `_help` (L3, selftest only), `_panel_ui`/`_panel_settings` (L2) and
+`_ui_theme`/`_loader` (L1), and never `_panel_state`, `_panel_write`, `_panel_discovery` or
+`panel-server` — a selftest case asserts that.
 
 ### `plugins/audit/scripts/_panel_discovery.py`
 Read-only discovery of which skills, agents and MCP servers this project can actually reach —

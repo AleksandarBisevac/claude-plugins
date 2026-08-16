@@ -79,7 +79,16 @@ LAYERS = (
     # `_report_usage` reaches nothing at layer 4 or above, and only render-report (L7)
     # reaches it, so the move is free.
     ("_help", "usage_ledger"),
-    ("_panel_discovery", "_report_usage"),
+    # `_panel_page` (the panel's assembled page: the substitution chain and the
+    # ~1,450 lines of cases that read the result) lands here rather than beside
+    # `_panel_state`, and that placement is the whole cost of the split. Its
+    # deepest reach is `usage_ledger` at L3 - `_panel_ui`/`_panel_settings` are
+    # L2, `_ui_theme`/`_loader` L1, `_help` L3 - so L4 is the first layer that
+    # holds every one of its edges strictly downward. Sitting beside
+    # `_panel_discovery` and `_report_usage` costs nothing: it reaches neither,
+    # and neither reaches it. The alternative was a new layer, which renumbers
+    # every entry in KNOWN_LAYER_DEBT below without a single edge changing.
+    ("_panel_discovery", "_panel_page", "_report_usage"),
     ("_panel_state",),
     ("_panel_write",),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
