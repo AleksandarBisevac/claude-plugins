@@ -15,9 +15,10 @@ and the same "never render real spend as $0.00" rule were typed out three times:
     reads `3.23M` at two, `dp=2`, without ever falling back to the raw integer)
     and `_fmt_cost(x)` (byte-identical logic to audit-usage's, just without the
     `show` flag — render-report never suppresses cost, it omits the tile instead).
-  * audit-status.py deliberately did NOT grow a fourth copy: it importlib-loads
-    audit-usage's `fmt_tokens`/`fmt_cost` at runtime (see its own docstring) and
-    calls them as `au.fmt_tokens(...)` / `au.fmt_cost(...)`.
+  * audit-status.py deliberately did NOT grow a fourth copy: it used to
+    importlib-load audit-usage's `fmt_tokens`/`fmt_cost` at runtime. That loader
+    is gone — it reads them from here now, and the layer-debt entry it produced
+    was retired with it.
 
 Differences tabled BEFORE unifying (golden values run against the two originals,
 frozen in `_selftest` below, before either call site was touched):
@@ -64,13 +65,14 @@ home here:
     table) and _report_usage.py:527-528 (author chips). Now `fmt_share`.
   * The bar. Five renderings of one arithmetic:
       audit-usage.bar(fraction, width=18)   `[####......]`, clamped, no minimum
-      audit-status.py                       does not own a bar at all — it
-                                            importlib-loads audit-usage.py, an
-                                            ENTRY POINT, purely to borrow
-                                            `bar()` (a recorded entry in
-                                            _deps.KNOWN_LAYER_DEBT, and its own
-                                            loader docstring concedes the shape
-                                            "has no home in _fmt.py"). It does.
+      audit-status.py                       owned no bar: it importlib-loaded
+                                            audit-usage.py, an ENTRY POINT,
+                                            purely to borrow `bar()`, and its
+                                            loader docstring conceded the shape
+                                            "has no home in _fmt.py". It does
+                                            now, so both the loader and the
+                                            _deps.KNOWN_LAYER_DEBT entry it
+                                            produced are gone.
       audit-usage render_trend, twice       `"#" * max(1 if n else 0, ...)` —
                                             (:563 md, :575 ascii) no brackets,
                                             no padding, and a MINIMUM of one

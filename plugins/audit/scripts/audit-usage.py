@@ -59,6 +59,15 @@ DEFAULT_LEDGER = os.path.join(".claude", "usage")
 # now imports _fmt directly for these (P14.2) rather than reaching them through this
 # module's loader; these wrappers stay as this CLI's own call shape (and in case any
 # other consumer still loads this module for them).
+#
+# `bar(fraction, width)` used to live here too — the boxed share bar, the copy
+# _fmt's docstring names first. It is gone rather than re-exported: it took a
+# PRE-DIVIDED fraction, and every caller therefore did the divide itself behind
+# a `grand = tot["tokens"] or 1` that turned "there is no total" into a confident
+# 0% (and 5-of-0 into 500%). `_fmt.fmt_bar(part, whole, width)` takes the pair so
+# the divide happens once, under `share_pct`'s guard. Its golden values are the
+# ones frozen from THIS function — see _fmt._selftest's `fmt_bar: golden bar(...)`
+# rows — so the pins moved with the code rather than being dropped.
 def fmt_tokens(n):
     """Compact, right-alignable token counts (CLI shape: always one decimal)."""
     return _fmt.fmt_tokens(n)
@@ -70,15 +79,6 @@ def fmt_cost(x, show=True):
 
 def fmt_int(n):
     return _fmt.fmt_int(n)
-
-
-def bar(fraction, width=18):
-    """`[##########........]` — a share bar that survives any terminal."""
-    try:
-        filled = int(round(max(0.0, min(1.0, float(fraction))) * width))
-    except (TypeError, ValueError):
-        filled = 0
-    return "[" + "#" * filled + "." * (width - filled) + "]"
 
 
 def _md_cell(v):
@@ -337,7 +337,11 @@ def render(rows, args, manifest, window, show_cost, pt=None):
         items = sorted(agg.items(), key=lambda kv: -kv[1]["tokens"])
         if limit:
             items = items[:limit]
-        grand = tot["tokens"] or 1
+        # The REAL total, not `... or 1`. That guard did not prevent a bad answer,
+        # it manufactured one: a zero total rendered every row's share as "0%",
+        # which is indistinguishable from a measured zero. _fmt.share_pct owns the
+        # divide now and says "?" when there is nothing to divide by.
+        grand = tot["tokens"]
         headers = [title, "tokens"]
         aligns = ["<", ">"]
         if show_cost:
@@ -353,11 +357,9 @@ def render(rows, args, manifest, window, show_cost, pt=None):
             row = [label_for(by, key), fmt_tokens(v["tokens"])]
             if show_cost:
                 row.append(fmt_cost(v["costUSD"]))
-            share = 100.0 * v["tokens"] / grand
-            # A visible slice must never print as 0% — that reads as "free".
-            pct = "<1%" if 0 < share < 1 else "%.0f%%" % share
             row += [fmt_int(v["msgs"]),
-                    "%s %4s" % (bar(v["tokens"] / float(grand)), pct)]
+                    "%s %4s" % (_fmt.fmt_bar(v["tokens"], grand),
+                                _fmt.fmt_share(v["tokens"], grand))]
             if extra:
                 row.append(extra[1](key, v))
             body.append(tuple(row))
@@ -419,7 +421,7 @@ def render_by_area(manifest, rows, tot, show_cost, fmt="ascii", pt=None):
         return []
     items = sorted(agg.items(),
                    key=lambda kv: (kv[0] == ul.UNTAGGED_AREA, -kv[1]["tokens"]))
-    grand = tot["tokens"] or 1
+    grand = tot["tokens"]       # the real total — see group_table on the `or 1`
     headers = ["BY AREA", "tokens"]
     aligns = ["<", ">"]
     if show_cost:
@@ -432,10 +434,9 @@ def render_by_area(manifest, rows, tot, show_cost, fmt="ascii", pt=None):
         row = [key, fmt_tokens(v["tokens"])]
         if show_cost:
             row.append(fmt_cost(v["costUSD"]))
-        share = 100.0 * v["tokens"] / grand
-        pct = "<1%" if 0 < share < 1 else "%.0f%%" % share
         row += [fmt_int(v["msgs"]), str(v["phases"]),
-                "%s %4s" % (bar(v["tokens"] / float(grand)), pct)]
+                "%s %4s" % (_fmt.fmt_bar(v["tokens"], grand),
+                            _fmt.fmt_share(v["tokens"], grand))]
         body.append(tuple(row))
     pt = pt or _cli_fmt.PLAIN
     rendered = table(body, headers, aligns, fmt=fmt)
@@ -553,26 +554,32 @@ def render_trend(rows, width=28, fmt="ascii", pt=None):
         return []
     md = fmt == "md"
     pt = pt or _cli_fmt.PLAIN
-    peak = max(daily[d]["tokens"] for d in days) or 1
+    # The real peak, not `... or 1`. `bar_cells(min_fill=True)` is the sparkline's
+    # own arithmetic — a day with real tokens gets at least one cell, a true zero
+    # gets none — and it returns 0 cells when there is no peak to measure against.
+    # The `peak and` in `_is_peak` is what the `or 1` was silently doing: with a
+    # divisor forced to 1, `n == peak` could never hold on an all-zero ledger, so
+    # no day was labelled. Naming every zero day "peak 0" would manufacture a
+    # high-water mark out of nothing, which is the same defect one line up.
+    peak = max(daily[d]["tokens"] for d in days)
     if md:
         out = ["", "**TREND**  daily tokens", ""]
         body = []
         for d in days[-30:]:
             n = daily[d]["tokens"]
             body.append((d[5:], fmt_tokens(n),
-                         "#" * max(1 if n else 0,
-                                   int(round(width * n / float(peak))))
-                         + (" peak" if n == peak else "")))
+                         "#" * _fmt.bar_cells(n, peak, width, min_fill=True)
+                         + (" peak" if _is_peak(n, peak) else "")))
         out += table(body, ["day", "tokens", "trend"], ["<", ">", "<"],
                      fmt="md")
     else:
         out = ["", pt.paint("  TREND  daily tokens", "header")]
         for d in days[-30:]:
             n = daily[d]["tokens"]
-            marker = "   peak %s" % fmt_tokens(n) if n == peak else ""
+            marker = "   peak %s" % fmt_tokens(n) if _is_peak(n, peak) else ""
             out.append("  %s  %s%s" % (
                 d[5:],
-                "#" * max(1 if n else 0, int(round(width * n / float(peak)))),
+                "#" * _fmt.bar_cells(n, peak, width, min_fill=True),
                 marker))
 
     hourly = {}
@@ -594,6 +601,13 @@ def render_trend(rows, width=28, fmt="ascii", pt=None):
     if bits:
         out += ["", " - ".join(bits)] if md else ["  " + " - ".join(bits)]
     return out
+
+
+def _is_peak(n, peak):
+    """Is this day the trend's high-water mark? A ledger of nothing has none —
+    every day ties at zero, and labelling them all "peak 0" would invent a
+    measurement, the same way `share = tokens / (total or 1)` invented one."""
+    return bool(peak) and n == peak
 
 
 def _trend_delta(daily, days):
@@ -880,10 +894,12 @@ def _selftest():
     check("fmt: sub-cent cost does not render as $0.00",
           fmt_cost(0.004) == "<$0.01")
     check("fmt: cost suppressed when disabled", fmt_cost(9.0, show=False) == "")
-    check("fmt: bar is fixed width and clamps",
-          bar(0.5) == "[#########.........]" and bar(3.0) == "[" + "#" * 18 + "]"
-          and bar(-1) == "[" + "." * 18 + "]")
-    check("fmt: bar tolerates garbage", bar(None) == "[" + "." * 18 + "]")
+    # The two `bar(fraction)` unit cases that used to sit here are gone with the
+    # function. Their golden values were frozen INTO _fmt's suite before either
+    # call site moved (`fmt_bar: golden bar(0.5, 18)`, the over-100% clamp, the
+    # negative clamp), so the pins relocated rather than being dropped — and this
+    # file now pins the thing it actually owns instead: the rendered share cell,
+    # which unit-testing `bar` never exercised. See the (sb) block below.
     check("fmt: table pads to the widest cell",
           table([("a", "1"), ("bbbb", "22")], ["k", "v"])[1].startswith("  a   "))
     check("fmt: empty table renders nothing", table([], ["k"]) == [])
@@ -1306,6 +1322,74 @@ def _selftest():
         check("co6 the paint lands on the section headers and notes (bold "
               "BY PHASE header row, dim band note)",
               "\033[1m  BY PHASE" in _painted and "\033[2m" in _painted)
+
+        # --- shares and bars (sb): the two table call sites, through _fmt ----
+        # Both tables used to divide by `grand = tot["tokens"] or 1`. That is
+        # not a guard: it does not prevent a bad answer, it manufactures one.
+        # Run verbatim it renders a row of 5 out of a total of 0 as "500%", and
+        # every row of a zero-total ledger as "0%" - indistinguishable from a
+        # measured zero. _fmt.share_pct owns the divide now and returns None,
+        # which fmt_share renders as "?".
+        #
+        # Every case below reads the share CELLS, not the whole document: the
+        # dashboard prints "(cache hit 0%)" in its header, so `"0%" in text` is
+        # true on any ledger and asserts nothing. And each collects EVERY cell
+        # rather than finding one - a sentinel that leaked into half the rows
+        # would pass a presence assertion.
+        _shares_re = re.compile(r"\[[#.]+\]\s+(\S+)")
+        _zero_counts = {"in": 0, "out": 0, "cacheW5m": 0, "cacheW1h": 0,
+                        "cacheR": 0, "costUSD": 0.0}
+        _zero_rows = [dict(loaded[0], sessionId="s-z1", **_zero_counts),
+                      dict(loaded[2], sessionId="s-z2", **_zero_counts)]
+        # `_man_a` (the da block's tagged plan), not `manifest`: BY AREA is the
+        # SECOND call site and it divides by its own `grand`. Rendered against an
+        # untagged plan that table never appears, and its copy of the bug would
+        # sit here uncaught while this case reported green.
+        _ztext = render(_zero_rows, args, _man_a, "all time", True)
+        _zshares = _shares_re.findall(_ztext)
+        check("sb1 a ledger totalling zero tokens reports EVERY share as "
+              "unmeasurable, not as a measured 0% - the `or 1` guard's answer",
+              "BY AREA" in _ztext and len(_zshares) >= 6
+              and set(_zshares) == {"?"}, repr(_zshares))
+        _real_shares = _shares_re.findall(_atext)
+        check("sb2 ...and a real ledger never shows the sentinel (the "
+              "second-direction case: this one goes red if the guard becomes "
+              "unconditional, and passes on the pre-fix code by construction)",
+              "BY AREA" in _atext and len(_real_shares) >= 6
+              and "?" not in _real_shares, repr(_real_shares))
+        _mixed = list(loaded) + [dict(loaded[0], sessionId="s-zerorow",
+                                      phaseId="P3", taskId="P3.9",
+                                      **_zero_counts)]
+        _mshares = _shares_re.findall(render(_mixed, args, _man_a,
+                                             "all time", True))
+        check("sb3 a genuinely empty row inside a real total still prints 0% - "
+              "absent is not unmeasurable, and the sentinel must not spread",
+              "0%" in _mshares and "?" not in _mshares, repr(_mshares))
+        check("sb4 the share box is the same width at every fill, so the "
+              "column stays a column",
+              set(len(b) for b in re.findall(r"\[[#.]+\]", text)) == {20})
+        # The trend, whose `peak = max(...) or 1` was the third `or 1`. With the
+        # divisor forced to 1, `n == peak` could never hold on an all-zero
+        # ledger; with the real peak it holds for every day, so the marker needs
+        # its own guard. Labelling every empty day "peak 0" invents a high-water
+        # mark, which is the same defect as the manufactured share.
+        check("sb5 a trend with nothing in it names no peak day",
+              "TREND" in _ztext and "peak 0" not in _ztext
+              and "peak hour" in _ztext)
+        check("sb6 ...while a real ledger still names its peak day",
+              "peak " in text.split("TREND")[-1])
+        _tiny = [dict(loaded[0], ts="2026-08-05T09", sessionId="s-big",
+                      **dict(_zero_counts, out=1_000_000)),
+                 dict(loaded[0], ts="2026-08-06T09", sessionId="s-tiny",
+                      **dict(_zero_counts, out=1))]
+        _ttext = render(_tiny, args, manifest, "all time", True)
+        check("sb7 a real-but-tiny day still draws a cell (bar_cells' "
+              "min_fill) - a day with spend must not render as a blank row",
+              "\n  08-06  #" in _ttext, _ttext.split("TREND")[-1])
+        check("sb8 ...and in md too, which builds the same sparkline a second "
+              "time - one adopted call site does not vouch for the other",
+              "| 08-06 | 1 | # |" in render(_tiny, args_md, manifest,
+                                            "all time", True))
 
         # backfill on a project with no transcripts must fail cleanly, not crash
         args_b = build_parser().parse_args(["--backfill"])

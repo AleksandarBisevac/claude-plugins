@@ -852,7 +852,7 @@ def ui_navigability_violations(ui_dir=None):
 #     grammar into an L1 `_locks.py` rather than `_panel_state` reimplementing
 #     `audit-lock`.
 #
-#   * FOURTEEN are entry point -> entry point. All thirteen commands sit at L7,
+#   * THIRTEEN are entry point -> entry point. All thirteen commands sit at L7,
 #     so one command reusing another is a "peer" edge BY CONSTRUCTION. Whether
 #     that is a defect or a gap in the model is an open architecture question
 #     this list does not pretend to have answered.
@@ -877,7 +877,7 @@ KNOWN_LAYER_DEBT = (
      "runtime-loads validate-config (layer 7) from layer 5 - not strictly downward"),
     ("_panel_state.py",
      "runtime-loads validate-manifest (layer 7) from layer 5 - not strictly downward"),
-    # -- entry point reusing an entry point, all at L7 (14) --
+    # -- entry point reusing an entry point, all at L7 (13) --
     ("audit-doctor.py",
      "runtime-loads audit-journal (layer 7) from layer 7 - not strictly downward"),
     ("audit-doctor.py",
@@ -890,8 +890,6 @@ KNOWN_LAYER_DEBT = (
      "runtime-loads validate-config (layer 7) from layer 7 - not strictly downward"),
     ("audit-doctor.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    ("audit-status.py",
-     "runtime-loads audit-usage (layer 7) from layer 7 - not strictly downward"),
     ("audit-status.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
     ("audit-usage.py",

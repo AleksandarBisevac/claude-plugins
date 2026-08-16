@@ -481,7 +481,6 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     a _cli_fmt.Painter; None (every pre-color caller) means plain, and a
     disabled painter returns its input unchanged, so plain mode stays
     byte-identical to the pre-color render."""
-    au = _load_usage_fmt()
     pt = pt or _cli_fmt.PLAIN
     meta = (manifest or {}).get("meta") or {}
     lines = []
@@ -494,11 +493,11 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     t_done = summary["tasks"]["byStatus"].get("done", 0)
     ph_done = sum(1 for p in summary["phases"] if p.get("status") == "done")
     bugs = summary["bugs"]
-    frac = (float(t_done) / t_total) if t_total else 0.0
     lines.append("  %s  %d/%d tasks done - %d/%d phases signed off - "
                  "%d open bug(s) - %d ready now"
-                 % (au.bar(frac, width), t_done, t_total, ph_done,
-                    len(summary["phases"]), bugs["open"], len(summary["ready"])))
+                 % (_fmt.fmt_bar(t_done, t_total, width), t_done, t_total,
+                    ph_done, len(summary["phases"]), bugs["open"],
+                    len(summary["ready"])))
     if not summary["valid"]:
         lines.append(pt.paint(
             "  INVALID MANIFEST: %d validator finding(s) - fix before "
@@ -515,7 +514,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     usage = summary.get("usage")
     if usage:
         lines.append("  " + _usage_line(summary, usage))
-        lines += _budget_lines(au, summary, usage, pt=pt)
+        lines += _budget_lines(summary, usage, pt=pt)
 
     unmet = unmet_refs(manifest)
     ready = set(summary["ready"])
@@ -570,11 +569,11 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     for pe in shown_phases:
         lines.append("")
         pdone, ptotal = pe.get("done", 0), pe.get("total", 0)
-        pfrac = (float(pdone) / ptotal) if ptotal else 0.0
         ph = by_id.get(pe.get("id")) or {}
         head = "  %-4s %-26s %-11s %s %d/%d" % (
             pe.get("id") or "?", _clip(pe.get("title") or "", 26),
-            _theme.label(pe.get("status")) or "?", au.bar(pfrac, 12), pdone, ptotal)
+            _theme.label(pe.get("status")) or "?",
+            _fmt.fmt_bar(pdone, ptotal, 12), pdone, ptotal)
         if ph.get("branch"):
             head += "  %s" % ph["branch"]
         lines.append(head)
@@ -618,7 +617,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
                               "waiting on something, or the plan is complete",
                               "header"))
 
-    lines += _area_lines(au, summary, pt=pt)
+    lines += _area_lines(summary, pt=pt)
     lines += _bug_lines(manifest, summary, pt=pt)
     lines += _proposal_lines(manifest, summary, pt=pt)
     lines += _resumable_lines(manifest, summary, pt=pt)
@@ -700,7 +699,7 @@ def _usage_line(summary, usage):
     return " - ".join(parts)
 
 
-def _budget_lines(au, summary, usage, pt=None):
+def _budget_lines(summary, usage, pt=None):
     """Budget lines, and only for phases that actually declare one.
 
     Renders nothing when no phase carries a `budgetUSD`, which is the common case —
@@ -722,8 +721,11 @@ def _budget_lines(au, summary, usage, pt=None):
             flag = "  " + pt.paint("OVER", "finding")
         elif pct >= BUDGET_WARN_PCT:
             flag = "  " + pt.paint("WARN", "warn")
+        # `pct` is ALREADY a percentage, so the whole is a literal 100 — a
+        # percentage is a hundred-cell bar. bar_cells' clamp is what keeps an
+        # over-budget phase (470%) inside its own bracket.
         out.append("  budget %-5s %s %3.0f%%  %s of %s%s"
-                   % (p.get("id") or "?", au.bar(pct / 100.0, 12), pct,
+                   % (p.get("id") or "?", _fmt.fmt_bar(pct, 100, 12), pct,
                       _fmt.fmt_cost(p.get("spent")), _fmt.fmt_cost(p.get("budget")),
                       flag))
     unbudgeted = len(budgets.get("phases") or []) - len(rows)
@@ -733,7 +735,7 @@ def _budget_lines(au, summary, usage, pt=None):
     return out
 
 
-def _area_lines(au, summary, pt=None):
+def _area_lines(summary, pt=None):
     """`BY AREA` — the per-area rollup, printed instead of only shipped in --json.
 
     `summary["areas"]` has been computed (and carried in --json) since the tags
@@ -776,9 +778,8 @@ def _area_lines(au, summary, pt=None):
                            len(phases)), "header")]
     w = max(len(r[0]) for r in rows)
     for tag, n_ph, done, total, owner in rows:
-        frac = (float(done) / total) if total else 0.0
         line = ("    %-*s  %2d phase(s)  %s %d/%d tasks"
-                % (w, tag, n_ph, au.bar(frac, 12), done, total))
+                % (w, tag, n_ph, _fmt.fmt_bar(done, total, 12), done, total))
         if owner:
             # The advisory owner, from the same rollup --json ships - the
             # person to coordinate with, never an assignee.
@@ -885,16 +886,12 @@ def _resumable_lines(manifest, summary, pt=None):
     return []
 
 
-def _load_usage_fmt():
-    """audit-usage.py's `bar()` — the share-bar renderer, which has no home in
-    _fmt.py (that module holds only the token/cost/int formatters shared with
-    render-report.py; `bar` is audit-usage's own CLI shape). fmt_tokens/fmt_cost
-    are imported directly from _fmt (see the top-of-file import) since P10.6 made
-    it the one copy; this loader stays only for what _fmt does not carry. Its
-    `render()` is deliberately NOT reused — that one reads flags off an argparse
-    Namespace."""
-    return _loader.load_script("audit-usage.py", modname="audit_usage_fmt",
-                                cache=False)
+# `_load_usage_fmt()` used to sit here: a runtime load of audit-usage.py — an ENTRY
+# POINT, a peer at layer 7 — purely to borrow its `bar()`. The share bar now lives in
+# _fmt (`fmt_bar`/`bar_cells`), which this file already imports for fmt_tokens/fmt_cost,
+# so the four call sites take the same downward edge as everything else and the loader
+# has nothing left to load. Its entry in _deps.KNOWN_LAYER_DEBT went with it — that
+# list may only shrink, and only deliberately.
 
 
 # --- gate evaluation ------------------------------------------------------------
@@ -1687,6 +1684,49 @@ def _selftest():
     _sum_nc["usage"]["showCost"] = False
     check("b17 budget lines are withheld when showCost is false",
           "budget" not in render_status({"meta": {}, "phases": []}, _sum_nc))
+
+    # --- (zb) the four bars, at the edges the old divides guarded by hand -------
+    # All four are `_fmt.fmt_bar(part, whole, width)` now; this file no longer
+    # runtime-loads audit-usage.py to borrow a `bar(fraction)` that made each
+    # caller do its own divide. fmt_bar draws an EMPTY BOX when `whole` is 0,
+    # deliberately not the "?" fmt_share returns: every bar here prints its own
+    # `done/total` right beside it, so the denominator contradicts an empty bar.
+    # A share string travels alone and has nothing to contradict it.
+    _zb_empty = {"meta": {"version": 2}, "phases": []}
+    _zb_txt = render_status(_zb_empty, rollup(_zb_empty, [], []))
+    check("zb1 a plan with zero tasks draws an empty box beside its own 0/0 - "
+          "not a full bar, not a traceback",
+          "[" + "." * 18 + "]  0/0 tasks done" in _zb_txt, _zb_txt[:200])
+    _zb_ph = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "no tasks at all", "status": "pending",
+         "area": "backend", "tasks": []}]}
+    _zb_pt = render_status(_zb_ph, rollup(_zb_ph, [], []))
+    # Anchored on the PHASE HEAD line, not on the document: the BY AREA row two
+    # blocks down prints an identical `[............] 0/0`, so a bare `in _zb_pt`
+    # passes on the area row alone and says nothing about the phase bar.
+    check("zb2 a phase carrying no tasks draws an empty 12-cell box beside 0/0",
+          re.search(r"\n  P1\s+no tasks at all\s+\S+\s+\[\.{12}\] 0/0",
+                    _zb_pt) is not None, _zb_pt)
+    check("zb3 ...and its BY AREA row, which divides by the same zero, does too",
+          re.search(r"backend\s+1 phase\(s\)\s+\[\.{12}\] 0/0 tasks",
+                    _zb_pt) is not None,
+          _zb_pt.split("BY AREA")[-1][:160] if "BY AREA" in _zb_pt else _zb_pt)
+    # The budget bar's whole is the literal 100 (a percentage IS a hundred-cell
+    # bar), so it can never divide by zero — its edge is the other one. Count the
+    # cells rather than asserting a substring: an UNCLAMPED bar still contains a
+    # full box, it just runs past the bracket, which is what fmt_bar's clamp is
+    # for and what `bar(pct / 100.0, 12)` used to do by clamping the fraction.
+    _zb_line = [ln for ln in _bl.splitlines() if ln.startswith("  budget P2")]
+    _zb_box = re.search(r"\[([#.]*)\]", _zb_line[0]) if _zb_line else None
+    check("zb4 a 130%-of-budget phase fills its 12-cell box exactly and no "
+          "further, while the percentage itself stays uncapped",
+          _zb_box is not None and _zb_box.group(1) == "#" * 12
+          and "130%" in _zb_line[0], repr(_zb_line))
+    _zb_partial = [re.search(r"\[([#.]*)\]", ln).group(1)
+                   for ln in _bl.splitlines() if ln.startswith("  budget P1")]
+    check("zb5 ...and the 85% phase beside it draws a PARTIAL box, so zb4 is "
+          "not passing on a bar that is simply always full",
+          _zb_partial == ["#" * 10 + "." * 2], repr(_zb_partial))
 
     check("u2 rollup(usage=None) omits the key",
           "usage" not in rollup(_fixture(), [], [], usage=None))
