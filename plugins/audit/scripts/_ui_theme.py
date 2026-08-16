@@ -21,7 +21,11 @@ than of somebody remembering.
   label()    lookup with a graceful fallback, so an unknown status degrades to
              something readable instead of blank
 
-The CSS lint helpers live here too, next to the stylesheet they police.
+The CSS lint helpers live here too, next to the stylesheet they police — and so
+does the read that puts `scripts/ui/` in front of them (`UI_DIR`, `read_asset`,
+`cr_violations`, `unreadable_assets`). `_report_ui` and `_panel_ui` are layer-2
+peers and cannot import each other, so this is the lowest layer both can reach:
+one io.open contract for the assets, instead of two copies kept in step by hand.
 """
 import io
 import json
@@ -760,6 +764,80 @@ def list_themes(project, home=None):
     return out
 
 
+# --- the ui/ assets on disk ------------------------------------------------------
+# `_report_ui` and `_panel_ui` assemble their pages out of the same directory with
+# the same io.open call, the same CR check and the same exception tuple — typed
+# twice, down to the wording of the docstrings, because they are LAYER-2 PEERS and
+# neither may import the other. This module is the lowest layer both already reach
+# (both selftests call `unterminated_css_decls` below), so it is the only legal
+# home for the read.
+#
+# Nothing here knows which surface is asking. The asset NAMES stay with the surface
+# that owns them; what lives here is the contract every read of them obeys.
+UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
+
+
+def read_asset(name, directory=None):
+    """One `ui/` asset, decoded as utf-8 with NO line-ending translation.
+
+    `newline=""` is the load-bearing part, not a tidy default. Both surfaces
+    assemble their page by concatenating these files and then prove the result
+    BYTE FOR BYTE — the report pins `CSS == TOKEN_CSS + report.css` and that the
+    text between its `<script>` tags is report.js unmodified; the panel pins that
+    the spliced `<style>` span IS panel.css — and every cross-line pin in either
+    suite spans a newline. Read with Python's default universal-newline
+    translation, a CRLF checkout (windows-latest CI with core.autocrlf rewriting
+    the repo) hands back "\\n" where the file holds "\\r\\n", so those proofs would
+    pass against bytes no browser ever receives. `.gitattributes` pins
+    `plugins/audit/scripts/ui/** text eol=lf` for the other half of the same
+    contract: the attribute keeps CRLF from happening, this flag keeps it VISIBLE
+    when it does (see `cr_violations`).
+
+    `directory` exists so a test can point the reader at a fixture tree; every
+    caller in the tree takes the default."""
+    root = UI_DIR if directory is None else directory
+    with io.open(os.path.join(root, name), "r", encoding="utf-8", newline="") as fh:
+        return fh.read()
+
+
+def cr_violations(assets):
+    """Given [(name, text), ...], the names whose text carries a "\\r".
+
+    `read_asset` translates nothing, so a CRLF checkout arrives here as a literal
+    "\\r" in the loaded text rather than as nothing at all — which is the whole
+    point of reading that way. A pure function of the pairs it is handed, with no
+    filesystem access, so a test can feed it fixture content without touching
+    UI_DIR.
+
+    An empty `assets` yields an empty list, and that means "nothing was checked",
+    not "every asset is LF". Both callers pass a fixed literal list of the assets
+    they have just read, so the distinction cannot bite them; a caller that built
+    the list by filtering would have to say the set was empty itself."""
+    return [name for name, text in assets if "\r" in text]
+
+
+def unreadable_assets(names, directory=None):
+    """The named `ui/` assets that are missing or do not decode as utf-8.
+
+    Returned in the order given, so a caller can still report one case per asset
+    rather than one verdict for the set. Both surfaces ask this first, before any
+    pin about the content: the failure it catches is not a bad stylesheet but a
+    file renamed, dropped from the package, or committed in another encoding —
+    and every later pin would then die with a traceback pointing at the wrong
+    thing.
+
+    The exception tuple is the policy here, and it is why this is a function
+    rather than an `os.path.isfile` at each site: an asset that EXISTS and does
+    not decode is exactly the half `isfile` cannot see."""
+    bad = []
+    for name in names:
+        try:
+            read_asset(name, directory)
+        except (IOError, OSError, UnicodeDecodeError):
+            bad.append(name)
+    return bad
+
+
 # --- stylesheet lints ------------------------------------------------------------
 def undeclared_css_vars(css):
     """Custom properties referenced by var() but never declared anywhere.
@@ -1248,6 +1326,83 @@ def _selftest():
           label(None) == "" and label("") == "")
     check("the flat map covers task AND bug statuses",
           set(STATUS) <= set(LABELS) and set(BUG_STATUS) <= set(LABELS))
+
+    # --- ua: the ui/ read both surfaces share --------------------------------
+    # _report_ui and _panel_ui are NOT imported here to check this end to end:
+    # they sit a layer above, and reaching up for a test is the one shortcut
+    # _deps.layer_violations() would be right to fail. These cases stand on
+    # their own, against the real ui/ directory and against fixtures.
+    _ASSETS = ("report.css", "report.js", "panel.html", "panel.css", "panel.js")
+    check("ua1 UI_DIR is the scripts/ui/ directory beside this module, and it "
+          "holds every asset the two surfaces assemble",
+          os.path.basename(UI_DIR) == "ui"
+          and os.path.dirname(UI_DIR) == os.path.dirname(os.path.abspath(__file__))
+          and all(os.path.isfile(os.path.join(UI_DIR, n)) for n in _ASSETS))
+    check("ua2 mutation proof: the same isfile test says NO to a name that is "
+          "not in ui/, so the all() above is a result rather than a vacuous "
+          "truth over an empty or wrong directory",
+          not os.path.isfile(os.path.join(UI_DIR, "no-such-asset.css")))
+
+    # newline="" is the load-bearing half of read_asset. Proving it needs a file
+    # that actually holds CRLF, read BOTH ways: a fixture with LF endings reads
+    # identically with or without the flag and would prove nothing.
+    _uidir = _tf.mkdtemp(prefix="audit-uiasset-")
+    _crlf = "crlf-fixture.css"
+    with io.open(os.path.join(_uidir, _crlf), "w", encoding="utf-8",
+                 newline="") as _fh:
+        _fh.write(":root{\r\n  --a:1px;\r\n}\r\n")
+    _kept = read_asset(_crlf, _uidir)
+    with io.open(os.path.join(_uidir, _crlf), "r", encoding="utf-8") as _fh:
+        _translated = _fh.read()          # same file, Python's default newline=None
+    check("ua3 read_asset hands back the bytes that are on disk: newline='' "
+          "means no line-ending translation, so a CRLF fixture arrives carrying "
+          "all three of its \\r (got %d)" % _kept.count("\r"),
+          _kept.count("\r") == 3 and "\r\n" in _kept)
+    check("ua4 ...and the SAME file read without newline='' is a DIFFERENT "
+          "string - 3 \\r silently translated away. That difference is the "
+          "whole reason for the flag, and why .gitattributes pins "
+          "scripts/ui/** to eol=lf",
+          _translated.count("\r") == 0 and _translated != _kept
+          and _translated == _kept.replace("\r\n", "\n"))
+    with io.open(os.path.join(UI_DIR, "report.css"), "r", encoding="utf-8",
+                 newline="") as _fh:
+        _direct = _fh.read()
+    check("ua5 read_asset defaults to UI_DIR and is byte for byte the read both "
+          "surfaces already do, so adopting it changes nothing on screen",
+          bool(_direct) and read_asset("report.css") == _direct)
+
+    # cr_violations. The fixture carries a real \r on purpose: an all-LF one
+    # cannot tell a working check apart from `return []`.
+    _mixed = [("panel.html", "<html>\n</html>\n"),
+              ("panel.css", ":root{--a:1px}\r\n"),
+              ("panel.js", "boot();\n")]
+    check("ua6 cr_violations names exactly the asset carrying a \\r, and only "
+          "it (got %r)" % (cr_violations(_mixed),),
+          cr_violations(_mixed) == ["panel.css"])
+    check("ua7 mutation proof in the other direction: an all-LF fixture names "
+          "NOTHING. Looks vacuous, and is the only case that goes red if the "
+          "check ever becomes `[name for name, _text in assets]`",
+          cr_violations([(n, t.replace("\r\n", "\n")) for n, t in _mixed]) == [])
+    check("ua8 a LONE \\r counts too - the check is about the byte, not about "
+          "the CRLF pair, so old-Mac endings are not waved through",
+          cr_violations([("report.css", "a{}\rb{}")]) == ["report.css"])
+
+    # unreadable_assets. Two failure shapes, and each proves a different half.
+    _notutf8 = "not-utf8.css"
+    with io.open(os.path.join(_uidir, _notutf8), "wb") as _fh:
+        _fh.write(b":root{--a:'\xff\xfe'}\n")
+    check("ua9 unreadable_assets is silent about the real assets - all five "
+          "exist and decode as utf-8 (%r)" % (unreadable_assets(_ASSETS),),
+          not unreadable_assets(_ASSETS))
+    check("ua10 ...and names one that is not there, in the order given - so the "
+          "empty list above is an answer, not a no-op",
+          unreadable_assets(("report.css", "nope.css", "report.js"))
+          == ["nope.css"])
+    check("ua11 ...and one that EXISTS and does not decode as utf-8, while the "
+          "CRLF fixture beside it decodes fine. A check written as "
+          "os.path.isfile would pass ua10 and still miss this half",
+          unreadable_assets((_crlf, _notutf8), _uidir) == [_notutf8])
+    _sh.rmtree(_uidir, ignore_errors=True)
 
     print(("ALL PASS: %d/%d cases passed" if not bad else
            "SELFTEST FAILED: %d/%d cases passed") % (ok, ok + bad))
