@@ -161,7 +161,7 @@ L1:
 L2:
   _panel_settings -> _loader, _output
   _panel_ui -> _output, _ui_theme
-  _report_html -> _areas, _output, _ui_theme
+  _report_html -> _areas, _manifest_io, _output, _ui_theme
   _report_ui -> _output, _ui_theme
 
 L3:

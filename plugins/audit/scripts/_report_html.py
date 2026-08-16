@@ -21,7 +21,10 @@ selftest's many direct references keep working unchanged.
 
 This module must never import render-report or _report_usage: nothing that
 imports THIS module (render-report does) can form a cycle through it. It may
-use `_ui_theme` for status/label vocabulary, same as the panel.
+use layer 1 — `_ui_theme` for status/label vocabulary (same as the panel),
+`_areas` for tag derivation, and `_manifest_io` for reading a manifest's
+shape, which is where the id -> task index and the derived bug status live so
+this file and the layer-7 commands cannot drift apart.
 """
 import html
 import os
@@ -36,6 +39,7 @@ if _HERE not in sys.path:
 
 import _ui_theme as _theme  # noqa: E402  (tokens + labels shared with the panel)
 import _areas  # noqa: E402  (one home for tag derivation; stdlib-only, no cycle)
+import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 
 
 # Chip and pipeline-rail colors live in the report's CSS theme tokens (see
@@ -73,9 +77,16 @@ def _report_basename(meta, cli_value):
 
 
 # --- lookups ----------------------------------------------------------------
-def _tasks_by_id(manifest):
-    return {t["id"]: t for p in (manifest.get("phases") or []) if isinstance(p, dict)
-            for t in (p.get("tasks") or []) if isinstance(t, dict) and t.get("id")}
+# The id -> task index. One implementation, in `_manifest_io`, the same one
+# audit-status and the panel reach for. The local copy this alias replaced agreed
+# with it on every manifest a validator would accept — same falsy-id filter, same
+# LAST-wins duplicate rule, same tolerance of a non-dict phase or task — and
+# disagreed on exactly one input: a JSON document whose ROOT is not an object
+# survives `load_manifest` unchanged, and the copy raised AttributeError on it
+# where the shared one returns {}. render-report would have crashed rather than
+# rendered an empty report; a lookup is not the right place to discover that, and
+# `validate-manifest` is the reader that names it.
+_tasks_by_id = _manifest_io.tasks_by_id
 
 
 # A phase's `area` -> its tags. One implementation, in `_areas`, the same one the
@@ -156,16 +167,42 @@ def _seg_of(status):
 
 # --- fragment builders ------------------------------------------------------
 def _bug_view(b, task_by_id):
-    """Derived (status, fixedIn) for a bug — mirrors audit-status.effective_bug_status:
-    a bug materialized into a done task reads as fixed (fixedIn = that task's commit),
-    since the orchestrator never writes bugs[] during a run. Stored fixedIn/wontfix win."""
-    stored = b.get("status")
-    fixed_in = b.get("fixedIn")
-    if stored != "wontfix":
-        t = task_by_id.get(b.get("taskId"))
-        if isinstance(t, dict) and t.get("status") == "done":
-            return "fixed", (fixed_in or t.get("commit") or "—")
-    return stored, (fixed_in or "—")
+    """(status, fixedIn) for a bug row — the PRESENTATION half of the bug status.
+
+    The rule itself is not decided here any more: `_manifest_io.effective_bug_status`
+    owns it, and this is the wrapper that adds the `fixedIn` cell. That split is the
+    point — the derivation had three homes (audit-status, the panel, this file, whose
+    docstring said it "mirrored" audit-status) and layer 2 cannot import layer 7, so
+    the copy was structural. The em dash stays HERE, deliberately: a placeholder is
+    what a table draws when a cell is empty, and layer 1 has no table.
+
+    Adopting the shared rule also picks up its falsy-`taskId` guard, which this file
+    did not have: given an index built WITHOUT the truthy-id filter (audit-status's
+    ready-list index is one), a bug carrying no `taskId` used to look up the `None`
+    key, find a task, and read 'fixed'. Pinned below by two cases.
+    """
+    status = _manifest_io.effective_bug_status(b, task_by_id)
+    # DECIDED, and it is the `x or default` shape the house rules single out, so it
+    # is written down rather than left to the reader: an empty-string `fixedIn` means
+    # "nothing recorded", NOT "recorded as empty". The field holds a commit-ish
+    # reference and "" is not one — it is the shape a form or a hand edit leaves
+    # behind, carrying no claim about where the fix landed. So it falls through to
+    # the linked task's commit exactly as a missing key does; treating it as a
+    # recorded value would print the placeholder beside a bug whose fix has a known
+    # commit, which is less true, not more careful.
+    recorded = b.get("fixedIn")
+    if recorded:
+        return status, recorded
+    if status == "fixed":
+        # The inner `done` check is not redundant with `status == "fixed"`: a bug can
+        # carry a STORED 'fixed' while its linked task is still running, and that
+        # task's commit is not the fix. The commit is borrowed only where the
+        # derivation itself fired.
+        tid = b.get("taskId")
+        task = task_by_id.get(tid) if tid else None
+        if isinstance(task, dict) and task.get("status") == "done":
+            return status, (task.get("commit") or "—")
+    return status, "—"
 
 
 def _chip_buttons(statuses, attr, cls, humanize=True, titles=None):
@@ -672,6 +709,30 @@ def _selftest():
           _tasks_by_id(_m) == {"P1.1": {"id": "P1.1", "title": "t"}})
     check("_tasks_by_id tolerates a malformed phase entry",
           isinstance(_tasks_by_id({"phases": [None, "x"]}), dict))
+    check("_tasks_by_id is the shared implementation, not a copy of it",
+          _tasks_by_id is _manifest_io.tasks_by_id)
+    # The ONE input the local copy answered differently: a JSON document whose
+    # root is a list survives load_manifest unchanged, and `manifest.get(...)`
+    # raised AttributeError on it — render-report crashed where it can now
+    # render an empty report. A list is the fixture rather than None because
+    # `None.get` and `[].get` both raise, and a list is the shape a real
+    # hand-written manifest actually reaches the renderer as.
+    def _index_of(manifest):
+        """The index, or the raised exception's NAME — never a dict.
+
+        The behaviour under test is "does not raise", so calling it bare would
+        take the whole suite down with it and report nothing at all, including
+        the ninety-odd cases that have nothing to do with this one. The
+        exception name is a sentinel the success path can never produce.
+        """
+        try:
+            return _tasks_by_id(manifest)
+        except Exception as exc:
+            return type(exc).__name__
+
+    check("_tasks_by_id returns {} for a non-object manifest root, where the "
+          "local copy raised AttributeError",
+          _index_of([{"id": "P1"}]) == {} and _index_of(None) == {})
     check("_areas_of wraps a bare string", _areas_of("frontend") == ["frontend"])
     check("_areas_of passes a list of strings through, dropping junk",
           _areas_of(["a", 1, "b", None]) == ["a", "b"])
@@ -695,7 +756,7 @@ def _selftest():
     check("_areas_of is the shared implementation, not a copy of it",
           _areas_of is _areas.areas_of)
 
-    # --- _bug_view(): derived status mirrors audit-status ----------------------
+    # --- _bug_view(): the shared derivation + this file's presentation ----------
     _tbi = {"T1": {"status": "done", "commit": "abc1234"}}
     check("_bug_view reads fixed from a done task when nothing is stored",
           _bug_view({"taskId": "T1"}, _tbi) == ("fixed", "abc1234"))
@@ -707,6 +768,49 @@ def _selftest():
           ("wontfix", "—"))
     check("_bug_view falls back to em dash with no task and no fixedIn",
           _bug_view({"taskId": "nope", "status": "open"}, _tbi) == ("open", "—"))
+    # The falsy-taskId guard this file did not have. The index is built the way
+    # audit-status's ready list builds one — WITHOUT the truthy-id filter — so it
+    # carries a falsy key, and the bug carries no taskId at all. Unguarded, the
+    # lookup finds the ghost task, sees `done`, and reports a bug nobody linked to
+    # anything as fixed in someone else's commit. Both stored statuses are
+    # deliberately NOT "open": a broken implementation that fell back to "open"
+    # would be indistinguishable from a correct one on that value.
+    _tbi_unfiltered = {None: {"status": "done", "commit": "ghost1"},
+                       "": {"status": "done", "commit": "ghost2"}}
+    # The STATUS half must be the shared rule's answer on EVERY input, not merely
+    # on a well-formed one. Swept rather than spot-checked: on the tidy rows the
+    # old local copy agreed, and a single-fixture case would have been green
+    # against exactly the implementation being replaced.
+    check("_bug_view defers the status, without exception, to the one shared rule",
+          all(_bug_view(_b, _ix)[0] == _manifest_io.effective_bug_status(_b, _ix)
+              for _b, _ix in (({"taskId": "T1", "status": "open"}, _tbi),
+                              ({"taskId": "T1", "status": "wontfix"}, _tbi),
+                              ({"taskId": "nope", "status": "triaged"}, _tbi),
+                              ({"status": "triaged"}, _tbi_unfiltered),
+                              ({"status": "in_progress", "taskId": ""},
+                               _tbi_unfiltered))))
+    check("_bug_view: a bug with NO taskId never matches a None key in an index "
+          "built without the truthy-id filter",
+          _bug_view({"status": "triaged"}, _tbi_unfiltered) == ("triaged", "—"))
+    check("_bug_view: an EMPTY taskId never matches an '' key either",
+          _bug_view({"status": "in_progress", "taskId": ""}, _tbi_unfiltered)
+          == ("in_progress", "—"))
+    # The decision on an empty stored `fixedIn`, in both directions. "" means
+    # "nothing recorded" and falls through to the task's commit; a real string
+    # wins over it. The commit here is a value the em-dash branch cannot produce
+    # by accident, so the two readings disagree on a VALUE rather than on a type.
+    check("_bug_view: an empty-string fixedIn means 'nothing recorded' and falls "
+          "through to the linked task's commit",
+          _bug_view({"taskId": "T1", "fixedIn": ""}, _tbi) == ("fixed", "abc1234"))
+    check("_bug_view: an empty fixedIn with no commit to borrow is the placeholder",
+          _bug_view({"taskId": "nope", "status": "triaged", "fixedIn": ""}, _tbi)
+          == ("triaged", "—"))
+    # The commit is borrowed only where the DERIVATION fired. A stored 'fixed' on
+    # a task that is still running must not print that task's commit as the fix.
+    check("_bug_view: a stored 'fixed' does not borrow a running task's commit",
+          _bug_view({"taskId": "T2", "status": "fixed"},
+                    {"T2": {"status": "in_progress", "commit": "wip5678"}})
+          == ("fixed", "—"))
 
     # --- chips / badges ----------------------------------------------------------
     check("_chip carries the machine value in the attribute and the label in text",

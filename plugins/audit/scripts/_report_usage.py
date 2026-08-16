@@ -124,10 +124,23 @@ def load_usage(manifest, manifest_path, project_dir=None):
         if not rows:
             return None
 
-        def slim(by):
+        # One pass per dimension, hoisted. `aggregate` walks EVERY ledger row and
+        # this dict asked for the same four dimensions more than once: `day` three
+        # times (the token, cost and message series are three reads of one
+        # aggregate) and phase/model/author twice each — once for the breakdown,
+        # once for the orientation counts. Eleven full scans for six answers.
+        # Sharing the dicts is safe because nothing here mutates one: `slim` builds
+        # new dicts and the counts only measure key sets.
+        by_day = ul.aggregate(rows, "day")
+        by_phase = ul.aggregate(rows, "phase")
+        by_model = ul.aggregate(rows, "model")
+        by_author = ul.aggregate(rows, "author")
+
+        def slim(agg):
+            """The three fields a breakdown renders, out of a finished aggregate."""
             return {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
                         "msgs": v["msgs"]}
-                    for k, v in ul.aggregate(rows, by).items()}
+                    for k, v in agg.items()}
 
         phase_model = {}
         for r in rows:
@@ -153,10 +166,10 @@ def load_usage(manifest, manifest_path, project_dir=None):
 
         return {
             "totals": ul.totals(rows),
-            "byPhase": slim("phase"),
-            "byModel": slim("model"),
-            "byAuthor": slim("author"),
-            "byAgent": slim("agent"),
+            "byPhase": slim(by_phase),
+            "byModel": slim(by_model),
+            "byAuthor": slim(by_author),
+            "byAgent": slim(ul.aggregate(rows, "agent")),
             "phaseModel": phase_model,
             "phaseTitles": titles,
             "taskTitles": {t["id"]: t.get("title") or ""
@@ -164,11 +177,11 @@ def load_usage(manifest, manifest_path, project_dir=None):
                            if isinstance(ph, dict)
                            for t in (ph.get("tasks") or [])
                            if isinstance(t, dict) and t.get("id")},
-            "daily": {k: v["tokens"] for k, v in ul.aggregate(rows, "day").items()
+            "daily": {k: v["tokens"] for k, v in by_day.items()
                       if k != "unknown"},
-            "dailyCost": {k: v["costUSD"] for k, v in ul.aggregate(rows, "day").items()
+            "dailyCost": {k: v["costUSD"] for k, v in by_day.items()
                           if k != "unknown"},
-            "dailyMsgs": {k: v["msgs"] for k, v in ul.aggregate(rows, "day").items()
+            "dailyMsgs": {k: v["msgs"] for k, v in by_day.items()
                           if k != "unknown"},
             # Per-date hour vectors (C1/C3): {"YYYY-MM-DD": [24 ints]}. The 7x24
             # heatmap aggregates AWAY the calendar, so it cannot be navigated by
@@ -200,9 +213,9 @@ def load_usage(manifest, manifest_path, project_dir=None):
             # looking at" — a question the tiles cannot answer, and one that would
             # cost five more tiles to answer badly.
             "counts": {
-                "phases": len([k for k in ul.aggregate(rows, "phase") if k != "--"]),
-                "people": len(ul.aggregate(rows, "author")),
-                "models": len(ul.aggregate(rows, "model")),
+                "phases": len([k for k in by_phase if k != "--"]),
+                "people": len(by_author),
+                "models": len(by_model),
                 "sessions": len([k for k in ul.aggregate(rows, "session")
                                  if k != "unknown"]),
                 "days": len(days),
@@ -401,7 +414,15 @@ def _usage_trend(u):
     if len(days) < 2:
         return ""
     w, h, pad_b, pad_t = 720.0, 210.0, 22.0, 14.0
-    peak = max(daily[d] for d in days) or 1
+    peak = max(daily[d] for d in days)
+    if not peak:
+        # No `or 1`. Every column is scaled against the peak and the y axis is
+        # LABELLED with it, so a fabricated denominator of 1 drew a flat 1px
+        # baseline under an axis reading "1" and an aria-label claiming a peak of
+        # one token — a measurement of a ledger that recorded none. There is no
+        # shape to plot, so nothing is plotted, the same answer this section
+        # already gives a zero-token ledger rather than an empty frame.
+        return ""
     slot = w / len(days)
     bw = min(24.0, max(2.0, slot - 3.0))
     plot = h - pad_b - pad_t
@@ -520,12 +541,17 @@ def _author_chips(u):
     data = u.get("byAuthor") or {}
     if len(data) < 2:
         return ""
-    total = sum(v["tokens"] for v in data.values()) or 1
+    # No `or 1`. That is not a divide guard, it is a fabricated denominator: with
+    # every author at zero tokens it turned an unmeasurable share into a confident
+    # `0%`, and any non-zero part over a zero whole into a multiple of 100%.
+    # `fmt_share` is the one share rule in the tree and it says `?` for "there is
+    # no whole to divide by" — the same `<1%` floor and the same rounding for
+    # every share that CAN be computed, so nothing measurable renders differently.
+    total = sum(v["tokens"] for v in data.values())
     show_cost = u.get("showCost", True)
     chips = []
     for a, v in sorted(data.items(), key=lambda kv: -kv[1]["tokens"]):
-        share = 100.0 * v["tokens"] / total
-        share_txt = "<1%" if 0 < share < 1 else "%.0f%%" % share
+        share_txt = _fmt.fmt_share(v["tokens"], total)
         chips.append(
             '<button type="button" class="fchip" data-au="%s" data-tokens="%s" '
             'data-cost="%s" data-msgs="%s" data-share="%s" '
@@ -1656,6 +1682,24 @@ def _selftest():
     # preserveAspectRatio="none" scales the coordinate system non-uniformly, and
     # that scales the glyphs with it - measured at +49% width on a 1072px render.
     # The bars are meant to stretch; the type is not, so the type is not in there.
+    # u28b: the trend's own `or 1`. Two days that both recorded zero tokens is a
+    # peak of zero, and the fabricated denominator drew a flat 1px baseline under
+    # a y axis labelled `1` and an aria-label reading "peak 1" — a token count
+    # nothing in the ledger recorded. The fixture keeps TWO days so the
+    # `len(days) < 2` guard above cannot be what produces the empty string.
+    check("u28b an all-zero trend renders nothing rather than a flat baseline "
+          "under a y axis labelled with a peak nobody recorded",
+          _usage_trend(dict(_u, daily={"2026-08-01": 0, "2026-08-02": 0})) == ""
+          and "peak 1" not in _usage_trend(dict(_u, daily={"2026-08-01": 0,
+                                                           "2026-08-02": 0})))
+    # ...and the other direction: the guard must not swallow a real series. A
+    # single zero DAY inside a series that has a peak still draws its column, so
+    # an implementation that returned "" on any zero is caught here.
+    check("u28c one quiet day inside a real series still draws its chart",
+          'data-d="2026-08-02"' in _usage_trend(
+              dict(_u, daily={"2026-08-01": 900000, "2026-08-02": 0}))
+          and "peak 900.0K" in _usage_trend(
+              dict(_u, daily={"2026-08-01": 900000, "2026-08-02": 0})))
     _trend = _usage_trend(_u)
     check("u29 no text is drawn inside the stretched chart space",
           "<text" not in _trend and 'class="xt"' in _trend
@@ -1782,6 +1826,31 @@ def _selftest():
               "b@x.io": {"tokens": 1, "costUSD": 0.0, "msgs": 1}})))
     check("ua7 every smcell names its author so a chip can find it",
           _usage_section(_sm).count('data-author=') >= 2)
+    # ua8: the `or 1` that used to sit under this share was not a divide guard.
+    # Two authors, both at zero tokens, is a whole of zero — and the old
+    # expression fabricated a denominator of 1 and printed a confident `0%`,
+    # indistinguishable from a real measurement of a real share. `?` says the
+    # share could not be computed. Counted, not merely found: BOTH chips must
+    # carry it, so an implementation that says `?` for one and `0%` for the other
+    # is caught too.
+    _ac0 = _author_chips(dict(_u, byAuthor={
+        "a@x.io": {"tokens": 0, "costUSD": 0.0, "msgs": 3},
+        "b@x.io": {"tokens": 0, "costUSD": 0.0, "msgs": 2}}))
+    check("ua8 with no tokens at all the share is `?`, never the `0%` an `or 1` "
+          "denominator manufactured",
+          _ac0.count('data-share="?"') == 2
+          and 'data-share="0%"' not in _ac0)
+    # ua9 is the other direction, and it looks vacuous on purpose: it is the case
+    # that fails if the unmeasurable branch becomes unconditional. A share that
+    # CAN be computed must still render exactly as it always did — 500K of 1.5M
+    # is 33%, and the sub-one-percent floor still says `<1%` rather than `0%`.
+    # (`<1%` reaches the attribute escaped, as every value in this file does.)
+    check("ua9 a measurable share is unchanged by the adoption - and a real "
+          "sub-one-percent slice still floors at `<1%`, never `0%`",
+          'data-share="33%"' in _ac
+          and 'data-share="&lt;1%"' in _author_chips(dict(_u, byAuthor={
+              "a@x.io": {"tokens": 1000000, "costUSD": 8.0, "msgs": 30},
+              "b@x.io": {"tokens": 500, "costUSD": 0.1, "msgs": 1}})))
 
     # --- monthly overview (um) ------------------------------------------------
     check("um1 the monthly table renders both halves and its caption names the "
@@ -1839,6 +1908,60 @@ def _selftest():
               bool(_lu) and _lu.get("monthly", {}).get("months")
               == ["2026-07", "2026-08"]
               and _lu["monthly"]["plan"]["2026-08"]["tasksCompleted"] == 1)
+
+        # ul1: one aggregate pass per dimension. `aggregate` walks every ledger
+        # row, and the return dict used to ask for `day` three times and
+        # phase/model/author twice each — eleven full scans for six answers, all
+        # of them identical. COUNTED rather than merely observed: a `>= 1` here
+        # would pass on the three-pass version, which is the whole thing being
+        # pinned. The spy hangs off `_loader.load_script` because `load_usage`
+        # loads its own usage_ledger with `cache=False`, so there is no module
+        # object to patch from out here — and it is restored in a `finally`,
+        # since a leaked patch would silently re-route every later case.
+        _agg_calls = []
+        _real_load = _loader.load_script
+
+        def _counting_load(*a, **kw):
+            mod = _real_load(*a, **kw)
+            _real_agg = mod.aggregate
+
+            def _spy(rows, by):
+                _agg_calls.append(by)
+                return _real_agg(rows, by)
+
+            mod.aggregate = _spy
+            return mod
+
+        _loader.load_script = _counting_load
+        try:
+            _lu2 = load_usage({"meta": {}, "phases": [], "bugs": []},
+                              os.path.join(_tmp, "m.json"), _tmp)
+        finally:
+            _loader.load_script = _real_load
+        check("ul1 load_usage aggregates each dimension exactly once - the day, "
+              "phase, model and author passes are hoisted, not repeated",
+              bool(_lu2)
+              and [_agg_calls.count(_d) for _d in ("day", "phase", "model",
+                                                   "author", "agent", "session")]
+              == [1, 1, 1, 1, 1, 1],
+              repr(sorted(_agg_calls)))
+        # ul1b, the other direction: hoisting must not have dropped a dimension.
+        # A pass that stops happening at all also satisfies "not repeated", and
+        # the counts above would still read 1 for the rest — this asserts the
+        # OUTPUT the hoisted passes feed is still there and still distinct.
+        check("ul1b the hoisted passes still produce their three distinct day "
+              "series and their phase/model/author breakdowns",
+              bool(_lu2)
+              and sorted(_lu2["daily"]) == ["2026-07-03", "2026-08-04"]
+              and sorted(_lu2["dailyCost"]) == sorted(_lu2["daily"])
+              and sorted(_lu2["dailyMsgs"]) == sorted(_lu2["daily"])
+              and _lu2["daily"]["2026-07-03"] == 15
+              and _lu2["dailyCost"]["2026-07-03"] == 0.1
+              and _lu2["dailyMsgs"]["2026-07-03"] == 1
+              and list(_lu2["byModel"]) == ["claude-opus-5"]
+              and list(_lu2["byAuthor"]) == ["a@x.io"]
+              and _lu2["counts"]["models"] == 1
+              and _lu2["counts"]["people"] == 1)
     finally:
         _sh.rmtree(_tmp, ignore_errors=True)
 
