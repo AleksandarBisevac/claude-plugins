@@ -227,6 +227,100 @@ def house_style_violations(dirs=None):
     return violations
 
 
+def _module_string_constants(tree):
+    """`{NAME: (value, line)}` for MODULE-LEVEL `NAME = "literal"` assignments.
+
+    Module level only — `tree.body`, not `ast.walk`. A same-named local inside a
+    function is a different name with a different lifetime, and folding the two
+    together would report a constant as duplicated by a variable that shadows it
+    for three lines.
+    """
+    found = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target, value = node.targets[0], node.value
+        if isinstance(target, ast.Name) and isinstance(value, ast.Constant) \
+                and isinstance(value.value, str):
+            found[target.id] = (value.value, node.lineno)
+    return found
+
+
+def _names_read(tree):
+    """Every name this module reads, as a bare name OR through an attribute.
+
+    The attribute half matters: a constant nothing in its own file reads may still
+    be another module's `panel_server.CONFIG_REL`, and deleting it would break a
+    reader this file cannot see. Collecting `node.attr` across the tree is coarse —
+    an unrelated `x.CONFIG_REL` counts — but it errs toward silence, which is the
+    right direction for a lint whose remedy is DELETION.
+    """
+    read = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            read.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            read.add(node.attr)
+    return read
+
+
+def redundant_constants(dirs=None):
+    """(filename, line, what) for a constant that is BOTH duplicated and dead.
+
+    `panel-server.py` declared `CONFIG_REL = ".claude/audit.config.json"` and never
+    read it, while importing `_panel_state`, which declares the same name with the
+    same value and actually uses it. Nothing was broken and nothing would ever have
+    gone red — the copy simply sat there being a second place the fact could drift
+    from, and a reader grepping for the name found two answers.
+
+    Both halves of the test are load-bearing, and the rule is narrow ON PURPOSE:
+
+    - **duplicated** — a lone constant is a constant, not a defect.
+    - **never read in its own module** — a duplicate that IS read is a real
+      dependency, and removing it is a refactor with call sites to move. That is a
+      different job, and a lint whose fix is sometimes "delete" and sometimes
+      "restructure" gets ignored. When this fires, deletion is always correct.
+    - **same directory only** — `hooks/` may not import `scripts/`, so
+      `hooks/_config.CONFIG_REL` and `_panel_state.CONFIG_REL` are an IRREDUCIBLE
+      pair. Reporting them would be demanding a fix the layer rule forbids, and a
+      lint that cries about something nobody may fix teaches people to skip it.
+      That pair is held true by `_usage_core`'s pricing cases instead — read, not
+      merged.
+
+    Scanned per directory through `py_files`, so a file one level down counts.
+    """
+    dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR)
+    violations = []
+    for d in dirs:
+        declared = {}
+        unread = {}
+        for name, path in py_files(d):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=name)
+            except (OSError, SyntaxError):
+                # house_style_violations already reports an unparseable file by
+                # name; saying it twice adds noise, not information.
+                continue
+            consts = _module_string_constants(tree)
+            read = _names_read(tree)
+            unread[name] = set(n for n in consts if n not in read)
+            for const_name, (value, line) in consts.items():
+                declared.setdefault((const_name, value), []).append((name, line))
+        for (const_name, value), sites in sorted(declared.items()):
+            if len(sites) < 2:
+                continue
+            others = [n for n, _ in sites]
+            for name, line in sites:
+                if const_name not in unread.get(name, ()):
+                    continue
+                elsewhere = ", ".join(n for n in others if n != name)
+                violations.append((name, line,
+                                   "%s = %r is never read here and is already "
+                                   "declared in %s" % (const_name, value, elsewhere)))
+    return violations
+
+
 # --- selftest -----------------------------------------------------------------
 def _selftest():
     import subprocess
@@ -458,6 +552,73 @@ def _selftest():
               "usage/clean_entry.py" not in missing)
     finally:
         shutil.rmtree(rec, ignore_errors=True)
+
+    # ------------------------------------------------- duplicated AND dead constants
+    # Built as files rather than asserted against the real tree, because the real
+    # tree is (now) clean and a lint only ever seen returning [] is a lint that
+    # might be returning [] for the wrong reason.
+    dup_a = tempfile.mkdtemp(prefix="audit-output-dup-a-")
+    dup_b = tempfile.mkdtemp(prefix="audit-output-dup-b-")
+    try:
+        def _w(root, rel, text):
+            path = os.path.join(root, rel)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        # owner: declares the constant and uses it.
+        _w(dup_a, "owner.py", 'REL = ".claude/x.json"\n\n\ndef p(root):\n'
+                              '    return root + REL\n')
+        # dead_dup: same name, same value, never read here. THE defect.
+        _w(dup_a, "dead_dup.py", 'import os\nREL = ".claude/x.json"\n\n\n'
+                                 'def p(root):\n    return os.sep\n')
+        # live_dup: same name and value, but READ here - a real dependency, so
+        # deleting it is a refactor and this lint must stay quiet.
+        _w(dup_a, "live_dup.py", 'REL = ".claude/x.json"\n\n\ndef p(root):\n'
+                                 '    return root + REL\n')
+        # lonely: never read, but nothing else declares it - a constant, not a copy.
+        _w(dup_a, "lonely.py", 'import os\nONLY = "solo"\n\n\ndef p():\n'
+                               '    return os.sep\n')
+        # attr_read: never read as a bare name, but read through an attribute, which
+        # is what a cross-module `mod.NAME` looks like from inside this file.
+        _w(dup_a, "attr_read.py", 'import os\nSHARED = "s"\n\n\ndef p(m):\n'
+                                  '    return m.SHARED + os.sep\n')
+        _w(dup_a, "attr_other.py", 'SHARED = "s"\n\n\ndef q():\n    return SHARED\n')
+        # the cross-directory pair: identical, dead on one side, and IRREDUCIBLE.
+        _w(dup_b, "hooks_copy.py", 'import os\nREL = ".claude/x.json"\n\n\n'
+                                   'def p():\n    return os.sep\n')
+
+        dups = redundant_constants([dup_a])
+        named = ["%s:%d" % (n, l) for n, l, _w2 in dups]
+        check("rc1 a constant that is declared elsewhere AND never read in its own "
+              "module is reported, by file and line: %r" % (named,),
+              named == ["dead_dup.py:2"])
+        check("rc2 ...and the message names the OTHER declaration, so the fix does "
+              "not start with a grep: %r" % ([w for _n, _l, w in dups],),
+              dups and "live_dup.py" in dups[0][2] and "owner.py" in dups[0][2])
+        check("rc3 a duplicate that IS read stays silent - removing it is a "
+              "refactor with call sites, not a deletion, and a lint whose remedy "
+              "changes shape gets ignored",
+              not any(n == "live_dup.py" for n, _l, _w2 in dups))
+        check("rc4 an unread constant nobody else declares stays silent - being "
+              "unused is not this lint's business",
+              not any(n == "lonely.py" for n, _l, _w2 in dups))
+        check("rc5 a constant read only through an ATTRIBUTE counts as read, so a "
+              "lint whose remedy is DELETION cannot delete another module's reader",
+              not any(n == "attr_read.py" for n, _l, _w2 in dups))
+        check("rc6 the same name and value in a DIFFERENT directory is not "
+              "reported - hooks/ may not import scripts/, so that pair is "
+              "irreducible and demanding a fix the layer rule forbids trains "
+              "people to skip the lint: %r"
+              % (redundant_constants([dup_a, dup_b]),),
+              not any(n == "hooks_copy.py"
+                      for n, _l, _w2 in redundant_constants([dup_a, dup_b])))
+    finally:
+        shutil.rmtree(dup_a, ignore_errors=True)
+        shutil.rmtree(dup_b, ignore_errors=True)
+
+    check("rc7 ...and the real tree carries none. This is the case that goes red "
+          "when somebody adds the next copy: %r" % (redundant_constants(),),
+          redundant_constants() == [])
 
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:
