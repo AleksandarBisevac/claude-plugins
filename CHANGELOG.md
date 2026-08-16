@@ -147,6 +147,55 @@ the team's own tags. Plus, user-requested: `meta.ado.tag` — the provenance tag
 personalizable per repo (default `audit-plugin`, `null` = none), pairing with
 `pull.tags` for per-repo push/pull symmetry on shared sprints.
 
+**A fifth lifecycle state, and a table that answers.** `cancelled` joins `done` as
+terminal: a phase can finish without being done. Readiness treats a cancelled blocker as
+settled, sign-off accepts done-or-cancelled, the report files it under Archived, sync maps
+it to Removed, and `/audit:task cancel <id> --reason "<why>"` records the reason, the
+moment and a journal row, cascading to work still open inside a cancelled phase. The
+report's phases table gains a named **View** — active & pending / archived / all —
+replacing an archive toggle nobody found; a search that matches rows the view hides says
+so and offers the one press that shows them, and the view and every filter survive a
+reload, including over `file://`. Each task gains a detail row carrying the full outcome
+in both voices, both timestamps, owner, branch, work item, model, skills and what it waits
+on, so model / outcome / ADO could leave the compact row and rows are one line again. The
+panel's Overview follows the same shape and opens a phase in place.
+
+**Themes as data.** A new Appearance tab, and a theme is token *values* in a DTCG-shaped
+JSON file: the compiler substitutes them into the stylesheet, so the default theme compiles
+back to the shipped sheet byte for byte and a theme can change values and nothing else.
+Light and dark pairs sit side by side with the live column marked, contrast is warned but
+never refused, charts sit behind a deliberate unlock, density is one multiplier over the
+spacing scale, and Save-as writes to `.claude/themes/`. Reports render wearing the same
+theme.
+
+**Seven dogfooding findings, each reproduced before it was fixed.** The composition
+dropdown flickered and fled the pointer because `tr.phase:hover>td` carried a `filter`,
+making that cell the containing block of every `position:fixed` descendant; the menu is now
+one element on `<body>`. Spend with no plan behind it read as `--` across four spellings on
+three surfaces and is now one word from the shared label map. And `guard-secrets-read`
+refused a read-only one-liner as a source write — the heuristic matched a write shape and a
+source path anywhere in one clause without checking they were the same thing.
+
+**The rules that govern an edit became something a session can read.** A root `CLAUDE.md`
+states the hard rules and defers to `CONTRIBUTING.md` and `PLUGIN-BUILD-GUIDE.md` rather
+than restating them, and eight dev-time skills land under `.claude/skills/` — three copied
+from `wdm0006/python-skills` (MIT) at a pinned commit and trimmed where they contradict this
+repo, five written here because nothing off the shelf fits a stdlib-only, annotation-free,
+3.8-floor tree with a build-less front end. `writing-python`, `writing-javascript` and
+`writing-css` fire at write time rather than at review time. None of it ships to plugin
+users; `plugins/audit/skills/` still holds exactly the two thin routers.
+
+**Two gates that were lying, and one that could not see.** The segment-CSV checks pulled the
+commit sha and completion stamp out of a row with a naive `split(',')`, so any row whose
+title carried a comma shifted every later column and the export was accused of a defect that
+was in the diagnosis — green on every fixture CI renders, red only against a plan whose
+titles read like prose. `docs/demo-large.html` predated the report's view selector, so the
+interactive checker died on an unhandled timeout instead of the exit-2 "cannot check" it has
+for older reports. And `_deps` gained `ui_navigability_violations()`: the 400-line
+section-marker rule now reaches `scripts/ui/`, which the `.py`-only lint had never seen, as a
+density (one marker per 400 lines) because those assets run 2–11× longer than the longest
+`.py` in the tree.
+
 ## [0.38.1] - 2026-08-15
 
 **The round's own leftovers, swept.** `meta.ado` itself now has a shape — a bare string
