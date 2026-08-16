@@ -290,6 +290,203 @@ def main(argv):
     return 0
 
 
+# --- bench ----------------------------------------------------------------------
+# WHY, AND WHY IT IS NOT A GATE. Until this landed there was not one `perf_counter`
+# or benchmark in the repository, while several comments stated measured costs that
+# nobody — including their author — could produce again. This prints numbers a human
+# can run twice and compare; it is deliberately NOT a CI threshold, because a shared
+# runner's noise floor is wider than the regressions worth catching and a gate that
+# flaps teaches people to ignore it.
+#
+# PHASES SEPARATELY, NEVER ONE TOTAL. Earlier profiling claimed the ledger analytics
+# dominate the HTML build several times over. Whether that is still true is exactly
+# what a single total would hide — and the two grow with DIFFERENT things: the ledger
+# pass with rows, everything else with the plan. So each phase is timed on its own
+# and printed against the denominator that makes it comparable across scales.
+#
+# BEST-OF-N, NOT THE MEAN, and the definition of that has ONE home:
+# `_usage_analytics._time_best`. See the note at the call site for why it is reached
+# the way it is.
+_BENCH_SCALES = ((10, 5), (50, 20))
+_BENCH_REPEATS = 3
+
+# Which denominator makes each phase comparable across scales. The ledger pass grows
+# with ROWS; everything else grows with the PLAN. `bn5` pins that this table covers
+# exactly the phases `_bench_phases` returns, so a phase added later without a
+# denominator fails by name instead of printing a bare millisecond figure.
+_BENCH_PER = {"validate": "task", "rollup": "task", "usage load": "row",
+              "html": "task", "markdown": "task"}
+
+
+def _bench_fixture(out_dir, phases, tasks):
+    """Build the demo manifest AND a matching ledger in `out_dir`, by RUNNING the
+    two generators. Returns {manifestPath, tasks, rows, ledgerDir}.
+
+    `gen-demo-manifest.py` and `gen-demo-usage.py` already produce exactly this
+    fixture, deterministically — hand-rolling a third one here would be a fixture
+    that nothing else validates. They are run as COMMANDS, the same way ci.yml and
+    tools/capture-screenshots.mjs build the demo, for two reasons:
+
+      * both are entry points at layer 7, the same layer as this file, so loading
+        one through `_loader` would add a peer edge to `_deps.KNOWN_LAYER_DEBT` —
+        a list whose whole contract is that it may only ever SHRINK. A change that
+        adds measurement must not enlarge the module graph;
+      * out of process, the fixture build cannot contaminate what it is a fixture
+        for: its imports, its loader cache and its garbage stay out of the very
+        process whose timings this reports.
+
+    A generator that fails raises with its stderr attached rather than leaving the
+    caller to time an empty directory and report a suspiciously fast render.
+    """
+    import subprocess
+    gen_manifest = os.path.join(_HERE, "gen-demo-manifest.py")
+    gen_usage = os.path.join(_HERE, "gen-demo-usage.py")
+    manifest_path = os.path.join(out_dir, "audit-plan.json")
+    # The generators do not read it, but the bench must never be one environment
+    # variable away from resolving a ledger somewhere else on this machine.
+    env = dict(os.environ)
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    for cmd in ([sys.executable, gen_manifest, out_dir,
+                 "--phases", str(phases), "--tasks", str(tasks)],
+                [sys.executable, gen_usage, manifest_path]):
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, env=env)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                "%s exited %d: %s" % (os.path.basename(cmd[1]), proc.returncode,
+                                      (proc.stderr or b"").decode("utf-8",
+                                                                  "replace").strip()))
+    ledger_dir = os.path.join(out_dir, ".claude", "usage")
+    rows = 0
+    for name in sorted(os.listdir(ledger_dir)):
+        if not name.endswith(".jsonl"):
+            continue
+        with open(os.path.join(ledger_dir, name), "r", encoding="utf-8") as fh:
+            rows += sum(1 for line in fh if line.strip())
+    return {"manifestPath": manifest_path, "ledgerDir": ledger_dir,
+            "tasks": phases * tasks, "rows": rows}
+
+
+def _bench_phases(manifest, manifest_path, project_dir):
+    """`(label, thunk)` for the five phases of a render, in the order `main()`
+    runs them.
+
+    Each thunk hands its output to the next through one dict, because that is what
+    `main()` does: the summary is rollup's output and both writers need it. Timing
+    them separately is the whole point — see the section note above.
+
+    `load_usage` is handed `project_dir` EXPLICITLY. Left to itself it falls back to
+    `CLAUDE_PROJECT_DIR`, which every Claude Code session sets to the real
+    repository — the bench would then load, time and report THIS repo's own live
+    ledger instead of the fixture's, and the number would look perfectly reasonable.
+    """
+    lib = _load_status_lib()
+    vm = lib._load_validator()
+    out = {}
+
+    def _validate():
+        out["findings"], out["warnings"] = vm.validate(manifest)
+        return out["findings"]
+
+    def _rollup():
+        out["summary"] = lib.rollup(manifest, out.get("findings") or [],
+                                    out.get("warnings") or [])
+        return out["summary"]
+
+    def _usage():
+        out["usage"] = load_usage(manifest, manifest_path,
+                                  project_dir=project_dir)
+        return out["usage"]
+
+    def _html():
+        return render_html(manifest, out["summary"], "bench", out["usage"])
+
+    def _markdown():
+        return render_md(manifest, out["summary"], out["usage"])
+
+    return (("validate", _validate), ("rollup", _rollup), ("usage load", _usage),
+            ("html", _html), ("markdown", _markdown))
+
+
+def _bench(scales=None, repeats=None):
+    """Time a full render at each scale. 0 when every scale ran, 1 if one failed.
+
+    The fixture is built in a temp directory and DELETED before this returns, at
+    every scale, including the failing ones — a bench that leaves a fixture behind
+    is a bench whose next run measures something else.
+    """
+    import shutil
+    import tempfile
+    # ONE definition of best-of-N, in `_usage_analytics`, beside the note that
+    # argues for the minimum over the mean. A second copy here is how two benches
+    # start disagreeing about what "the time" means — the same way this repo's
+    # token formatter drifted once it existed twice. Reached through `_loader`
+    # rather than by `import` for a reason worth stating: a static import would
+    # change `_deps.render()`'s module map, which is byte-pinned to a fence in
+    # PLUGIN-BUILD-GUIDE.md, and a measurement-only change must not rewrite the
+    # architecture guide. The runtime edge is L7 -> L2, strictly downward, so the
+    # layer rule is satisfied either way.
+    analytics = _loader.load_script("_usage_analytics.py",
+                                    modname="usage_analytics_bench")
+    scales = scales if scales is not None else _BENCH_SCALES
+    repeats = repeats if repeats is not None else _BENCH_REPEATS
+    print("render-report --bench  (python %s on %s)"
+          % (sys.version.split()[0], sys.platform))
+    print("fixture:  gen-demo-manifest.py + gen-demo-usage.py, run as commands "
+          "into a temp dir that is deleted before this exits")
+    print("timing:   best of %d runs per phase - the MINIMUM, not the mean, "
+          "because other load can only make a call slower" % repeats)
+    rc = 0
+    for phases, tasks in scales:
+        tmp = tempfile.mkdtemp(prefix="render-report-bench-")
+        try:
+            fx = _bench_fixture(tmp, phases, tasks)
+            manifest = _mio.load_manifest(fx["manifestPath"])
+            print("")
+            print("%d phases x %d tasks (%s tasks, %s ledger rows)"
+                  % (phases, tasks, "{:,}".format(fx["tasks"]),
+                     "{:,}".format(fx["rows"])))
+            seen = {}
+            for label, thunk in _bench_phases(manifest, fx["manifestPath"], tmp):
+                seconds, _ = analytics._time_best(thunk, repeats)
+                seen[label] = seconds
+                per = fx["rows"] if _BENCH_PER[label] == "row" else fx["tasks"]
+                print("  %-11s %8.2f ms  (%7.2f us/%s)"
+                      % (label, seconds * 1e3, seconds * 1e6 / max(1, per),
+                         _BENCH_PER[label]))
+            total = sum(seen.values())
+            # A SUM of minima, not a measured whole-render time - said so rather
+            # than printed as if one run had been observed taking it.
+            print("  %-11s %8.2f ms  (%7.2f us/task)"
+                  % ("sum of min", total * 1e3,
+                     total * 1e6 / max(1, fx["tasks"])))
+            if seen.get("html"):
+                print("  the ledger pass is %.1fx the HTML build"
+                      % (seen["usage load"] / seen["html"]))
+        except Exception as exc:             # a failed scale must not read as fast
+            sys.stderr.write("ERROR: bench failed at %d x %d: %s\n"
+                             % (phases, tasks, exc))
+            rc = 1
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return rc
+
+
+def _mode(argv):
+    """Which mode the flags ask for: 'selftest', 'bench' or 'render'.
+
+    `--selftest` WINS over `--bench` when both are given. CI runs `--selftest` on
+    every `.py` in the tree on two platforms; a suite that could turn into a
+    benchmark run because a stray flag came along would be paid for on every push.
+    A mode that can be entered by accident will be.
+    """
+    if "--selftest" in argv:
+        return "selftest"
+    if "--bench" in argv:
+        return "bench"
+    return "render"
+
+
 # --- selftest -------------------------------------------------------------------
 def _selftest():
     import tempfile
@@ -1518,6 +1715,119 @@ def _selftest():
           and not os.path.exists(os.path.join(bdir2, "audit-report.html"))
           and not os.path.exists(os.path.join(tmp, "etc", "passwd.html")))
 
+    # --- bn: the bench harness measures what it claims -------------------------
+    # A bench that silently measures the wrong thing is worse than none. These run
+    # at the smallest scale the fixture supports; the numbers are not asserted (a
+    # threshold on a shared machine is the flaky gate this feature refuses to be),
+    # only that each timed phase does the work its label claims, over the FIXTURE's
+    # ledger rather than this repository's live one.
+    check("bn1 --selftest wins over --bench whichever order they arrive in, so "
+          "CI's per-file sweep can never turn into a benchmark run; anything "
+          "else is still a render",
+          _mode(["--selftest"]) == "selftest" and _mode(["--bench"]) == "bench"
+          and _mode(["--selftest", "--bench"]) == "selftest"
+          and _mode(["--bench", "--selftest"]) == "selftest"
+          and _mode(["m.json"]) == "render" and _mode([]) == "render")
+    _bd = os.path.join(tmp, "bench")
+    os.makedirs(_bd, exist_ok=True)
+    _fx = _bench_fixture(_bd, 3, 2)
+    # Recounted through the REAL ledger reader, not by running this file's own
+    # counting loop a second time: a count re-derived the same way would agree
+    # with itself however wrong it was, and every per-row figure the bench prints
+    # divides by this number.
+    _fx_rows = _loader.load_script("usage_ledger.py", modname="usage_ledger",
+                                    cache=False).read_ledger(_fx["ledgerDir"])
+    check("bn2 the fixture really is the size the bench prints beside every "
+          "figure - the task count is the plan's own, and the row count agrees "
+          "with what the ledger reader actually finds in the fixture",
+          _fx["tasks"] == 6 and _fx["rows"] > 0
+          and _fx["rows"] == len(_fx_rows),
+          "%r vs reader %d" % (_fx, len(_fx_rows)))
+    _bman = _mio.load_manifest(_fx["manifestPath"])
+    _bphases = _bench_phases(_bman, _fx["manifestPath"], _bd)
+    check("bn3 every phase named in the printed table has a denominator, and "
+          "the table names no phase that is not timed - a phase added later "
+          "without one fails HERE rather than printing a bare millisecond",
+          set(_BENCH_PER) == set(lbl for lbl, _ in _bphases)
+          and set(_BENCH_PER.values()) == {"row", "task"})
+    # Run the phases IN ORDER and keep what each returned: a thunk that quietly
+    # did nothing would still be timed, and would print a very fast number.
+    _art = {}
+    for _lbl, _thunk in _bphases:
+        _art[_lbl] = _thunk()
+    check("bn4 each timed phase produces that phase's own artifact - validate a "
+          "findings list, rollup a summary, the ledger pass a totals dict, and "
+          "the two writers a whole document each",
+          isinstance(_art["validate"], list)
+          and "phases" in _art["rollup"] and "tasks" in _art["rollup"]
+          and isinstance(_art["usage load"], dict)
+          and "totals" in _art["usage load"]
+          and _art["html"].lstrip().lower().startswith("<!doctype html>")
+          and "## " in _art["markdown"],
+          repr(sorted(_art)))
+    # THE trap this bench exists next to: CLAUDE_PROJECT_DIR is set to the real
+    # repository in every Claude Code session, and load_usage falls back to it.
+    # Pointed at the repo, the ledger pass would time a live, growing ledger and
+    # print a number that looks entirely reasonable. Set it to a decoy and prove
+    # the fixture's own ledger is still what got read.
+    _decoy, _prev_pd = os.path.join(tmp, "decoy"), os.environ.get("CLAUDE_PROJECT_DIR")
+    os.makedirs(_decoy, exist_ok=True)
+    os.environ["CLAUDE_PROJECT_DIR"] = _decoy
+    try:
+        _scoped = dict((lbl, fn) for lbl, fn in
+                       _bench_phases(_bman, _fx["manifestPath"], _bd))["usage load"]()
+    finally:
+        if _prev_pd is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev_pd
+    check("bn5 the ledger pass reads the FIXTURE's ledger even when "
+          "CLAUDE_PROJECT_DIR points elsewhere - project_dir is passed "
+          "explicitly, so an ambient env var cannot redirect the bench onto "
+          "this repository's own live ledger",
+          isinstance(_scoped, dict)
+          and _scoped["totals"]["tokens"]
+          == _art["usage load"]["totals"]["tokens"]
+          and _scoped["totals"]["tokens"] > 0,
+          repr(_scoped is None))
+    # DRY, pinned rather than asserted in a comment: best-of-N has one definition,
+    # in _usage_analytics. Two copies would let one take the mean.
+    _ua = _loader.load_script("_usage_analytics.py", modname="usage_analytics_bench")
+    check("bn6 the report bench times with the ledger bench's harness rather "
+          "than a second copy - one definition of best-of-N, in one place",
+          callable(_ua._time_best) and "_time_best" not in globals())
+    # Exit code and the printed contract, at the smallest scale. Counted, not
+    # merely found: one timing line per phase plus the sum line.
+    import io
+
+    def _tmp_bench_dirs():
+        return set(d for d in os.listdir(tempfile.gettempdir())
+                   if d.startswith("render-report-bench-"))
+
+    _before_dirs = _tmp_bench_dirs()
+    _bbuf, _bout = io.StringIO(), sys.stdout
+    sys.stdout = _bbuf
+    try:
+        _brc = _bench(scales=((3, 2),), repeats=2)
+    finally:
+        sys.stdout = _bout
+    _btext = _bbuf.getvalue()
+    _leftover = _tmp_bench_dirs() - _before_dirs
+    _blines = [ln for ln in _btext.splitlines() if " ms " in ln]
+    check("bn7 --bench exits 0 and prints, per phase, the size, a wall time in "
+          "ms and the derived per-row or per-task figure - the three things a "
+          "human needs in order to act on it",
+          _brc == 0 and "best of 2 runs" in _btext and "MINIMUM" in _btext
+          and "3 phases x 2 tasks" in _btext and "ledger rows" in _btext
+          and len(_blines) == len(_BENCH_PER) + 1
+          and all(any(lbl in ln for ln in _blines) for lbl in _BENCH_PER)
+          and all(("us/row" in ln or "us/task" in ln) for ln in _blines),
+          repr(_btext[:400]))
+    check("bn8 ...and it leaves no fixture behind - measured as the temp dirs "
+          "that appeared ACROSS the run, so a stale one from some other "
+          "process cannot fail this and a real leak cannot hide behind one",
+          _leftover == set(), repr(sorted(_leftover)))
+
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"
           % ("ALL PASS" if all_pass else "SELFTEST FAILED",
@@ -1528,6 +1838,9 @@ def _selftest():
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if "--selftest" in sys.argv:
+    _MODE = _mode(sys.argv[1:])
+    if _MODE == "selftest":
         sys.exit(_selftest())
+    if _MODE == "bench":
+        sys.exit(_bench())
     sys.exit(main(sys.argv[1:]))
