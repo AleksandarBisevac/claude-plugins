@@ -94,6 +94,8 @@ claude-plugins/                           # this repo (personal, public)
         _loader.py                        # the one way scripts/ loads a sibling script as a library, one cache policy
         _ui_theme.py                      # shared visual tokens (colour/spacing/type/labels) for report + panel
         _deps.py                          # the module layer table, checked against the real import graph every run
+        _usage_core.py                    # usage arithmetic: the price table, the hour bucket, the roll-ups
+        _usage_analytics.py               # what the ledger MEANS: series, bands, budgets, routing, coverage
         usage_ledger.py                   # token-usage metering core: transcript scan, dedup, attribution
         validate-manifest.py              # dependency-free referential validator (cycles, links)
         validate-config.py                # validates .claude/audit.config.json against its schema
@@ -156,20 +158,22 @@ L1:
   _manifest_io -> _output
   _policy -> _output
   _ui_theme -> _output
-  usage_ledger -> _output
+  _usage_core -> _output
 
 L2:
   _panel_settings -> _loader, _output
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _manifest_io, _output, _ui_theme
   _report_ui -> _output, _ui_theme
+  _usage_analytics -> _output, _usage_core
 
 L3:
   _help -> _areas, _loader, _output, _panel_settings, _policy, _ui_theme
-  _report_usage -> _fmt, _loader, _output, _report_html, _ui_theme
+  usage_ledger -> _output, _usage_analytics, _usage_core
 
 L4:
   _panel_discovery -> _help, _manifest_io, _output
+  _report_usage -> _fmt, _loader, _output, _report_html, _ui_theme
 
 L5:
   _panel_state -> _areas, _help, _loader, _manifest_io, _output, _panel_discovery, _policy
@@ -486,6 +490,28 @@ this module's first run found it (`hooks/_config.py` reached `_manifest_io` by p
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it. `--selftest`.
 
+### `plugins/audit/scripts/_usage_core.py`
+The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`
+table plus `rates_for`/`price`, one ISO parser and one hour-bucket rule, and the roll-ups
+(`totals`, `aggregate`, `aggregate_area`, `rows_for_area`, `heatmap`) the CLI, the report and
+the panel all read. Values in, values out — no file, no process, no transcript — which is why
+its 48 cases need no fixture directory. `pricing_divergences()` lives here too: `hooks/_config.py`
+must price a model with no config present and may import nothing from `scripts/`, so its copy
+of the 13 x 5 rate table is deliberate and the `pp` cases are what keep the two identical.
+`--selftest`.
+
+### `plugins/audit/scripts/_usage_analytics.py`
+What the ledger MEANS, as `rows -> dict` functions: `series`, `compare`, `cache_profile`,
+`unit_economics`, `cost_bands`/`band_of`, `phase_budgets`, `retry_cost`, `routing` (+ its
+advice), `coverage` and `monthly_activity`. Every one of these is easy to compute and easy to
+present dishonestly, so the guards live here rather than in each renderer — a projection is
+suppressed below its sample gate, a cache profile reports rates and never a fabricated dollar
+saving, routing advice compares only WITHIN a risk band and only on this repo's own evidence,
+an absent phase budget renders as nothing rather than 0% or 100%. `COST_BAND_PARAMS` is the one
+statement of the relative basis's shape; `panel-server.py` serialises that exact dict into the
+page so `panel.js` cannot restate it differently. Depends on `_usage_core` and nothing else.
+`--selftest`.
+
 ### `plugins/audit/scripts/usage_ledger.py`
 The token-usage metering core `meter-usage.py` and `audit-usage.py --backfill` both call.
 Claude Code hands hooks a `transcript_path`, not token counts, so this reads the transcript
@@ -494,7 +520,11 @@ plus each subagent's sibling `subagents/agent-<id>.jsonl` + `.meta.json`. The on
 trap it exists to close: a single `message.usage` block repeats across every transcript entry
 sharing a `message.id`, so naive summation overcounts spend by roughly 2.4x — this module dedups
 by `message.id` within and across scans. Attribution runs task -> phase -> window ->
-unattributed, highest precision first, nothing ever dropped.
+unattributed, highest precision first, nothing ever dropped. The two layers beneath it
+(`_usage_core`, `_usage_analytics`) were split out when the file passed 2,600 lines, and every
+public name they define is RE-EXPORTED here: nothing imports this module by name — every
+consumer loads `usage_ledger.py` by path and reads attributes off the module object — so the
+module object has to keep serving all of them, and the `rx` cases assert it does.
 
 ### `plugins/audit/scripts/audit-journal.py` (v0.29.0)
 The trail itself: `append(project, entry) -> bool` plus `append | verify | show` on the CLI.

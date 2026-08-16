@@ -69,10 +69,17 @@ LAYERS = (
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
     # other member of this layer - so it belongs beside them, not in a layer of its own.
     ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
-     "usage_ledger", "_deps"),
-    ("_panel_settings", "_panel_ui", "_report_html", "_report_ui"),
-    ("_help", "_report_usage"),
-    ("_panel_discovery",),
+     "_usage_core", "_deps"),
+    ("_panel_settings", "_panel_ui", "_report_html", "_report_ui", "_usage_analytics"),
+    # The usage metering stack is a three-link chain, `_usage_core` -> `_usage_analytics`
+    # -> `usage_ledger`, so it needs three layers under its lowest consumer. That consumer
+    # is `_report_usage`, which sat here beside `_help` and now sits one layer up: moving
+    # ONE module was the whole cost of making room, where inserting a layer would have
+    # renumbered every entry in KNOWN_LAYER_DEBT below without a single edge changing.
+    # `_report_usage` reaches nothing at layer 4 or above, and only render-report (L7)
+    # reaches it, so the move is free.
+    ("_help", "usage_ledger"),
+    ("_panel_discovery", "_report_usage"),
     ("_panel_state",),
     ("_panel_write",),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
