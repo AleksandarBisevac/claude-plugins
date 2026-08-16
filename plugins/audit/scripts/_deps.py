@@ -18,6 +18,18 @@ explaining why that one is safe. A textual grep sees line noise; `ast.walk` sees
 whether it is module-level or fifty lines deep in a function body, which is the only way a
 lint like this is worth trusting.
 
+WHY THE WALK READS `_loader` CALLS TOO, AND WHAT IT COST NOT TO. An `import` statement is a
+MINORITY of the real edges here. Every entry point is hyphenated, so `import audit-status` is
+not legal Python and nothing can spell that edge - scripts/ reaches those siblings through
+`_loader` at runtime instead, and a `_loader.load_script("audit-status.py")` is an `ast.Call`
+that an import walk cannot see at all. For as long as this module looked only at `ast.Import`
+/ `ast.ImportFrom` it reported ZERO violations on a tree carrying twenty-one peer-to-peer or
+upward runtime edges, and printed a clean module map beside them. That is worse than having no
+lint: a rule that is configured, green and structurally blind is believed. `_loader` is the
+ONE loading mechanism scripts/ has (that is the whole point of its own docstring), so its call
+shapes are read here as edges of the same graph - see `_runtime_loaded_sibling_names` for the
+shapes covered and the one that is deliberately not.
+
 WHY LAYERS, NOT A STRICT TOPOLOGICAL SORT. The tightest possible layering (every node one
 above the highest of its own dependencies) is not what a human wants to read in a guide: it
 would put `audit-journal.py` (which imports only `_output`) two layers below `panel-server.py`
@@ -88,6 +100,149 @@ def _layer_of(name, layers=None):
     return None
 
 
+# --- runtime loads ------------------------------------------------------------
+# hooks/ is deliberately NOT scanned this way. Hooks keep their own copies of the
+# loader and DO reach scripts/ modules by path on purpose, degrading gracefully when
+# the file is not installed; the rule this module enforces for them - no STATIC
+# import of a scripts/ module - is about import-TIME coupling, and reading their
+# runtime loads as violations would fail a design decision rather than a defect.
+_LOADER_MODULE = "_loader"
+
+# `_loader`'s public API is `load`, `load_script` and `load_hooks_config`. The third
+# is left out on purpose rather than forgotten: it takes no path at all and resolves
+# `../hooks/_config.py` by construction, so it can never name a scripts/ sibling, and
+# listing it would imply an edge it cannot produce.
+_LOADER_FUNCS = ("load", "load_script")
+
+
+def _loader_names(tree):
+    """`(module_names, function_names)` - every local name `_loader` is reachable by.
+
+    Both spellings the tree actually uses are covered: plain `import _loader`, and
+    `import _loader as _ldr` (validate-config.py's selftest). `from _loader import
+    load_script` is read as well even though nothing writes it today - an unhandled
+    call shape is not a smaller graph, it is a blind spot that opens silently the
+    first time somebody writes it, which is the exact failure this whole section is
+    repairing.
+    """
+    module_names = set()
+    function_names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == _LOADER_MODULE:
+                    module_names.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or node.module != _LOADER_MODULE:
+                continue
+            for alias in node.names:
+                if alias.name in _LOADER_FUNCS:
+                    function_names.add(alias.asname or alias.name)
+    return module_names, function_names
+
+
+def _is_loader_call(call, module_names, function_names):
+    """True if `call` calls one of `_loader`'s loading functions directly."""
+    func = call.func
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        return func.value.id in module_names and func.attr in _LOADER_FUNCS
+    if isinstance(func, ast.Name):
+        return func.id in function_names
+    return False
+
+
+def _loader_wrapper_names(tree, module_names, function_names):
+    """Local function names that forward a CALLER-CHOSEN target to `_loader`.
+
+    Three files wrap the loader (`audit-doctor._load`, `audit-usage._load`,
+    `_panel_state._load`) and in those the filename is spelled at the CALL SITE, not
+    in the wrapper body, so the call site is where the edge is readable.
+
+    The test is that the wrapper passes one of its OWN parameters into the loader
+    call - that is what makes the caller the one choosing the target. A function that
+    merely hard-codes a load (`_panel_state._cores`, `render-report._load_status_lib`
+    and ~20 more accessors of that shape) is NOT a wrapper: its own body already
+    carries the literal, so following its zero-argument call sites would add nothing
+    and would invent a false edge the day one of them is handed an unrelated `.py`
+    string. Both rules were run over the real tree and agree on it exactly; the
+    narrower one is kept because only it stays true of a tree nobody has read yet.
+    """
+    wrappers = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        params = set(a.arg for a in ast.walk(node.args) if isinstance(a, ast.arg))
+        if not params:
+            continue
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call):
+                continue
+            if not _is_loader_call(sub, module_names, function_names):
+                continue
+            used = set(n.id for n in ast.walk(sub) if isinstance(n, ast.Name))
+            if used & params:
+                wrappers.add(node.name)
+                break
+    return wrappers
+
+
+def _py_literal_basenames(node):
+    """Module basenames of every `"....py"` string literal anywhere inside `node`.
+
+    The directory is dropped, so `os.path.join(_HERE, "..", "hooks",
+    "guard-capabilities.py")` yields `guard-capabilities` - not a scripts/ sibling,
+    therefore not an edge, which is how audit-doctor's two hooks/ loads stay out of
+    this graph. That is also this rule's one false-positive shape: a `../hooks/x.py`
+    load WOULD be recorded against scripts/x.py if both files existed. No such
+    basename collision exists, and the selftest asserts that rather than assuming it.
+    """
+    found = []
+    for sub in ast.walk(node):
+        if not isinstance(sub, ast.Constant) or not isinstance(sub.value, str):
+            continue
+        if sub.value.endswith(".py"):
+            found.append(os.path.basename(sub.value)[:-3])
+    return found
+
+
+def _runtime_loaded_sibling_names(tree, sibling_names, self_name):
+    """Base module names `tree` loads at RUNTIME through `_loader`.
+
+    An edge is counted when a `_loader` loading call - direct, under an alias, or
+    through one of the three local wrappers `_loader_wrapper_names` recognises -
+    contains a string literal ending in `.py` whose basename is one of
+    `sibling_names`. A `modname="usage_ledger"` argument is not one (no `.py`), and a
+    hooks/ filename is not one (no such sibling), so neither invents an edge.
+
+    LIMITATION, deliberate and load-bearing: only a filename SPELLED AS A LITERAL
+    INSIDE THE CALL counts. `_loader.load(os.path.join(_HERE, "render-report.py"))`
+    is read, because the literal is right there in the call expression;
+    `path = os.path.join(_HERE, "audit-journal.py")` on one line followed by
+    `_loader.load(path)` on the next is NOT, and neither is any genuinely computed
+    name. A target this function cannot READ is not a target it may GUESS - widening
+    the scan to "any `.py` literal in the file" would manufacture edges out of error
+    messages and doc strings, and the selftest carries the fixture that goes red the
+    day someone tries it. One real call site is invisible for this reason today
+    (`_panel_state`'s journal loader), and that is a known gap, not a clean scan.
+    """
+    module_names, function_names = _loader_names(tree)
+    if not module_names and not function_names:
+        return []
+    wrappers = _loader_wrapper_names(tree, module_names, function_names)
+
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        wrapped = isinstance(node.func, ast.Name) and node.func.id in wrappers
+        if not (wrapped or _is_loader_call(node, module_names, function_names)):
+            continue
+        for base in _py_literal_basenames(node):
+            if base in sibling_names and base != self_name:
+                found.append(base)
+    return found
+
+
 # --- import graph -------------------------------------------------------------
 def _imported_sibling_names(tree, sibling_names, self_name):
     """Base module names `tree` statically imports that are also in `sibling_names`.
@@ -115,18 +270,19 @@ def _imported_sibling_names(tree, sibling_names, self_name):
     return found
 
 
-def import_graph(script_dir=None):
-    """The real static import graph of scripts/*.py.
+def _scan_edges(script_dir=None):
+    """`(static, runtime, broken)` - the two kinds of edge kept apart, in one pass.
 
-    Returns `(edges, broken)`: `edges` is a sorted list of unique `(importer, imported)`
-    pairs (basenames, no `.py`), `broken` is a sorted list of basenames that would not
-    parse. Flat `os.listdir`, `.py` only, nothing skipped silently - a file that will not
-    parse is reported in `broken` rather than dropped from the scan, the same rule
+    `static` and `runtime` are SETS of `(importer, imported)` pairs (basenames, no
+    `.py`); an edge that is both - a file that imports a sibling and also loads it by
+    path - is in each. `broken` is a sorted list of basenames that would not parse.
+    Flat `os.listdir`, `.py` only, nothing skipped silently: a file that will not parse
+    is reported in `broken` rather than dropped from the scan, the same rule
     `_output.entries_missing_guard` and `_output.house_style_violations` both follow.
 
-    A hyphenated name (every entry point) can appear as an IMPORTER - it runs as a command
-    and can `import _loader` like anything else - but never as an IMPORTED target, since
-    `import panel-server` is not legal Python and nothing can spell that edge.
+    Kept apart for one reason worth the tuple: a violation that says "runtime-loads"
+    instead of "imports" tells the reader which kind of line to go and find, and there
+    is no `import` line to find for most of them.
     """
     script_dir = script_dir or _HERE
     files = {}
@@ -135,7 +291,8 @@ def import_graph(script_dir=None):
             files[fname[:-3]] = fname
     sibling_names = set(files)
 
-    edges = set()
+    static = set()
+    runtime = set()
     broken = []
     for mod, fname in sorted(files.items()):
         path = os.path.join(script_dir, fname)
@@ -146,8 +303,30 @@ def import_graph(script_dir=None):
             broken.append(mod)
             continue
         for imported in _imported_sibling_names(tree, sibling_names, mod):
-            edges.add((mod, imported))
-    return sorted(edges), sorted(broken)
+            static.add((mod, imported))
+        for loaded in _runtime_loaded_sibling_names(tree, sibling_names, mod):
+            runtime.add((mod, loaded))
+    return static, runtime, sorted(broken)
+
+
+def import_graph(script_dir=None):
+    """The real dependency graph of scripts/*.py: static imports AND runtime loads.
+
+    Returns `(edges, broken)` - `edges` a sorted list of unique `(importer, imported)`
+    pairs, `broken` a sorted list of basenames that would not parse. The two kinds are
+    unioned here on purpose: a dependency is a dependency, and `layer_violations()` /
+    `_find_cycle()` must judge the whole graph, not the quarter of it spelled with an
+    `import` keyword. `_scan_edges()` is the same scan with the kinds still separated,
+    for callers that need to say WHICH kind an edge is.
+
+    A hyphenated name (every entry point) is reachable both ways now: as an IMPORTER,
+    because it runs as a command and can `import _loader` like anything else, and as an
+    IMPORTED target, because `_loader.load_script("audit-status.py")` names one where
+    `import audit-status` cannot. It is exactly those targets the old import-only walk
+    could not see.
+    """
+    static, runtime, broken = _scan_edges(script_dir)
+    return sorted(static | runtime), broken
 
 
 def _find_cycle(edges):
@@ -212,6 +391,19 @@ def _hooks_scripts_imports(hooks_dir, script_names):
     return hits
 
 
+def _edge_verb(edge, static, runtime):
+    """How a violation should describe `edge`: the reader has to find the line.
+
+    "imports" sends them looking for an `import` statement, which for most of the
+    edges in this tree does not exist - the dependency is a `_loader` call somewhere
+    in a function body. Naming the kind is the difference between a message that
+    locates the problem and one that sends the reader hunting for the wrong syntax.
+    """
+    if edge in static and edge in runtime:
+        return "imports and runtime-loads"
+    return "imports" if edge in static else "runtime-loads"
+
+
 def layer_violations(script_dir=None, hooks_dir=None, layers=None):
     """(file, what) tuples: everything wrong with the real tree against LAYERS.
 
@@ -221,7 +413,9 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
         the table is exactly as wrong as a new file nobody added to it);
       - an import cycle;
       - an edge where the importer's layer is not STRICTLY above the imported's (same
-        layer included - a same-layer import is still not downward);
+        layer included - a same-layer import is still not downward). Both kinds of
+        edge are judged: the message opens with `imports`, `runtime-loads` or
+        `imports and runtime-loads` so the wording names what is actually on the line;
       - a hooks/*.py static import of a scripts/ module name, with no exceptions - there was
         one, for one import, and both are gone (F11; see the module docstring).
     A file that will not parse is its own violation in every one of the four passes it
@@ -245,20 +439,23 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
                             "assigned a layer in LAYERS but no such file exists "
                             "(stale table entry)"))
 
-    edges, broken = import_graph(script_dir)
+    static, runtime, broken = _scan_edges(script_dir)
+    edges = sorted(static | runtime)
     for mod in broken:
         violations.append((mod + ".py",
                             "file does not parse; cannot be scanned for import edges"))
 
-    for importer, imported in edges:
+    for edge in edges:
+        importer, imported = edge
         li = _layer_of(importer, layers)
         lj = _layer_of(imported, layers)
         if li is None or lj is None:
             continue  # already named above as unassigned
         if not (li > lj):
             violations.append((importer + ".py",
-                                "imports %s (layer %d) from layer %d - not strictly "
-                                "downward" % (imported, lj, li)))
+                                "%s %s (layer %d) from layer %d - not strictly "
+                                "downward" % (_edge_verb(edge, static, runtime),
+                                              imported, lj, li)))
 
     cycle = _find_cycle(edges)
     if cycle:
@@ -280,17 +477,26 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
 
 # --- rendering ----------------------------------------------------------------
 def render(script_dir=None, layers=None):
-    """A deterministic module map: every layer, its members, each member's out-edges.
+    """A deterministic module map: every layer, its members, each member's STATIC
+    out-edges.
 
     The format is committed to from this task on - a later phase generates the guide's
     module map from this exact text, under a drift lint, so two calls on an unchanged tree
     must be byte-identical. Stable inputs only: `LAYERS`' own tuple order for layers, a
     sorted() member list within a layer, sorted() edges per member.
+
+    STATIC ONLY, AND THAT IS A KNOWN GAP, NOT A JUDGEMENT. `layer_violations()` reads
+    the whole graph (see `import_graph`); this map still draws only the `import` edges,
+    because its text is byte-pinned to a fence in PLUGIN-BUILD-GUIDE.md that
+    `map_drift()` compares against and that a change here cannot update. Adding the
+    runtime edges to the picture is a one-line change plus a regenerated fence, and it
+    belongs in the session that owns the guide - not in one that would leave the two
+    disagreeing.
     """
     layers = layers if layers is not None else LAYERS
-    edges, broken = import_graph(script_dir)
+    static, _runtime, broken = _scan_edges(script_dir)
     out_edges = {}
-    for importer, imported in edges:
+    for importer, imported in sorted(static):
         out_edges.setdefault(importer, []).append(imported)
 
     lines = ["module map (%d layers, generated by _deps.py --render)" % len(layers)]
@@ -629,6 +835,80 @@ def ui_navigability_violations(ui_dir=None):
     return violations
 
 
+# --- known layer debt ---------------------------------------------------------
+# The 21 edges that became visible the moment this module learned to read
+# `_loader` calls. NONE of them is new: every one has been in the tree for
+# months, certified clean by a lint that walked only `ast.Import` while most of
+# this codebase reaches its siblings at runtime. The lint was not wrong, it was
+# blind, and `layer_violations()` reported zero over a tree with 34 runtime edges.
+#
+# They are two different problems and want two different answers:
+#
+#   * SEVEN are real inversions - a helper reaching UP to an entry point.
+#     `_panel_state` (L5) reaching audit-lock / audit-status / render-report /
+#     validate-*, `_help` (L3) reaching audit-journal, `_panel_settings` (L2)
+#     reaching validate-config. These are debt, and the refactor retires them by
+#     giving the shared thing a home low enough to import - e.g. the lock-name
+#     grammar into an L1 `_locks.py` rather than `_panel_state` reimplementing
+#     `audit-lock`.
+#
+#   * FOURTEEN are entry point -> entry point. All thirteen commands sit at L7,
+#     so one command reusing another is a "peer" edge BY CONSTRUCTION. Whether
+#     that is a defect or a gap in the model is an open architecture question
+#     this list does not pretend to have answered.
+#
+# THE LIST MAY ONLY SHRINK. `r2` asserts EXACT equality, so a new violation fails
+# the build, and retiring one also fails it until the entry is deleted on purpose.
+# An allowlist that silently absorbs both directions is how debt becomes
+# permanent; this one cannot, because fixing something breaks it too.
+KNOWN_LAYER_DEBT = (
+    # -- upward inversions: a helper reaching an entry point (7) --
+    ("_help.py",
+     "runtime-loads audit-journal (layer 7) from layer 3 - not strictly downward"),
+    ("_panel_settings.py",
+     "runtime-loads validate-config (layer 7) from layer 2 - not strictly downward"),
+    ("_panel_state.py",
+     "runtime-loads audit-lock (layer 7) from layer 5 - not strictly downward"),
+    ("_panel_state.py",
+     "runtime-loads audit-status (layer 7) from layer 5 - not strictly downward"),
+    ("_panel_state.py",
+     "runtime-loads render-report (layer 7) from layer 5 - not strictly downward"),
+    ("_panel_state.py",
+     "runtime-loads validate-config (layer 7) from layer 5 - not strictly downward"),
+    ("_panel_state.py",
+     "runtime-loads validate-manifest (layer 7) from layer 5 - not strictly downward"),
+    # -- entry point reusing an entry point, all at L7 (14) --
+    ("audit-doctor.py",
+     "runtime-loads audit-journal (layer 7) from layer 7 - not strictly downward"),
+    ("audit-doctor.py",
+     "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
+    ("audit-doctor.py",
+     "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
+    ("audit-doctor.py",
+     "runtime-loads gen-demo-manifest (layer 7) from layer 7 - not strictly downward"),
+    ("audit-doctor.py",
+     "runtime-loads validate-config (layer 7) from layer 7 - not strictly downward"),
+    ("audit-doctor.py",
+     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
+    ("audit-status.py",
+     "runtime-loads audit-usage (layer 7) from layer 7 - not strictly downward"),
+    ("audit-status.py",
+     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
+    ("audit-usage.py",
+     "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
+    ("gen-demo-manifest.py",
+     "runtime-loads gen-demo-usage (layer 7) from layer 7 - not strictly downward"),
+    ("gen-demo-manifest.py",
+     "runtime-loads validate-config (layer 7) from layer 7 - not strictly downward"),
+    ("gen-demo-manifest.py",
+     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
+    ("migrate-manifest.py",
+     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
+    ("render-report.py",
+     "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
+)
+
+
 # --- selftest -----------------------------------------------------------------
 def _selftest():
     import shutil
@@ -646,8 +926,15 @@ def _selftest():
 
     check("r1 the real scripts/ tree is acyclic: %r" % (real_violations,),
           not by_what("import cycle"))
-    check("r2 every real edge points strictly downward: %r" % (real_violations,),
-          not by_what("not strictly downward"))
+    _downward = tuple(sorted(by_what("not strictly downward")))
+    _new = [v for v in _downward if v not in KNOWN_LAYER_DEBT]
+    _gone = [v for v in KNOWN_LAYER_DEBT if v not in _downward]
+    check("r2 the not-strictly-downward edges are EXACTLY the %d recorded in "
+          "KNOWN_LAYER_DEBT. A new one fails here; RETIRING one fails here too, "
+          "until its entry is deleted on purpose - the list may only shrink, and "
+          "only deliberately. new=%r retired=%r"
+          % (len(KNOWN_LAYER_DEBT), _new, _gone),
+          not _new and not _gone)
     check("r3 every real scripts/*.py file is assigned a layer, and LAYERS carries no "
           "stale entry: %r" % (real_violations,),
           not by_what("not assigned a layer") and not by_what("stale table entry"))
@@ -677,6 +964,29 @@ def _selftest():
     check("r6 real edge count is positive - a checker that finds zero edges on a tree "
           "this size is reading the wrong directory, not a clean graph: %d"
           % len(real_edges), len(real_edges) > 0)
+
+    real_static, real_runtime, _rb = _scan_edges()
+    check("r7 the `_loader` runtime edges are actually being READ, and they are edges "
+          "the import walk does not already have (%d runtime, %d static, %d runtime-only): "
+          "every entry point in this tree is hyphenated and therefore cannot be reached "
+          "by an `import` statement at all, so a scan that finds none of them here is "
+          "reading static imports only - the state in which r2 certified this tree while "
+          "seeing a fraction of it"
+          % (len(real_runtime), len(real_static), len(real_runtime - real_static)),
+          real_runtime and (real_runtime - real_static))
+
+    real_hook_names = set()
+    if os.path.isdir(_HOOKS_DIR):
+        for _fname in sorted(os.listdir(_HOOKS_DIR)):
+            if _fname.endswith(".py"):
+                real_hook_names.add(_fname[:-3])
+    check("r8 no hooks/*.py basename collides with a scripts/*.py one. The runtime-load "
+          "rule reads a literal's BASENAME and ignores its directory (audit-doctor loads "
+          "`../hooks/_config.py` and `../hooks/guard-capabilities.py` by path), so the "
+          "day both directories carry the same filename a hooks load would be recorded "
+          "as a scripts edge. That precondition is asserted here rather than assumed in "
+          "a comment: %r" % (sorted(real_hook_names & real_on_disk),),
+          not (real_hook_names & real_on_disk))
 
     # -------------------------------------------------------- render: format + determinism
     render_a = render()
@@ -758,6 +1068,129 @@ def _selftest():
                       for v in hook_hits))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # ------------------------------------------- runtime loads: the `_loader` call shapes
+    # The edges the graph could not see AT ALL until now. Every shape below was read off
+    # the real tree first (`_loader.load_script("x.py")`, the `_ldr` alias in
+    # validate-config.py's selftest, the three `_load(...)` wrappers, and the one call
+    # whose target is bound to a name before the call) - a fixture invented from the same
+    # head that wrote the parser proves only that the head is self-consistent.
+    rt = tempfile.mkdtemp(prefix="audit-deps-runtime-")
+    try:
+        rt_hooks = os.path.join(rt, "hooks")  # empty; the hooks pass is not under test
+        os.makedirs(rt_hooks)
+        rt_src = os.path.join(rt, "scripts")
+        os.makedirs(rt_src)
+
+        def _rt_write(name, body):
+            with open(os.path.join(rt_src, name), "w", encoding="utf-8") as fh:
+                fh.write(body)
+
+        # No _loader.py in the fixture, on purpose: if `_loader` were a sibling here,
+        # `import _loader` would ALSO be a static edge and these cases could pass on the
+        # import walk alone, proving nothing about the call walk.
+        _rt_write("high.py", "pass\n")
+        _rt_write("bottom.py", "pass\n")
+        _rt_write("low.py",
+                  "import _loader\n"
+                  "def go():\n"
+                  "    return _loader.load_script('high.py', modname='high')\n")
+        _rt_write("aliased.py",
+                  "import _loader as _ldr\n"
+                  "def go():\n"
+                  "    return _ldr.load(os.path.join(_HERE, 'high.py'), modname='high')\n")
+        _rt_write("wrapped.py",
+                  "import _loader\n"
+                  "def _load(name, filename):\n"
+                  "    return _loader.load_script(filename, modname=name)\n"
+                  "def go():\n"
+                  "    return _load('high', 'high.py')\n")
+        _rt_write("computed.py",
+                  "import _loader\n"
+                  "TARGET = 'high.py'\n"
+                  "def go():\n"
+                  "    return _loader.load_script(TARGET)\n")
+        _rt_write("top.py",
+                  "import _loader\n"
+                  "def go():\n"
+                  "    return _loader.load_script('bottom.py', modname='bottom')\n")
+        # low/aliased/wrapped/computed sit BELOW high; top sits ABOVE bottom. One table
+        # carries both directions so a single call has to get both of them right.
+        rt_layers = (("aliased", "bottom", "computed", "low", "wrapped"),
+                      ("high", "top"))
+        rt_hits = layer_violations(rt_src, hooks_dir=rt_hooks, layers=rt_layers)
+        rt_by_file = lambda name: [v for v in rt_hits if v[0] == name]  # noqa: E731
+
+        check("rt1 a runtime `_loader.load_script('high.py')` from a LOWER layer is named "
+              "as an upward edge - the whole class of edge the import-only walk could not "
+              "see - and the message says runtime-loads, not imports, because there is no "
+              "import line for the reader to go and find: %r" % (rt_hits,),
+              len([v for v in rt_by_file("low.py")
+                   if "runtime-loads high (layer 1) from layer 0" in v[1]]) == 1)
+
+        check("rt2 the alias form (`import _loader as _ldr`, which validate-config.py's "
+              "selftest really uses) is seen, and so is a literal nested inside an "
+              "`os.path.join(...)` argument - the shape `_panel_state` and `audit-doctor` "
+              "spell most of their loads with: %r" % (rt_hits,),
+              len([v for v in rt_by_file("aliased.py")
+                   if "runtime-loads high" in v[1]]) == 1)
+
+        check("rt3 a local wrapper that forwards a caller-chosen filename is followed to "
+              "its CALL SITE, where the filename is actually spelled - without this the "
+              "~20 `_load(...)` sites in audit-doctor alone are invisible: %r" % (rt_hits,),
+              len([v for v in rt_by_file("wrapped.py")
+                   if "runtime-loads high" in v[1]]) == 1)
+
+        check("rt4 a target that is not a literal IN the call (bound to a name first) is "
+              "NOT guessed at. The documented limitation, asserted so it stays a decision "
+              "on record; it is also the OTHER-direction case, going red the day detection "
+              "is widened to 'any .py literal anywhere in the file', which would invent "
+              "edges out of error messages and docstrings: %r" % (rt_hits,),
+              rt_by_file("computed.py") == [])
+
+        check("rt5 control: a LEGAL downward runtime load (top -> bottom) is left alone. "
+              "The rule fires on DIRECTION, not on the presence of a load, and this is "
+              "the only case that goes red if it ever becomes unconditional - which would "
+              "flag every one of the ~13 correct downward loads in the real tree: %r"
+              % (rt_hits,), rt_by_file("top.py") == [])
+
+        # ---- mutation proof: the pre-change graph must MISS these same fixtures ----
+        # This IS the code that shipped: edges from `ast.Import` / `ast.ImportFrom` only,
+        # with the layer comparison kept intact so the only thing removed is the runtime
+        # pass. It reports nothing at all here, which is precisely how it reported nothing
+        # on a real tree carrying twenty-one bad edges.
+        def _static_only_layer_violations(script_dir, layers):
+            names = {}
+            for fname in sorted(os.listdir(script_dir)):
+                if fname.endswith(".py"):
+                    names[fname[:-3]] = fname
+            found = []
+            for mod, fname in sorted(names.items()):
+                with open(os.path.join(script_dir, fname), "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=fname)
+                for imported in _imported_sibling_names(tree, set(names), mod):
+                    li = _layer_of(mod, layers)
+                    lj = _layer_of(imported, layers)
+                    if li is not None and lj is not None and not (li > lj):
+                        found.append((mod + ".py", "imports %s - not strictly downward"
+                                      % imported))
+            return found
+
+        weak_rt_hits = _static_only_layer_violations(rt_src, rt_layers)
+        check("rt6 mutation proof: with the runtime pass removed (the static-import walk "
+              "this change replaced, verbatim), the SAME three fixtures rt1-rt3 catch are "
+              "missed ENTIRELY - red here proves those three cases test something real "
+              "rather than passing however the check were written: %r" % (weak_rt_hits,),
+              weak_rt_hits == [])
+
+        rt_again = layer_violations(rt_src, hooks_dir=rt_hooks, layers=rt_layers)
+        check("rt7 mutation proof: the real, unweakened check still catches all THREE - "
+              "counted, not merely found, so a version that spots one upward load and "
+              "drops the other two cannot pass this; nothing was left mutated behind: %r"
+              % (rt_again,),
+              len([v for v in rt_again if "runtime-loads" in v[1]]) == 3)
+    finally:
+        shutil.rmtree(rt, ignore_errors=True)
 
     # --------------------------------------------------- map_drift: guide vs --render output
     check("g1 the shipped guide's module map fence matches `_deps.py --render` "
