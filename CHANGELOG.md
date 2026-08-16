@@ -102,6 +102,38 @@ Five dogfooding findings, each reproduced in a real browser before the fix.
 - **An expand control on the panel's capability table** (F-P-3): one press gives it the
   whole viewport, built by the same builder the tab uses (one filter, one set of rows), with
   Esc handled on the dialog so a search box cannot swallow it.
+- **`--bench` on `render-report.py` and `_usage_analytics.py`.** There was not one
+  `perf_counter` or benchmark in the tree, and yet several comments carried hard numbers, so
+  no timing claim here was checkable and no regression would have been caught. It reports the
+  minimum of N runs (timing noise is one-sided, so the mean measures the machine's mood) at
+  three ledger sizes (a flat per-row cost is the only thing that separates linear from
+  quadratic), phase by phase for a whole render. Deliberately **not** a CI threshold — a
+  shared runner's noise floor is wider than the regressions worth catching. `--selftest`
+  beats `--bench` in either order, so the per-file sweep can never become a benchmark run.
+  First findings: everything is linear and already fast enough that tuning it would be
+  pointless (~68 ms for a full pass over an 8,740-row ledger, ~74 ms for a 1,000-task
+  report), and two long-standing comments were wrong — `aggregate` runs six times per report,
+  not eleven, and the ledger pass leads the HTML build by 2.4×, not the "roughly 6×" that had
+  been repeated without ever being measured.
+
+### Changed
+
+- **CI now re-renders the shipped example instead of comparing two committed copies to each
+  other.** The old check proved `docs/index.html` was a byte copy of the example report — not
+  that either file still reflected the renderer. So when `render-report.py` changed and nobody
+  refreshed the artifacts, both drifted together and the gate stayed green; that is exactly
+  how the published demo spent a while claiming `share 1%` for a row at 0.7%. The new step
+  renders into a scratch directory and diffs, which means normalizing the `generated <UTC>`
+  stamp in **both** places it appears — the visible header and the base64 Markdown twin
+  embedded in the page — and treating a zero hit as a failure rather than a quiet pass. The
+  Markdown twin is compared now too; CI had only ever grepped a *fresh* one and never looked
+  at the shipped copy.
+- **A constant that is both copied and never read is now a build failure.** `panel-server.py`
+  declared `CONFIG_REL` and never used it while importing the module that owns it — nothing
+  broke, it was just a second place the fact could drift from. The lint is narrow on purpose:
+  a duplicate that *is* read stays silent (removing that one is a refactor, not a deletion),
+  and the `hooks/`↔`scripts/` pair is exempt because the layer rule forbids merging it — a
+  lint that demands an impossible fix is a lint people learn to skip.
 
 ## [0.39.0] - 2026-08-15
 
