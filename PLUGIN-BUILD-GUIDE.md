@@ -108,6 +108,8 @@ claude-plugins/                           # this repo (personal, public)
         _report_ui.py                     # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
         _report_html.py                   # HTML fragment builders for the report: escaping, chips, table cells
         _report_usage.py                  # the report's Usage section: ledger load + every chart over it
+        _report_page.py                   # the report as a whole document: vocab, table, render_html
+        _report_md.py                     # the report's Markdown twin (render_md), embedded in the page
         migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
         _panel_ui.py                      # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
@@ -179,9 +181,11 @@ L4:
 
 L5:
   _panel_state -> _areas, _help, _loader, _manifest_io, _output, _panel_discovery, _policy
+  _report_md -> _output, _report_html, _report_usage
 
 L6:
   _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _ui_theme
+  _report_page -> _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
   audit-doctor -> _cli_fmt, _loader, _output
@@ -194,7 +198,7 @@ L7:
   gen-demo-usage -> _loader, _output
   migrate-manifest -> _loader, _manifest_io, _output
   panel-server -> _help, _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
-  render-report -> _loader, _manifest_io, _output, _report_html, _report_ui, _report_usage, _ui_theme
+  render-report -> _loader, _manifest_io, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _ui_theme
   validate-config -> _loader, _output, _policy
   validate-manifest -> _areas, _manifest_io, _output
 ```
@@ -647,7 +651,37 @@ untrusted — and only http(s) URLs render as links (`javascript:` degrades to t
 The report's CSS/JS live as real files under `scripts/ui/report.{css,js}`; `_report_ui.py`
 reads them at import with explicit utf-8 and assembles the same `_CSS`/`_SCRIPT` constants
 byte-identically — the rendered report page stays a single self-contained file regardless.
-`--selftest` (includes XSS cases).
+What is left in this file after the split is `main()` — argument parsing, the manifest
+read, the theme resolve, the files it writes — plus `_verdict`, and the ~230 cases that
+read a report `main()` actually wrote into a temp directory. Those cases pin the emitted
+DOCUMENT (its markup, its emission order, the stylesheet, the embedded script), so they can
+live nowhere else: a fragment module cannot render one. `--selftest` (includes XSS cases).
+
+### `plugins/audit/scripts/_report_page.py`
+The report as a whole document, moved out of `render-report.py`: the report's vocabulary
+(`_plural`, the gate's condition labels, which optional columns a plan has earned), the
+phase-row builder, and `render_html` itself — the function that glues `_report_html`'s
+fragments and `_report_usage`'s section into one self-contained page, or (with
+`fragment=True`) into the same page with no document wrapper, for a Claude Code Artifact
+whose host supplies its own. Layer 6, and the reason is the gate: the verdict at the top of
+the report is `audit-status.py`'s own word, and `audit-status` is an entry point at layer 7.
+So `render_html` takes `verdict` as an INJECTED callable and `render-report.py` — which
+already carries that L7 → L7 runtime edge, recorded in `_deps.KNOWN_LAYER_DEBT` — supplies
+`_verdict`. Reaching the gate from here would be a helper calling up, and `_deps`'
+layer lint reads runtime `_loader` calls, so it would report it. With no verdict supplied
+the hero renders the "could not be evaluated" state the product already has for a gate that
+raises: an honest unknown, never a fabricated Clear.
+
+### `plugins/audit/scripts/_report_md.py`
+The report's Markdown twin, `render_md`. It could not stay behind when `render_html` left:
+the HTML page embeds this output base64-encoded as its "Download .md" payload, so
+`_report_page` calls it — the single edge that makes the split two files rather than one
+(`_report_page → _report_md → _report_html`/`_report_usage`, one way, no cycle). It escapes
+only the Markdown metacharacters that would break a table (pipes, newlines) and passes raw
+HTML through to whatever renders it; `render_html` is the hardened output for an untrusted
+source. It also keeps the manifest's own machine vocabulary and the manifest's own phase
+order, where the HTML segments and re-words: this table is read by GitHub and by `diff`, and
+reordering it would change every diff against an earlier render for a presentational reason.
 
 ### `plugins/audit/scripts/_report_ui.py`
 The report's CSS and inline JS, off disk as real files under `scripts/ui/report.{css,js}`,
@@ -661,8 +695,9 @@ though its source no longer is.
 ### `plugins/audit/scripts/_report_html.py`
 Pure HTML fragment builders moved out of `render-report.py`: escaping, chips/badges, table
 cells and the filter panel, over already-computed values only — no layout decisions, no usage
-data, no whole-document assembly (that stays in `render_html`/`render_md`, which call these
-dozens of times and glue the fragments together). Every manifest value is untrusted JSON, so
+data, no whole-document assembly (that lives in `_report_page.render_html` /
+`_report_md.render_md`, which call these dozens of times and glue the fragments together).
+Every manifest value is untrusted JSON, so
 each fragment routes through `e()` before it reaches the page, and `_safe_url` is the one gate
 a URL passes before it may become an `href`. `render-report.py` keeps thin aliases so its
 existing call sites and selftest are unchanged.

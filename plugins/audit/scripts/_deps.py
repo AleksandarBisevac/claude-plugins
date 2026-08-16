@@ -107,8 +107,24 @@ LAYERS = (
     # and neither reaches it. The alternative was a new layer, which renumbers
     # every entry in KNOWN_LAYER_DEBT below without a single edge changing.
     ("_panel_discovery", "_panel_page", "_report_usage"),
-    ("_panel_state",),
-    ("_panel_write",),
+    # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
+    # document) are the report's answer to the same question `_panel_page`
+    # answered above, and they land the same way: at the FIRST layer that holds
+    # every one of their edges strictly downward, beside whatever already lives
+    # there. `_report_md` reaches `_report_usage` (L4) and `_report_html` (L2),
+    # so L5; `_report_page` reaches `_report_md`, so L6. Neither touches
+    # `_panel_state`/`_panel_write` and neither is touched by them, so sharing
+    # their layers costs nothing - where a new layer for the pair would renumber
+    # every entry in KNOWN_LAYER_DEBT below without a single edge changing.
+    #
+    # NOT above L6, and that is the design rather than a coincidence: the gate
+    # verdict at the top of the report comes from `audit-status` (L7), so
+    # `render_html` takes it as an INJECTED callable and render-report.py - which
+    # already carries that L7 -> L7 runtime edge, recorded below - supplies it.
+    # Reaching the gate from `_report_page` would be a helper calling up, and the
+    # runtime-load half of this lint would report it.
+    ("_panel_state", "_report_md"),
+    ("_panel_write", "_report_page"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task"),

@@ -19,8 +19,23 @@ Writes <basename>.html / <basename>.md into --out-dir (default: the manifest's
 own directory) and prints the paths. `basename` is `--basename` › the manifest's
 `meta.reportBasename` › `audit-report`, sanitized to [A-Za-z0-9-_].
 Exit codes: 0 ok · 2 usage error / unreadable manifest.
+
+WHAT IS STILL HERE AFTER THE SPLITS. The document itself is
+`_report_page.render_html` and its Markdown twin is `_report_md.render_md`
+(P13.3); the fragments they glue are `_report_html` (P13.1) and `_report_usage`
+(P13.2). This file keeps `main()` — the arguments, the manifest read, the theme
+resolve, the files it writes — and `_verdict`, which cannot move: the gate is
+`audit-status.py`, an entry point, so the verdict is computed here and INJECTED
+into the page rather than reached for from a module below (see the
+`# --- the gate verdict ---` section).
+
+It also keeps the ~230 cases, and that is the honest shape rather than a
+leftover. They render a report through `main()` into a temp directory and then
+assert about the emitted DOCUMENT — its markup, the ORDER things are emitted in,
+the stylesheet, the embedded script. A fragment module cannot produce one, so
+splitting those cases by whichever function happens to emit each string would
+have left two suites and no complete one.
 """
-import base64
 import json
 import os
 import re
@@ -49,33 +64,14 @@ import _loader                # noqa: E402  (the one way scripts/ loads a siblin
 import _report_ui             # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
 import _report_html           # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
+import _report_md             # noqa: E402  (the Markdown twin)
+import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 
 
-# --- module aliases (CSS/SCRIPT, fragment + usage re-exports) -------------------
-def _plugin_version():
-    """The version of the plugin that rendered this file, or '' if unknown.
-
-    A report is a file that outlives the tree it came from: it gets mailed, put in
-    a CI artifact, opened next week. When someone says a control does not work,
-    the first thing worth knowing is which renderer wrote the page in front of
-    them — and until now nothing on the page could answer that. Best-effort by
-    construction: a missing or malformed plugin.json costs the stamp, never the
-    report.
-    """
-    try:
-        with open(os.path.join(os.path.dirname(_HERE), ".claude-plugin",
-                               "plugin.json"), encoding="utf-8") as fh:
-            v = json.load(fh).get("version")
-        return v if isinstance(v, str) and v.strip() else ""
-    except Exception:
-        return ""
-
+# --- module aliases (CSS/SCRIPT, page + fragment + usage re-exports) ------------
 # Chip and pipeline-rail colors live in the report's CSS theme tokens (see _CSS),
 # keyed off the `data-status` / `data-risk` attributes the markup carries — so a
 # single token set themes every status/risk consistently in both light and dark.
-# Risk chips render only for these levels:
-_RISK_LEVELS = _report_html._RISK_LEVELS
-
 _CSS = _report_ui.CSS
 
 # Inline, self-contained (no external fetch) filter/sort/search over the report
@@ -90,32 +86,18 @@ def _load_status_lib():
 
 # HTML fragment builders (escaping, chips, cells, filter panel) live in
 # _report_html.py (P13.1) — bottom of the report's module graph, imported by
-# nothing upward. Aliased here so render_html/render_md and this file's own
-# selftest keep referring to these names unchanged.
-e = _report_html.e
-_safe_url = _report_html._safe_url
+# nothing upward. This file used to alias two dozen of them, for the reason the
+# comment said out loud: so `render_html`/`render_md` could spell them unchanged.
+# Those two left with P13.3 and took the reason with them, so what is aliased now
+# is only what `main()` and the suite below still ask for by name; everything
+# else is still reachable, and still spelled, as `_report_html.<name>`.
+#
+# `_report_basename` is not only this file's: `_panel_state` reads it off this
+# module BY NAME when the panel's Export button asks where the report will land,
+# so it is part of what render-report.py exports rather than an internal
+# convenience. `main` and `_report_basename` are that whole exported surface.
 _report_basename = _report_html._report_basename
-_tasks_by_id = _report_html._tasks_by_id
-_areas_of = _report_html._areas_of
-_bug_view = _report_html._bug_view
-_chip_buttons = _report_html._chip_buttons
-_chip = _report_html._chip
-_ado_cell = _report_html._ado_cell
-_outcome_text = _report_html._outcome_text
-_short_date = _report_html._short_date
-_timing_cell = _report_html._timing_cell
-_commit_cell = _report_html._commit_cell
-_detail_row = _report_html._detail_row
-_filter_attrs = _report_html._filter_attrs
 _filter_panel = _report_html._filter_panel
-_global_filter_row = _report_html._global_filter_row
-_ready_now_dl = _report_html._ready_now_dl
-_risk_chip = _report_html._risk_chip
-_phase_meta_div = _report_html._phase_meta_div
-_bar = _report_html._bar
-_owner_map = _report_html._owner_map
-_area_tag_span = _report_html._area_tag_span
-_seg_of = _report_html._seg_of
 
 
 # The stylesheet lints live beside the stylesheet they police, in _ui_theme,
@@ -128,115 +110,35 @@ _theme_asymmetric_vars = _theme.theme_asymmetric_vars
 _themes_missing_color_scheme = _theme.themes_missing_color_scheme
 
 
-# The Usage section — the ledger load, every chart in it and the Markdown twin
-# of the whole block — lives in _report_usage.py (P13.2). It sits above
-# _report_html and below this file: it imports the fragment helpers, nothing
-# imports it but render-report. Aliased here so render_html/render_md and this
-# file's selftest keep referring to these names unchanged.
+# The Usage section lives in _report_usage.py (P13.2); `load_usage` is the half
+# this file still calls, to hand the ledger to the page.
 load_usage = _report_usage.load_usage
-_iso_day = _report_usage._iso_day
-_pricing_stale = _report_usage._pricing_stale
-VIZ_SLOTS = _report_usage.VIZ_SLOTS
-TOP_N = _report_usage.TOP_N
-SPARK_COLS = _report_usage.SPARK_COLS
-_fmt_tokens = _report_usage._fmt_tokens
-_fmt_cost = _report_usage._fmt_cost
-_model_slots = _report_usage._model_slots
-_delta = _report_usage._delta
-_tip = _report_usage._tip
-_tile = _report_usage._tile
-_usage_context = _report_usage._usage_context
-_usage_tiles = _report_usage._usage_tiles
-_usage_notices = _report_usage._usage_notices
-_usage_trend = _report_usage._usage_trend
-_budget_block = _report_usage._budget_block
-_ranked = _report_usage._ranked
-_spark = _report_usage._spark
-_bin_days = _report_usage._bin_days
-_small_multiples = _report_usage._small_multiples
-_routing_table = _report_usage._routing_table
-_routing_advice_block = _report_usage._routing_advice_block
-_economics_block = _report_usage._economics_block
-_band_note = _report_usage._band_note
-_phase_stacks = _report_usage._phase_stacks
-_usage_heatmap = _report_usage._usage_heatmap
-_usage_section = _report_usage._usage_section
-_md = _report_usage._md
-_usage_md = _report_usage._usage_md
+
+# The document itself lives in _report_page.py (P13.3) and its Markdown twin in
+# _report_md.py — this file kept `main()`, the theme resolve and the suite that
+# reads what `main()` writes. Aliased so the ~230 cases below, which are about
+# the RENDERED DOCUMENT and can therefore live nowhere else, keep asking for
+# these names unchanged.
+_plural = _report_page._plural
+PRIMARY_COLS = _report_page.PRIMARY_COLS
+_OPTIONAL_COLS = _report_page._OPTIONAL_COLS
+_present_columns = _report_page._present_columns
+_held_by = _report_page._held_by
+render_md = _report_md.render_md
 
 
-# --- report vocab ---------------------------------------------------------------
-def _plural(n, one, many=None):
-    return "%d %s" % (n, one if n == 1 else (many or one + "s"))
-
-
+# --- the gate verdict -----------------------------------------------------------
+# The gate is `audit-status.py`, an entry point, and `_loader` is how this file
+# reaches one — an L7 -> L7 edge `_deps.KNOWN_LAYER_DEBT` already records. That
+# is why the verdict is computed HERE and injected into `_report_page`
+# (layer 6) rather than fetched from inside it: a helper reaching up to an entry
+# point would be a new inversion, and `_deps.layer_violations()` reads runtime
+# `_loader` calls, so it would report one.
 _GATE_WORDS = {
     "invalid": lambda n: _plural(n, "validator finding"),
     "open-high-bugs": lambda n: _plural(n, "high-severity bug") + " still open",
     "blocked-tasks": lambda n: _plural(n, "blocked task"),
 }
-# The conditions in the reader's words. `open-high-bugs` is a flag name; printing it
-# raw makes the basis look like a config dump and quietly assumes the reader knows
-# the CLI. The flag names still appear in the title attribute for whoever is going
-# to type them.
-_GATE_LABELS = {
-    "invalid": "manifest validity",
-    "open-high-bugs": "high-severity bugs",
-    "blocked-tasks": "blocked tasks",
-    "open-bugs": "any open bug",
-    "in-progress": "work in progress",
-    "over-budget": "phases over budget",
-    "budget-80": "phases past 80% of budget",
-}
-
-
-# Columns that exist only when the plan has something to put in them. `id`, `title`
-# and `status` are not here: they are never empty, and a table with no status column
-# is not this table.
-#
-# §7 asked for "collapse to four always-visible columns", on the reading that six of
-# nine were blank. Measured across three real manifests that turned out to describe
-# the PHASE rows (which span the table) rather than the task rows: model and risk are
-# 100% filled everywhere, outcome 35-100%, commit and done track completion — and
-# only ADO is consistently empty (0%, 0%, 10%), because it exists solely for repos
-# that run the Azure DevOps sync. Cutting to a fixed four would have thrown away
-# columns that are full for everyone in order to lose one that is empty for most.
-#
-# So the rule rather than the decree: density follows the data. A plan on day one
-# renders id/title/status and little else; a finished one renders all nine; and a
-# repo that has never touched Azure DevOps never sees an ADO column at all.
-# ex (F-P-4): which of the optional columns the COMPACT row carries. The rest
-# (model, the work item, the outcome) live in the detail row, where they have
-# room to be complete rather than truncated. Chosen by what a reader scans for:
-# where is it, how risky is it, when did it land, which commit. The outcome was
-# the worst offender in the other direction — a 70-character cut that pushed
-# every row to three lines and still said too little, which is the complaint
-# this whole change came from.
-PRIMARY_COLS = ("risk", "commit", "done")
-_OPTIONAL_COLS = (
-    ("model", lambda t: t.get("model")),
-    ("risk", lambda t: t.get("risk")),
-    ("commit", lambda t: t.get("commit")),
-    ("done", lambda t: t.get("completedAt") or t.get("startedAt")),
-    ("ADO", lambda t: (t.get("ado") or {}).get("id")
-     if isinstance(t.get("ado"), dict) else None),
-    ("outcome", lambda t: _outcome_text(t)),
-)
-
-
-# --- table + verdict helpers ----------------------------------------------------
-def _present_columns(manifest):
-    """The optional columns at least one task actually fills."""
-    tasks = [t for p in (manifest.get("phases") or []) if isinstance(p, dict)
-             for t in (p.get("tasks") or []) if isinstance(t, dict)]
-    out = []
-    for name, get in _OPTIONAL_COLS:
-        try:
-            if any(get(t) not in (None, "", [], {}) for t in tasks):
-                out.append(name)
-        except Exception:                 # a malformed task never removes a column
-            out.append(name)
-    return out
 
 
 def _verdict(summary):
@@ -261,586 +163,20 @@ def _verdict(summary):
     return ("blocked" if failed else "clear"), why, list(lib.DEFAULT_GATE)
 
 
-def _held_by(ph, done_ids):
-    """Which of this phase's `blockedBy` targets are not done yet.
-
-    The manifest has carried this since v0.1.0 and the report has never drawn it:
-    a reader could see that a phase was pending but not that another phase was the
-    reason. It is also what actually decides what you can work on next."""
-    out = []
-    for b in ph.get("blockedBy") or []:
-        if isinstance(b, str) and b not in done_ids:
-            out.append(b)
-    return out
-
-
-# --- render_html ----------------------------------------------------------------
-def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners):
-    """One phase's rows — the group row, its task-filter row and its task rows.
-
-    Extracted from render_html's former inline loop when segmentation (D1)
-    made the iteration two levels deep; the MARKUP is byte-identical to what
-    the loop emitted, plus `data-seg` on every row (the hook the archive gate
-    and the per-segment print isolation select whole segments by) and the
-    advisory owner suffix on the area tags (D4)."""
-    pid = psum["id"]
-    areas = psum["area"] if isinstance(psum.get("area"), list) \
-        else _areas_of(ph.get("area"))
-    area_tags = "".join(" " + _area_tag_span(a, owners) for a in areas)
-    held = _held_by(ph, done_ids)
-    out = []
-    # The gate closes only where something actually holds it. A phase that is
-    # merely pending is an OPEN gate nobody has walked through yet, and drawing
-    # those the same way would make the rail a restatement of status rather
-    # than a drawing of dependency.
-    held_mark = "".join(
-        '<a class="heldby" href="#phase-%s" title="This phase is held until %s '
-        'is done">held by %s</a>' % (e(h), e(h), e(h)) for h in held)
-    # The stamp on a signed-off phase: the last commit recorded inside it. The
-    # manifest has no separate sign-off SHA, so this is labelled as what it is
-    # rather than presented as a signature it is not.
-    stamp = ""
-    if psum["status"] == "done":
-        shas = [t.get("commit") for t in (ph.get("tasks") or [])
-                if isinstance(t, dict) and isinstance(t.get("commit"), str)
-                and t["commit"].strip()]
-        if shas:
-            stamp = ('<span class="stamp" title="Last commit recorded in this '
-                     'phase">%s</span>' % e(shas[-1][:7]))
-    # bl (F-P-4): blocked TASKS inside a phase that is not itself blocked. The
-    # phase chip answers "is this phase blocked"; nothing answered "is anything
-    # in it stuck", which is the question that decides whether a phase in
-    # progress is actually moving. Emitted only when it says something the chip
-    # does not — on a blocked phase the chip already carries the word.
-    _nblocked = sum(1 for t in (ph.get("tasks") or [])
-                    if isinstance(t, dict) and t.get("status") == "blocked")
-    blocked_mark = ""
-    if _nblocked and psum["status"] != "blocked":
-        blocked_mark = ('<span class="pblocked" title="%d task(s) in this phase '
-                        'are blocked">%d blocked</span>'
-                        % (_nblocked, _nblocked))
-    # ...and the dropped ones, for the same reason: a bar reading 3/5 on a phase
-    # whose other two tasks were cancelled is a phase that is finished, and the
-    # bar cannot say so on its own.
-    _ncancelled = sum(1 for t in (ph.get("tasks") or [])
-                      if isinstance(t, dict) and t.get("status") == "cancelled")
-    cancelled_mark = ('<span class="pcancelled" title="%d task(s) in this phase '
-                      'were cancelled">%d cancelled</span>'
-                      % (_ncancelled, _ncancelled)) if _ncancelled else ""
-    out.append(
-        '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
-        'data-seg="%s" data-area="%s" tabindex="0" '
-        'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
-        '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s%s%s %s'
-        '<span class="pmatch" hidden></span>%s</td></tr>'
-        % (e(pid), e(pid), e(psum["status"]),
-           ' data-held="1"' if held else "",
-           seg, e(" ".join(areas)), ncol, e(pid), e(psum["title"]),
-           area_tags, _chip(psum["status"]), blocked_mark, cancelled_mark,
-           held_mark, stamp,
-           _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
-    # per-phase task-status filter (shown only when the phase is expanded);
-    # _SCRIPT fills .tf-chips from this phase's own task statuses.
-    _tstat = sorted({t.get("status") for t in (ph.get("tasks") or [])
-                     if isinstance(t, dict) and t.get("status")})
-    out.append('<tr class="taskfilter" data-phase="%s" data-seg="%s">'
-               '<td colspan="%d">'
-               '<span class="tf-label">Filter tasks by status:</span>'
-               '<span class="tf-chips">%s</span></td></tr>'
-               % (e(pid), seg, ncol,
-                  _chip_buttons(_tstat, "data-ts", "tf-chip")))
-    for t in ph.get("tasks") or []:
-        if not isinstance(t, dict):
-            continue
-        cells = {
-            "model": lambda: "<td>%s</td>" % e(t.get("model") or "—"),
-            "risk": lambda: "<td>%s</td>" % _risk_chip(t.get("risk")),
-            "commit": lambda: "<td class=mono>%s</td>" % _commit_cell(t),
-            "done": lambda: "<td class=when>%s</td>" % _timing_cell(t),
-            "ADO": lambda: "<td>%s</td>" % _ado_cell(t),
-            "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
-        }
-        # ex (F-P-4): the compact row plus a control that opens the rest. The
-        # button lives in the id cell and carries the task id, so a keyboard
-        # reader tabs id -> detail rather than hunting a bare chevron.
-        out.append(
-            '<tr class="task" data-phase="%s" data-seg="%s" data-status="%s"%s%s>'
-            '<td class="mono tid"><button type="button" class="dtoggle" '
-            'data-dfor="%s" aria-expanded="false" aria-label="Show details for '
-            '%s"></button>%s</td><td>%s</td><td>%s</td>%s</tr>'
-            % (e(pid), seg, e(t.get("status")),
-               ' data-held="1"' if held else "",
-               _filter_attrs(t),
-               e(t.get("id")), e(t.get("id")),
-               e(t.get("id")), e(t.get("title")),
-               _chip(t.get("status")),
-               "".join(cells[c]() for c in cols)))
-        out.append(_detail_row(t, ph, owners, ncol, seg, pid))
-    return "\n".join(out)
-
-
+# --- rendering ------------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
                 fragment=False, css=None):
-    """The HTML report. `fragment=True` emits it for an embedding host.
+    """The HTML report, with this file's gate verdict wired into it.
 
-    A Claude Code Artifact wraps what it is given in its own
-    `<!doctype>…<head>…</head><body>`, so a standalone document published as one
-    nests a second `<html>` inside the first. The fragment carries no document
-    wrapper — but it keeps `<title>` (the host reads it to name the page) and the
-    whole `<style>`, which already does what an embedded page needs: it declares
-    `color-scheme:light dark` for the reader who has chosen nothing and restates it
-    under each `:root[data-theme]` so a chosen theme takes the native controls with
-    it, honours both `prefers-color-scheme` and that attribute for colour, and
-    scrolls its wide tables inside `.tablewrap` instead of the page.
-
-    Nothing here is fetched from a network, in either mode. That was true before
-    this flag existed — it is why the report can be embedded at all under a CSP
-    that blocks every external host.
+    The document itself is `_report_page.render_html`; the only thing added here
+    is `_verdict`, which reaches `audit-status.py` and therefore cannot live in a
+    module below the entry points (see the `# --- the gate verdict ---` note
+    above). Keeping the injection in a wrapper rather than at every call site is
+    what lets this signature stay exactly what it has always been.
     """
-    meta = manifest.get("meta") or {}
-    now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
-    # doctype + charset so the file renders standalone (not quirks mode) and its
-    # UTF-8 punctuation (·, —, …) decodes correctly when opened from disk.
-    out = [] if fragment else [
-        '<!doctype html>',
-        # `lang` is why this element is emitted at all: without it a screen
-        # reader guesses the language and can read the whole report in the wrong
-        # voice. The control panel has always declared one; the report did not.
-        '<html lang="en">',
-        '<meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">']
-    out += ['<title>%s</title>' % e(meta.get("title") or "Audit report"),
-            # th (F-P-6): the project's own theme when it has one. The
-            # report is a FILE — mailed, published, opened months later —
-            # so the stylesheet is embedded compiled, never fetched, and a
-            # theme travels with the report rather than living in a panel.
-            "<style>%s</style>" % (css or _CSS)]
-    # The shell. `sections` is the ONE list both the nav and the content are drawn
-    # from — a hand-kept nav beside hand-placed anchors is the same trap as the
-    # hand-maintained selftest list that drifted three ways: adding a section and
-    # remembering to link it would be two separate acts, and only one of them shows.
-    sections = []
-
-    def section(anchor, label, count=None, sub=False):
-        sections.append((anchor, label, count, sub))
-        return anchor
-
-    # Say so when the script did not run. This report is a static file people are
-    # meant to SEND each other, and a very common way of opening one — an IDE's
-    # HTML preview pane — sandboxes inline <script>. The page then renders
-    # completely and looks finished, while filtering, search and every expandable
-    # phase silently do nothing. Reported as "the report is broken", and it took
-    # two browsers, two origins, five viewports and real mouse input to establish
-    # that the report was fine and the viewer was not.
-    #
-    # Written into the HTML rather than a <noscript>: the failure is not only "JS
-    # disabled" — a sandbox can leave scripts enabled but strip inline ones, which
-    # <noscript> does not catch. The script's first act is to remove this, so it is
-    # visible exactly when it is true, and its absence is itself a live proof that
-    # the script ran (the CI interactivity check asserts that).
-    out.append(
-        '<div id="audit-nojs" class="nojs" role="status">'
-        "<strong>This report is interactive, and its scripts are not running here.</strong> "
-        "Filtering, search, sorting and expanding a phase all need them. "
-        "An IDE preview pane usually blocks inline scripts — "
-        "open this file in a real browser and it will work.</div>")
-
-    _ver = _plugin_version()
-    out.append('<header class="topbar"><div class="tb-id">'
-               '<h1>%s</h1><p class="meta">%s · %d phases · %d tasks · %d bugs · '
-               "generated %s%s</p></div>"
-               % (e(meta.get("title") or "Audit report"),
-                  e(meta.get("repo") or "?"), len(summary["phases"]),
-                  summary["tasks"]["total"], summary["bugs"]["total"], now,
-                  (' · <span class="stampv" title="The plugin version that '
-                   'rendered this file">audit %s</span>' % e(_ver)) if _ver else ""))
-    # The global filter row (C1/C2): author, area and the date range, inside
-    # the sticky top bar so they stay reachable however far the reader has
-    # scrolled. Why the bar and not a new floating row is argued where the row
-    # is built (_report_html._global_filter_row). Inputs: authors by spend
-    # (matching the Usage chips' order), tags first-seen (matching the panel
-    # chips), and the date bounds from ALL data actually present — task
-    # timestamps and ledger days both, since the one range scopes both surfaces.
-    _gauthors = [a for a, v in sorted(
-        ((usage or {}).get("byAuthor") or {}).items(),
-        key=lambda kv: -kv[1].get("tokens", 0))]
-    _gdates = []
-    for _ph in (manifest.get("phases") or []):
-        if isinstance(_ph, dict):
-            for _t in (_ph.get("tasks") or []):
-                if isinstance(_t, dict):
-                    for _k in ("startedAt", "completedAt"):
-                        if _t.get(_k):
-                            _gdates.append(_short_date(_t[_k]))
-    _gdates += list(((usage or {}).get("daily") or {}).keys())
-    _owners = _owner_map(manifest)   # advisory area owners (D4) — one lookup
-    out.append("@@TOOLBAR@@%s</header>"
-               % _global_filter_row(_gauthors, _report_html._areas.used_tags(manifest),
-                                    min(_gdates) if _gdates else None,
-                                    max(_gdates) if _gdates else None,
-                                    owners=_owners))
-    out.append('<div class="shell">@@NAV@@<main class="content">')
-    if not summary["valid"]:
-        out.append('<p><strong class="invalid">INVALID MANIFEST: %d '
-                   "validator finding(s) — fix before trusting this report."
-                   "</strong></p>" % summary["findings"])
-
-    # The verdict hero. The old band led with the word "Overall" and a bar — true,
-    # but it answered "how far along" when the reader's question is "can I ship".
-    tdone = sum(p["done"] for p in summary["phases"])
-    ttotal = summary["tasks"]["total"]
-    phdone = sum(1 for p in summary["phases"] if p["status"] == "done")
-    gate, why, conds = _verdict(summary)
-    ready = summary["ready"]
-    if ready:
-        # The most actionable string on the page. It used to sit at the bottom in
-        # small monospace with no affordance; it is now the one thing in the hero
-        # you can act on, and it is copyable because reading an id off a screen and
-        # retyping it is a transcription error waiting to happen.
-        nxt = ('<span class="tbl">Next</span> <code class="vd-run">/audit:run %s</code>'
-               '<button type="button" class="btn btn-copy" data-copy="/audit:run %s">'
-               "Copy</button>" % (e(ready[0]), e(ready[0])))
-        if len(ready) > 1:
-            nxt += ('<span class="muted">%d more ready</span>'
-                    % (len(ready) - 1))
-    elif ttotal and tdone == ttotal:
-        nxt = '<span class="muted">Nothing left to run — every task is done.</span>'
-    else:
-        nxt = ('<span class="muted">Nothing ready — every remaining task is '
-               "waiting on something.</span>")
-    out.append('<div class="topgrid">')
-    out.append(
-        '<section class="overall" id="%s"%s aria-label="Gate verdict">'
-        '<p class="vd-eyebrow">Gate</p>'
-        '<p class="vd-word">%s</p><p class="vd-why">%s</p>'
-        '<p class="vd-basis">%s</p>'
-        '<div class="vd-next">%s</div>'
-        '<div class="vd-stats">%s<span class="muted">%s · '
-        "%d of %d phases signed off · %s</span></div></section>"
-        % (section("gate", "Gate", None),
-           (' data-gate="%s"' % gate) if gate else "",
-           e({"clear": "Clear", "blocked": "Blocked"}.get(gate, "Unknown")),
-           e(" · ".join(why)) if why
-           else ("No blocking condition." if gate == "clear"
-                 else "The gate could not be evaluated."),
-           # The conditions are printed, not implied. A verdict whose criteria are
-           # invisible is a score, and the reader cannot tell whether it covers the
-           # thing they care about — spend, for instance, is deliberately NOT here.
-           ('<span title="audit-status.py --gate --fail-on %s">Checks %s. '
-            "Spend is deliberately not one of them.</span>"
-            % (e(",".join(conds)),
-               e(", ".join(_GATE_LABELS.get(c, c) for c in conds)))) if conds else "",
-           nxt, _bar(tdone, ttotal), _plural(tdone, "task") + " done",
-           phdone, len(summary["phases"]),
-           _plural(summary["bugs"]["open"], "open bug")))
-
-    # AI-authored narrative summary (written by /audit:report into
-    # meta.reportSummary); the quantitative "Overall" line above is the
-    # always-present deterministic fallback. Escaped — treated as untrusted.
-    rsum = meta.get("reportSummary")
-    if isinstance(rsum, str) and rsum.strip():
-        out.append('<div class="summary"><strong>Summary</strong>%s</div>'
-                   % e(rsum.strip()))
-    out.append("</div>")   # close .topgrid
-
-    # Controls are split by WHAT THEY ACT ON, which is the same rule that put
-    # navigation at the side and actions on top. Save-as-PDF, the markdown twin and
-    # the theme act on the document, so they live in the persistent bar. Search,
-    # the status chips and expand-all act on the phases table and nothing else — in
-    # the top bar they were three rows of chrome following the reader through the
-    # usage charts, where they do nothing at all. They now sit on the table they
-    # drive. Enhanced by _SCRIPT; with JS off both tables are still fully readable.
-    doc_actions = (
-        '<div class="toolbar tb-actions">'
-        '<button type="button" id="audit-print" class="btn btn-primary" '
-        'title="Print / Save as PDF — the whole plan, every phase expanded. '
-        'Paper size and orientation are yours to pick in the print dialog.">'
-        'Save as PDF</button>'
-        '<button type="button" id="audit-dl-md" class="btn">Download .md</button>'
-        # Withheld in a fragment: the host owns the theme there and stamps
-        # `data-theme` on the same root element this button writes. Two controls
-        # over one attribute is not a redundancy, it is a race — and the report
-        # would lose it, since it restores its own persisted value on load and
-        # would flip a viewer who had picked dark back to a light report saved on
-        # some earlier visit. One toggle, owned by whoever owns the page.
-        + ('' if fragment else
-           '<button type="button" id="audit-theme" class="btn btn-icon" '
-           'aria-label="Toggle light/dark theme" title="Toggle light/dark theme">'
-           '\u263e</button>')
-        + '</div>')
-    # The chips are rendered HERE, not built by the script. Built in JS they were
-    # invisible to anything that does not run it \u2014 a printed page, a reader with
-    # scripting off \u2014 which is the one context where "the filters are gone" is
-    # indistinguishable from "the filters are broken". Server-rendered they are
-    # always present; the script only attaches behaviour to them.
-    _phase_statuses = sorted({p["status"] for p in summary["phases"] if p.get("status")})
-    table_tools = (
-        '<div class="toolbar sectools" role="search" aria-label="Filter the phases table">'
-        '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
-        'placeholder="Filter phases &amp; tasks by text\u2026">'
-        '<span class="tbl">Phase status:</span><span id="audit-phase-status">%s</span>'
-        '%s'
-        # vw (F-P-4): WHICH phases are on screen, said out loud. The archive used
-        # to be a toggle nobody found — a plan with forty done phases opened
-        # looking half-empty and there was no control saying why. Three named
-        # views, the default is the work that is left, and the select carries
-        # the answer even with the script dead.
-        '<span class="viewpick"><label class="tbl" for="audit-view">View:</label>'
-        '<select id="audit-view" aria-label="Which phases to show">'
-        '<option value="active">Active &amp; pending</option>'
-        '<option value="archived">Archived (done &amp; cancelled)</option>'
-        '<option value="all">All phases</option></select></span>'
-        '<button type="button" id="audit-expand" class="btn">expand all</button>'
-        # Shown only while something is actually filtering. It is a second copy of
-        # the empty state's button on purpose: the More-filters panel is drawn OVER
-        # the top of the table, so when a filter leaves no rows at all, the empty
-        # state — and the only way back from it — ends up underneath the very panel
-        # that caused it. A browser click found that; no string check could.
-        '<button type="button" class="btn" data-clear hidden>Clear filters</button>'
-        '<span id="audit-count" class="muted"></span>'
-        "<noscript><span class=\"tbl\">Filtering and collapsing need JavaScript "
-        "\u2014 every row is shown.</span></noscript></div>"
-        % (_chip_buttons(_phase_statuses, "data-ps", "fchip"),
-           _filter_panel(manifest)))
-
-    # One collapsible table: each phase is a group-row (click to expand its task
-    # rows). Default-collapsed via _SCRIPT; with JS off every row is visible.
-    out.append('<section id="%s" class="sec">' % section("phases", "Phases",
-                                                        len(summary["phases"])))
-    out.append(table_tools)
-    # `present` is every optional column this plan HAS data for; `cols` is the
-    # subset the compact row shows. The detail row renders the difference, so
-    # nothing is dropped from the page — only from the row.
-    present = _present_columns(manifest)
-    cols = [c for c in present if c in PRIMARY_COLS]
-    ncol = 3 + len(cols)
-    # vw: 'active' unless there is nothing active or pending to show — a
-    # finished plan that greeted its reader with an empty table would be the
-    # archive toggle's own failure wearing a select. Decided here, where the
-    # statuses are, and read by report.js as the starting view.
-    _segs_present = {_seg_of(p["status"]) for p in summary["phases"]}
-    _defview = "active" if (_segs_present & {"active", "pending"}) else "all"
-    # tm: the zone is named ONCE, in the header, rather than repeated in every
-    # cell or left for a reader to assume.
-    _colhead = {"done": 'done <span class="muted">UTC</span>'}
-    out.append('<div class="tablewrap"><table class="phases" '
-               'data-defaultview="%s"><thead><tr>'
-               "<th>id</th><th>title</th><th>status</th>%s</tr></thead><tbody>"
-               % (_defview,
-                  "".join('<th data-col="%s">%s</th>' % (e(c), _colhead.get(c, e(c)))
-                          for c in cols)))
-    _done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
-    # D1: the table renders in SEGMENTS — active (in_progress/blocked) first,
-    # then pending, then done — grouped by rolled-up status, plan order kept
-    # inside each group. The done segment is the ARCHIVE: on a plan that still
-    # has other work its seghead is a toggle and report.js collapses the rows
-    # under it at load, so a long finished run stops burying the work in
-    # motion. When done is the ONLY segment there is nothing to keep prominent
-    # and no toggle is emitted — a table that opens empty explains nothing.
-    # The Markdown twin deliberately keeps manifest order: it is a data table
-    # read by machines, and reordering it would change every diff against an
-    # earlier render for a purely presentational reason.
-    _pairs = list(zip(
-        [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
-        summary["phases"]))
-    _by_seg = {}
-    for _pair in _pairs:
-        _by_seg.setdefault(_seg_of(_pair[1]["status"]), []).append(_pair)
-    _segs = [s for s in _report_html.SEG_ORDER if _by_seg.get(s)]
-    for _seg in _segs:
-        _sn = len(_by_seg[_seg])
-        # D2: every segment header is also the segment's export surface — CSV
-        # of the segment's DATA and a print run scoped to it, wired by
-        # report.js (server-rendered buttons, the chips rule).
-        _exports = (
-            '<span class="segx">'
-            '<button type="button" class="btn segbtn" data-segcsv="%s" '
-            'title="Download this segment&#39;s phases and tasks as CSV — the '
-            'data, not the filtered view">CSV</button>'
-            '<button type="button" class="btn segbtn" data-segprint="%s" '
-            'title="Print only this segment — the print dialog opens scoped '
-            'to it">Print</button></span>' % (_seg, _seg))
-        # vw: every seghead is now a plain title. Which segments are ON SCREEN
-        # is the view select's business, and a segment that also hid itself
-        # would be a second, contradictory gate.
-        _head = ('<span class="segname">%s</span>'
-                 '<span class="segn">%s</span>'
-                 % (_report_html.SEG_LABEL[_seg], _plural(_sn, "phase")))
-        out.append('<tr class="seghead" data-seg="%s"><td colspan="%d">%s%s'
-                   "</td></tr>" % (_seg, ncol, _head, _exports))
-        for ph, psum in _by_seg[_seg]:
-            out.append(_phase_rows(ph, psum, _seg, ncol, cols, _done_ids,
-                                   _owners))
-    # Its own <tbody>, so `tbody tr:last-child` keeps meaning the last DATA row —
-    # the table's rounded bottom corner and its missing final rule both hang off
-    # that selector, and a permanently-present hidden row in the main body would
-    # have quietly taken both.
-    # vw: matches the VIEW is hiding. The archive gate used to lift itself
-    # during a search, which meant the control said one thing and the table did
-    # another; this says the true thing instead — how many matched, and the one
-    # press that shows them.
-    out.append('</tbody><tbody><tr class="norows"><td colspan="%d">'
-               "No phase matches these filters."
-               '<button type="button" class="btn" data-clear>Clear filters'
-               "</button></td></tr>"
-               '<tr class="outside" data-outside hidden><td colspan="%d">'
-               '<span data-outside-n></span>'
-               '<button type="button" class="btn" data-viewall>Show all phases'
-               "</button></td></tr>"
-               "</tbody></table></div></section>" % (ncol, ncol))
-    # Usage is the longest section by far — a chart, five tiles, three ranked
-    # lists, a budget block, economics and a heatmap — so its own headings become
-    # sub-items. A nav that stops at the section a reader is already inside stops
-    # helping exactly where the scrolling gets long.
-    _usage_html = _usage_section(usage)
-    if _usage_html:
-        section("usage", "Usage", None)
-        for _label, _anchor in (("Tokens per day", "usage-trend"),
-                                ("Budget", "usage-budget")):
-            _tag = '<h3 class="sub">%s</h3>' % _label
-            if _tag in _usage_html:
-                _usage_html = _usage_html.replace(
-                    _tag, '<h3 class="sub" id="%s">%s</h3>' % (_anchor, _label), 1)
-                section(_anchor, _label, None, sub=True)
-    out.append(_usage_html)
-
-    bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
-    if bugs:
-        task_by_id = _tasks_by_id(manifest)
-        # D2: the bugs table is tabular data, so it earns the same CSV control
-        # the phase segments carry — server-rendered, wired by report.js.
-        out.append('<h2 id="%s">Bugs<span class="segx">'
-                   '<button type="button" class="btn segbtn" data-csv="bugs" '
-                   'title="Download the bugs table as CSV">CSV</button>'
-                   "</span></h2>"
-                   % section("bugs", "Bugs", summary["bugs"]["open"] or None))
-        rows = []
-        for b in bugs:
-            bstatus, bfixed = _bug_view(b, task_by_id)
-            rows.append(
-                '<tr data-status="%s"><td class=mono>%s</td><td>%s</td><td>%s</td><td>%s</td>'
-                "<td class=mono>%s</td><td class=mono>%s</td><td>%s</td></tr>"
-                % (e(bstatus), e(b.get("id")), e(b.get("title")),
-                   _chip(bstatus),
-                   e(b.get("severity") or "—"), e(b.get("taskId") or "—"),
-                   e(bfixed[:9]), _ado_cell(b)))
-        out.append('<div class="tablewrap"><table class="data bugs"><thead><tr>'
-                   "<th>id</th><th>title</th>"
-                   "<th>status</th><th>severity</th><th>task</th><th>fixedIn</th>"
-                   "<th>ADO</th></tr></thead><tbody>%s</tbody></table></div>"
-                   % "".join(rows))
-
-    if summary["ready"]:
-        # C4: a definition list, not a comma-joined id string — each ready task
-        # names itself, wears its phase's area tags (same chip style as
-        # everywhere else) and states which blockers cleared. Empty stays as it
-        # was: no section at all, because the hero's "Nothing ready / nothing
-        # left to run" line already IS the empty state, with more context than
-        # a heading over nothing could carry.
-        out.append('<h2 id="%s">Ready now</h2>%s'
-                   % (section("ready", "Ready now", len(summary["ready"])),
-                      _ready_now_dl(manifest, summary["ready"])))
-    out.append("</main></div>")   # close .content and .shell
-
-    # Embed the Markdown twin as base64 so the "Download .md" button works from a
-    # standalone file. base64 (not raw text) keeps any manifest HTML/`</script>`
-    # out of the page and preserves UTF-8 exactly.
-    md_b64 = base64.b64encode(
-        render_md(manifest, summary, usage).encode("utf-8")).decode("ascii")
-    # basename is sanitized to [A-Za-z0-9-_], so it is safe in a JS string literal.
-    out.append('<script>window.AUDIT_MD_B64="%s";window.AUDIT_MD_NAME="%s.md";</script>'
-               % (md_b64, basename))
-    out.append(_SCRIPT)
-    if not fragment:
-        out.append("</html>")
-
-    # The nav is emitted from `sections`, the same list the anchors were written
-    # from, so it cannot list a section that is not there or miss one that is. It
-    # is rendered server-side rather than built by the script: with JS off this
-    # report still has to be a whole document, and a nav that only exists once
-    # JavaScript runs is a nav that is missing from every PDF and every reader
-    # with scripting disabled. The script adds scroll-spy on top; it does not
-    # supply the links.
-    nav = ""
-    if sections:
-        items = "".join(
-            '<li class="%s"><a href="#%s">%s%s</a></li>'
-            % ("sub-item" if sub else "item", e(anchor), e(label),
-               ('<span class="n">%d</span>' % count) if count else "")
-            for anchor, label, count, sub in sections)
-        nav = ('<nav class="snav" aria-label="Report sections">'
-               '<p class="snav-title">Contents</p><ol>%s</ol></nav>' % items)
-    body = "\n".join(out) + "\n"
-    return body.replace("@@NAV@@", nav).replace("@@TOOLBAR@@", doc_actions)
-
-
-# --- render_md ------------------------------------------------------------------
-def render_md(manifest, summary, usage=None):
-    """Markdown twin of render_html. Only Markdown metacharacters (pipes,
-    newlines) are escaped here — raw HTML inside manifest strings is passed
-    through and relies on the Markdown renderer (e.g. GitHub) to sanitise it.
-    render_html is the hardened, self-contained output; prefer it when the
-    source is untrusted and no sanitising renderer sits in front."""
-    meta = manifest.get("meta") or {}
-    now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
-
-    def cell(v):
-        return str(v if v is not None else "—").replace("|", "\\|").replace(
-            "\n", " ")
-
-    out = ["# %s" % cell(meta.get("title") or "Audit report"), "",
-           "repo: %s · generated %s" % (cell(meta.get("repo") or "?"), now), ""]
-    rsum = meta.get("reportSummary")
-    if isinstance(rsum, str) and rsum.strip():
-        out += ["> " + cell(rsum.strip()), ""]
-    if not summary["valid"]:
-        out += ["**INVALID MANIFEST: %d validator finding(s).**" % summary["findings"], ""]
-    tdone = sum(p["done"] for p in summary["phases"])
-    phdone = sum(1 for p in summary["phases"] if p["status"] == "done")
-    out += ["**Overall:** %d/%d tasks done · %d/%d phases signed off · %d open bug(s) · %d ready now"
-            % (tdone, summary["tasks"]["total"], phdone, len(summary["phases"]),
-               summary["bugs"]["open"], len(summary["ready"])), ""]
-    for ph, psum in zip(
-            [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
-            summary["phases"]):
-        out.append("## %s — %s (%s, %d/%d)"
-                   % (cell(psum["id"]), cell(psum["title"]),
-                      cell(psum["status"]), psum["done"], psum["total"]))
-        if ph.get("desiredOutcome"):
-            out.append("_%s_" % cell(ph["desiredOutcome"]))
-        out += ["", "| id | title | status | model | risk | commit | done | ADO |",
-                "|---|---|---|---|---|---|---|---|"]
-        for t in ph.get("tasks") or []:
-            if not isinstance(t, dict):
-                continue
-            ado = t.get("ado") if isinstance(t.get("ado"), dict) else None
-            ado_txt = "#%s" % ado["id"] if ado and ado.get("id") is not None else "—"
-            done_txt = _short_date(t.get("completedAt")) or (
-                "started " + _short_date(t.get("startedAt")) if t.get("startedAt") else "—")
-            out.append("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
-                cell(t.get("id")), cell(t.get("title")), cell(t.get("status")),
-                cell(t.get("model") or "—"), cell(t.get("risk") or "—"),
-                cell((t.get("commit") or "—")[:9]), cell(done_txt), cell(ado_txt)))
-        out.append("")
-    bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
-    if bugs:
-        task_by_id = _tasks_by_id(manifest)
-        out += ["## Bugs", "",
-                "| id | title | status | severity | task | fixedIn |",
-                "|---|---|---|---|---|---|"]
-        for b in bugs:
-            bstatus, bfixed = _bug_view(b, task_by_id)
-            out.append("| %s | %s | %s | %s | %s | %s |" % (
-                cell(b.get("id")), cell(b.get("title")), cell(bstatus),
-                cell(b.get("severity") or "—"), cell(b.get("taskId") or "—"),
-                cell(bfixed[:9])))
-        out.append("")
-    if summary["ready"]:
-        out += ["## Ready now", "", ", ".join(cell(r) for r in summary["ready"]), ""]
-    usage_md = _usage_md(usage)
-    if usage_md:
-        out.append(usage_md)
-    return "\n".join(out)
+    return _report_page.render_html(manifest, summary, basename, usage,
+                                    fragment=fragment, css=css,
+                                    verdict=_verdict)
 
 
 # --- cli ------------------------------------------------------------------------
