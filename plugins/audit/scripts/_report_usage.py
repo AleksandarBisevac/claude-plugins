@@ -18,12 +18,28 @@ Two rules the whole section is built on, and the reason it is worth a module:
     a routing recommendation all render beside the figure, or the figure does
     not render.
 
-Formatting is not decided here: `_fmt_tokens` / `_fmt_cost` delegate to _fmt
-(P10.6), the one token/cost formatter shared with the panel and /audit:usage.
-Neither is the divide: every share and every bar width in this file goes through
-`_fmt.share_pct`, via `_fill_pct` (a bar's answer to "there is no whole") or
-`_hover_share` (a share string's). No `or 1` — that fabricates a denominator and
-turns an unmeasurable share into a confident one.
+Formatting is not decided here: `_fmt_tokens` / `_fmt_cost` / `_fmt_pct`
+delegate to _fmt (P10.6), the one token/cost/share formatter shared with the
+panel and /audit:usage. Neither is the divide: every share and every bar width
+in this file goes through `_fmt.share_pct`, via `_fill_pct` (a bar's answer to
+"there is no whole") or `_hover_share` (a share string's). No `or 1` — that
+fabricates a denominator and turns an unmeasurable share into a confident one.
+
+One rule decides whether a rendered share carries `fmt_share`'s `<1%` floor,
+and it is about what sits BESIDE the number:
+
+  * A share that stands ALONE as a claim — a tooltip line, a stat tile, a
+    sentence — floors. `0%` for a slice that exists reads as "none", which is
+    the same lie `$0.00` tells about real spend, and `fmt_cost` has refused to
+    tell that one since P10.6.
+  * A share printed immediately NEXT TO the two numbers it was divided from —
+    a bar's width beside its own token count, a budget label beside `$spent of
+    $budget`, a saving beside both dollar figures — does not. The basis is
+    already on screen, and a floor would only disagree with the geometry drawn
+    beside it. Same asymmetry `_fmt.bar_cells` and `_fmt.fmt_share` already
+    make about the missing denominator.
+  * A percent CHANGE (`_delta`) is not a share at all: `+0%` says "essentially
+    unchanged", which is true, where `<1%` would claim a slice exists.
 
 render-report.py keeps thin module-level aliases (`load_usage`,
 `_usage_section`, `_usage_md`, `_fmt_tokens`, ...) so render_html / render_md
@@ -262,6 +278,25 @@ def _fmt_cost(x):
     return _fmt.fmt_cost(x)
 
 
+def _fmt_pct(x):
+    """An ALREADY-DERIVED rate — cache hit, attribution coverage, retried share
+    of spend — rendered under the one share rule: `<1%` for a real-but-tiny
+    rate, never the `0%` that reads as "none".
+
+    These arrive as percentages rather than as a part and a whole: the divide
+    happened in _usage_analytics, which rounds each to one decimal.
+    `fmt_share(x, 100)` is that percentage read back as a share of a hundred —
+    the same identity `_fmt.bar_cells(part, whole, 100)` already uses for the
+    CSS fill, and byte-identical to the `"%.0f%%"` it replaces everywhere
+    outside the 0-to-1 window.
+
+    The floor therefore only reaches what survived that rounding: a rate under
+    0.05% arrives here as `0.0` and is indistinguishable from a genuine zero.
+    That is upstream's information to keep, not this renderer's to guess at —
+    so `0.0` renders `0%`, which is what the number actually says."""
+    return _fmt.fmt_share(x, 100)
+
+
 def _model_slots(models):
     """model -> categorical slot, assigned by NAME (sorted), never by rank.
 
@@ -277,7 +312,12 @@ def _model_slots(models):
 
 def _delta(u, key):
     """`+12%` / `-4%` vs the previous period, or '' when there is nothing to compare
-    against. A first-run report must not invent a trend."""
+    against. A first-run report must not invent a trend.
+
+    NOT floored, because this is not a share: `+0%` says "essentially unchanged",
+    which is true and is what a reader wants from a delta, where `<1%` would
+    claim a slice exists. The sign is part of the string too, and `+<1%` is not
+    a thing anyone reads."""
     cmp_ = u.get("compare") or {}
     d = (cmp_.get("deltas") or {}).get(key)
     if d is None:
@@ -367,15 +407,20 @@ def _usage_tiles(u):
         tiles.append(_tile("equivalent cost", _fmt_cost(t["costUSD"]),
                            "not a bill — subscription plans have no per-token charge",
                            _delta(u, "costUSD")))
+    # Floored through `_fmt_pct`: a tile value stands alone, so a real 0.4%
+    # cache hit rendered `0%` says the cache never hits, and "bills at 0% of
+    # fresh-token rates" says the input side is free. `_tile` escapes `value`
+    # but passes `sub` through raw, so the sub-lines escape their own.
     tiles.append(_tile(
-        "cache hit", "%.0f%%" % cache.get("hitPct", 0),
-        "input side bills at %.0f%% of fresh-token rates"
-        % cache.get("inputCostVsFreshPct", 100)))
+        "cache hit", _fmt_pct(cache.get("hitPct", 0)),
+        "input side bills at %s of fresh-token rates"
+        % e(_fmt_pct(cache.get("inputCostVsFreshPct", 100)))))
     if unit.get("costPerTask") is not None:
         tiles.append(_tile("cost per task", _fmt_cost(unit["costPerTask"]),
                            "%d task(s) completed" % unit.get("completed", 0)))
-    tiles.append(_tile("attributed", "%.0f%%" % cov.get("attributedPct", 0),
-                       "%.0f%% down to a specific task" % cov.get("taskLevelPct", 0)))
+    tiles.append(_tile("attributed", _fmt_pct(cov.get("attributedPct", 0)),
+                       "%s down to a specific task"
+                       % e(_fmt_pct(cov.get("taskLevelPct", 0)))))
     return '<div class="tiles">%s</div>' % "".join(tiles)
 
 
@@ -390,11 +435,14 @@ def _usage_notices(u):
             % e(u.get("pricingAsOf") or "?"))
     cov = u.get("coverage") or {}
     if cov.get("warn"):
+        # Floored: this notice fires precisely when coverage is low, so it is the
+        # one sentence most likely to land in the 0-to-1 window — and "Only 0% of
+        # spend is attributed" contradicts the breakdowns it is introducing.
         out.append(
-            '<p class="notice warn">Only %.0f%% of spend is attributed to a phase, so '
+            '<p class="notice warn">Only %s of spend is attributed to a phase, so '
             "the breakdowns below describe a minority of the total. This is normal "
             "on a repo that has not run a phase since metering was installed.</p>"
-            % cov.get("attributedPct", 0))
+            % e(_fmt_pct(cov.get("attributedPct", 0))))
     return "".join(out)
 
 
@@ -508,6 +556,12 @@ def _budget_block(u):
         pct = p["pct"]
         # The fill caps at 100% because a bar cannot draw past its track; the
         # number beside it does not, so the overrun stays visible.
+        #
+        # And the `%.0f%%` label is NOT floored the way the tooltip share is:
+        # `$0.03 of $40.00` prints on this same row, so a reader has the whole
+        # divide in front of them and `0%` cannot mislead — while `<1%` beside a
+        # track drawn at 0.1% would only disagree with the geometry. The
+        # bar-label case the module docstring names, and `_fill_pct`'s reason.
         fill = min(100.0, pct)
         rows.append(
             '<div class="bud%s"><span class="nm"><span class="mono">%s</span> %s</span>'
@@ -544,29 +598,42 @@ def _fill_pct(part, whole):
 
     Not `_fmt.bar_cells(part, whole, 100)` itself: these tracks are drawn at one
     decimal, and the ranked list floors a real-but-tiny row at 0.8% — a whole-cell
-    minimum would round that to 1.0% and change every measurable row that has it."""
+    minimum would round that to 1.0% and change every measurable row that has it.
+
+    Left unfloored when `_hover_share` adopted `fmt_share`'s `<1%`: a CSS width
+    has no way to say "<1%", the ranked list's own 0.8% minimum is the geometric
+    form of the same rule, and the token count printed beside the track already
+    says what the empty-looking bar is worth."""
     pct = _fmt.share_pct(part, whole)
     return 0.0 if pct is None else pct
 
 
 def _hover_share(part, whole):
-    """`part` as a percentage of `whole` for a hover line — `?` when there is no
+    """`part` as a percentage of `whole` for a hover line — `<1%` for a
+    real-but-tiny slice, `0%` only for a genuine zero, `?` when there is no
     whole to divide by.
 
-    The mirror of `_fill_pct`: this string sits alone inside a tooltip with
-    nothing beside it to contradict a fabricated denominator, so an unmeasurable
-    share must say it is unmeasurable rather than report a confident `0%` that
-    reads exactly like a measured one.
+    A PURE ALIAS for `_fmt.fmt_share`, and said out loud rather than dressed up:
+    it adds nothing, not even the sentinel, which is fmt_share's own default. It
+    keeps its name because `_fill_pct` and `_hover_share` are how the rest of
+    this file names the two answers to "there is no whole" — a bar's and a share
+    string's — and a name is cheaper to keep than a second copy of the rule,
+    which is how the two drift.
 
-    Deliberately NOT `_fmt.fmt_share`, which is otherwise the same function: it
-    also carries a `<1%` floor this hover has never had, so adopting it would
-    change a MEASURABLE share — a row at 0.4% of the grand total reads `0%` here
-    today and would start reading `<1%`. Whether this hover should gain that
-    floor is a separate decision from guarding the divide; only the divide moves,
-    through `_fmt.share_pct`. The sentinel is spelled to match `fmt_share`'s
-    default so the chips and the hover say one word for one absence."""
-    pct = _fmt.share_pct(part, whole)
-    return "?" if pct is None else "%.0f%%" % pct
+    The mirror of `_fill_pct`: this string sits alone inside a tooltip with
+    nothing beside it, so an unmeasurable share must say so rather than report a
+    confident `0%` that reads exactly like a measured one — and, since this
+    change, a MEASURABLE one must not say `0%` either. It used to reimplement
+    fmt_share without the `<1%` floor on purpose, so that guarding the divide
+    could not move a measurable share; that exception is over. A row at 0.03% of
+    the grand total read `0%` here, and a slice that exists reported as nothing
+    is the same lie `fmt_cost` refuses to tell about sub-cent spend. Saying what
+    a row is worth is the tooltip's entire job.
+
+    Note the floor is not only about rounding DOWN: `0.7%` read `1%` here too,
+    overstating a slice that never reached one percent. `fmt_share` answers
+    `<1%` to both."""
+    return _fmt.fmt_share(part, whole)
 
 
 def _author_chips(u):
@@ -905,6 +972,9 @@ def _routing_advice_block(rt):
     advice = (rt or {}).get("advice") or []
     if not advice:
         return ""
+    # `savingPct` is NOT floored: the sentence prints both sides of the divide a
+    # few words earlier ("cost X at <to> rates versus Y"), so the basis for the
+    # percentage is in the same clause. The bar-label case, in prose.
     items = []
     for a in advice:
         items.append(
@@ -948,12 +1018,15 @@ def _economics_block(u):
             "anything; there are %d. A forecast off a smaller sample would be noise."
             "</p>" % (unit.get("gate", 5), unit.get("completed", 0)))
     if retry.get("totalCost"):
+        # Floored: the total spend this is a share OF is in the tiles far above,
+        # not in this sentence, so "0% of spend" travels alone beside a dollar
+        # figure that says the opposite.
         out.append(
             '<p class="fact">%s on tasks that needed more than one attempt '
-            "(%d task(s), %.0f%% of spend) &middot; <strong>%s</strong> on tasks that "
+            "(%d task(s), %s of spend) &middot; <strong>%s</strong> on tasks that "
             "ended blocked (%d task(s)).</p>"
             % (e(_fmt_cost(retry["retriedCost"])), retry["retriedTasks"],
-               retry["retriedPct"], e(_fmt_cost(retry["blockedCost"])),
+               e(_fmt_pct(retry["retriedPct"])), e(_fmt_cost(retry["blockedCost"])),
                retry["blockedTasks"]))
         out.append(
             '<p class="muted small">Retried spend is not the same as wasted spend: '
@@ -1240,8 +1313,8 @@ def _usage_md(u):
     head = "**Total:** %s tokens" % _fmt_tokens(t["tokens"])
     if show_cost:
         head += " · ~%s equiv" % _fmt_cost(t["costUSD"])
-    head += " · %s msgs · %d session(s) · cache hit %.0f%%" % (
-        "{:,}".format(t["msgs"]), t["sessions"], t["cacheHitPct"])
+    head += " · %s msgs · %d session(s) · cache hit %s" % (
+        "{:,}".format(t["msgs"]), t["sessions"], _fmt_pct(t["cacheHitPct"]))
     if show_cost:                       # see _usage_context for why there is no fallback
         head += (" · rates as of %s" % u["pricingAsOf"] if u.get("pricingAsOf")
                  else " · rates undated (set usage.pricingAsOf)")
@@ -1308,18 +1381,25 @@ def _usage_md(u):
     # number the charts encode in colour.
     unit, retry = u.get("unit") or {}, u.get("retry") or {}
     cache, cov = u.get("cache") or {}, u.get("coverage") or {}
+    # Every rate here is floored through `_fmt_pct`, exactly as its HTML twin is:
+    # this table IS the documented relief for the light-mode palette slots, so a
+    # `0%` it prints where the page prints `<1%` would make the relief the less
+    # honest of the two. Markdown carries the bare `<1%` the way it already
+    # carries `_fmt_cost`'s bare `<$0.01`.
     facts = []
     if cache:
-        facts.append("- **Cache:** %.0f%% hit; the input side bills at %.0f%% of "
-                     "fresh-token rates." % (cache.get("hitPct", 0),
-                                             cache.get("inputCostVsFreshPct", 100)))
+        facts.append("- **Cache:** %s hit; the input side bills at %s of "
+                     "fresh-token rates."
+                     % (_fmt_pct(cache.get("hitPct", 0)),
+                        _fmt_pct(cache.get("inputCostVsFreshPct", 100))))
         if cache.get("worstPhase"):
-            facts.append("- **Lowest cache phase:** %s at %.0f%%."
-                         % (_md(cache["worstPhase"][0]), cache["worstPhase"][1]))
+            facts.append("- **Lowest cache phase:** %s at %s."
+                         % (_md(cache["worstPhase"][0]),
+                            _fmt_pct(cache["worstPhase"][1])))
     if cov:
-        facts.append("- **Attribution:** %.0f%% of spend attributed (%.0f%% to a "
-                     "specific task)." % (cov.get("attributedPct", 0),
-                                          cov.get("taskLevelPct", 0)))
+        facts.append("- **Attribution:** %s of spend attributed (%s to a "
+                     "specific task)." % (_fmt_pct(cov.get("attributedPct", 0)),
+                                          _fmt_pct(cov.get("taskLevelPct", 0))))
     if unit.get("costPerTask") is not None:
         facts.append("- **Cost per completed task:** %s across %d task(s)."
                      % (_fmt_cost(unit["costPerTask"]), unit.get("completed", 0)))
@@ -1332,11 +1412,11 @@ def _usage_md(u):
         facts.append("- **Projection:** suppressed — needs %d completed tasks, has "
                      "%d." % (unit.get("gate", 5), unit.get("completed", 0)))
     if retry.get("totalCost"):
-        facts.append("- **Retried tasks:** %s across %d task(s) (%.0f%% of spend). "
+        facts.append("- **Retried tasks:** %s across %d task(s) (%s of spend). "
                      "Not the same as wasted spend — the ledger buckets by hour, "
                      "not by attempt."
                      % (_fmt_cost(retry["retriedCost"]), retry["retriedTasks"],
-                        retry["retriedPct"]))
+                        _fmt_pct(retry["retriedPct"])))
         facts.append("- **Blocked tasks:** %s across %d task(s) — spend with no "
                      "outcome." % (_fmt_cost(retry["blockedCost"]),
                                    retry["blockedTasks"]))
@@ -1735,16 +1815,23 @@ def _selftest():
     check("ud1 with no tokens anywhere the ranked hover says the share could not "
           "be computed, never the confident `0%` a denominator of 1 manufactured",
           _udz.count("share\t?") == 2 and "share\t0%" not in _udz, _udz)
-    # The other direction, and the one that would be cut in review: it passes on
-    # the pre-fix code by construction, and it is the ONLY case that fails if the
-    # unmeasurable branch goes unconditional or if `_fmt.fmt_share` is swapped in
-    # here — fmt_share carries a `<1%` floor this hover has never had, and a row
-    # at 0.03% of the grand total reads `0%` today. Changing that is a separate
-    # decision from guarding the divide; this case is what makes it deliberate.
-    check("ud2 a share that CAN be computed is untouched: same rounding, and no "
-          "`<1%` floor smuggled in with the guard",
-          "share\t67%" in uh and _tiny.count("share\t0%") == 1
-          and "share\t<1%" not in _tiny,
+    # ud2 UPDATED, deliberately. It used to pin the ABSENCE of the `<1%` floor
+    # ("a row at 0.03% of the grand total reads `0%` here today"), because
+    # guarding the divide was not licence to move a measurable share. That
+    # decision has since been reversed on purpose: `_hover_share` is now a pure
+    # alias for `_fmt.fmt_share` and uf1/uf2 pin the floor in both directions.
+    # What survives here is the half that never changed — a share at or above
+    # one percent rounds exactly as it always did — which is still the ONLY
+    # thing that fails if the floor goes unconditional.
+    #
+    # The old case also carried `"share\t<1%" not in _tiny`, and that clause
+    # asserted nothing: `_tip` escapes its payload, so the raw `<1%` can never
+    # appear in the markup and the clause was green either way. uf1 counts the
+    # escaped `share\t&lt;1%` instead.
+    check("ud2 a share at or above one percent is untouched by the divide "
+          "guard: same rounding, same digits as the removed expression",
+          "share\t67%" in uh and _tiny.count("share\t100%") == 1
+          and "share\t0%" not in _tiny,
           re.findall(r"share\t[^\n\"]*", _tiny))
     # Restoring `or 1` does NOT turn ud3/ud6 red, and that is stated rather than
     # hidden: a peak of zero forces every part to zero, so the fabricated `1` and
@@ -1809,11 +1896,159 @@ def _selftest():
           and _fill_with_the_or_1(0, 0) == _fill_pct(0, 0) == 0.0)
     check("ud7c mutation proof (measurable side): every computable divide is "
           "bit-for-bit the removed expression, so no bar or stack moves a pixel "
-          "and no hover changes a digit",
+          "and no hover at or above one percent changes a digit",
           all(_fill_pct(p, w) == 100.0 * p / w == _fill_with_the_or_1(p, w)
               for p, w in ((1, 3), (900000, 1500000), (7, 12), (0, 5), (300, 1000300)))
           and all(_hover_share(p, w) == "%.0f%%" % (100.0 * p / w)
-                  for p, w in ((1, 3), (300, 1000300), (0, 5), (900000, 1500000))))
+                  for p, w in ((1, 3), (0, 5), (900000, 1500000)))
+          # (300, 1000300) left the `all(...)` above and is named here instead
+          # of being quietly dropped from the tuple: 0.03% is the ONE hover this
+          # change moves, and the bar at the same ratio is pinned unmoved on the
+          # line above. uf1/uf3 own the rest of that story.
+          and _hover_share(300, 1000300) == "<1%"
+          and _share_with_the_or_1(300, 1000300) == "0%")
+
+    # --- uf: the `<1%` floor, and the sites that deliberately refuse it -------
+    # `0%` for a slice that EXISTS is the same lie `$0.00` tells about real
+    # spend, and `_fmt.fmt_share` has owned that rule since P10.6.
+    # `_hover_share` was the last share string in this file still spelling out
+    # fmt_share WITHOUT it — ud2 above used to pin that absence. It is now a
+    # pure alias, and the derived rates (cache, coverage, retry) render through
+    # `_fmt_pct`, which is the same rule for a percentage that arrives already
+    # divided.
+    #
+    # ONE fixture proves both directions at once, and it has to: a case built
+    # only from a tiny row passes on an implementation that floors EVERYTHING,
+    # and a case built only from a zero passes on one that floors nothing.
+    # Three rows over a grand total of 1,000,300 — 99.97%, 0.03% and a true
+    # zero — so the three implementations produce three different maps.
+    _uf = _ranked(dict(_u, byModel={
+        "big": {"tokens": 1000000, "costUSD": 1.0, "msgs": 9},
+        "sliver": {"tokens": 300, "costUSD": 0.01, "msgs": 1},
+        "silent": {"tokens": 0, "costUSD": 0.0, "msgs": 1}}),
+        "byModel", "By model")
+    # label -> the share its own tooltip reports, read back off the markup, so a
+    # row cannot borrow its neighbour's answer the way a bare `in` check allows.
+    _ufshares = dict(re.findall(r'title="([^"\n]*)\n[^"]*?share\t([^\n"]*)', _uf))
+    check("uf1 a measurable-but-tiny row hovers `&lt;1%`: 0.03% of the grand "
+          "total is a slice that exists, and `0%` reported it as nothing",
+          _ufshares.get("sliver") == "&lt;1%"
+          and _uf.count("share\t&lt;1%") == 1, _ufshares)
+    # The second direction, and the one that would be cut in review: it passes
+    # on the PRE-fix code by construction and is the only case that fails if the
+    # floor becomes unconditional — `<1%` for a row with no tokens would invent
+    # a presence, the mirror-image lie fmt_share's own `pct and` guard prevents.
+    check("uf2 ...and a genuine zero still reads `0%`, beside a full row that "
+          "still reads `100%` - the floor fires on smallness, never absence",
+          _ufshares == {"big": "100%", "sliver": "&lt;1%", "silent": "0%"}
+          and _uf.count("share\t0%") == 1, _ufshares)
+
+    def _hover_without_the_floor(part, whole):
+        pct = _fmt.share_pct(part, whole)
+        return "?" if pct is None else "%.0f%%" % pct   # the floor, removed
+
+    # The second pair is not invented: claude-fable-5 spends 655,243 of
+    # acme-store's committed 93,126,797 tokens, and that row is the one string
+    # this change moves in the worked example. It also shows the floor is not
+    # merely about rounding DOWN — 0.70% was being rounded UP to a confident
+    # `1%`, overstating a slice that never reached one percent.
+    check("uf3 mutation proof: the removed `\"%.0f%%\" % pct` calls a real "
+          "0.03% row `0%` and rounds a real 0.70% row UP to `1%`, so uf1 goes "
+          "red on it - while a true zero renders the same either way",
+          _hover_without_the_floor(300, 1000300) == "0%"
+          and _hover_share(300, 1000300) == "<1%"
+          and _hover_without_the_floor(655243, 93126797) == "1%"
+          and _hover_share(655243, 93126797) == "<1%"
+          and _hover_without_the_floor(0, 100) == _hover_share(0, 100) == "0%"
+          # the sentinel is unchanged by the adoption - fmt_share's own default
+          and _hover_share(5, 0) == _hover_without_the_floor(5, 0) == "?")
+
+    # The derived rates. Each stands alone in a tile, a warning or a sentence,
+    # with the total it is a share OF nowhere near it, so each floors.
+    _ufr = dict(_u,
+                cache={"hitPct": 0.4, "inputCostVsFreshPct": 0.4,
+                       "worstPhase": ("P2", 0.4)},
+                coverage={"attributedPct": 0.4, "taskLevelPct": 0.0,
+                          "warn": True},
+                retry={"totalCost": 10.0, "retriedCost": 0.5, "retriedTasks": 1,
+                       "retriedPct": 0.4, "blockedCost": 0.0, "blockedTasks": 0,
+                       "overlaps": 0},
+                totals=dict(_u["totals"], cacheHitPct=0.4))
+    _uftiles = _usage_tiles(_ufr)
+    check("uf4 a real-but-tiny cache hit, attribution and retried share render "
+          "`&lt;1%` in the tiles, the coverage warning and the economics line - "
+          "'bills at 0% of fresh-token rates' says the input side is free",
+          _uftiles.count('<div class="v">&lt;1%</div>') == 2
+          and "bills at &lt;1% of fresh-token rates" in _uftiles
+          and "Only &lt;1% of spend is attributed" in _usage_notices(_ufr)
+          and "(1 task(s), &lt;1% of spend)" in _economics_block(_ufr),
+          _uftiles)
+    # ...and the other direction, on the same four sites: a rate that really is
+    # zero must not be dressed up as a tiny one. `taskLevelPct` is 0.0 in the
+    # fixture above precisely so one tile answers each way.
+    _ufz = dict(_u,
+                cache={"hitPct": 0.0, "inputCostVsFreshPct": 0.0,
+                       "worstPhase": ("P2", 0.0)},
+                coverage={"attributedPct": 0.0, "taskLevelPct": 0.0,
+                          "warn": True},
+                retry={"totalCost": 10.0, "retriedCost": 0.0, "retriedTasks": 0,
+                       "retriedPct": 0.0, "blockedCost": 0.0, "blockedTasks": 0,
+                       "overlaps": 0},
+                totals=dict(_u["totals"], cacheHitPct=0.0))
+    _ufztiles = _usage_tiles(_ufz)
+    check("uf5 a rate that is genuinely zero still reads `0%` at every one of "
+          "those sites - the case that fails if `_fmt_pct` floors everything",
+          "&lt;1% down to a specific task" not in _uftiles
+          and "0% down to a specific task" in _uftiles
+          and "&lt;1%" not in _ufztiles
+          and _ufztiles.count('<div class="v">0%</div>') == 2
+          and "Only 0% of spend is attributed" in _usage_notices(_ufz)
+          and "(0 task(s), 0% of spend)" in _economics_block(_ufz),
+          _ufztiles)
+    # The twin must not be the more honest of the two, or the less: this table
+    # IS the documented relief for the light-mode palette slots.
+    _ufmd = _usage_md(_ufr)
+    check("uf6 the Markdown twin floors the same six rates the page does, and "
+          "carries the bare `<1%` the way it already carries `<$0.01`",
+          "cache hit <1%" in _ufmd
+          and "**Cache:** <1% hit; the input side bills at <1% of "
+              "fresh-token rates." in _ufmd
+          and "**Lowest cache phase:** P2 at <1%." in _ufmd
+          and "**Attribution:** <1% of spend attributed (0% to a specific "
+              "task)." in _ufmd
+          and "(<1% of spend)" in _ufmd
+          # Exactly six: the head's cacheHitPct, the cache pair, the worst
+          # phase, attribution and the retried share. Counted rather than
+          # found, so taskLevelPct's genuine 0.0 cannot drift into the floor
+          # without this going red.
+          and _ufmd.count("<1%") == 6,
+          [ln for ln in _ufmd.splitlines() if "%" in ln])
+
+    # The refusals. Each of these prints the two numbers it was divided from
+    # within a few characters of the percentage, so `0%` cannot mislead and a
+    # floor would only disagree with the track drawn beside it.
+    _ufbud = _budget_block(dict(_u, budgets={
+        "phases": [{"id": "P1", "title": "Alpha", "budget": 40.0, "spent": 0.03,
+                    "pct": 0.075, "over": False}],
+        "budgeted": 1, "totalBudget": 40.0, "totalSpent": 0.03,
+        "anyOver": False}))
+    check("uf7 a budget label does NOT floor: `$0.03 of $40.00` is on the same "
+          "row, so the whole divide is on screen and `<1%` would only disagree "
+          "with the 0.1%-wide track beside it",
+          '<span class="pct">0%</span>' in _ufbud
+          and "$0.03 of $40.00" in _ufbud
+          and "&lt;1%" not in _ufbud and "<1%" not in _ufbud, _ufbud)
+    check("uf8 nor does a bar width, a percent CHANGE, or a saving printed "
+          "between both of its dollar figures - a width cannot say `<1%`, and "
+          "`+0%` means unchanged rather than `a slice exists`",
+          "width:0.8%" in _uf            # the geometric form of the same floor
+          and '<span class="dl up">+0%</span>'
+              == _delta({"compare": {"deltas": {"tokens": 0.4}}}, "tokens")
+          and "$0.30 less (0%)" in _routing_advice_block({"advice": [{
+              "risk": "low", "from": "a", "to": "b", "tasks": 9,
+              "fromMeanAttempts": 1.0, "atFromRates": 148.30,
+              "atToRates": 148.00, "saving": 0.30, "savingPct": 0.2,
+              "evidenceTasks": 4, "evidenceAttempts": 1.0}]}))
 
     # --- one number format, everywhere ------------------------------------------
     check("u26 tokens are compact at one decimal, and two on hover",
