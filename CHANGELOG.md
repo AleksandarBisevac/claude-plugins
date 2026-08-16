@@ -128,6 +128,23 @@ Five dogfooding findings, each reproduced in a real browser before the fix.
   embedded in the page — and treating a zero hit as a failure rather than a quiet pass. The
   Markdown twin is compared now too; CI had only ever grepped a *fresh* one and never looked
   at the shipped copy.
+- **One home for "every task, and which phase it came from".** Thirty-three hand-rolled task
+  walks across twelve files now go through `_manifest_io`'s owners, and the duplicated
+  `effective_bug_status` body — whose own docstring admitted it "mirrors" the other copy — is
+  gone. Just as deliberate are the **twenty sites left alone**, each with its reason recorded
+  where the code is: `validate-manifest` must not adopt a *skipping* traversal when its job is
+  to report what would be skipped; `gen-demo-usage` draws one random number per phase, so
+  skipping task-less phases would change every generated ledger row; `audit-status`' index
+  keeps phase ids and task ids in one map, where splitting the walk lets a task win a
+  duplicate-id collision that document order used to decide. That last one was caught by a
+  4,000-manifest differential fuzz **after** the conversion looked right, and reverted.
+- **Hooks stamp time through one helper.** The same
+  `strftime("%Y-%m-%dT%H:%M:%SZ", gmtime())` was typed out in five files, and the sixth would
+  eventually have been typed with `localtime` — which nothing would have caught, because the
+  `Z` is a literal in the format string and the result still parses. A lock taken at 14:00
+  CEST recorded as `14:00Z` makes every consumer compute a negative age. The new cases pin
+  that the digits really are UTC, and force a timezone around themselves to do it: on a UTC
+  box — which is every CI runner — the obvious assertions are blind to exactly this bug.
 - **A constant that is both copied and never read is now a build failure.** `panel-server.py`
   declared `CONFIG_REL` and never used it while importing the module that owns it — nothing
   broke, it was just a second place the fact could drift from. The lint is narrow on purpose:
