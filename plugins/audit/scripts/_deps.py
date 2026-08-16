@@ -562,6 +562,73 @@ def navigability_violations(script_dir=None, hooks_dir=None):
     return violations
 
 
+# --- ui navigability ----------------------------------------------------------
+# The same rule as above for the assets under scripts/ui/, which the .py lint
+# cannot see: its file list is `scripts/*.py` + `hooks/*.py`, so the four files
+# that carry the entire report and panel UI have never been checked by anything.
+#
+# The threshold is a DENSITY here rather than a flat 2. Two headers is a real
+# floor in a 600-line module and means nothing in a 4,500-line script, and these
+# assets run 2-11x longer than the longest .py in the tree - the .py rule was
+# written for files that top out around 2,600 lines. One landmark per
+# `_NAV_MIN_LINES`, with 2 still the minimum, keeps one rule and one constant.
+#
+# Markers are the comment syntax each language already uses here:
+#   report.css   /* ---- base ---------- */
+#   panel.js     // ---------- Settings ----------
+# Up to two leading spaces count, because report.js wraps its whole body in an
+# IIFE and column 0 is therefore unavailable to it. A marker indented deeper
+# than that sits inside a function and is not a landmark the left margin gives
+# you - the same reason the .py rule insists on column 0.
+_UI_DIR = os.path.join(_HERE, "ui")
+
+_UI_MARKER_RES = (
+    (".css", re.compile(r"^/\*\s+-{2,}\s+(.+?)\s+-{2,}")),
+    (".js", re.compile(r"^ {0,2}//\s+-{2,}\s+(.+?)\s+-{2,}")),
+)
+
+
+def ui_navigability_violations(ui_dir=None):
+    """(filename, problem) for every long scripts/ui/ asset carrying too few
+    section markers to be navigable.
+
+    "Long" is `_NAV_MIN_LINES` or more, the same constant the .py rule uses;
+    "enough" is one marker per `_NAV_MIN_LINES` lines, never fewer than 2.
+    Files below the line threshold are not checked at all, and any extension
+    without a marker syntax in `_UI_MARKER_RES` (`.html`, and whatever else
+    lands there) is skipped rather than guessed at.
+    """
+    ui_dir = ui_dir if ui_dir is not None else _UI_DIR
+    violations = []
+    try:
+        names = sorted(os.listdir(ui_dir))
+    except OSError:
+        return violations
+    for name in names:
+        rex = None
+        for ext, candidate in _UI_MARKER_RES:
+            if name.endswith(ext):
+                rex = candidate
+                break
+        if rex is None:
+            continue
+        try:
+            with open(os.path.join(ui_dir, name), "r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if len(lines) < _NAV_MIN_LINES:
+            continue
+        markers = sum(1 for line in lines if rex.match(line))
+        want = max(2, -(-len(lines) // _NAV_MIN_LINES))
+        if markers < want:
+            violations.append((name,
+                                "%d lines but only %d section marker(s); needs "
+                                ">= %d (one per %d lines) to stay navigable"
+                                % (len(lines), markers, want, _NAV_MIN_LINES)))
+    return violations
+
+
 # --- selftest -----------------------------------------------------------------
 def _selftest():
     import shutil
@@ -954,6 +1021,68 @@ def _selftest():
               any(f == "long_file.py" for f, _ in real_nav_hits_again))
     finally:
         shutil.rmtree(nav_tmp, ignore_errors=True)
+
+    # ------------------------------------------------ ui_navigability_violations
+    check("u1 the real scripts/ui/ assets (>= %d lines) all carry one section "
+          "marker per %d lines - the four files that hold the entire report and "
+          "panel UI were unchecked by anything until now: %r"
+          % (_NAV_MIN_LINES, _NAV_MIN_LINES, ui_navigability_violations()),
+          not ui_navigability_violations())
+
+    ui_tmp = tempfile.mkdtemp(prefix="audit-deps-uinav-")
+    try:
+        def _write(name, body):
+            with open(os.path.join(ui_tmp, name), "w", encoding="utf-8") as fh:
+                fh.write(body)
+
+        _JS_MARK = "// --- one -------------------------------------------------\n"
+        _CSS_MARK = "/* ---- one ---------------------------------------------- */\n"
+
+        _write("bare.js", "x();\n" * (_NAV_MIN_LINES + 10))
+        ui_hits = ui_navigability_violations(ui_tmp)
+        check("u2 a long .js with no section markers at all is named as a ui "
+              "navigability violation: %r" % (ui_hits,),
+              any(f == "bare.js" for f, _ in ui_hits))
+
+        # ---- mutation proof: a weakened check must MISS the u2 fixture ----
+        def _weakened_ui_navigability_violations(ui_dir):
+            return []  # the marker-count check removed entirely
+
+        weak_ui_hits = _weakened_ui_navigability_violations(ui_tmp)
+        check("u3 mutation proof: with the marker-count check removed, the SAME "
+              "markerless-file fixture u2 catches is missed entirely (red proves "
+              "u2 is testing something real): %r" % (weak_ui_hits,),
+              not any(f == "bare.js" for f, _ in weak_ui_hits))
+        check("u4 mutation proof: the real, unweakened ui_navigability_violations() "
+              "still catches it - nothing was left mutated behind",
+              any(f == "bare.js" for f, _ in ui_navigability_violations(ui_tmp)))
+
+        # ---- the density is what does the work, not the floor of 2 ----
+        _write("thin.css", _CSS_MARK * 2 + ("a{b:c}\n" * (_NAV_MIN_LINES * 2 + 50)))
+        thin_hits = ui_navigability_violations(ui_tmp)
+        check("u5 a 900-line asset carrying exactly 2 markers is still named - a "
+              "flat 'at least 2' rule (what the .py lint asks) would pass it, so "
+              "this is the case that proves the DENSITY is doing the work: %r"
+              % (thin_hits,),
+              any(f == "thin.css" for f, _ in thin_hits))
+
+        # ---- the other direction: the rule must not fire on a well-marked file.
+        # Looks vacuous and is the only case that goes red if the density is ever
+        # tightened into something no real asset can satisfy.
+        _write("ok.css", _CSS_MARK * 2 + ("a{b:c}\n" * (_NAV_MIN_LINES - 100)))
+        _write("short.js", "x();\n" * 100)
+        ok_hits = ui_navigability_violations(ui_tmp)
+        check("u6 control: a long asset with enough markers, and a short one with "
+              "none, are both left alone - the rule fires on too few markers for "
+              "the length, not on length or on markers alone: %r" % (ok_hits,),
+              not any(f in ("ok.css", "short.js") for f, _ in ok_hits))
+
+        _write("panel.html", "<div>\n" * (_NAV_MIN_LINES + 10))
+        check("u7 an extension with no marker syntax on record (.html) is skipped "
+              "rather than guessed at",
+              not any(f == "panel.html" for f, _ in ui_navigability_violations(ui_tmp)))
+    finally:
+        shutil.rmtree(ui_tmp, ignore_errors=True)
 
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:
