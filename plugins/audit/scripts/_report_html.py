@@ -78,13 +78,12 @@ def _tasks_by_id(manifest):
             for t in (p.get("tasks") or []) if isinstance(t, dict) and t.get("id")}
 
 
-def _areas_of(area):
-    """A phase's `area` (string, list, or absent) -> a list of tag strings."""
-    if isinstance(area, str):
-        return [area] if area else []
-    if isinstance(area, list):
-        return [a for a in area if isinstance(a, str) and a]
-    return []
+# A phase's `area` -> its tags. One implementation, in `_areas`, the same one the
+# panel and audit-status alias. This file carried a COPY that predated the trim and
+# the de-duplication, so `"area": ["api","api"]` drew two chips in the HTML report
+# and one on every other surface — the report was the last reader of the pre-fix
+# six lines. A copy is not shared code; the alias is.
+_areas_of = _areas.areas_of
 
 
 # --- advisory area owners (D4, v0.36) ----------------------------------------
@@ -678,6 +677,23 @@ def _selftest():
           _areas_of(["a", 1, "b", None]) == ["a", "b"])
     check("_areas_of returns [] for absent/other types", _areas_of(None) == []
           and _areas_of(3) == [])
+    # The three cases above ALL pass on the pre-fix local copy — not one of them
+    # repeats a tag or pads one, which is how the report kept drawing two chips
+    # for `["api","api"]` while every other surface drew one, protected by a
+    # green case. The three below are the ones that can tell the copy from
+    # `_areas.areas_of`. The dedupe fixture is `["web","api","api"]` rather than
+    # the alphabetical `["api","api","web"]` because a set-based dedupe answers
+    # that one correctly by accident, and chip order is written order.
+    check("_areas_of DEDUPES in written order - a repeated tag is one chip, not "
+          "two (the local copy of this function shipped un-deduped)",
+          _areas_of(["api", "api"]) == ["api"]
+          and _areas_of(["web", "api", "api"]) == ["web", "api"])
+    check("_areas_of TRIMS, so ' api' and 'api' are the same tag - written "
+          "spacing must not split one area into two chips",
+          _areas_of([" api", "api"]) == ["api"]
+          and _areas_of(" frontend ") == ["frontend"])
+    check("_areas_of is the shared implementation, not a copy of it",
+          _areas_of is _areas.areas_of)
 
     # --- _bug_view(): derived status mirrors audit-status ----------------------
     _tbi = {"T1": {"status": "done", "commit": "abc1234"}}
