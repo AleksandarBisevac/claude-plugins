@@ -22,9 +22,11 @@ its own hooks.
 ## Tests (run before every PR)
 
 ```bash
-# every selftest suite — stdlib only, no deps. Globbed, never enumerated: a list
+# every selftest suite — stdlib only, no deps. Swept, never enumerated: a list
 # drifted three ways once and CI silently stopped running one suite entirely.
-for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
+# `find`, not `*.py`, and for the same reason — the glob was flat, so a file one
+# directory down stopped being run here without anything going red.
+for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
   python3 "$f" --selftest || exit 1
 done
 
@@ -56,13 +58,25 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   rather than listing them, and fails a file that has none. Adding a file and
   remembering to register it were once two separate acts, and one suite went
   unrun for two releases as a result.
-- **All `.py` under `hooks/` and `scripts/` stays flat, one directory deep.**
-  The CI selftest glob above and `_output.py`'s own guard are non-recursive by
-  design — a `.py` file dropped into a subdirectory silently stops being
-  tested. `scripts/ui/` is the one exception, and it holds only non-Python
-  assets (HTML/CSS/JS read at import by `_panel_ui.py`/`_report_ui.py`);
-  each carries a selftest that pins `scripts/ui/` as containing no `.py`
-  files, so the exception cannot quietly grow one.
+- **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits.** The
+  selftest sweeps — the one above and CI's two — use `find`, and
+  `_output.py_files()` is the single recursive walk behind both of `_output.py`'s
+  AST lints and every scanner in `_deps.py`. A rule stood here requiring `.py` to
+  stay flat, one directory deep, and its only reason was that all three of those
+  scanners were non-recursive: a file dropped into a subdirectory silently
+  stopped being tested. The hazard was the **silence**, not the subdirectory, and
+  it is gone — so the constraint is gone with it, and a `.py` one level down is
+  linted, layer-checked and selftested exactly like any other. What the recursion
+  costs is one rule, enforced rather than requested: a `.py` **basename must be
+  unique across the whole of `scripts/`**, because `import` and `_loader` both
+  resolve by basename, so two files sharing one would be a single node in the
+  layer graph wearing both files' edges — `_deps.layer_violations()` fails the
+  build by name on it. Removing the constraint is not the same as wanting
+  folders; whether `scripts/` should grow any is still the open question the
+  Decision record below records. `scripts/ui/` remains non-Python regardless: it
+  holds ordered parts of one assembled artifact rather than standalone files, and
+  `_panel_ui.py` and `_report_ui.py` each carry a selftest pinning it as
+  containing no `.py`.
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
 - Every command that mutates the manifest must revalidate
@@ -102,8 +116,8 @@ Checklist for a new `.py` under `hooks/` or `scripts/`:
   directly (by a hook, a command, or CI) takes a hyphenated name
   (`validate-manifest.py`).
 - **Module docstring** stating why the file exists, not just what it does.
-- **`--selftest`** that prints the `N/M cases passed` contract — CI sweeps
-  `hooks/*.py` and `scripts/*.py` and fails a file that has none.
+- **`--selftest`** that prints the `N/M cases passed` contract — CI sweeps every
+  `.py` under `hooks/` and `scripts/`, at any depth, and fails one that has none.
 - **`safe_stdio()` first in `__main__`**, before any other statement — this
   is AST-enforced by `_output.py`, not a convention.
 - **A layer assignment in `_deps.LAYERS`** — the import-graph lint fails an

@@ -17,9 +17,12 @@ two copies of a procedure is one copy and one lie.
   hooks that must start fast on every tool call are the reason.
 - **Python 3.8 floor**, held by `vermin -t=3.8-` in CI. Formatting is `%`-style throughout; the
   tree contains no f-strings.
-- **All `.py` stays flat, one directory deep.** The CI selftest glob and `_output.py`'s own guard
-  are non-recursive *by design*: a `.py` dropped into a subdirectory silently stops being tested.
-  `scripts/ui/` is the one exception and holds no `.py` at all.
+- **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits** — CI's sweep and the
+  lints in `_output.py` and `_deps.py` all walk recursively. The old rule saying files must stay
+  one directory deep existed only because those scanners were flat, so a file in a subdirectory
+  silently stopped being tested; that reason is gone. The one cost is that a `.py` **basename must
+  be unique** across the whole of `scripts/`, since `import` and `_loader` both resolve by
+  basename — `layer_violations()` reports a collision by name. `scripts/ui/` still holds no `.py`.
 - **Fail-open for advisory paths, fail-loud for guards** — the table is in `SECURITY.md`.
 - **Every claim in output carries the basis that makes it true, and when the basis is missing,
   that is the thing to say.** Never fall back to a default to fill the gap; a basis with no claim
@@ -73,7 +76,7 @@ lines, enforced by `_deps.ui_navigability_violations()`.
 ## Tests
 
 ```bash
-for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do python3 "$f" --selftest || exit 1; done
+for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks
 ```

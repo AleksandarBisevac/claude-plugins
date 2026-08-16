@@ -12,6 +12,15 @@ re-reads the sentence. This module makes the rule self-checking: `import_graph()
 REAL edges via `ast`, `layer_violations()` compares them against `LAYERS`, and the selftest
 this file's own CI runs fails the moment truth and table disagree.
 
+WHICH FILES, AND WHAT A NODE IS CALLED. Every `.py` under scripts/ and hooks/ is scanned
+WHEREVER IT SITS - the walk is `_output.py_files`, recursive, the same one both of
+`_output`'s own lints and CI's two `find` sweeps use. It used to be a flat `os.listdir`
+in all three places, which is the whole reason `CONTRIBUTING.md` had to forbid a `.py` in
+a subdirectory: the file did not fail anything, it silently stopped being checked. The
+hazard was the SILENCE, not the subdirectory, so the walk was widened rather than the
+shape forbidden. A node is named by its BASENAME (`scripts/usage/core.py` is `core`), and
+`_module_files` carries the argument for that and the collision check that pays for it.
+
 WHY `ast`, NOT A REGEX. An import can be nested inside a function, a `try`, a selftest -
 `_help.py` reaches for `_panel_settings` from inside its own selftest, five lines of comment
 explaining why that one is safe. A textual grep sees line noise; `ast.walk` sees a real edge
@@ -59,6 +68,15 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _HOOKS_DIR = os.path.join(os.path.dirname(_HERE), "hooks")
+
+# Run as a command, `sys.path[0]` is already this directory; imported from anywhere else
+# it is not. The same two-line preamble `_help.py` and `_panel_state.py` carry, for the
+# same reason - and `_output` was already an edge of this module (the `safe_stdio` import
+# in `__main__` below), so hoisting it to module level adds no new one.
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import _output  # noqa: E402  (py_files: the ONE recursive `.py` walk, shared not copied)
 
 # The module structure, position-indexed: LAYERS[0] is layer 0, the floor. Built from the
 # REAL import graph (see the module docstring), not aspiration - `import_graph()` and the
@@ -114,6 +132,54 @@ def _layer_of(name, layers=None):
         if name in members:
             return i
     return None
+
+
+# --- file discovery -----------------------------------------------------------
+# ONE module name per file, and it is the BASENAME: `scripts/usage/core.py` is `core`,
+# never `usage/core`. That is not a shortening for readability, it is the only name
+# anything in this tree can reach the file by. `import core` resolves on `sys.path`,
+# which carries scripts/ and not scripts/usage/; a runtime load is read through
+# `_py_literal_basenames`, which drops the directory on purpose so that
+# `../hooks/x.py` is not mistaken for a scripts/ sibling. A node called `usage/core`
+# would therefore match no edge either walk can produce, and `LAYERS` would become a
+# table of names nothing in the tree spells.
+#
+# The price of that choice is that a `.py` BASENAME must be unique across the whole
+# recursive tree, and the price is charged here rather than assumed in a comment: two
+# files claiming one name do not merely confuse the map, they COLLAPSE INTO ONE NODE -
+# every edge of one is attributed to the other, and the layer rule is then judged
+# against a graph that does not exist. `layer_violations()` reports a collision as a
+# violation in its own words, so the day `usage/core.py` and `panel/core.py` both exist
+# the build says so instead of quietly keeping whichever the walk saw last. This is the
+# same shape as `r8`, which asserts the hooks/-vs-scripts/ half of the same precondition.
+def _module_files(directory):
+    """`(modules, collisions)` for every `.py` under `directory`, RECURSIVELY.
+
+    `modules` maps module name -> a LIST of `(relname, path)`, and the list is a list
+    rather than a single entry for exactly one reason: a second file claiming the same
+    name has to be visible instead of overwriting the first. `collisions` is the sorted
+    list of names carrying more than one file - empty on any tree that obeys the rule
+    above, and never confused with "no files found", which shows up as an empty
+    `modules` instead.
+
+    `relname` is `_output.py_files`' forward-slashed path relative to `directory`, kept
+    so a violation can NAME `usage/core.py` rather than a bare `core.py` the reader then
+    has to go hunting for. On today's flat tree it is exactly the basename.
+    """
+    modules = {}
+    for rel, path in _output.py_files(directory):
+        modules.setdefault(os.path.basename(rel)[:-3], []).append((rel, path))
+    return modules, sorted(name for name in modules if len(modules[name]) > 1)
+
+
+def _named_by(modules):
+    """module name -> the relname a violation message should call it by.
+
+    The first entry wins; a name with a second entry is already reported as a collision
+    by `layer_violations()`, so this does not ALSO have to invent an answer to "which of
+    the two did you mean".
+    """
+    return dict((name, entries[0][0]) for name, entries in modules.items())
 
 
 # --- runtime loads ------------------------------------------------------------
@@ -289,39 +355,38 @@ def _imported_sibling_names(tree, sibling_names, self_name):
 def _scan_edges(script_dir=None):
     """`(static, runtime, broken)` - the two kinds of edge kept apart, in one pass.
 
-    `static` and `runtime` are SETS of `(importer, imported)` pairs (basenames, no
+    `static` and `runtime` are SETS of `(importer, imported)` pairs (module names, no
     `.py`); an edge that is both - a file that imports a sibling and also loads it by
-    path - is in each. `broken` is a sorted list of basenames that would not parse.
-    Flat `os.listdir`, `.py` only, nothing skipped silently: a file that will not parse
-    is reported in `broken` rather than dropped from the scan, the same rule
-    `_output.entries_missing_guard` and `_output.house_style_violations` both follow.
+    path - is in each. `broken` is a sorted list of RELNAMES (with `.py`) that would not
+    parse; a relname rather than a module name because that violation is the one whose
+    reader most needs to be handed the file. Recursive `.py` walk via `_module_files`,
+    nothing skipped silently: a file that will not parse is reported in `broken` rather
+    than dropped from the scan, the same rule `_output.entries_missing_guard` and
+    `_output.house_style_violations` both follow.
 
     Kept apart for one reason worth the tuple: a violation that says "runtime-loads"
     instead of "imports" tells the reader which kind of line to go and find, and there
     is no `import` line to find for most of them.
     """
     script_dir = script_dir or _HERE
-    files = {}
-    for fname in sorted(os.listdir(script_dir)):
-        if fname.endswith(".py"):
-            files[fname[:-3]] = fname
-    sibling_names = set(files)
+    modules, _collisions = _module_files(script_dir)
+    sibling_names = set(modules)
 
     static = set()
     runtime = set()
     broken = []
-    for mod, fname in sorted(files.items()):
-        path = os.path.join(script_dir, fname)
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=fname)
-        except (OSError, SyntaxError):
-            broken.append(mod)
-            continue
-        for imported in _imported_sibling_names(tree, sibling_names, mod):
-            static.add((mod, imported))
-        for loaded in _runtime_loaded_sibling_names(tree, sibling_names, mod):
-            runtime.add((mod, loaded))
+    for mod in sorted(modules):
+        for rel, path in modules[mod]:
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
+            except (OSError, SyntaxError):
+                broken.append(rel)
+                continue
+            for imported in _imported_sibling_names(tree, sibling_names, mod):
+                static.add((mod, imported))
+            for loaded in _runtime_loaded_sibling_names(tree, sibling_names, mod):
+                runtime.add((mod, loaded))
     return static, runtime, sorted(broken)
 
 
@@ -329,7 +394,13 @@ def import_graph(script_dir=None):
     """The real dependency graph of scripts/*.py: static imports AND runtime loads.
 
     Returns `(edges, broken)` - `edges` a sorted list of unique `(importer, imported)`
-    pairs, `broken` a sorted list of basenames that would not parse. The two kinds are
+    pairs of MODULE NAMES, `broken` a sorted list of relnames that would not parse. A
+    node is a basename (`scripts/usage/core.py` is `core`; see `_module_files` for why
+    it can be nothing else), which is also why two files may not share one: they would
+    be a single node here, wearing each other's edges. That collision is not silently
+    tolerated - `layer_violations()` names it - but this function does not itself
+    return it, so a caller reading the graph alone reads it through that gate.
+    The two kinds are
     unioned here on purpose: a dependency is a dependency, and `layer_violations()` /
     `_find_cycle()` must judge the whole graph, not the quarter of it spelled with an
     `import` keyword. `_scan_edges()` is the same scan with the kinds still separated,
@@ -385,25 +456,27 @@ def _find_cycle(edges):
 
 
 def _hooks_scripts_imports(hooks_dir, script_names):
-    """(hookfile, importedmodule) pairs: every static hooks/*.py import of a scripts name.
+    """(hookfile, importedmodule) pairs: every static hooks/**.py import of a scripts name.
 
     A hook's own sibling (`_config`, etc.) is not in `script_names` and is never flagged -
-    only a name that is genuinely one of scripts/*.py's own modules counts. A hooks file
+    only a name that is genuinely one of scripts/'s own modules counts. A hooks file
     that will not parse is reported (as a violation, by the caller) rather than skipped.
+
+    Recursive: `hookfile` is the path relative to `hooks_dir`, so a hook one directory
+    down is both SEEN and named by a path the reader can open. A hook that reaches into
+    scripts/ is exactly the rule this module refuses to let rot, and a flat listing
+    quietly exempted any hook somebody moved into a folder.
     """
     hits = []
-    for fname in sorted(os.listdir(hooks_dir)):
-        if not fname.endswith(".py"):
-            continue
-        path = os.path.join(hooks_dir, fname)
+    for rel, path in _output.py_files(hooks_dir):
         try:
             with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=fname)
+                tree = ast.parse(fh.read(), filename=rel)
         except (OSError, SyntaxError):
-            hits.append((fname, None))  # None: caller renders this as "does not parse"
+            hits.append((rel, None))  # None: caller renders this as "does not parse"
             continue
         for imported in _imported_sibling_names(tree, script_names, None):
-            hits.append((fname, imported))
+            hits.append((rel, imported))
     return hits
 
 
@@ -423,7 +496,11 @@ def _edge_verb(edge, static, runtime):
 def layer_violations(script_dir=None, hooks_dir=None, layers=None):
     """(file, what) tuples: everything wrong with the real tree against LAYERS.
 
-    Four kinds, each its own wording so a failure names what actually broke:
+    Five kinds, each its own wording so a failure names what actually broke:
+      - two files claiming one module name. The walk is recursive, so `usage/core.py`
+        and `panel/core.py` can both exist; they would be ONE node in the graph, each
+        wearing the other's edges, and every judgement below would be made about a tree
+        that is not there. Reported first because everything below it assumes otherwise;
       - a file on disk with no LAYERS entry, or a LAYERS entry with no file (stale table
         entry is drift too - a name that used to exist and was deleted without updating
         the table is exactly as wrong as a new file nobody added to it);
@@ -442,14 +519,22 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
     layers = layers if layers is not None else LAYERS
     violations = []
 
-    on_disk = set()
-    for fname in sorted(os.listdir(script_dir)):
-        if fname.endswith(".py"):
-            on_disk.add(fname[:-3])
+    modules, collisions = _module_files(script_dir)
+    named = _named_by(modules)
+    on_disk = set(modules)
     assigned = set(_all_names(layers))
 
+    for name in collisions:
+        violations.append((named[name],
+                            "module name %r is claimed by %d files (%s) - a `.py` "
+                            "basename must be unique across the whole of scripts/, "
+                            "because `import` and `_loader` both resolve by basename "
+                            "and two files sharing one are a single node in this graph"
+                            % (name, len(modules[name]),
+                               ", ".join(rel for rel, _path in modules[name]))))
+
     for mod in sorted(on_disk - assigned):
-        violations.append((mod + ".py", "on disk but not assigned a layer in LAYERS"))
+        violations.append((named[mod], "on disk but not assigned a layer in LAYERS"))
     for mod in sorted(assigned - on_disk):
         violations.append((mod + ".py",
                             "assigned a layer in LAYERS but no such file exists "
@@ -457,8 +542,8 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
 
     static, runtime, broken = _scan_edges(script_dir)
     edges = sorted(static | runtime)
-    for mod in broken:
-        violations.append((mod + ".py",
+    for rel in broken:
+        violations.append((rel,
                             "file does not parse; cannot be scanned for import edges"))
 
     for edge in edges:
@@ -468,14 +553,14 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
         if li is None or lj is None:
             continue  # already named above as unassigned
         if not (li > lj):
-            violations.append((importer + ".py",
+            violations.append((named[importer],
                                 "%s %s (layer %d) from layer %d - not strictly "
                                 "downward" % (_edge_verb(edge, static, runtime),
                                               imported, lj, li)))
 
     cycle = _find_cycle(edges)
     if cycle:
-        violations.append((cycle[0] + ".py", "import cycle: " + " -> ".join(cycle)))
+        violations.append((named[cycle[0]], "import cycle: " + " -> ".join(cycle)))
 
     if os.path.isdir(hooks_dir):
         for hookfile, imported in _hooks_scripts_imports(hooks_dir, on_disk):
@@ -670,22 +755,25 @@ def _section_text(text, heading):
 
 
 def _real_source_files(script_dir=None, hooks_dir=None):
-    """Sorted `(basename_with_ext, kind)` for every hooks/*.py and scripts/*.py file.
+    """Sorted `(relname, kind, path)` for every hooks/**.py and scripts/**.py file.
 
-    `kind` is `"scripts"` or `"hooks"` - callers need it only for readable
-    violation messages, not for the matching rule itself (a filename is a
-    filename regardless of which directory it lives in).
+    `relname` is relative to its OWN directory and forward-slashed
+    (`usage/core.py`), which is what a violation should print; `kind` is
+    `"scripts"` or `"hooks"`, which callers need only for readable messages, not
+    for the matching rule itself (a filename is a filename regardless of which
+    directory it lives in); `path` is carried because the walk already knows it
+    and a caller rebuilding it from a relname is a second place to get it wrong.
+
+    Recursive, via `_output.py_files`. A missing hooks/ directory is skipped
+    explicitly rather than left to `os.walk`, which yields nothing for a path
+    that does not exist and would make "no hooks at all" indistinguishable from
+    "hooks, all clean".
     """
     script_dir = script_dir or _HERE
     hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
-    out = []
-    for fname in sorted(os.listdir(script_dir)):
-        if fname.endswith(".py"):
-            out.append((fname, "scripts"))
+    out = [(rel, "scripts", path) for rel, path in _output.py_files(script_dir)]
     if os.path.isdir(hooks_dir):
-        for fname in sorted(os.listdir(hooks_dir)):
-            if fname.endswith(".py"):
-                out.append((fname, "hooks"))
+        out.extend((rel, "hooks", path) for rel, path in _output.py_files(hooks_dir))
     return out
 
 
@@ -713,6 +801,13 @@ def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
 
     A missing heading OR missing tree entry is reported once per file, in
     `_real_source_files()` order (scripts before hooks, each alphabetical).
+
+    MATCHED BY BASENAME, REPORTED BY RELNAME. A directory tree draws a nested
+    file as an indented `core.py` under a `usage/` line, not as the string
+    `usage/core.py`, so demanding the relname would fail a correctly drawn tree;
+    and a basename is unambiguous here because `layer_violations()` fails a tree
+    in which two files share one (see `_module_files`). The violation still names
+    the relname, because that is the thing the reader has to go and open.
     """
     path = _guide_path(guide_path)
     rel = "PLUGIN-BUILD-GUIDE.md" if guide_path is None else path
@@ -727,11 +822,12 @@ def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
     headings = re.findall(r"^### .*$", section2, re.M) if section2 is not None else []
 
     violations = []
-    for fname, _kind in _real_source_files(script_dir, hooks_dir):
-        if tree_block is None or fname not in tree_block:
-            violations.append((fname, "missing from the '%s' tree" % _TREE_HEADING))
-        if not any(fname in h for h in headings):
-            violations.append((fname, "no '### ' heading in '%s' mentions it"
+    for rel, _kind, _path in _real_source_files(script_dir, hooks_dir):
+        base = os.path.basename(rel)
+        if tree_block is None or base not in tree_block:
+            violations.append((rel, "missing from the '%s' tree" % _TREE_HEADING))
+        if not any(base in h for h in headings):
+            violations.append((rel, "no '### ' heading in '%s' mentions it"
                                 % _SECTION2_HEADING))
     return violations
 
@@ -762,8 +858,7 @@ def navigability_violations(script_dir=None, hooks_dir=None):
     script_dir = script_dir or _HERE
     hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
     violations = []
-    for fname, kind in _real_source_files(script_dir, hooks_dir):
-        path = os.path.join(script_dir if kind == "scripts" else hooks_dir, fname)
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 lines = fh.readlines()
@@ -777,7 +872,7 @@ def navigability_violations(script_dir=None, hooks_dir=None):
             if m and m.group(1).strip() != "selftest":
                 headers += 1
         if headers < 2:
-            violations.append((fname,
+            violations.append((rel,
                                 "%d lines but only %d non-selftest section header(s) "
                                 "(# --- name ---); needs >= 2 to be navigable"
                                 % (len(lines), headers)))
@@ -959,10 +1054,8 @@ def _selftest():
     # different facts while an allow-list sat between them, and the point of removing it is
     # that they are now one - so both are asserted, and a suppression reintroduced anywhere
     # in between makes exactly one of them fail.
-    real_on_disk = set()
-    for _fname in sorted(os.listdir(_HERE)):
-        if _fname.endswith(".py"):
-            real_on_disk.add(_fname[:-3])
+    real_modules, real_collisions = _module_files(_HERE)
+    real_on_disk = set(real_modules)
     real_hooks_raw = [(f, m) for f, m in _hooks_scripts_imports(_HOOKS_DIR, real_on_disk)
                        if m is not None]
     check("r5 hooks/ statically imports nothing from scripts/ AT ALL - no allow-list, no "
@@ -989,18 +1082,24 @@ def _selftest():
           % (len(real_runtime), len(real_static), len(real_runtime - real_static)),
           real_runtime and (real_runtime - real_static))
 
-    real_hook_names = set()
+    real_hook_modules = {}
+    real_hook_collisions = []
     if os.path.isdir(_HOOKS_DIR):
-        for _fname in sorted(os.listdir(_HOOKS_DIR)):
-            if _fname.endswith(".py"):
-                real_hook_names.add(_fname[:-3])
-    check("r8 no hooks/*.py basename collides with a scripts/*.py one. The runtime-load "
+        real_hook_modules, real_hook_collisions = _module_files(_HOOKS_DIR)
+    real_hook_names = set(real_hook_modules)
+    check("r8 no hooks/**.py basename collides with a scripts/**.py one. The runtime-load "
           "rule reads a literal's BASENAME and ignores its directory (audit-doctor loads "
           "`../hooks/_config.py` and `../hooks/guard-capabilities.py` by path), so the "
           "day both directories carry the same filename a hooks load would be recorded "
           "as a scripts edge. That precondition is asserted here rather than assumed in "
           "a comment: %r" % (sorted(real_hook_names & real_on_disk),),
           not (real_hook_names & real_on_disk))
+    check("r8b ...and no basename collides WITHIN either directory either. Both scans "
+          "are recursive now, so `usage/core.py` beside `panel/core.py` is a shape the "
+          "tree can take - and it would be one node in the graph wearing two files' "
+          "edges, and one ambiguous name for `guide_enumeration` to match on. scripts=%r "
+          "hooks=%r" % (real_collisions, real_hook_collisions),
+          not real_collisions and not real_hook_collisions)
 
     # -------------------------------------------------------- render: format + determinism
     render_a = render()
@@ -1169,19 +1268,18 @@ def _selftest():
               % (rt_hits,), rt_by_file("top.py") == [])
 
         # ---- mutation proof: the pre-change graph must MISS these same fixtures ----
-        # This IS the code that shipped: edges from `ast.Import` / `ast.ImportFrom` only,
-        # with the layer comparison kept intact so the only thing removed is the runtime
-        # pass. It reports nothing at all here, which is precisely how it reported nothing
-        # on a real tree carrying twenty-one bad edges.
+        # The graph as it stood before the runtime pass existed: edges from `ast.Import` /
+        # `ast.ImportFrom` only. Everything else is today's code - including the recursive
+        # `_module_files` walk - so exactly ONE variable is removed and a red rt6 can only
+        # be about that one. It reports nothing at all here, which is precisely how it
+        # reported nothing on a real tree carrying twenty-one bad edges.
         def _static_only_layer_violations(script_dir, layers):
-            names = {}
-            for fname in sorted(os.listdir(script_dir)):
-                if fname.endswith(".py"):
-                    names[fname[:-3]] = fname
+            names, _dupes = _module_files(script_dir)
             found = []
-            for mod, fname in sorted(names.items()):
-                with open(os.path.join(script_dir, fname), "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=fname)
+            for mod in sorted(names):
+                rel, path = names[mod][0]
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
                 for imported in _imported_sibling_names(tree, set(names), mod):
                     li = _layer_of(mod, layers)
                     lj = _layer_of(imported, layers)
@@ -1192,7 +1290,8 @@ def _selftest():
 
         weak_rt_hits = _static_only_layer_violations(rt_src, rt_layers)
         check("rt6 mutation proof: with the runtime pass removed (the static-import walk "
-              "this change replaced, verbatim), the SAME three fixtures rt1-rt3 catch are "
+              "this change replaced, and nothing else changed with it), the SAME three "
+              "fixtures rt1-rt3 catch are "
               "missed ENTIRELY - red here proves those three cases test something real "
               "rather than passing however the check were written: %r" % (weak_rt_hits,),
               weak_rt_hits == [])
@@ -1416,9 +1515,10 @@ def _selftest():
             headings = (re.findall(r"^### .*$", section2, re.M)
                         if section2 is not None else [])
             found = []
-            for fname, _kind in _real_source_files(src_b, hk_dir):
-                if not any(fname in h for h in headings):  # tree check dropped entirely
-                    found.append((fname, "no section heading"))
+            for rel, _kind, _path in _real_source_files(src_b, hk_dir):
+                base = os.path.basename(rel)
+                if not any(base in h for h in headings):  # tree check dropped entirely
+                    found.append((rel, "no section heading"))
             return found
 
         weak_hits = _weakened_guide_enumeration(no_tree_guide)
@@ -1530,6 +1630,192 @@ def _selftest():
               not any(f == "panel.html" for f, _ in ui_navigability_violations(ui_tmp)))
     finally:
         shutil.rmtree(ui_tmp, ignore_errors=True)
+
+    # ------------------------------------------- the scanners reach a subdirectory
+    # A recursive walk that is never handed a subdirectory proves nothing, so this
+    # builds one. Every scanner in this module used a flat `os.listdir`, which is
+    # why `CONTRIBUTING.md` had to forbid a `.py` below scripts/ or hooks/: the file
+    # did not fail anything, it stopped being scanned and said so nowhere. The
+    # fixture puts the offence one level down in each direction - an upward edge in
+    # `scripts/usage/`, a banned hooks->scripts import in `hooks/nested/` - and the
+    # clean second direction beside each of them.
+    rec = tempfile.mkdtemp(prefix="audit-deps-rec-")
+    try:
+        rec_scripts = os.path.join(rec, "scripts")
+        rec_hooks = os.path.join(rec, "hooks")
+        for _d in (rec_scripts, rec_hooks,
+                   os.path.join(rec_scripts, "usage"),
+                   os.path.join(rec_scripts, "panel"),
+                   os.path.join(rec_hooks, "nested")):
+            os.makedirs(_d)
+
+        def _rec_write(*parts):
+            body = parts[-1]
+            with open(os.path.join(rec, *parts[:-1]), "w", encoding="utf-8") as fh:
+                fh.write(body)
+
+        _rec_write("scripts", "flat_low.py", "pass\n")
+        _rec_write("scripts", "high.py", "pass\n")
+        # One directory down and UPWARD: L0 reaching L1. The offence.
+        _rec_write("scripts", "usage", "core.py", "import high\n")
+        # One directory down and DOWNWARD: L1 reaching L0. Legal, and must stay legal.
+        _rec_write("scripts", "panel", "clean.py", "import flat_low\n")
+        # A hook one directory down importing a scripts module that is ITSELF only
+        # findable one directory down - both walks have to work for this to be named.
+        _rec_write("hooks", "nested", "sneaky.py", "import core\n")
+        _rec_write("hooks", "nested", "fine.py", "import os\n")
+        rec_layers = (("core", "flat_low"), ("clean", "high"))
+
+        rec_modules, rec_collisions = _module_files(rec_scripts)
+        rec_map = dict((name, [rel for rel, _p in entries])
+                       for name, entries in rec_modules.items())
+        check("w1 the scripts walk descends into subdirectories, keys each file by its "
+              "BASENAME (the only name `import` or `_loader` can spell) and remembers the "
+              "relative path to report it by: %r" % (rec_map,),
+              rec_map == {"clean": ["panel/clean.py"], "core": ["usage/core.py"],
+                          "flat_low": ["flat_low.py"], "high": ["high.py"]})
+
+        rec_hits = sorted(layer_violations(rec_scripts, hooks_dir=rec_hooks,
+                                            layers=rec_layers))
+        check("w2 the whole violation list is EXACTLY the two offences, one from a "
+              "scripts file one directory down and one from a hooks file one directory "
+              "down, each NAMED BY ITS RELATIVE PATH rather than by a bare basename the "
+              "reader would have to go hunting for. Counted as a whole list, not found "
+              "one at a time, so a walk that sees one of the two cannot pass: %r"
+              % (rec_hits,),
+              rec_hits == [
+                  ("nested/sneaky.py",
+                   "imports scripts module core - hooks must not depend on scripts"),
+                  ("usage/core.py",
+                   "imports high (layer 1) from layer 0 - not strictly downward")])
+        check("w3 ...and the second direction, which w2's exact list already carries and "
+              "this states out loud: a LEGAL downward import from `panel/clean.py`, and a "
+              "hook one level down importing only stdlib, are both left alone. Living in "
+              "a folder is not the offence - it never was: %r" % (rec_hits,),
+              not any(f in ("panel/clean.py", "nested/fine.py") for f, _w in rec_hits))
+
+        rec_edges, rec_broken = import_graph(rec_scripts)
+        check("w4 a file one directory down is the node `core`, not `usage/core` - the "
+              "name every real edge in this tree is spelled with. Pinned because the "
+              "alternative silently matches nothing: %r %r" % (rec_edges, rec_broken),
+              rec_edges == [("clean", "flat_low"), ("core", "high")] and not rec_broken)
+
+        # ---- mutation proof: the flat scan this replaced misses both offences ----
+        def _flat_relnames(directory):
+            """The `os.listdir` these scanners used to call: one level, no walk."""
+            return sorted(f for f in os.listdir(directory) if f.endswith(".py"))
+
+        def _flat_layer_violations(script_dir, hooks_dir, layers):
+            # `layer_violations()` with ONE thing swapped back - the recursive walk
+            # returns to the flat listing. The edge walk, the layer comparison and the
+            # hooks rule are all the real ones, so an empty result here is about file
+            # discovery and nothing else.
+            names = dict((f[:-3], os.path.join(script_dir, f))
+                         for f in _flat_relnames(script_dir))
+            found = []
+            for mod in sorted(names):
+                with open(names[mod], "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=mod)
+                for imported in _imported_sibling_names(tree, set(names), mod):
+                    li = _layer_of(mod, layers)
+                    lj = _layer_of(imported, layers)
+                    if li is not None and lj is not None and not (li > lj):
+                        found.append((mod + ".py",
+                                      "imports %s (layer %d) from layer %d - not "
+                                      "strictly downward" % (imported, lj, li)))
+            for fname in _flat_relnames(hooks_dir):
+                with open(os.path.join(hooks_dir, fname), "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=fname)
+                for imported in _imported_sibling_names(tree, set(names), None):
+                    found.append((fname, "imports scripts module %s - hooks must not "
+                                  "depend on scripts" % imported))
+            return found
+
+        weak_rec_hits = _flat_layer_violations(rec_scripts, rec_hooks, rec_layers)
+        check("w5 mutation proof: with the walk swapped back for the flat `os.listdir` "
+              "it replaced, BOTH offences w2 catches are missed entirely - the scan "
+              "returns %r and %r and reports a clean tree. That is the exact failure "
+              "`CONTRIBUTING.md`'s old flat-files rule existed to avoid: %r"
+              % (_flat_relnames(rec_scripts), _flat_relnames(rec_hooks), weak_rec_hits),
+              weak_rec_hits == [])
+        rec_again = layer_violations(rec_scripts, hooks_dir=rec_hooks, layers=rec_layers)
+        check("w6 mutation proof: the real, unweakened check still names both - each "
+              "KIND counted separately, so a version that finds the scripts one and "
+              "drops the hooks one cannot pass here. Counting the list length alone "
+              "would not do it: a flat scan turns those same two files into two "
+              "'stale table entry' violations and lands on 2 as well, which is the "
+              "shape of a fixture that cannot tell the two implementations apart: %r"
+              % (rec_again,),
+              len([v for v in rec_again if "not strictly downward" in v[1]]) == 1
+              and len([v for v in rec_again if "imports scripts module" in v[1]]) == 1
+              and len(rec_again) == 2)
+
+        # ---- guide_enumeration: matched by basename, reported by relative path ----
+        rec_guide = os.path.join(rec, "guide.md")
+        with open(rec_guide, "w", encoding="utf-8") as fh:
+            fh.write(
+                "intro\n\n" + _TREE_HEADING + "\n\n```\n"
+                "  flat_low.py\n  high.py\n  usage/\n    core.py\n```\n\n"
+                + _SECTION2_HEADING + "\n\n"
+                "### `flat_low.py`\nprose.\n\n"
+                "### `high.py`\nprose.\n\n"
+                "### `core.py`\nprose.\n\n"
+                "## 3. Next section\nnot part of section 2.\n"
+            )
+        rec_enum_hooks = os.path.join(rec, "empty_hooks")
+        os.makedirs(rec_enum_hooks)
+        rec_enum = guide_enumeration(rec_guide, script_dir=rec_scripts,
+                                      hooks_dir=rec_enum_hooks)
+        check("w7 a file one directory down that the guide never mentions is named, by "
+              "its relative path - and `usage/core.py`, which the tree draws as an "
+              "indented `core.py` under a `usage/` line, is NOT, because the match is on "
+              "the BASENAME. Both directions in one exact list, which is also what fails "
+              "if the rule is ever tightened to demand the literal `usage/core.py` a "
+              "correctly drawn tree does not contain: %r" % (rec_enum,),
+              rec_enum == [
+                  ("panel/clean.py", "missing from the '%s' tree" % _TREE_HEADING),
+                  ("panel/clean.py", "no '### ' heading in '%s' mentions it"
+                   % _SECTION2_HEADING)])
+
+        # ---- navigability: a long file one directory down is still judged ----
+        nav_scripts = os.path.join(rec, "nav", "scripts", "deep")
+        os.makedirs(nav_scripts)
+        nav_hooks_dir = os.path.join(rec, "nav", "hooks")
+        os.makedirs(nav_hooks_dir)
+        with open(os.path.join(nav_scripts, "long_file.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("pass\n" * (_NAV_MIN_LINES + 10))
+        nav_deep = navigability_violations(os.path.join(rec, "nav", "scripts"),
+                                            hooks_dir=nav_hooks_dir)
+        check("w8 a long, headerless file one directory down is a navigability "
+              "violation like any other, named `deep/long_file.py`: %r" % (nav_deep,),
+              [f for f, _w in nav_deep] == ["deep/long_file.py"])
+
+        # ---- the price of naming nodes by basename, charged rather than assumed ----
+        coll = os.path.join(rec, "collide")
+        os.makedirs(os.path.join(coll, "usage"))
+        os.makedirs(os.path.join(coll, "panel"))
+        for _sub in ("usage", "panel"):
+            with open(os.path.join(coll, _sub, "core.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write("pass\n")
+        coll_hits = layer_violations(coll, hooks_dir=rec_enum_hooks,
+                                      layers=(("core",),))
+        check("w9 two files claiming one module name is a violation IN ITS OWN WORDS, "
+              "naming both paths - not a silently kept last-one-wins. They would be a "
+              "single node in the graph, each wearing the other's edges, and every "
+              "later judgement would be about a tree that is not there: %r" % (coll_hits,),
+              len(coll_hits) == 1 and coll_hits[0][0] == "panel/core.py"
+              and "claimed by 2 files" in coll_hits[0][1]
+              and "usage/core.py" in coll_hits[0][1])
+        check("w10 ...and the second direction: two DIFFERENT basenames in two different "
+              "subdirectories are not a collision. Reads vacuous, and is the only case "
+              "that fails if uniqueness is ever implemented as 'more than one directory' "
+              "rather than 'more than one file per name' - which would make the whole "
+              "recursion unusable: %r" % (rec_collisions,),
+              rec_collisions == [])
+    finally:
+        shutil.rmtree(rec, ignore_errors=True)
 
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:

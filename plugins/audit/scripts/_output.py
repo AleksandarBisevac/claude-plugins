@@ -207,8 +207,8 @@ def house_style_violations(dirs=None):
     House style, not the 3.8 floor: walrus, `from __future__ import ...`, `typing` and
     `dataclasses` are all legal on Python 3.8, so vermin's version gate cannot see any
     of them — they are banned by convention, and conventions drift unless something
-    reads the AST. Scans `scripts/*.py` and `hooks/*.py`, flat and non-recursive, the
-    same directory-listing shape `entries_missing_guard` uses — and for the same reason
+    reads the AST. Scans every `.py` under `scripts/` and `hooks/` RECURSIVELY through
+    `py_files`, the same walk `entries_missing_guard` uses — and for the same reason
     a file that will not parse is reported as a violation rather than skipped, since a
     syntax error is a worse thing to pass over in silence than any single banned import.
     """
