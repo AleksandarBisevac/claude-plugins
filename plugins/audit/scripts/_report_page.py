@@ -23,8 +23,9 @@ hero renders the "could not be evaluated" state the product already has for a
 gate that raises — an honest unknown, never a fabricated Clear.
 
 Imports go one way only: `_report_md` (the Markdown twin this page embeds),
-`_report_usage`, `_report_ui` and `_report_html` are all below this file; it
-must never import render-report.
+`_report_usage`, `_report_ui`, `_report_html` and `_manifest_io` (layer 1, which
+owns reading a manifest's shape) are all below this file; it must never import
+render-report.
 """
 import base64
 import json
@@ -39,6 +40,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 import _report_ui    # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
 import _report_html  # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage  # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
@@ -168,8 +170,11 @@ _OPTIONAL_COLS = (
 # --- table helpers --------------------------------------------------------------
 def _present_columns(manifest):
     """The optional columns at least one task actually fills."""
-    tasks = [t for p in (manifest.get("phases") or []) if isinstance(p, dict)
-             for t in (p.get("tasks") or []) if isinstance(t, dict)]
+    # Every task, id or not: a column is earned by a task FILLING it, and a task
+    # with no `id` fills `ado` or `outcome` exactly as well as one that has an id.
+    # `iter_tasks`, therefore, and not `_tasks_by_id` — the index drops id-less
+    # tasks by contract, which here would silently un-earn a column.
+    tasks = [t for _, t in _manifest_io.iter_tasks(manifest)]
     out = []
     for name, get in _OPTIONAL_COLS:
         try:
@@ -390,13 +395,10 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         ((usage or {}).get("byAuthor") or {}).items(),
         key=lambda kv: -kv[1].get("tokens", 0))]
     _gdates = []
-    for _ph in (manifest.get("phases") or []):
-        if isinstance(_ph, dict):
-            for _t in (_ph.get("tasks") or []):
-                if isinstance(_t, dict):
-                    for _k in ("startedAt", "completedAt"):
-                        if _t.get(_k):
-                            _gdates.append(_short_date(_t[_k]))
+    for _, _t in _manifest_io.iter_tasks(manifest):
+        for _k in ("startedAt", "completedAt"):
+            if _t.get(_k):
+                _gdates.append(_short_date(_t[_k]))
     _gdates += list(((usage or {}).get("daily") or {}).keys())
     _owners = _owner_map(manifest)   # advisory area owners (D4) — one lookup
     out.append("@@TOOLBAR@@%s</header>"

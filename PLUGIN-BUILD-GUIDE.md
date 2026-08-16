@@ -172,7 +172,7 @@ L2:
 
 L3:
   _help -> _areas, _loader, _output, _panel_settings, _policy, _ui_theme
-  usage_ledger -> _output, _usage_analytics, _usage_core
+  usage_ledger -> _manifest_io, _output, _usage_analytics, _usage_core
 
 L4:
   _panel_discovery -> _help, _manifest_io, _output
@@ -185,7 +185,7 @@ L5:
 
 L6:
   _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _ui_theme
-  _report_page -> _output, _report_html, _report_md, _report_ui, _report_usage
+  _report_page -> _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
   audit-doctor -> _cli_fmt, _loader, _output

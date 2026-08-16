@@ -62,11 +62,10 @@ def renumber_duplicate_bugs(manifest):
         m = re.match(r"^BUG-(\d+)$", str(b.get("id", "")))
         if m:
             mx = max(mx, int(m.group(1)))
-    task_by_id = {}
-    for ph in manifest.get("phases", []):
-        for t in (ph.get("tasks") or []) if isinstance(ph, dict) else []:
-            if isinstance(t, dict) and t.get("id"):
-                task_by_id[t["id"]] = t
+    # The shared index, and the values are the LIVE task dicts (pinned in
+    # `_manifest_io`), which is what lets the reciprocal `task.bugId` below be
+    # rewritten through it.
+    task_by_id = _mio.tasks_by_id(manifest)
     seen, changed = set(), []
     for b in bugs:
         bid = b.get("id")

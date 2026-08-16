@@ -117,15 +117,15 @@ def generate(manifest, seed=7, authors=DEFAULT_AUTHORS, adhoc_days=0, repo="demo
     rng = random.Random(seed)
     rows = []
 
+    mio = _load_manifest_io()
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
     # One phase gets a degraded cache rate so that chart has a story: the phase
     # holding a blocked task, where repeated retries churned the prompt prefix.
-    churned = None
-    for ph in phases:
-        if any(isinstance(t, dict) and t.get("status") == "blocked"
-               for t in (ph.get("tasks") or [])):
-            churned = ph.get("id")
-            break
+    # `iter_tasks` is document order, so the FIRST blocked task it yields is in
+    # the first phase holding one — the phase the old break-out-of-two-loops
+    # found. Nothing here draws from `rng`, so the sequence below is untouched.
+    churned = next((p.get("id") for p, t in mio.iter_tasks(manifest)
+                    if t.get("status") == "blocked"), None)
 
     def emit(bucket, phase_id, task_id, attr, tier, author, agent_type,
              agent_id, scale, hit):

@@ -192,11 +192,14 @@ def load_usage(manifest, manifest_path, project_dir=None):
             "byAgent": slim(ul.aggregate(rows, "agent")),
             "phaseModel": phase_model,
             "phaseTitles": titles,
-            "taskTitles": {t["id"]: t.get("title") or ""
-                           for ph in ((manifest or {}).get("phases") or [])
-                           if isinstance(ph, dict)
-                           for t in (ph.get("tasks") or [])
-                           if isinstance(t, dict) and t.get("id")},
+            # Through `_report_html._tasks_by_id`, which IS `_manifest_io`'s
+            # index (aliased, not copied — a case in that file pins the identity).
+            # Same truthy-id filter and same LAST-wins duplicate rule this
+            # comprehension had, so a duplicated task id still labels rows with
+            # the last title the plan gives it.
+            "taskTitles": {tid: t.get("title") or ""
+                           for tid, t in
+                           _report_html._tasks_by_id(manifest).items()},
             "daily": {k: v["tokens"] for k, v in by_day.items()
                       if k != "unknown"},
             "dailyCost": {k: v["costUSD"] for k, v in by_day.items()
@@ -2063,13 +2066,25 @@ def _selftest():
     # render-report's source too: the formatters moved here, the rule did not stop
     # applying to the file they left (a file read, never an import - the DAG says
     # nothing in here may depend on that module).
+    #
+    # _COUNTABLES IS A CLOSED LIST, ON PURPOSE, and that is the maintenance cost of
+    # this guard rather than a defect in it. A permissive default - "allow anything
+    # that does not look like tokens" - would let the next magnitude through
+    # silently, which is the one failure a lint like this must not have. So every
+    # genuinely new countable is added HERE, deliberately, and the diff that adds it
+    # is the record that somebody looked. `rows` is the case that proved it:
+    # render-report's --bench banner prints a count of LEDGER ROWS, the rule allowed
+    # it in words, and the vocabulary did not - so a correct line went red until this
+    # list caught up. Widen it only for a true countable; a magnitude belongs in
+    # `_fmt_tokens`.
+    _COUNTABLES = r"msgs|sessions|tasks|phases|rows"
     _bad = []
     for _f in (__file__, os.path.join(_HERE, "render-report.py")):
         with open(_f, encoding="utf-8") as _fh:
             _src = _fh.read()
         _bad += [(os.path.basename(_f), x)
                  for x in re.findall(r'"\{:,\}"\.format\(([^)]*)\)', _src)
-                 if not re.search(r"msgs|sessions|tasks|phases", x)]
+                 if not re.search(_COUNTABLES, x)]
     check("u27 no token value is ever rendered with thousand separators "
           "(counts may be; magnitudes may not)", _bad == [], repr(_bad))
     check("u28 the md twin uses the same compact tokens as the HTML labels",

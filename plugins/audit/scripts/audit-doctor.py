@@ -252,7 +252,14 @@ def check_manifest(rep, project, cfg):
     vm = _load("validate_manifest", "validate-manifest.py")
     findings, warnings = vm.validate(manifest)
     n_phases = len(manifest.get("phases") or [])
-    n_tasks = sum(len(p.get("tasks") or []) for p in (manifest.get("phases") or []))
+    # Counted through layer 1 rather than by hand, and the difference is not
+    # cosmetic: the hand-rolled `sum(len(p.get("tasks")...))` had no isinstance
+    # guard, so a manifest carrying a non-dict PHASE raised AttributeError here -
+    # a doctor crashing on exactly the broken input the finding two lines below is
+    # busy naming. The number is unchanged wherever it is printed: this line is
+    # only read in the `else` branch, i.e. when the validator found nothing, and a
+    # valid manifest has no malformed entry for `iter_tasks` to skip.
+    n_tasks = sum(1 for _ in mio.iter_tasks(manifest))
     if findings:
         rep.finding("manifest",
                     "%d validator finding(s): %s" % (len(findings),
@@ -756,12 +763,17 @@ def check_ado(rep, project, manifest):
             if isinstance(ts, str) and (newest[0] is None or ts > newest[0]):
                 newest[0] = ts
 
+    mio = _load("_manifest_io", "_manifest_io.py")
     for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        _note(ph, "phase")
-        for t in (ph.get("tasks") or []):
-            _note(t, "task")
+        if isinstance(ph, dict):
+            _note(ph, "phase")
+    # Two passes rather than a nested loop, because only ONE of them is a task
+    # traversal: the phase pass must reach a phase that holds no tasks (its own
+    # `ado` link is what is being counted), and `iter_tasks` yields nothing for
+    # one. `_note` only ever increments a counter and takes a max, so the order
+    # the three kinds are visited in cannot change the answer.
+    for _, t in mio.iter_tasks(manifest):
+        _note(t, "task")
     for b in (manifest.get("bugs") or []):
         _note(b, "bug")
     if not sum(linked.values()):
@@ -1040,17 +1052,17 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                 row_file.setdefault(tid, r["_file"])
 
     done, pre_era = [], 0
-    for phase in manifest.get("phases") or []:
-        if not isinstance(phase, dict):
+    mio = _load("_manifest_io", "_manifest_io.py")
+    # The phase is not read here - only the tasks are joined against the journal -
+    # so the pair is unpacked and dropped rather than kept beside a lookup.
+    for _, task in mio.iter_tasks(manifest):
+        if task.get("status") != "done":
             continue
-        for task in phase.get("tasks") or []:
-            if not isinstance(task, dict) or task.get("status") != "done":
-                continue
-            completed = task.get("completedAt")
-            if not isinstance(completed, str) or completed < watermark:
-                pre_era += 1        # older history: out of scope by watermark
-                continue
-            done.append(task)
+        completed = task.get("completedAt")
+        if not isinstance(completed, str) or completed < watermark:
+            pre_era += 1            # older history: out of scope by watermark
+            continue
+        done.append(task)
     if pre_era:
         rep.ok("completions",
                "%d done task(s) predate the first completion record and are "
@@ -2292,6 +2304,52 @@ def _selftest():
         check("manifest: legacy free-form proposals are counted in the ok line",
               "1 legacy proposal(s)" in detail(rep, "manifest"),
               detail(rep, "manifest"))
+        os.remove(os.path.join(tmp, "plan.json"))
+
+        # The OTHER direction, and it was missing: nothing pinned the NUMBER, so
+        # `n_tasks` could have been replaced by a constant 0 and all 146 cases
+        # stayed green (measured, by doing exactly that). A count that no case
+        # reads is not a checked count. The fixture is 2 phases holding 3 tasks
+        # UNEVENLY - one phase with 1, one with 2 - so the assertion separates a
+        # real total from a phase count, from a per-phase count, and from 0.
+        with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "one", "status": "pending", "tasks": [
+                    {"id": "P1.1", "title": "t", "status": "pending"}]},
+                {"id": "P2", "title": "two", "status": "pending", "tasks": [
+                    {"id": "P2.1", "title": "t", "status": "pending"},
+                    {"id": "P2.2", "title": "t", "status": "pending"}]}]}, fh)
+        rep_cnt = diagnose(tmp)
+        check("manifest: the ok line counts every task across every phase",
+              "(2 phases, 3 tasks" in detail(rep_cnt, "manifest"),
+              detail(rep_cnt, "manifest"))
+        os.remove(os.path.join(tmp, "plan.json"))
+
+        # A doctor must survive the broken input it exists to describe. The task
+        # count beside "N phases" was hand-rolled as
+        # `sum(len(p.get("tasks") or []) for p in phases)` with no isinstance
+        # guard, so a non-dict PHASE raised AttributeError one line after
+        # `validate()` had already produced the finding that names it - the whole
+        # run died instead of printing it. Counting through
+        # `_manifest_io.iter_tasks` is what makes the line survive.
+        #
+        # `diagnose()` is called inside a try so the REINTRODUCED bug reports as a
+        # clean FAIL naming the exception. Without it the mutation kills the whole
+        # suite before any case runs, and a suite that never ran is not a red one.
+        with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "real", "status": "pending", "tasks": [
+                    {"id": "P1.1", "title": "t", "status": "pending"}]},
+                "not-a-phase"]}, fh)
+        try:
+            rep_bad = diagnose(tmp)
+            _bad_lv, _bad_dt = levels(rep_bad, "manifest"), detail(rep_bad, "manifest")
+        except Exception as _exc:
+            _bad_lv, _bad_dt = [], "diagnose() RAISED %r" % (_exc,)
+        check("manifest: a non-object phase entry is REPORTED, not crashed on - "
+              "the count beside 'N phases' walks the shared traversal",
+              _bad_lv == ["FINDING"] and "phases[1]: not an object" in _bad_dt,
+              "%r %s" % (_bad_lv, _bad_dt))
         os.remove(os.path.join(tmp, "plan.json"))
 
         # sharded layout: intact, then broken

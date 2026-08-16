@@ -434,17 +434,12 @@ def _filter_panel(manifest):
     on the months the work actually happened in rather than on this century.
     """
     models, dates = set(), []
-    for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        for t in (ph.get("tasks") or []):
-            if not isinstance(t, dict):
-                continue
-            if t.get("model"):
-                models.add(str(t["model"]))
-            for key in ("startedAt", "completedAt"):
-                if t.get(key):
-                    dates.append(_short_date(t[key]))
+    for _, t in _manifest_io.iter_tasks(manifest):
+        if t.get("model"):
+            models.add(str(t["model"]))
+        for key in ("startedAt", "completedAt"):
+            if t.get(key):
+                dates.append(_short_date(t[key]))
     tags = _areas.used_tags(manifest)
     if not models and not dates and not tags:
         return ""
@@ -595,14 +590,16 @@ def _ready_now_dl(manifest, ready_ids):
     if not ready_ids:
         return ""
     owners = _owner_map(manifest)   # tags here wear their advisory owner too
+    # One pass, not two: `phase_of` wants the phase BODY (its `area` and its
+    # `blockedBy` are read below), which `_manifest_io.phase_of_task` deliberately
+    # does not carry — it answers with an id. `iter_tasks` yields the pair, which
+    # is the case its docstring names, and both dicts keep the shared truthy-id
+    # filter and LAST-wins rule for free.
     task_of, phase_of = {}, {}
-    for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        for t in (ph.get("tasks") or []):
-            if isinstance(t, dict) and t.get("id"):
-                task_of[t["id"]] = t
-                phase_of[t["id"]] = ph
+    for ph, t in _manifest_io.iter_tasks(manifest):
+        if t.get("id"):
+            task_of[t["id"]] = t
+            phase_of[t["id"]] = ph
     items = []
     for rid in ready_ids:
         t = task_of.get(rid) or {}

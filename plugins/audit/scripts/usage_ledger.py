@@ -78,6 +78,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
+
 # The re-export. These names were defined in this file until the split and are read
 # off this module by audit-usage.py, _report_usage.py, _panel_state.py,
 # audit-status.py, audit-doctor.py, panel-server.py, gen-demo-usage.py,
@@ -195,17 +197,16 @@ class Attributor(object):
         stays a plain string and the ledger's shape is unchanged."""
         self.session_id = session_id
         self.session_ids = _session_ids(session_id, session_aliases)
-        self.phase_of_task = {}
+        # `{task id: phase id}` is exactly what layer 1 owns, down to the truthy-id
+        # filter this loop used to spell out — and `task_from_description` reads it
+        # as a MEMBERSHIP set, so an id-less task admitted under a falsy key would
+        # be a task id this manifest does not know.
+        self.phase_of_task = _manifest_io.phase_of_task(manifest)
         self.task_windows = []          # (taskId, startEpoch, endEpoch or None)
         self.claimed_phase = None
         phases = [p for p in ((manifest or {}).get("phases") or [])
                   if isinstance(p, dict)]
         for ph in phases:
-            pid = ph.get("id")
-            for t in (ph.get("tasks") or []):
-                if not isinstance(t, dict) or not t.get("id"):
-                    continue
-                self.phase_of_task[t["id"]] = pid
             claim = ph.get("claim")
             if (isinstance(claim, dict) and self.session_ids
                     and claim.get("sessionId") in self.session_ids):

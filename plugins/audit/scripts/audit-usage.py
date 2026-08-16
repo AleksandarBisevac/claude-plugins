@@ -222,15 +222,15 @@ def load_manifest(path):
 
 def titles_of(manifest):
     """(phase id -> title, task id -> title) for labelling rows."""
-    phases, tasks = {}, {}
+    phases = {}
     for ph in ((manifest or {}).get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        if ph.get("id"):
+        if isinstance(ph, dict) and ph.get("id"):
             phases[ph["id"]] = ph.get("title") or ""
-        for t in (ph.get("tasks") or []):
-            if isinstance(t, dict) and t.get("id"):
-                tasks[t["id"]] = t.get("title") or ""
+    # The task half is a whole-manifest traversal, so it is the shared one. The
+    # phase half is not - a phase with no tasks still needs its title here, and
+    # `iter_tasks` yields nothing for one.
+    tasks = {t["id"]: t.get("title") or ""
+             for _, t in mio.iter_tasks(manifest) if t.get("id")}
     return phases, tasks
 
 
