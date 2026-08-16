@@ -303,9 +303,10 @@ def _allocate_id(assembled, phase_id):
             if tid.startswith(prefix) and tid[len(prefix):].isdigit():
                 top = max(top, int(tid[len(prefix):]))
 
-    for ph in (assembled.get("phases") or []):
-        if isinstance(ph, dict):
-            _count(ph.get("tasks") or [])
+    # The manifest's own tasks come from `_mio.iter_tasks`; the proposal payloads
+    # below cannot, because a parked payload's phase is NOT in `manifest["phases"]`
+    # yet — reserving its ids is the whole point of reading it separately.
+    _count(t for _ph, t in _mio.iter_tasks(assembled))
     for prop in (assembled.get("proposals") or []):
         if not isinstance(prop, dict) or prop.get("status") != "proposed":
             continue
@@ -460,16 +461,22 @@ def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
 # --- readiness (report only) ---------------------------------------------------
 def _waiting_on(assembled, task):
     """The blockedBy/dependsOn refs that are not done yet -- what the report
-    prints so the human knows whether /audit:run can start this now."""
+    prints so the human knows whether /audit:run can start this now.
+
+    Phases are walked directly and only the TASKS come from `_mio.iter_tasks`: a
+    task can be blocked by a whole phase, and a phase with no tasks of its own
+    yields nothing from `iter_tasks` -- so a one-pass index would forget it exists
+    and report the dependent task as ready. Phase and task ids share this map, so
+    a collision resolves task-wins rather than by document order; both callers
+    reach here only after `vm.validate` has already refused the manifest that
+    could have one (`duplicate id` is a finding, not a warning)."""
     status = {}
     for ph in (assembled.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        if ph.get("id"):
+        if isinstance(ph, dict) and ph.get("id"):
             status[ph["id"]] = ph.get("status")
-        for t in (ph.get("tasks") or []):
-            if isinstance(t, dict) and t.get("id"):
-                status[t["id"]] = t.get("status")
+    for _ph, t in _mio.iter_tasks(assembled):
+        if t.get("id"):
+            status[t["id"]] = t.get("status")
     refs = list(task.get("blockedBy") or []) + list(task.get("dependsOn") or [])
     return [r for r in refs if status.get(r) != "done"]
 
@@ -631,15 +638,19 @@ def _utc_now():
 
 
 def _find_target(assembled, tid):
-    """(kind, node, phase) for a task or phase id, or (None, None, None)."""
+    """(kind, node, phase) for a task or phase id, or (None, None, None).
+
+    Phases are swept first and in full, because a phase can be cancelled before
+    it has a single task and `_mio.iter_tasks` yields nothing for such a phase.
+    The task sweep then takes its owning phase from the pair rather than tracking
+    it in an enclosing loop -- that phase is the third return value, and the one
+    `_locked_cancel` writes the shard for."""
     for ph in (assembled.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        if ph.get("id") == tid:
+        if isinstance(ph, dict) and ph.get("id") == tid:
             return "phase", ph, ph
-        for t in (ph.get("tasks") or []):
-            if isinstance(t, dict) and t.get("id") == tid:
-                return "task", t, ph
+    for ph, t in _mio.iter_tasks(assembled):
+        if t.get("id") == tid:
+            return "task", t, ph
     return None, None, None
 
 
@@ -934,14 +945,9 @@ def _selftest():
 
     def task_in(mpath, tid):
         try:
-            m = _mio.load_manifest(mpath)
-            for ph in m.get("phases") or []:
-                for t in (ph.get("tasks") or []):
-                    if isinstance(t, dict) and t.get("id") == tid:
-                        return t
+            return _mio.tasks_by_id(_mio.load_manifest(mpath)).get(tid)
         except Exception:
-            pass
-        return None
+            return None
 
     try:
         # ---- (a) add + phase resolution -----------------------------------
@@ -1419,6 +1425,28 @@ def _selftest():
         code, jtext = run(["cancel", "P1", mpe, "--reason", "x",
                            "--project-dir", proje, "--json"])
         check("c9 a done PHASE is refused as well", code == 2)
+
+        # ---- (w) the index _waiting_on resolves refs through -------------------
+        # A phase with NO tasks still has a status and can still be the thing a
+        # task is blocked by, and `_mio.iter_tasks` yields nothing at all for
+        # such a phase -- so the phase half of that index is a separate walk.
+        # These are the cases that go red if the two are ever folded into one.
+        _wm = {"phases": [
+            {"id": "P0", "title": "groundwork", "status": "done"},
+            {"id": "P1", "title": "next", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "pending"}]},
+        ]}
+        # DONE on purpose: a phase missing from the index reads back as None,
+        # which is already "not done", so a PENDING blocker would let the folded
+        # version and this one agree and prove nothing.
+        check("w1 a ref to a task-less DONE phase counts as satisfied",
+              _waiting_on(_wm, {"blockedBy": ["P0"], "dependsOn": []}) == [])
+        # The other direction, and it looks vacuous by design: it is the only
+        # case that fails if `_waiting_on` ever becomes "nothing is ever waiting".
+        check("w2 ...while a ref to a phase that is NOT done is still reported",
+              _waiting_on(_wm, {"blockedBy": ["P1"], "dependsOn": []}) == ["P1"])
+        check("w3 a task ref resolves through the same index",
+              _waiting_on(_wm, {"dependsOn": ["P1.1"]}) == ["P1.1"])
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

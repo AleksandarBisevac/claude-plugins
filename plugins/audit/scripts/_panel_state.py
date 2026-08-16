@@ -389,16 +389,17 @@ def _bugs_view(manifest):
     `reported` keeps what the manifest actually stores, so a bug whose status is
     inherited from its task can say so instead of looking hand-edited."""
     _, _, as_, _ = _cores()
-    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
-    task_by_id = {t["id"]: t for p in phases for t in (p.get("tasks") or [])
-                  if isinstance(t, dict) and t.get("id")}
-    task_phase = {t["id"]: p.get("id") for p in phases for t in (p.get("tasks") or [])
-                  if isinstance(t, dict) and t.get("id")}
+    # The two indexes come from `_manifest_io` — the module that owns the shape —
+    # rather than from a walk here; `phase_of_task` is why the enclosing `phases`
+    # list this used to build is gone, since nothing else needed the phase bodies.
+    # They are guaranteed to share a key set, which is what lets a row read both.
+    task_by_id = _mio.tasks_by_id(manifest)
+    task_phase = _mio.phase_of_task(manifest)
     out = []
     for b in (manifest.get("bugs") or []):
         if not isinstance(b, dict):
             continue
-        eff = as_.effective_bug_status(b, task_by_id)
+        eff = _mio.effective_bug_status(b, task_by_id)
         out.append({
             "id": b.get("id"), "title": b.get("title"),
             "status": eff,
@@ -463,12 +464,15 @@ def _ado_status(manifest):
             if isinstance(ts, str) and (last[0] is None or ts > last[0]):
                 last[0] = ts
 
+    # Phases are walked directly and tasks through `_mio.iter_tasks`: a phase can
+    # carry an `ado` link with no tasks under it at all, and `iter_tasks` yields
+    # nothing for such a phase. Two passes rather than one nested walk is free
+    # here because every answer below is a count or a max — both order-free.
     for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        note(ph, "phases")
-        for t in (ph.get("tasks") or []):
-            note(t, "tasks")
+        if isinstance(ph, dict):
+            note(ph, "phases")
+    for _ph, t in _mio.iter_tasks(manifest):
+        note(t, "tasks")
     for b in (manifest.get("bugs") or []):
         note(b, "bugs")
     return {"configured": configured,
@@ -480,6 +484,10 @@ def _ado_status(manifest):
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     phases_out, tasks_out = [], []
+    # `phases_out` and `tasks_out` are separate flat lists, so splitting the old
+    # nested walk in two changes neither one's order: the phase rows stay in
+    # document order and `_mio.iter_tasks` yields the tasks in document order too.
+    # The task rows need the owning phase's id, which arrives with the task.
     for ph in (manifest.get("phases") or []):
         if not isinstance(ph, dict):
             continue
@@ -487,24 +495,22 @@ def _composition_view(manifest):
         phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
                            "status": ph.get("status"), "reviewModel": review.get("model"),
                            "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill")})
-        for t in (ph.get("tasks") or []):
-            if not isinstance(t, dict):
-                continue
-            tasks_out.append({
-                "id": t.get("id"), "title": t.get("title"),
-                "phaseId": ph.get("id"), "status": t.get("status"),
-                "model": t.get("model"),
-                "skills": _skills_of(t),
-                # ov (F-P-5): Overview shows what the REPORT's table shows, so
-                # it needs the same four values. They ride the composition
-                # payload rather than a second endpoint — this is one manifest
-                # read either way, and the Composition tab ignores what it does
-                # not edit. Timestamps stay whole; the client cuts them.
-                "risk": t.get("risk"),
-                "commit": t.get("commit"),
-                "startedAt": t.get("startedAt"),
-                "completedAt": t.get("completedAt"),
-            })
+    for ph, t in _mio.iter_tasks(manifest):
+        tasks_out.append({
+            "id": t.get("id"), "title": t.get("title"),
+            "phaseId": ph.get("id"), "status": t.get("status"),
+            "model": t.get("model"),
+            "skills": _skills_of(t),
+            # ov (F-P-5): Overview shows what the REPORT's table shows, so
+            # it needs the same four values. They ride the composition
+            # payload rather than a second endpoint — this is one manifest
+            # read either way, and the Composition tab ignores what it does
+            # not edit. Timestamps stay whole; the client cuts them.
+            "risk": t.get("risk"),
+            "commit": t.get("commit"),
+            "startedAt": t.get("startedAt"),
+            "completedAt": t.get("completedAt"),
+        })
     # Every skill name the AREAS declare, deduped in registry order — the other
     # half of what the manifest spells (task rows carry their own). Shipped so
     # the client's inventory hint (skillHints, the modelHints analog) can see
@@ -869,6 +875,12 @@ def _active_area_tags(manifest):
     manifest already in hand rather than re-read from disk. Both walk the ASSEMBLED
     document and both use `_areas.areas_of`, so the panel's preview and the guard's
     decision cannot disagree about which areas are live.
+
+    Kept off `_mio.iter_tasks` on purpose. "Running" is a property of the PHASE and
+    a phase is running when its OWN status says so, tasks or not — `iter_tasks`
+    yields nothing for a task-less phase, so an in_progress phase that has not been
+    broken into tasks yet would stop scoping its area rules, which is the one
+    direction a capability policy must not fail in.
     """
     tags = []
     for phase in (manifest or {}).get("phases") or []:
@@ -1227,22 +1239,26 @@ def usage_state(project):
     # concurrent manifest write and ship five mutually inconsistent views of it.
     manifest = _mio.load_manifest_safe(mpath)
     try:
+        # `titles`/`budgets` are per-PHASE and must cover a phase with no tasks
+        # (it still has a name and can still declare a budget), so that half stays
+        # a phase walk; the task half is `_mio.iter_tasks`. Three id-keyed dicts,
+        # so the split costs nothing: the same document order still decides the
+        # same last-wins winner it did when the two walks were nested.
         for ph in (manifest.get("phases") or []):
-            if not isinstance(ph, dict):
+            if not isinstance(ph, dict) or not ph.get("id"):
                 continue
-            if ph.get("id"):
-                titles[ph["id"]] = ph.get("title") or ""
-                # Same rule the validator enforces: 0, negative, boolean and
-                # non-numeric all mean "no budget", never a budget of zero.
-                b = ph.get("budgetUSD")
-                if isinstance(b, (int, float)) and not isinstance(b, bool) and b > 0:
-                    budgets[ph["id"]] = float(b)
-            for t in (ph.get("tasks") or []):
-                if isinstance(t, dict) and t.get("id"):
-                    task_meta[t["id"]] = {
-                        "status": t.get("status"), "risk": t.get("risk") or "unrated",
-                        "attempts": t.get("attempts") or 1,
-                        "title": t.get("title") or ""}
+            titles[ph["id"]] = ph.get("title") or ""
+            # Same rule the validator enforces: 0, negative, boolean and
+            # non-numeric all mean "no budget", never a budget of zero.
+            b = ph.get("budgetUSD")
+            if isinstance(b, (int, float)) and not isinstance(b, bool) and b > 0:
+                budgets[ph["id"]] = float(b)
+        for _ph, t in _mio.iter_tasks(manifest):
+            if t.get("id"):
+                task_meta[t["id"]] = {
+                    "status": t.get("status"), "risk": t.get("risk") or "unrated",
+                    "attempts": t.get("attempts") or 1,
+                    "title": t.get("title") or ""}
     except Exception:
         titles, task_meta, budgets = {}, {}, {}
 
@@ -1542,6 +1558,27 @@ def _selftest():
           "meta.ado still gets the full shape)",
           _composition_view({"meta": {}, "phases": []})
           .get("adoStatus", {}).get("configured") is False)
+    # _as5 pins why the phase half of this walk is NOT `_mio.iter_tasks`: a phase
+    # /audit:sync has pushed but nobody has broken into tasks yet still carries a
+    # link and a timestamp, and `iter_tasks` yields nothing at all for it. The
+    # fixture puts the NEWEST timestamp on that phase so a version that dropped it
+    # gets both the count AND lastSyncedAt wrong — a same-or-older stamp there
+    # would let the two versions agree on the second half by accident.
+    _as5 = _ado_status({
+        "meta": {"ado": {"organization": "o"}},
+        "phases": [{"id": "P1", "title": "linked, no tasks yet",
+                    "status": "pending",
+                    "ado": {"id": 4, "lastSyncedAt": "2026-08-09T00:00:00Z"}},
+                   {"id": "P2", "title": "p", "status": "pending",
+                    "ado": {"id": 9, "lastSyncedAt": "2026-08-01T00:00:00Z"},
+                    "tasks": [
+                       {"id": "P2.1", "title": "t", "status": "pending",
+                        "ado": {"id": 5,
+                                "lastSyncedAt": "2026-08-04T00:00:00Z"}}]}]})
+    check("adoStatus: a phase with a link and NO tasks is still counted, and "
+          "still wins lastSyncedAt",
+          _as5["linked"] == {"tasks": 1, "bugs": 0, "phases": 2}
+          and _as5["lastSyncedAt"] == "2026-08-09T00:00:00Z")
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with.
@@ -1676,6 +1713,22 @@ def _selftest():
           _rules_safe({"skills": "nonsense"}, "skills", ["x"]) == []
           and _rules_safe({}, "skills", ["x"]) == []
           and _rules_safe({"skills": {"deny": "nope"}}, "skills", ["x"]) == [])
+
+    # What scopes an area rule, and why this walk is NOT `_mio.iter_tasks`. The
+    # first phase is in_progress with NO tasks at all — the state a phase is in
+    # between /audit:phase starting it and its first task being minted — and
+    # `iter_tasks` yields nothing for it. The second phase is the same shape the
+    # other way round (dormant phase, running task), so the case separates the
+    # two rules instead of proving only one of them.
+    check("an in_progress phase with no tasks still scopes its area, and a "
+          "dormant phase holding a running task does too",
+          _active_area_tags({"phases": [
+              {"id": "P1", "status": "in_progress", "area": "infra"},
+              {"id": "P2", "status": "pending", "area": ["web"], "tasks": [
+                  {"id": "P2.1", "status": "in_progress"}]},
+              {"id": "P3", "status": "pending", "area": "quiet", "tasks": [
+                  {"id": "P3.1", "status": "pending"}]},
+          ]}) == ["infra", "web"])
 
     _pproj = tempfile.mkdtemp(prefix="state-policy-")
     try:

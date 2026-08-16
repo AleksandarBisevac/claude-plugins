@@ -129,55 +129,74 @@ def submodule_conflicts(manifest, submodule_paths, git_root=""):
     'vendor/child/x' but NOT 'vendor/child-other/x'."""
     subs = [str(s).replace("\\", "/").strip("/") for s in (submodule_paths or []) if s]
     out = []
-    if not isinstance(manifest, dict):
-        return out
-    for ph in manifest.get("phases") or []:
-        if not isinstance(ph, dict):
-            continue
-        for t in ph.get("tasks") or []:
-            if not isinstance(t, dict):
-                continue
-            for f in t.get("files") or []:
-                rel = _strip_git_root(f, git_root)
-                for s in subs:
-                    if rel == s or rel.startswith(s + "/"):
-                        out.append((t.get("id"), f, s))
-                        break
+    # `_mio.iter_tasks` also absorbs the non-dict-root guard this used to open
+    # with: a scalar manifest yields no pairs rather than raising (case nd3).
+    for _ph, t in _mio.iter_tasks(manifest):
+        for f in t.get("files") or []:
+            rel = _strip_git_root(f, git_root)
+            for s in subs:
+                if rel == s or rel.startswith(s + "/"):
+                    out.append((t.get("id"), f, s))
+                    break
     return out
 
 
 # --- gate rollup ----------------------------------------------------------------
+def _status_index(manifest):
+    """`{phase id or task id: status}` — what a `blockedBy`/`dependsOn` ref resolves
+    through. `ready_tasks` and `unmet_refs` each built this by hand, identically.
+
+    ONE id space, holding PHASES as well as tasks, is why this walk is hand-rolled
+    rather than `_mio.iter_tasks`, and both halves of that matter:
+
+      * a task may be blocked by a whole phase, INCLUDING a phase that carries no
+        tasks of its own — and `iter_tasks` yields nothing at all for such a phase,
+        so its status would be missing and every dependent task would read ready;
+      * because phase and task ids share the map, WHICH ONE WINS on a collision is
+        observable, and document order is what decides it here. Filling the phases
+        in one pass and the tasks in another makes the task win instead. That is a
+        `duplicate id` manifest either way (the validator reports it across phases
+        + tasks + bugs), but this is the read-only surface that has to RENDER an
+        invalid manifest rather than refuse it, so its tie-breaks are held fixed.
+    """
+    status = {}
+    if not isinstance(manifest, dict):
+        return status
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        if ph.get("id"):
+            status[ph["id"]] = ph.get("status")
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("id"):
+                status[t["id"]] = t.get("status")
+    return status
+
+
 def ready_tasks(manifest):
     """Task ids ready to run — mirrors /audit's readiness rule: status pending,
     own blockedBy satisfied, own dependsOn all done, phase blockedBy satisfied
     ('satisfied' = referenced task/phase is done)."""
-    if not isinstance(manifest, dict):
-        return []
-    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
-    status = {}
-    for ph in phases:
-        if ph.get("id"):
-            status[ph["id"]] = ph.get("status")
-        for t in ph.get("tasks") or []:
-            if isinstance(t, dict) and t.get("id"):
-                status[t["id"]] = t.get("status")
+    status = _status_index(manifest)
 
     def satisfied(refs):
         return all(status.get(r) in TERMINAL for r in (refs or []))
 
     out = []
-    for ph in phases:
-        for t in ph.get("tasks") or []:
-            if not isinstance(t, dict) or t.get("status") != "pending":
-                continue
-            if not satisfied(t.get("blockedBy")):
-                continue
-            if not satisfied(t.get("dependsOn")):
-                continue
-            if not satisfied(ph.get("blockedBy")):
-                continue
-            if t.get("id"):
-                out.append(t["id"])
+    # The phase arrives WITH the task, so its `blockedBy` needs no second lookup —
+    # and a non-dict manifest yields no pairs, which is what makes the old
+    # isinstance guard above redundant (case nd2 pins it).
+    for ph, t in _mio.iter_tasks(manifest):
+        if t.get("status") != "pending":
+            continue
+        if not satisfied(t.get("blockedBy")):
+            continue
+        if not satisfied(t.get("dependsOn")):
+            continue
+        if not satisfied(ph.get("blockedBy")):
+            continue
+        if t.get("id"):
+            out.append(t["id"])
     return out
 
 
@@ -203,22 +222,14 @@ def _by_status_values(values):
 areas_of = _areas.areas_of
 
 
-def effective_bug_status(bug, task_by_id):
-    """A bug's status, DERIVING 'fixed' from its linked task.
-
-    The orchestrator never writes bugs[] during a run (that keeps the shared index
-    untouched, so parallel phase branches merge clean). Instead a bug materialized
-    into a task (bug.taskId <-> task.bugId) reads as 'fixed' once that task is done.
-    A human-set 'wontfix' always wins; an un-materialized bug keeps its reported
-    status (open/triaged/in_progress)."""
-    stored = bug.get("status")
-    if stored == "wontfix":
-        return "wontfix"
-    tid = bug.get("taskId")
-    t = task_by_id.get(tid) if tid else None
-    if isinstance(t, dict) and t.get("status") == "done":
-        return "fixed"
-    return stored
+# A bug's status, DERIVING 'fixed' from its linked task. Re-exported rather than
+# reimplemented, the same move `areas_of` above makes: this rule had two homes that
+# could drift — here (layer 7) and `_report_html._bug_view` (layer 2) — and layer 2
+# cannot import layer 7, so the copy was structural. `_manifest_io` is the only
+# place underneath both readers. Its docstring carries the rule and says why the
+# falsy-taskId guard is load-bearing; `_panel_state` reaches this name through
+# `_cores()`, so the name stays.
+effective_bug_status = _mio.effective_bug_status
 
 
 # --- usage summary --------------------------------------------------------------
@@ -347,10 +358,9 @@ def rollup(manifest, findings, warnings, usage=None):
     if not isinstance(manifest, dict):
         manifest = {}  # non-object root -> empty rollup, never an AttributeError
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
-    tasks = [t for p in phases for t in (p.get("tasks") or [])
-             if isinstance(t, dict)]
+    tasks = [t for _p, t in _mio.iter_tasks(manifest)]
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
-    task_by_id = {t["id"]: t for t in tasks if t.get("id")}
+    task_by_id = _mio.tasks_by_id(manifest)
     bug_eff = [effective_bug_status(b, task_by_id) for b in bugs]
     open_bugs = [b for b, s in zip(bugs, bug_eff) if s not in CLOSED_BUG]
     phase_entries = [{
@@ -425,26 +435,27 @@ def unmet_refs(manifest):
     say WHY something is not ready instead of only that it is not."""
     if not isinstance(manifest, dict):
         return {}
-    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
-    status = {}
-    for ph in phases:
-        if ph.get("id"):
-            status[ph["id"]] = ph.get("status")
-        for t in ph.get("tasks") or []:
-            if isinstance(t, dict) and t.get("id"):
-                status[t["id"]] = t.get("status")
+    status = _status_index(manifest)
+
+    def unmet(refs):
+        return [r for r in (refs or []) if status.get(r) not in TERMINAL]
+
+    # `_mio.iter_tasks` is deliberately NOT used here, for `_status_index`'s second
+    # reason: this dict is keyed by phase ids AND task ids together, and the phase
+    # rows have to be written in document order relative to the task rows or a
+    # `duplicate id` manifest resolves to a different answer than it used to.
     out = {}
-    for ph in phases:
-        pending = [r for r in (ph.get("blockedBy") or [])
-                   if status.get(r) not in TERMINAL]
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        pending = unmet(ph.get("blockedBy"))
         if ph.get("id") and pending:
             out[ph["id"]] = pending
-        for t in ph.get("tasks") or []:
+        for t in (ph.get("tasks") or []):
             if not isinstance(t, dict) or not t.get("id"):
                 continue
-            waits = [r for r in list(t.get("blockedBy") or [])
-                     + list(t.get("dependsOn") or [])
-                     if status.get(r) not in TERMINAL]
+            waits = unmet(list(t.get("blockedBy") or [])
+                          + list(t.get("dependsOn") or []))
             # A task inherits its phase's gate: it cannot start while the phase
             # is blocked, and saying so is more useful than an empty column.
             waits += ["%s (phase)" % r for r in pending]
@@ -601,9 +612,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
                                  "" if len(shown) == len(ready_list)
                                  else ", first %d shown" % len(shown)),
                               "header"))
-        task_by_id = {t.get("id"): t for p in (manifest.get("phases") or [])
-                      if isinstance(p, dict)
-                      for t in (p.get("tasks") or []) if isinstance(t, dict)}
+        task_by_id = _mio.tasks_by_id(manifest)
         for tid in shown:
             t = task_by_id.get(tid) or {}
             lines.append("    %-9s %-44s %-7s run: /audit:run %s"
@@ -800,9 +809,12 @@ def _bug_lines(manifest, summary, pt=None):
     if not bugs:
         return []
     pt = pt or _cli_fmt.PLAIN
-    tasks = {t.get("id"): t for p in (manifest.get("phases") or [])
-             if isinstance(p, dict)
-             for t in (p.get("tasks") or []) if isinstance(t, dict)}
+    # `_mio.tasks_by_id` drops a task with no id, where the index built here used
+    # to key it under `None`. That is the shape `_manifest_io.effective_bug_status`
+    # documents as the hazard it guards against — a bug with no `taskId` matching
+    # the `None` key and reading 'fixed'. The guard still stands; the hazard it
+    # guards against no longer reaches it from this file.
+    tasks = _mio.tasks_by_id(manifest)
     ready = set(summary["ready"])
     out = ["", pt.paint("  BUGS  %d total - %d open (%d high severity)"
                         % (summary["bugs"]["total"], summary["bugs"]["open"],
@@ -1884,6 +1896,46 @@ def _selftest():
         {"meta": {}, "phases": [{"id": "P", "title": "p", "status": "pending",
          "tasks": [{"id": "P.1", "title": "t", "status": "pending",
                     "files": ["vendor/child/a.ts:10-20"]}]}]}, ["vendor/child"]) != [])
+    # sm6: this walk is `_mio.iter_tasks` now, so the skip of a non-dict phase and
+    # a non-dict task is inherited rather than spelled here. Both malformed shapes
+    # sit BEFORE the good task on purpose: a version that raised on either would
+    # never reach the row this asserts, so the case separates "skipped" from
+    # "happened to come last".
+    check("sm6 a non-dict phase and a non-dict task are skipped, and the real "
+          "conflict behind them is still reported",
+          submodule_conflicts(
+              {"meta": {}, "phases": [
+                  "not-a-phase",
+                  {"id": "P", "title": "p", "status": "pending", "tasks": [
+                      "not-a-task",
+                      {"id": "P.1", "title": "t", "status": "pending",
+                       "files": ["vendor/child/a.ts"]}]}]},
+              ["vendor/child"]) == [("P.1", "vendor/child/a.ts", "vendor/child")])
+
+    # (si) `_status_index` — the one id space readiness resolves through, and the
+    # reason it is NOT driven by `_mio.iter_tasks`.
+    _si_m = {"meta": {}, "phases": [
+        # A phase with NO tasks at all. `iter_tasks` yields nothing for it, so an
+        # index built from `iter_tasks` alone would not know this phase exists.
+        {"id": "P0", "title": "groundwork", "status": "done"},
+        {"id": "P1", "title": "next", "status": "pending", "tasks": [
+            {"id": "P1.1", "title": "t", "status": "pending", "blockedBy": ["P0"]}]},
+    ]}
+    check("si1 the index carries a phase that has no tasks of its own",
+          _status_index(_si_m).get("P0") == "done")
+    # si2 is si1's consequence, and it is the one that separates the two
+    # implementations by VALUE: the blocking phase is DONE, so a missing entry
+    # reads `None`, `None not in TERMINAL`, and the task silently stops being
+    # ready. A `pending` blocker would leave both versions saying "not ready".
+    check("si2 a task blocked by a task-less DONE phase is ready",
+          ready_tasks(_si_m) == ["P1.1"])
+    check("si3 ...and unmet_refs agrees there is nothing left to wait on",
+          "P1.1" not in unmet_refs(_si_m), repr(unmet_refs(_si_m)))
+    # si4: ONE implementation of the bug<->task rule, not a copy that agrees
+    # today. `_report_html` reaches the same object from layer 2; this pins that
+    # layer 7 did not quietly grow its own again.
+    check("si4 effective_bug_status IS _manifest_io's, not a second copy",
+          effective_bug_status is _mio.effective_bug_status)
 
     # (c) CLI: exit codes 0 / 1 / 2
     import tempfile

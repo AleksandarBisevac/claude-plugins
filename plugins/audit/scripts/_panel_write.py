@@ -391,9 +391,12 @@ def _composition_changes(manifest, patch):
         if was != now:
             rows.append({"target": pid, "field": "review model",
                          "from": was, "to": now})
-    by_tid = {t.get("id"): t for p in (manifest.get("phases") or [])
-              if isinstance(p, dict)
-              for t in (p.get("tasks") or []) if isinstance(t, dict)}
+    # `_mio.tasks_by_id` drops a task carrying no id, where this index used to key
+    # it under `None`. Nothing reachable changes: the keys looked up here come out
+    # of a JSON object, so they are always strings and could never BE `None` --
+    # what goes away is the `None` entry sitting in the index waiting for a caller
+    # that could hit it.
+    by_tid = _mio.tasks_by_id(manifest)
     for tid, tv in sorted((patch.get("tasks") or {}).items()):
         t = by_tid.get(tid)
         if t is None:
@@ -423,14 +426,17 @@ def _heal_phase_status(manifest):
     not show this.
     """
     rows = []
-    for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict) or ph.get("status") != "pending":
+    # The heal is its OWN guard against a second row for the same phase: the
+    # moment the status is flipped the phase stops reading 'pending', so the rest
+    # of its tasks fall out of this branch. That is what lets the walk be
+    # `_mio.iter_tasks` -- one pass over (phase, task) pairs -- instead of a
+    # per-phase `any()`, and phases still heal in document order.
+    for ph, t in _mio.iter_tasks(manifest):
+        if ph.get("status") != "pending" or t.get("status") != "in_progress":
             continue
-        if any(isinstance(t, dict) and t.get("status") == "in_progress"
-               for t in (ph.get("tasks") or [])):
-            ph["status"] = "in_progress"
-            rows.append({"target": ph.get("id"), "field": "status",
-                         "from": "pending", "to": "in_progress"})
+        ph["status"] = "in_progress"
+        rows.append({"target": ph.get("id"), "field": "status",
+                     "from": "pending", "to": "in_progress"})
     return rows
 
 
@@ -768,9 +774,11 @@ def apply_composition_patch(manifest, patch):
             if not isinstance(rev, dict):
                 rev = ph["review"] = {}
             rev["model"] = pv["reviewModel"]
-    by_tid = {t.get("id"): t for p in (manifest.get("phases") or [])
-              if isinstance(p, dict)
-              for t in (p.get("tasks") or []) if isinstance(t, dict)}
+    # Same index as `_composition_changes` reads, from the same owner, so the
+    # dialog's preview and the write cannot disagree about which task a patch key
+    # names. An id-less task is not addressable here and never was: a JSON patch
+    # key is a string, so it could never have matched the `None` this used to key.
+    by_tid = _mio.tasks_by_id(manifest)
     for tid, tv in (patch.get("tasks") or {}).items():
         t = by_tid.get(tid)
         if t is None:
@@ -795,12 +803,14 @@ def _touched_phase_ids(manifest, patch):
     touched = set((patch.get("phases") or {}).keys())
     want = set((patch.get("tasks") or {}).keys())
     if want:
-        for ph in (manifest.get("phases") or []):
-            if not isinstance(ph, dict):
-                continue
-            for t in (ph.get("tasks") or []):
-                if isinstance(t, dict) and t.get("id") in want:
-                    touched.add(ph.get("id"))
+        # `_mio.phase_of_task` answers exactly this question and is deliberately
+        # NOT used: it is LAST-wins, so on a duplicate task id it would name one
+        # phase, while this needs EVERY phase holding a task by that name. The
+        # answer decides which shards get written, and writing a shard that did
+        # not need it costs a re-serialize; missing one loses the edit.
+        for ph, t in _mio.iter_tasks(manifest):
+            if t.get("id") in want:
+                touched.add(ph.get("id"))
     return touched
 
 
@@ -1707,6 +1717,55 @@ def _selftest():
         res = apply_composition(proj, {"tasks": {"P1.1": {"model": "opus"}}})
         check("a real save appends one row and reports journaled",
               res["ok"] and res.get("journaled") is True and len(_JStub.rows) == 1)
+
+        # Both `by_tid` indexes are `_mio.tasks_by_id` now, which excludes a task
+        # whose id is falsy: an index is a lookup BY IDENTITY, and an entry with
+        # no identity is a validator finding rather than a key. What changes is
+        # only WHICH refusal comes back -- a manifest holding such a task is
+        # refused end to end either way (the validator names the missing id a few
+        # lines later in `apply_composition`) -- so this pins the more precise of
+        # the two, and pins that the task NEXT to it still patches, which is the
+        # direction that would go wrong if the filter were too wide.
+        def _nid_fixture():
+            return {"meta": {}, "phases": [
+                {"id": "P1", "status": "in_progress", "tasks": [
+                    {"id": "", "status": "pending", "model": "sonnet"},
+                    {"id": "P1.1", "status": "pending", "model": "sonnet"}]}]}
+
+        check("an empty-id task is not addressable by a composition patch - "
+              "refused by name rather than written to",
+              apply_composition_patch(_nid_fixture(),
+                                      {"tasks": {"": {"model": "opus"}}})
+              == "unknown task ''")
+        _nid = _nid_fixture()
+        check("...while the task beside it, which HAS an id, still patches",
+              apply_composition_patch(_nid, {"tasks": {"P1.1": {"model": "opus"}}})
+              is None
+              and _nid["phases"][0]["tasks"][1]["model"] == "opus"
+              and _nid["phases"][0]["tasks"][0]["model"] == "sonnet")
+
+        # `_heal_phase_status` walks (phase, task) PAIRS now, so a phase with
+        # more than one running task is visited more than once. Two running
+        # tasks is the fixture that separates "one row per phase" from "one row
+        # per running task" -- with a single task both versions agree, and the
+        # rows go to the confirm dialog and the journal, where a duplicate would
+        # read as two edits nobody made. The `pending` phase behind them is the
+        # second direction: it must produce NO row, or the walk is healing
+        # everything it touches.
+        _hp = {"phases": [
+            {"id": "P1", "status": "pending", "tasks": [
+                {"id": "P1.1", "status": "in_progress"},
+                {"id": "P1.2", "status": "in_progress"}]},
+            {"id": "P2", "status": "pending", "tasks": [
+                {"id": "P2.1", "status": "pending"}]},
+        ]}
+        _hrows = _heal_phase_status(_hp)
+        check("heal: a phase with TWO running tasks heals exactly once, and a "
+              "phase with none is left alone",
+              _hrows == [{"target": "P1", "field": "status",
+                          "from": "pending", "to": "in_progress"}]
+              and _hp["phases"][0]["status"] == "in_progress"
+              and _hp["phases"][1]["status"] == "pending")
 
         # --- the write heals "task in_progress, phase pending" (v0.37 A4) ----
         # The validator's warning stays as the backstop for hand edits; at the
