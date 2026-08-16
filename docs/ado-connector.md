@@ -104,8 +104,12 @@ The built-in state defaults (used when `stateMap` is absent):
 
 | Manifest | ADO state |
 |---|---|
-| task `pending` / `in_progress` / `blocked` / `done` | `New` / `Active` / `Active` + tag `blocked` / `Closed` |
+| task `pending` / `in_progress` / `blocked` / `done` / `cancelled` | `New` / `Active` / `Active` + tag `blocked` / `Closed` / `Removed` |
 | bug `open` / `triaged`,`in_progress` / `fixed` / `wontfix` | `New` / `Active` / `Resolved` / `Closed` |
+
+> **`cancelled` is the phase/task twin of a bug's `wontfix`** — the work will not be done,
+> and the card follows: `Removed` on both stock processes. Nothing is deleted on either
+> side; a cancelled item keeps its history, its commits and its link.
 
 > **These names are Agile-process names.** On a Scrum project a Task has no `Closed`
 > state (`To Do / In Progress / Done`) — set `stateMap`, or every done-move will report

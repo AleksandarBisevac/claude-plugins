@@ -36,7 +36,7 @@ KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "planGate",
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
-    "journal", "policy",
+    "journal", "policy", "ui",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
@@ -213,6 +213,23 @@ def validate_config(obj):
             if "inProgressPolicy" in tr and tr["inProgressPolicy"] not in IN_PROGRESS_POLICY:
                 findings.append("tddReminder.inProgressPolicy must be one of %s"
                                 % (IN_PROGRESS_POLICY,))
+
+    # th (F-P-6): `ui.theme` is a preset NAME or a path to a theme file. The
+    # shape is all this can judge: whether a named preset exists, or a path
+    # resolves, is a question about a live tree and belongs to the doctor and
+    # the panel (the same split the skills inventory already uses).
+    ui = obj.get("ui")
+    if ui is not None:
+        if not isinstance(ui, dict):
+            findings.append("ui must be an object, got %s" % type(ui).__name__)
+        else:
+            for k in ui:
+                if k != "theme":
+                    warnings.append("unknown key ui.%s (ignored)" % k)
+            th = ui.get("theme")
+            if th is not None and not (isinstance(th, str) and th.strip()):
+                findings.append("ui.theme must be a non-empty string (a preset "
+                                "name or a path) or null")
 
     us = obj.get("usage")
     if us is not None:
@@ -489,6 +506,23 @@ def _selftest():
     check("the shipped template passes its own validator cleanly",
           not f and not w)
 
+    # th (F-P-6)
+    check("ui: absent is fine", validate_config({})[0] == [])
+    check("ui: a preset name validates",
+          validate_config({"ui": {"theme": "slate-teal"}})[0] == [])
+    check("ui: a path validates",
+          validate_config({"ui": {"theme": ".claude/themes/midnight.json"}})[0] == [])
+    check("ui: explicit null is an answer",
+          validate_config({"ui": {"theme": None}})[0] == [])
+    check("ui: a non-string theme is a finding",
+          validate_config({"ui": {"theme": 3}})[0] != [])
+    check("ui: a blank theme is a finding",
+          validate_config({"ui": {"theme": "  "}})[0] != [])
+    check("ui: a non-object ui is a finding",
+          validate_config({"ui": "dark"})[0] != [])
+    check("ui: an unknown ui key warns rather than refusing",
+          validate_config({"ui": {"themee": "x"}})[0] == []
+          and validate_config({"ui": {"themee": "x"}})[1] != [])
     f, w = validate_config({"usage": {"authorMode": "nope"}})
     check("usage.authorMode enum enforced", any("authorMode" in x for x in f))
     f, w = validate_config({"usage": {"maxScanBytes": -1}})

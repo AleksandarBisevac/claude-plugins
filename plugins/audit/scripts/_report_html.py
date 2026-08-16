@@ -127,20 +127,29 @@ def _area_tag_span(tag, owners):
 # The order the segments render in: the work in motion first, then the queue,
 # then the archive. A dict, not an if-chain, so the emitter and the selftest
 # read one table.
-SEG_ORDER = ("active", "pending", "done")
-SEG_LABEL = {"active": "Active", "pending": "Pending", "done": "Done"}
+SEG_ORDER = ("active", "pending", "archived")
+SEG_LABEL = {"active": "Active", "pending": "Pending", "archived": "Archived"}
+# The two views a reader picks between, plus the escape hatch. `active` is the
+# default and means "everything still to come or in hand" — active AND pending,
+# because both are work nobody has finished.
+VIEW_SEGS = {"active": ("active", "pending"),
+             "archived": ("archived",),
+             "all": SEG_ORDER}
 
 
 def _seg_of(status):
     """Which segment a phase files under, from its ROLLED-UP status.
 
     in_progress and blocked are both "someone is (or should be) on this now";
-    done is the archive; everything else — pending, an unknown vocabulary
-    value, a phase with no status at all — is work still to come. Unknowns
-    land in pending on purpose: a segment that silently swallowed a typo'd
-    status would hide the phase the validator is about to flag."""
-    if status == "done":
-        return "done"
+    the archive holds both TERMINAL states — `done` (it landed) and `cancelled`
+    (it will not be done) — because the question a reader asks of the top of
+    this table is "what is left", and finished-by-dropping is finished.
+    Everything else — pending, an unknown vocabulary value, a phase with no
+    status at all — is work still to come. Unknowns land in pending on purpose:
+    a segment that silently swallowed a typo'd status would hide the phase the
+    validator is about to flag."""
+    if status in ("done", "cancelled"):
+        return "archived"
     if status in ("in_progress", "blocked"):
         return "active"
     return "pending"
@@ -222,6 +231,24 @@ def _short_date(iso):
     return s.split("T", 1)[0] if "T" in s else s
 
 
+def _stamp(iso):
+    """ISO timestamp -> 'YYYY-MM-DD HH:MM', the date part when there is no time.
+
+    tm (F-P-4): the table showed the DATE a task finished and kept the clock in
+    a tooltip. "Which of these two finished first" is the question this column
+    is asked on a busy day, and the answer was a hover away - on paper, not
+    available at all. The value is the manifest's own string, cut rather than
+    parsed: these are UTC stamps written by the orchestrator, and re-formatting
+    them through a local timezone here would silently move a completion across
+    midnight in a file that is also read offline. The zone is named in the
+    column header once, not repeated per row."""
+    s = str(iso or "")
+    if "T" not in s:
+        return s
+    day, rest = s.split("T", 1)
+    return "%s %s" % (day, rest[:5]) if len(rest) >= 5 else day
+
+
 def _timing_cell(task):
     """Compact completion date for the table, with the full started/completed
     timestamps on hover. Done -> completed date; started-but-not-done -> the
@@ -229,11 +256,105 @@ def _timing_cell(task):
     started, completed = task.get("startedAt"), task.get("completedAt")
     tip = e("started %s · completed %s" % (started or "—", completed or "—"))
     if completed:
-        return '<span title="%s">%s</span>' % (tip, e(_short_date(completed)))
+        return '<span title="%s">%s</span>' % (tip, e(_stamp(completed)))
     if started:
         return ('<span class="muted" title="%s">started %s</span>'
-                % (tip, e(_short_date(started))))
+                % (tip, e(_stamp(started))))
     return '<span class="muted">—</span>'
+
+
+def _commit_cell(task):
+    """The commit, with one press that copies the WHOLE sha (F-P-4).
+
+    The column shows nine characters because a table cannot carry forty, and
+    nine is not what `git cherry-pick` wants - so a reader who needed the sha
+    was retyping it off a screenshot or opening the manifest. The button carries
+    the full value in `data-copy`; report.js already owns the copy behaviour and
+    its file:// fallback (clipboard.writeText is refused there, and that is
+    where this report is most often opened), so this is the same control the run
+    command uses, one cell down."""
+    sha = str(task.get("commit") or "").strip()
+    if not sha:
+        return '<span class="muted">\u2014</span>'
+    return ('<span class="shacell"><code>%s</code>'
+            '<button type="button" class="btn-copy shacopy" data-copy="%s" '
+            'title="Copy the full commit sha (%s)" '
+            'aria-label="Copy the full commit sha">Copy</button></span>'
+            % (e(sha[:9]), e(sha), e(sha)))
+
+
+def _detail_row(task, phase, owners, ncol, seg, pid):
+    """The row under a task row: everything the compact row had to leave out.
+
+    ex (F-P-4). The table is read at a glance and acted on in detail, and those
+    are different densities. The compact row answers "where is this" — id,
+    title, status, risk, when, commit — and the detail row answers "what
+    happened and who do I ask", in two labelled groups because the questions
+    come in two kinds:
+
+      meta    — who owns this area, when it started and finished (to the
+                second, not the minute the cell shows), the whole sha, the
+                phase's branch and its work item
+      details — the FULL outcome (both voices, untruncated: the table's 70-char
+                cut is what made this row necessary), the model, the skills,
+                what it waits on, and how it was tested
+
+    "Who" is the AREA's advisory owner, not an assignee: the manifest has no
+    per-task assignee and inventing one here would be a claim the file does not
+    make. It is labelled as what it is.
+    """
+    def rows(pairs):
+        out = []
+        for k, v in pairs:
+            if not v:
+                continue
+            out.append('<div class="dt-r"><span class="dt-k">%s</span>'
+                       '<span class="dt-v">%s</span></div>' % (e(k), v))
+        return "".join(out)
+
+    areas = [a for a in (phase.get("area") if isinstance(phase.get("area"), list)
+                         else [phase.get("area")]) if isinstance(a, str) and a]
+    owner_bits = []
+    for a in areas:
+        own = (owners or {}).get(a)
+        if own:
+            owner_bits.append("%s <span class=\"muted\">(area %s)</span>"
+                              % (e(own), e(a)))
+    o = task.get("outcome") if isinstance(task.get("outcome"), dict) else {}
+    waits = [w for w in list(task.get("blockedBy") or [])
+             + list(task.get("dependsOn") or []) if isinstance(w, str)]
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    skills = task.get("skills")
+    meta = rows([
+        ("owner", " · ".join(owner_bits)),
+        ("started", e(task.get("startedAt") or "")),
+        ("completed", e(task.get("completedAt") or "")),
+        ("commit", _commit_cell(task) if task.get("commit") else ""),
+        ("branch", e(phase.get("branch") or "")),
+        ("work item", _ado_cell(task) if isinstance(task.get("ado"), dict)
+         and task["ado"].get("id") is not None else ""),
+    ])
+    details = rows([
+        # Both voices, in the order a person reads them: what changed, then how.
+        ("outcome", e(str(o.get("descriptive") or "").strip())),
+        ("technical", e(str(o.get("technical") or "").strip())),
+        ("model", e(task.get("model") or "")),
+        ("skills", e(", ".join(s for s in (skills or []) if isinstance(s, str)))
+         if isinstance(skills, list) and skills
+         else ('<span class="muted">none \u2014 opted out</span>'
+               if skills is None and "skills" in task else "")),
+        ("waits on", e(", ".join(waits))),
+        ("tests", e(str(tests.get("mode") or ""))),
+    ])
+    if not meta and not details:
+        details = ('<div class="dt-r"><span class="dt-v muted">Nothing recorded '
+                   "for this task yet.</span></div>")
+    return ('<tr class="taskdetail" data-phase="%s" data-seg="%s" '
+            'data-detail="%s" hidden><td colspan="%d"><div class="dtwrap">'
+            '<div class="dtcol"><h4>meta</h4>%s</div>'
+            '<div class="dtcol"><h4>task details</h4>%s</div>'
+            "</div></td></tr>"
+            % (e(pid), e(seg), e(task.get("id") or ""), ncol, meta, details))
 
 
 def _filter_attrs(task):
@@ -778,11 +899,39 @@ def _selftest():
                                       "status": "pending"}]}]}, ["P1.1"]))
 
     # --- _seg_of(): the segment a phase row files under (D1, v0.36) -------------
-    check("_seg_of maps in_progress and blocked to active, done to done, and "
-          "everything else - pending, unknown, None - to pending",
+    check("_seg_of maps in_progress and blocked to active, BOTH terminal states "
+          "to the archive, and everything else - pending, unknown, None - to "
+          "pending",
           _seg_of("in_progress") == "active" and _seg_of("blocked") == "active"
-          and _seg_of("done") == "done" and _seg_of("pending") == "pending"
+          and _seg_of("done") == "archived" and _seg_of("cancelled") == "archived"
+          and _seg_of("pending") == "pending"
           and _seg_of("weird") == "pending" and _seg_of(None) == "pending")
+    check("VIEW_SEGS names the three views, and 'active' covers the two "
+          "segments of unfinished work - a reader asking what is left means "
+          "pending too",
+          set(VIEW_SEGS) == {"active", "archived", "all"}
+          and VIEW_SEGS["active"] == ("active", "pending")
+          and VIEW_SEGS["all"] == SEG_ORDER)
+
+    # --- tm / sha: the two table cells a reader has to ACT on --------------------
+    check("tm the completion cell carries the clock, not just the day - two "
+          "tasks finishing on one day is the case the column is read for",
+          _stamp("2026-06-28T10:04:59Z") == "2026-06-28 10:04"
+          and _stamp("2026-06-28") == "2026-06-28" and _stamp(None) == ""
+          and "2026-06-28 10:04" in _timing_cell({"completedAt": "2026-06-28T10:04:59Z"}))
+    check("tm ...and the full stamps stay on hover, both of them",
+          "started 2026-06-28T09:00:00Z" in _timing_cell(
+              {"startedAt": "2026-06-28T09:00:00Z",
+               "completedAt": "2026-06-28T10:04:59Z"}))
+    check("sha the commit cell shows nine characters and copies FORTY - nine is "
+          "not what cherry-pick wants",
+          "abc1234de" in _commit_cell({"commit": "abc1234de567890"})
+          and 'data-copy="abc1234de567890"' in _commit_cell(
+              {"commit": "abc1234de567890"})
+          and "btn-copy" in _commit_cell({"commit": "abc1234de567890"}))
+    check("sha a task with no commit gets an em dash and no button to press",
+          "btn-copy" not in _commit_cell({})
+          and "\u2014" in _commit_cell({"commit": "  "}))
 
     # --- _phase_meta_div() / _bar() ----------------------------------------------
     check("_phase_meta_div is '' with nothing to say",

@@ -23,6 +23,9 @@ than of somebody remembering.
 
 The CSS lint helpers live here too, next to the stylesheet they police.
 """
+import io
+import json
+import os
 import re
 
 TOKEN_CSS = """
@@ -47,13 +50,17 @@ TOKEN_CSS = """
   --border:#e2e8f0;--border-strong:#cbd5e1;
   --accent:#0d9488;--accent-solid:#0d9488;--ring:rgba(13,148,136,.35);
   --st-done:#15803d;--st-prog:#f59e0b;--st-blocked:#dc2626;--st-pending:#64748b;
+  /* ca: cancelled is finished, not achieved. Deliberately the quietest
+     ink on the sheet — dimmer than pending, and nowhere near done's
+     green: an archive full of green would read as a plan delivered. */
+  --st-cancelled:#94a3b8;
   /* Ink for a TINTED status badge. One solid-fill chip per status needed one ink
      and an exception (amber on white is unreadable, so in_progress alone got dark
      ink) — four statuses wearing three different grammars. A badge tinted from
      its own status colour carries readable ink of that same hue instead, and the
      exception disappears. Mirrors the --rk-*-fg pattern, which already worked. */
   --st-done-ink:#166534;--st-prog-ink:#854d0e;--st-blocked-ink:#b91c1c;
-  --st-pending-ink:#475569;
+  --st-pending-ink:#475569;--st-cancelled-ink:#64748b;
   --rk-low-bg:#dcfce7;--rk-low-fg:#166534;--rk-med-bg:#fef9c3;--rk-med-fg:#854d0e;
   --rk-high-bg:#fee2e2;--rk-high-fg:#b91c1c;
   /* Usage viz. Categorical slots carry MODEL identity (assigned by name, never by
@@ -125,8 +132,9 @@ TOKEN_CSS = """
   --border:#1f2b40;--border-strong:#33425c;
   --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
+  --st-cancelled:#64748b;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
-  --st-pending-ink:#cbd5e1;
+  --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
@@ -149,8 +157,9 @@ TOKEN_CSS = """
   --border:#1f2b40;--border-strong:#33425c;
   --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
+  --st-cancelled:#64748b;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
-  --st-pending-ink:#cbd5e1;
+  --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
@@ -176,6 +185,11 @@ STATUS = {
     "in_progress": "In progress",
     "blocked": "Blocked",
     "done": "Done",
+    # ca (F-P-4): the second terminal state — the work will not be done. Named
+    # "Cancelled" rather than "Dropped"/"Deprecated" because that is the word
+    # the trackers use for it (Linear Canceled, Jira Won't Do, GitHub closed as
+    # not planned, ADO Removed), and a plan is read beside them.
+    "cancelled": "Cancelled",
 }
 BUG_STATUS = {
     "open": "Open",
@@ -189,6 +203,22 @@ TESTS_MODE = {
     "regression": "Regression",
     "gate-only": "Gate only",
 }
+# The empty bucket, named once (F-P-2). The usage ledger groups spend by phase,
+# task and branch with "--" standing for a row that has none, and its `attr`
+# dimension carries "unattributed" for the same fact from the other side: work
+# with no plan behind it — ad-hoc edits, `#no-plan`, sessions outside the plan.
+# That is an ANSWER, not a missing value, and both keys used to reach the screen
+# raw: the panel's ranked list said "-- unattributed", its browse table and chart
+# legend said "--", the report said both, and the CLI said "--   unattributed"
+# and "--      (no task)". Four spellings of one thing across three surfaces,
+# each of which a reader met as a hole in the table. The word lives here, beside
+# the statuses, for the same reason they do — `in_progress` is a key, "In
+# progress" is what a person reads, and neither surface gets to pick its own.
+# The STORAGE keys are untouched: the ledger still writes "--"/"unattributed",
+# `/audit:usage --attr unattributed` still selects, and the CSV still exports the
+# key, because a file that is parsed is not a surface that is read.
+UNCATEGORIZED = "Uncategorized"
+USAGE_BUCKET = {"--": UNCATEGORIZED, "unattributed": UNCATEGORIZED}
 RISK = {"low": "Low", "med": "Medium", "high": "High"}
 GATE_TIER = {"observe": "Observe", "warn": "Warn", "ask": "Ask", "deny": "Deny"}
 
@@ -196,9 +226,11 @@ GATE_TIER = {"observe": "Observe", "warn": "Warn", "ask": "Ask", "deny": "Deny"}
 # table cell. The two disagree on nothing: `in_progress` reads the same either way.
 LABELS = dict(STATUS)
 LABELS.update(BUG_STATUS)
+# ...and the usage bucket, which every surface renders in the same tables.
+LABELS.update(USAGE_BUCKET)
 
 ALL = {"status": STATUS, "bugStatus": BUG_STATUS, "testsMode": TESTS_MODE,
-       "risk": RISK, "gateTier": GATE_TIER}
+       "risk": RISK, "gateTier": GATE_TIER, "usageBucket": USAGE_BUCKET}
 
 
 def label(value, mapping=None):
@@ -215,6 +247,517 @@ def label(value, mapping=None):
         return m[value]
     pretty = value.replace("_", " ").replace("-", " ").strip()
     return pretty[:1].upper() + pretty[1:] if pretty else value
+
+
+# --- themes: the token layer as data ---------------------------------------------
+# th (F-P-6). Everything above is ONE stylesheet, and every colour, radius and
+# type step in it is already a custom property — which means the visual system
+# is editable without touching a rule, IF something can read the values out and
+# put different ones back. That is all a "theme" is here.
+#
+# THE COMPILER SUBSTITUTES, IT DOES NOT REGENERATE. `compile_theme` takes
+# TOKEN_CSS and rewrites the VALUES of the tokens a theme names, in place. It
+# was tempting to build the stylesheet from a data structure instead; that would
+# have thrown away every comment above — the arguments for why the heatmap runs
+# dark->light, why in_progress needed its own ink, why the sticky offsets are
+# derived — and those comments are the reason the system holds. Substitution
+# also makes the guarantee cheap to state and to check: a theme can change token
+# values and NOTHING else, and `compile_theme(DEFAULT_THEME) == TOKEN_CSS` byte
+# for byte (the `th1` case below).
+#
+# A theme file is JSON in the DTCG shape (`$value`, light/dark modes) — the
+# format that reached its first stable version in 2025-10 — so the same file
+# feeds Style Dictionary and friends without a converter.
+
+# Which tokens a theme may touch, in the groups the editor shows them in. The
+# runtime geometry (--topbar-h, --sticky-*, --z-*) and the shell metrics are
+# deliberately ABSENT: those are measured at runtime or are layout contracts,
+# not taste, and a theme that could move them could break the sticky stack in a
+# way no colour ever can.
+THEME_GROUPS = (
+    ("brand", "Brand & surfaces",
+     ("--bg", "--surface", "--surface-2", "--text", "--muted",
+      "--border", "--border-strong", "--accent", "--accent-solid", "--ring")),
+    ("status", "Status & risk",
+     ("--st-done", "--st-prog", "--st-blocked", "--st-pending", "--st-cancelled",
+      "--st-done-ink", "--st-prog-ink", "--st-blocked-ink", "--st-pending-ink",
+      "--st-cancelled-ink",
+      "--rk-low-bg", "--rk-low-fg", "--rk-med-bg", "--rk-med-fg",
+      "--rk-high-bg", "--rk-high-fg")),
+    # Locked in the editor by default (not here — this is the vocabulary, not
+    # the policy): this palette is validated for colour-vision deficiency and
+    # for contrast against these very surfaces, and arbitrary values can make a
+    # chart two readers see differently.
+    ("charts", "Charts",
+     ("--viz-1", "--viz-2", "--viz-3", "--viz-4", "--viz-5", "--viz-6",
+      "--viz-7", "--viz-8",
+      "--hm-0", "--hm-1", "--hm-2", "--hm-3", "--hm-4", "--hm-5", "--hm-6",
+      "--hm-ink", "--bar-neutral", "--rail", "--rail-held")),
+    ("shape", "Shape & motion",
+     ("--radius", "--radius-lg", "--pill", "--shadow-sm", "--shadow-md",
+      "--dur", "--ease")),
+    ("type", "Type & fonts",
+     ("--sans", "--mono", "--t-1", "--t-2", "--t-3", "--t-label")),
+    # Measurements a reader legitimately disagrees about: how wide the section
+    # rail is, and how much air sits between the rail and the content. The
+    # sticky offsets are still absent — those are measured at runtime.
+    ("layout", "Layout",
+     ("--nav-w", "--shell-gap")),
+)
+THEME_TOKENS = tuple(t for _k, _title, names in THEME_GROUPS for t in names)
+# Colour tokens carry a value per theme; the rest are declared once (the same
+# split `theme_asymmetric_vars` already enforces on the stylesheet).
+THEME_SINGLE = frozenset(("--radius", "--radius-lg", "--pill", "--dur", "--ease",
+                          "--sans", "--mono", "--t-1", "--t-2", "--t-3",
+                          "--t-label", "--nav-w", "--shell-gap"))
+# ...with two exceptions that are colour-BEARING but not colours: the shadows
+# are declared in both themes, so they are paired like a colour.
+THEME_PAIRED = tuple(t for t in THEME_TOKENS if t not in THEME_SINGLE)
+
+
+def _blocks(css):
+    """(start, end) spans of the base :root block and of each dark block.
+
+    Brace-counting is safe here because no comment in this stylesheet contains
+    one — pinned by `th7`, so a future comment with a brace fails loudly rather
+    than corrupting a theme."""
+    out = {"light": None, "dark": []}
+    for m in re.finditer(r"(@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{\s*)?"
+                         r":root(\[[^\]]*\]|:not\([^)]*\))?\s*\{", css):
+        start = m.end()
+        depth, i = 1, start
+        while i < len(css) and depth:
+            if css[i] == "{":
+                depth += 1
+            elif css[i] == "}":
+                depth -= 1
+            i += 1
+        span = (start, i - 1)
+        head = m.group(0)
+        if "prefers-color-scheme" in head or 'data-theme="dark"' in head \
+                or "data-theme=dark" in head:
+            out["dark"].append(span)
+        elif "data-theme" not in head:
+            if out["light"] is None:
+                out["light"] = span
+    return out
+
+
+_VAL_RE = r"(?<![\w-])%s\s*:\s*([^;}]*)"
+
+
+def _read_token(text, name):
+    m = re.search(_VAL_RE % re.escape(name), text)
+    return m.group(1).strip() if m else None
+
+
+def extract_theme(css=None):
+    """The stylesheet, read back as a theme. This IS the default theme: the
+    values are never typed twice, so the two cannot drift."""
+    css = TOKEN_CSS if css is None else css
+    sp = _blocks(css)
+    light = css[sp["light"][0]:sp["light"][1]] if sp["light"] else ""
+    dark = css[sp["dark"][0][0]:sp["dark"][0][1]] if sp["dark"] else ""
+    out = {}
+    for name in THEME_TOKENS:
+        lv = _read_token(light, name)
+        if lv is None:
+            continue
+        if name in THEME_SINGLE:
+            out[name] = {"$value": lv}
+        else:
+            out[name] = {"$value": lv, "$dark": _read_token(dark, name) or lv}
+    return out
+
+
+# The tokens density scales, and by how much. Spacing carries the change; type
+# follows at a THIRD of it — a compact panel wants tighter air far more than it
+# wants smaller words, and type that shrinks with the gaps is how "compact"
+# turns into "unreadable". `comfortable` is exactly 1.0 in both, which is what
+# keeps the byte-pin true for the default theme.
+DENSITIES = {"compact": 0.8, "comfortable": 1.0, "spacious": 1.25}
+_SPACING_TOKENS = ("--sp-0", "--sp-1", "--sp-2", "--sp-3", "--sp-4", "--sp-5",
+                   "--sp-6", "--sp-7")
+_TYPE_TOKENS = ("--t-1", "--t-2", "--t-3", "--t-label")
+_NUM_UNIT = re.compile(r"^(-?\d*\.?\d+)(rem|em|px)$")
+
+
+def _scale(value, factor):
+    """A CSS length, scaled. Anything this cannot parse is returned unchanged —
+    a density must never turn a value it did not understand into garbage."""
+    m = _NUM_UNIT.match(str(value or "").strip())
+    if not m or factor == 1.0:
+        return value
+    n = float(m.group(1)) * factor
+    # Trimmed the way the stylesheet writes them: `.5rem`, not `0.500rem`.
+    out = ("%.4f" % n).rstrip("0").rstrip(".")
+    if out.startswith("0."):
+        out = out[1:]
+    return (out or "0") + m.group(2)
+
+
+def _density_edits(css, density):
+    """{token: scaled value} for a density, read off the sheet's own values."""
+    if density in (None, "comfortable") or density not in DENSITIES:
+        return {}
+    f = DENSITIES[density]
+    sp = _blocks(css)
+    base = css[sp["light"][0]:sp["light"][1]] if sp["light"] else ""
+    out = {}
+    for name in _SPACING_TOKENS:
+        v = _read_token(base, name)
+        if v is not None:
+            out[name] = _scale(v, f)
+    # Type moves a third as far (see DENSITIES).
+    tf = 1.0 + (f - 1.0) / 3.0
+    for name in _TYPE_TOKENS:
+        v = _read_token(base, name)
+        if v is not None:
+            out[name] = _scale(v, tf)
+    return out
+
+
+def compile_theme(theme, css=None, layout=None):
+    """TOKEN_CSS with this theme's values substituted in. Unknown keys are
+    ignored here — `validate_theme` is what reports them; a compiler that also
+    judged would make every caller decide twice."""
+    css = TOKEN_CSS if css is None else css
+    theme = theme if isinstance(theme, dict) else {}
+    sp = _blocks(css)
+    edits = []          # (start, end, replacement), applied right-to-left
+    # Density is a MULTIPLIER over whatever the scale currently says — including
+    # a step the theme set by hand. The alternative (an explicit value opts out)
+    # was tried and is worse: "compact" would then mean different things on two
+    # themes, and a reader who nudged one type step would silently lose the
+    # density on it alone.
+    density = (layout or {}).get("density") if isinstance(layout, dict) else None
+    scaled = _density_edits(css, density)
+    factor = DENSITIES.get(density, 1.0)
+    tfactor = 1.0 + (factor - 1.0) / 3.0
+    names = list(THEME_TOKENS) + [n for n in scaled if n not in THEME_TOKENS]
+    for name in names:
+        entry = theme.get(name)
+        if not isinstance(entry, dict):
+            if name not in scaled:
+                continue
+            entry = {"$value": scaled[name]}
+        val = entry.get("$value")
+        dark = entry.get("$dark", val)
+        if name in _TYPE_TOKENS and tfactor != 1.0:
+            val, dark = _scale(val, tfactor), _scale(dark, tfactor)
+        spans = [(sp["light"], val)] if sp["light"] else []
+        if name not in THEME_SINGLE and name not in scaled:
+            spans += [(d, dark) for d in sp["dark"]]
+        for span, newval in spans:
+            if span is None or newval is None:
+                continue
+            seg = css[span[0]:span[1]]
+            m = re.search(_VAL_RE % re.escape(name), seg)
+            if not m:
+                continue
+            # The LAST declaration in a block has no `;`, so the capture runs to
+            # the closing brace and swallows the newline before it. Only the
+            # value itself is replaced; the block's own shape is not a theme's
+            # to change (this is what the byte-pin caught).
+            start = span[0] + m.start(1)
+            edits.append((start, start + len(m.group(1).rstrip()), str(newval)))
+    for start, end, newval in sorted(edits, reverse=True):
+        css = css[:start] + newval + css[end:]
+    return css
+
+
+# What a value may look like. Deliberately narrow: a theme sets VALUES, and a
+# value that can carry `url(`, a second declaration or a comment could reach a
+# report that gets emailed and published. The report is the reason this is a
+# parser and not a passthrough.
+_COLOURISH = re.compile(
+    r"^(?:#[0-9a-f]{3,8}"
+    r"|rgba?\([\d\s.,%/]+\)"
+    r"|hsla?\([\d\s.,%/deg]+\)"
+    r"|color-mix\(in srgb,[^;{}()]*(?:\([^()]*\))?[^;{}()]*\)"
+    r"|transparent|currentColor|inherit)$", re.IGNORECASE)
+_SAFE_PLAIN = re.compile(r"^[\w\s.,%#()'\"/+*-]+$")
+_UNSAFE = re.compile(r"(?:url\s*\(|@import|expression\s*\(|/\*|\*/|[;{}<>])",
+                     re.IGNORECASE)
+_SHADOWISH = re.compile(r"^[\w\s.,%#()/-]+$")
+
+
+def validate_theme(theme):
+    """(findings, warnings) for a theme dict. Findings refuse the write;
+    warnings are said out loud and written anyway — a contrast a reader chose
+    is their call, an unknown token is not."""
+    findings, warnings = [], []
+    if not isinstance(theme, dict):
+        return (["theme must be an object"], [])
+    known = set(THEME_TOKENS)
+    for name in sorted(theme):
+        if name in ("$schema", "$description", "name", "history", "$layout"):
+            continue
+        if name not in known:
+            findings.append("%s: not a token this theme may set (see "
+                            "THEME_GROUPS for the list)" % name)
+            continue
+        entry = theme[name]
+        if not isinstance(entry, dict) or "$value" not in entry:
+            findings.append("%s: must be an object carrying $value" % name)
+            continue
+        vals = [("$value", entry.get("$value"))]
+        if name not in THEME_SINGLE:
+            if entry.get("$dark") in (None, ""):
+                # The parity lint refuses a token declared in one theme only,
+                # and it is right: the missing half renders transparent.
+                findings.append("%s: needs a $dark value too — a colour set in "
+                                "one theme only vanishes in the other" % name)
+            else:
+                vals.append(("$dark", entry.get("$dark")))
+        for label, val in vals:
+            if not isinstance(val, str) or not val.strip():
+                findings.append("%s %s: must be a non-empty string" % (name, label))
+                continue
+            v = val.strip()
+            if _UNSAFE.search(v):
+                findings.append("%s %s: %r is not a value — a theme sets values, "
+                                "never rules (no url(), no @import, no ';')"
+                                % (name, label, v))
+                continue
+            if name in ("--shadow-sm", "--shadow-md"):
+                ok = bool(_SHADOWISH.match(v))
+            elif name in ("--sans", "--mono", "--ease", "--radius", "--radius-lg",
+                          "--pill", "--dur", "--t-1", "--t-2", "--t-3",
+                          "--t-label"):
+                ok = bool(_SAFE_PLAIN.match(v))
+            else:
+                ok = bool(_COLOURISH.match(v))
+                if not ok:
+                    findings.append("%s %s: %r is not a colour this editor "
+                                    "writes (#hex, rgb()/rgba(), hsl()/hsla(), "
+                                    "color-mix(in srgb, …), transparent)"
+                                    % (name, label, v))
+                    continue
+            if not ok:
+                findings.append("%s %s: %r contains characters a value may not"
+                                % (name, label, v))
+    warnings.extend(contrast_warnings(theme))
+    return (findings, warnings)
+
+
+# The non-token half of a theme: how dense the page is, and the order the cards
+# come in. Deliberately NOT tokens — a density is one decision over eight
+# spacing steps, and an order is a list of names, neither of which is a value a
+# stylesheet can hold.
+def validate_layout(layout):
+    """(findings, warnings) for a theme's `layout` block."""
+    findings, warnings = [], []
+    if layout is None:
+        return (findings, warnings)
+    if not isinstance(layout, dict):
+        return (["layout must be an object"], warnings)
+    for k in layout:
+        if k not in ("density", "order"):
+            warnings.append("unknown key layout.%s (ignored)" % k)
+    d = layout.get("density")
+    if d is not None and d not in DENSITIES:
+        findings.append("layout.density must be one of %s"
+                        % sorted(DENSITIES))
+    order = layout.get("order")
+    if order is not None:
+        if not isinstance(order, dict):
+            findings.append("layout.order must be an object of view -> [card ids]")
+        else:
+            for view, names in order.items():
+                if not isinstance(names, list) or not all(
+                        isinstance(x, str) and x.strip() for x in names):
+                    findings.append("layout.order.%s must be a list of card ids"
+                                    % view)
+    return (findings, warnings)
+
+
+def _rgb(value):
+    """(r, g, b) 0-255 for the hex forms this editor writes, else None."""
+    v = str(value or "").strip()
+    if not v.startswith("#"):
+        return None
+    h = v[1:]
+    if len(h) in (3, 4):
+        h = "".join(c * 2 for c in h[:3])
+    if len(h) in (6, 8):
+        h = h[:6]
+    else:
+        return None
+    try:
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def _lum(rgb):
+    def chan(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (chan(x) for x in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(fg, bg):
+    """WCAG contrast, or None when either value is not a plain hex colour."""
+    a, b = _rgb(fg), _rgb(bg)
+    if not a or not b:
+        return None
+    la, lb = _lum(a), _lum(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return round((hi + 0.05) / (lo + 0.05), 2)
+
+
+# The pairs a reader actually reads: body text and muted text on each of the
+# three grounds. Not a full audit — a warning that names the pair it measured
+# is worth more than a score nobody can act on.
+_CONTRAST_PAIRS = (("--text", "--bg", 4.5), ("--text", "--surface", 4.5),
+                   ("--text", "--surface-2", 4.5), ("--muted", "--surface", 4.5),
+                   ("--muted", "--bg", 4.5), ("--accent", "--surface", 3.0))
+
+
+def contrast_warnings(theme, base=None):
+    """Readability warnings for a theme, measured against the DEFAULT values
+    for anything the theme does not override — a theme that changes only the
+    accent is still judged on the ground it will actually sit on."""
+    base = DEFAULT_THEME if base is None else base
+    out = []
+
+    def val(name, mode):
+        entry = theme.get(name) if isinstance(theme, dict) else None
+        if not isinstance(entry, dict):
+            entry = base.get(name) or {}
+        return entry.get("$value") if mode == "light" else \
+            entry.get("$dark", entry.get("$value"))
+
+    for fg, bg, floor in _CONTRAST_PAIRS:
+        for mode in ("light", "dark"):
+            ratio = contrast_ratio(val(fg, mode), val(bg, mode))
+            if ratio is not None and ratio < floor:
+                out.append("%s on %s in %s mode is %.2f:1 — below %.1f:1. A "
+                           "warning, not a refusal: your theme, your readers."
+                           % (fg, bg, mode, ratio, floor))
+    return out
+
+
+DEFAULT_THEME = extract_theme()
+
+
+# --- where a theme comes from ----------------------------------------------------
+# The skills-discovery rule, applied to looks: THIS project first, then you,
+# then the built-in. A project theme is committed, so a team shares one look
+# through git rather than through screenshots; anybody who does not want that
+# simply never creates the project file. `ui.theme` in the config overrides the
+# search with a preset name or an explicit path.
+#
+# Reading is fail-soft on purpose. A theme is decoration: a malformed file must
+# degrade to the default look and SAY so, never take the panel or the report
+# down with it — the same contract the usage ledger's torn-line tolerance has.
+THEME_FILENAME = "audit.theme.json"
+PRESETS = {"slate-teal": "the shipped look — Slate & Teal"}
+
+
+def load_theme_file(path):
+    """(theme, error). Never raises; an unreadable or invalid file yields
+    ({}, why) so the caller can fall back and report."""
+    try:
+        with io.open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception as exc:
+        return ({}, "unreadable (%s)" % exc)
+    if not isinstance(data, dict):
+        return ({}, "not a JSON object")
+    theme = data.get("tokens") if isinstance(data.get("tokens"), dict) else data
+    findings, _warnings = validate_theme(theme)
+    if findings:
+        return ({}, "invalid: %s" % findings[0])
+    layout = data.get("layout") if isinstance(data.get("layout"), dict) else None
+    lf, _lw = validate_layout(layout)
+    if lf:
+        return ({}, "invalid: %s" % lf[0])
+    # The tokens ARE the theme (every caller reads it that way); the layout
+    # rides alongside on the same object so nothing has to re-read the file.
+    if layout:
+        theme = dict(theme)
+        theme["$layout"] = layout
+    return (theme, None)
+
+
+def resolve_theme(project, config=None, home=None):
+    """The theme in effect, and where it came from.
+
+    Returns {"theme", "source", "path", "name", "error"} — `source` is one of
+    "config", "project", "user", "default", so every surface can SAY which file
+    it is wearing instead of leaving a reader guessing why the panel changed."""
+    cfg = config if isinstance(config, dict) else {}
+    want = ((cfg.get("ui") or {}).get("theme")
+            if isinstance(cfg.get("ui"), dict) else None)
+    out = {"theme": {}, "source": "default", "path": None,
+           "name": "slate-teal", "error": None}
+    candidates = []
+    if isinstance(want, str) and want.strip():
+        w = want.strip()
+        if w in PRESETS:
+            out["name"] = w
+            return out                      # the built-in IS the default sheet
+        candidates.append(("config", w if os.path.isabs(w)
+                           else os.path.join(project or ".", w)))
+    else:
+        candidates.append(("project",
+                           os.path.join(project or ".", ".claude", THEME_FILENAME)))
+        h = home or os.path.expanduser("~")
+        candidates.append(("user", os.path.join(h, ".claude", THEME_FILENAME)))
+    for source, path in candidates:
+        if not os.path.isfile(path):
+            if source == "config":
+                out["error"] = "ui.theme points at %s, which is not a file" % path
+            continue
+        theme, err = load_theme_file(path)
+        if err:
+            # Named, not swallowed: a theme that silently did nothing would
+            # send its author looking for the bug in the wrong place.
+            out["error"] = "%s: %s" % (path, err)
+            continue
+        out.update({"theme": theme, "source": source, "path": path,
+                    "name": os.path.splitext(os.path.basename(path))[0]})
+        return out
+    return out
+
+
+def theme_layout(theme):
+    """The layout block a resolved theme carries, or {}."""
+    lay = (theme or {}).get("$layout") if isinstance(theme, dict) else None
+    return lay if isinstance(lay, dict) else {}
+
+
+def token_css_for(project, config=None, home=None):
+    """(css, info) — the stylesheet this project should be served."""
+    info = resolve_theme(project, config, home)
+    info["layout"] = theme_layout(info["theme"])
+    if not info["theme"]:
+        return (TOKEN_CSS, info)
+    return (compile_theme(info["theme"], layout=info["layout"]), info)
+
+
+def list_themes(project, home=None):
+    """Saved themes this project can switch to: the built-in, plus every
+    `.claude/themes/*.json`. A preset is a FILE somebody saved, so the list is
+    what is on disk rather than a registry to keep in step with it."""
+    out = [{"name": "slate-teal", "path": None, "builtin": True}]
+    for base in ([os.path.join(project or ".", ".claude", "themes")]
+                 + ([os.path.join(home, ".claude", "themes")] if home else [])):
+        try:
+            names = sorted(os.listdir(base))
+        except Exception:
+            continue
+        for fn in names:
+            if not fn.endswith(".json"):
+                continue
+            out.append({"name": os.path.splitext(fn)[0],
+                        "path": os.path.relpath(os.path.join(base, fn),
+                                                project or "."),
+                        "builtin": False})
+    return out
 
 
 # --- stylesheet lints ------------------------------------------------------------
@@ -433,6 +976,196 @@ def _selftest():
         else:
             bad += 1
             print("FAIL %s" % name)
+
+    # uc (F-P-2): the empty bucket has ONE name, and it is not its storage key.
+    check("the empty usage bucket is named once, for all three surfaces: the "
+          "ledger's \"--\" (no phase/task) and its attr bucket are the same fact "
+          "to a reader, and neither reaches a screen as its storage key",
+          label("--") == label("unattributed") == UNCATEGORIZED
+          and UNCATEGORIZED not in ("--", "unattributed"))
+    # --- th (F-P-6): the token layer as data --------------------------------
+    check("th1 the stylesheet round-trips through the theme model BYTE FOR "
+          "BYTE - the default theme is read OUT of TOKEN_CSS, so the two can "
+          "never drift, and shipping the editor changes nothing on screen",
+          compile_theme(DEFAULT_THEME) == TOKEN_CSS)
+    check("th2 every themable token was actually found in the stylesheet - a "
+          "name in THEME_GROUPS that no rule declares is an editor control "
+          "that writes into nothing",
+          sorted(DEFAULT_THEME) == sorted(THEME_TOKENS))
+    _t2 = dict(DEFAULT_THEME)
+    _t2["--accent"] = {"$value": "#7c3aed", "$dark": "#a78bfa"}
+    _c2 = compile_theme(_t2)
+    check("th3 a changed colour lands in the light block AND in both dark "
+          "blocks - the OS-default one and the explicit toggle, or half the "
+          "readers keep the old theme",
+          "--accent:#7c3aed" in _c2 and _c2.count("--accent:#a78bfa") == 2
+          and "--accent:#0d9488" not in _c2)
+    check("th4 ...and nothing else moves", "--st-done:#15803d" in _c2
+          and _c2.count("color-scheme") == TOKEN_CSS.count("color-scheme"))
+    check("th5 a themed stylesheet still passes the sheet's own lints - parity "
+          "and color-scheme are properties of the OUTPUT, not of the default",
+          not theme_asymmetric_vars(_c2) and not themes_missing_color_scheme(_c2))
+    check("th6 a single-valued token (shape/type) is written once, and a $dark "
+          "on it is simply not asked for",
+          "$dark" not in DEFAULT_THEME["--radius"]
+          and "$dark" in DEFAULT_THEME["--accent"]
+          and compile_theme({"--radius": {"$value": "2px"}}).count("--radius:2px") == 1)
+    check("th7 no comment in this stylesheet carries a brace - the block "
+          "scanner counts them, so a comment that did would corrupt a theme "
+          "silently",
+          not any("{" in m.group(0) or "}" in m.group(0)
+                  for m in re.finditer(r"/\*.*?\*/", TOKEN_CSS, re.S)))
+    # Validation: what a theme may say, and what it may never say.
+    check("th8 an unknown token is a finding, not a silently ignored key",
+          any("--brand-x" in f for f in
+              validate_theme({"--brand-x": {"$value": "#fff"}})[0]))
+    check("th9 a colour without its dark half is a finding - the parity lint "
+          "refuses it downstream, and the missing half renders transparent",
+          any("$dark" in f for f in
+              validate_theme({"--accent": {"$value": "#fff"}})[0]))
+    check("th10 a value that is not a value is refused: no rules, no url(), "
+          "no second declaration",
+          all(validate_theme({"--accent": {"$value": v, "$dark": "#fff"}})[0]
+              for v in ("red;}body{display:none", "url(http://x/a.png)",
+                        "#fff /* x */"))
+          # ...and a real colour in any form this editor writes is accepted.
+          and not validate_theme({"--accent": {"$value": "#7c3aed",
+                                               "$dark": "rgba(167,139,250,.9)"}})[0])
+    check("th11 shape and type take plain values, and the same rule about "
+          "rules applies to them",
+          not validate_theme({"--radius": {"$value": "2px"}})[0]
+          and validate_theme({"--sans": {"$value": "x;}@import url(y)"}})[0])
+    check("th12 contrast is measured and WARNED about, never refused - a "
+          "theme is the reader's call",
+          contrast_ratio("#ffffff", "#000000") == 21.0
+          and any("below" in w for w in contrast_warnings(
+              {"--text": {"$value": "#eeeeee", "$dark": "#eeeeee"}}))
+          and not validate_theme(
+              {"--text": {"$value": "#eeeeee", "$dark": "#eeeeee"}})[0])
+    check("th13 a theme that overrides only the accent is still judged against "
+          "the ground it will sit on, not against nothing",
+          contrast_warnings({"--accent": {"$value": "#f8fafc",
+                                          "$dark": "#f8fafc"}}))
+
+    import json as _json
+    import tempfile as _tf
+    _root = _tf.mkdtemp(prefix="audit-theme-")
+    _proj = os.path.join(_root, "proj")
+    _home = os.path.join(_root, "home")
+    for _d in (os.path.join(_proj, ".claude"), os.path.join(_home, ".claude")):
+        os.makedirs(_d, exist_ok=True)
+
+    def _write(path, obj):
+        with io.open(path, "w", encoding="utf-8") as fh:
+            fh.write(_json.dumps(obj))
+
+    _pfile = os.path.join(_proj, ".claude", THEME_FILENAME)
+    _ufile = os.path.join(_home, ".claude", THEME_FILENAME)
+    check("th14 nothing on disk anywhere -> the built-in, said out loud",
+          resolve_theme(_proj, {}, _home)["source"] == "default")
+    _write(_ufile, {"tokens": {"--accent": {"$value": "#111111",
+                                            "$dark": "#eeeeee"}}})
+    check("th15 a user theme is found when the project has none",
+          resolve_theme(_proj, {}, _home)["source"] == "user")
+    _write(_pfile, {"tokens": {"--accent": {"$value": "#222222",
+                                            "$dark": "#dddddd"}}})
+    _r = resolve_theme(_proj, {}, _home)
+    check("th16 ...and the PROJECT's wins when both exist - a team shares one "
+          "look through the repo",
+          _r["source"] == "project"
+          and _r["theme"]["--accent"]["$value"] == "#222222")
+    check("th17 the compiled sheet carries it, and still passes the lints",
+          "--accent:#222222" in token_css_for(_proj, {}, _home)[0]
+          and not theme_asymmetric_vars(token_css_for(_proj, {}, _home)[0]))
+    check("th18 ui.theme naming the built-in short-circuits the search",
+          resolve_theme(_proj, {"ui": {"theme": "slate-teal"}}, _home)["source"]
+          == "default")
+    _alt = os.path.join(_proj, "themes", "alt.json")
+    os.makedirs(os.path.dirname(_alt), exist_ok=True)
+    _write(_alt, {"tokens": {"--accent": {"$value": "#333333", "$dark": "#cccccc"}}})
+    check("th19 ui.theme naming a path uses THAT file, wherever it sits",
+          resolve_theme(_proj, {"ui": {"theme": "themes/alt.json"}},
+                        _home)["theme"]["--accent"]["$value"] == "#333333")
+    _write(_pfile, {"tokens": {"--accent": {"$value": "red;}body{display:none",
+                                            "$dark": "#fff"}}})
+    _bad = resolve_theme(_proj, {}, _home)
+    check("th20 a theme carrying anything but values is REFUSED at the door, "
+          "the reader falls back, and the reason is named rather than swallowed "
+          "- a report is emailed and published",
+          _bad["source"] != "project" and _bad["error"]
+          and "display:none" not in token_css_for(_proj, {}, _home)[0])
+    with io.open(_pfile, "w", encoding="utf-8") as _fh:
+        _fh.write("{not json")
+    check("th21 an unreadable theme degrades to the default look and says why "
+          "- decoration must never take the page down",
+          resolve_theme(_proj, {}, _home)["source"] != "project"
+          and token_css_for(_proj, {}, _home)[0].startswith("\n/* ---- design tokens"))
+    import shutil as _sh
+    # --- th: density, layout, presets (second increment) ---------------------
+    check("th22 comfortable is exactly the shipped sheet - the default density "
+          "must be a no-op, or every byte-pin above is a lie",
+          compile_theme(DEFAULT_THEME, layout={"density": "comfortable"})
+          == TOKEN_CSS
+          and compile_theme(DEFAULT_THEME, layout={}) == TOKEN_CSS)
+    _cmp = compile_theme(DEFAULT_THEME, layout={"density": "compact"})
+    _spa = compile_theme(DEFAULT_THEME, layout={"density": "spacious"})
+    check("th23 density scales the SPACING scale in one move - eight steps from "
+          "one decision, not eight hand-tuned values",
+          "--sp-3:.8rem" in _cmp and "--sp-3:1.25rem" in _spa
+          and "--sp-3:1rem" in TOKEN_CSS)
+    check("th24 ...and type follows at a THIRD of it: a compact panel wants "
+          "tighter air, not smaller words",
+          "--t-3:.8167rem" in _cmp or "--t-3:.817rem" in _cmp
+          or "--t-3:.8166rem" in _cmp)
+    check("th25 a scaled sheet is still a sheet - the lints hold, and nothing "
+          "but the scaled tokens moved",
+          not theme_asymmetric_vars(_cmp)
+          and not themes_missing_color_scheme(_cmp)
+          and "--accent:#0d9488" in _cmp)
+    check("th26 density multiplies the step a theme set BY HAND too - one "
+          "meaning of 'compact', not one per theme",
+          "--t-1:2.8rem" in compile_theme(
+              dict(DEFAULT_THEME, **{"--t-1": {"$value": "3rem"}}),
+              layout={"density": "compact"}))
+    check("th27 _scale leaves what it cannot parse alone, rather than turning "
+          "it into garbage",
+          _scale("cubic-bezier(.4,0,.2,1)", 0.8) == "cubic-bezier(.4,0,.2,1)"
+          and _scale("1.5rem", 2.0) == "3rem" and _scale(".25rem", 0.8) == ".2rem")
+    check("th28 the layout block is validated: a density outside the three is a "
+          "finding, an unknown key is a warning, an order must be lists of names",
+          validate_layout({"density": "roomy"})[0]
+          and not validate_layout({"density": "compact"})[0]
+          and validate_layout({"wat": 1})[1]
+          and validate_layout({"order": {"over": ["a", 2]}})[0]
+          and not validate_layout({"order": {"over": ["phases", "gate"]}})[0]
+          and not validate_layout(None)[0])
+    check("th29 the shell metrics are themable and single-valued - a rail width "
+          "is one number, not a pair",
+          "--nav-w" in THEME_TOKENS and "--nav-w" in THEME_SINGLE
+          and compile_theme({"--nav-w": {"$value": "18rem"}}).count("--nav-w:18rem") == 1)
+    # Presets are FILES, so the list is what is on disk.
+    _pdir = os.path.join(_proj, ".claude", "themes")
+    os.makedirs(_pdir, exist_ok=True)
+    _write(os.path.join(_pdir, "midnight.json"),
+           {"tokens": {"--accent": {"$value": "#111111", "$dark": "#eeeeee"}}})
+    _names = [t["name"] for t in list_themes(_proj)]
+    check("th30 the built-in is always offered, and every saved theme beside it",
+          _names[0] == "slate-teal" and "midnight" in _names
+          and list_themes(_proj)[1]["path"].replace(chr(92), "/")
+          == ".claude/themes/midnight.json")
+    _write(_pfile, {"tokens": {}, "layout": {"density": "compact",
+                                             "order": {"over": ["phases"]}}})
+    _lr = resolve_theme(_proj, {}, _home)
+    check("th31 a theme's layout rides its file and reaches the compiler - "
+          "density is part of the look, and the look is one file",
+          theme_layout(_lr["theme"]).get("density") == "compact"
+          and "--sp-3:.8rem" in token_css_for(_proj, {}, _home)[0])
+    _write(_pfile, {"tokens": {}, "layout": {"density": "nope"}})
+    check("th32 ...and an invalid layout is refused at the door like any other "
+          "invalid theme, rather than half-applied",
+          resolve_theme(_proj, {}, _home)["source"] != "project")
+
+    _sh.rmtree(_root, ignore_errors=True)
 
     check("tokens declare a light :root", ":root{" in TOKEN_CSS)
     check("tokens declare both dark forms - the OS default AND the explicit "

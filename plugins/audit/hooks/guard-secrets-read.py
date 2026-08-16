@@ -121,14 +121,39 @@ _INLINE_EVAL = re.compile(
 )
 SECRET_TOKEN_RE = re.compile(_SECRET_TOKEN, re.IGNORECASE)
 
+# F-P-7: the write CALL and the path it writes, captured TOGETHER. The old
+# pattern matched a write-shaped fragment anywhere in the clause and left the
+# target to a second, unrelated search — so `>` inside the code (a comparison,
+# `len(x)>3`, or a redirect into /tmp) paired with the quoted name of the file
+# being READ, and a read-only one-liner over a .json was refused as a source
+# write. Reported from a live repo, where the reader routed around the guard
+# with `jq`; a guard that fires on reads teaches people to ignore it, which
+# costs more than the writes it catches.
+#
+# Each alternative names its target in group 1 or 2, so `_eval_write_targets`
+# can answer "what does this write?" instead of "does a write and a path both
+# appear here?". The bare `>`/`>>` redirect is deliberately NOT here: a shell
+# redirect into a source file is `_source_write_hit`'s job (it reads the whole
+# command with the redirect grammar), and duplicating it here is what produced
+# the false positive.
 _WRITE_CALL = re.compile(
-    r"(?:open\s*\([^)]*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
-    r"|\.write(?:File)?(?:Sync)?\s*\("
-    r"|createWriteStream\s*\("
-    r"|File\.(?:open|write)\s*\("
-    r"|>>?\s*['\"]?[\w./-]+)",
+    r"(?:open\s*\(\s*['\"]([\w./-]+)['\"]\s*,\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
+    r"|(?:fs\.)?write(?:File)?(?:Sync)?\s*\(\s*['\"]([\w./-]+)['\"]"
+    r"|createWriteStream\s*\(\s*['\"]([\w./-]+)['\"]"
+    r"|File\.(?:open|write)\s*\(\s*['\"]([\w./-]+)['\"])",
     re.IGNORECASE,
 )
+
+
+def _eval_write_targets(clause):
+    """Every path this clause actually WRITES, from the write calls themselves."""
+    out = []
+    for m in _WRITE_CALL.finditer(clause):
+        for g in m.groups():
+            if g:
+                out.append(g)
+                break
+    return out
 _NON_EXEMPT_WRITE_TARGET = re.compile(
     r"['\"][\w./-]+\.(?:tsx?|jsx?|mjs|cjs|json|ya?ml|swift|kt|java|rb|py|sh|gradle|"
     r"podspec|plist)['\"]",
@@ -429,12 +454,11 @@ def _decide_core(data: dict, root, cfg):
                         "Listing names is fine; reading contents is not. Ask the user to "
                         "paste any value you actually need.")
         for cl in clauses:
-            if (
-                _INLINE_EVAL.search(cl)
-                and _WRITE_CALL.search(cl)
-                and _NON_EXEMPT_WRITE_TARGET.search(cl)
-                and not _exempt_eval_write(cl)
-            ):
+            # F-P-7: judged on the paths the write calls NAME, not on a write
+            # shape and a path that merely share a clause.
+            targets = _eval_write_targets(cl) if _INLINE_EVAL.search(cl) else []
+            if any(_NON_EXEMPT_WRITE_TARGET.search("'%s'" % t)
+                   and not _exempt_eval_write("'%s'" % t) for t in targets):
                 return ("block",
                         "Writing source files via an inline-eval one-liner "
                         "(python -c / node -e …) bypasses the plan-first gate.\n"
@@ -812,6 +836,47 @@ def _selftest() -> int:
     check("s26 an eval-write that is the SECOND clause is still caught", "block",
           bash('echo x >/tmp/o; '
                'python3 -c "open(\'src/foo/gen3.ts\',\'w\').write(\'x\')"'))
+
+    # (s27+) F-P-7: the eval-write backstop matched a WRITE CALL and a SOURCE
+    # PATH anywhere in the same clause, never checking that the two were the
+    # same thing. `>` inside the code (a comparison, or a redirect to /tmp) fed
+    # the write half; the quoted name of the file being READ fed the target
+    # half. Reported from a live repo: a read-only `python3 -c` over a .json
+    # was refused as a source write, and the reader learned to route around the
+    # guard with `jq`. A guard that cries on reads is a guard nobody reads.
+    check("s27 a read-only one-liner over a .json is NOT a write, even with a "
+          "comparison in it", "allow",
+          bash('python3 -c "import json; d=json.load(open(\'package.json\')); '
+               'print(len(d[\'scripts\'])>3)"'))
+    check("s28 ...nor is one whose OUTPUT is redirected to a scratch file - the "
+          "path it writes is not source, and shell redirects are the other "
+          "backstop\'s business", "allow",
+          bash('python3 -c "import json; print(json.load(open(\'pkg.json\'))[\'name\'])" '
+               '> /tmp/name.txt'))
+    check("s29 ...and reading a .py to print a line stays a read", "allow",
+          bash('python3 -c "print(open(\'scripts/build.py\').read().splitlines()[0])"'))
+    check("s30 the write half still denies when the WRITE ITSELF names source",
+          "block",
+          bash('python3 -c "json.dump(cfg, open(\'tsconfig.json\',\'w\'))"'))
+    check("s31 ...including node, which names the target in the call", "block",
+          bash('node -e "require(\'fs\').writeFileSync(\'src/gen.ts\', x)"'))
+    check("s32 ...and a read of one file plus a write of another is a write",
+          "block",
+          bash('python3 -c "s=open(\'a.json\').read(); open(\'src/b.ts\',\'w\').write(s)"'))
+    # The `>` alternative LEFT _WRITE_CALL with this fix, so the case it used to
+    # cover is pinned here against the branch that actually owns it — a shell
+    # redirect is _source_write_hit's grammar, graded like require-plan's gate.
+    check("s33 an eval whose OUTPUT is redirected into source is still caught, "
+          "by the shell-write branch rather than by the eval one", "block",
+          bash('python3 -c "print(1)" > src/app.ts'), use_cfg=cfg_enforced)
+    check("s34 _eval_write_targets names what a clause WRITES and nothing it "
+          "merely mentions - the whole bug in one function",
+          "allow" if (
+              _eval_write_targets(
+                  'python3 -c "d=json.load(open(\'a.json\')); print(len(d)>2)"') == []
+              and _eval_write_targets(
+                  'python3 -c "open(\'src/x.ts\',\'w\').write(1)"') == ["src/x.ts"]
+          ) else "block", bash("true"))
 
     # The ask payload's SHAPE is the pinned contract (the dialog cannot be
     # driven by a selftest) - mirror of require-plan's g9 and of j1 below.

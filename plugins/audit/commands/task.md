@@ -1,6 +1,6 @@
 ---
-description: Add a tracked task to the audit manifest (interactive), or move one between phases. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row.
-argument-hint: 'add "<title>" [--phase <id>] | move <taskId> --to <phaseId>'
+description: Add a tracked task to the audit manifest (interactive), move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task or a whole phase as terminal-but-not-done, recording the reason, the moment and a journal row.
+argument-hint: 'add "<title>" [--phase <id>] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -97,6 +97,46 @@ per add is the class of error the script exists to delete.
    not resolve) and re-run. `3` the index lock is held by a live run — stop; do not
    take it over. `4` the lock looks abandoned — confirm with the human
    (AskUserQuestion), then re-run the same add with `--takeover`.
+
+## Subcommand: `cancel <id> --reason "<why>"`
+
+Close a task — or a whole phase — that will **not** be done. The feature was dropped, the
+approach was abandoned, the phase ends with whatever landed. This is not failure and it is
+not `done`: `cancelled` is the second TERMINAL state (the phase/task twin of a bug's
+`wontfix`), and the report files it under **Archived** beside the finished work.
+
+Like `add`, this is a SCRIPT call — `scripts/audit-task.py cancel <id> --reason "<why>"`,
+which takes the index lock itself. Never hand-edit the status: the script is what records
+all three things a hand-edit loses — the reason, the moment, and the journal row.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-task.py" cancel P3.2 \
+  --reason "search rewrite dropped; the endpoint stays as-is" [--json]
+```
+
+What it writes:
+
+- **task** → `status: "cancelled"`, `completedAt` stamped (it stopped being work then),
+  and the reason into `outcome.descriptive` as `Cancelled: <why>` — the field the report's
+  detail row already reads, so no new field is invented for it.
+- **phase** → the same status, the reason appended to `summary`, its `claim` released
+  (a claim on a finished phase is stale, and the validator says so), **and every task in it
+  that is not already finished is cancelled too** — a pending task under a dropped phase is
+  a task `/audit:next` would otherwise still offer.
+- **journal** → one `task.cancel` / `phase.cancel` row carrying the reason, so the why
+  outlives the session.
+- **ADO** (when linked) → the next echo/sync moves the card to the mapped state,
+  `Removed` by default.
+
+**Refusals, all before any write:** an id that resolves to nothing; a missing or blank
+`--reason` (a status flipped with no why is exactly the hand-edit this replaces); and a
+target that is already `done` or `cancelled` — terminal work is not re-decided here. As
+with `add`, the manifest is validated from disk afterwards and **every written file rolls
+back** on findings.
+
+Readiness treats a cancelled blocker as settled, so a plan never deadlocks on work nobody
+will do — a task that was waiting on the cancelled one becomes ready, and is worth a look
+before it runs.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

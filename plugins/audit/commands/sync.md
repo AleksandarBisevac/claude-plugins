@@ -59,7 +59,7 @@ heals whatever the echo missed.
 | `bug.description` + `repro` + `expected`/`actual` | Repro Steps (Bug) / Description |
 | `bug.severity` high/med/low | Severity `2 - High` / `3 - Medium` / `4 - Low` |
 | bug status (default `open` → `New` · `triaged`/`in_progress` → `Active` · `fixed` → `Resolved` · `wontfix` → `Closed`) | State via `meta.ado.stateMap.bug` |
-| task status (default `pending` → `New` · `in_progress` → `Active` · `blocked` → `Active` + tag `blocked` · `done` → `Closed`) | State via `meta.ado.stateMap.task` |
+| task status (default `pending` → `New` · `in_progress` → `Active` · `blocked` → `Active` + tag `blocked` · `done` → `Closed` · `cancelled` → `Removed`) | State via `meta.ado.stateMap.task` |
 | phase status via `meta.ado.stateMap.phase` (defaults = the task defaults; NOTE phase-item vocabularies differ — a Scrum PBI knows no "In Progress", see tracker-sync.md) | State |
 | task `done` + `meta.ado.onComplete.remainingWork` (default 0 when `onComplete` present) | `Microsoft.VSTS.Scheduling.RemainingWork`, same update call — stock processes REFUSE it (they force-clear the field at done) → retry state-only, report the skip (tracker-sync.md) |
 | `meta.ado.areaPath` (when set) | Area |

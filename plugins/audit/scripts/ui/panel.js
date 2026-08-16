@@ -24,6 +24,8 @@ try{const s=localStorage.getItem(TK);if(s)root.setAttribute('data-theme',s);}cat
 const isDark=()=>{const t=root.getAttribute('data-theme');return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches;};
 const paint=()=>$('#theme').textContent=isDark()?'☀':'☾';paint();
 $('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data-theme',n);
+ // th: the live preview is per-mode — repaint it for the mode just chosen.
+ if(typeof tPaint==='function')tPaint();
  try{localStorage.setItem(TK,n);}catch(e){}paint();};
 // Render the standalone report and open it. Opened through THIS origin (/report):
 // a browser will not follow a file:// link from an http:// page, so handing over a
@@ -61,10 +63,31 @@ $('#report').onclick=async e=>{const b=e.currentTarget;
 // only the text changes.
 const LABELS=__LABELS__;
 const label=v=>LABELS[v]||(v?String(v).replace(/[_-]+/g,' ').replace(/^./,c=>c.toUpperCase()):'—');
-const TABS=['guards','comp','over','usage','policy'],SCROLL={};
+// uc (F-P-2): "--" is the ledger's storage key for spend with no phase or task
+// behind it — ad-hoc edits, `#no-plan`, work outside the plan. That is an
+// answer, and it used to reach the screen as those two characters. LABELS
+// names it (shared with the report and the CLI, so the three cannot drift),
+// and uKeyEl paints it in the warn role: not a gate, not a finding, just the
+// one row in the table a reader should be able to find without hunting.
+const UNCAT='--';
+// TWO storage keys, one fact: the group dimensions (phase/task/branch) write
+// "--" for a row with none, and the attr dimension writes "unattributed" for
+// the same spend seen from the other side. A reader meets one thing, so they
+// get one word. Deliberately a two-key predicate rather than label() over any
+// key: label() humanises whatever it does not know, and "claude-opus-5" is not
+// something to prettify.
+const isUncat=k=>k===UNCAT||k==='unattributed';
+const UNCAT_WHY='spend with no phase or task behind it - ad-hoc edits, #no-plan, '
+ +'or sessions outside the plan. Counted, never hidden.';
+const uKey=k=>isUncat(k)?label(UNCAT):k;
+const uKeyEl=(k,cls)=>isUncat(k)
+ ?el('span',{class:'uncat'+(cls?' '+cls:''),title:UNCAT_WHY},label(UNCAT))
+ :(cls?el('span',{class:cls},String(k)):String(k));
+const TABS=['guards','comp','over','usage','policy','look'],SCROLL={};
 let CURTAB=null;
 function showTab(t,push){
  if(!TABS.includes(t))t='guards';
+ closeCombo();   // the menu is on <body>, not in the view being hidden
  if(CURTAB)SCROLL[CURTAB]=window.scrollY;
  CURTAB=t;
  document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.t===t;x.classList.toggle('on',on);
@@ -373,7 +396,9 @@ async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/
   const got=bang>=0&&uApplyFragment(h.slice(bang+1));
   if(!got){let s=null;try{s=localStorage.getItem(UFSTORE);}catch(e){}
    if(s)uApplyFragment(s);}}
- renderViewer();renderSettings();renderComp();renderOver();renderUsage();renderPolicy();
+ THEME=await api('GET','/api/theme').catch(()=>null);
+ tCaptureBase();
+ renderViewer();renderSettings();renderComp();renderOver();renderUsage();renderPolicy();renderAppearance();
  // Restored last, once every view has content to scroll to.
  showTab(initialTab());
  RUNSTATUS=STATE.runStatus||null;FP=(RUNSTATUS||{}).fingerprint||null;
@@ -685,17 +710,48 @@ $('#helpbtn').onclick=()=>openHelpIndex();
 // uHay pattern), so the second keystroke rebuilds nothing. In the usage combos
 // the description is a magnitude ("3.2M"), so a digit query matches token
 // counts too — uniformity beats a per-site opt-out.
+//
+// THE menu is one element on <body> (F-P-1a), the #hinttip rule applied to the
+// second overlay this page has: it used to be a child of each combo's wrapper,
+// position:fixed and placed from the input's viewport rect — and `tr.phase:hover
+// >td{filter:...}` made that td the CONTAINING BLOCK of every fixed descendant,
+// so the phase row's review-model menu jumped ~550px on hover and grew the
+// table frame's scroll box (measured 321->868px tall, 837->1194px wide: the
+// "layout change" of the report). Hovering the menu itself counted as hovering
+// the row (DOM ancestry), so the menu fled from under the pointer. On <body>
+// there is no ancestor to trap, clip or restack it, and a click inside it can
+// no longer bubble into the row it was drawn for. Focus is singular, so one
+// menu suffices: the combo whose input has it CLAIMS the element (CMOWNER) and
+// fills it; the loser's delayed close is a no-op on a menu it no longer holds.
+let CMENU=null,CMOWNER=null;
+function comboMenu(){
+ if(!CMENU){CMENU=el('div',{class:'combo-menu hidden',id:'combomenu',role:'listbox'});
+  // F-P-1d: a mousedown ANYWHERE in the menu — padding, the overflow footer,
+  // the scrollbar — used to blur the input, and the blur closed the menu 150ms
+  // later; only the items prevented it. The menu as a whole keeps the focus
+  // where it is; the items still choose on their own mousedown.
+  CMENU.addEventListener('mousedown',e=>e.preventDefault());
+  document.body.append(CMENU);}
+ return CMENU;}
+// Re-renders and tab switches call this: the menu is not inside the view any
+// more, so tearing the view down no longer takes it along.
+function closeCombo(){if(CMOWNER)CMOWNER.close();}
+const comboOpen=()=>!!(CMENU&&!CMENU.classList.contains('hidden'));
 function comboWrap(inp,itemsFn,onChoose,onEnterFree){
- const wrap=el('div',{class:'combo'}),menu=el('div',{class:'combo-menu hidden'});
+ const wrap=el('div',{class:'combo'});
  let active=-1,shown=[];
- const close=()=>{menu.classList.add('hidden');active=-1;};
- // Fixed-position, like showTip: the menu used to hang absolutely inside the
- // wrap, and any ancestor with its own overflow frame (.comptblwrap scrolls
- // sideways by design) clipped it at the frame's edge. Placed at the input's
- // own x where that fits, clamped into the viewport where it does not, and
- // flipped above the input when the space below cannot hold it (390px is the
- // width that decides all three).
- const place=()=>{if(menu.classList.contains('hidden'))return;
+ const me={};
+ const close=()=>{active=-1;
+  if(CMOWNER===me){const menu=comboMenu();menu.classList.add('hidden');menu.textContent='';CMOWNER=null;}};
+ me.close=close;
+ // Fixed-position, like showTip: placed at the input's own x where that fits,
+ // clamped into the viewport where it does not, and flipped above the input
+ // when the space below cannot hold it (390px is the width that decides all
+ // three). An input that a re-render has removed closes its menu here — the
+ // scroll/resize re-place is the one path that still runs for it.
+ const place=()=>{const menu=comboMenu();
+  if(CMOWNER!==me||menu.classList.contains('hidden'))return;
+  if(!inp.isConnected){close();return;}
   const r=inp.getBoundingClientRect(),vw=document.documentElement.clientWidth,
     vh=innerHeight,gut=8;
   const w=Math.min(Math.max(r.width,180),vw-2*gut);
@@ -704,15 +760,18 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
   const mh=Math.min(menu.scrollHeight,240);
   menu.style.top=(r.bottom+4+mh>vh-gut&&r.top-4-mh>gut
     ?r.top-4-mh:r.bottom+4)+'px';};
- menu.__place=place;   // re-placed by the document-level scroll listener below
+ me.place=place;
  const render=()=>{const q=inp.value.trim().toLowerCase();
+  const menu=comboMenu();
+  if(CMOWNER&&CMOWNER!==me)CMOWNER.close();
+  CMOWNER=me;menu.__place=place;   // re-placed by the document-level scroll listener below
   const all=itemsFn().filter(it=>{
    if(it.h===undefined)it.h=(it.name+' '+(it.description||'')+' '+(it.source||'')).toLowerCase();
    return it.h.includes(q);});
   shown=all.slice(0,60);
   menu.textContent='';
   if(!shown.length){close();return;}
-  shown.forEach((it,i)=>menu.append(el('div',{class:'combo-it'+(i===active?' active':''),
+  shown.forEach((it,i)=>menu.append(el('div',{class:'combo-it'+(i===active?' active':''),role:'option',
     onmousedown:e=>{e.preventDefault();onChoose(it.name,close);}},
     el('span',{class:'combo-n mono'},it.name),
     it.source?el('span',{class:'src badge'},it.source):null,
@@ -726,6 +785,9 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
   const a=menu.querySelector('.combo-it.active');if(a)a.scrollIntoView({block:'nearest'});};
  inp.setAttribute('autocomplete','off');
  inp.addEventListener('focus',render);
+ // F-P-1c: after a choice (or Escape) the input keeps focus and the menu is
+ // closed — a click on it must open the menu again, not wait for a keystroke.
+ inp.addEventListener('click',()=>{if(!(CMOWNER===me&&comboOpen()))render();});
  inp.addEventListener('input',()=>{active=-1;render();});
  inp.addEventListener('keydown',e=>{
   if(e.key==='ArrowDown'){e.preventDefault();active=Math.min(active+1,shown.length-1);render();}
@@ -734,7 +796,7 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
    else if(onEnterFree&&inp.value.trim()){e.preventDefault();onEnterFree(inp.value.trim(),close);}}
   else if(e.key==='Escape'){close();}});
  inp.addEventListener('blur',()=>setTimeout(close,150));
- wrap.append(inp,menu);return wrap;}
+ wrap.append(inp);return wrap;}
 // One listener for every combo, registered once: a fixed-position menu does not
 // follow its input when something scrolls, so any open menu is re-placed. Only
 // menus still in the DOM are found, so re-rendered views leak nothing.
@@ -790,7 +852,7 @@ function gotoSetting(path){showTab('guards');
 function settingsLink(text,path){
  return el('button',{class:'lnk',type:'button',onclick:()=>gotoSetting(path)},text);}
 
-function renderSettings(){const c=$('#guards');c.textContent='';
+function renderSettings(){closeCombo();const c=$('#guards');c.textContent='';
  const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
  const findings=el('div',{class:'findings-slot'});
  // What this form would change, against the config the server last served. Read by
@@ -1212,7 +1274,7 @@ function skillChips(getArr,setArr){
 const COMPF={q:'',status:'',needs:false,open:{},apply:null};
 function openInComp(pid){COMPF.q=pid;COMPF.status='';COMPF.needs=false;COMPF.open[pid]=true;
  if(COMPF.apply)COMPF.apply();showTab('comp');}
-function renderComp(){const c=$('#comp');c.textContent='';const comp=STATE.composition;
+function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const comp=STATE.composition;
  MITEMS=null;   // STATE may have moved under us (save re-render, disk refresh)
  const patch={meta:{},phases:{},tasks:{}};
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,
@@ -1674,6 +1736,496 @@ function manifestFindingsBox(n,list){
    el('summary',{},'every finding, unfolded'),ol));
  return box;}
 
+// ---------- Appearance (th, F-P-6) ----------
+// The visual system is one token layer, shared by this panel and the report, and
+// every value in it is already a custom property — so editing the look is
+// editing those values, not writing CSS. That is the whole design: the server
+// compiles a theme by SUBSTITUTING values into the stylesheet, so a theme can
+// change token values and nothing else, and the default compiles back to the
+// shipped sheet byte for byte.
+//
+// What lives here: a draft, a live preview (this page IS the preview — the draft
+// is written straight onto :root, so a colour is judged on the thing it will
+// colour), an ordered undo trail, and one Save that goes through the same
+// confirm-and-echo path every other write in this panel uses.
+let THEME=null;                 // the server's answer: stored theme + default + groups
+let TDRAFT=null;                // what the editor is holding, before Save
+let TUNDO=[], TREDO=[];         // the ordered trail: {token, mode, from, to}
+let TUNLOCK=false;              // the Charts group's deliberate second act
+let TLAY=null;                  // the layout draft: density + card order
+// The layout in effect: draft first, then what the theme file says, then the
+// shipped defaults — the same three-layer answer tVal gives for a token.
+function tLayout(){
+ if(TLAY)return TLAY;
+ const l=(THEME&&THEME.layout)||{};
+ return {density:l.density||'comfortable',order:l.order||{}};}
+function tLaySet(patch){
+ const cur=tLayout();
+ TLAY=Object.assign({density:cur.density,order:Object.assign({},cur.order)},patch);
+ tPaintLayout();
+ // ...and the views that carry ordered cards restack at once, so the change is
+ // visible on the tab it is about rather than only after a save.
+ Object.keys((THEME&&THEME.cards)||{}).forEach(v=>applyCardOrder(v));}
+// The density preview: the panel's own spacing scale, scaled here so the tab
+// shows what it is about to write. The compiler does the same arithmetic
+// server-side — this is the preview of it, not a second source.
+const TDENSITY={compact:0.8,comfortable:1,spacious:1.25};
+const TSPACING=['--sp-0','--sp-1','--sp-2','--sp-3','--sp-4','--sp-5','--sp-6','--sp-7'];
+const TTYPE=['--t-1','--t-2','--t-3','--t-label'];
+let TLAYPAINT=[];
+function tScale(v,f){const m=/^(-?\d*\.?\d+)(rem|em|px)$/.exec(String(v||'').trim());
+ if(!m||f===1)return null;
+ let out=(parseFloat(m[1])*f).toFixed(4).replace(/0+$/,'').replace(/\.$/,'');
+ if(out.indexOf('0.')===0)out=out.slice(1);
+ return (out||'0')+m[2];}
+function tPaintLayout(){
+ const root=document.documentElement;
+ TLAYPAINT.forEach(n=>root.style.removeProperty(n));TLAYPAINT=[];
+ // Spelled out rather than `||1`: this is a lookup with a known default, and
+ // the sheet's own lint bans that idiom outright — it is a denominator's
+ // disguise everywhere else in this file, and one exception is how the rule
+ // stops being read.
+ const d=tLayout().density;
+ const f=TDENSITY[d]===undefined?1:TDENSITY[d];
+ if(f===1)return;
+ const tf=1+(f-1)/3;
+ const cs=getComputedStyle(root);
+ TSPACING.forEach(n=>{const v=tScale(TBASE[n]||cs.getPropertyValue(n),f);
+  if(v){root.style.setProperty(n,v);TLAYPAINT.push(n);}});
+ TTYPE.forEach(n=>{const v=tScale(TBASE[n]||cs.getPropertyValue(n),tf);
+  if(v){root.style.setProperty(n,v);TLAYPAINT.push(n);}});}
+// The UNSCALED values, read once before anything is painted — reading them back
+// off the root after a paint would compound the scale on every keystroke.
+const TBASE={};
+function tCaptureBase(){
+ const cs=getComputedStyle(document.documentElement);
+ TSPACING.concat(TTYPE).forEach(n=>{
+  if(!TBASE[n])TBASE[n]=cs.getPropertyValue(n).trim();});}
+const TMODES=['light','dark'];
+const tKey=(name,mode)=>mode==='dark'?'$dark':'$value';
+// The value a token HAS right now: the draft first, then the stored theme, then
+// the default. Three layers, one answer, so nothing on screen is ever blank.
+function tVal(name,mode){
+ const from=o=>o&&o[name]?o[name][tKey(name,mode)]:undefined;
+ const d=from(TDRAFT);if(d!==undefined&&d!==null)return d;
+ const s=from(THEME&&THEME.theme);if(s!==undefined&&s!==null)return s;
+ const f=from(THEME&&THEME.default);
+ return f===undefined?'':f;}
+const tSingle=name=>((THEME&&THEME.single)||[]).includes(name);
+function tDefault(name,mode){
+ const e=(THEME&&THEME.default||{})[name]||{};
+ const v=e[tKey(name,mode)];return v===undefined?e['$value']:v;}
+// Every token whose draft differs from the DEFAULT — computed, never
+// remembered, so it is answerable for a theme somebody sent you as a file.
+function tChanges(){
+ const out=[];
+ ((THEME&&THEME.groups)||[]).forEach(g=>g.tokens.forEach(name=>{
+  TMODES.forEach(mode=>{
+   if(mode==='dark'&&tSingle(name))return;
+   const now=tVal(name,mode),was=tDefault(name,mode);
+   if(String(now)!==String(was))out.push({token:name,mode:mode,from:was,to:now});});}));
+ return out;}
+// The draft, as the payload the server takes: only what differs from the
+// default is written, so a theme file says what its author decided and nothing
+// more (and a later change to a default reaches everyone who never overrode it).
+// What differs from the shipped defaults on the layout side, in the same
+// {token,mode,from,to} shape the token diff uses, so one list shows both.
+function tLayChanges(){
+ const cur=tLayout(),base=(THEME&&THEME.layout)||{};
+ const out=[];
+ const shipped='comfortable';
+ if((cur.density||shipped)!==shipped)
+  out.push({token:'layout · density',mode:'',from:shipped,to:cur.density,layout:1});
+ Object.keys(cur.order||{}).forEach(view=>{
+  const now=(cur.order[view]||[]).join(', ');
+  const was=((base.order||{})[view]||[]).join(', ');
+  // An order equal to the DRAWN one is not a change: moving a card down and
+  // back up must leave the tab saying "no changes", not offering to write an
+  // order that says what the default already says.
+  const shipped=((THEME&&THEME.cards)||{})[view];
+  const isDefault=Array.isArray(shipped)&&now===shipped.join(', ');
+  if(now&&now!==was&&!isDefault)out.push({token:'layout · order · '+view,mode:'',
+    from:was||'(default)',to:now,layout:1});});
+ return out;}
+function tPayload(){
+ const out={};
+ tChanges().forEach(c=>{
+  const e=out[c.token]||(out[c.token]={$value:tVal(c.token,'light')});
+  if(!tSingle(c.token))e.$dark=tVal(c.token,'dark');});
+ return out;}
+// LIVE PREVIEW. The draft is written onto the document root as inline custom
+// properties: the panel repaints instantly and honestly, because it is wearing
+// the theme rather than showing a swatch of it. Cleared token by token, so a
+// revert leaves nothing behind.
+let TPAINTED=[];
+function tPaint(){
+ const root=document.documentElement;
+ TPAINTED.forEach(n=>root.style.removeProperty(n));
+ TPAINTED=[];
+ const dark=isDark();
+ tChanges().forEach(c=>{
+  if(c.mode!==(dark?'dark':'light'))return;
+  root.style.setProperty(c.token,String(c.to));TPAINTED.push(c.token);});}
+function tSet(name,mode,value,record){
+ const was=tVal(name,mode);
+ if(String(was)===String(value))return;
+ TDRAFT=TDRAFT||{};
+ const e=TDRAFT[name]||(TDRAFT[name]={$value:tVal(name,'light')});
+ if(!tSingle(name)&&e.$dark===undefined)e.$dark=tVal(name,'dark');
+ e[tKey(name,mode)]=value;
+ if(record!==false){TUNDO.push({token:name,mode:mode,from:was,to:value});TREDO=[];}
+ tPaint();}
+function tUndo(stack,other){
+ const step=stack.pop();if(!step)return;
+ const back={token:step.token,mode:step.mode,from:step.to,to:step.from};
+ tSet(step.token,step.mode,step.from,false);
+ other.push(back.from===undefined?step:{token:step.token,mode:step.mode,
+   from:step.to,to:step.from});
+ renderAppearance();}
+function tHex(v){return /^#[0-9a-fA-F]{6}$/.test(String(v||''))?String(v):null;}
+
+function renderAppearance(){closeCombo();
+ const c=$('#look');
+ const act=document.activeElement,
+   keepId=act&&act.id&&act.id.indexOf('th-')===0?act.id:null,
+   caret=keepId&&act.setSelectionRange?act.selectionStart:0;
+ c.textContent='';
+ if(!THEME){c.append(el('div',{class:'card'},el('div',{class:'findings warn'},
+   'The theme could not be read from this project.')));return;}
+ const changes=tChanges().concat(tLayChanges());
+
+ // --- the bar: where this look comes from, and what to do with it -----------
+ const head=el('div',{class:'card'});
+ head.append(h2h('Appearance',
+   'The panel and the report share ONE token layer, and a theme edits its '
+   +'values — never a rule. The stylesheet is compiled from those values when '
+   +'a page is served and is never stored, so nothing here can reach a report '
+   +'except a colour, a size or a font name.'));
+ const src=THEME.source==='project'?('this project — '+(THEME.path||''))
+   :THEME.source==='user'?'your ~/.claude theme'
+   :THEME.source==='config'?('ui.theme → '+(THEME.path||''))
+   :'the built-in Slate & Teal';
+ head.append(el('p',{class:'mut','data-thsrc':THEME.source},'Wearing: '+src
+   +'. A project theme lives in .claude/'+'audit.theme.json and travels with the '
+   +'repo; without one, your ~/.claude theme applies; without that, the built-in.'));
+ head.append(el('p',{class:'mut small','data-thlive':isDark()?'dark':'light'},
+   'You are viewing '+(isDark()?'DARK':'LIGHT')+' — that column is what repaints '
+   +'as you type. The other one is saved just the same and applies when the '
+   +'theme toggle is flipped; both are on screen because a colour edited in one '
+   +'theme and checked in the other is how a pair drifts.'));
+ if(THEME.error)head.append(el('div',{class:'findings warn','data-therr':'1'},
+   THEME.error));
+ const bar=el('div',{class:'row'});
+ const nch=changes.length;
+ bar.append(el('span',{class:'pill'+(nch?' unsaved':''),'data-thcount':String(nch)},
+   nch?(nch+' unsaved change'+(nch===1?'':'s')):'no changes'));
+ // Which saved theme is worn, and Save-as beside it: a preset here is a FILE
+ // somebody saved, so the menu lists what is on disk rather than a registry.
+ const sel=el('select',{'aria-label':'which theme to wear','data-thpreset':'1',
+   onchange:async()=>{
+    const res=await api('PUT','/api/theme',{use:sel.value});
+    THEME=await api('GET','/api/theme');TDRAFT=null;TLAY=null;TUNDO=[];TREDO=[];
+    tPaint();tPaintLayout();renderAppearance();
+    toast(res.ok?'wearing '+sel.value:'could not switch',res.ok?'':'err');}});
+ (THEME.saved||[]).forEach(t=>{
+  const v=t.builtin?'slate-teal':(t.path||t.name);
+  const o=el('option',{value:v},t.name+(t.builtin?' (built-in)':''));
+  const worn=THEME.source==='config'?THEME.path:(THEME.source==='default'?'slate-teal':null);
+  if(worn&&(v===worn||v===String(worn).replace(/\\/g,'/')))o.selected=true;
+  sel.append(o);});
+ bar.append(el('span',{class:'filtlbl'},'theme:'),sel);
+ bar.append(el('button',{class:'btn small',type:'button','data-thsaveas':'1',
+   title:'keep this look under a name, and wear it',
+   onclick:async()=>{
+    const name=prompt('Save this theme as:','custom');
+    if(!name||!name.trim())return;
+    const lay=tLayout(),layPayload={};
+    if(lay.density&&lay.density!=='comfortable')layPayload.density=lay.density;
+    if(lay.order&&Object.keys(lay.order).length)layPayload.order=lay.order;
+    const res=await api('PUT','/api/theme',{theme:tPayload(),layout:layPayload,
+      saveAs:name.trim()});
+    if(!res.ok){toast('could not save: '+(res.findings||[])[0],'err');return;}
+    THEME=await api('GET','/api/theme');TDRAFT=null;TLAY=null;
+    renderAppearance();toast('saved as '+name.trim());}},'Save as…'));
+ // `disabled:false` would still DISABLE these: el() sets any non-null value as
+ // an attribute, and `disabled="false"` is a disabled button in HTML. Present
+ // or absent, never a boolean — a browser check caught this by finding no
+ // clickable control where there plainly was one.
+ bar.append(el('button',{class:'btn small',type:'button','data-thundo':'1',
+   disabled:TUNDO.length?null:'',onclick:()=>tUndo(TUNDO,TREDO)},'Undo'));
+ bar.append(el('button',{class:'btn small',type:'button','data-thredo':'1',
+   disabled:TREDO.length?null:'',onclick:()=>tUndo(TREDO,TUNDO)},'Redo'));
+ bar.append(el('button',{class:'btn small',type:'button','data-thexport':'json',
+   title:'the theme as a file you can send someone (DTCG JSON)',
+   onclick:()=>tExport('json')},'Export .json'));
+ bar.append(el('button',{class:'btn small',type:'button','data-thexport':'css',
+   title:'the compiled tokens, to read or paste elsewhere — never read back',
+   onclick:()=>tExport('css')},'Export .css'));
+ const imp=el('input',{type:'file',accept:'.json,application/json',
+   style:'display:none','data-thimport':'1'});
+ imp.addEventListener('change',()=>tImport(imp));
+ bar.append(el('button',{class:'btn small',type:'button',
+   title:'load a theme file someone sent you — validated token by token',
+   onclick:()=>imp.click()},'Load a theme file…'),imp);
+ head.append(bar,imp);
+ c.append(head);
+
+ // --- the groups ------------------------------------------------------------
+ (THEME.groups||[]).forEach(g=>{
+  const locked=(THEME.locked||[]).includes(g.key)&&!TUNLOCK;
+  const card=el('div',{class:'card','data-thgroup':g.key});
+  card.append(el('h2',{},g.title));
+  if((THEME.locked||[]).includes(g.key)){
+   card.append(el('p',{class:'blurb'},'This palette is validated for '
+     +'colour-vision deficiency and for contrast against these very surfaces. '
+     +'Changing it can make a chart two readers see differently — so it opens '
+     +'deliberately, and the checks below keep reporting afterwards.'));
+   card.append(el('div',{class:'row'},el('button',{class:'btn small',
+     type:'button','data-thunlock':TUNLOCK?'on':'off',
+     onclick:()=>{TUNLOCK=!TUNLOCK;renderAppearance();}},
+     TUNLOCK?'Lock the chart palette':'Unlock the chart palette')));}
+  if(!locked){
+   // WHICH column is live, said out loud. The preview paints the mode the
+   // reader is actually in, so a value typed into the other column changes
+   // nothing on screen — correct, and baffling unless the table says so.
+   const livemode=isDark()?'dark':'light';
+   const tbl=el('table',{class:'thtbl'});
+   tbl.append(el('thead',{},el('tr',{},el('th',{},'token'),
+     el('th',{class:livemode==='light'?'thlive':'thoff'},'light',
+       livemode==='light'?el('span',{class:'mut'},' · previewing'):null),
+     el('th',{class:livemode==='dark'?'thlive':'thoff'},'dark',
+       livemode==='dark'?el('span',{class:'mut'},' · previewing'):null),
+     el('th',{}))));
+   const tb=el('tbody');
+   g.tokens.forEach(name=>{
+    const row=el('tr',{'data-thtoken':name});
+    row.append(el('td',{class:'mono thname'},name));
+    TMODES.forEach(mode=>{
+     if(mode==='dark'&&tSingle(name)){
+      row.append(el('td',{class:'mut small'},'— same in both'));return;}
+     const val=String(tVal(name,mode));
+     const cell=el('td',{class:'thcell'});
+     const hex=tHex(val);
+     const text=el('input',{type:'text',id:'th-'+name.slice(2)+'-'+mode,
+       value:val,'data-thval':name+'|'+mode,'aria-label':name+' '+mode,
+       class:'thtext'});
+     // Typing repaints the page and the counter immediately; the TAB itself is
+     // rebuilt on a short debounce, because everything else on it — the Changes
+     // list, the per-row revert, the contrast warnings — would otherwise sit
+     // stale until the reader happened to blur. The debounce is what keeps a
+     // colour-picker drag (one event per pixel) from fighting the rebuild.
+     text.addEventListener('input',()=>{tSet(name,mode,text.value.trim());
+       tRepaintBar();tSoon();});
+     text.addEventListener('change',()=>renderAppearance());
+     if(hex!==null||/^#/.test(val)){
+      const pick=el('input',{type:'color',value:hex||'#000000',
+        'aria-label':name+' '+mode+' colour picker',class:'thpick'});
+      pick.addEventListener('input',()=>{text.value=pick.value;
+        tSet(name,mode,pick.value);tRepaintBar();tSoon();});
+      pick.addEventListener('change',()=>renderAppearance());
+      cell.append(pick);}
+     cell.append(text);
+     const changed=String(tVal(name,mode))!==String(tDefault(name,mode));
+     if(changed)cell.append(el('button',{class:'btn small',type:'button',
+       'data-threvert':name+'|'+mode,title:'back to '+tDefault(name,mode),
+       onclick:()=>{tSet(name,mode,tDefault(name,mode));renderAppearance();}},'↺'));
+     row.append(cell);});
+    row.append(el('td',{class:'mut small'},
+      tSingle(name)?'':(String(tVal(name,'light'))!==String(tDefault(name,'light'))
+        ||String(tVal(name,'dark'))!==String(tDefault(name,'dark'))?'changed':'')));
+    tb.append(row);});
+   tbl.append(tb);
+   card.append(el('div',{class:'thwrap'},tbl));}
+  c.append(card);});
+
+ // --- layout: measurements, not colours -------------------------------------
+ {
+  const lay=tLayout();
+  const card=el('div',{class:'card','data-thgroup':'layoutctl'});
+  card.append(h2h('Density & order',
+    'Density is ONE multiplier over the eight-step spacing scale; type follows '
+    +'at a third of it, because a compact panel wants tighter air rather than '
+    +'smaller words. The order is which card comes first in a view.'));
+  const seg=el('div',{class:'row'});
+  (THEME.densities||['comfortable']).forEach(d=>seg.append(
+    el('button',{class:'btn small'+(lay.density===d?' primary':''),type:'button',
+      'data-thdensity':d,'aria-pressed':lay.density===d?'true':'false',
+      onclick:()=>{tLaySet({density:d});renderAppearance();}},
+      d.charAt(0).toUpperCase()+d.slice(1))));
+  card.append(el('div',{class:'row'},el('span',{class:'filtlbl'},'density:'),seg));
+  // Card order, per view. Up/down rather than drag: a keyboard reader gets the
+  // same control, and there is nothing to discover.
+  Object.keys(THEME.cards||{}).forEach(view=>{
+   const known=(THEME.cards||{})[view]||[];
+   const cur=(lay.order||{})[view]||known.slice();
+   const list=cur.filter(x=>known.includes(x))
+     .concat(known.filter(x=>!cur.includes(x)));
+   card.append(el('h3',{class:'sub2'},'Order — '+(LABELS[view]||view)));
+   list.forEach((name,i)=>{
+    const move=(to)=>{const a=list.slice();const t=a.splice(i,1)[0];a.splice(to,0,t);
+      const order=Object.assign({},lay.order);order[view]=a;
+      tLaySet({order:order});renderAppearance();};
+    card.append(el('div',{class:'row thorder','data-thcard':name},
+      el('span',{class:'mono'},name),
+      el('button',{class:'btn small',type:'button',disabled:i===0?'':null,
+        'aria-label':'move '+name+' up',onclick:()=>move(i-1)},'↑'),
+      el('button',{class:'btn small',type:'button',
+        disabled:i===list.length-1?'':null,
+        'aria-label':'move '+name+' down',onclick:()=>move(i+1)},'↓')));});});
+  c.append(card);
+ }
+
+ // --- what changed, and every way back --------------------------------------
+ const chg=el('div',{class:'card','data-thchanges':String(changes.length)});
+ chg.append(h2h('Changes',
+   'Computed, not remembered: this is the theme minus the default, so it is '
+   +'answerable even for a file somebody sent you. Revert one row, Undo one '
+   +'step, or reset everything.'));
+ if(!changes.length)chg.append(el('div',{class:'mut'},
+   'Nothing differs from the built-in theme.'));
+ else changes.forEach(ch=>chg.append(el('div',{class:'row thdiff'},
+   el('span',{class:'mono'},ch.token+(tSingle(ch.token)?'':' · '+ch.mode)),
+   el('span',{class:'mut'},String(ch.from)+' → '),
+   el('span',{},String(ch.to)),
+   el('button',{class:'btn small',type:'button',
+     onclick:()=>{
+      if(ch.layout){
+       if(ch.token==='layout · density')tLaySet({density:'comfortable'});
+       else{const view=ch.token.split(' · ').pop();
+        const order=Object.assign({},tLayout().order);delete order[view];
+        tLaySet({order:order});}
+      }else tSet(ch.token,ch.mode,ch.from);
+      renderAppearance();}},'Revert'))));
+ (THEME.warnings||[]).concat(tLocalWarnings()).slice(0,6).forEach(w=>
+   chg.append(el('div',{class:'mut small','data-thwarn':'1'},w)));
+ const save=el('button',{class:'btn primary','data-thsave':'1',onclick:async()=>{
+   const rows=changes.map(ch=>({scope:'theme',
+     field:ch.token+(tSingle(ch.token)?'':' · '+ch.mode),
+     from:ch.from,to:ch.to}));
+   if(!rows.length){toast('nothing to save — the theme matches the default');return;}
+   if(!await confirmChanges({title:'Save theme',rows:rows,scope:'look',
+     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     note:'writes .claude/audit.theme.json — the CSS is compiled from it, never stored'}))
+    return;
+   const lay=tLayout();
+   const layPayload={};
+   if(lay.density&&lay.density!=='comfortable')layPayload.density=lay.density;
+   if(lay.order&&Object.keys(lay.order).length)layPayload.order=lay.order;
+   const res=await api('PUT','/api/theme',{theme:tPayload(),layout:layPayload,
+     history:TUNDO.slice(-100)});
+   const slot=$('#look .findings-slot');
+   if(slot)slot.replaceChildren(findingsBox(res));
+   if(!res.ok){saveOutcome(res,rows,'the theme',slot);return;}
+   THEME=await api('GET','/api/theme');TDRAFT=null;TLAY=null;
+   renderAppearance();
+   const s2=$('#look .findings-slot');
+   if(s2)s2.replaceChildren(findingsBox(res));
+   saveOutcome(res,rows,'the theme',s2);
+   toast('theme saved — reload to see the report wear it too');}},'Save theme');
+ const reset=el('button',{class:'btn small','data-threset':'1',type:'button',
+   onclick:async()=>{
+   if(!await confirmChanges({title:'Reset the theme',danger:1,lock:false,
+     rows:changes.map(ch=>({scope:'theme',
+       field:ch.token+(tSingle(ch.token)?'':' · '+ch.mode),from:ch.to,to:ch.from})),
+     verb:'Back to the built-in look',
+     note:'removes .claude/audit.theme.json — the file goes, not just its values'}))
+    return;
+   const res=await api('PUT','/api/theme',{reset:true});
+   THEME=await api('GET','/api/theme');TDRAFT=null;TLAY=null;TUNDO=[];TREDO=[];
+   tPaint();tPaintLayout();
+   renderAppearance();
+   toast(res.ok?'back to the built-in theme':'reset refused',res.ok?'':'err');}},
+   'Reset to the built-in');
+ chg.append(el('div',{class:'row',style:'margin-top:.9rem'},save,reset),
+   el('div',{class:'findings-slot'}));
+ c.append(chg);
+
+ if(keepId){const n=document.getElementById(keepId);
+  if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
+ tPaint();tPaintLayout();}
+
+// Rebuild the tab shortly after the typing stops. renderAppearance puts the
+// caret back by id, so a rebuild mid-sentence is invisible; what it buys is a
+// Changes list, a revert control and a contrast warning that are never stale.
+let TSOON=null;
+function tSoon(){if(TSOON)clearTimeout(TSOON);
+ TSOON=setTimeout(()=>{TSOON=null;renderAppearance();},350);}
+// The count pill without a full redraw: a colour picker fires per pixel dragged,
+// and rebuilding the tab on each of those would fight the drag.
+function tRepaintBar(){
+ const pill=$('#look [data-thcount]');if(!pill)return;
+ const n=tChanges().length;
+ pill.textContent=n?(n+' unsaved change'+(n===1?'':'s')):'no changes';
+ pill.setAttribute('data-thcount',String(n));
+ pill.className='pill'+(n?' unsaved':'');}
+
+// Contrast, judged in the browser on the DRAFT — the server judges what is
+// saved, and a reader dragging a picker deserves the answer before they commit.
+function tLum(hex){const m=tHex(hex);if(!m)return null;
+ const v=[1,3,5].map(i=>parseInt(m.slice(i,i+2),16)/255)
+   .map(x=>x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4));
+ return 0.2126*v[0]+0.7152*v[1]+0.0722*v[2];}
+function tRatio(a,b){const la=tLum(a),lb=tLum(b);
+ if(la===null||lb===null)return null;
+ const hi=Math.max(la,lb),lo=Math.min(la,lb);
+ return (hi+0.05)/(lo+0.05);}
+const TPAIRS=[['--text','--bg',4.5],['--text','--surface',4.5],
+  ['--muted','--surface',4.5],['--accent','--surface',3]];
+function tLocalWarnings(){
+ const out=[];
+ TPAIRS.forEach(([fg,bg,floor])=>TMODES.forEach(mode=>{
+  const r=tRatio(tVal(fg,mode),tVal(bg,mode));
+  if(r!==null&&r<floor)out.push(fg+' on '+bg+' in '+mode+' mode is '
+    +r.toFixed(2)+':1 — below '+floor+':1. A warning, not a refusal: your '
+    +'theme, your readers.');}));
+ return out;}
+
+function tExport(kind){
+ const name=(THEME&&THEME.name)||'audit-theme';
+ if(kind==='json'){
+  const body=JSON.stringify({$description:'audit panel/report theme',
+    name:name,tokens:tPayload()},null,2);
+  tDownload(name+'.theme.json',body,'application/json');return;}
+ // The compiled tokens, for reading or pasting elsewhere. One-way on purpose:
+ // what comes BACK in is JSON, so the importer never has to parse CSS.
+ const lines=[':root{'];
+ tChanges().filter(ch=>ch.mode==='light').forEach(ch=>
+   lines.push('  '+ch.token+':'+ch.to+';'));
+ lines.push('}',':root[data-theme="dark"]{');
+ tChanges().filter(ch=>ch.mode==='dark').forEach(ch=>
+   lines.push('  '+ch.token+':'+ch.to+';'));
+ lines.push('}');
+ tDownload(name+'.theme.css',lines.join('\n'),'text/css');}
+function tDownload(fname,body,mime){
+ const url=URL.createObjectURL(new Blob([body],{type:mime+';charset=utf-8'}));
+ const a=el('a',{href:url,download:fname});document.body.append(a);a.click();
+ a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function tImport(input){
+ const f=input.files&&input.files[0];input.value='';
+ if(!f)return;
+ const rd=new FileReader();
+ rd.onload=()=>{
+  let data=null;
+  try{data=JSON.parse(String(rd.result||''));}
+  catch(e){toast('that file is not JSON — a theme is exported as .json','err');return;}
+  const tokens=(data&&typeof data==='object'&&data.tokens&&typeof data.tokens==='object')
+    ?data.tokens:data;
+  if(!tokens||typeof tokens!=='object'){toast('no tokens in that file','err');return;}
+  const known=new Set(((THEME&&THEME.groups)||[]).flatMap(g=>g.tokens));
+  const refused=[];
+  Object.keys(tokens).forEach(name=>{
+   if(name.charAt(0)==='$'||name==='name'||name==='history')return;
+   if(!known.has(name)){refused.push(name);return;}
+   const e=tokens[name]||{};
+   if(e.$value!==undefined)tSet(name,'light',String(e.$value));
+   if(!tSingle(name)&&e.$dark!==undefined)tSet(name,'dark',String(e.$dark));});
+  renderAppearance();
+  toast(refused.length
+    ? ('loaded as a draft; '+refused.length+' unknown token(s) refused: '
+       +refused.slice(0,3).join(', '))
+    : 'loaded as a draft — nothing is written until you Save');};
+ rd.readAsText(f);}
+
 // ---------- live run status ----------
 // Who is driving which phase changes WHILE you are looking at the panel — that is
 // the whole point of the badges, and until now they were a snapshot taken at page
@@ -1692,6 +2244,29 @@ let RUNSTATUS=null, RUNPOLL=null, FP=null;
 // repaints Overview from the payload the poll already fetched. The
 // fingerprint stays OUT (it hands off to refreshFromDisk; the D9 rule).
 function runStatusKey(rs){return JSON.stringify(rs&&{i:rs.index,p:rs.phases,g:rs.gate});}
+// F-P-1b: a moved disk stamp re-renders every CLEAN view — and the ledger's
+// stamp moves after every Claude turn in the project (the Stop hook meters
+// it), so an open combo menu, or a field the reader had focused but not typed
+// into yet, was torn down every <=5s under their hands. Deferred exactly like
+// an open dialog: FP stays put and the poll after the interaction ends picks
+// the change up. Scoped, not blanket: a DIRTY form is never rebuilt by the
+// refresh (it keeps its edits and gets the stale note), so a caret inside one
+// defers nothing — Overview must keep refreshing while someone types in
+// Composition. Only a caret in a form the refresh WOULD rebuild, or an open
+// menu anywhere, holds it back.
+function interacting(){
+ if(comboOpen())return true;
+ const a=document.activeElement;
+ if(!(a&&a.matches&&a.matches('input,textarea,select')))return false;
+ // Only a caret in a form the refresh would REBUILD holds it back, and only
+ // while that form is clean (a dirty one is left alone anyway, with the stale
+ // note). A caret in Overview's or Usage's search box defers NOTHING: those are
+ // filters, their state is hoisted out of the render on purpose, and a reader
+ // who leaves the cursor in a search box must not freeze the live view for the
+ // rest of the session — which is exactly what the first version of this did,
+ // caught by the out-of-band write test one step later.
+ const v=a.closest('#comp,#guards,#policy');
+ return !!v&&editRows(v.id).length===0;}
 async function pollRunStatus(){
  if(document.hidden)return;
  try{
@@ -1706,7 +2281,7 @@ async function pollRunStatus(){
   const fp=next.fingerprint;
   if(fp&&fp!==FP){
    if(FP===null)FP=fp;
-   else if(!document.querySelector('dialog[open]')){FP=fp;refreshFromDisk();}
+   else if(!document.querySelector('dialog[open]')&&!interacting()){FP=fp;refreshFromDisk();}
   }
   if(runStatusKey(next)===runStatusKey(RUNSTATUS))return;   // no repaint on no change
   RUNSTATUS=next;
@@ -1781,7 +2356,15 @@ async function refreshFromDisk(){
  // The Usage chart remounts on its own rAF; put the reader back where they were.
  requestAnimationFrame(()=>window.scrollTo(0,y));}
 
-const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan'};
+// ov (F-P-5): Overview follows the report's table — the same segments, the same
+// three views, the same words. `segOf` is the client twin of _report_html._seg_of
+// and is pinned against it by name; two surfaces disagreeing about which phases
+// are "finished" is the kind of drift a reader reads as a bug in the plan.
+const SEG_VIEWS={active:['active','pending'],archived:['archived'],
+  all:['active','pending','archived']};
+const segOf=st=>st==='done'||st==='cancelled'?'archived'
+  :(st==='in_progress'||st==='blocked')?'active':'pending';
+const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{}};
 // Nothing-to-see-first: the statuses that need a human come before the ones that
 // do not, in the strips and in the status sort. Plan order is still the default —
 // a plan is written in an order and that order means something.
@@ -1802,6 +2385,61 @@ function ovCopy(btn,text){
   let ok=false;try{ok=document.execCommand('copy');}catch(e){ok=false;}
   ta.remove();if(ok)done();else toast('could not copy — the command is '+text,'err');};
  try{navigator.clipboard.writeText(text).then(done,manual);}catch(e){manual();}}
+// ov (F-P-5): a phase's tasks, in the columns the report's table uses — id,
+// title, status, risk (coloured TEXT, not a pill), commit and when it finished.
+// Read-only on purpose: this tab is for reading the plan, and the one place
+// that edits it is named at the end rather than reached by accident.
+const ovStamp=v=>{const s=String(v||'');if(!s)return '';
+ const i=s.indexOf('T');return i<0?s:s.slice(0,i)+' '+s.slice(i+1,i+6);};
+function ovDetail(p){
+ const tasks=((STATE.composition||{}).tasks||[]).filter(t=>t.phaseId===p.id);
+ const box=el('div',{class:'ovdetail','data-ovdetail':p.id});
+ if(!tasks.length)box.append(el('div',{class:'mut small'},'This phase has no tasks.'));
+ else{
+  const tb=el('tbody');
+  tasks.forEach(t=>{
+   const when=ovStamp(t.completedAt||t.startedAt);
+   tb.append(el('tr',{'data-ovtask':t.id||''},
+    el('td',{class:'mono'},t.id||''),
+    el('td',{class:'ovt'},t.title||''),
+    el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
+    el('td',{},t.risk?el('span',{class:'rk','data-risk':t.risk},t.risk):null),
+    el('td',{class:'mono'},t.commit?String(t.commit).slice(0,9):''),
+    el('td',{class:'mut'},when+(t.completedAt?'':(when?' (started)':'')))));});
+  box.append(el('table',{class:'ovtasks'},
+    el('thead',{},el('tr',{},el('th',{},'id'),el('th',{},'title'),el('th',{},'status'),
+      el('th',{},'risk'),el('th',{},'commit'),el('th',{},'done (UTC)'))),tb));}
+ if(p.desiredOutcome)box.append(el('div',{class:'mut small'},'Desired: '+p.desiredOutcome));
+ box.append(el('div',{class:'row',style:'margin-top:.4rem'},
+   el('button',{class:'btn small','data-ovedit':p.id,type:'button',
+     title:'Composition is where tasks, models and skills are changed',
+     onclick:()=>openInComp(p.id)},'Edit in Composition')));
+ return box;}
+
+// th (F-P-6, layout): a view's cards, in the order the theme asks for. The
+// renderers append in their own order and stamp each top-level card with a
+// name; this reorders what is already drawn. Reordering AFTER the fact rather
+// than parameterising every renderer keeps the ordering in one place — and a
+// card the theme does not name simply keeps its position at the end, so a theme
+// written today never hides a card added next year.
+function applyCardOrder(view){
+ const host=document.getElementById(view);
+ if(!host||!THEME)return;
+ // The DRAFT order when the editor is holding one, the saved theme otherwise —
+ // the same three-layer answer the colours get. An order you can only see after
+ // saving is not a preview, and this is the one part of the look that is judged
+ // by looking at another tab.
+ const lay=(typeof tLayout==='function')?tLayout():(THEME.layout||{});
+ const want=(lay.order||{})[view];
+ if(!Array.isArray(want)||!want.length)return;
+ const named={};
+ [...host.children].forEach(n=>{const k=n.getAttribute&&n.getAttribute('data-card');
+  if(k)named[k]=n;});
+ want.forEach(k=>{if(named[k])host.append(named[k]);});
+ // Anything the order did not mention stays after it, in its drawn order.
+ [...host.children].forEach(n=>{const k=n.getAttribute&&n.getAttribute('data-card');
+  if(k&&want.indexOf(k)<0)host.append(n);});}
+
 function renderOver(){const c=$('#over');const r=STATE.rollup;
  // The poll repaints this view under the reader's hands. Put the caret back where
  // it was, or typing a five-letter search while a colleague takes a phase lock
@@ -1809,7 +2447,9 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  const act=document.activeElement,keepQ=!!(act&&act.id==='ovq'),
    caret=keepQ?act.selectionStart:0;
  c.textContent='';
- const card=el('div',{class:'card'});
+ // data-card (th, F-P-6): the name the theme's layout.order refers to. Stamped
+ // where the card is BUILT, so a renamed card renames its ordering key with it.
+ const card=el('div',{class:'card','data-card':'phases'});
  if(!r){card.append(el('div',{class:'mut'},'No manifest at '+STATE.manifestPath+'. Run /audit:init.'));c.append(card);return;}
  const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)')
    :manifestFindingsBox(r.findings,STATE.manifestFindings||[]);
@@ -1864,6 +2504,17 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   const cb=el('input',{type:'checkbox',id:'ovarea'});cb.checked=OVF.byArea;
   cb.onchange=()=>{OVF.byArea=cb.checked;renderOver();};
   tools.append(el('label',{class:'inl',for:'ovarea'},cb,'group by area'));}
+ // ov: the same three views the report offers, defaulting the same way — a
+ // finished plan opens on `all` rather than on an empty table.
+ if(OVF.view===null){
+  const segs=new Set((r.phases||[]).map(p=>segOf(p.status)));
+  OVF.view=(segs.has('active')||segs.has('pending'))?'active':'all';}
+ const viewSel=el('select',{'aria-label':'which phases to show','data-ovview':'1',
+   onchange:e=>{OVF.view=e.target.value;renderOver();}});
+ [['active','Active & pending'],['archived','Archived (done & cancelled)'],
+  ['all','All phases']].forEach(([v,t])=>{
+   const o=el('option',{value:v},t);if(OVF.view===v)o.selected=true;viewSel.append(o);});
+ tools.append(el('span',{class:'filtlbl'},'view:'),viewSel);
  const count=el('span',{class:'count',style:'margin-left:auto'});
  tools.append(count);
  if(ovAnyFilter())tools.append(el('button',{class:'btn small',type:'button','data-ovclear':'1',
@@ -1875,7 +2526,10 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  const hitP=p=>(!term||((p.id+' '+(p.title||'')+' '+(p.area||[]).join(' ')+' '
      +(p.desiredOutcome||'')).toLowerCase().includes(term)))
    &&(!OVF.ts||!!((pStatus[p.id]||{})[OVF.ts]));
- const ordered=r.phases.filter(hitP);
+ const matched=r.phases.filter(hitP);
+ const inView=p=>(SEG_VIEWS[OVF.view]||SEG_VIEWS.all).includes(segOf(p.status));
+ const ordered=matched.filter(inView);
+ const outside=matched.length-ordered.length;
  const pct=p=>p.total?100*p.done/p.total:0;
  if(OVF.sort==='progress')ordered.sort((a,b)=>pct(b)-pct(a));
  else if(OVF.sort==='status')ordered.sort((a,b)=>ovRank(OVORDER,a.status)-ovRank(OVORDER,b.status));
@@ -1892,18 +2546,36 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   const areaBadges=(p.area||[]).map(a=>el('span',{class:'badge area',title:'area'},a));
   // One control, not a row with a handler bolted on: keyboard reachable and
   // announced as pressable without a hand-written role/tabindex/keydown trio.
-  return el('button',{class:'ovrow',type:'button','data-status':p.status||'','data-phase':p.id,
-    title:'open '+p.id+' in Composition',onclick:()=>openInComp(p.id)},
+  // ov (F-P-5): the row's own counts, in the report's words. A phase in
+  // progress with two stuck tasks reads as "in progress" and nothing else
+  // without them, and the bar cannot say a task was dropped.
+  const nBlocked=(pStatus[p.id]||{}).blocked||0,nCancelled=(pStatus[p.id]||{}).cancelled||0;
+  const open=!!OVF.open[p.id];
+  // A click OPENS the phase here. It used to jump to Composition — a tab for
+  // EDITING tasks, models and skills — so "let me look at this phase" landed
+  // the reader in a form, with their Overview filters left behind. Composition
+  // is still one press away, named, inside the detail.
+  const row=el('button',{class:'ovrow'+(open?' open':''),type:'button',
+    'data-status':p.status||'','data-phase':p.id,'aria-expanded':open?'true':'false',
+    title:(open?'collapse ':'expand ')+p.id,
+    onclick:()=>{OVF.open[p.id]=!open;renderOver();}},
+   el('span',{class:'ovtri'}),
    el('span',{class:'pid'},p.id),
    el('span',{class:'ptitle'},p.title||''),
    el('span',{class:'st','data-status':p.status||''},label(p.status)),
    areaBadges,runBadge,
+   nBlocked&&p.status!=='blocked'?el('span',{class:'pblocked',
+     title:nBlocked+' task(s) in this phase are blocked'},nBlocked+' blocked'):null,
+   nCancelled?el('span',{class:'pcancelled',
+     title:nCancelled+' task(s) in this phase were cancelled'},nCancelled+' cancelled'):null,
    OVF.ts?el('span',{class:'ovmatch'},((pStatus[p.id]||{})[OVF.ts]||0)+' '+label(OVF.ts).toLowerCase()):null,
    el('span',{class:'bar'},el('i',{style:'width:'+w+'%'})),
    el('span',{class:'mut'},p.done+'/'+p.total),
    // The line the plan is actually about. It was in the rollup all along and the
    // panel showed the title, which says what the phase is called, not what it is for.
-   p.desiredOutcome?el('span',{class:'ovout',title:p.desiredOutcome},p.desiredOutcome):null);}
+   p.desiredOutcome?el('span',{class:'ovout',title:p.desiredOutcome},p.desiredOutcome):null);
+  if(!open)return row;
+  return el('div',{class:'ovwrap'},row,ovDetail(p));}
  if(!ordered.length){
   card.append(el('div',{class:'ovempty'},'No phase matches this filter. ',
     el('button',{class:'btn small',type:'button','data-ovclear':'1',
@@ -1924,6 +2596,13 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
     el('span',{class:'mut'},untagged.length+' phases')));
    untagged.forEach(p=>card.append(phaseRow(p)));}}
  else ordered.forEach(p=>card.append(phaseRow(p)));
+ // ov: matches the VIEW is holding back — the report says this too, in the
+ // same words, and for the same reason: a filter that quietly finds nothing is
+ // indistinguishable from a plan that holds nothing.
+ if(outside>0)card.append(el('div',{class:'ovoutside','data-ovoutside':String(outside)},
+   outside+(outside===1?' phase matches':' phases match')+' outside this view — ',
+   el('button',{class:'btn small',type:'button','data-ovviewall':'1',
+     onclick:()=>{OVF.view='all';renderOver();}},'Show all phases')));
  count.textContent=ovAnyFilter()?(ordered.length+' / '+r.phases.length+' phases')
    :(r.phases.length+' phases · '+r.tasks.total+' tasks');
  c.append(card);
@@ -1935,7 +2614,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // runStatusKey, so a fresh verdict repaints this card within one poll.
  const g=rs.gate;
  if(g){
-  const gcard=el('div',{class:'card',id:'gatecard'});
+  const gcard=el('div',{class:'card',id:'gatecard','data-card':'gate'});
   gcard.append(h2h('Plan gate',
     'The plan-first gate’s current tier, its source, and the newest verdicts '
     +'it delivered (from .claude/logs/plan-gate-events.jsonl). Deny and ask come '
@@ -1967,7 +2646,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // filter set to look at what is blocked must not empty the one card that says
  // where to start.
  const ready=r.ready||[];
- const rcard=el('div',{class:'card'});
+ const rcard=el('div',{class:'card','data-card':'ready'});
  rcard.append(h2h('Ready now',
    'Tasks whose blockers are all done and whose phase is not gated — the ones /audit:run '
    +'will accept right now. Copy the command rather than retyping an id.'));
@@ -1989,7 +2668,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // --- bugs ---------------------------------------------------------------------
  const bugs=STATE.bugs||[];
  if(bugs.length){
-  const bcard=el('div',{class:'card'});
+  const bcard=el('div',{class:'card','data-card':'bugs'});
   bcard.append(h2h('Bugs',
     'Status here is the EFFECTIVE status the totals above count: a bug materialized '
     +'into a task reads Fixed once that task is done, so the list and the pills can '
@@ -2009,6 +2688,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   if(rows.length>20)bcard.append(el('div',{class:'mut'},'+'+(rows.length-20)+' more'));
   c.append(bcard);}
 
+ // th (F-P-6, layout): the theme's card order, applied to what was just drawn.
+ applyCardOrder('over');
  if(keepQ){const n=$('#ovq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}}
 // ---------- capability policy: the switchboard ----------
 // `{"default":"deny","allow":["code-*"]}` is four words that decide the fate of
@@ -2128,13 +2809,121 @@ const pRuleKey=r=>JSON.stringify([r.scope||null,r.list,r.pattern]);
 function pServerRules(kind){const m={};
  ((POLICY.rules||{})[kind]||[]).forEach(r=>{m[pRuleKey(r)]=r;});return m;}
 
-function renderPolicy(){
+// px (F-P-3): ONE builder for the capability table, used by the Policy tab and
+// by the expanded dialog. `full` only decides the ids (a document may hold one
+// element per id, and both copies carry a search box) and whether the frame
+// caps its own height — in the dialog the DIALOG is the frame.
+// px (F-P-3): the capability table, given the viewport. A native <dialog>, so
+// the focus trap, the backdrop and Esc are the platform's — the browse dialog's
+// pattern, and for the same reason: this is a LIST, and reading a verdict per
+// area means reading across it. It lives on <body> (renderPolicy rebuilds the
+// whole tab on every keystroke, and a dialog inside it would be destroyed
+// mid-type), it is refilled from the same builder the tab uses, and the filter
+// it types into is the TAB's filter — expanding never costs you your place.
+let POLFULL=null,POLBACK=null;
+function polFullFill(){
+ if(!POLFULL||!POLFULL.open||!POLICY)return;
+ const kind=PF.kind,rows=((POLICY.resolved||{})[kind]||[]);
+ const cap=pCapTable(kind,rows,true);
+ POLFULL.replaceChildren(
+   el('div',{class:'bhead'},
+     el('h3',{},PKLABEL[kind]+' — what this project can reach'),
+     el('button',{class:'bx',title:'close','aria-label':'close',
+       onclick:()=>POLFULL.close()},'\u2715')),
+   cap.tools,cap.body);}
+function polFullOpen(){
+ if(!POLFULL){POLFULL=el('dialog',{class:'polfull'});
+  POLFULL.addEventListener('click',ev=>{if(ev.target===POLFULL)POLFULL.close();});
+  // An <input type=search> eats the FIRST Escape to clear itself, so a dialog
+  // whose caret sits in one closes on the SECOND press — which reads as the key
+  // being broken (the browse dialog hit this first). Handled on the dialog, not
+  // on the box: the box is built by pCapTable and the tab's copy of it must not
+  // close anything. One Escape, one effect.
+  POLFULL.addEventListener('keydown',ev=>{
+    if(ev.key==='Escape'){ev.preventDefault();POLFULL.close();}});
+  // Esc and the ✕ both land here. The control that opened it gets the caret
+  // back: a dialog that closes into nowhere leaves a keyboard reader at the top
+  // of the document, several tab stops from where they were.
+  // ...and it is looked up FRESH when the node that opened it is gone: typing in
+  // the dialog re-renders the tab underneath, which replaces that button. The
+  // captured node is only a preference, never the answer.
+  POLFULL.addEventListener('close',()=>{
+   const b=(POLBACK&&POLBACK.isConnected)?POLBACK:$('#policy [data-polexpand]');
+   if(b)b.focus();POLBACK=null;});
+  document.body.append(POLFULL);}
+ POLBACK=$('#policy [data-polexpand]');
+ POLFULL.showModal();polFullFill();}
+function pCapTable(kind,rows,full){
+ const q=PF.q.trim().toLowerCase();
+ const shown=rows.filter(r=>(!q||(r.name+' '+(r.source||'')).toLowerCase().includes(q))
+   &&(!PF.bad||r.verdict==='violation'));
+ const qIn=el('input',{type:'search',id:full?'polqfull':'polq',value:PF.q,
+   placeholder:'search '+PKLABEL[kind].toLowerCase()+'…',
+   'aria-label':'search '+PKLABEL[kind].toLowerCase()});
+ qIn.addEventListener('input',()=>{PF.q=qIn.value;renderPolicy();});
+ const badId=full?'polbadfull':'polbad';
+ const bad=el('input',{type:'checkbox',id:badId});bad.checked=PF.bad;
+ bad.onchange=()=>{PF.bad=bad.checked;renderPolicy();};
+ const tools=el('div',{class:'ovtools'},qIn,
+   el('label',{class:'inl',for:badId},bad,'violations only'),
+   el('span',{class:'count',style:'margin-left:auto'},
+     shown.length===rows.length?(rows.length+' discovered')
+       :(shown.length+' / '+rows.length)));
+ if(q||PF.bad)tools.append(el('button',{class:'btn small',type:'button',
+   'data-polclear':'1',onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},
+   'Clear filters'));
+ // The control that gives this table the screen. Only in the tab: inside the
+ // dialog the same affordance is the ✕, and an expand button in an expanded
+ // view is a button that says nothing.
+ if(!full)tools.append(el('button',{class:'btn small','data-polexpand':'1',
+   type:'button','aria-label':'expand the capability table to full screen',
+   title:'Expand — read the whole table without the frame. Esc closes it.',
+   onclick:()=>polFullOpen()},'⤢ Expand'));
+ const cols=POLICY.areaInfo||[];
+ const head2=el('tr',{},el('th',{},'capability'),el('th',{},'source'),
+   el('th',{},'rule'),
+   cols.map(a=>el('th',{class:'ar'+(a.active?'':' dormant'),
+     title:a.active
+       ?('area '+a.tag+' has work in progress, so its rules apply right now')
+       :('no phase tagged '+a.tag+' has work in progress, so its rules decide '
+         +'nothing until one does')},
+     a.tag,el('span',{class:'mut'},a.active?'live':'dormant'))),
+   el('th',{},'verdict, and why'));
+ const tb=el('tbody');
+ shown.forEach(r=>{
+  const tr=el('tr',{'data-pcap':r.name,'data-verdict':r.verdict});
+  tr.append(el('td',{class:'nm'},r.name,
+    r.required?el('span',{class:'badge req',title:'shipped by audit itself — the '
+      +'panel refuses to write a policy denying it, and the guard would allow it '
+      +'anyway. Not unremovable: disabling the plugin removes it, visibly.'},
+      'required'):null,
+    r.standIn?el('span',{class:'badge stand',title:'stands in for every tool of '
+      +'this server'},'server'):null));
+  tr.append(el('td',{},r.source?el('span',{class:'src badge'},r.source):null));
+  tr.append(pCell(kind,r,null));
+  cols.forEach(a=>tr.append(pCell(kind,r,a.tag)));
+  tr.append(el('td',{class:'vd'},
+    el('span',{class:'pv '+r.verdict},r.verdict==='violation'?'Violation':'Allowed'),
+    el('span',{class:'pbasis'},r.basis||'')));
+  tb.append(tr);});
+ const body=!shown.length?el('div',{class:'ovempty','data-polempty':'1'},
+   rows.length?'No '+PKLABEL[kind].toLowerCase()+' match this filter. '
+     :'Nothing of this kind was discovered for this project. A rule can still be '
+      +'written for it below — it will apply the day something matches it.',
+   rows.length?el('button',{class:'btn small',type:'button','data-polclear':'1',
+     onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},'Clear filters'):null)
+ :el('div',{class:'poltblwrap'+(full?' full':''),id:full?'poltblfull':'poltbl'},
+   el('table',{class:'poltbl'},el('thead',{},head2),tb));
+ return {tools:tools,body:body};}
+
+function renderPolicy(){closeCombo();
  const c=$('#policy');
  // The whole view redraws on every switch, so put back the two things a redraw
  // throws away: the caret in whichever box was being typed in, and how far down
  // the capability table the reader had scrolled.
  const act=document.activeElement,
-   keepId=act&&act.id&&(act.id==='polq'||act.id==='poladdpat')?act.id:null,
+   keepId=act&&act.id&&(act.id==='polq'||act.id==='polqfull'
+     ||act.id==='poladdpat')?act.id:null,
    caret=keepId?act.selectionStart:0,
    scrolled=(()=>{const w=$('#poltbl');return w?w.scrollTop:0;})();
  c.textContent='';
@@ -2245,60 +3034,12 @@ function renderPolicy(){
    +'not move it, which is true and better said than quietly averaged.'));
 
  // --- the capability table ----------------------------------------------------
- const q=PF.q.trim().toLowerCase();
- const shown=rows.filter(r=>(!q||(r.name+' '+(r.source||'')).toLowerCase().includes(q))
-   &&(!PF.bad||r.verdict==='violation'));
- const qIn=el('input',{type:'search',id:'polq',value:PF.q,
-   placeholder:'search '+PKLABEL[kind].toLowerCase()+'…',
-   'aria-label':'search '+PKLABEL[kind].toLowerCase()});
- qIn.addEventListener('input',()=>{PF.q=qIn.value;renderPolicy();});
- const bad=el('input',{type:'checkbox',id:'polbad'});bad.checked=PF.bad;
- bad.onchange=()=>{PF.bad=bad.checked;renderPolicy();};
- const tools=el('div',{class:'ovtools'},qIn,
-   el('label',{class:'inl',for:'polbad'},bad,'violations only'),
-   el('span',{class:'count',style:'margin-left:auto'},
-     shown.length===rows.length?(rows.length+' discovered')
-       :(shown.length+' / '+rows.length)));
- if(q||PF.bad)tools.append(el('button',{class:'btn small',type:'button',
-   'data-polclear':'1',onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},
-   'Clear filters'));
- card.append(tools);
- const cols=POLICY.areaInfo||[];
- const head2=el('tr',{},el('th',{},'capability'),el('th',{},'source'),
-   el('th',{},'rule'),
-   cols.map(a=>el('th',{class:'ar'+(a.active?'':' dormant'),
-     title:a.active
-       ?('area '+a.tag+' has work in progress, so its rules apply right now')
-       :('no phase tagged '+a.tag+' has work in progress, so its rules decide '
-         +'nothing until one does')},
-     a.tag,el('span',{class:'mut'},a.active?'live':'dormant'))),
-   el('th',{},'verdict, and why'));
- const tb=el('tbody');
- shown.forEach(r=>{
-  const tr=el('tr',{'data-pcap':r.name,'data-verdict':r.verdict});
-  tr.append(el('td',{class:'nm'},r.name,
-    r.required?el('span',{class:'badge req',title:'shipped by audit itself — the '
-      +'panel refuses to write a policy denying it, and the guard would allow it '
-      +'anyway. Not unremovable: disabling the plugin removes it, visibly.'},
-      'required'):null,
-    r.standIn?el('span',{class:'badge stand',title:'stands in for every tool of '
-      +'this server'},'server'):null));
-  tr.append(el('td',{},r.source?el('span',{class:'src badge'},r.source):null));
-  tr.append(pCell(kind,r,null));
-  cols.forEach(a=>tr.append(pCell(kind,r,a.tag)));
-  tr.append(el('td',{class:'vd'},
-    el('span',{class:'pv '+r.verdict},r.verdict==='violation'?'Violation':'Allowed'),
-    el('span',{class:'pbasis'},r.basis||'')));
-  tb.append(tr);});
- if(!shown.length)card.append(el('div',{class:'ovempty','data-polempty':'1'},
-   rows.length?'No '+PKLABEL[kind].toLowerCase()+' match this filter. '
-     :'Nothing of this kind was discovered for this project. A rule can still be '
-      +'written for it below — it will apply the day something matches it.',
-   rows.length?el('button',{class:'btn small',type:'button','data-polclear':'1',
-     onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},'Clear filters'):null));
- else card.append(el('div',{class:'poltblwrap',id:'poltbl'},
-   el('table',{class:'poltbl'},el('thead',{},head2),tb)));
-
+ // Built by pCapTable so the tab and the expanded dialog (px) are ONE view: same
+ // rows, same filter state, same verdicts. Two builders would drift, and a
+ // "full screen" copy of a table that disagrees with the table is worse than
+ // the scrolling it was meant to relieve.
+ const cap=pCapTable(kind,rows,false);
+ card.append(cap.tools,cap.body);
  // --- the block as written ----------------------------------------------------
  card.append(el('h3',{class:'sub2'},flabel('Rules as written',
    'The block for this kind, in the order the guard reads it: deny before allow, '
@@ -2382,6 +3123,9 @@ function renderPolicy(){
  c.append(el('div',{class:'savebar'},save,discard,
    el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));
 
+ // px: the expanded copy is refilled from the same state, in the same pass —
+ // before focus is restored, since the box the caret belongs in may be inside it.
+ polFullFill();
  if(keepId){const n=document.getElementById(keepId);
   if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
  if(scrolled){const w=$('#poltbl');if(w)w.scrollTop=scrolled;}}
@@ -2478,11 +3222,14 @@ const DIMS=['model','author','phase','task','agent','attr','area','day','q'];
 // `range` is not in DIMS and never wears a chip, but it is a filter a reader can
 // be asked about by name, so it is named here with the rest rather than spelled
 // out at the one place that asks.
-const DLABEL={q:'text',attr:'attributed to',agent:'agent',day:'date',
+const DLABEL={q:'text',attr:'attribution',agent:'agent',day:'date',
  range:'time range'};
 const fName=d=>DLABEL[d]||d;
 const fVal=d=>d==='day'?UF.day.replace('..',' to ')
- :d==='range'?(UF.range==='all'?'all time':'last '+UF.range+' days'):UF[d];
+ :d==='range'?(UF.range==='all'?'all time':'last '+UF.range+' days')
+ // uc: a chip is a sentence about what you are looking at, so it says the word
+ // rather than the key it filters on.
+ :uKey(UF[d]);
 let UORDER=[];                 // dimensions in the order they were set (Esc pops)
 let UQT=null;                  // search debounce; the whole tab re-renders per change
 const SHOWN={phase:8,model:8,author:8,task:8};   // ranked-list depth; 'other' pages
@@ -2880,7 +3627,7 @@ function uChart(sr,dim,W){
   cross.classList.remove('hidden');
   const rows=[el('div',{class:'utip-h'},binLabel(sr.bins[i]))];
   sr.entities.filter(e=>e.values[i]).sort((a,b)=>b.values[i]-a.values[i])
-   .forEach(e=>rows.push(tipRow(uCol(e.key),e.key,uTok(e.values[i]))));
+   .forEach(e=>rows.push(tipRow(uCol(e.key),uKey(e.key),uTok(e.values[i]))));
   if(rows.length===1)rows.push(el('div',{class:'utip-r mut'},'no usage'));
   rows.push(el('div',{class:'utip-f'},'click to filter to this '
     +(sr.binSize===1?'day':BINNAME[sr.binSize])));
@@ -3099,13 +3846,14 @@ function uBars(facts,dim,title){
  const out=[el('h2',{},title)];
  for(const[k,v]of head){
   const meta=USAGE.taskMeta[k]||{};
-  const nm=dim==='phase'
-    ?(k==='--'?'-- unattributed':(k+' '+(USAGE.phaseTitles[k]||'')).trim())
+  const nm=isUncat(k)?label(UNCAT)
+    :dim==='phase'?(k+' '+(USAGE.phaseTitles[k]||'')).trim()
     :(dim==='task'&&meta.title?(k+' '+meta.title):k);
   const active=UF[dim]===k;
   const row=el('div',{class:'urow pick'+(active?' on':''),
     onclick:()=>setF(dim,active?'':k)},
-   el('span',{class:'unm'},nm),
+   el('span',{class:'unm'+(isUncat(k)?' uncat':''),
+     title:isUncat(k)?UNCAT_WHY:null},nm),
    // Floor the width: a row that spent 0.08% of the peak rounds to 0.0% and
    // paints an empty track, which reads as "no data" rather than "a little".
    el('span',{class:'bar'},el('i',{style:'width:'+
@@ -3506,8 +4254,9 @@ function browseRows(dim,facts){
     .map(m=>({model:m,tokens:per[m],pct:uShare(per[m],v[0])}));
   const top=[...models].sort((a,b)=>b.tokens-a.tokens)[0];
   return {id:k,
-    title:dim==='phase'?(k==='--'?'unattributed':(USAGE.phaseTitles[k]||''))
-      :dim==='task'?(k==='--'?'unattributed':(meta.title||'')):'',
+    title:isUncat(k)?UNCAT_WHY
+      :dim==='phase'?(USAGE.phaseTitles[k]||'')
+      :dim==='task'?(meta.title||''):'',
     status:meta.status||'',risk:meta.risk||'',
     band:(dim==='task'?bandOf(k):null)||'',
     models:models,dominant:top?top.model:'',
@@ -3601,6 +4350,8 @@ function openBrowse(dim,title,facts){
         :(r.share<1?r.share.toFixed(2):r.share.toFixed(1))+'%')
       :key==='cost'?uCost(r.cost)
       :key==='msgs'?r.msgs.toLocaleString()
+      // uc: the id column is where the empty bucket lands in this table.
+      :key==='id'?uKeyEl(r.id)
       :String(r[key]||'—'))));}));
   if(!shown.length)tb.replaceChildren(el('tr',{},
     el('td',{colspan:String(cols.length),class:'mut'},
@@ -3619,7 +4370,7 @@ function openBrowse(dim,title,facts){
  BROWSE.showModal();
  search.focus();}
 
-function renderUsage(){const c=$('#usage');
+function renderUsage(){closeCombo();const c=$('#usage');
  persistUF();  // fp: every filter change repaints this tab, so this one call is the write-through
  // Every filter change repaints this whole tab — and a filter change is exactly
  // what typing in the search box IS. Without this, the third letter of a five
@@ -3715,7 +4466,9 @@ function renderUsage(){const c=$('#usage');
   const sel=el('select',{'aria-label':'filter by '+fName(dim),'data-uf':dim,
     onchange:e=>setF(dim,e.target.value)});
   sel.append(el('option',{value:''},none+' ('+vals.length+')'));
-  vals.forEach(v=>{const o=el('option',{value:v},v);
+  // uc: the option VALUE stays the ledger's key (it is what setF filters on);
+  // only the words a reader picks from are named.
+  vals.forEach(v=>{const o=el('option',{value:v},uKey(v));
    if(UF[dim]===v)o.selected=true;sel.append(o);});
   r2.append(sel);});
  // Area - the plan's partition of the work, joined from row.phaseId at read time
@@ -3869,9 +4622,10 @@ function renderUsage(){const c=$('#usage');
      'one per day, which at this span would draw noise.')));
  card.append(mountChart(sr,dim));
  card.append(el('div',{class:'ulegend'},sr.entities.map(e=>
-   el('b',{class:e.key==='other'?'':'pick',
+   el('b',{class:(e.key==='other'?'':'pick')+(isUncat(e.key)?' uncat':''),
+     title:isUncat(e.key)?UNCAT_WHY:null,
      onclick:()=>{if(e.key!=='other')setF(dim,UF[dim]===e.key?'':e.key);}},
-    el('i',{style:'background:'+uCol(e.key)}),e.key))));
+    el('i',{style:'background:'+uCol(e.key)}),uKey(e.key)))));
 
  card.append(...uBars(facts,'phase','By phase'));
  card.append(...uBudgets(facts));

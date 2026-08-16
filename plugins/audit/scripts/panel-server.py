@@ -134,6 +134,9 @@ build_state = _panel_state.build_state
 # site) is what keeps this panel's byte shape stated once.
 _atomic_write_json = _panel_write._atomic_write_json
 write_policy = _panel_write.write_policy
+# th (F-P-6): the Appearance tab's two calls.
+theme_state = _panel_write.theme_state
+write_theme = _panel_write.write_theme
 write_areas = _panel_write.write_areas
 write_ado = _panel_write.write_ado
 _panel_session = _panel_write._panel_session
@@ -218,7 +221,15 @@ def _make_handler(project, token):
             if path == "/":
                 if not self._host_ok():
                     self._send(403, "forbidden", "text/plain"); return
-                html = UI_HTML.replace("__AUDIT_TOKEN__", _js(token)).replace(
+                # th (F-P-6): the token block is swapped per REQUEST, not at
+                # import: a theme is a file on disk, and the reader who just
+                # saved one reloads to see it. The default costs one string
+                # compare (resolve_theme finds nothing and hands back TOKEN_CSS
+                # itself), so the ordinary case pays nothing for the feature.
+                css, _tinfo = _theme.token_css_for(
+                    project, _panel_write.read_config(project))
+                html = UI_TEMPLATE.replace("/*__THEME_TOKENS__*/", css).replace(
+                    "__AUDIT_TOKEN__", _js(token)).replace(
                     "__AUDIT_PROJECT__", _js(project))
                 self._send(200, html, "text/html"); return
             if not self._guard():
@@ -249,6 +260,8 @@ def _make_handler(project, token):
                 self._json(200, journal_state(project)); return
             if path == "/api/policy":
                 self._json(200, policy_state(project)); return
+            if path == "/api/theme":
+                self._json(200, theme_state(project)); return
             if path == "/api/help":
                 from urllib.parse import urlparse, parse_qs
                 q = parse_qs(urlparse(self.path).query)
@@ -293,6 +306,8 @@ def _make_handler(project, token):
                 self._json(200, write_ado(project, body)); return
             if path == "/api/policy":
                 self._json(200, write_policy(project, body)); return
+            if path == "/api/theme":
+                self._json(200, write_theme(project, body)); return
             self._json(404, {"error": "not found"})
 
         def do_POST(self):
@@ -566,7 +581,6 @@ UI_HTML = _panel_ui.raw_template()
 # Assembled once, at import: the shared token layer and the words both surfaces
 # render. One substitution rather than a template engine, so every selftest that
 # asks `... in UI_HTML` still sees the whole finished stylesheet.
-UI_HTML = UI_HTML.replace("/*__THEME_TOKENS__*/", _theme.TOKEN_CSS)
 UI_HTML = UI_HTML.replace("__LABELS__", json.dumps(_theme.LABELS, sort_keys=True))
 # `ensure_ascii=False` because the page is served as UTF-8 and this prose contains
 # em dashes and curly apostrophes like the rest of it. \uXXXX escapes would render
@@ -587,6 +601,15 @@ UI_HTML = UI_HTML.replace("__CFG_ENUMS__", json.dumps(_cfg_enums(), sort_keys=Tr
 _ulmod_for_ui = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
 UI_HTML = UI_HTML.replace("__COST_BAND_PARAMS__",
                           json.dumps(_ulmod_for_ui.COST_BAND_PARAMS, sort_keys=True))
+# th (F-P-6): the token block is substituted LAST, and into two copies.
+# UI_TEMPLATE keeps the marker so do_GET can dress the page in THIS project's
+# theme per request — a theme is a file on disk, and the reader who just saved
+# one reloads to see it. UI_HTML is that same finished page wearing the DEFAULT,
+# which is what every selftest below reads: `... in UI_HTML` must keep seeing a
+# complete stylesheet, and the template must keep seeing every other
+# substitution in this chain (it is captured after all of them for that reason).
+UI_TEMPLATE = UI_HTML
+UI_HTML = UI_HTML.replace("/*__THEME_TOKENS__*/", _theme.TOKEN_CSS)
 
 
 # --- selftest -------------------------------------------------------------------
@@ -1083,20 +1106,47 @@ def _selftest():
     # A filter held in the render closure is wiped by the 5s run-status poll five
     # seconds after it is set — the same repaint D9 deliberately kept narrow.
     check("overview: the filter state is hoisted out of the render, so the poll "
-          "cannot wipe it",
-          "const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan'};" in UI_HTML
+          "cannot wipe it - the VIEW and which phases are open ride it too, or "
+          "a 5s badge repaint would fold every row a reader opened",
+          "const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{}};"
+          in UI_HTML
           and UI_HTML.index("const OVF=") < UI_HTML.index("function renderOver"))
     check("overview: and the caret survives a repaint mid-search",
           "act.id==='ovq'" in UI_HTML and "n.setSelectionRange(caret,caret)" in UI_HTML)
     check("overview: a phase row is a real button - keyboard reachable without a "
           "hand-written role/tabindex/keydown trio",
-          "el('button',{class:'ovrow',type:'button'" in UI_HTML
+          "const row=el('button',{class:'ovrow'+(open?' open':''),type:'button',"
+          in UI_HTML
           and "role:'button'" not in UI_HTML)
-    check("overview: it opens that phase in Composition, pre-filtered, without "
-          "re-rendering the form someone may be typing in",
+    # ov (F-P-5): pressing a phase used to LEAVE this tab for Composition — the
+    # tab that edits tasks, models and skills. "Show me this phase" answered
+    # with a form, and the Overview filters left behind. It opens in place now;
+    # Composition is a named button inside the detail, not the default.
+    check("overview: a phase opens IN PLACE, and going to Composition is an "
+          "explicit, named press rather than what a click happens to do",
+          "onclick:()=>{OVF.open[p.id]=!open;renderOver();}" in UI_HTML
+          and "onclick:()=>openInComp(p.id)},'Edit in Composition')" in UI_HTML
+          and "title:'open '+p.id+' in Composition',onclick:()=>openInComp(p.id)"
+          not in UI_HTML)
+    check("overview: ...and openInComp still exists for that press, unchanged",
           "function openInComp(pid){COMPF.q=pid;" in UI_HTML
-          and "if(COMPF.apply)COMPF.apply();showTab('comp');" in UI_HTML
-          and "onclick:()=>openInComp(p.id)" in UI_HTML)
+          and "if(COMPF.apply)COMPF.apply();showTab('comp');" in UI_HTML)
+    check("ov: Overview follows the report's table - the same segments, the "
+          "same three views, the same default rule, and the same sentence when "
+          "a match falls outside the view",
+          "const segOf=st=>st==='done'||st==='cancelled'?'archived'" in UI_HTML
+          and "const SEG_VIEWS={active:['active','pending'],archived:['archived']," in UI_HTML
+          and "data-ovview" in UI_HTML
+          and "data-ovoutside" in UI_HTML
+          and "' phases match')+' outside this view" in UI_HTML)
+    check("ov: the phase detail is the report's task columns, read-only - id, "
+          "title, status, risk as coloured TEXT, commit and the completion "
+          "stamp to the minute",
+          "function ovDetail(" in UI_HTML
+          and "el('th',{},'risk'),el('th',{},'commit'),el('th',{},'done (UTC)')"
+          in UI_HTML
+          and "class:'rk','data-risk':t.risk" in UI_HTML
+          and ".rk[data-risk=\"high\"]{color:var(--err)}" in UI_HTML)
     check("composition's filter state is hoisted too, so it survives a re-render",
           "const COMPF={q:'',status:'',needs:false,open:{},apply:null};" in UI_HTML
           and "const open=COMPF.open;" in UI_HTML
@@ -1239,7 +1289,78 @@ def _selftest():
     # its own HOME; these guard the constructs those checks depend on.
     check("the policy tab is registered, routable and has a view container",
           "data-t=policy>Policy<" in UI_HTML and "<div id=policy" in UI_HTML
-          and "const TABS=['guards','comp','over','usage','policy']" in UI_HTML)
+          and "const TABS=['guards','comp','over','usage','policy','look']"
+          in UI_HTML)
+    # --- th (F-P-6): Appearance ------------------------------------------------
+    # The panel and the report share ONE token layer, and every value in it is a
+    # custom property — so "change the look" is "change those values", and the
+    # server compiles them by substitution (see _ui_theme's th1: the default
+    # theme compiles back to the shipped stylesheet byte for byte). What the
+    # browser checks drive is in capture-screenshots --check; these pin the
+    # constructs those behaviours rest on.
+    check("th-p1 Appearance is a tab of its own, routable, with a container - "
+          "Settings is paths and the gate, and a look is neither",
+          "data-t=look>Appearance<" in UI_HTML and "<div id=look" in UI_HTML
+          and "function renderAppearance(" in UI_HTML)
+    check("th-p2 the page is dressed in THIS project's theme per request, and "
+          "the template keeps the marker so it can be",
+          '"/*__THEME_TOKENS__*/"' in _hsrc
+          and "UI_TEMPLATE.replace(" in _hsrc
+          and "/*__THEME_TOKENS__*/" in UI_TEMPLATE
+          and "/*__THEME_TOKENS__*/" not in UI_HTML)
+    check("th-p3 the editor reads the vocabulary and the DEFAULT from the "
+          "server - a second copy of the default in the browser is how 'what "
+          "did I change' starts disagreeing with itself",
+          "GET','/api/theme'" in UI_HTML
+          and "THEME.default" in UI_HTML and "function tChanges(" in UI_HTML)
+    check("th-p4 the preview is the panel itself: the draft is written onto "
+          ":root and cleared token by token, so a revert leaves nothing behind",
+          "function tPaint(" in UI_HTML
+          and "root.style.setProperty(c.token" in UI_HTML
+          and "TPAINTED.forEach(n=>root.style.removeProperty(n));" in UI_HTML)
+    check("th-p5 saving goes through the same confirm-and-echo path every other "
+          "write here uses, and says what file it writes",
+          "confirmChanges({title:'Save theme'" in UI_HTML
+          and "PUT','/api/theme'" in UI_HTML
+          and "writes .claude/audit.theme.json" in UI_HTML)
+    check("th-p6 the chart palette opens deliberately - locked by default, "
+          "unlocked by a named press, and the contrast/CVD argument is stated "
+          "where the press is",
+          "data-thunlock" in UI_HTML
+          and "colour-vision deficiency" in UI_HTML
+          and "TUNLOCK" in UI_HTML)
+    check("th-p7 three ways back, and they are different things: revert one "
+          "row, undo one step, reset the whole file",
+          "data-threvert" in UI_HTML and "data-thundo" in UI_HTML
+          and "data-threset" in UI_HTML
+          and "removes .claude/audit.theme.json" in UI_HTML)
+    check("th-p9 density is ONE control over the spacing scale, previewed with "
+          "the same arithmetic the compiler does - and the preview reads the "
+          "UNSCALED values it captured once, or every keystroke would compound",
+          "data-thdensity" in UI_HTML
+          and "const TDENSITY={compact:0.8,comfortable:1,spacious:1.25};" in UI_HTML
+          and "function tCaptureBase(" in UI_HTML
+          and "TBASE[n]" in UI_HTML)
+    check("th-p10 a view's card order is applied to what was DRAWN, and a card "
+          "the theme never heard of keeps its place rather than vanishing",
+          "function applyCardOrder(" in UI_HTML
+          and "applyCardOrder('over');" in UI_HTML
+          and "if(k&&want.indexOf(k)<0)host.append(n);" in UI_HTML)
+    check("th-p11 every reorderable card is NAMED where it is built, so a "
+          "renamed card renames its ordering key with it",
+          UI_HTML.count("'data-card':'") >= 4
+          and "'data-card':'phases'" in UI_HTML
+          and "'data-card':'gate'" in UI_HTML)
+    check("th-p12 switching theme is a one-key config edit, and Save as keeps a "
+          "named copy AND wears it",
+          "data-thpreset" in UI_HTML and "{use:sel.value}" in UI_HTML
+          and "data-thsaveas" in UI_HTML and "saveAs:name.trim()" in UI_HTML)
+
+    check("th-p8 export hands over a FILE and import takes only JSON - the "
+          "compiled .css goes one way, so no importer ever parses CSS",
+          "data-thexport" in UI_HTML and "function tImport(" in UI_HTML
+          and "accept:'.json,application/json'" in UI_HTML
+          and "not JSON — a theme is exported as .json" in UI_HTML)
     check("the verdicts shown are the SERVER's — the browser is handed them and "
           "never matches a pattern itself, because two matchers eventually "
           "disagree about a denial",
@@ -2080,6 +2201,105 @@ def _selftest():
           ".combo-menu{position:fixed" in UI_HTML
           and "menu.__place=place;" in UI_HTML
           and "m.__place()" in UI_HTML)
+
+    # --- F-P-3 (px): the capability table, expanded ---------------------------
+    # Behaviour is driven in capture-screenshots --check (assertPolicyExpand):
+    # same rows in both views, one filter, Esc gives the focus back. These pin
+    # the constructs that make those properties structural rather than lucky.
+    check("px: ONE builder feeds the Policy tab and its expanded dialog, so the "
+          "two cannot list different capabilities",
+          "function pCapTable(kind,rows,full){" in UI_HTML
+          and "const cap=pCapTable(kind,rows,false);" in UI_HTML
+          and "const cap=pCapTable(kind,rows,true);" in UI_HTML)
+    check("px: the dialog lives on <body> and is refilled by every renderPolicy "
+          "- the tab is rebuilt on each keystroke, and a dialog inside it would "
+          "be destroyed mid-type",
+          "document.body.append(POLFULL);" in UI_HTML
+          and "function polFullFill(" in UI_HTML
+          and " polFullFill();\n if(keepId){" in UI_HTML)
+    check("px: Esc is handled on the dialog, not on its search box - a type=search "
+          "eats the first Escape to clear itself (the browse dialog's trap), and "
+          "the tab's copy of that box must not close anything",
+          "POLFULL.addEventListener('keydown',ev=>{" in UI_HTML
+          and "if(ev.key==='Escape'){ev.preventDefault();POLFULL.close();}});" in UI_HTML)
+    check("px: closing hands the caret back to the control that opened it",
+          "POLFULL.addEventListener('close',()=>{" in UI_HTML
+          and "POLBACK=$('#policy [data-polexpand]');" in UI_HTML
+          # ...and looked up fresh when the re-render replaced that node.
+          and "const b=(POLBACK&&POLBACK.isConnected)?POLBACK:$('#policy [data-polexpand]');"
+          in UI_HTML)
+    check("px: the dialog IS the frame - the table inside drops the 34rem cap "
+          "rather than scrolling a frame inside a frame",
+          ".poltblwrap.full{max-height:none" in UI_HTML
+          and "dialog.polfull{width:calc(100vw - 2rem);height:calc(100vh - 2rem)"
+          in UI_HTML
+          # ...and the layout mode is [open]-qualified, or the CLOSED dialog
+          # outranks the UA's display:none and eats clicks on the tab below.
+          and "dialog.polfull[open]{display:flex" in UI_HTML
+          and "box-shadow:var(--shadow-md);display:flex" not in UI_HTML)
+
+    # --- F-P-2 (uc): spend with no plan behind it is NAMED, and highlighted ---
+    # "--" is the ledger's storage key for a row with no phase/task; it used to
+    # reach the screen as those two characters (and, in the ranked list, as
+    # "-- unattributed"), which reads as a missing value rather than as the
+    # answer it is. The word comes from the shared LABELS map, so the panel, the
+    # report and the CLI cannot drift apart again; the warn role says how much
+    # of the bill has no plan behind it without turning into a gate.
+    check("uc: the empty bucket's word comes from the shared label map, never "
+          "spelled in the panel's own source",
+          "const UNCAT='--';" in UI_HTML
+          and "label(UNCAT)" in UI_HTML
+          and "'-- unattributed'" not in UI_HTML
+          and _theme.UNCATEGORIZED in UI_HTML)
+    check("uc: every place a group key reaches the screen names it - the "
+          "ranked lists, the browse table's id column, the chart legend, its "
+          "crosshair tip and the filter chips",
+          "const uKey=" in UI_HTML
+          and "const isUncat=k=>k===UNCAT||k==='unattributed';" in UI_HTML
+          and "const nm=isUncat(k)?label(UNCAT)" in UI_HTML          # ranked list
+          and ":key==='id'?uKeyEl(r.id)" in UI_HTML                 # browse table
+          and "}),uKey(e.key)))));" in UI_HTML                      # legend
+          and "tipRow(uCol(e.key),uKey(e.key)" in UI_HTML           # crosshair
+          and ":uKey(UF[d]);" in UI_HTML                            # filter chips
+          and "el('option',{value:v},uKey(v))" in UI_HTML)          # the attr select
+    check("uc: the label wears the warn role, as text and not as a badge",
+          ".uncat{color:var(--warn)" in UI_HTML)
+    # --- F-P-1 (co): the combo menu is ONE overlay on <body> ------------------
+    # Reproduced in a real browser before the fix (repro numbers in the plan):
+    # a filter on tr.phase:hover>td made the td the containing block of the
+    # fixed menu inside it, so the menu jumped ~550px on hover and grew the
+    # table frame's scroll box. The behaviour is driven in capture-screenshots
+    # --check (assertComboOverlay); these pin the constructs it relies on.
+    check("co: THE menu is one element appended to document.body (the #hinttip "
+          "rule), claimed by the combo whose input has focus - no ancestor can "
+          "trap, clip or restack it",
+          "id:'combomenu'" in UI_HTML
+          and "document.body.append(CMENU);" in UI_HTML
+          and "if(CMOWNER&&CMOWNER!==me)CMOWNER.close();" in UI_HTML
+          and "wrap.append(inp,menu);" not in UI_HTML)
+    check("co: a re-render or a tab switch closes the menu explicitly, since "
+          "tearing the view down no longer takes it along",
+          "function closeCombo(" in UI_HTML
+          and UI_HTML.count("closeCombo();") >= 5
+          and "function showTab(t,push){\n if(!TABS.includes(t))t='guards';\n closeCombo();"
+          in UI_HTML)
+    check("co: a mousedown anywhere in the menu keeps the input's focus, so a "
+          "scrollbar drag or a click on the footer no longer closes it (F-P-1d)",
+          "CMENU.addEventListener('mousedown',e=>e.preventDefault());" in UI_HTML)
+    check("co: a click on the still-focused input reopens a closed menu (F-P-1c)",
+          "inp.addEventListener('click',()=>{if(!(CMOWNER===me&&comboOpen()))render();});"
+          in UI_HTML)
+    check("co: the disk refresh defers while a combo is open or a control in a "
+          "CLEAN form is focused, exactly as it defers for an open dialog - FP "
+          "stays put and the poll after the interaction lands it; a dirty form "
+          "defers nothing, since the refresh never rebuilds it (F-P-1b)",
+          "function interacting(" in UI_HTML
+          and "if(comboOpen())return true;" in UI_HTML
+          and "const v=a.closest('#comp,#guards,#policy');" in UI_HTML
+          # ...and ONLY there: a caret in Overview's or Usage's search box is a
+          # filter, whose state the refresh preserves, so it defers nothing.
+          and "return !!v&&editRows(v.id).length===0;}" in UI_HTML
+          and "&&!interacting()){FP=fp;refreshFromDisk();}" in UI_HTML)
 
     # --- v0.34 C2 (mc): the model combo, three sources -------------------------
     # The ledger-only listing and the collapse-safety of the review combo are

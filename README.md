@@ -55,7 +55,7 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 
 No manifest, no agents, no tokens spent: it scans the Claude Code transcripts already
 in `~/.claude/projects/` and prints what this repo has cost you so far, broken down by
-model, author and agent. Everything will read as **`unattributed`** — that is the
+model, author and agent. Everything will read as **Uncategorized** — that is the
 point. Attributing spend to *phases and tasks* is what the rest of this does, and it
 is the comparison a plan-driven pipeline can make that a date-range dashboard cannot.
 

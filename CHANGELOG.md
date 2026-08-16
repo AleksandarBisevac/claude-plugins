@@ -4,6 +4,105 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+**The panel's dropdown stops running away, and the report's table starts answering.**
+Five dogfooding findings, each reproduced in a real browser before the fix.
+
+### Fixed
+
+- **The composition dropdown flickered, moved the layout, and could not be clicked with a
+  mouse** (F-P-1). Four causes, one report: `tr.phase:hover>td` carried a `filter`, which
+  makes that cell the containing block of every `position:fixed` descendant — the phase
+  row's model menu jumped ~550px on hover and grew the table's scroll box, and because
+  hovering the MENU counts as hovering the row, it fled from under the pointer. The menu is
+  now ONE element on `<body>` (the `#hinttip` rule, applied to the second overlay this page
+  has), so no ancestor can trap, clip or restack it. Beside it: a mousedown on the menu's
+  own padding, footer or scrollbar no longer blurs the input and closes it; a click on an
+  already-focused input reopens the menu; and the 5s disk refresh — which fires after every
+  Claude turn in the project, because the Stop hook meters the ledger — now defers while a
+  menu is open or a caret sits in a clean form, exactly as it already deferred for an open
+  dialog.
+- **A read-only one-liner was refused as a source write** (F-P-7, reported from a live
+  repo). `guard-secrets-read`'s eval-write backstop looked for a write-shaped fragment and a
+  source-looking path *anywhere in the same clause*, never checking they were the same thing
+  — so a `>` inside the code (`len(x) > 3`, or a redirect into `/tmp`) paired with the quoted
+  name of the file being **read**, and `python3 -c "json.load(open('x.json'))…"` was blocked.
+  The pattern now captures the path each write call actually names, and only that path is
+  graded; the bare redirect left this heuristic entirely, since a shell redirect into source
+  is the other backstop's grammar and duplicating it here is what produced the false
+  positive. A guard that fires on reads teaches people to route around it, which costs more
+  than the writes it catches.
+- **Spend with no plan behind it read as `--`** (F-P-2). The ledger's storage keys (`--` for
+  a row with no phase/task, `unattributed` for the attribution bucket) reached the screen in
+  four different spellings across the panel, the report and the CLI. One word now, from the
+  shared label map — **Uncategorized** — in the panel's ranked lists, browse table, chart
+  legend, crosshair, filter chips and attribution select, in the report's HTML and Markdown,
+  and in `/audit:usage`; the panel paints it in the warn role so a reader can find how much
+  of the bill has no plan behind it. Storage keys, the `--attr unattributed` selector and the
+  CSV are untouched: a file that is parsed is not a surface that is read.
+
+### Added
+
+- **`cancelled`** — a fifth lifecycle state for phases and tasks, and the second TERMINAL
+  one. A phase can finish without being done: the feature was dropped, part of the work
+  landed, the phase closes. It is the phase/task twin of a bug's `wontfix` (Linear's
+  Canceled, Jira's Won't Do, GitHub's closed-as-not-planned, ADO's `Removed`, which
+  `/audit:sync` now maps it to). Nothing is deleted to express it; readiness treats a
+  cancelled blocker as settled so a plan cannot deadlock on work nobody will do; sign-off
+  accepts a phase whose tasks are done **or** cancelled; the report files it under Archived.
+- **A named View on the report's phases table** (F-P-4) — *active & pending* (the default),
+  *archived* (done **and** cancelled), *all* — replacing the archive toggle nobody found. A
+  search that matches rows the current view hides now says so and offers the one press that
+  shows them, instead of silently lifting the gate. The view and every filter survive a
+  reload, including over `file://`, where the URL fragment cannot be written.
+- **A detail row per task** (F-P-4): the compact row keeps id, title, status, risk, commit
+  and completion; opening it shows the parts a table cannot hold — the full outcome (both
+  voices, untruncated), both timestamps, the area owner, the branch, the work item, the
+  model, the skills and what the task waits on. Model, outcome and ADO left the compact row
+  for it, so rows are one line again; the CSV carries every column either surface shows,
+  plus the full sha and full ISO stamps.
+- Table details the eye was doing without: the **sort marker on the column the table is
+  already sorted by** (it used to appear only on the first click), **risk as coloured text**
+  rather than a second pill competing with status, **one press that copies the whole commit
+  sha**, completion **to the minute with its zone named once**, and per-phase **"N blocked" /
+  "N cancelled"** counts.
+- **The panel's Overview follows that table** (F-P-5): the same three views, the same
+  archive rule, the same sentence when a match falls outside the view — and a phase row now
+  **opens in place** with its tasks in the report's own columns. Clicking a phase used to
+  jump to Composition, a tab for editing tasks and models; that is now a named button inside
+  the detail rather than what a click happens to do.
+- **An Appearance tab, and themes as data** (F-P-6). The panel and the report share one token
+  layer, so the look is editable without touching a rule: a theme is token VALUES in a
+  DTCG-shaped JSON file, and the server compiles them into the stylesheet when a page is
+  served. The CSS is never stored and never uploaded, and a theme may set values and nothing
+  else — no rule, no `url()`, no `@import` — because a report is a file that gets emailed and
+  published. The default theme is read *out of* the shipped stylesheet and compiles back to it
+  **byte for byte**, so installing this changes nothing on screen until a token changes.
+  Colours are edited in light/dark pairs side by side (the parity lint refuses a colour that
+  exists in one theme only), the column you are viewing is marked *previewing* and repaints as
+  you type — the panel is the preview — contrast is measured and warned about but never
+  refused, and the chart palette opens behind a deliberate unlock because it is validated for
+  colour-vision deficiency against these surfaces. Three ways back: revert a row, undo a step
+  (the trail rides the file, so it survives a reload), or reset, which removes the theme file
+  rather than writing one that equals the default. Resolution is project
+  (`.claude/audit.theme.json`, committed, so a team shares one look) → `~/.claude` → built-in,
+  with `ui.theme` overriding the search. Reports render wearing the same theme.
+  Beyond colours: **density** (one multiplier over the spacing scale; type follows at a third
+  of it), the shell metrics as ordinary tokens, and a per-view **card order** moved with ↑↓ —
+  a card the theme never heard of keeps its place, so an old theme cannot hide a new card.
+  **Save as…** keeps a named copy in `.claude/themes/` and wears it; the theme menu lists the
+  built-in beside everything saved there, and switching is a one-key config edit.
+- **`/audit:task cancel <id> --reason "<why>"`** — the verb that sets the new state. It
+  records the three things a hand-edit loses: the reason (into `outcome.descriptive`, or the
+  phase's `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. Cancelling
+  a phase releases its claim and cascades to the work still open inside it, because a pending
+  task under a dropped phase is a task `/audit:next` would otherwise still offer. A blank
+  reason is refused, and terminal work is never re-decided by the verb.
+- **An expand control on the panel's capability table** (F-P-3): one press gives it the
+  whole viewport, built by the same builder the tab uses (one filter, one set of rows), with
+  Esc handled on the dialog so a search box cannot swallow it.
+
 ## [0.39.0] - 2026-08-15
 
 **The ADO connector grows up: boards, sprints, and a card in the panel.** `/audit:sync`

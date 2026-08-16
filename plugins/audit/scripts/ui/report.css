@@ -6,7 +6,11 @@
 [data-status="done"],[data-status="fixed"]{--st:var(--st-done);--st-ink:var(--st-done-ink)}
 [data-status="in_progress"],[data-status="triaged"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
 [data-status="blocked"],[data-status="open"]{--st:var(--st-blocked);--st-ink:var(--st-blocked-ink)}
-[data-status="pending"],[data-status="wontfix"]{--st:var(--st-pending);--st-ink:var(--st-pending-ink)}
+[data-status="pending"]{--st:var(--st-pending);--st-ink:var(--st-pending-ink)}
+/* ca (F-P-4): the two "settled, not achieved" states share an ink. A cancelled
+   phase beside a done one must not read as a second success — see the token. */
+[data-status="cancelled"],[data-status="wontfix"]{--st:var(--st-cancelled);
+  --st-ink:var(--st-cancelled-ink)}
 .area-tag{display:inline-block;font-size:var(--t-label);font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   padding:.25rem .5em;border-radius:var(--pill);background:var(--surface-2);color:var(--muted);
   border:1px solid var(--border);vertical-align:middle}
@@ -321,17 +325,15 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
    text having to carry the colour at a contrast that hurts to read. */
 .chip::before{content:"";width:.45em;height:.45em;border-radius:50%;flex:none;
   background:var(--st,var(--st-pending))}
-.rchip{display:inline-block;padding:.25rem .55em;border-radius:var(--pill);font-size:.73rem;font-weight:600;border:1px solid transparent}
-/* Same tint/ink/outline recipe as .chip, at the same border weight — these read
-   as a heavier kind of thing purely because their outline was the ink colour at
-   full strength. No leading dot, though: the dot marks a lifecycle STATE, and
-   risk is an attribute of the task rather than a stage it is passing through. */
-.rchip[data-risk="low"]{background:var(--rk-low-bg);color:var(--rk-low-fg);
-  border-color:color-mix(in srgb,var(--rk-low-fg) 30%,transparent)}
-.rchip[data-risk="med"]{background:var(--rk-med-bg);color:var(--rk-med-fg);
-  border-color:color-mix(in srgb,var(--rk-med-fg) 30%,transparent)}
-.rchip[data-risk="high"]{background:var(--rk-high-bg);color:var(--rk-high-fg);
-  border-color:color-mix(in srgb,var(--rk-high-fg) 30%,transparent)}
+/* rk (F-P-4): risk is TEXT, in its own ink — not a pill. A row carrying two
+   pills (status and risk) reads as two states of equal weight, and only one of
+   them is a state: status is where the task IS, risk is a property of it. The
+   ink is the same token the pill used, so nothing about the colour system
+   changes; what goes is the fill, the outline and the pill's visual claim. */
+.rchip{display:inline-block;font-size:.8rem;font-weight:600}
+.rchip[data-risk="low"]{color:var(--rk-low-fg)}
+.rchip[data-risk="med"]{color:var(--rk-med-fg)}
+.rchip[data-risk="high"]{color:var(--rk-high-fg)}
 
 /* ---- tables -------------------------------------------------------------- */
 .tablewrap{margin:.5rem 0 1rem}
@@ -356,6 +358,60 @@ th.sorted::after{content:"\25B2";font-size:.75em;margin-left:.35em;color:var(--a
 th.sorted[data-sort="desc"]::after{content:"\25BC"}
 td{padding:.5rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
 td.when,td.mono{font-variant-numeric:tabular-nums}
+/* vw: the label and its select are one control and wrap as one — the toolbar
+   is a flex row, and letting the words break away from the box they name is
+   how a reader ends up reading "View:" over an unrelated line. */
+.viewpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
+.viewpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
+  border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);color:var(--text)}
+/* bl (F-P-4): "something in here is stuck" and "some of this was dropped" —
+   counts, in the row's own words, wearing the status ink of what they count.
+   Not chips: the phase already carries one, and a row with three pills makes
+   the reader compare them instead of reading them. */
+.pblocked,.pcancelled{font-size:.72rem;font-weight:600;margin-left:.15rem}
+.pblocked{color:var(--st-blocked)}
+.pcancelled{color:var(--st-cancelled)}
+/* ex (F-P-4): the detail row. Two labelled groups side by side, wrapping to one
+   column on a narrow screen — the compact row above it stays the scanning
+   surface, and this is the reading one. It is a table row, so it obeys every
+   filter its task obeys; the toggle only decides whether an already-visible
+   task shows it. Key/value pairs rather than a paragraph: these are answers to
+   named questions, and a reader looking for the commit should not have to read
+   a sentence about the model first. */
+tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--border);
+  padding:.6rem .75rem .7rem 2.4rem}
+.dtwrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);
+  gap:.5rem 2rem}
+@media (max-width:52rem){.dtwrap{grid-template-columns:minmax(0,1fr)}}
+.dtcol h4{margin:0 0 .3rem;font-size:var(--t-label);text-transform:uppercase;
+  letter-spacing:.08em;color:var(--muted);font-weight:700}
+.dt-r{display:flex;gap:.6rem;align-items:baseline;padding:.12rem 0;font-size:.86rem}
+.dt-k{flex:0 0 6.2rem;color:var(--muted);font-size:.76rem;text-align:right}
+.dt-v{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;white-space:pre-wrap}
+/* The disclosure control. A chevron that rotates, in the id cell, sized to a
+   comfortable target without pushing the column wider than its ids. */
+/* The id and its control are one unit and must not wrap apart — "BF1.1" under
+   a lone chevron reads as two cells. */
+td.tid{white-space:nowrap}
+.dtoggle{border:0;background:none;cursor:pointer;color:var(--muted);
+  padding:0 .35em 0 0;font:inherit;line-height:1}
+.dtoggle::before{content:"\25B8";display:inline-block;font-size:.8em;
+  transition:transform var(--dur) var(--ease)}
+.dtoggle[aria-expanded="true"]::before{transform:rotate(90deg)}
+.dtoggle:hover{color:var(--accent)}
+.dtoggle:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* sha (F-P-4): the commit and the one press that copies all forty characters
+   of it. The button is quiet until the row is hovered or it takes focus — a
+   Copy button on every row of a fifty-phase table is fifty buttons shouting;
+   keyboard users get it on :focus-visible, so quiet never means unreachable. */
+.shacell{display:inline-flex;align-items:center;gap:.4em}
+.shacopy{font-size:.66rem;padding:.1rem .4em;border:1px solid var(--border);
+  border-radius:var(--radius);background:var(--surface);color:var(--muted);
+  cursor:pointer;opacity:0;transition:opacity var(--dur) var(--ease)}
+tr:hover .shacopy,.shacopy:focus-visible{opacity:1}
+.shacopy:hover{color:var(--accent);border-color:var(--accent)}
+@media (hover:none){.shacopy{opacity:1}}
 td.muted{font-size:.86em}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:last-child td:first-child{border-bottom-left-radius:var(--radius-lg)}
@@ -592,7 +648,7 @@ dl.ready dd{margin:.1rem 0 .35rem;padding:0 0 .35rem 1.1rem;
    ONE table (splitting it would re-measure the columns per segment and skew
    every row against the shared thead), and table rows cannot be
    height-clipped without display:block, which breaks that same alignment.
-   The archive collapse is what delivers the scanning win instead; the house
+   The View select is what delivers the scanning win instead; the house
    rule the table does keep is horizontal — .tablewrap owns any sideways
    overflow, and the page never scrolls sideways. */
 tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
@@ -609,14 +665,13 @@ tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
    rewrites, so nothing may ride inside it. */
 .usx{float:none;display:flex;justify-content:flex-end;gap:.3rem;
   margin:.2rem 0 0}
-.segtoggle{cursor:pointer;font:inherit;font-size:.72rem;font-weight:700;
-  letter-spacing:.08em;text-transform:uppercase;color:var(--text);
-  background:none;border:0;padding:0;display:inline-flex;align-items:center;
-  gap:.4em}
-.segtoggle::after{content:"\25BE";color:var(--muted)}
-.segtoggle[aria-expanded="true"]::after{content:"\25B4"}
-.segtoggle:hover{color:var(--accent)}
-.segtoggle:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* vw (F-P-4): the archive's disclosure button is gone — which segments are on
+   screen is the toolbar's View select now, and a segment that ALSO hid itself
+   was a second gate saying something different. The row below is what replaced
+   the one thing the toggle did well: it said the rows were there. */
+tr.outside td{background:var(--surface-2);color:var(--muted);font-size:.78rem;
+  padding:.5rem .75rem;text-align:center}
+tr.outside .btn{margin-left:.5rem}
 /* The advisory owner suffix on an area tag (D4): same chip, quieter voice —
    the tag is the identifier, the owner is a note about it. */
 .area-tag .aown{font-weight:400;letter-spacing:normal;text-transform:none;
@@ -660,7 +715,7 @@ tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
      empty state announcing that no phase matched, directly above every phase.
      Each of those is an inline style written by the filter, so each needs
      `!important` to be taken back here. */
-  tr.phase,tr.task{display:table-row!important;break-inside:avoid}
+  tr.phase,tr.task,tr.taskdetail{display:table-row!important;break-inside:avoid}
   .pmatch,tr.norows{display:none!important}
   /* A table that spans pages has to carry its column headers onto each of them,
      or page two of a long plan is a grid of unlabelled cells. */
@@ -932,10 +987,9 @@ details.more>summary:hover{color:var(--text)}
   #phases tbody tr.seghead:first-child{break-before:auto}
   /* The export controls are screen furniture; on paper they are dead ink. */
   .segx,.secx{display:none!important}
-  /* The archive header prints as a plain segment title: every row under it
-     is already on the page, so a disclosure arrow would be a control that
-     lies (the .tri rule's own argument). */
-  .segtoggle::after{content:""}
+  /* Screen-only: on paper every row is already there, so a line offering to
+     show more of them is a control that lies (the .tri rule's own argument). */
+  tr.outside{display:none!important}
 }
 
 /* ---- one segment on paper (D2) ---------------------------------------------
@@ -951,6 +1005,6 @@ details.more>summary:hover{color:var(--text)}
   body[data-printseg] .content>*:not(#phases){display:none!important}
   body[data-printseg="active"] #phases tr[data-seg]:not([data-seg="active"]),
   body[data-printseg="pending"] #phases tr[data-seg]:not([data-seg="pending"]),
-  body[data-printseg="done"] #phases tr[data-seg]:not([data-seg="done"]){
+  body[data-printseg="archived"] #phases tr[data-seg]:not([data-seg="archived"]){
     display:none!important}
 }

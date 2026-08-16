@@ -33,7 +33,13 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR i
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 
 # --- vocabulary + known keys ----------------------------------------------------
-STATUS = ("pending", "in_progress", "blocked", "done")
+# Two of these are terminal: `done` (it landed) and `cancelled` (it will not be
+# done, and that is an answer — see the schema's $defs/status for why the word is
+# `cancelled` and not `deprecated`). TERMINAL is what "finished" means everywhere
+# below: a phase signs off when every task is finished, and a claim on a finished
+# phase is stale whichever way it finished.
+STATUS = ("pending", "in_progress", "blocked", "done", "cancelled")
+TERMINAL = ("done", "cancelled")
 TESTS_MODE = ("tdd", "regression", "gate-only")
 RISK = ("low", "med", "high", None)
 BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix")
@@ -143,7 +149,7 @@ def _check_claim(phase, pwhere, findings, warnings):
     if missing:
         warnings.append("%s: claim is missing %s — a claim should identify the "
                         "session/host/branch holding the phase" % (pwhere, ", ".join(missing)))
-    if phase.get("status") in ("done", "blocked"):
+    if phase.get("status") in ("done", "cancelled", "blocked"):
         warnings.append("%s: has a claim but status is %r — a finished/blocked phase should "
                         "release its claim (stale claim)" % (pwhere, phase.get("status")))
 
@@ -886,11 +892,15 @@ def validate(manifest):
         # can't express (e.g. a hand-regenerated roadmap that flipped the phase
         # but not its tasks).
         if phase.get("status") == "done":
+            # FINISHED, not done: a task the team cancelled is settled, and a
+            # phase that signed off around it is not a slip. Only genuinely
+            # unfinished work (pending / in_progress / blocked) contradicts it.
             not_done = [t.get("id") or "?" for t in _safe_list(tasks_val)
-                        if isinstance(t, dict) and t.get("status") != "done"]
+                        if isinstance(t, dict) and t.get("status") not in TERMINAL]
             if not_done:
-                f.append("%s: status 'done' but %d task(s) are not done (%s) — a "
-                         "phase is done only after ALL its tasks are (sign-off)"
+                f.append("%s: status 'done' but %d task(s) are not finished (%s) "
+                         "\u2014 a phase is done only after ALL its tasks are done "
+                         "or cancelled (sign-off)"
                          % (pwhere, len(not_done), ", ".join(not_done[:6])))
         for ti, task in enumerate(_safe_list(tasks_val)):
             if not isinstance(task, dict):
@@ -1240,6 +1250,32 @@ def _selftest():
         print("%s %s (%s)" % ("PASS" if ok else "FAIL", name, detail))
 
     check("v1 valid manifest passes", None)
+    # ca (F-P-4): a phase can finish WITHOUT being done — the feature it was for
+    # is dropped, part of the work landed, the phase closes. Industry calls that
+    # cancelled (Linear "Canceled", Jira "Won't Do", GitHub "closed as not
+    # planned", ADO "Removed"); the manifest's bugs already had `wontfix` and
+    # phases/tasks had no way to say it, so plans carried dead phases as
+    # `pending` forever or lied with `done`.
+    check("ca1 cancelled is a legal task status", None,
+          lambda m: m["phases"][0]["tasks"][0].update(status="cancelled"))
+    check("ca2 cancelled is a legal phase status", None,
+          lambda m: m["phases"][0].update(status="cancelled"))
+    check("ca3 a done phase may hold cancelled tasks - dropping one task is not "
+          "a reason a finished phase cannot sign off", None,
+          lambda m: (m["phases"][0].update(status="done"),
+                     [t.update(status="done") for t in m["phases"][0]["tasks"]],
+                     m["phases"][0]["tasks"][0].update(status="cancelled")))
+    check("ca4 ...but a done phase with UNFINISHED tasks is still a slip",
+          "status 'done' but 1 task(s) are not finished",
+          lambda m: (m["phases"][0].update(status="done"),
+                     [t.update(status="done") for t in m["phases"][0]["tasks"]],
+                     m["phases"][0]["tasks"][0].update(status="in_progress")))
+    check("ca5 a claim on a cancelled phase is stale, exactly as on a done one",
+          None,
+          lambda m: m["phases"][0].update(
+              status="cancelled",
+              claim={"sessionId": "s", "host": "h", "branch": "b"}),
+          expect_warning="stale claim")
     check("v2 bad task status", "status 'doing' not in",
           lambda m: m["phases"][0]["tasks"][0].update(status="doing"))
     check("v3 bad tests.mode", "tests.mode 'yolo' not in",

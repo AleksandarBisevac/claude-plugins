@@ -51,12 +51,13 @@
   },
   "$defs": {
     "status": {
-      "description": "Lifecycle state for a phase or task.",
+      "description": "Lifecycle state for a phase or task. Two of the five are TERMINAL: 'done' (the work landed) and 'cancelled' (the work will not be done - the feature was dropped, the approach was abandoned, the phase closes with whatever landed). Cancelled is the phase/task twin of a bug's 'wontfix', and the state the trackers call Canceled (Linear), Won't Do (Jira), closed-as-not-planned (GitHub) and Removed (Azure DevOps). Nothing is deleted to express it: a cancelled item keeps its history, its commits and its outcome, and the report files it under the archive beside the done ones. Readiness treats a cancelled blocker as settled - a plan must not deadlock on work nobody will do - so a task waiting on a cancelled one becomes ready and is worth a look before it runs.",
       "enum": [
         "pending",
         "in_progress",
         "blocked",
-        "done"
+        "done",
+        "cancelled"
       ]
     },
     "model": {

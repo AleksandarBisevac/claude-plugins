@@ -85,6 +85,16 @@ CSS = _theme.TOKEN_CSS + _css()
 SCRIPT = _script()
 
 
+def css_with_tokens(token_css):
+    """The report's stylesheet wearing a DIFFERENT token block (th, F-P-6).
+
+    The concatenation lives here, in one place, for the reason `CSS` above does:
+    a caller that assembled the sheet itself would eventually assemble it
+    differently — and a report served the token block ALONE loses every rule in
+    report.css, which is exactly the bug this function was extracted after."""
+    return (token_css or _theme.TOKEN_CSS) + _css()
+
+
 # --- selftest -----------------------------------------------------------------
 def _selftest():
     ok = bad = 0

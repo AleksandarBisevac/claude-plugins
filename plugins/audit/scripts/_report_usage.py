@@ -45,6 +45,7 @@ if _HERE not in sys.path:
 import _loader        # noqa: E402  (the one way scripts/ loads a sibling script)
 import _fmt           # noqa: E402  (the one token/cost formatter)
 import _report_html   # noqa: E402  (escaping and the shared fragment helpers)
+import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 e = _report_html.e
 
@@ -565,8 +566,9 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
     for k, v in head:
         label = k
         if key == "byPhase":
+            # uc (F-P-2): the empty bucket wears the shared word, not its key.
             label = "%s %s" % (k, u["phaseTitles"].get(k, "")) if k != "--" \
-                else "-- unattributed"
+                else _theme.UNCATEGORIZED
         colour = ("var(--viz-%d)" % slots[k]) if (slots and k in slots) \
             else "var(--bar-neutral)"
         amt = _fmt_tokens(v["tokens"])
@@ -938,7 +940,8 @@ def _phase_stacks(u, slots, models):
             for m in models))
     for pid, per_model in phases:
         total = sum(per_model.values())
-        label = u["phaseTitles"].get(pid) or ("unattributed" if pid == "--" else "")
+        label = (_theme.UNCATEGORIZED if pid == "--"
+                 else u["phaseTitles"].get(pid) or "")
         segs = "".join(
             '<i class="seg" style="flex:%d 0 0;background:var(--viz-%d)" '
             'title="%s - %s - %s tokens"></i>'
@@ -1163,7 +1166,10 @@ def _usage_md(u):
         for k, v in sorted(data.items(), key=lambda kv: -kv[1]["tokens"]):
             # One decimal, matching the ranked list this table mirrors. The
             # two-decimal form is the hover affordance, and Markdown has no hover.
-            cells = [k, _fmt_tokens(v["tokens"])]
+            # uc (F-P-2): the Markdown twin is read by people too — the same
+            # word as the HTML and the CLI, never the storage key.
+            cells = [_theme.UNCATEGORIZED if k == "--" else k,
+                     _fmt_tokens(v["tokens"])]
             if show_cost:
                 cells.append(_fmt_cost(v["costUSD"]))
             cells.append("{:,}".format(v["msgs"]))
@@ -1317,6 +1323,16 @@ def _selftest():
     uh = _usage_section(_u)
     um = _usage_md(_u)
 
+    # uc (F-P-2): the empty bucket is named, not printed as its storage key.
+    _uc_html = _ranked(_u, "byPhase", "By phase")
+    check("uc the phase with no id is named from the shared label map in the "
+          "ranked list, and its storage key never reaches the page",
+          _theme.UNCATEGORIZED in _uc_html
+          and "-- unattributed" not in _uc_html
+          and ">--<" not in _uc_html)
+    _uc_md = _usage_md(_u)
+    check("uc ...and the Markdown twin says the same word, in the same table",
+          _theme.UNCATEGORIZED in _uc_md and "| -- |" not in _uc_md)
     check("u3 stat tiles carry compacted totals and equivalent cost",
           "1.5M" in uh and "$12.35" in uh and "equivalent cost" in uh)
     # This case read `"2026-08-06" in uh` for four releases and asserted nothing:

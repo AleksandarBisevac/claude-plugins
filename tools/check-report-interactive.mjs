@@ -153,69 +153,217 @@ if (load.total < 2) {
   process.exit(2);
 }
 
-// D1 (v0.36): the table renders in segments — active, pending, done — and the
-// done segment is the ARCHIVE, collapsed at load whenever the renderer emitted
-// its toggle (#audit-arch, i.e. done phases exist beside other work). This
-// deliberately ALTERS the old "on load, every phase is listed" pin: collapsing
-// the finished run is exactly the behaviour D1 asked for, so the expectation
-// now reads the document's own contract — toggle present and closed means the
-// done rows are hidden and everything else is listed; no toggle means the old
-// promise holds unchanged (single-segment and all-done plans).
+// vw (F-P-4): the table renders in segments — active, pending, archived — and
+// WHICH of them is on screen is a named View (active / archived / all), not a
+// disclosure toggle a reader has to find. The old D1 pins asserted the toggle;
+// they are replaced rather than kept, because the control they described is
+// gone on purpose: a plan that opened looking half-empty, with the explanation
+// hidden inside a button, is the report this replaced.
 const seg0 = await page.evaluate(() => {
   const heads = [...document.querySelectorAll('table.phases tbody tr.seghead')]
     .map((h) => h.getAttribute('data-seg'));
-  const arch = document.getElementById('audit-arch');
   const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
-  // Every phase row must sit under a seghead carrying ITS segment: walk the
-  // rows in order, tracking the last header seen.
   let cur = null, misfiled = 0;
   for (const r of document.querySelectorAll('table.phases tbody tr')) {
     if (r.classList.contains('seghead')) cur = r.getAttribute('data-seg');
     else if (r.classList.contains('phase')
              && r.getAttribute('data-seg') !== cur) misfiled++;
   }
+  const sel = document.getElementById('audit-view');
   return {
     heads,
     misfiled,
-    done: rows.filter((r) => r.getAttribute('data-seg') === 'done').length,
-    collapsed: !!arch && arch.getAttribute('aria-expanded') === 'false',
-    count: arch ? +arch.getAttribute('data-count') : null,
+    archived: rows.filter((r) => r.getAttribute('data-seg') === 'archived').length,
+    view: sel ? sel.value : null,
+    defaultView: document.querySelector('table.phases').getAttribute('data-defaultview'),
+    options: sel ? [...sel.options].map((o) => o.value) : [],
+    legacyToggle: !!document.getElementById('audit-arch'),
   };
 });
-const SEG_ORDER = ['active', 'pending', 'done'];
-expect('the segment headers come in active, pending, done order',
+const SEG_ORDER = ['active', 'pending', 'archived'];
+expect('the segment headers come in active, pending, archived order',
   seg0.heads.join(','),
   SEG_ORDER.filter((s) => seg0.heads.includes(s)).join(','));
 expect('every phase row sits under the seghead of its own segment', seg0.misfiled, 0);
-if (seg0.collapsed) {
-  expect(`the archive toggle names the count of rows it hides (${seg0.done} done)`,
-    seg0.count, seg0.done);
-  expect('on load the active and pending phases are listed and the done ones '
-    + 'sit in the collapsed archive', load.phases, load.total - seg0.done);
+expect('the toolbar offers the three named views', seg0.options.join(','),
+  'active,archived,all');
+expect('no archive toggle survives', seg0.legacyToggle, false);
+expect('the select opens on the view the renderer chose', seg0.view, seg0.defaultView);
+if (seg0.defaultView === 'active') {
+  expect(`on load the archived phases are off screen (${seg0.archived} of them), `
+    + 'and the rest are listed', load.phases, load.total - seg0.archived);
 } else {
-  expect('on load, every phase is listed (no collapsed archive in this plan)',
-    load.phases, load.total);
+  expect('a plan with nothing active opens on all phases', load.phases, load.total);
 }
 expect('on load, tasks are collapsed', load.tasks, 0);
 
-// Opening the archive is an EXPANDER, so it answers the standing rule: it may
-// not grow any scroll box sideways. Left open afterwards, so every later
-// count in this file keeps meaning what it always did.
-if (seg0.collapsed) {
+// Switching the view is an EXPANDER in the standing sense — it may not grow a
+// sideways scroll box — and it must not lose the reader's place either.
+{
   const preW = await page.evaluate(() => document.documentElement.scrollWidth);
-  await page.click('#audit-arch');
+  await page.selectOption('#audit-view', 'all');
   await page.waitForTimeout(250);
-  const opened0 = await page.evaluate(() => ({
+  const all = await page.evaluate(() => ({
     phases: [...document.querySelectorAll('table.phases tbody tr.phase')]
       .filter((r) => r.style.display !== 'none').length,
-    aria: document.getElementById('audit-arch').getAttribute('aria-expanded'),
     dw: document.documentElement.scrollWidth,
     cw: document.documentElement.clientWidth,
+    hash: location.hash,
   }));
-  expect('opening the archive lists every phase', opened0.phases, load.total);
-  expect('...and the toggle reports itself open', opened0.aria, 'true');
-  expect(`...growing no horizontal scroll box (scrollWidth ${preW} -> ${opened0.dw})`,
-    opened0.dw <= Math.max(preW, opened0.cw + 1), true);
+  expect('choosing All lists every phase', all.phases, load.total);
+  expect(`...growing no horizontal scroll box (scrollWidth ${preW} -> ${all.dw})`,
+    all.dw <= Math.max(preW, all.cw + 1), true);
+  if (seg0.defaultView === 'active') {
+    expect('...and the view rides the shareable fragment', /[?&#!]v=all/.test(all.hash), true);
+  }
+}
+
+// A search that matches rows the view is hiding SAYS SO. The old gate lifted
+// itself silently during a filter, which made the control disagree with the
+// table; the honest version keeps the gate and offers the way past it.
+if (seg0.defaultView === 'active' && seg0.archived > 0) {
+  await page.selectOption('#audit-view', 'active');
+  await page.waitForTimeout(200);
+  const archivedTerm = await page.evaluate(() => {
+    const r = [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .find((x) => x.getAttribute('data-seg') === 'archived');
+    return r ? (r.querySelector('.mono') || {}).textContent : null;
+  });
+  if (archivedTerm) {
+    await page.fill('#audit-q', archivedTerm.trim());
+    await page.waitForTimeout(350);
+    const hidden = await page.evaluate(() => {
+      const row = document.querySelector('[data-outside]');
+      return {
+        shown: !!row && !row.hidden && row.style.display !== 'none',
+        text: row ? row.textContent.trim() : '',
+        visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
+          .filter((r) => r.style.display !== 'none').length,
+      };
+    });
+    expect(`searching "${archivedTerm.trim()}" from the Active view says its `
+      + 'matches are elsewhere rather than reporting nothing', hidden.shown, true);
+    expect('...and names how many', /\d+ phase/.test(hidden.text), true);
+    await page.click('[data-viewall]');
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({
+      view: document.getElementById('audit-view').value,
+      visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((r) => r.style.display !== 'none').length,
+    }));
+    expect('...and the one press shows them', after.view, 'all');
+    expect('...with the search still applied', after.visible > 0, true);
+    await page.fill('#audit-q', '');
+    await page.waitForTimeout(300);
+  }
+}
+
+// The view and the filters survive a RELOAD — the failure a reader meets every
+// time they refresh a report opened off disk, where History is refused and the
+// fragment never gets written.
+{
+  await page.selectOption('#audit-view', 'archived');
+  await page.waitForTimeout(250);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(500);
+  const back = await page.evaluate(() => ({
+    view: (document.getElementById('audit-view') || {}).value,
+    archivedOnly: [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .filter((r) => r.style.display !== 'none')
+      .every((r) => r.getAttribute('data-seg') === 'archived'),
+  }));
+  expect('after a reload the report comes back in the view it was left in',
+    back.view, 'archived');
+  expect('...showing that view\'s rows and no others', back.archivedOnly, true);
+  await page.selectOption('#audit-view', 'all');
+  await page.waitForTimeout(250);
+}
+
+// ex (F-P-4): the per-task detail row. The compact row truncates the outcome at
+// 70 characters — that truncation is what this row exists to undo — so the
+// oracle is the TEXT: whatever the table shows must be a prefix of what the
+// detail row shows, and longer for at least one task, or the row is decoration.
+{
+  await page.selectOption('#audit-view', 'all');
+  await page.waitForTimeout(200);
+  // Open every phase so task rows are reachable, the way a reader would.
+  await page.click('#audit-expand');
+  await page.waitForTimeout(300);
+  const toggles = await page.$$('tr.task .dtoggle');
+  expect('every task row carries a detail control', toggles.length > 0, true);
+  if (toggles.length) {
+    const before = await page.evaluate(() =>
+      [...document.querySelectorAll('tr.taskdetail')].filter((r) => !r.hidden).length);
+    expect('...and none of them is open at load', before, 0);
+    const opened = await page.evaluate(() => {
+      const b = document.querySelector('tr.task .dtoggle');
+      b.click();
+      const row = b.closest('tr.task');
+      const d = row.nextElementSibling;
+      const cellText = (row.querySelector('td.muted') || {}).textContent || '';
+      return {
+        isDetail: d.classList.contains('taskdetail'),
+        visible: !d.hidden,
+        aria: b.getAttribute('aria-expanded'),
+        keys: [...d.querySelectorAll('.dt-k')].map((k) => k.textContent),
+        groups: [...d.querySelectorAll('.dtcol h4')].map((h) => h.textContent),
+        truncated: cellText.trim(),
+        full: d.textContent,
+      };
+    });
+    expect('opening one shows the row under its task', opened.isDetail && opened.visible, true);
+    expect('...and the control says it is open', opened.aria, 'true');
+    expect('...in two labelled groups', opened.groups.join(','), 'meta,task details');
+    if (opened.truncated.endsWith('\u2026')) {
+      const stem = opened.truncated.slice(0, -1).trim();
+      expect('...carrying the outcome the table had to cut short, in full',
+        opened.full.indexOf(stem) >= 0 && opened.full.length > opened.truncated.length,
+        true);
+    }
+    // A detail row is a table row: it must obey the filter its task obeys.
+    const q = await page.evaluate(() => {
+      const open = [...document.querySelectorAll('tr.taskdetail')].find((r) => !r.hidden);
+      return open ? open.getAttribute('data-detail') : null;
+    });
+    await page.fill('#audit-q', 'zzz-no-such-task-anywhere');
+    await page.waitForTimeout(350);
+    const hiddenWithTask = await page.evaluate(() =>
+      [...document.querySelectorAll('tr.taskdetail')].filter((r) => !r.hidden).length);
+    expect(`a filter that hides task ${q} hides its detail row with it`,
+      hiddenWithTask, 0);
+    await page.fill('#audit-q', '');
+    await page.waitForTimeout(350);
+    const backAgain = await page.evaluate(() =>
+      [...document.querySelectorAll('tr.taskdetail')].filter((r) => !r.hidden).length);
+    expect('...and clearing the filter brings it back still open', backAgain, 1);
+    await page.evaluate(() => {
+      const b = document.querySelector('tr.task .dtoggle[aria-expanded="true"]');
+      if (b) b.click();
+    });
+    await page.waitForTimeout(150);
+  }
+  // Leave the table exactly as this block found it: collapsed, on the view the
+  // checks below were written against. (The old archive block left itself open
+  // for the same reason, stated the same way.)
+  await page.click('#audit-expand');
+  await page.waitForTimeout(300);
+}
+
+// sha (F-P-4): nine characters on screen, forty on the clipboard.
+{
+  const sha = await page.evaluate(() => {
+    const b = document.querySelector('.shacopy');
+    if (!b) return null;
+    return { shown: (b.previousElementSibling || {}).textContent || '',
+             copies: b.getAttribute('data-copy') || '' };
+  });
+  if (sha) {
+    // The example's shas may already be short; what must hold is that the
+    // clipboard carries the manifest's value and the cell carries its prefix.
+    expect('the commit cell copies the sha the manifest recorded, whole',
+      sha.copies.length >= sha.shown.replace(/\s/g, '').length
+      && sha.copies.indexOf(sha.shown.replace(/\s/g, '')) === 0, true);
+  } else notes.push('ok   (no task in this plan records a commit — sha copy skipped)');
 }
 
 // The no-script banner. It is rendered into the HTML and removed by the script's
@@ -430,8 +578,13 @@ if (panelParts.length) {
   await page.click('.sectools [data-clear]');
   await page.waitForTimeout(250);
   expect('Clear filters puts every phase back', (await state()).phases, load.total);
-  expect('...and takes the filter fragment out of the URL with it',
-    /#!/.test(await page.evaluate(() => location.hash)), false);
+  // vw: the fragment may still carry the VIEW (`v=all` — this file switched to
+  // it above, and a view is not a filter). What must be gone is every filter
+  // key; a leftover `q=` or `m=` is a link that reopens the state just cleared.
+  expect('...and takes every filter key out of the URL with it',
+    (await page.evaluate(() => location.hash))
+      .replace(/^#!/, '').split('&').filter((p) => p && !/^v=/.test(p)).join('&'),
+    '');
 } else notes.push('ok   (this plan records no models — More filters skipped)');
 
 // 6b. Author chips in the Usage section (C3). Emitted only when the ledger
@@ -991,6 +1144,47 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
       lines.length - 1, segOracle.rows);
     expect('...and the filename names the segment',
       dl.suggestedFilename().includes(`-phases-${segName}.csv`), true);
+    // csv (F-P-4): the file carries the DATA. Three columns are lossy on
+    // screen — the commit is cut to nine characters and wears a Copy control,
+    // the done cell is cut to the minute, the outcome is cut at seventy — and
+    // the export used to take the cell text, Copy included.
+    const head = lines[0].split(',');
+    const iCommit = head.indexOf('commit');
+    const iDone = head.indexOf('done');
+    const iOut = head.indexOf('outcome');
+    const body = lines.slice(1);
+    // Every data row must carry as many fields as the header names — an
+    // appended column with no value pushed into the row is how a CSV silently
+    // shifts every later column by one. (Quoted fields may contain commas, so
+    // rows with quotes are counted by the parser rather than by split.)
+    expect('every CSV row has as many fields as the header names',
+      body.every((l) => /"/.test(l) || l.split(',').length === head.length), true);
+    expect('the CSV never exports a control as if it were data',
+      body.some((l) => /,?"?[^,]*Copy[^,]*"?,/.test(l)), false);
+    if (iCommit >= 0) {
+      const shas = body.map((l) => (l.split(',')[iCommit] || '')).filter(Boolean);
+      // The oracle is THIS segment's shas: the file is one segment, and the
+      // document holds them all.
+      const shown = await page.evaluate((sg) =>
+        [...document.querySelectorAll(`tr.task[data-seg="${sg}"] .shacopy`)]
+          .map((b) => b.getAttribute('data-copy')), segName);
+      expect(`every exported commit is the manifest's own sha, and a task `
+        + `without one exports nothing rather than an em dash `
+        + `(${shas.length} of ${body.length} rows carry one)`,
+        shas.length === shown.length && shas.every((x) => shown.indexOf(x) >= 0),
+        true);
+    }
+    if (iDone >= 0) {
+      const stamps = body.map((l) => (l.split(',')[iDone] || '')).filter(Boolean);
+      expect('every exported completion is the full ISO stamp, not the minute '
+        + 'the cell shows',
+        stamps.every((x) => /T/.test(x)), true);
+    }
+    expect('...and the file carries every column the compact row leaves out',
+      head.includes('started') && head.includes('model')
+      && head.includes('outcome') && head.includes('technical outcome')
+      && head.includes('work item') && head.includes('owner')
+      && head.includes('waits on'), true);
   } catch (e) {
     failures.push(`FAIL the segment CSV button produced no download (${String(e).split('\n')[0]})`);
   }

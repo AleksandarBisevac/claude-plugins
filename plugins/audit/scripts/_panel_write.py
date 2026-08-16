@@ -63,6 +63,7 @@ if _HERE not in sys.path:
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _policy                # noqa: E402  (the capability policy + its resolution)
+import _ui_theme as _theme    # noqa: E402  (the token layer + the theme compiler)
 import _panel_settings        # noqa: E402  (settings-form schema + write allow-lists)
 import _panel_state           # noqa: E402  (the read side this write path reads through)
 
@@ -543,6 +544,191 @@ def write_config(project, obj):
     return out
 
 
+def theme_state(project):
+    """`GET /api/theme` — the theme in effect, the vocabulary to edit it with,
+    and the default to measure changes against.
+
+    The DEFAULT ships in the payload rather than being re-derived in the
+    browser: "what did I change" is theme-minus-default, and a second copy of
+    the default in JS is how the two answers start disagreeing."""
+    config = read_config(project)
+    info = _theme.resolve_theme(project, config)
+    stored = info["theme"] or {}
+    return {
+        "theme": stored,
+        "default": _theme.DEFAULT_THEME,
+        "groups": [{"key": k, "title": t, "tokens": list(names)}
+                   for k, t, names in _theme.THEME_GROUPS],
+        "single": sorted(_theme.THEME_SINGLE),
+        "source": info["source"],
+        "path": (os.path.relpath(info["path"], project)
+                 if info.get("path") else None),
+        "name": info["name"],
+        "error": info["error"],
+        "presets": _theme.PRESETS,
+        "warnings": _theme.contrast_warnings(stored) if stored else [],
+        "layout": _theme.theme_layout(stored),
+        "densities": sorted(_theme.DENSITIES),
+        # Which themes this project can switch to — files on disk, plus the
+        # built-in. A preset IS a saved file here; a registry beside them would
+        # be a second list to keep in step.
+        "saved": _theme.list_themes(project),
+        # The cards a view is allowed to reorder, named by the renderer that
+        # draws them. Server-side so the editor lists what EXISTS rather than
+        # what somebody typed into a theme file.
+        "cards": {"over": ["phases", "gate", "ready", "bugs"]},
+        # Which group the editor keeps locked until asked twice. The palette is
+        # validated for colour-vision deficiency against these very surfaces,
+        # and arbitrary values make a chart two readers see differently — so the
+        # unlock is a deliberate act, and the validator's verdict stays visible
+        # afterwards. It is never a refusal: the user's decision, 2026-08-16.
+        "locked": ["charts"],
+    }
+
+
+def _theme_changes(before, after):
+    """Dotted change rows for a theme save, in the shape confirmChanges reads —
+    the same vocabulary the config and composition saves answer in."""
+    rows = []
+    for name in _theme.THEME_TOKENS:
+        b = before.get(name) if isinstance(before, dict) else None
+        a = after.get(name) if isinstance(after, dict) else None
+        for mode, key in (("light", "$value"), ("dark", "$dark")):
+            if name in _theme.THEME_SINGLE and mode == "dark":
+                continue
+            bv = (b or {}).get(key)
+            av = (a or {}).get(key)
+            if bv == av:
+                continue
+            rows.append({
+                "scope": "theme",
+                "field": "%s · %s" % (name, mode) if name not in _theme.THEME_SINGLE
+                         else name,
+                "from": bv,
+                "to": av,
+            })
+    return rows
+
+
+def _layout_changes(before, after):
+    """Change rows for the non-token half — the density and the card order read
+    as decisions, so they are shown as decisions rather than as JSON."""
+    before = before if isinstance(before, dict) else {}
+    after = after if isinstance(after, dict) else {}
+    rows = []
+    if before.get("density") != after.get("density"):
+        rows.append({"scope": "theme", "field": "layout · density",
+                     "from": before.get("density") or "comfortable",
+                     "to": after.get("density") or "comfortable"})
+    bo, ao = before.get("order") or {}, after.get("order") or {}
+    for view in sorted(set(list(bo) + list(ao))):
+        if bo.get(view) != ao.get(view):
+            rows.append({"scope": "theme", "field": "layout · order · " + view,
+                         "from": ", ".join(bo.get(view) or []) or "(default)",
+                         "to": ", ".join(ao.get(view) or []) or "(default)"})
+    return rows
+
+
+def write_theme(project, body):
+    """`PUT /api/theme` — write the project's theme file.
+
+    Refused BEFORE anything is written, in the theme's own words (an unknown
+    token, a value that is not a value), because a theme reaches a stylesheet
+    that gets emailed and published. Contrast is reported as a WARNING and
+    written anyway: how readable a reader wants their own panel is their call.
+
+    `reset: true` deletes the file — back to the default look — rather than
+    writing a theme that merely happens to equal it, so the next reader sees
+    "no project theme" and not "a theme that says nothing".
+    """
+    if not isinstance(body, dict):
+        return {"ok": False, "findings": ["body must be a JSON object"]}
+    path = os.path.join(project, ".claude", _theme.THEME_FILENAME)
+    before = _theme.resolve_theme(project, read_config(project))["theme"] or {}
+    if body.get("reset"):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except Exception as exc:
+            return {"ok": False, "findings": ["cannot remove %s: %s" % (path, exc)]}
+        rows = _theme_changes(before, {})
+        _journal(project, read_config(project), "theme.reset",
+                 os.path.join(".claude", _theme.THEME_FILENAME), rows)
+        return {"ok": True, "applied": rows, "reset": True,
+                "warnings": [], "written": [".claude/" + _theme.THEME_FILENAME]}
+    # `use` switches which theme is worn without touching any theme file: it is
+    # a one-key config edit (ui.theme), written through the one config writer.
+    if body.get("use") is not None:
+        want = str(body.get("use") or "").strip()
+        cfg = dict(read_config(project))
+        ui = dict(cfg.get("ui") or {})
+        if want in ("", "slate-teal"):
+            ui.pop("theme", None)          # back to the search order
+        else:
+            ui["theme"] = want
+        if ui:
+            cfg["ui"] = ui
+        else:
+            cfg.pop("ui", None)
+        return write_config(project, cfg)
+    theme = body.get("theme")
+    if not isinstance(theme, dict):
+        return {"ok": False, "findings": ["theme must be an object of tokens"]}
+    findings, warnings = _theme.validate_theme(theme)
+    layout = body.get("layout")
+    lf, lw = _theme.validate_layout(layout)
+    findings, warnings = list(findings) + lf, list(warnings) + lw
+    if findings:
+        return {"ok": False, "findings": findings, "warnings": warnings}
+    rows = _theme_changes(before, theme) + _layout_changes(
+        _theme.theme_layout(before), layout)
+    payload = {
+        "$schema": "https://design-tokens.org/schema.json",
+        "$description": "audit panel/report theme — token values only; the CSS "
+                        "is compiled from this and never stored.",
+        "name": str(body.get("name") or "custom"),
+        "tokens": theme,
+    }
+    if isinstance(layout, dict) and layout:
+        payload["layout"] = layout
+    history = body.get("history")
+    if isinstance(history, list):
+        # Capped where it is written, not where it is read: an unbounded trail
+        # in a file somebody commits grows without anyone deciding to keep it.
+        payload["history"] = history[-100:]
+    save_as = str(body.get("saveAs") or "").strip()
+    if save_as:
+        # A named copy, and the config pointed at it: "Save as" means "keep this
+        # one AND wear it", which is two writes and would be a half-done state
+        # if either were skipped.
+        slug = "".join(ch if (ch.isalnum() or ch in "-_") else "-"
+                       for ch in save_as.lower())[:40].strip("-") or "theme"
+        path = os.path.join(project, ".claude", "themes", slug + ".json")
+        payload["name"] = save_as
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _atomic_write_json(path, payload)
+    except Exception as exc:
+        return {"ok": False, "findings": ["cannot write %s: %s" % (path, exc)]}
+    # Read it back through the same door every other reader uses: a file that
+    # writes but does not resolve is the failure this catches.
+    back, err = _theme.load_theme_file(path)
+    if err:
+        return {"ok": False, "findings": ["written but not readable back: %s" % err]}
+    written = [os.path.relpath(path, project).replace(os.sep, "/")]
+    if save_as:
+        cfg = dict(read_config(project))
+        ui = dict(cfg.get("ui") or {})
+        ui["theme"] = written[0]
+        cfg["ui"] = ui
+        res = write_config(project, cfg)
+        if not res.get("ok"):
+            return res
+    _journal(project, read_config(project), "theme.save", written[0], rows)
+    return {"ok": True, "applied": rows, "warnings": warnings,
+            "written": written, "theme": back, "savedAs": save_as or None}
+
+
 def _reject_unknown(patch):
     for top in patch:
         if top not in ("meta", "phases", "tasks"):
@@ -778,6 +964,106 @@ def _selftest():
 
     tmp = tempfile.mkdtemp(prefix="panel-write-selftest-")
     proj = os.path.join(tmp, "proj")
+
+    # --- th (F-P-6): the Appearance tab's two calls -------------------------
+    _thp = tempfile.mkdtemp(prefix="audit-theme-write-")
+    os.makedirs(os.path.join(_thp, ".claude"), exist_ok=True)
+    _st = theme_state(_thp)
+    check("th-w1 an unthemed project reports the default, and ships the "
+          "vocabulary AND the default values the editor measures against",
+          _st["source"] == "default" and _st["theme"] == {}
+          and _st["default"] == _theme.DEFAULT_THEME
+          and [g["key"] for g in _st["groups"]][:2] == ["brand", "status"]
+          and "charts" in _st["locked"])
+    _good = {"--accent": {"$value": "#7c3aed", "$dark": "#a78bfa"},
+             "--radius": {"$value": "2px"}}
+    _res = write_theme(_thp, {"theme": _good, "name": "midnight"})
+    check("th-w2 a valid theme is written, and the change rows name the token "
+          "AND the mode - the same dotted vocabulary every other save answers in",
+          _res.get("ok")
+          and any(r["field"].startswith("--accent") and "light" in r["field"]
+                  for r in _res["applied"])
+          and any(r["field"] == "--radius" for r in _res["applied"]))
+    check("th-w3 ...and the panel now serves it, compiled",
+          "--accent:#7c3aed" in _theme.token_css_for(_thp, read_config(_thp))[0]
+          and theme_state(_thp)["source"] == "project")
+    _bad = write_theme(_thp, {"theme": {"--accent": {"$value": "red;}body{x:y}",
+                                                     "$dark": "#fff"}}})
+    check("th-w4 a value that is not a value is refused BEFORE the write, and "
+          "the file on disk is untouched", not _bad.get("ok")
+          and _bad["findings"]
+          and "--accent:#7c3aed" in _theme.token_css_for(_thp, read_config(_thp))[0])
+    _dim = write_theme(_thp, {"theme": dict(
+        _good, **{"--text": {"$value": "#dddddd", "$dark": "#222222"}})})
+    check("th-w5 an unreadable CONTRAST is a warning and is written anyway - "
+          "the reader's own panel is the reader's call",
+          _dim.get("ok") and any("below" in w for w in _dim.get("warnings") or []))
+    _rst = write_theme(_thp, {"reset": True})
+    check("th-w6 reset REMOVES the file rather than writing a theme that "
+          "happens to equal the default - the next reader sees 'no project "
+          "theme', not 'a theme that says nothing'",
+          _rst.get("ok")
+          and not os.path.isfile(os.path.join(_thp, ".claude",
+                                              _theme.THEME_FILENAME))
+          and theme_state(_thp)["source"] == "default")
+    _hist = write_theme(_thp, {"theme": _good,
+                               "history": [{"t": i} for i in range(150)]})
+    with open(os.path.join(_thp, ".claude", _theme.THEME_FILENAME),
+              encoding="utf-8") as _fh:
+        _raw = json.loads(_fh.read())
+    check("th-w7 the undo trail rides the file so Undo survives a reload, and "
+          "it is capped where it is WRITTEN - an unbounded trail in a file "
+          "somebody commits grows without anyone deciding to keep it",
+          _hist.get("ok") and len(_raw["history"]) == 100
+          and _raw["history"][-1] == {"t": 149}
+          and _raw["tokens"]["--accent"]["$value"] == "#7c3aed")
+    # --- th: layout, Save as, switching (second increment) ------------------
+    _lres = write_theme(_thp, {"theme": {}, "layout": {"density": "compact"}})
+    check("th-w8 the density is saved with the theme and reaches the compiled "
+          "sheet - one decision over eight spacing steps",
+          _lres.get("ok")
+          and any(r["field"] == "layout · density" and r["to"] == "compact"
+                  for r in _lres["applied"])
+          and "--sp-3:.8rem" in _theme.token_css_for(_thp, read_config(_thp))[0])
+    check("th-w9 ...and it comes back in the state the editor reads",
+          theme_state(_thp)["layout"].get("density") == "compact"
+          and theme_state(_thp)["densities"] == ["comfortable", "compact",
+                                                 "spacious"])
+    _ores = write_theme(_thp, {"theme": {},
+                               "layout": {"density": "compact",
+                                          "order": {"over": ["ready", "phases"]}}})
+    check("th-w10 a card order is a decision, and reads as one in the change "
+          "rows rather than as JSON",
+          _ores.get("ok")
+          and any(r["field"] == "layout · order · over" and "ready" in str(r["to"])
+                  for r in _ores["applied"]))
+    check("th-w11 an invalid density is refused with the theme it came in with",
+          not write_theme(_thp, {"theme": {},
+                                 "layout": {"density": "roomy"}}).get("ok"))
+    _sa = write_theme(_thp, {"theme": {"--accent": {"$value": "#111111",
+                                                    "$dark": "#eeeeee"}},
+                             "saveAs": "Midnight Blue"})
+    check("th-w12 Save as writes a NAMED copy and points the config at it - "
+          "'keep this one and wear it' is two writes, and half of it would be a "
+          "half-done state",
+          _sa.get("ok") and _sa.get("savedAs") == "Midnight Blue"
+          and os.path.isfile(os.path.join(_thp, ".claude", "themes",
+                                          "midnight-blue.json"))
+          and (read_config(_thp).get("ui") or {}).get("theme")
+          == ".claude/themes/midnight-blue.json"
+          and theme_state(_thp)["theme"]["--accent"]["$value"] == "#111111")
+    check("th-w13 the saved themes are listed beside the built-in, from disk",
+          [t["name"] for t in theme_state(_thp)["saved"]][0] == "slate-teal"
+          and any(t["name"] == "midnight-blue"
+                  for t in theme_state(_thp)["saved"]))
+    _use = write_theme(_thp, {"use": "slate-teal"})
+    check("th-w14 switching to the built-in is a one-key config edit, and the "
+          "saved file is left where it is",
+          _use.get("ok")
+          and not (read_config(_thp).get("ui") or {}).get("theme")
+          and os.path.isfile(os.path.join(_thp, ".claude", "themes",
+                                          "midnight-blue.json")))
+    _shutil.rmtree(_thp, ignore_errors=True)
 
     # config write: valid then invalid
     res = write_config(proj, {"trivialLineThreshold": 40})

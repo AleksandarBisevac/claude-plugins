@@ -166,7 +166,7 @@ L2:
 
 L3:
   _help -> _areas, _loader, _output, _panel_settings, _policy, _ui_theme
-  _report_usage -> _fmt, _loader, _output, _report_html
+  _report_usage -> _fmt, _loader, _output, _report_html, _ui_theme
 
 L4:
   _panel_discovery -> _help, _manifest_io, _output
@@ -175,7 +175,7 @@ L5:
   _panel_state -> _areas, _help, _loader, _manifest_io, _output, _panel_discovery, _policy
 
 L6:
-  _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy
+  _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _ui_theme
 
 L7:
   audit-doctor -> _cli_fmt, _loader, _output
@@ -183,7 +183,7 @@ L7:
   audit-lock -> _output
   audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _output, _panel_discovery, _ui_theme
   audit-task -> _manifest_io, _output, _panel_write
-  audit-usage -> _areas, _cli_fmt, _fmt, _loader, _output
+  audit-usage -> _areas, _cli_fmt, _fmt, _loader, _output, _ui_theme
   gen-demo-manifest -> _loader, _output
   gen-demo-usage -> _loader, _output
   migrate-manifest -> _loader, _manifest_io, _output

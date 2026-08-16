@@ -310,6 +310,15 @@ def _composition_view(manifest):
                 "phaseId": ph.get("id"), "status": t.get("status"),
                 "model": t.get("model"),
                 "skills": _skills_of(t),
+                # ov (F-P-5): Overview shows what the REPORT's table shows, so
+                # it needs the same four values. They ride the composition
+                # payload rather than a second endpoint — this is one manifest
+                # read either way, and the Composition tab ignores what it does
+                # not edit. Timestamps stay whole; the client cuts them.
+                "risk": t.get("risk"),
+                "commit": t.get("commit"),
+                "startedAt": t.get("startedAt"),
+                "completedAt": t.get("completedAt"),
             })
     # Every skill name the AREAS declare, deduped in registry order — the other
     # half of what the manifest spells (task rows carry their own). Shipped so

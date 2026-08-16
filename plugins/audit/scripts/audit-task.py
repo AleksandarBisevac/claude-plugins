@@ -615,6 +615,200 @@ def _locked_add(args, project, config, mpath, title, out):
     return 0
 
 
+# --- cancel: finished, but not done ---------------------------------------------
+# ca (F-P-4, v0.40): a phase or task can end without landing — the feature was
+# dropped, the approach abandoned — and until this verb the only way to say so
+# was to hand-edit the manifest. Three things then went unrecorded, every time:
+# WHY (the reason lived in somebody's memory), WHEN (no stamp), and THAT IT
+# HAPPENED AT ALL (no journal row). The verb writes all three through the same
+# lock / write / validate-from-disk / roll-back path `add` uses.
+_NOW_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _utc_now():
+    import time
+    return time.strftime(_NOW_FMT, time.gmtime())
+
+
+def _find_target(assembled, tid):
+    """(kind, node, phase) for a task or phase id, or (None, None, None)."""
+    for ph in (assembled.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        if ph.get("id") == tid:
+            return "phase", ph, ph
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("id") == tid:
+                return "task", t, ph
+    return None, None, None
+
+
+def _cancel_task(task, reason, now):
+    """Mark one task cancelled. The reason goes where the report already reads
+    from — outcome.descriptive — so it shows up in the detail row without a
+    field invented for it, and `completedAt` is the moment it stopped being
+    work rather than the moment it landed (it never landed)."""
+    task["status"] = "cancelled"
+    if not task.get("completedAt"):
+        task["completedAt"] = now
+    outcome = task.get("outcome")
+    if not isinstance(outcome, dict):
+        outcome = {}
+    prefix = "Cancelled: %s" % reason
+    prev = (outcome.get("descriptive") or "").strip()
+    outcome["descriptive"] = ("%s (was: %s)" % (prefix, prev)) if prev else prefix
+    task["outcome"] = outcome
+    return task
+
+
+def _locked_cancel(args, project, config, mpath, tid, reason, out):
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    kind, node, phase = _find_target(assembled, tid)
+    if kind is None:
+        out("[audit-task] no task or phase with id %r in %s" % (tid, mpath))
+        return E_USAGE
+    if node.get("status") in ("done", "cancelled"):
+        # Terminal is terminal. Re-writing a finished item's status here would
+        # rewrite history with no record of what it said before.
+        out("[audit-task] %s is already %s -- terminal work is not re-decided "
+            "by this verb (edit the manifest deliberately if it is wrong)"
+            % (tid, node.get("status")))
+        return E_USAGE
+
+    now = _utc_now()
+    cascaded = []
+    if kind == "task":
+        _cancel_task(node, reason, now)
+    else:
+        node["status"] = "cancelled"
+        prev = (node.get("summary") or "").strip()
+        line = "Cancelled: %s" % reason
+        node["summary"] = ("%s %s" % (prev, line)).strip() if prev else line
+        # A claim on a finished phase is stale (the validator says so).
+        node.pop("claim", None)
+        # ...and the work still open inside it goes with it: a pending task
+        # under a dropped phase is a task /audit:next would still offer.
+        for t in (node.get("tasks") or []):
+            if isinstance(t, dict) and t.get("status") not in ("done", "cancelled"):
+                _cancel_task(t, "phase %s cancelled: %s" % (tid, reason), now)
+                cascaded.append(t.get("id"))
+
+    phase_id = phase.get("id")
+    snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, phase_id, False)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the cancel would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jres = _journal_cancel(project, config, mpath, kind, tid, phase_id,
+                           reason, cascaded)
+    if args.as_json:
+        result = {"ok": True, "id": tid, "kind": kind, "phase": phase_id,
+                  "reason": reason, "at": now, "cascaded": cascaded,
+                  "written": written, "warnings": warnings}
+        result.update(jres)
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
+    if cascaded:
+        out("  also cancelled inside it: %s" % ", ".join(c for c in cascaded if c))
+    for line in warnings:
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the %s.cancel row" % kind)
+    out("  written: %s" % ", ".join(written))
+    return 0
+
+
+def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
+                    cascaded):
+    """One `task.cancel` / `phase.cancel` row — the same shape and the same
+    fail-soft contract as _journal_add (see its docstring for why this script
+    writes its own row at all). The REASON rides the summary: a trail that
+    records the state change and not the why answers the wrong question a
+    month later."""
+    mod = _panel_write._journalmod()
+    if mod is None or not hasattr(mod, "append"):
+        return {"journaled": False, "journaledWhy": "unavailable"}
+    summary = "%s cancelled: %s" % (tid, reason)
+    if cascaded:
+        summary += " (also %s)" % ", ".join(c for c in cascaded if c)
+    cfg = None if config else {"manifestPath": os.path.relpath(mpath, project)}
+    details = {"phaseId": phase_id, "reason": reason}
+    details["taskId" if kind == "task" else "cancelledId"] = tid
+    if cascaded:
+        details["cascaded"] = [c for c in cascaded if c]
+    try:
+        ok = bool(mod.append(project, {
+            "action": "%s.cancel" % kind,
+            "target": os.path.relpath(mpath, project).replace(os.sep, "/"),
+            "summary": summary,
+            "details": details,
+            "actor": {"author": _panel_write._viewer(project, config or {})},
+        }, cfg))
+    except Exception:
+        return {"journaled": False, "journaledWhy": "failed"}
+    return {"journaled": ok, "journaledWhy": None if ok else "failed"}
+
+
+def cmd_cancel(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to cancel
+    if not tid:
+        out("[audit-task] cancel needs a task or phase id")
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if not reason:
+        # The whole point of the verb. A status flipped with no why is the
+        # hand-edit this replaces, one layer up.
+        out("[audit-task] cancel needs --reason \"<why>\" -- cancelling without "
+            "a recorded reason is the hand-edit this verb exists to replace")
+        return E_USAGE
+    config = _panel_write.read_config(project)
+    mpath = (os.path.abspath(args.manifest) if args.manifest
+             else _panel_write._manifest_path(project, config))
+    if not os.path.isfile(mpath):
+        out("[audit-task] manifest not found: %s -- run /audit:init first" % mpath)
+        return E_USAGE
+    lock = _acquire_lock(project, config, mpath, args.takeover, out)
+    if isinstance(lock, int):
+        return lock
+    try:
+        return _locked_cancel(args, project, config, mpath, tid, reason, out)
+    finally:
+        _release_lock(lock)
+
+
 def cmd_add(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -644,7 +838,7 @@ def cmd_add(args, out):
 
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
-    p.add_argument("command", choices=["add"])
+    p.add_argument("command", choices=["add", "cancel"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -661,6 +855,7 @@ def main(argv, out=print):
                    default=None)
     p.add_argument("--gate", action="append", default=None)
     p.add_argument("--project-dir", dest="project_dir", default=None)
+    p.add_argument("--reason", default=None)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     try:
@@ -668,7 +863,8 @@ def main(argv, out=print):
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
     try:
-        return cmd_add(args, out)
+        return cmd_cancel(args, out) if args.command == "cancel" \
+            else cmd_add(args, out)
     except Exception as exc:                    # never leave a caller guessing
         out("[audit-task] internal error: %s" % exc)
         return E_INVALID
@@ -1159,6 +1355,70 @@ def _selftest():
               code == 0 and '"task.add"' in jtext)
         check("n8b ...without conjuring docs/audit into the tree",
               not os.path.exists(os.path.join(projb2, "docs")))
+
+        # ---- (c) cancel: finished, but not done ------------------------------
+        # A phase can end without landing: the feature is dropped, part of the
+        # work exists, the phase closes. Until now the only way to say so was
+        # to hand-edit the manifest, so the reason lived in nobody's memory and
+        # the trail had no row. The verb records all three: the status, the
+        # reason, and the moment.
+        projc, mpc = mk("cancel", base_manifest())
+        code, txt = run(["cancel", "P2.3", mpc, "--reason",
+                         "search feature dropped", "--project-dir", projc])
+        mc = _mio.load_manifest(mpc)
+        tc = [t for ph in mc["phases"] for t in ph["tasks"] if t["id"] == "P2.3"][0]
+        check("c1 a task is cancelled, with the reason and the moment recorded",
+              code == 0 and tc["status"] == "cancelled"
+              and "search feature dropped" in (tc.get("outcome") or {}).get("descriptive", "")
+              and tc.get("completedAt"))
+        check("c2 the reason is REQUIRED - a status flipped with no why is the "
+              "hand-edit this verb replaces",
+              run(["cancel", "P2.1", mpc, "--project-dir", projc])[0] == 2
+              and run(["cancel", "P2.1", mpc, "--reason", "  ",
+                       "--project-dir", projc])[0] == 2)
+        check("c3 already-terminal work is refused rather than silently "
+              "rewritten - a done task is history",
+              run(["cancel", "P2.1", mpc, "--reason", "no",
+                   "--project-dir", projc])[0] == 2)
+        code, txt = run(["cancel", "P2.3", mpc, "--reason", "again",
+                         "--project-dir", projc])
+        check("c4 ...and so is one already cancelled", code == 2)
+
+        projd, mpd = mk("cancel-phase", base_manifest())
+        code, txt = run(["cancel", "P3", mpd, "--reason", "area shelved",
+                         "--project-dir", projd])
+        md = _mio.load_manifest(mpd)
+        pd = [ph for ph in md["phases"] if ph["id"] == "P3"][0]
+        check("c5 a phase can be cancelled too, and says why in its summary",
+              code == 0 and pd["status"] == "cancelled"
+              and "area shelved" in (pd.get("summary") or ""))
+
+        proje, mpe = mk("cancel-cascade", base_manifest())
+        code, txt = run(["cancel", "P2", mpe, "--reason", "shelved",
+                         "--project-dir", proje])
+        me = _mio.load_manifest(mpe)
+        pe = [ph for ph in me["phases"] if ph["id"] == "P2"][0]
+        states = {t["id"]: t["status"] for t in pe["tasks"]}
+        check("c6 cancelling a phase cancels the work still open inside it - a "
+              "pending task under a dropped phase would still be offered by "
+              "/audit:next",
+              code == 0 and states["P2.3"] == "cancelled"
+              # ...and leaves finished work exactly as it finished.
+              and states["P2.1"] == "done")
+        check("c7 the manifest stays valid after both writes",
+              not _panel_write._cores()[0].validate(me)[0])
+        jpath = os.path.join(proje, "docs", "audit", "journal")
+        jtxt = ""
+        for root, _dirs, files in os.walk(jpath):
+            for f in files:
+                with open(os.path.join(root, f), encoding="utf-8") as fh:
+                    jtxt += fh.read()
+        check("c8 the trail carries a row naming the reason - the point of the "
+              "verb is that the why outlives the session",
+              '"phase.cancel"' in jtxt and "shelved" in jtxt)
+        code, jtext = run(["cancel", "P1", mpe, "--reason", "x",
+                           "--project-dir", proje, "--json"])
+        check("c9 a done PHASE is refused as well", code == 2)
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

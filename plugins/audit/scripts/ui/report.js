@@ -190,6 +190,8 @@
   var fcount = document.getElementById('audit-fcount');
   var clearBtns = [].slice.call(document.querySelectorAll('[data-clear]'));
   var norow = grouped ? grouped.querySelector('tr.norows') : null;
+  var outsideRow = grouped ? grouped.querySelector('[data-outside]') : null;
+  var outsideN = outsideRow ? outsideRow.querySelector('[data-outside-n]') : null;
   // The author chips (C3) live in the Usage section and scope ONLY it: tasks
   // record no author, so these never enter refresh() or touch the task table.
   var authorBar = document.getElementById('audit-authors');
@@ -255,6 +257,15 @@
       var d = t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
       if (d > DMAX) DMAX = d;
     });
+    // ex (F-P-4): each task's detail row, resolved once and hung on the task
+    // row itself — refresh() shows and hides these in the same pass, and a
+    // querySelector per task per keystroke is the cliff this index exists for.
+    [].forEach.call(grouped.querySelectorAll('tbody tr.taskdetail'), function (d) {
+      var id = d.getAttribute('data-detail');
+      var host = grouped.querySelector('tr.task .dtoggle[data-dfor="' + id + '"]');
+      var row = host ? host.closest('tr.task') : null;
+      if (row) { row.__detail = d; d.__task = row; }
+    });
     [].forEach.call(grouped.querySelectorAll('tbody tr.taskfilter'), function (t) {
       TFROW[t.getAttribute('data-phase')] = t;
     });
@@ -273,10 +284,21 @@
   var archN = 0;
   phaseRows.forEach(function (pr) {
     pr.__seg = pr.getAttribute('data-seg') || '';
-    if (pr.__seg === 'done') archN++;
+    if (pr.__seg === 'archived') archN++;
   });
-  var archBtn = document.getElementById('audit-arch');
-  var archOpen = !archBtn;
+  // vw (F-P-4): which phases are on screen is a NAMED view, not a toggle
+  // somebody has to find. `active` covers both segments of unfinished work;
+  // `archived` is done AND cancelled; `all` is the escape hatch. The starting
+  // value is the renderer's (it stamps `all` on a plan with nothing active),
+  // then whatever the reader last chose, then whatever the link says.
+  var viewSel = document.getElementById('audit-view');
+  var VIEWS = { active: ['active', 'pending'], archived: ['archived'],
+                all: ['active', 'pending', 'archived'] };
+  var defaultView = (grouped && grouped.getAttribute('data-defaultview')) || 'active';
+  var viewMode = defaultView;
+  function inView(seg) {
+    return (VIEWS[viewMode] || VIEWS.all).indexOf(seg) >= 0;
+  }
   function tasksOf(pid) { return TASKS[pid] || []; }
   function tfOf(pid) { return TFROW[pid] || null; }
   // Lowercased once per row and kept. The text of a rendered report never changes,
@@ -318,6 +340,8 @@
     return false;
   }
 
+  // --- filter state, and the pass that applies it ----------------------------
+
   // The filtered view, written back into the URL so it can be sent to someone.
   // `history.replaceState` and not an assignment to location.hash: assigning
   // pushes a history entry per keystroke and scrolls the document to whatever it
@@ -329,9 +353,22 @@
   // phase id, so carrying them would put a list as long as the plan into the URL
   // to describe a drill-down inside one row. A link names the view, not the state
   // of every control on the page.
+  // vw: the same state, written twice on purpose. The fragment is the SHAREABLE
+  // copy; localStorage is the copy that survives a reload when History is
+  // refused — which is the ordinary case for this file, because a report is
+  // most often opened straight off disk over file://, and that is exactly where
+  // filters used to vanish on every refresh.
+  var STORE_KEY = 'audit-view-' + (document.title || 'report');
+  function saveState(parts) {
+    try {
+      if (parts.length) localStorage.setItem(STORE_KEY, parts.join('&'));
+      else localStorage.removeItem(STORE_KEY);
+    } catch (e) {}
+  }
   function syncHash() {
     var parts = [];
     function put(k, v) { if (v) parts.push(k + '=' + encodeURIComponent(v)); }
+    put('v', viewMode === defaultView ? '' : viewMode);
     put('q', q ? q.value.trim() : '');
     put('ps', phaseStatus);
     // Space-joined, mirroring the data-area attribute — one separator rule for
@@ -348,6 +385,7 @@
     // real filter: a theme alone must not mint a `#!` fragment, or simply opening
     // the report with a remembered theme would overwrite the heading you linked to.
     if (themeBtn && parts.length) put('th', root.getAttribute('data-theme') || '');
+    saveState(parts);
     try {
       if (parts.length) history.replaceState(null, '', '#!' + parts.join('&'));
       else if ((location.hash || '').indexOf('#!') === 0) {
@@ -367,7 +405,7 @@
     var narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
     var anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
-    var visP = 0, visT = 0, totT = 0;
+    var visP = 0, visT = 0, totT = 0, hiddenByView = 0;
     var segVis = {};   // visible phases per segment, for the seghead painter
     phaseRows.forEach(function (pr) {
       var pid = pr.getAttribute('data-phase');
@@ -389,16 +427,20 @@
         if (t.__hit) nMatch++;
       });
       // phase-level: status + area gates + text (phase title OR any task matches)
-      var showP = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
+      var matchAll = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
                   && areaOk(pr)
                   && (term === '' || pText || anyTaskText)
-                  && (!narrows || nMatch > 0)
-                  // The archive gate (D1): done rows sit collapsed under
-                  // their seghead until the toggle opens them — but only at
-                  // REST. Any active filter lifts the gate, because a search
-                  // that silently skipped the archive would report "0 of 40"
-                  // over rows that match.
-                  && (archOpen || anyFilter || pr.__seg !== 'done');
+                  && (!narrows || nMatch > 0);
+      var showP = matchAll
+                  // vw: the view gates, and it gates ALWAYS. The old rule
+                  // lifted the archive whenever a filter was on, which made
+                  // the control a lie mid-search; matches the view hides are
+                  // counted instead and announced under the table, with the
+                  // way to see them.
+                  && inView(pr.__seg);
+      // vw: would this phase have shown in ALL? Counted before the view is
+      // applied, so the note below can say what the reader is not seeing.
+      if (matchAll && !showP) hiddenByView++;
       pr.style.display = showP ? '' : 'none';
       if (showP) {
         visP++; visT += nMatch;
@@ -420,7 +462,14 @@
       // never be seen. `tr.task` survives the same pattern only because it has no
       // default display rule to fall back to.
       if (tfRow) tfRow.style.display = open ? 'table-row' : 'none';
-      tasks.forEach(function (t) { t.style.display = (open && t.__hit) ? '' : 'none'; });
+      tasks.forEach(function (t) {
+        var vis = open && t.__hit;
+        t.style.display = vis ? '' : 'none';
+        // ex: a detail row is visible only when its task is AND it was opened.
+        // Kept open across a filter on purpose — a reader who opened a task and
+        // then narrowed the table has not changed their mind about that task.
+        if (t.__detail) t.__detail.hidden = !(vis && t.__open);
+      });
       // "3 of 12 match" on a row that is closed and hiding its own evidence. Not
       // shown at rest, and not shown when everything matched — "12 of 12" is a
       // sentence that tells a reader nothing they did not already have.
@@ -431,14 +480,11 @@
         badge.hidden = !wanted;
       }
     });
-    // A segment header follows its rows: a header over nothing says nothing —
-    // except the collapsed archive's, whose whole job is to announce the rows
-    // it is hiding (the count rides in its own label), so at rest it stays.
+    // A segment header follows its rows: a header over nothing says nothing.
+    // (The archive's old exception — a header that stayed to announce what it
+    // was hiding — belonged to the toggle, and the view select says it now.)
     segRows.forEach(function (sh) {
-      var keep = (segVis[sh.__seg] || 0) > 0
-        || (sh.__seg === 'done' && archBtn && !archOpen && !anyFilter
-            && archN > 0);
-      sh.style.display = keep ? '' : 'none';
+      sh.style.display = (segVis[sh.__seg] || 0) > 0 ? '' : 'none';
     });
     bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
 
@@ -453,6 +499,18 @@
     // Filtered down to nothing, the table was an empty frame with no explanation
     // and no way back except undoing each control by hand.
     if (norow) norow.style.display = (anyFilter && visP === 0) ? 'table-row' : 'none';
+    // vw: what the view is keeping off screen, said plainly, with the way to
+    // see it. Silent when the view is already `all` — there is nothing outside it.
+    if (outsideRow) {
+      var show = hiddenByView > 0 && viewMode !== 'all';
+      outsideRow.hidden = !show;
+      outsideRow.style.display = show ? 'table-row' : 'none';
+      if (show && outsideN) {
+        outsideN.textContent = hiddenByView + (hiddenByView === 1
+          ? ' phase matches outside this view'
+          : ' phases match outside this view') + ' \u2014 ';
+      }
+    }
     // The toolbar copy appears the moment anything is filtering, so there is a way
     // back that does not depend on the table having rows left to draw it in.
     clearBtns.forEach(function (b) { b.hidden = !anyFilter; });
@@ -486,7 +544,7 @@
   }
   function cell(r, idx) { return r.cells[idx] ? r.cells[idx].textContent.trim() : ''; }
 
-  function wireSort(table, withinPhase) {
+  function wireSort(table, withinPhase, initial) {
     if (!table) return;
     var ths = table.querySelectorAll('thead th');
     [].forEach.call(ths, function (th, idx) {
@@ -528,8 +586,21 @@
           doSort();
         }
       });
+      // so (F-P-4): the table ARRIVES sorted — plan order, by id — and until
+      // now nothing said so. The marker appeared on the first click, which
+      // taught every reader that the column they were looking at was unsorted.
+      // Marked, not re-sorted: the rows are already in this order, and running
+      // the comparator at load would reorder a table that is correct (and
+      // would tear the phase/task grouping apart to do it).
+      if (initial && idx === 0) {
+        th.setAttribute('data-sort', 'asc');
+        th.setAttribute('aria-sort', 'ascending');
+        th.classList.add('sorted');
+      }
     });
   }
+
+  // --- wiring the controls the document already carries -----------------------
 
   // Attach behaviour to chips that are already in the document. They used to be
   // created here, which meant the filter UI simply did not exist for anything
@@ -1208,13 +1279,37 @@
     } catch (e) {}
   });
 
-  // The archive toggle (D1). State lives here, not in the hash: which way the
-  // archive folds is view furniture like the per-phase task chips, not a view
-  // someone would send as a link.
-  if (archBtn) archBtn.addEventListener('click', function () {
-    archOpen = !archOpen;
-    archBtn.setAttribute('aria-expanded', archOpen ? 'true' : 'false');
+  // ex (F-P-4): the per-task detail toggle. The compact row answers "where is
+  // this"; this opens the row that answers "what happened and who do I ask" —
+  // the full outcome above all, which the table can only show 70 characters of.
+  [].slice.call(document.querySelectorAll('.dtoggle')).forEach(function (b) {
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();          // the row itself is not a control
+      var row = b.closest('tr.task');
+      if (!row || !row.__detail) return;
+      row.__open = !row.__open;
+      row.__detail.hidden = !row.__open;
+      b.setAttribute('aria-expanded', row.__open ? 'true' : 'false');
+      b.setAttribute('aria-label', (row.__open ? 'Hide' : 'Show')
+        + ' details for ' + (b.getAttribute('data-dfor') || 'this task'));
+    });
+  });
+
+  // vw: the view select. Unlike the toggle it replaces, this IS part of the
+  // view someone would send as a link (and expect back after a reload), so it
+  // rides the fragment and the local fallback with the filters.
+  function setView(v) {
+    if (!VIEWS[v]) return;
+    viewMode = v;
+    if (viewSel && viewSel.value !== v) viewSel.value = v;
     refresh();
+  }
+  if (viewSel) {
+    viewSel.value = viewMode;
+    viewSel.addEventListener('change', function () { setView(viewSel.value); });
+  }
+  [].slice.call(document.querySelectorAll('[data-viewall]')).forEach(function (b) {
+    b.addEventListener('click', function () { setView('all'); });
   });
 
   // --- per-segment and per-section exports (D2) ------------------------------
@@ -1255,14 +1350,60 @@
   // Column names read once off the table's own header — the export must not
   // restate _present_columns, or the two would disagree the first time a
   // column appears.
+  // The MACHINE name of each optional column, from the header's own attribute
+  // rather than its words: the done header carries a "UTC" note beside the
+  // word, and a CSV keyed on rendered text would stop recognising the column
+  // the moment a header gained a second word (it did).
   var COLNAMES = grouped
     ? [].slice.call(grouped.querySelectorAll('thead th')).map(function (h) {
-        return h.textContent.trim();
+        return h.getAttribute('data-col') || h.textContent.trim();
       }).slice(3)
     : [];
+  // csv (F-P-4): the file carries the DATA, not what the cell happens to show.
+  // Three columns are lossy on screen and were being exported lossy: the commit
+  // cell shows nine characters (and, since the copy control landed, the word
+  // "Copy" inside its own text), the done cell shows minutes, and the outcome
+  // cell is cut at 70 characters. A spreadsheet is where someone re-derives
+  // things, so each of those exports its full value — read from the same place
+  // the reader can see it, the detail row.
+  function detailValue(t, key) {
+    var d = t.__detail;
+    if (!d) return '';
+    var ks = [].slice.call(d.querySelectorAll('.dt-k'));
+    for (var i = 0; i < ks.length; i++) {
+      if (ks[i].textContent.trim() === key) {
+        var v = ks[i].nextElementSibling;
+        return v ? v.textContent.trim() : '';
+      }
+    }
+    return '';
+  }
+  // An em dash is what a table prints where there is nothing; a data file says
+  // nothing by saying nothing. Every column goes through this.
+  function csvPlain(v) { return (v === '\u2014' || v === '-') ? '' : v; }
+  function csvCell(t, name, ci) {
+    if (name === 'commit') {
+      var b = t.querySelector('.shacopy');
+      return b ? b.getAttribute('data-copy') : '';
+    }
+    if (name === 'done') {
+      // The DETAIL row carries the whole stamp; the data-attribute is cut to
+      // the date on purpose (the range filter compares those as strings), and
+      // the cell is cut to the minute. A spreadsheet gets the seconds.
+      return detailValue(t, 'completed') || detailValue(t, 'started')
+        || t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
+    }
+    if (name === 'outcome') return detailValue(t, 'outcome') || csvPlain(cell(t, 3 + ci));
+    return csvPlain(cell(t, 3 + ci));
+  }
   function segCsv(seg) {
     var rows = [['phase', 'phase title', 'phase status',
-                 'task', 'task title', 'task status'].concat(COLNAMES)];
+                 'task', 'task title', 'task status'].concat(COLNAMES)
+      // ...plus everything the compact row moved into the detail. A CSV is the
+      // complete view by definition: a column that left the table must not
+      // leave the file with it.
+      .concat(['started', 'model', 'outcome', 'technical outcome', 'work item',
+               'owner', 'waits on'])];
     phaseRows.forEach(function (pr) {
       if (pr.__seg !== seg) return;
       var pid = pr.getAttribute('data-phase');
@@ -1272,14 +1413,27 @@
       var tasks = tasksOf(pid);
       if (!tasks.length) {   // a phase with no tasks is still a data row
         rows.push(head.concat(['', '', ''])
-          .concat(COLNAMES.map(function () { return ''; })));
+          .concat(COLNAMES.map(function () { return ''; }))
+          .concat(['', '', '', '', '', '', '']));
         return;
       }
       tasks.forEach(function (t) {
         // Machine statuses from the data attributes; prose from the cells.
         var line = head.concat([cell(t, 0), cell(t, 1),
                                 t.getAttribute('data-status') || '']);
-        for (var ci = 0; ci < COLNAMES.length; ci++) line.push(cell(t, 3 + ci));
+        for (var ci = 0; ci < COLNAMES.length; ci++) {
+          line.push(csvCell(t, COLNAMES[ci], ci));
+        }
+        // The four the table has no column for and the detail row does. A
+        // reader who opened the row to find them should not have to open
+        // fifty rows to tabulate them.
+        line.push(detailValue(t, 'started') || t.getAttribute('data-started') || '',
+                  detailValue(t, 'model') || t.getAttribute('data-model') || '',
+                  detailValue(t, 'outcome'),
+                  detailValue(t, 'technical'),
+                  detailValue(t, 'work item'),
+                  detailValue(t, 'owner'),
+                  detailValue(t, 'waits on'));
         rows.push(line);
       });
     });
@@ -1446,8 +1600,8 @@
     document.body.removeAttribute('data-printseg');
   });
 
-  wireSort(grouped, true);
-  wireSort(bugsTable, false);
+  wireSort(grouped, true, true);
+  wireSort(bugsTable, false, true);
   // Typing is a burst, not a series of questions. Five characters used to mean five
   // full passes over every row — half a second of blocked main thread on a
   // 200-phase plan — to show four intermediate results nobody reads. One pass once
@@ -1470,6 +1624,26 @@
   }
   // Restore what the link asked for BEFORE the first pass, so a shared URL renders
   // the view it names instead of rendering everything and then rearranging itself.
+  // A link WINS over the local copy: somebody sent it on purpose. With no link,
+  // the local copy is what this reader last had on screen.
+  if (!Object.keys(HASH).length) {
+    try {
+      var stored = localStorage.getItem(STORE_KEY);
+      if (stored) {
+        stored.split('&').forEach(function (pair) {
+          if (!pair) return;
+          var i = pair.indexOf('=');
+          var k = i < 0 ? pair : pair.slice(0, i);
+          var v = i < 0 ? '' : pair.slice(i + 1);
+          try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) {}
+        });
+      }
+    } catch (e) {}
+  }
+  if (HASH.v && VIEWS[HASH.v]) {
+    viewMode = HASH.v;
+    if (viewSel) viewSel.value = viewMode;
+  }
   if (q && HASH.q) q.value = HASH.q;
   if (HASH.ps) {
     phaseStatus = HASH.ps;

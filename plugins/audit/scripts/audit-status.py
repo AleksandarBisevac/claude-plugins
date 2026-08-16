@@ -163,7 +163,7 @@ def ready_tasks(manifest):
                 status[t["id"]] = t.get("status")
 
     def satisfied(refs):
-        return all(status.get(r) == "done" for r in (refs or []))
+        return all(status.get(r) in TERMINAL for r in (refs or []))
 
     out = []
     for ph in phases:
@@ -330,6 +330,15 @@ def discovery_block(project, home=None):
                 "error": (msg or type(exc).__name__)[:200]}
 
 
+# ca (F-P-4): the two ways a phase or task can be FINISHED. `done` is the work
+# landed; `cancelled` is the work will not be done — the feature was dropped, the
+# approach abandoned — and it is terminal in exactly the same sense. Readiness
+# treats a cancelled blocker as settled on purpose: a plan whose dropped work
+# still gates everything behind it deadlocks, and a deadlock nobody can clear is
+# a worse answer than a ready task worth a second look.
+TERMINAL = ("done", "cancelled")
+
+
 def rollup(manifest, findings, warnings, usage=None):
     """The machine-readable summary --json, render-report and the panel consume.
 
@@ -350,6 +359,11 @@ def rollup(manifest, findings, warnings, usage=None):
         "desiredOutcome": p.get("desiredOutcome"),
         "done": sum(1 for t in (p.get("tasks") or [])
                     if isinstance(t, dict) and t.get("status") == "done"),
+        # ca: counted separately, never folded into `done`. A bar that showed
+        # 5/5 for three landed tasks and two dropped ones would be a lie in the
+        # one direction that matters.
+        "cancelled": sum(1 for t in (p.get("tasks") or [])
+                         if isinstance(t, dict) and t.get("status") == "cancelled"),
         "total": sum(1 for t in (p.get("tasks") or []) if isinstance(t, dict)),
     } for p in phases]
     # group phases by each of their `area` tags (a phase with several tags counts
@@ -422,7 +436,7 @@ def unmet_refs(manifest):
     out = {}
     for ph in phases:
         pending = [r for r in (ph.get("blockedBy") or [])
-                   if status.get(r) != "done"]
+                   if status.get(r) not in TERMINAL]
         if ph.get("id") and pending:
             out[ph["id"]] = pending
         for t in ph.get("tasks") or []:
@@ -430,7 +444,7 @@ def unmet_refs(manifest):
                 continue
             waits = [r for r in list(t.get("blockedBy") or [])
                      + list(t.get("dependsOn") or [])
-                     if status.get(r) != "done"]
+                     if status.get(r) not in TERMINAL]
             # A task inherits its phase's gate: it cannot start while the phase
             # is blocked, and saying so is more useful than an empty column.
             waits += ["%s (phase)" % r for r in pending]
@@ -447,7 +461,7 @@ def unmet_refs(manifest):
 # every run. The model reads nothing here — this renders from the manifest that is
 # already loaded in this process, so nothing is re-read either.
 _MARKERS = {"done": "[x]", "in_progress": "[~]", "blocked": "[!]",
-            "pending": "[ ]"}
+            "pending": "[ ]", "cancelled": "[-]"}
 
 
 def _marker(status):
@@ -1161,6 +1175,33 @@ def _selftest():
         results.append(ok)
         print("%s %s%s" % ("PASS" if ok else "FAIL", name,
                            (" (%s)" % detail) if detail and not ok else ""))
+
+    # ca (F-P-4): cancelled is TERMINAL. A plan whose dropped work still gates
+    # everything behind it deadlocks — nothing is ready, and no command can make
+    # it ready without lying about what happened.
+    _ca = copy.deepcopy(_fixture())
+    _ca["phases"][0]["tasks"][0]["status"] = "cancelled"
+    _ca["phases"][0]["status"] = "cancelled"
+    _cas = summarize(_ca)
+    check("ca1 a task waiting on CANCELLED work becomes ready, rather than "
+          "waiting forever on something nobody will do",
+          "P2.1" in _cas["ready"], repr(_cas["ready"]))
+    check("ca2 ...and nothing lists it as still waiting",
+          "P2.1" not in unmet_refs(_ca), repr(unmet_refs(_ca)))
+    check("ca3 cancelled tasks are counted under their own status, never folded "
+          "into done",
+          _cas["tasks"]["byStatus"].get("cancelled") == 1
+          and _cas["tasks"]["byStatus"].get("done", 0)
+              == summarize(_fixture())["tasks"]["byStatus"].get("done", 0) - 1,
+          repr(_cas["tasks"]["byStatus"]))
+    check("ca4 the phase entry carries its cancelled count beside done/total, so "
+          "a progress bar can say 'and two were dropped' instead of rounding up",
+          _cas["phases"][0]["cancelled"] == 1
+          and _cas["phases"][0]["done"] + _cas["phases"][0]["cancelled"]
+              <= _cas["phases"][0]["total"], repr(_cas["phases"][0]))
+    check("ca5 the text view has a marker of its own for it - [x] would say the "
+          "work landed", _marker("cancelled") == "[-]"
+          and _marker("cancelled") != _marker("done"))
 
     # (r) readiness mirrors /audit's rule
     s = summarize(_fixture())

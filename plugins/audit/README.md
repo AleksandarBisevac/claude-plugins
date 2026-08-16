@@ -129,6 +129,42 @@ not paper over.
 |---|
 | [![the policy switchboard](../../docs/screenshots/panel-policy.png)](../../docs/screenshots/panel-policy.png) |
 
+The **Appearance** tab edits the look — of the panel *and* of every report rendered afterwards,
+because the two share one token layer. A theme is that layer as **data**: token values in a
+[DTCG](https://www.designtokens.org/tr/drafts/format/)-shaped JSON file, compiled into the
+stylesheet when a page is served. The CSS itself is never stored and never uploaded, and a theme
+can set values and nothing else — no rule, no `url()`, no `@import` — because a report is a file
+that gets emailed and published. Colours are edited in **light/dark pairs, side by side** (a
+colour set in one theme only vanishes in the other, and the sheet's own parity lint refuses it),
+the column you are currently viewing is marked *previewing* and repaints as you type — the panel
+IS the preview — and contrast is measured and **warned** about, never refused: your theme, your
+readers. The chart palette opens behind a deliberate unlock, since it is validated for
+colour-vision deficiency against these very surfaces. There are three ways back, and they are
+different things: **revert** one row, **undo** one step (the trail rides the file, so it survives
+a reload), or **reset**, which removes the theme file rather than writing one that happens to
+equal the default. Export hands over a `.json` to send someone (or a one-way `.css` to read);
+import takes only the `.json`, validated token by token.
+
+Beyond colours: **density** is one multiplier over the eight-step spacing scale (compact ·
+comfortable · spacious — type follows at a third of it, because a compact panel wants tighter
+air rather than smaller words), the **shell metrics** (`--nav-w`, `--shell-gap`) are ordinary
+tokens, and each view's **card order** is a list you move with ↑↓ — a card the theme never
+heard of keeps its place, so a theme written today cannot hide a card added later. Both are
+previewed live, on the tab they are about.
+
+Where it lives, first hit wins: `.claude/audit.theme.json` in the project (committed, so a team
+shares one look through git) → `~/.claude/audit.theme.json` (yours, everywhere) → the built-in
+Slate & Teal. `ui.theme` in the config overrides the search with a preset name or a path.
+**Save as…** keeps the current look under a name in `.claude/themes/<name>.json` *and* wears it;
+the **theme** menu lists the built-in plus everything saved there, and switching is a one-key
+config edit that leaves every file where it is. The default theme is read *out of* the shipped
+stylesheet and compiles back to it byte for byte — so installing this changes nothing on screen
+until you change a token.
+
+| Appearance (tokens, light and dark together, live) |
+|---|
+| [![the appearance tab](../../docs/screenshots/panel-appearance.png)](../../docs/screenshots/panel-appearance.png) |
+
 Every ⓘ in the panel — and the **Help** button in the topbar — opens the **help drawer**: the
 field's dotted path, what it accepts, the default the hooks really fall back to, and the concept
 page behind it, read against the form rather than instead of it. All of it is
@@ -273,7 +309,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
-| `/audit:task` | `add "<title>" [--phase <id>]` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. |
+| `/audit:task` | `add "<title>" [--phase <id>] \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>"` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
 | `/audit:sync` | `push [bugs\|tasks\|all] \| pull \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
 
@@ -385,7 +421,7 @@ economics, and a breakdown by model, author and **agent** (orchestrator vs. suba
 with a daily trend. Nothing is generated and nothing is called; the data was already on
 your disk, unread.
 
-Every row will say **`unattributed`**, and that is the useful part. Native tooling can
+Every row will say **Uncategorized**, and that is the useful part. Native tooling can
 tell you what a *session* or a *model* cost. Tying spend to a **phase and a task** needs
 a plan to tie it to — which is what everything below builds, and the comparison a
 date-range dashboard structurally cannot make.
@@ -683,7 +719,7 @@ config and no prior runs — nothing is generated and no agent is called:
 /audit:usage --backfill               # free: past spend, from transcripts already on disk
 ```
 
-Expect every row to read `unattributed`. Native tooling can price a *session* or a
+Expect every row to read **Uncategorized**. Native tooling can price a *session* or a
 *model*; attributing spend to a **phase and a task** requires a plan to attribute it to,
 which is what the manifest is for. Once phases run:
 
@@ -705,7 +741,7 @@ USAGE  repo acme-store   window last 30d (2026-07-07 -> 2026-08-06)
   BY PHASE                    tokens     cost   msgs  share
   P4   Report accessibility   29.8M    $27.87    198  [##########........]  24%
   P1   Manifest sharding      26.2M    $25.03    176  [#########.........]  21%
-  --   unattributed          921.6K     $5.70     31  [..................]  <1%
+  Uncategorized             921.6K     $5.70     31  [..................]  <1%
 ```
 
 **How the numbers are obtained.** Claude Code does not hand token counts to hooks, but it does
@@ -722,9 +758,9 @@ over-reports spend by roughly 2.4x. The ledger dedups by message id, and a selft
 | task | each subagent has its own transcript, labelled with the task id | exact, even for parallel tasks |
 | phase | the session that claimed the phase (`phase.claim.sessionId`) | orchestrator spend |
 | window | exactly one task's `startedAt`/`completedAt` window contains the message | best-effort |
-| unattributed | everything else — ad-hoc edits, `#no-plan`, pre-install sessions | still counted |
+| unattributed | everything else — ad-hoc edits, `#no-plan`, pre-install sessions (shown as **Uncategorized**) | still counted |
 
-A repo that has not run a phase since installing will show everything as `unattributed`. That is
+A repo that has not run a phase since installing will show everything as **Uncategorized**. That is
 the design, not a failure: off-pipeline work is exactly what you would otherwise never see.
 
 **Month by month.** One function (`monthly_activity`) rolls the calendar up — ledger spend beside
@@ -893,9 +929,15 @@ calendar-navigated heatmap** driven by the persisted filters, and **Export CSV**
 exactly the rows behind the current view. The report adds a **global filter row** in its sticky
 top bar (author, area, from/to date range — every choice a shareable `#` link that prints as a
 named line), renders **Ready now as a definition list** (id, title, area chips, what cleared it),
-splits long plans into **active / pending / done-archive segments** with per-segment **CSV
-export, chart PNG export (redrawn from data) and print-to-PDF of one segment**, and shows each
-area's registered **owner** beside its tag — advisory, the panel's own wording.
+splits long plans into **active / pending / archived segments** behind a named **View**
+(active & pending, archived, all — the archive holds both terminal states, `done` and
+`cancelled`) with per-segment **CSV export, chart PNG export (redrawn from data) and
+print-to-PDF of one segment**, and shows each area's registered **owner** beside its tag —
+advisory, the panel's own wording. Each task row **opens in place** for the parts a table
+cannot hold: the full outcome, both timestamps, the whole commit sha (one press copies it),
+the model, the work item and what the task waits on. A search that matches rows the current
+view hides says so, and offers the one press that shows them; the view and every filter
+survive a reload, including over `file://` where the URL fragment cannot be written.
 
 ## Audit trail
 
@@ -1184,7 +1226,20 @@ until materialized) · `deferred` · `proposals[]` (parked phases — full phase
 `/audit:init` wrote but the user has not approved yet; `/audit:propose` materializes or drops
 them, and their ids stay reserved while parked). A task carries `model`, `skills`,
 `blockedBy`/`dependsOn` (cycle-checked), `files`, `tests` (`mode` + `add` + `gate`), `risk`,
-optional `bugId`, and orchestrator-written `status`/`commit`/`outcome`. A phase runs on an
+optional `bugId`, and orchestrator-written `status`/`commit`/`outcome`.
+
+A phase or task is `pending`, `in_progress`, `blocked`, `done` or **`cancelled`**. The last
+two are TERMINAL and the report files both under **Archived**: `done` is the work landed,
+`cancelled` is the work will not be done — the feature was dropped, the approach abandoned,
+the phase closes with whatever landed. It is the phase/task twin of a bug's `wontfix`, and
+nothing is deleted to express it (the history, the commits and the outcome stay). Readiness
+treats a cancelled blocker as settled, so a plan never deadlocks on work nobody will do, and
+a task that was waiting on one becomes ready — worth a look before it runs. Set it with
+`/audit:task cancel <id> --reason "<why>"`, which records the reason, the moment and a
+journal row, and cascades to the work still open inside a cancelled phase; `/audit:sync`
+maps it to the tracker's own word (`Removed` on Azure DevOps).
+
+A phase runs on an
 `audit/<id>-<slug>` branch, commits per task, and merges into `meta.developmentBranch` after
 sign-off (ff, or `--no-ff` with your confirmation when the branch advanced).
 

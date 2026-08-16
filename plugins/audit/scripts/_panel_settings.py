@@ -429,7 +429,13 @@ def _selftest():
     # second, dedicated checkbox would be two controls writing one gate, free to
     # disagree about it. The check below pins that the planGate control exists,
     # so this exemption cannot outlive the control that justifies it.
-    _settings_exempt = {"policy", "enforce"}
+    #
+    # `ui` (th, F-P-6) is exempt for the policy reason, not the enforce one: it
+    # HAS a surface, and that surface is the Appearance tab — a token editor
+    # with a live preview, light/dark pairs and a contrast check. A text field
+    # here holding a theme name beside it would be a second control writing the
+    # same key, free to disagree with the tab about which theme is on.
+    _settings_exempt = {"policy", "enforce", "ui"}
     _expected = {k for k in _vc.KNOWN_ROOT
                  if k not in _containers and k not in _settings_exempt}
     for _parent, _keys in _containers.items():

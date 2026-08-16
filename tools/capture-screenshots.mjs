@@ -31,7 +31,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, statSync,
-         writeFileSync } from 'node:fs';
+         writeFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -411,6 +411,13 @@ async function assertOverviewWorks(page) {
       firstPhase: (rollup.phases || [])[0] ? (rollup.phases || [])[0].id : null,
     };
   });
+  // ov (F-P-5): Overview follows the report's table, so it opens on a VIEW —
+  // active & pending — and the archived phases are off screen by design. Every
+  // count below is therefore taken against the view the tab is actually in,
+  // computed the same way the client computes it. Switch to `all` first, so the
+  // filter/search assertions keep measuring filters rather than the view.
+  await page.evaluate(() => { OVF.view = 'all'; renderOver(); });
+  await page.waitForTimeout(200);
   const rows = () => page.locator('#over .ovrow:visible').count();
 
   const pills = await page.locator('#over .ovpill').count();
@@ -491,9 +498,49 @@ async function assertOverviewWorks(page) {
     }
   }
 
-  // A phase row is a control: it opens that phase in Composition, pre-filtered.
+  // ov (F-P-5): a phase row OPENS IN PLACE. It used to leave for Composition —
+  // a tab that edits tasks, models and skills — so "show me this phase" landed
+  // the reader in a form with their filters behind them. Composition is still
+  // reachable, by a named press inside the detail.
   if (facts.firstPhase) {
+    const firstId = await page.evaluate(() =>
+      (document.querySelector('#over .ovrow') || {}).getAttribute
+        ? document.querySelector('#over .ovrow').getAttribute('data-phase') : null);
     await page.locator('#over .ovrow').first().click();
+    await page.waitForTimeout(250);
+    const inPlace = await page.evaluate((pid) => {
+      const row = document.querySelector(`#over .ovrow[data-phase="${pid}"]`);
+      const det = document.querySelector(`#over [data-ovdetail="${pid}"]`);
+      const tasks = ((STATE.composition || {}).tasks || [])
+        .filter((t) => t.phaseId === pid).length;
+      return {
+        stayed: !document.getElementById('over').classList.contains('hidden'),
+        expanded: row ? row.getAttribute('aria-expanded') : null,
+        detail: !!det,
+        rows: det ? det.querySelectorAll('[data-ovtask]').length : -1,
+        want: tasks,
+        cols: det ? [...det.querySelectorAll('th')].map((h) => h.textContent) : [],
+        edit: !!(det && det.querySelector('[data-ovedit]')),
+      };
+    }, firstId);
+    if (!inPlace.stayed || inPlace.expanded !== 'true' || !inPlace.detail) {
+      fail(`overview: clicking a phase row did not open it in place `
+         + `(${JSON.stringify(inPlace)})`);
+    } else if (inPlace.rows !== inPlace.want) {
+      fail(`overview: the detail lists ${inPlace.rows} tasks for a phase with `
+         + `${inPlace.want}`);
+    } else if (inPlace.cols.join(',') !== 'id,title,status,risk,commit,done (UTC)') {
+      fail(`overview: the detail's columns are ${JSON.stringify(inPlace.cols)} — `
+         + `it is meant to follow the report's table`);
+    } else if (!inPlace.edit) {
+      fail('overview: the detail offers no way to Composition — the click used to '
+         + 'go there, so removing it without a named replacement strands the reader');
+    } else {
+      note(`overview: a phase opens in place with its ${inPlace.rows} tasks in the `
+         + `report's columns, and Composition is a named press`);
+    }
+    // ...and that named press still does what the click used to.
+    await page.locator(`#over [data-ovedit="${firstId}"]`).click();
     await page.waitForTimeout(300);
     const landed = await page.evaluate((pid) => {
       const visible = [...document.querySelectorAll('#comp tr.phase')]
@@ -516,18 +563,74 @@ async function assertOverviewWorks(page) {
       };
     }, facts.firstPhase);
     if (landed.hidden || landed.hash !== '#/comp') {
-      fail(`overview: clicking a phase row did not open Composition (hash ${landed.hash})`);
+      fail(`overview: "Edit in Composition" did not open Composition (hash ${landed.hash})`);
     } else if (landed.q !== facts.firstPhase || landed.rows >= landed.total || !landed.open) {
       fail(`overview: Composition did not open on ${facts.firstPhase} — search is `
          + `"${landed.q}", ${landed.rows}/${landed.total} phase rows visible, `
          + `target row expanded: ${landed.open}`);
     } else {
-      note(`overview: a phase row opens Composition filtered to ${facts.firstPhase} `
+      note(`overview: "Edit in Composition" opens it filtered to ${facts.firstPhase} `
          + `(${landed.rows}/${landed.total} rows)`);
     }
     await page.fill('#comp input[type=search]', '');
     await page.click('.tab[data-t=over]');
     await page.waitForTimeout(200);
+    await page.evaluate((pid) => { OVF.open[pid] = false; renderOver(); }, firstId);
+    await page.waitForTimeout(150);
+  }
+
+  // The view itself: the default hides the archive, and a match it hides is
+  // announced rather than silently dropped — the report's rule, same words.
+  {
+    const v = await page.evaluate(() => {
+      OVF.view = 'active'; OVF.q = ''; renderOver();
+      const seg = (st) => (st === 'done' || st === 'cancelled') ? 'archived'
+        : (st === 'in_progress' || st === 'blocked') ? 'active' : 'pending';
+      const all = STATE.rollup.phases || [];
+      return {
+        want: all.filter((p) => seg(p.status) !== 'archived').length,
+        archived: all.filter((p) => seg(p.status) === 'archived').length,
+        sel: !!document.querySelector('#over [data-ovview]'),
+      };
+    });
+    await page.waitForTimeout(200);
+    const shown = await rows();
+    if (!v.sel) {
+      fail('overview: no view select — the tab it must follow has one');
+    } else if (shown !== v.want) {
+      fail(`overview: the Active view shows ${shown} phases, expected ${v.want} `
+         + `(${v.archived} archived)`);
+    } else {
+      note(`overview: the Active view shows ${shown} of ${v.want + v.archived} phases`);
+    }
+    if (v.archived) {
+      // Search for an archived phase from the Active view: it must say so.
+      const aid = await page.evaluate(() => {
+        const seg = (st) => (st === 'done' || st === 'cancelled') ? 'archived' : '';
+        const p = (STATE.rollup.phases || []).find((x) => seg(x.status) === 'archived');
+        return p ? p.id : null;
+      });
+      await page.fill('#ovq', aid);
+      await page.waitForTimeout(300);
+      const note1 = await page.evaluate(() => {
+        const n = document.querySelector('#over [data-ovoutside]');
+        return n ? n.textContent : null;
+      });
+      if (!note1 || !/outside this view/.test(note1)) {
+        fail(`overview: searching for the archived phase ${aid} from the Active `
+           + `view reports nothing about it (${JSON.stringify(note1)})`);
+      } else {
+        await page.locator('#over [data-ovviewall]').click();
+        await page.waitForTimeout(250);
+        const found = await rows();
+        if (!found) fail('overview: "Show all phases" did not reveal the match');
+        else note(`overview: a match outside the view is announced, and one press shows it`);
+      }
+      await page.fill('#ovq', '');
+      await page.waitForTimeout(200);
+    }
+    await page.evaluate(() => { OVF.view = 'all'; renderOver(); });
+    await page.waitForTimeout(150);
   }
 }
 
@@ -2740,6 +2843,12 @@ async function assertLiveData(page, project) {
   await page.evaluate((a) => setF('author', a), who);
   await page.evaluate((p) => openInComp(p), pid);
   await page.waitForTimeout(300);
+  // ov (F-P-5): Overview opens on the ACTIVE view now, and the phase this step
+  // writes to is a finished one — off screen there by design. The view is a
+  // precondition of what this step measures (does a disk write reach the
+  // screen), not part of it, so it is set explicitly rather than assumed.
+  await page.evaluate(() => { OVF.view = 'all'; renderOver(); });
+  await page.waitForTimeout(150);
 
   const idx = JSON.parse(readFileSync(path.join(project, 'audit-plan.json'), 'utf8'));
   const stub = (idx.phases || []).find((p) => p.id === pid);
@@ -2808,6 +2917,241 @@ async function assertLiveData(page, project) {
   }
   // Leave the page clean for whatever runs after.
   await page.evaluate(() => { renderComp(); clearAll(); });
+  await page.waitForTimeout(200);
+}
+
+/* ---- F-P-2 (uc): the empty usage bucket is named, and findable ---------------
+ *
+ * "--" is the ledger's storage key for spend with no phase or task behind it.
+ * It reached the screen as those two characters in four places (the ranked
+ * list said "-- unattributed", the browse table's id column, the chart legend
+ * and the filter chips said "--"), which reads as a missing value rather than
+ * as the answer it is. The word now comes from the shared LABELS map — one
+ * spelling for the panel, the report and the CLI — and wears the warn role so
+ * a reader can find how much of the bill has no plan behind it.
+ *
+ * Two oracles, because the failures look nothing alike: nothing rendered in the
+ * Usage tab may READ as the storage key, and the label's computed colour must
+ * be the warn token's (a class that exists but resolves to the body colour is
+ * the silent half).
+ */
+async function assertUncategorizedNamed(page) {
+  await page.click('.tab[data-t=usage]');
+  await page.waitForTimeout(400);
+  const seen = await page.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--warn)';
+    document.body.appendChild(probe);
+    const warn = getComputedStyle(probe).color;
+    probe.remove();
+    // Every leaf that carries text in the Usage tab, plus the SVG legend.
+    const raw = [];
+    document.querySelectorAll('#usage *').forEach((n) => {
+      if (n.children.length) return;
+      const t = (n.textContent || '').trim();
+      if (t === '--' || t === '-- unattributed' || t === 'unattributed') {
+        raw.push((n.className || '') + ':' + t);
+      }
+    });
+    const marks = [...document.querySelectorAll('#usage .uncat')];
+    return {
+      raw, warn,
+      count: marks.length,
+      texts: [...new Set(marks.map((m) => m.textContent.trim()))],
+      colours: [...new Set(marks.map((m) => getComputedStyle(m).color))],
+    };
+  });
+  if (seen.raw.length) {
+    fail(`usage: ${seen.raw.length} element(s) in the Usage tab still read as the `
+       + `ledger's storage key rather than a word — ${JSON.stringify(seen.raw.slice(0, 4))}`);
+  } else if (!seen.count) {
+    fail('usage: nothing in the Usage tab is marked .uncat — the fixture ledger '
+       + 'carries unattributed rows, so the empty bucket must be on screen and '
+       + 'named; a check that finds neither the key nor the label is blind');
+  } else if (seen.texts.length !== 1 || !seen.texts[0]) {
+    fail(`usage: the empty bucket is spelled ${JSON.stringify(seen.texts)} — one `
+       + `fact, one word`);
+  } else if (seen.colours.some((c) => c !== seen.warn)) {
+    fail(`usage: the "${seen.texts[0]}" label computes to ${JSON.stringify(seen.colours)} `
+       + `but the warn role is ${seen.warn} — the class is on the element and the `
+       + `colour is not reaching it`);
+  } else {
+    note(`usage: spend with no plan behind it reads "${seen.texts[0]}" in `
+       + `${seen.count} place(s), painted in the warn role`);
+  }
+}
+
+/* ---- F-P-1 (co): the combo menu is an overlay, and an open one is not a target -
+ *
+ * Four faces of one report ("the composition dropdown flickers, sometimes shows,
+ * sometimes not, and moves the layout"), each reproduced in a real browser
+ * before the fix and each asserted on its CAUSE rather than its symptom —
+ * headless hover is lazy (it applies on the next pointer move, not the first),
+ * so a check that only clicked would stay green under the bug:
+ *
+ *   a. `tr.phase:hover>td` carried a `filter`, which makes the td the containing
+ *      block of every position:fixed descendant — the review-model menu, a DOM
+ *      child of that td, jumped ~550px on hover and grew the table frame's
+ *      scroll box (scrollbars = the "layout change"). The menu now lives on
+ *      <body>, the way #hinttip already does: no ancestor can trap, clip or
+ *      restack it. Asserted: hover the row → menu rect unchanged, frame's
+ *      scroll box unchanged, and the menu's parent IS document.body.
+ *   b. A moved disk stamp re-rendered a CLEAN Composition (renderComp resets
+ *      the tab), and the ledger stamp moves after every Claude turn in the
+ *      project — so an open menu or a focused field with nothing typed yet was
+ *      wiped every ≤5s. The refresh now defers while a menu is open or a
+ *      control is focused, exactly as it defers for an open dialog, and lands
+ *      once the interaction ends. Asserted with a real ledger write.
+ *   c. After a choice (or Escape) the input kept focus and a click on it did
+ *      nothing — the menu only rendered on focus/input. A click reopens it.
+ *   d. A mousedown on the menu's own padding/footer/scrollbar blurred the input
+ *      and closed the menu 150ms later. The menu swallows mousedown.
+ */
+async function assertComboOverlay(page, project) {
+  await page.evaluate(() => { COMPF.q = ''; COMPF.status = ''; COMPF.needs = false;
+    if (COMPF.apply) COMPF.apply(); showTab('comp'); });
+  await page.waitForTimeout(250);
+  const REV = '#comp tr.phase .comp-review .combo>input';
+  const geo = () => page.evaluate((sel) => {
+    const inp = document.querySelector(sel);
+    const menu = [...document.querySelectorAll('.combo-menu')]
+      .find((m) => !m.classList.contains('hidden')) || null;
+    const wrap = document.querySelector('#comp .comptblwrap');
+    const r = inp.getBoundingClientRect();
+    const m = menu ? menu.getBoundingClientRect() : null;
+    return {
+      open: !!menu, onBody: !!menu && menu.parentElement === document.body,
+      tdFilter: getComputedStyle(inp.closest('td')).filter,
+      inputBottom: Math.round(r.bottom), inputLeft: Math.round(r.left),
+      menuTop: m ? Math.round(m.top) : null, menuLeft: m ? Math.round(m.left) : null,
+      frame: [wrap.scrollWidth, wrap.scrollHeight, wrap.clientWidth, wrap.clientHeight],
+    };
+  }, REV);
+  // a. open with the pointer parked away, then hover the phase row itself.
+  await page.mouse.move(2, 2);
+  await page.focus(REV);
+  await page.waitForTimeout(200);
+  const g0 = await geo();
+  if (!g0.open) {
+    fail('combo: focusing the phase review-model input opened no menu');
+    return;
+  }
+  const rowBox = await page.locator('#comp tr.phase').first().boundingBox();
+  await page.mouse.move(rowBox.x + 160, rowBox.y + rowBox.height / 2);
+  await page.mouse.move(rowBox.x + 162, rowBox.y + rowBox.height / 2);   // hover is lazy
+  await page.waitForTimeout(200);
+  const g1 = await geo();
+  const moved = g1.menuTop !== g0.menuTop || g1.menuLeft !== g0.menuLeft;
+  const grew = JSON.stringify(g1.frame) !== JSON.stringify(g0.frame);
+  if (!g0.onBody) {
+    fail(`combo(a): the open menu's parent is not <body> — it hangs inside the `
+       + `phase row, one filtered/transformed ancestor away from being demoted `
+       + `to absolute (menu at ${g0.menuTop},${g0.menuLeft} under input bottom `
+       + `${g0.inputBottom})`);
+  } else if (moved || grew) {
+    fail(`combo(a): hovering the phase row (td filter=${JSON.stringify(g1.tdFilter)}) `
+       + `moved the menu ${g0.menuTop},${g0.menuLeft} → ${g1.menuTop},${g1.menuLeft} `
+       + `and/or grew the table frame ${JSON.stringify(g0.frame)} → `
+       + `${JSON.stringify(g1.frame)} — the row is the menu's containing block`);
+  } else if (Math.abs(g1.menuTop - g1.inputBottom) > 12 || Math.abs(g1.menuLeft - g1.inputLeft) > 2) {
+    fail(`combo(a): the menu sits at ${g1.menuTop},${g1.menuLeft} for an input whose `
+       + `bottom/left is ${g1.inputBottom},${g1.inputLeft} — not under its input`);
+  } else {
+    note(`combo(a): the phase review-model menu lives on <body>, stays at `
+       + `${g1.menuTop},${g1.menuLeft} under hover, and the table frame does not grow`);
+  }
+  // d. a mousedown on the menu's padding (not an item) must not close it.
+  const pad = await page.evaluate(() => {
+    const m = [...document.querySelectorAll('.combo-menu')]
+      .find((x) => !x.classList.contains('hidden'));
+    const r = m.getBoundingClientRect();
+    return { x: r.left + 2, y: r.top + 2 };
+  });
+  await page.mouse.move(pad.x, pad.y);
+  await page.mouse.down(); await page.mouse.up();
+  await page.waitForTimeout(300);
+  const dRes = await page.evaluate((sel) => ({
+    open: !![...document.querySelectorAll('.combo-menu')].find((m) => !m.classList.contains('hidden')),
+    focused: document.activeElement === document.querySelector(sel) }), REV);
+  if (!dRes.open || !dRes.focused) {
+    fail(`combo(d): a mousedown on the menu's own padding closed it (open=${dRes.open}, `
+       + `input focused=${dRes.focused}) — a scrollbar drag or a stray click inside `
+       + `the menu blurs the input and the menu goes with it`);
+  } else {
+    note('combo(d): a mousedown inside the menu (not on an item) keeps it open and the input focused');
+  }
+  // c. choose by keyboard, then click the still-focused input: it must reopen.
+  //    Independent of (d): the input is blurred and re-focused first, so a menu
+  //    (d) closed does not decide this leg.
+  await page.mouse.move(2, 2);
+  await page.evaluate((sel) => { const i = document.querySelector(sel); i.blur(); }, REV);
+  await page.waitForTimeout(250);
+  await page.focus(REV);
+  await page.waitForTimeout(200);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  const chosen = await page.evaluate((sel) => ({
+    value: document.querySelector(sel).value,
+    open: !![...document.querySelectorAll('.combo-menu')].find((m) => !m.classList.contains('hidden')),
+    focused: document.activeElement === document.querySelector(sel) }), REV);
+  const revBox = await page.locator(REV).first().boundingBox();
+  await page.mouse.click(revBox.x + revBox.width / 2, revBox.y + revBox.height / 2);
+  await page.waitForTimeout(250);
+  const cRes = await page.evaluate(() =>
+    !![...document.querySelectorAll('.combo-menu')].find((m) => !m.classList.contains('hidden')));
+  if (!chosen.value || chosen.open || !chosen.focused) {
+    fail(`combo(c): the keyboard choice landed as ${JSON.stringify(chosen)} — `
+       + `expected a value, a closed menu and a still-focused input`);
+  } else if (!cRes) {
+    fail('combo(c): after choosing, a click on the still-focused input did not '
+       + 'reopen the menu — it only renders on focus/input, so the reader has to '
+       + 'type or leave and come back');
+  } else {
+    note(`combo(c): after choosing "${chosen.value}", a click on the input reopens the menu`);
+  }
+  // b. a ledger write while the menu is open must NOT tear the tab down under
+  //    the reader — and must land once the interaction ends.
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { renderComp(); });   // drop the choice above
+  await page.waitForTimeout(200);
+  await page.evaluate(async () => { await pollRunStatus(); });   // adopt the current stamp
+  await page.waitForTimeout(200);
+  const handle = await page.$(REV);
+  await page.mouse.move(2, 2);
+  await handle.focus();
+  await page.waitForTimeout(150);
+  const led = path.join(project, '.claude', 'usage');
+  const files = readdirSync(led).filter((f) => f.endsWith('.jsonl')).sort();
+  if (!files.length) {
+    fail(`combo(b): no ledger file under ${led} to move the stamp with`);
+  } else {
+    appendFileSync(path.join(led, files[files.length - 1]), '\n');   // blank line: skipped by the reader
+    await page.waitForTimeout(6500);   // > one 5s poll
+    const held = await page.evaluate((sel) => ({
+      open: !![...document.querySelectorAll('.combo-menu')].find((m) => !m.classList.contains('hidden')),
+      focused: document.activeElement === document.querySelector(sel) }), REV);
+    held.sameNode = await handle.evaluate((n) => document.contains(n));
+    if (!held.sameNode || !held.open || !held.focused) {
+      fail(`combo(b): a ledger write with the menu open re-rendered Composition `
+       + `(same input node=${held.sameNode}, menu open=${held.open}, focused=${held.focused}) `
+       + `— the disk refresh does not defer for an open combo, so every Claude turn `
+       + `in the project tears the tab down under the reader`);
+    } else {
+      // ...and the deferred refresh must land once the reader lets go.
+      await page.evaluate(() => document.activeElement && document.activeElement.blur());
+      await page.waitForTimeout(6500);
+      const landed = !(await handle.evaluate((n) => document.contains(n)));
+      if (!landed) {
+        fail('combo(b): the deferred refresh never landed after the input was blurred '
+           + '— the stamp move was swallowed, not deferred');
+      } else {
+        note('combo(b): a ledger write is deferred while the combo is open, and lands '
+           + 'once the reader lets go');
+      }
+    }
+  }
+  await page.evaluate(() => { renderComp(); });
   await page.waitForTimeout(200);
 }
 
@@ -3618,6 +3962,297 @@ async function assertDeadPatternNote(page, cfgPath) {
  * shot rather than tidied up per step, so the shot that WANTS one says so and
  * every other shot is guarded by default.
  */
+/* ---- F-P-6 (th): Appearance — the look, edited as tokens ---------------------
+ *
+ * The panel and the report are one visual system: a single token layer that the
+ * server compiles by substituting values into the stylesheet. This tab edits
+ * those values. Three things only a browser can prove, and each is the whole
+ * point of the feature:
+ *
+ *   the PREVIEW is real — a colour typed here repaints the panel it is typed
+ *   into, so it is judged on the thing it colours, not on a swatch;
+ *   the CHANGE COUNT is the theme minus the default, computed rather than
+ *   remembered, so it survives a reload and a file somebody else wrote;
+ *   the WAY BACK works — revert one row, and the page is wearing the default
+ *   again with nothing left behind on the root element.
+ *
+ * The write path is deliberately NOT driven here: it writes a file into the
+ * fixture, and the writer's own refusals (an unknown token, a value that is not
+ * a value) are pinned in _panel_write's selftest where they can be exhaustive.
+ */
+async function assertAppearanceWorks(page) {
+  await page.click('.tab[data-t=look]');
+  await page.waitForTimeout(350);
+  const shape = await page.evaluate(() => ({
+    groups: [...document.querySelectorAll('#look [data-thgroup]')]
+      .map((g) => g.getAttribute('data-thgroup')),
+    rows: document.querySelectorAll('#look [data-thtoken]').length,
+    accentRow: !!document.querySelector('#look [data-thtoken="--accent"]'),
+    // The chart palette is locked until asked twice.
+    chartsOpen: !!document.querySelector('#look [data-thgroup=charts] [data-thtoken]'),
+    unlock: !!document.querySelector('#look [data-thunlock]'),
+    count: (document.querySelector('#look [data-thcount]') || {}).textContent,
+    source: (document.querySelector('#look [data-thsrc]') || {})
+      .getAttribute && document.querySelector('#look [data-thsrc]').getAttribute('data-thsrc'),
+  }));
+  if (!shape.accentRow || shape.rows < 20) {
+    fail(`appearance: the tab lists ${shape.rows} token row(s) and `
+       + `${shape.accentRow ? 'has' : 'has no'} --accent — it is meant to carry the `
+       + `whole editable vocabulary`);
+    return;
+  }
+  if (shape.chartsOpen || !shape.unlock) {
+    fail('appearance: the chart palette is editable without asking — it is '
+       + 'validated for colour-vision deficiency against these surfaces, so it '
+       + 'opens deliberately or not at all');
+  } else {
+    note(`appearance: ${shape.rows} tokens across ${shape.groups.length} groups, `
+       + `charts locked behind an unlock, wearing "${shape.source}"`);
+  }
+
+  // The preview: type a colour, and the PANEL wears it. Into the column that is
+  // LIVE — the preview paints the mode the reader is in, and the table says
+  // which that is; typing into the other one correctly changes nothing.
+  const live = await page.evaluate(() =>
+    (document.querySelector('#look [data-thlive]') || {}).getAttribute('data-thlive'));
+  const before = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  const cell = (token, mode) =>
+    `#look [data-thtoken="${token}"] input#th-${token.slice(2)}-${mode}`;
+  await page.fill(cell('--accent', live), '#b5179e');
+  await page.waitForTimeout(300);
+  const painted = await page.evaluate(() => ({
+    accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+    inline: document.documentElement.style.getPropertyValue('--accent').trim(),
+    count: (document.querySelector('#look [data-thcount]') || {}).textContent,
+    painted: getComputedStyle(document.querySelector('.tab.on')).color,
+  }));
+  if (painted.accent !== '#b5179e' || painted.inline !== '#b5179e') {
+    fail(`appearance: typing a colour into the LIVE (${live}) column did not `
+       + `reach the page (--accent is "${painted.accent}", inline `
+       + `"${painted.inline}", was "${before}") — the preview is the panel `
+       + `itself, or it is not a preview`);
+  } else if (!/change/.test(painted.count || '')) {
+    fail(`appearance: the page repainted but the change count says `
+       + `"${painted.count}"`);
+  } else {
+    note(`appearance: a colour typed into the live ${live} column repaints the `
+       + `panel (${before} → ${painted.accent}) and is counted`);
+  }
+
+  // ...and the way back leaves nothing behind.
+  await page.click(`#look [data-threvert="--accent|${live}"]`);
+  await page.waitForTimeout(300);
+  const back = await page.evaluate(() => ({
+    accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+    inline: document.documentElement.style.getPropertyValue('--accent').trim(),
+    count: (document.querySelector('#look [data-thcount]') || {}).textContent,
+  }));
+  if (back.accent !== before || back.inline !== '') {
+    fail(`appearance: reverting left --accent at "${back.accent}" with inline `
+       + `"${back.inline}" — a revert must clear the property, not overwrite it`);
+  } else if (!/no changes/.test(back.count || '')) {
+    fail(`appearance: after reverting the only change, the count says "${back.count}"`);
+  } else {
+    note('appearance: revert puts the token back and clears the override');
+  }
+
+  // Contrast is reported, and never in the way of the reader's own decision.
+  await page.fill(cell('--text', live), live === 'dark' ? '#222222' : '#dddddd');
+  // The tab rebuilds on a debounce (a colour picker fires per pixel dragged),
+  // so this waits for the rebuild rather than for a duration.
+  await page.waitForFunction(
+    () => document.querySelectorAll('#look [data-thwarn]').length > 0,
+    null, { timeout: 4000 }).catch(() => {});
+  const warned = await page.evaluate(() => ({
+    warns: [...document.querySelectorAll('#look [data-thwarn]')].map((w) => w.textContent),
+    saveEnabled: !document.querySelector('#look [data-thsave]').disabled,
+  }));
+  if (!warned.warns.some((w) => /below/.test(w))) {
+    fail('appearance: an unreadable text colour drew no contrast warning');
+  } else if (!warned.saveEnabled) {
+    fail('appearance: the contrast warning disabled Save — it is a warning, not a gate');
+  } else {
+    note(`appearance: an unreadable pair is named (${warned.warns.length} warning(s)) `
+       + `and Save stays available — the reader's own call`);
+  }
+  await page.click(`#look [data-threvert="--text|${live}"]`);
+  await page.waitForTimeout(250);
+
+  // Density: one press, and the panel's own spacing scale moves. Measured on a
+  // computed token rather than on a screenshot — "it looks tighter" is not an
+  // assertion.
+  const sp0 = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--sp-3').trim());
+  await page.click('#look [data-thdensity=compact]');
+  await page.waitForTimeout(350);
+  const sp1 = await page.evaluate(() => ({
+    sp: getComputedStyle(document.documentElement).getPropertyValue('--sp-3').trim(),
+    pressed: document.querySelector('#look [data-thdensity=compact]')
+      .getAttribute('aria-pressed'),
+    counted: (document.querySelector('#look [data-thcount]') || {}).textContent,
+  }));
+  if (sp1.sp === sp0 || sp1.pressed !== 'true') {
+    fail(`appearance: choosing compact left --sp-3 at "${sp1.sp}" (was "${sp0}") `
+       + `and aria-pressed=${sp1.pressed} — density is meant to move the whole `
+       + `spacing scale at once`);
+  } else if (!/change/.test(sp1.counted || '')) {
+    fail(`appearance: the density changed but the count says "${sp1.counted}"`);
+  } else {
+    note(`appearance: density compact scales the spacing scale live `
+       + `(--sp-3 ${sp0} → ${sp1.sp}) and counts as a change`);
+  }
+  await page.click('#look [data-thdensity=comfortable]');
+  await page.waitForTimeout(350);
+  const sp2 = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--sp-3').trim());
+  if (sp2 !== sp0) {
+    fail(`appearance: back at comfortable, --sp-3 is "${sp2}" and not the `
+       + `"${sp0}" it started at — the default density must be a no-op`);
+  } else {
+    note('appearance: comfortable puts the scale back exactly');
+  }
+
+  // Card order: move one, and Overview draws in that order.
+  const first = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#look [data-thcard]')];
+    return rows.length ? rows[0].getAttribute('data-thcard') : null;
+  });
+  if (!first) {
+    fail('appearance: no card-order control — the Layout group lists none');
+  } else {
+    await page.click('#look [data-thcard="' + first + '"] button:not([disabled])');
+    await page.waitForTimeout(300);
+    await page.click('.tab[data-t=over]');
+    await page.waitForTimeout(400);
+    const order = await page.evaluate(() =>
+      [...document.querySelectorAll('#over [data-card]')]
+        .map((n) => n.getAttribute('data-card')));
+    if (order[0] === first) {
+      fail(`appearance: moving "${first}" down left it first in Overview `
+         + `(${order.join(', ')}) — the order is drawn, not just stored`);
+    } else {
+      note(`appearance: reordering moves the card in Overview (${order.join(', ')})`);
+    }
+    await page.click('.tab[data-t=look]');
+    await page.waitForTimeout(300);
+    // Put it back, so the shot below and every later check see the drawn order
+    // — and moving a card down and back up must leave NO change behind, or the
+    // tab offers to write an order that says what the default already says.
+    const back = await page.$(`#look [data-thcard="${first}"] button:not([disabled])`);
+    if (back) { await back.click(); await page.waitForTimeout(350); }
+    const settled = await page.evaluate(() =>
+      (document.querySelector('#look [data-thcount]') || {}).textContent);
+    if (!/no changes/.test(settled || '')) {
+      fail(`appearance: after moving a card down and back up the tab still says `
+         + `"${settled}" — an order equal to the drawn one is not a change`);
+    } else {
+      note('appearance: a reorder undone leaves nothing to save');
+    }
+  }
+
+  // The shot belongs here, with the tab open and nothing edited: what a reader
+  // meets when they first press Appearance.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await shot(page, 'panel-appearance', { full: true });
+}
+
+/* ---- F-P-3 (px): the capability table, given the whole screen ----------------
+ *
+ * The Policy tab's table is the one surface here that is a LIST first: a
+ * project with a plugin or two installed already scrolls it inside a 34rem
+ * frame, and reading a verdict per area means reading across it at the same
+ * time. So the frame gets an expand control and the table gets a dialog that
+ * is the viewport — the browse-dialog pattern, one more time.
+ *
+ * What a browser has to prove, and a string pin cannot: the dialog carries the
+ * SAME rows as the tab (one builder, not two), typing in either search box
+ * filters both (the filter state is shared, so a reader does not lose their
+ * place by expanding), and Esc gives the focus back to the control that opened
+ * it — a dialog that strands the caret is worse than no dialog.
+ */
+async function assertPolicyExpand(page) {
+  await page.click('.tab[data-t=policy]');
+  await page.waitForTimeout(300);
+  const btn = page.locator('#policy [data-polexpand]');
+  if (!(await btn.count())) {
+    fail('policy: no expand control on the capability table — the reader is left '
+       + 'scrolling a 34rem frame to compare verdicts across areas');
+    return;
+  }
+  const inTab = await page.evaluate(() =>
+    [...document.querySelectorAll('#policy [data-pcap]')].map((r) => r.getAttribute('data-pcap')));
+  await btn.click();
+  await page.waitForTimeout(350);
+  const open = await page.evaluate(() => {
+    const d = document.querySelector('dialog.polfull[open]');
+    if (!d) return null;
+    const r = d.getBoundingClientRect();
+    return {
+      rows: [...d.querySelectorAll('[data-pcap]')].map((x) => x.getAttribute('data-pcap')),
+      onBody: d.parentElement === document.body,
+      // The point of the control: the table gets the screen, not another frame.
+      wide: r.width >= innerWidth * 0.9 && r.height >= innerHeight * 0.85,
+      hasSearch: !!d.querySelector('input[type=search]'),
+    };
+  });
+  if (!open) {
+    fail('policy: the expand control opened no dialog.polfull');
+    return;
+  }
+  if (JSON.stringify(open.rows) !== JSON.stringify(inTab)) {
+    fail(`policy: the expanded table lists ${open.rows.length} capabilities and the `
+       + `tab lists ${inTab.length} — two builders drifting, which is the failure `
+       + `this was refactored to make impossible`);
+  } else if (!open.onBody || !open.wide || !open.hasSearch) {
+    fail(`policy: the dialog is ${JSON.stringify(open)} — expected a body-mounted, `
+       + `full-viewport panel with its own search`);
+  } else {
+    note(`policy: expand opens the same ${open.rows.length} capabilities full-screen`);
+  }
+  // The shot is taken here rather than in the capture block: the dialog is open
+  // for exactly this step, and photographing it means opening it a second time.
+  await shot(page, 'panel-policy-expanded', { dialog: true });
+  // Typing in the dialog filters BOTH, because the filter is the tab's own state.
+  const first = inTab[0] || '';
+  await page.fill('dialog.polfull input[type=search]', first);
+  await page.waitForTimeout(350);
+  const filtered = await page.evaluate(() => ({
+    dlg: [...document.querySelectorAll('dialog.polfull [data-pcap]')].length,
+    tab: [...document.querySelectorAll('#policy [data-pcap]')].length,
+    focused: document.activeElement && document.activeElement.closest
+      && !!document.activeElement.closest('dialog.polfull'),
+  }));
+  if (filtered.dlg !== filtered.tab || filtered.dlg >= inTab.length) {
+    fail(`policy: filtering inside the dialog left ${filtered.dlg} rows there and `
+       + `${filtered.tab} in the tab (of ${inTab.length}) — the two must be one view`);
+  } else if (!filtered.focused) {
+    fail('policy: the caret left the dialog search box as it filtered — the '
+       + 'rebuild is not putting focus back, so the reader types one letter per click');
+  } else {
+    note(`policy: a search inside the dialog narrows both views to ${filtered.dlg} `
+       + `and keeps the caret`);
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  const closed = await page.evaluate(() => ({
+    open: !!document.querySelector('dialog.polfull[open]'),
+    focus: document.activeElement && document.activeElement.getAttribute
+      ? document.activeElement.getAttribute('data-polexpand') : null,
+    q: PF.q,
+  }));
+  if (closed.open) {
+    fail('policy: Esc did not close the expanded table');
+  } else if (closed.focus !== '1') {
+    fail(`policy: after Esc the focus is on ${JSON.stringify(closed.focus)} rather `
+       + `than the expand control that opened the dialog`);
+  } else {
+    note('policy: Esc closes it and hands the focus back to the expand control');
+  }
+  await page.evaluate(() => { PF.q = ''; PF.bad = false; renderPolicy(); });
+  await page.waitForTimeout(200);
+}
+
 async function noDialog(page, name) {
   const open = await page.evaluate(() =>
     [...document.querySelectorAll('dialog[open]')]
@@ -3791,22 +4426,24 @@ async function main() {
           await shot(page, 'areas');
           await page.click(`#audit-areas .fchip[data-a="${pick.tag}"]`);
           await page.waitForTimeout(250);
-          // Releasing the chip returns to the AT-REST view, and since D1 the
-          // rest state may hold done phases collapsed under the archive —
-          // the expectation reads the document's own contract (the toggle's
-          // state) rather than assuming every row shows.
+          // Releasing the chip returns to the AT-REST view, and since vw
+          // (F-P-4) "at rest" means the chosen VIEW — the archived phases are
+          // off screen unless the reader asked for them. The expectation reads
+          // the select's own value rather than assuming every row shows.
           const back = await page.evaluate(() => {
             const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
-            const arch = document.getElementById('audit-arch');
-            const archived = (arch && arch.getAttribute('aria-expanded') === 'false')
-              ? rows.filter((r) => r.getAttribute('data-seg') === 'done').length : 0;
+            const view = (document.getElementById('audit-view') || {}).value || 'all';
+            const segs = view === 'active' ? ['active', 'pending']
+              : view === 'archived' ? ['archived'] : ['active', 'pending', 'archived'];
             return { shown: rows.filter((r) => r.style.display !== 'none').length,
-                     want: rows.length - archived };
+                     view,
+                     want: rows.filter((r) =>
+                       segs.indexOf(r.getAttribute('data-seg')) >= 0).length };
           });
           if (back.shown !== back.want) {
             fail(`report: releasing the "${pick.tag}" area chip left `
-               + `${back.shown}/${pick.total} phase rows (want ${back.want} — `
-               + `the rest sit in the collapsed archive)`);
+               + `${back.shown}/${pick.total} phase rows (want ${back.want} in `
+               + `the "${back.view}" view)`);
           }
           await page.click('.fdetails > summary');
           await page.waitForTimeout(120);
@@ -4685,6 +5322,11 @@ async function main() {
       await assertFilterPersistence(page, browser, panel.url);
       await assertSaveNoteLifecycle(page);
       await assertLiveData(page, big);
+      // co (F-P-1): appends a blank line to the fixture's ledger, so it keeps to
+      // the writes-last discipline too.
+      await assertComboOverlay(page, big);
+      await assertUncategorizedNamed(page);
+      await assertAppearanceWorks(page);
       // gt (v0.34 B3): writes into the fixture's logs/state dirs, so it keeps
       // to the same writes-last discipline and runs after live-data.
       await assertGateCard(page, big);
@@ -4804,6 +5446,7 @@ async function main() {
         await shot(ppage, 'panel-policy');
         // Everything below writes to the fixture's config, so it runs after.
         await assertPolicyWorks(ppage, path.join(seen.dir, seen.file));
+        await assertPolicyExpand(ppage);
         // cs, second half: the description search, on the one registry whose
         // every description this file wrote.
         await assertComboDescriptionSearch(ppage);

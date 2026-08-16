@@ -40,6 +40,7 @@ import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a 
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
 import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
+import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 
 def _load(name, filename):
@@ -315,13 +316,19 @@ def render(rows, args, manifest, window, show_cost, pt=None):
         return "\n".join(out)
 
     def label_for(by, key):
+        # uc (F-P-2): one word for the empty bucket, shared with the report and
+        # the panel. It used to be spelled twice here alone ("--   unattributed"
+        # and "--      (no task)") and differently again on the other two
+        # surfaces; the storage key stays "--" in the ledger and in --attr.
+        if key == "--":
+            return _theme.UNCATEGORIZED
         if by == "phase":
-            return ("%-4s %s" % (key, phase_titles.get(key, ""))).rstrip() \
-                if key != "--" else "--   unattributed"
+            return ("%-4s %s" % (key, phase_titles.get(key, ""))).rstrip()
         if by == "task":
-            return ("%-7s %s" % (key, task_titles.get(key, ""))).rstrip() \
-                if key != "--" else "--      (no task)"
-        return key
+            return ("%-7s %s" % (key, task_titles.get(key, ""))).rstrip()
+        # `--by attr` groups on the attribution bucket itself, whose "not
+        # attributed" member is the SAME fact under its other key.
+        return _theme.label(key) if by == "attr" else key
 
     def group_table(by, title, limit=None, extra=None):
         agg = ul.aggregate(rows, by)
@@ -946,6 +953,31 @@ def _selftest():
               "BY AUTHOR" in text and "a@x.io" in text)
         check("render: both models listed",
               "claude-opus-5" in text and "claude-haiku-4-5" in text)
+        # uc (F-P-2): a row with no phase and no task is ordinary — ad-hoc
+        # edits, `#no-plan`, work outside the plan — and it used to print as
+        # the ledger's storage key ("--   unattributed", "--      (no task)"),
+        # three spellings of one fact across three surfaces. The word now comes
+        # from the shared label map, so the CLI, the report and the panel say
+        # the same thing.
+        _uc_rows = list(loaded) + [dict(loaded[0], phaseId=None, taskId=None,
+                                        attr="unattributed",
+                                        sessionId="s-adhoc")]
+        _uc_text = render(_uc_rows, args, manifest, "all time", True)
+        check("uc: spend with no phase/task is named from the shared label map, "
+              "and the storage key never reaches the terminal",
+              _theme.UNCATEGORIZED in _uc_text
+              and "unattributed" not in _uc_text
+              and "(no task)" not in _uc_text)
+        _args_attr = build_parser().parse_args(["--by", "attr"])
+        _args_attr.ledger_dir = ledger
+        _uc_attr = render(_uc_rows, _args_attr, manifest, "all time", True)
+        check("uc: ...including the attribution table itself, where the bucket "
+              "IS the row - the CLI's own `--attr unattributed` selector is "
+              "untouched, because a flag is typed, not read",
+              _theme.UNCATEGORIZED in _uc_attr
+              and "unattributed" not in _uc_attr
+              and "task" in _uc_attr.lower())
+
         check("render: trend section present", "TREND" in text
               and "peak hour" in text)
         check("render: pure ASCII output", all(ord(c) < 128 for c in text))

@@ -317,6 +317,24 @@ dialog.browse{width:min(56rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
  background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
  overflow:hidden}
 dialog.browse::backdrop{background:rgb(0 0 0 / .45)}
+/* px (F-P-3): the capability table with the screen to itself. Wider and taller
+   than .browse on purpose — this one is read ACROSS (a verdict column per area),
+   which is the reading the 34rem frame makes hardest. The table inside scrolls;
+   the dialog is the frame, so .poltblwrap.full drops its own height cap. */
+dialog.polfull{width:calc(100vw - 2rem);height:calc(100vh - 2rem);
+ padding:0 var(--sp-3) var(--sp-3);border:1px solid var(--border-strong);
+ border-radius:var(--radius-lg);background:var(--surface);color:var(--text);
+ box-shadow:var(--shadow-md)}
+/* [open], and this is not a flourish: the UA hides a closed dialog with
+   `dialog:not([open]){display:none}`, which an unqualified `display:flex` here
+   OUTRANKS — the closed dialog then stays laid out over the page, invisible in
+   a screenshot and swallowing every click on the tab underneath. Caught by the
+   step that runs after this one, not by this one. */
+dialog.polfull[open]{display:flex;flex-direction:column;gap:var(--sp-1)}
+dialog.polfull::backdrop{background:rgb(0 0 0 / .45)}
+/* Shrink to the table, cap at the dialog: `flex:1 1 auto` stretched a six-row
+   inventory into a screen-tall empty box. Long lists still scroll inside it. */
+.poltblwrap.full{max-height:none;flex:0 1 auto;min-height:0;overflow:auto}
 dialog.browse>*{padding:0 var(--sp-3)}
 .bhead{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);
  padding-top:var(--sp-2)}
@@ -515,6 +533,12 @@ button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);curso
  box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-2);font-size:.74rem;
  max-width:18rem;color:var(--text)}
 .utip.hidden{display:none}
+/* uc (F-P-2): the one row in a usage table that has no plan behind it. Text
+   colour, not a badge — it is a normal row of the table, not a warning about
+   the row; the eye should find it without the table shouting. The warn role is
+   the panel's own (see the top of this sheet), and text-on-surface at both
+   themes is the contrast pair it was chosen for. */
+.uncat{color:var(--warn)}
 .utip-h{font-weight:600;margin-bottom:var(--sp-0);word-break:break-word}
 .utip-r{display:flex;align-items:center;gap:var(--sp-0);
  font-variant-numeric:tabular-nums;line-height:1.5}
@@ -725,7 +749,9 @@ table.regtbl td.d{color:var(--muted)}
 [data-status="done"],[data-status="fixed"]{--st:var(--ok)}
 [data-status="in_progress"],[data-status="triaged"]{--st:var(--warn)}
 [data-status="blocked"],[data-status="open"]{--st:var(--err)}
-[data-status="pending"],[data-status="wontfix"]{--st:var(--muted)}
+[data-status="pending"]{--st:var(--muted)}
+/* ca: settled, not achieved — quieter than pending, never the ok green. */
+[data-status="cancelled"],[data-status="wontfix"]{--st:var(--st-cancelled)}
 .st{display:inline-block;font-size:.66rem;font-weight:600;padding:.25rem .5em;border-radius:var(--pill);
  background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
  border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}
@@ -809,6 +835,51 @@ td.tmodel .combo{min-width:6.5rem}
 .ovtools label.inl{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--muted)}
 .ovgrp{display:flex;align-items:baseline;gap:.5rem;margin:.9rem 0 .1rem;
  padding-bottom:.25rem;border-bottom:1px solid var(--border)}
+/* th (F-P-6): Appearance. A token table — name, light, dark — where the two
+   values sit SIDE BY SIDE: a reader who edits one theme and flips to check the
+   other is how the pair drifts, and the parity lint downstream refuses a colour
+   that exists in one theme only. The swatch is a native <input type=color>
+   beside the text, so a hex anybody pasted stays editable as text. */
+.thwrap{overflow-x:auto}
+table.thtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
+table.thtbl th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted);padding:.3rem .4rem;font-weight:700}
+table.thtbl td{padding:.25rem .4rem;border-top:1px solid var(--border);
+  vertical-align:middle}
+td.thname{white-space:nowrap;color:var(--muted);font-size:.78rem}
+td.thcell{display:table-cell;white-space:nowrap}
+.thpick{width:1.7rem;height:1.4rem;padding:0;border:1px solid var(--border);
+  border-radius:5px;background:none;vertical-align:middle;cursor:pointer}
+input.thtext{width:11rem;padding:.2rem .4rem;font-family:var(--mono);
+  font-size:.76rem;vertical-align:middle;margin-left:.3rem}
+.thdiff{gap:.5rem;font-size:.82rem;padding:.15rem 0}
+.thdiff .mono{min-width:12rem}
+
+/* ov (F-P-5): Overview follows the report's table — a compact row that opens
+   in place. The wrapper exists so the detail is a sibling of its row rather
+   than inside a <button>, which may not contain interactive content. */
+.ovwrap{display:block}
+.ovtri{display:inline-block;width:.9em;color:var(--muted);
+  transition:transform var(--dur) var(--ease)}
+.ovtri::before{content:"\25B8";font-size:.8em}
+.ovrow.open .ovtri{transform:rotate(90deg)}
+.ovdetail{margin:0 0 .5rem 1.6rem;padding:.5rem .6rem;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--radius)}
+table.ovtasks{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.ovtasks th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted);padding:.2rem .4rem;font-weight:700}
+table.ovtasks td{padding:.25rem .4rem;border-top:1px solid var(--border);
+  vertical-align:top}
+table.ovtasks td.ovt{max-width:22rem;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+/* risk as coloured TEXT, the same decision the report's table made (rk). */
+.rk{font-weight:600}
+.rk[data-risk="low"]{color:var(--st-done)}
+.rk[data-risk="med"]{color:var(--warn)}
+.rk[data-risk="high"]{color:var(--err)}
+.ovoutside{margin:.4rem 0;padding:.4rem .6rem;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);
+  font-size:.8rem;text-align:center}
 .ovgrp .gname{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent)}
 /* A row is one control: it opens this phase in Composition. A <button> rather than
    a div with a click handler, so it is reachable by keyboard and announced as

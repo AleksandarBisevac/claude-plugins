@@ -32,6 +32,19 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the panel)
+
+
+def _panel_cfg(project):
+    """The project's .claude/audit.config.json, or {}. Read here rather than
+    through the panel's reader: this script must stay usable from a bare
+    checkout with nothing else running."""
+    path = os.path.join(project, ".claude", "audit.config.json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 import _loader                # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _report_ui             # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
 import _report_html           # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
@@ -91,6 +104,8 @@ _ado_cell = _report_html._ado_cell
 _outcome_text = _report_html._outcome_text
 _short_date = _report_html._short_date
 _timing_cell = _report_html._timing_cell
+_commit_cell = _report_html._commit_cell
+_detail_row = _report_html._detail_row
 _filter_attrs = _report_html._filter_attrs
 _filter_panel = _report_html._filter_panel
 _global_filter_row = _report_html._global_filter_row
@@ -190,6 +205,14 @@ _GATE_LABELS = {
 # So the rule rather than the decree: density follows the data. A plan on day one
 # renders id/title/status and little else; a finished one renders all nine; and a
 # repo that has never touched Azure DevOps never sees an ADO column at all.
+# ex (F-P-4): which of the optional columns the COMPACT row carries. The rest
+# (model, the work item, the outcome) live in the detail row, where they have
+# room to be complete rather than truncated. Chosen by what a reader scans for:
+# where is it, how risky is it, when did it land, which commit. The outcome was
+# the worst offender in the other direction — a 70-character cut that pushed
+# every row to three lines and still said too little, which is the complaint
+# this whole change came from.
+PRIMARY_COLS = ("risk", "commit", "done")
 _OPTIONAL_COLS = (
     ("model", lambda t: t.get("model")),
     ("risk", lambda t: t.get("risk")),
@@ -284,16 +307,37 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners):
         if shas:
             stamp = ('<span class="stamp" title="Last commit recorded in this '
                      'phase">%s</span>' % e(shas[-1][:7]))
+    # bl (F-P-4): blocked TASKS inside a phase that is not itself blocked. The
+    # phase chip answers "is this phase blocked"; nothing answered "is anything
+    # in it stuck", which is the question that decides whether a phase in
+    # progress is actually moving. Emitted only when it says something the chip
+    # does not — on a blocked phase the chip already carries the word.
+    _nblocked = sum(1 for t in (ph.get("tasks") or [])
+                    if isinstance(t, dict) and t.get("status") == "blocked")
+    blocked_mark = ""
+    if _nblocked and psum["status"] != "blocked":
+        blocked_mark = ('<span class="pblocked" title="%d task(s) in this phase '
+                        'are blocked">%d blocked</span>'
+                        % (_nblocked, _nblocked))
+    # ...and the dropped ones, for the same reason: a bar reading 3/5 on a phase
+    # whose other two tasks were cancelled is a phase that is finished, and the
+    # bar cannot say so on its own.
+    _ncancelled = sum(1 for t in (ph.get("tasks") or [])
+                      if isinstance(t, dict) and t.get("status") == "cancelled")
+    cancelled_mark = ('<span class="pcancelled" title="%d task(s) in this phase '
+                      'were cancelled">%d cancelled</span>'
+                      % (_ncancelled, _ncancelled)) if _ncancelled else ""
     out.append(
         '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
         'data-seg="%s" data-area="%s" tabindex="0" '
         'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
-        '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s %s'
+        '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s%s%s %s'
         '<span class="pmatch" hidden></span>%s</td></tr>'
         % (e(pid), e(pid), e(psum["status"]),
            ' data-held="1"' if held else "",
            seg, e(" ".join(areas)), ncol, e(pid), e(psum["title"]),
-           area_tags, _chip(psum["status"]), held_mark, stamp,
+           area_tags, _chip(psum["status"]), blocked_mark, cancelled_mark,
+           held_mark, stamp,
            _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
     # per-phase task-status filter (shown only when the phase is expanded);
     # _SCRIPT fills .tf-chips from this phase's own task statuses.
@@ -311,26 +355,32 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners):
         cells = {
             "model": lambda: "<td>%s</td>" % e(t.get("model") or "—"),
             "risk": lambda: "<td>%s</td>" % _risk_chip(t.get("risk")),
-            "commit": lambda: "<td class=mono>%s</td>"
-            % e((t.get("commit") or "—")[:9]),
+            "commit": lambda: "<td class=mono>%s</td>" % _commit_cell(t),
             "done": lambda: "<td class=when>%s</td>" % _timing_cell(t),
             "ADO": lambda: "<td>%s</td>" % _ado_cell(t),
             "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
         }
+        # ex (F-P-4): the compact row plus a control that opens the rest. The
+        # button lives in the id cell and carries the task id, so a keyboard
+        # reader tabs id -> detail rather than hunting a bare chevron.
         out.append(
             '<tr class="task" data-phase="%s" data-seg="%s" data-status="%s"%s%s>'
-            '<td class="mono tid">%s</td><td>%s</td><td>%s</td>%s</tr>'
+            '<td class="mono tid"><button type="button" class="dtoggle" '
+            'data-dfor="%s" aria-expanded="false" aria-label="Show details for '
+            '%s"></button>%s</td><td>%s</td><td>%s</td>%s</tr>'
             % (e(pid), seg, e(t.get("status")),
                ' data-held="1"' if held else "",
                _filter_attrs(t),
+               e(t.get("id")), e(t.get("id")),
                e(t.get("id")), e(t.get("title")),
                _chip(t.get("status")),
                "".join(cells[c]() for c in cols)))
+        out.append(_detail_row(t, ph, owners, ncol, seg, pid))
     return "\n".join(out)
 
 
 def render_html(manifest, summary, basename="audit-report", usage=None,
-                fragment=False):
+                fragment=False, css=None):
     """The HTML report. `fragment=True` emits it for an embedding host.
 
     A Claude Code Artifact wraps what it is given in its own
@@ -360,7 +410,11 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">']
     out += ['<title>%s</title>' % e(meta.get("title") or "Audit report"),
-            "<style>%s</style>" % _CSS]
+            # th (F-P-6): the project's own theme when it has one. The
+            # report is a FILE — mailed, published, opened months later —
+            # so the stylesheet is embedded compiled, never fetched, and a
+            # theme travels with the report rather than living in a panel.
+            "<style>%s</style>" % (css or _CSS)]
     # The shell. `sections` is the ONE list both the nav and the content are drawn
     # from — a hand-kept nav beside hand-placed anchors is the same trap as the
     # hand-maintained selftest list that drifted three ways: adding a section and
@@ -526,6 +580,16 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
         'placeholder="Filter phases &amp; tasks by text\u2026">'
         '<span class="tbl">Phase status:</span><span id="audit-phase-status">%s</span>'
         '%s'
+        # vw (F-P-4): WHICH phases are on screen, said out loud. The archive used
+        # to be a toggle nobody found — a plan with forty done phases opened
+        # looking half-empty and there was no control saying why. Three named
+        # views, the default is the work that is left, and the select carries
+        # the answer even with the script dead.
+        '<span class="viewpick"><label class="tbl" for="audit-view">View:</label>'
+        '<select id="audit-view" aria-label="Which phases to show">'
+        '<option value="active">Active &amp; pending</option>'
+        '<option value="archived">Archived (done &amp; cancelled)</option>'
+        '<option value="all">All phases</option></select></span>'
         '<button type="button" id="audit-expand" class="btn">expand all</button>'
         # Shown only while something is actually filtering. It is a second copy of
         # the empty state's button on purpose: the More-filters panel is drawn OVER
@@ -544,11 +608,27 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     out.append('<section id="%s" class="sec">' % section("phases", "Phases",
                                                         len(summary["phases"])))
     out.append(table_tools)
-    cols = _present_columns(manifest)
+    # `present` is every optional column this plan HAS data for; `cols` is the
+    # subset the compact row shows. The detail row renders the difference, so
+    # nothing is dropped from the page — only from the row.
+    present = _present_columns(manifest)
+    cols = [c for c in present if c in PRIMARY_COLS]
     ncol = 3 + len(cols)
-    out.append('<div class="tablewrap"><table class="phases"><thead><tr>'
+    # vw: 'active' unless there is nothing active or pending to show — a
+    # finished plan that greeted its reader with an empty table would be the
+    # archive toggle's own failure wearing a select. Decided here, where the
+    # statuses are, and read by report.js as the starting view.
+    _segs_present = {_seg_of(p["status"]) for p in summary["phases"]}
+    _defview = "active" if (_segs_present & {"active", "pending"}) else "all"
+    # tm: the zone is named ONCE, in the header, rather than repeated in every
+    # cell or left for a reader to assume.
+    _colhead = {"done": 'done <span class="muted">UTC</span>'}
+    out.append('<div class="tablewrap"><table class="phases" '
+               'data-defaultview="%s"><thead><tr>'
                "<th>id</th><th>title</th><th>status</th>%s</tr></thead><tbody>"
-               % "".join("<th>%s</th>" % e(c) for c in cols))
+               % (_defview,
+                  "".join('<th data-col="%s">%s</th>' % (e(c), _colhead.get(c, e(c)))
+                          for c in cols)))
     _done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
     # D1: the table renders in SEGMENTS — active (in_progress/blocked) first,
     # then pending, then done — grouped by rolled-up status, plan order kept
@@ -580,14 +660,12 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
             '<button type="button" class="btn segbtn" data-segprint="%s" '
             'title="Print only this segment — the print dialog opens scoped '
             'to it">Print</button></span>' % (_seg, _seg))
-        if _seg == "done" and len(_segs) > 1:
-            _head = ('<button type="button" class="segtoggle" id="audit-arch" '
-                     'aria-expanded="false" data-count="%d">Archive — %s'
-                     "</button>" % (_sn, _plural(_sn, "done phase")))
-        else:
-            _head = ('<span class="segname">%s</span>'
-                     '<span class="segn">%s</span>'
-                     % (_report_html.SEG_LABEL[_seg], _plural(_sn, "phase")))
+        # vw: every seghead is now a plain title. Which segments are ON SCREEN
+        # is the view select's business, and a segment that also hid itself
+        # would be a second, contradictory gate.
+        _head = ('<span class="segname">%s</span>'
+                 '<span class="segn">%s</span>'
+                 % (_report_html.SEG_LABEL[_seg], _plural(_sn, "phase")))
         out.append('<tr class="seghead" data-seg="%s"><td colspan="%d">%s%s'
                    "</td></tr>" % (_seg, ncol, _head, _exports))
         for ph, psum in _by_seg[_seg]:
@@ -597,10 +675,19 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     # the table's rounded bottom corner and its missing final rule both hang off
     # that selector, and a permanently-present hidden row in the main body would
     # have quietly taken both.
+    # vw: matches the VIEW is hiding. The archive gate used to lift itself
+    # during a search, which meant the control said one thing and the table did
+    # another; this says the true thing instead — how many matched, and the one
+    # press that shows them.
     out.append('</tbody><tbody><tr class="norows"><td colspan="%d">'
                "No phase matches these filters."
                '<button type="button" class="btn" data-clear>Clear filters'
-               "</button></td></tr></tbody></table></div></section>" % ncol)
+               "</button></td></tr>"
+               '<tr class="outside" data-outside hidden><td colspan="%d">'
+               '<span data-outside-n></span>'
+               '<button type="button" class="btn" data-viewall>Show all phases'
+               "</button></td></tr>"
+               "</tbody></table></div></section>" % (ncol, ncol))
     # Usage is the longest section by far — a chart, five tiles, three ranked
     # lists, a budget block, economics and a heatmap — so its own headings become
     # sub-items. A nav that stops at the section a reader is already inside stops
@@ -821,6 +908,23 @@ def main(argv):
     summary = lib.rollup(manifest, findings, warnings)
     usage = load_usage(manifest, manifest_path)
 
+    # th (F-P-6): resolve the look once — project theme, then the user's, then
+    # the built-in — and hand the compiled sheet to every writer below. A theme
+    # that failed to load says so on stderr and the report still renders: a
+    # look is decoration, and decoration never takes the document down.
+    _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
+        os.path.abspath(manifest_path)) or "."
+    try:
+        _cfg = _panel_cfg(_proj)
+    except Exception:
+        _cfg = {}
+    _tokens, _tinfo = _theme.token_css_for(_proj, _cfg)
+    # tokens + the report's own rules, assembled where that concatenation is
+    # defined — the token block alone is not a stylesheet.
+    _css = _report_ui.css_with_tokens(_tokens)
+    if _tinfo.get("error"):
+        sys.stderr.write("WARNING: theme not applied - %s\n" % _tinfo["error"])
+
     basename = _report_basename(manifest.get("meta"), cli_basename)
     out_dir = out_dir or (os.path.dirname(os.path.abspath(manifest_path)) or ".")
     os.makedirs(out_dir, exist_ok=True)
@@ -828,7 +932,8 @@ def main(argv):
     if fmt in ("html", "both"):
         p = os.path.join(out_dir, basename + ".html")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_html(manifest, summary, basename, usage))
+            fh.write(render_html(manifest, summary, basename, usage,
+                                 css=_css))
         written.append(p)
     if fmt == "artifact":
         # A separate name, never the .html one. The standalone file is what people
@@ -837,7 +942,7 @@ def main(argv):
         p = os.path.join(out_dir, basename + ".artifact.html")
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_html(manifest, summary, basename, usage,
-                                 fragment=True))
+                                 fragment=True, css=_css))
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")
@@ -907,6 +1012,42 @@ def _selftest():
 
     rc = main([mp, "--out-dir", tmp])
     check("c1 CLI exits 0", rc == 0)
+
+    # th (F-P-6): a report is a FILE — mailed, published, opened months later —
+    # so the theme is COMPILED INTO it rather than referenced. Rendered with a
+    # project theme on disk, the stylesheet must carry that value and still be a
+    # whole stylesheet (the token block alone loses every rule in report.css,
+    # which is what the first version of this shipped).
+    _thproj = os.path.join(tmp, "themed")
+    os.makedirs(os.path.join(_thproj, ".claude"), exist_ok=True)
+    with open(os.path.join(_thproj, ".claude", "audit.theme.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"tokens": {"--accent": {"$value": "#b5179e",
+                                           "$dark": "#f72585"}}}, fh)
+    _thm = os.path.join(_thproj, "m.json")
+    with open(_thm, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh)
+    _prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = _thproj
+    try:
+        main([_thm, "--out-dir", _thproj])
+    finally:
+        if _prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev
+    with open(os.path.join(_thproj, "audit-report.html"), encoding="utf-8") as fh:
+        _thhtml = fh.read()
+    check("th-r1 the report wears the project's theme, compiled in",
+          "--accent:#b5179e" in _thhtml and "--accent:#f72585" in _thhtml
+          and "--accent:#0d9488" not in _thhtml)
+    check("th-r2 ...and it is still the WHOLE stylesheet, not the token block "
+          "alone - every rule report.css contributes must survive theming",
+          "table.phases" in _thhtml and "prefers-reduced-motion" in _thhtml
+          and 'id="audit-theme"' in _thhtml)
+    check("th-r3 an untheme'd project renders exactly what it always did",
+          "--accent:#0d9488" in _report_ui.CSS
+          and _report_ui.css_with_tokens(None) == _report_ui.CSS)
     hp, dp = os.path.join(tmp, "audit-report.html"), os.path.join(tmp, "audit-report.md")
     check("c2 both artifacts exist and are non-empty",
           os.path.getsize(hp) > 0 and os.path.getsize(dp) > 0)
@@ -1493,7 +1634,7 @@ def _selftest():
     # an inline style, so every one of them needs !important to take back.
     check("c6: paper prints every phase and every task, not the filtered "
           "leftovers - task rows under headings the filter hid",
-          "tr.phase,tr.task{display:table-row!important" in _print)
+          "tr.phase,tr.task,tr.taskdetail{display:table-row!important" in _print)
     check("c6: ...so the match badge and the empty state never reach it - "
           "'3 of 12 match' beside all twelve, 'no phase matched' above every one",
           ".pmatch,tr.norows{display:none!important}" in _print)
@@ -1636,10 +1777,21 @@ def _selftest():
           and "<th>ADO</th>" not in _fhm)
     # Scoped to the phases table: the bugs table has its own headers, and counting
     # <th> across the document measured both.
-    _phead = html_out[html_out.index('<table class="phases">'):]
+    _phead = html_out[html_out.index('<table class="phases"'):]
     _phead = _phead[:_phead.index("</thead>")]
-    check("cols: the full example still renders every column it has data for",
-          _phead.count("<th>") == 3 + len(_present_columns(manifest)))
+    check("cols: the compact row carries the PRIMARY columns this plan has data "
+          "for, and the rest of them live in the detail row rather than being "
+          "dropped from the page",
+          _phead.count("<th>") + _phead.count("<th data-col=")
+          == 3 + len([c for c in _present_columns(manifest) if c in PRIMARY_COLS])
+          and set(PRIMARY_COLS) < set(dict(_OPTIONAL_COLS)))
+    check("cols: what the compact row leaves out, the detail row shows - a "
+          "column moved off screen and nowhere else is a column deleted",
+          all(k in _report_html._detail_row(
+              {"id": "T", "model": "m", "outcome": {"descriptive": "d"},
+               "ado": {"id": 7}},
+              {"id": "P", "branch": "b"}, {}, 6, "active", "P")
+              for k in (">model<", ">outcome<", ">work item<")))
 
     # --- sg: phase segmentation (D1, v0.36) -----------------------------------
     # On a large plan the Phases table is one long run. Segmentation groups the
@@ -1662,46 +1814,94 @@ def _selftest():
     _sgh = render_html(_sgm, _lib.rollup(_sgm, [], []), "r", None)
     _sghm = _markup(_sgh)
     check("sg1 a mixed plan renders one seghead per non-empty segment, in "
-          "active, pending, done order",
+          "active, pending, archived order",
           _sghm.count('<tr class="seghead"') == 3
           and _sgh.index('data-seg="active"') < _sgh.index('data-seg="pending"')
-          < _sgh.index('data-seg="done"'))
+          < _sgh.index('data-seg="archived"'))
     check("sg2 phases are grouped under their segments - active rows first, "
-          "then pending, then done - whatever the manifest order",
+          "then pending, then archived - whatever the manifest order",
           _sgh.index('id="phase-S2"') < _sgh.index('id="phase-S4"')
           < _sgh.index('id="phase-S3"') < _sgh.index('id="phase-S1"'))
     check("sg3 phase, taskfilter and task rows all carry data-seg, so the "
-          "archive gate and the print isolation can select whole segments",
-          re.search(r'<tr class="phase" id="phase-S1"[^>]*data-seg="done"', _sgh)
-          is not None
-          and re.search(r'<tr class="taskfilter" data-phase="S1"[^>]*'
-                        r'data-seg="done"', _sgh) is not None
-          and re.search(r'<tr class="task" data-phase="S1"[^>]*data-seg="done"',
-                        _sgh) is not None)
-    check("sg4 the done segment is the archive: its seghead is a toggle that "
-          "names the count and starts collapsed, because other segments exist",
-          re.search(r'<button[^>]*id="audit-arch"[^>]*aria-expanded="false"',
+          "view gate and the print isolation can select whole segments",
+          re.search(r'<tr class="phase" id="phase-S1"[^>]*data-seg="archived"',
                     _sgh) is not None
-          and "Archive — 1 done phase<" in _sgh)
+          and re.search(r'<tr class="taskfilter" data-phase="S1"[^>]*'
+                        r'data-seg="archived"', _sgh) is not None
+          and re.search(r'<tr class="task" data-phase="S1"[^>]*'
+                        r'data-seg="archived"', _sgh) is not None)
+    # vw (F-P-4): the archive toggle is gone. Which phases are on screen is a
+    # NAMED view — active (the default) / archived / all — because "done rows
+    # are hidden until you find the toggle" is a rule a reader has to discover,
+    # and the one they discovered it through was an empty-looking plan. The
+    # select is server-rendered (the chips rule) and starts on active.
+    _blm = {"meta": {"title": "b"}, "bugs": [], "phases": [
+        {"id": "B1", "title": "moving", "status": "in_progress", "tasks": [
+            {"id": "B1.1", "title": "t", "status": "blocked"},
+            {"id": "B1.2", "title": "t", "status": "cancelled"},
+            {"id": "B1.3", "title": "t", "status": "done"}]}]}
+    _blh = render_html(_blm, _lib.rollup(_blm, [], []), "r", None)
+    check("bl a phase in progress says how many of its tasks are STUCK - the "
+          "chip answers for the phase, and nothing answered for its contents",
+          '<span class="pblocked"' in _blh and ">1 blocked<" in _blh)
+    check("bl ...and how many were dropped, because a 1/3 bar on a phase whose "
+          "other tasks were cancelled cannot say that by itself",
+          '<span class="pcancelled"' in _blh and ">1 cancelled<" in _blh)
+    check("bl a blocked PHASE does not repeat the word - its own chip carries it",
+          '<span class="pblocked"' not in render_html(
+              {"meta": {"title": "b"}, "bugs": [], "phases": [
+                  {"id": "B2", "title": "stuck", "status": "blocked", "tasks": [
+                      {"id": "B2.1", "title": "t", "status": "blocked"}]}]},
+              _lib.rollup({"phases": [{"id": "B2", "status": "blocked", "tasks": [
+                  {"id": "B2.1", "status": "blocked"}]}]}, [], []), "r", None))
+    check("so the table says which column it is already sorted by, at load - "
+          "the marker used to appear only on the first click, so a reader met "
+          "an ordered table wearing no order at all",
+          "if (initial && idx === 0)" in _SCRIPT
+          and "th.setAttribute('aria-sort', 'ascending');" in _SCRIPT
+          and "wireSort(grouped, true, true);" in _SCRIPT)
+    check("vw1 the phases table carries a view select - active, archived, all - "
+          "and no archive toggle survives anywhere",
+          re.search(r'<select[^>]*id="audit-view"', _sgh) is not None
+          and '<option value="active"' in _sgh
+          and '<option value="archived"' in _sgh
+          and '<option value="all"' in _sgh
+          and "audit-arch" not in _sgh)
+    check("vw2 the archive segment holds BOTH terminal states - a cancelled "
+          "phase is finished, and filing it under pending would leave dropped "
+          "work looking like work still to come",
+          _report_html._seg_of("done") == "archived"
+          and _report_html._seg_of("cancelled") == "archived"
+          and _report_html._seg_of("blocked") == "active"
+          and _report_html._seg_of("nonsense") == "pending")
     _sgd = {"meta": {"title": "alldone"}, "bugs": [], "phases": [
         {"id": "D1", "title": "a", "status": "done",
          "tasks": [{"id": "D1.1", "title": "t", "status": "done"}]},
         {"id": "D2", "title": "b", "status": "done",
          "tasks": [{"id": "D2.1", "title": "t", "status": "done"}]}]}
     _sgdh = render_html(_sgd, _lib.rollup(_sgd, [], []), "r", None)
-    check("sg5 an all-done plan keeps its archive OPEN - there is nothing left "
-          "to keep prominent, and a table that opens empty explains nothing",
-          'id="audit-arch"' not in _sgdh
+    check("vw3 a plan with nothing active opens on ALL - the default view is "
+          "'active', and a finished plan that greeted its reader with an empty "
+          "table would be the archive toggle's own failure wearing a select",
+          'data-defaultview="all"' in _sgdh
+          and 'data-defaultview="active"' in _sgh
           and _markup(_sgdh).count('<tr class="seghead"') == 1
-          and 'data-seg="done"' in _sgdh)
+          and 'data-seg="archived"' in _sgdh)
     check("sg6 a single-segment plan still gets its one seghead - the home of "
           "the export controls",
-          _fhm.count('<tr class="seghead"') == 1
-          and 'id="audit-arch"' not in _fhm)
-    check("sg7 report.js gates the archive inside refresh() and lifts it while "
-          "any filter is active - a search must reach the archived rows",
-          "archOpen || anyFilter || pr.__seg !== 'done'" in _SCRIPT
-          and "audit-arch" in _SCRIPT)
+          _fhm.count('<tr class="seghead"') == 1)
+    check("vw4 report.js gates on the view, and a search that matches rows the "
+          "view hides SAYS SO rather than reporting nothing - the old rule "
+          "silently lifted the gate, which made the toggle a lie during a search",
+          "viewMode" in _SCRIPT
+          and "audit-view" in _SCRIPT
+          and "archOpen" not in _SCRIPT
+          and "data-outside" in _SCRIPT)
+    check("vw5 the view survives a reload - in the shareable fragment first, "
+          "and in localStorage when History is refused (a report opened over "
+          "file:// is the common case, and that is where filters vanished)",
+          "put('v', viewMode" in _SCRIPT
+          and "localStorage" in _SCRIPT and "audit-view-" in _SCRIPT)
     check("sg8 print: a page break lands before every segment header except "
           "the first, and the header itself always prints",
           "tr.seghead{break-before:page;display:table-row!important}" in _print
@@ -1710,7 +1910,7 @@ def _selftest():
     check("sg9 the archive prints EXPANDED - the pinned whole-plan rule "
           "already forces every row onto paper, and the stylesheet argues the "
           "choice where the rules live",
-          "tr.phase,tr.task{display:table-row!important" in _print
+          "tr.phase,tr.task,tr.taskdetail{display:table-row!important" in _print
           and "archive prints expanded" in _CSS.lower())
 
     # --- ex: per-segment export (D2, v0.36) -----------------------------------
@@ -1722,7 +1922,8 @@ def _selftest():
     check("ex1 every seghead carries its CSV and Print controls, named by "
           "segment",
           _sghm.count("data-segcsv=") == 3 and _sghm.count("data-segprint=") == 3
-          and 'data-segcsv="done"' in _sghm and 'data-segprint="active"' in _sghm)
+          and 'data-segcsv="archived"' in _sghm
+          and 'data-segprint="active"' in _sghm)
     check("ex2 the bugs table earns a CSV control beside its heading; a "
           "bugless plan renders none",
           'data-csv="bugs"' in _markup(html_out)
@@ -1742,7 +1943,7 @@ def _selftest():
               "!important}" in _print
           and 'body[data-printseg="active"]' in _print
           and 'body[data-printseg="pending"]' in _print
-          and 'body[data-printseg="done"]' in _print
+          and 'body[data-printseg="archived"]' in _print
           and "removeAttribute('data-printseg')" in _SCRIPT)
     check("ex6 the export controls never reach paper",
           ".segx,.secx{display:none!important}" in _print)
@@ -1911,8 +2112,10 @@ def _selftest():
           'id="audit-print"' in html_out and 'id="audit-dl-md"' in html_out
           and 'window.AUDIT_MD_B64="' in html_out and "@page" in html_out
           and "@media print" in html_out)
-    check("h10 done column: completion date + full timestamps on hover",
-          "<th>done</th>" in html_out and "2026-07-09" in html_out
+    check("h10 done column: completion stamp to the MINUTE, its zone named once "
+          "in the header, and both full timestamps still on hover",
+          '<th data-col="done">done <span class="muted">UTC</span></th>' in html_out
+          and "2026-07-09 09:30" in html_out
           and 'title="started 2026-07-09T08:00:00Z · completed '
           '2026-07-09T09:30:00Z"' in html_out)
     check("h11 risk chip (data-risk) + status token drives rail/chip",

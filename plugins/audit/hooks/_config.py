@@ -207,6 +207,13 @@ DEFAULTS = {
     # confirmation prompt on manifest STATE edits (status/completedAt/commit/
     # attempts) -- never "deny": the orchestrator writes through the same tools.
     "journal": {"enabled": True, "dir": None, "strictManifestState": "off"},
+    # th (F-P-6): the panel's and the report's LOOK. `theme` is a preset name or
+    # a path to a theme file; absent means "search" -- .claude/audit.theme.json
+    # in the project, then ~/.claude/audit.theme.json, then the built-in. No
+    # hook reads this; it lives here because DEFAULTS is the one place the whole
+    # config's shape is stated, and a key the validator knows but this file does
+    # not is how the two drifted before.
+    "ui": {"theme": None},
 }
 
 
