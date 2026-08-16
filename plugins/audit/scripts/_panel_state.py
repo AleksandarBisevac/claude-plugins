@@ -1030,8 +1030,19 @@ def usage_state(project):
     # ignoring the filter bar, which is worse than a slightly larger payload.
     titles, task_meta, budgets = {}, {}, {}
     mpath = _manifest_path(project, config)
+    # ONE read for the five consumers below. They each used to call
+    # `load_manifest_safe(mpath)` for themselves, which on a sharded manifest is
+    # 1 index + 1 file per phase EVERY TIME: measured at 100 file opens and 5 JSON
+    # parse passes for a 19-phase plan, per GET /api/usage, to answer five
+    # questions about one document. Hoisting is safe outside the try blocks
+    # because `load_manifest_safe` is total — it returns {} on any error and never
+    # raises — so the guards below still cover exactly what they were protecting
+    # against: the CONSUMERS (routing, monthly_activity, phase_tags, registry).
+    # Reading once is also the more correct answer: five reads could straddle a
+    # concurrent manifest write and ship five mutually inconsistent views of it.
+    manifest = _mio.load_manifest_safe(mpath)
     try:
-        for ph in (_mio.load_manifest_safe(mpath).get("phases") or []):
+        for ph in (manifest.get("phases") or []):
             if not isinstance(ph, dict):
                 continue
             if ph.get("id"):
@@ -1053,7 +1064,7 @@ def usage_state(project):
     # Needs the assembled manifest and the per-tier counts, so it cannot be done
     # on the client. Fail-soft: no advice is the normal outcome anyway.
     try:
-        advice = ul.routing(_mio.load_manifest_safe(mpath), rows,
+        advice = ul.routing(manifest, rows,
                             ucfg.get("pricing")).get("advice") or []
     except Exception:
         advice = []
@@ -1064,8 +1075,7 @@ def usage_state(project):
     # the client owns the month axis (its months union this dict's keys), and
     # the plan half's months are the plan's own events.
     try:
-        monthly_plan = ul.monthly_activity(
-            _mio.load_manifest_safe(mpath), []).get("plan") or {}
+        monthly_plan = ul.monthly_activity(manifest, []).get("plan") or {}
     except Exception:
         monthly_plan = {}
 
@@ -1074,7 +1084,7 @@ def usage_state(project):
     # re-tagging a phase re-attributes its whole ledger history with no backfill.
     # The join map ships with the facts; the client does the join per row.
     try:
-        phase_areas = _areas.phase_tags(_mio.load_manifest_safe(mpath))
+        phase_areas = _areas.phase_tags(manifest)
     except Exception:
         phase_areas = {}
 
@@ -1085,7 +1095,7 @@ def usage_state(project):
     # "owns:" line, and titles the area select's options with them.
     try:
         area_owners = {}
-        for _tag, _entry in _areas.registry(_mio.load_manifest_safe(mpath)).items():
+        for _tag, _entry in _areas.registry(manifest).items():
             _o = _entry.get("owner")
             if isinstance(_o, str) and _o.strip():
                 area_owners[_tag] = _o.strip()
@@ -1577,6 +1587,49 @@ def _selftest():
     check("usage_state does not roll up a small ledger", u["rolled"] is False)
     check("usage facts carry no prompt content — only dimensions and counts",
           all(len(f) == 10 for f in u["facts"]))
+
+    # --- one manifest read per /api/usage ---------------------------------------
+    # The payload answers five questions about ONE document (titles/taskMeta/
+    # budgets, routingAdvice, monthlyPlan, phaseAreas, areaOwners) and each used to
+    # re-read it — on a sharded plan that is 1 index + 1 file per phase, per
+    # question. COUNTED rather than asserted-present: a source pin cannot tell one
+    # call from five, which is exactly the regression this guards.
+    _lms_calls = [0]
+    _real_lms = _mio.load_manifest_safe
+
+    def _counting_lms(path):
+        _lms_calls[0] += 1
+        return _real_lms(path)
+
+    _mio.load_manifest_safe = _counting_lms
+    try:
+        _hoisted = usage_state(proj)
+    finally:
+        _mio.load_manifest_safe = _real_lms
+    check("usage_state reads the manifest exactly ONCE for all five of its "
+          "manifest-derived fields (each used to re-read it)",
+          _lms_calls[0] == 1)
+    check("counting the reads did not change the payload",
+          _hoisted == u)
+    # The other direction, and the one that looks vacuous: "read once" must mean
+    # once PER REQUEST, not once per process. A manifest memoized across requests
+    # would satisfy the count above and then serve a stale plan forever — the
+    # `_VIEWER_CACHE` failure — so edit the plan on disk and require the next
+    # response to carry it.
+    _m_before = _mio.load_manifest_safe(mpath)
+    try:
+        _m_edited = json.loads(json.dumps(_m_before))
+        _m_edited["phases"][0]["title"] = "Retitled between requests"
+        _atomic_write_json(mpath, _m_edited)
+        check("the single read is per REQUEST — a plan edited between two calls "
+              "shows up in the second",
+              usage_state(proj)["phaseTitles"].get("P1")
+              == "Retitled between requests")
+    finally:
+        _atomic_write_json(mpath, _m_before)
+    check("...and restoring the plan restores the payload",
+          usage_state(proj)["phaseTitles"].get("P1") == "P")
+
     _saved = globals()["_MAX_FACTS"]
     try:
         globals()["_MAX_FACTS"] = 1
@@ -1736,7 +1789,7 @@ def _selftest():
     # pinned in panel-server, beside UI_HTML.
     check("routing advice is shipped from the server and fails soft",
           '"routingAdvice": advice' in _src
-          and "ul.routing(_mio.load_manifest_safe(mpath), rows," in _src
+          and "ul.routing(manifest, rows," in _src
           and "advice = []" in _src)
 
     # --- v0.34 C5 (lv): the data fingerprint -------------------------------------
