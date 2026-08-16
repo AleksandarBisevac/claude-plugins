@@ -795,8 +795,8 @@ def _selftest() -> int:
         lockdir.mkdir(parents=True, exist_ok=True)
 
         def put_lock(name, **fields):
-            info = {"hostname": platform.node(), "startedAt": time.strftime(
-                "%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "note": "phase run"}
+            info = {"hostname": platform.node(),
+                    "startedAt": _config.utc_stamp(), "note": "phase run"}
             info.update(fields)
             with open(lockdir / (name + ".lock"), "w", encoding="utf-8") as fh:
                 json.dump(info, fh)

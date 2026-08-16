@@ -63,7 +63,6 @@ import json
 import os
 import re
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
@@ -218,7 +217,7 @@ def pre_cache(data, *, cfg=None, root=None):
         _config.ensure_local_dir(os.path.dirname(slot))
         with open(slot, "w", encoding="utf-8") as fh:
             json.dump({"path": rel,
-                       "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                       "ts": _config.utc_stamp(),
                        "sha256": sha, "content": content}, fh)
         return slot
     except Exception:

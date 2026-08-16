@@ -1012,6 +1012,36 @@ def enforce_always(cfg):
     return bool(DEFAULTS.get("enforce", False))
 
 
+# --- utc stamps ---------------------------------------------------------------
+def utc_stamp():
+    """The wall-clock stamp every record a hook writes carries — one instant in
+    UTC, ISO-8601 to the second, e.g. `2026-08-17T09:41:03Z`.
+
+    The `Z` and `time.gmtime()` are a pair, and holding the pair together is the
+    entire reason this function exists rather than the expression. `Z` is not
+    decoration: it is a claim that the digits in front of it are UTC, and
+    `gmtime()` is the only thing that makes the claim true. Build the same format
+    from `time.localtime()` and nothing anywhere objects — the `Z` is a literal in
+    the format string so it is still emitted, the result is still 20 characters,
+    and `time.strptime(s, "%Y-%m-%dT%H:%M:%SZ")` still parses it without a
+    murmur. What breaks is downstream and silent: a lock taken at 14:00 CEST is
+    recorded as `14:00Z`, so every reader that compares it to real UTC — the
+    stale-lock age in scripts/audit-lock.py, the doctor's clock-drift check, the
+    panel's Overview — sees an event two hours in the future and computes a
+    negative age. On a machine that happens to run in UTC the two versions are
+    indistinguishable, which is why the mistake survives review and a CI run.
+
+    This existed as five separately-typed copies of the expression across
+    hooks/, with no constant and no home; the sixth would eventually have been
+    typed with `localtime`.
+
+    Never raises, and adds no import: `time` is already at module scope. Every
+    hook imports this module on every tool call and they are blocking gates, so
+    a helper that pulled in `datetime` here would be paid for on calls that never
+    stamp anything."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
 # --- atomic local writes ------------------------------------------------------
 def atomic_write_text(path, text):
     """Replace `path`'s whole contents with `text`, atomically: a UNIQUE temp
@@ -1114,7 +1144,7 @@ def append_gate_event(logs_dir, event):
     try:
         logs = ensure_local_dir(logs_dir)
         path = logs / GATE_EVENTS_FILE
-        row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        row = {"ts": utc_stamp()}
         for key in _GATE_EVENT_KEYS:
             val = (event or {}).get(key) if isinstance(event, dict) else None
             if val is not None:
@@ -1817,6 +1847,91 @@ def _selftest() -> int:
     check("q4 an explicit non-test glob still exempts the config it names - "
           "only test-suffix-shaped globs are carved out",
           matches_exempt("tsconfig.test.json", ["**/tsconfig.*"]))
+
+    # (t) utc_stamp: the trailing Z and gmtime() are one fact -----------------
+    # Every record a hook writes is stamped through this, and the bug it exists
+    # to prevent is invisible to the obvious assertions: the same format built
+    # from localtime also ends in "Z", is also 20 characters long, and also
+    # strptimes cleanly. So t1/t2 are shape only and are NOT trusted to catch
+    # it; t3 is the one that can, t4 proves t3 discriminates by feeding it the
+    # bug on purpose, and t5 is what still fires where t4 cannot run.
+    import calendar
+    import inspect
+
+    _UNREADABLE = 10 ** 9
+
+    def _skew_from_utc(stamp):
+        """Seconds between `stamp` READ AS UTC and the real UTC now. A stamp
+        that will not parse returns a skew no threshold here can accept, never
+        0 — an unreadable format is further from correct, not closer — and the
+        return keeps the suite reporting cases instead of dying at t3."""
+        try:
+            parsed = time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            return _UNREADABLE
+        return abs(calendar.timegm(parsed) - int(time.time()))
+
+    def _localtime_variant():
+        """The fifth-and-a-half variant, written deliberately: right format,
+        wrong clock. t4 asserts t3's check rejects THIS."""
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.localtime())
+
+    # A non-UTC local zone, forced, because on a box whose local time IS UTC no
+    # runtime observation can tell the two apart -- and every CI runner is on
+    # UTC, which is precisely why this class of bug survives review and a green
+    # pipeline. POSIX form ("XYZ-14" == UTC+14) rather than an Olson name, so no
+    # tzdata is required; time.tzset is POSIX-only, hence the getattr.
+    _tzset = getattr(time, "tzset", None)
+    _tz_saved = os.environ.get("TZ")
+    try:
+        if _tzset is not None:
+            os.environ["TZ"] = "XYZ-14"
+            _tzset()
+        _t_now = time.time()
+        _local_offset = calendar.timegm(time.localtime(_t_now)) - int(_t_now)
+
+        check("t1 utc_stamp ends in Z", utc_stamp().endswith("Z"),
+              repr(utc_stamp()))
+        _parsed = True
+        try:
+            time.strptime(utc_stamp(), "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            _parsed = False
+        check("t2 utc_stamp parses back under exactly its own format, so a "
+              "numeric offset or a dropped Z would be a parse error", _parsed,
+              repr(utc_stamp()))
+        check("t3 utc_stamp's digits ARE UTC - read as UTC they land on the "
+              "current instant, not on local wall-clock time",
+              _skew_from_utc(utc_stamp()) <= 2,
+              "skew=%ds" % _skew_from_utc(utc_stamp()))
+        if abs(_local_offset) < 60:
+            # Not a pass: with local == UTC the two builds are identical, so
+            # the case would be green while asserting nothing.
+            print("SKIP t4 (local zone is UTC and TZ cannot be forced here - "
+                  "the localtime variant is indistinguishable)")
+        else:
+            check("t4 and t3 discriminates: the same format built from "
+                  "localtime FAILS it", _skew_from_utc(_localtime_variant()) > 2,
+                  "offset=%ds skew=%ds" % (_local_offset,
+                                           _skew_from_utc(_localtime_variant())))
+        # The docstring names `time.localtime()` as the bug, so only what
+        # follows the closing triple quote is judged. NOT `.replace(__doc__)`:
+        # 3.13+ dedents and strips `__doc__` at compile time, so it is no longer
+        # a substring of the source and the subtraction silently removes nothing
+        # (seen red here). With no docstring, split() yields one part and the
+        # whole body is judged, which is also correct. This is the only (t) case
+        # that fires on Windows, where time.tzset does not exist and t4 skips.
+        _src = inspect.getsource(utc_stamp).split('"""')[-1]
+        check("t5 the helper's own body pairs Z with gmtime and never reaches "
+              "for localtime", "time.gmtime()" in _src and "localtime" not in _src,
+              repr(_src))
+    finally:
+        if _tzset is not None:
+            if _tz_saved is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = _tz_saved
+            _tzset()
 
     all_pass = all(results)
     print("\n%s: %d/%d cases passed"

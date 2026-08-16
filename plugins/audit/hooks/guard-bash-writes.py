@@ -588,7 +588,6 @@ def _selftest() -> int:
     # honest thing left is to say who it landed on top of. Previously invisible
     # twice over: manifest_rel was skipped outright, and .json is not a source ext.
     import platform as _pf
-    import time as _time
     lockrepo = tmp / "lockrepo"
     (lockrepo / "audit" / "phases").mkdir(parents=True, exist_ok=True)
     os.environ["CLAUDE_PROJECT_DIR"] = str(lockrepo)
@@ -603,8 +602,7 @@ def _selftest() -> int:
                   encoding="utf-8") as fh:
             json.dump({"hostname": _pf.node(), "pid": os.getpid(),
                        "sessionId": "sess-A", "note": "phase P1",
-                       "startedAt": _time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                                   _time.gmtime())}, fh)
+                       "startedAt": _config.utc_stamp()}, fh)
         # baseline passes BEFORE the shard write exists (real git, no injection)
         for _sid in ("sess-B", "sess-B2"):
             decide({"tool_name": "Bash", "tool_input": {"command": "x"},

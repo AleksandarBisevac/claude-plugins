@@ -114,7 +114,7 @@ def _mark_seen(root, cfg):
         # it is paid only on the rare call that reaches here (at most once an
         # hour), never on the every-tool-call import of _config.
         _config.atomic_write_text(path, json.dumps(
-            {"lastRun": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+            {"lastRun": _config.utc_stamp()}))
     except Exception:
         pass
 
