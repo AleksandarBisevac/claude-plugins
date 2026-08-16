@@ -63,6 +63,10 @@ import time
 # --- pricing --------------------------------------------------------------------
 # USD per MILLION tokens. Mirrors hooks/_config.py DEFAULTS["usage"]["pricing"] so
 # this module is usable standalone (backfill, selftest) without a config file.
+# The mirror is CHECKED, not asserted in prose: `pricing_divergences()` below and
+# the `pp` selftest cases load the hooks' own table and name any field that drifts.
+# They cannot be merged - hooks/ may import nothing from scripts/ - so the copy is
+# deliberate and the case is what keeps it honest.
 # Cache rates follow the published multipliers off base input: write 1.25x at the
 # 5-minute TTL, 2x at the 1-hour TTL, read 0.1x.
 #
@@ -122,6 +126,54 @@ def price(counts, model, pricing=None):
         except (TypeError, ValueError, AttributeError):
             continue
     return total / 1_000_000.0
+
+
+def pricing_divergences(mine, theirs, mine_name="mine", theirs_name="theirs"):
+    """Every field-level disagreement between two pricing tables, sorted. `[]`
+    means the two agree completely.
+
+    Named rather than boolean because DEFAULT_PRICING above and
+    `hooks/_config.py DEFAULTS["usage"]["pricing"]` are 13 models x 5 rates that
+    must be kept identical BY HAND: hooks/ may import nothing from scripts/ and
+    has to price a model with no config file present, so the table cannot be
+    merged into one home. Each file carried a comment saying it mirrored the
+    other and nothing read either comment. A checker that only says "the tables
+    differ" hands the reader 65 numbers to diff, which is why every difference
+    is named down to `model.rate: <value> vs <value>`.
+
+    A table that is not a dict is REPORTED, never treated as empty-and-therefore-
+    equal: the caller's most likely non-dict is a load that failed, and a failed
+    load must not read as "they agree"."""
+    if not isinstance(mine, dict):
+        return ["%s is not a pricing table (%s)" % (mine_name, type(mine).__name__)]
+    if not isinstance(theirs, dict):
+        return ["%s is not a pricing table (%s)" % (theirs_name, type(theirs).__name__)]
+    out = []
+    for model in sorted(set(mine) | set(theirs)):
+        if model not in mine:
+            out.append("%s: absent from %s" % (model, mine_name))
+            continue
+        if model not in theirs:
+            out.append("%s: absent from %s" % (model, theirs_name))
+            continue
+        row_a, row_b = mine[model], theirs[model]
+        if not isinstance(row_a, dict) or not isinstance(row_b, dict):
+            out.append("%s: rate row is not a dict (%s=%s, %s=%s)"
+                       % (model, mine_name, type(row_a).__name__,
+                          theirs_name, type(row_b).__name__))
+            continue
+        for rate in sorted(set(row_a) | set(row_b)):
+            if rate not in row_a:
+                out.append("%s.%s: absent from %s (%s has %r)"
+                           % (model, rate, mine_name, theirs_name, row_b[rate]))
+            elif rate not in row_b:
+                out.append("%s.%s: absent from %s (%s has %r)"
+                           % (model, rate, theirs_name, mine_name, row_a[rate]))
+            elif row_a[rate] != row_b[rate]:
+                out.append("%s.%s: %s %r vs %s %r"
+                           % (model, rate, mine_name, row_a[rate],
+                              theirs_name, row_b[rate]))
+    return out
 
 
 # --- timestamps -----------------------------------------------------------------
@@ -800,11 +852,22 @@ def totals(rows):
 def aggregate(rows, by):
     """Group rows by one of GROUP_KEYS -> {key: finished totals}. Unknown `by`
     raises KeyError, which the CLI turns into a usage error."""
+    # The accumulator is fetched, not `setdefault`-ed, ON PURPOSE. `setdefault`
+    # evaluates `_blank()` EAGERLY, so a dict plus five `set()` objects were
+    # built and thrown away for every row whose key already existed: 20,000
+    # `_blank()` calls to fill 50 day buckets, and `aggregate` runs 11 times per
+    # report and per panel usage request. Calling `keyfn` once instead of twice
+    # is the rest of it. Measured 30.0 ms -> 18.4 ms over 20,000 rows.
+    # `_blank()` never returns None, so a `None` from `.get` means "absent".
     keyfn = GROUP_KEYS[by]
     acc = {}
     for row in rows:
-        acc.setdefault(keyfn(row), _blank())
-        _add(acc[keyfn(row)], row)
+        key = keyfn(row)
+        slot = acc.get(key)
+        if slot is None:
+            slot = _blank()
+            acc[key] = slot
+        _add(slot, row)
     return {k: _finish(v) for k, v in acc.items()}
 
 
@@ -831,11 +894,17 @@ def aggregate_area(rows, tags_by_phase):
     A multi-tag phase counts its rows under EACH of its tags, so per-tag figures
     can sum PAST the ledger total; every renderer that shows per-area numbers
     must say so. Rows that resolve to no tag land in `untagged`."""
+    # Lazy accumulator for the same reason `aggregate` uses one - see the comment
+    # there. This one allocated once per (row x tag), which is WORSE: a two-tag
+    # phase paid for two discarded `_blank()`s per row.
     acc = {}
     for row in rows:
         for tag in _row_area_tags(row, tags_by_phase):
-            acc.setdefault(tag, _blank())
-            _add(acc[tag], row)
+            slot = acc.get(tag)
+            if slot is None:
+                slot = _blank()
+                acc[tag] = slot
+            _add(slot, row)
     return {k: _finish(v) for k, v in acc.items()}
 
 
@@ -1526,6 +1595,97 @@ def _selftest():
           abs(price({"in": 0, "out": 0, "cacheW5m": 0, "cacheW1h": 0,
                      "cacheR": 1_000_000}, "claude-opus-5") - 0.5) < 1e-9)
 
+    # --- pp: the 65 numbers that used to be kept true by two comments -------
+    # DEFAULT_PRICING and hooks/_config.py DEFAULTS["usage"]["pricing"] are the
+    # same 13 models x 5 rates, and each file's comment said it mirrored the
+    # other. Nothing read either comment. They cannot be merged (hooks/ may
+    # import nothing from scripts/, and the hook must price a model standalone),
+    # so the agreement is pinned here instead - the scripts/ side is the one that
+    # is allowed to look at both.
+    def _deep_pricing_copy(table):
+        return dict((model, dict(row)) for model, row in table.items())
+
+    def _load_hooks_pricing():
+        """`(table, error)` for hooks/_config.py's own pricing map, loaded BY PATH.
+
+        NOT through `_loader.load_hooks_config()`, which is how `_help.py` and
+        `validate-config.py` reach the same file: `_loader` is this module's PEER
+        in `_deps.LAYERS` (both layer 1), so an `import _loader` here is a
+        sideways edge, and `_deps.layer_violations()` names it - measured, it adds
+        a 21st entry to a KNOWN_LAYER_DEBT list whose case asserts EXACT equality.
+        The four lines below are what `_loader.load()` does, minus the shared
+        cache this one call has no use for.
+
+        The failure is RETURNED, never swallowed: a hooks config that would not
+        load must land as a failing case of its own, not as an empty divergence
+        list that reads exactly like agreement."""
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "hooks", "_config.py")
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "audit_hooks_config_ledger_selftest", path)
+            if spec is None or spec.loader is None:
+                return None, "no import spec for %s" % path
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod.DEFAULTS["usage"]["pricing"], None
+        except Exception as exc:     # any failure is reported, not absorbed
+            return None, "%s: %s" % (type(exc).__name__, exc)
+
+    # The second-direction case: a divergence checker that ALWAYS reports
+    # something would fail every `pp` case below except this one, and this one
+    # is the only case that goes red when it does.
+    check("pp1 two identical tables diverge in nothing",
+          pricing_divergences(DEFAULT_PRICING,
+                              _deep_pricing_copy(DEFAULT_PRICING)) == [])
+    _pp_drift = _deep_pricing_copy(DEFAULT_PRICING)
+    _pp_drift["claude-sonnet-5"]["cacheW1h"] = 6.5
+    _pp_named = pricing_divergences(DEFAULT_PRICING, _pp_drift,
+                                    "ledger", "hooks")
+    check("pp2 one drifted rate is named down to model.rate WITH both values, "
+          "and is the ONLY thing reported - a checker that just says 'the "
+          "tables differ' sends someone diffing 65 numbers by hand",
+          _pp_named == ["claude-sonnet-5.cacheW1h: ledger 6.0 vs hooks 6.5"],
+          repr(_pp_named))
+    _pp_gone = _deep_pricing_copy(DEFAULT_PRICING)
+    del _pp_gone["claude-haiku-4-5"]
+    check("pp3 a model present on one side only is named by model",
+          pricing_divergences(DEFAULT_PRICING, _pp_gone, "ledger", "hooks")
+          == ["claude-haiku-4-5: absent from hooks"])
+    _pp_extra = _deep_pricing_copy(DEFAULT_PRICING)
+    _pp_extra["claude-future-9"] = dict(DEFAULT_PRICING["_default"])
+    check("pp4 ...and so is a model only the OTHER side has, so the check reads "
+          "both directions",
+          pricing_divergences(DEFAULT_PRICING, _pp_extra, "ledger", "hooks")
+          == ["claude-future-9: absent from ledger"])
+    _pp_partial = _deep_pricing_copy(DEFAULT_PRICING)
+    del _pp_partial["claude-opus-5"]["cacheR"]
+    check("pp5 a missing RATE inside a row is named too, not just a missing row",
+          pricing_divergences(DEFAULT_PRICING, _pp_partial, "ledger", "hooks")
+          == ["claude-opus-5.cacheR: absent from hooks (ledger has 0.5)"])
+    check("pp6 a table that is not a dict - the shape a failed load has - is "
+          "REPORTED, never treated as empty-and-therefore-equal",
+          pricing_divergences(DEFAULT_PRICING, None, "ledger", "hooks")
+          == ["hooks is not a pricing table (NoneType)"]
+          and pricing_divergences(None, DEFAULT_PRICING, "ledger", "hooks")
+          == ["ledger is not a pricing table (NoneType)"])
+
+    _hooks_pricing, _hooks_err = _load_hooks_pricing()
+    check("pp7 hooks/_config.py loaded and carries DEFAULTS['usage']['pricing'] "
+          "at all - its own case, so a load failure can never be mistaken for "
+          "the tables agreeing",
+          _hooks_err is None and isinstance(_hooks_pricing, dict)
+          and len(_hooks_pricing) == len(DEFAULT_PRICING),
+          _hooks_err or ("got %r" % (type(_hooks_pricing).__name__,)))
+    _hooks_diff = pricing_divergences(DEFAULT_PRICING, _hooks_pricing,
+                                      "usage_ledger.DEFAULT_PRICING",
+                                      "hooks/_config.py")
+    check("pp8 usage_ledger.DEFAULT_PRICING and hooks/_config.py "
+          "DEFAULTS['usage']['pricing'] are identical, model for model and rate "
+          "for rate - the duplication is deliberate, the agreement is now read",
+          _hooks_diff == [], " | ".join(_hooks_diff))
+
     # --- timestamps --------------------------------------------------------
     check("ts: millisecond Z form parses",
           parse_ts("2026-08-06T07:20:10.266Z") is not None)
@@ -1943,6 +2103,116 @@ def _selftest():
         check("aa7 ...including the untagged bucket, and an unknown tag is []",
               totals(rows_for_area(_aa_rows, _aa_map, "untagged"))["in"] == 280
               and rows_for_area(_aa_rows, _aa_map, "nope") == [])
+
+        # --- ag: the lazy accumulator (a measured hot spot) -----------------
+        # `acc.setdefault(k, _blank())` evaluates `_blank()` EAGERLY, so a dict
+        # plus five `set()`s were built and discarded for every row whose key
+        # already existed - 20,000 allocations to fill 50 day buckets, and
+        # `aggregate` runs 11 times per report and per panel usage request.
+        # THE TWO HALVES ARE PROVEN APART ON PURPOSE: an output assertion cannot
+        # see an allocation (the eager version returns exactly the same dict),
+        # and an allocation count cannot see a wrong number.
+        def _aggregate_eager(rows, by):
+            """The pre-fix body, kept as an ORACLE so "faster" can never quietly
+            become "different"."""
+            keyfn = GROUP_KEYS[by]
+            acc = {}
+            for row in rows:
+                acc.setdefault(keyfn(row), _blank())
+                _add(acc[keyfn(row)], row)
+            return dict((k, _finish(v)) for k, v in acc.items())
+
+        def _aggregate_area_eager(rows, tags_by_phase):
+            acc = {}
+            for row in rows:
+                for tag in _row_area_tags(row, tags_by_phase):
+                    acc.setdefault(tag, _blank())
+                    _add(acc[tag], row)
+            return dict((k, _finish(v)) for k, v in acc.items())
+
+        def _ag_row(ts, phase, tokens):
+            return {"ts": ts, "phaseId": phase, "taskId": phase + ".1",
+                    "model": "claude-opus-5", "author": "a@x",
+                    "sessionId": "s-" + phase, "branch": "main", "attr": "task",
+                    "agentType": "audit-executor", "msgs": 1, "in": tokens,
+                    "out": 2 * tokens, "cacheW5m": 1, "cacheW1h": 2,
+                    "cacheR": 3, "costUSD": 0.125 * tokens}
+
+        # Three day keys out of five rows: two buckets repeat (only a repeated
+        # key can tell the eager and lazy versions apart) and one occurs once.
+        # Every `ts` is distinct, so grouping by "hour" gives five keys for the
+        # same rows - that is what makes ag5 below a real second direction.
+        _ag_rows = [_ag_row("2026-08-01T09", "P1", 10),
+                    _ag_row("2026-08-01T10", "P1", 20),
+                    _ag_row("2026-08-01T11", "P2", 40),
+                    _ag_row("2026-08-02T09", "P2", 80),
+                    _ag_row("2026-08-03T09", "P3", 160)]
+        check("ag1 the fixture really does repeat keys - over rows that are all "
+              "unique the two versions are indistinguishable and ag4 would pass "
+              "on the bug",
+              len(aggregate(_ag_rows, "day")) == 3 and len(_ag_rows) == 5)
+        check("ag2 output is unchanged against the eager setdefault oracle, for "
+              "every group key, over repeated keys / a single-occurrence key / "
+              "an empty ledger",
+              all(aggregate(_r, _by) == _aggregate_eager(_r, _by)
+                  for _r in (_ag_rows, _ag_rows[4:], [])
+                  for _by in sorted(GROUP_KEYS)))
+        _ag_tags = {"P1": ["backend"], "P2": ["backend", "web"], "P3": []}
+        check("ag3 ...and aggregate_area's output is unchanged too, including "
+              "the multi-tag phase that allocated TWICE per row",
+              all(aggregate_area(_r, _ag_tags) == _aggregate_area_eager(_r, _ag_tags)
+                  for _r in (_ag_rows, _ag_rows[4:], [])))
+
+        # `_blank` is swapped for a counting stub and restored in `finally` -
+        # the same technique audit-journal.py's selftest uses for its anchor
+        # counter. THE COUNT IS THE DEFECT; nothing else in the suite can see it.
+        _ag_calls = [0]
+        _ag_real_blank = _blank
+
+        def _ag_counting_blank():
+            _ag_calls[0] += 1
+            return _ag_real_blank()
+
+        globals()["_blank"] = _ag_counting_blank
+        try:
+            _ag_calls[0] = 0
+            aggregate(_ag_rows, "day")
+            _ag_by_day = _ag_calls[0]
+            _ag_calls[0] = 0
+            aggregate(_ag_rows, "hour")
+            _ag_by_hour = _ag_calls[0]
+            _ag_calls[0] = 0
+            aggregate([], "day")
+            _ag_empty = _ag_calls[0]
+            _ag_calls[0] = 0
+            aggregate_area(_ag_rows, _ag_tags)
+            _ag_area = _ag_calls[0]
+            _ag_calls[0] = 0
+            _aggregate_eager(_ag_rows, "day")
+            _ag_eager_day = _ag_calls[0]
+        finally:
+            globals()["_blank"] = _ag_real_blank
+
+        check("ag4 `_blank()` is called once per KEY, not once per row: 3 "
+              "allocations for 5 rows over 3 day buckets",
+              _ag_by_day == 3, "got %d" % _ag_by_day)
+        # The other direction. A "lazy" accumulator that reused ONE slot, or
+        # allocated nothing, would satisfy ag4 by accident; it cannot satisfy
+        # this, because here every row genuinely IS its own key.
+        check("ag5 ...and once per row when every row is its own key, so ag4 is "
+              "not passing on a version that stopped allocating at all",
+              _ag_by_hour == 5, "got %d" % _ag_by_hour)
+        check("ag6 an empty ledger allocates nothing", _ag_empty == 0,
+              "got %d" % _ag_empty)
+        check("ag7 aggregate_area allocates once per TAG (backend, web, "
+              "untagged), not once per row x tag - 3, not 6",
+              _ag_area == 3, "got %d" % _ag_area)
+        # The counter itself is proven to fire: run the ORACLE through it and
+        # watch the pre-fix number come back. Without this, ag4/ag7 could be
+        # green because the stub was never installed.
+        check("ag8 the counter is real - the eager oracle, measured the same "
+              "way, still allocates once per ROW (5), which is the defect",
+              _ag_eager_day == 5, "got %d" % _ag_eager_day)
 
         # --- monthly_activity (ma) ----------------------------------------
         # One computation site for the 12-month overview's three surfaces
