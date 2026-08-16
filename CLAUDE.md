@@ -1,0 +1,106 @@
+# Working on this repo
+
+A Claude Code plugin marketplace (`quality-gates` → plugin `audit`). Python here is **hooks and
+CLI scripts**, not a package: there is no `[project]` table, nothing is installed, nothing is
+published. It dogfoods its own plugin, so your edits run under its plan gate and TDD reminder.
+
+`CONTRIBUTING.md` is the rulebook and `PLUGIN-BUILD-GUIDE.md` is the architecture. This file
+states only what you must know *before* an edit; it deliberately restates no procedure, because
+two copies of a procedure is one copy and one lie.
+
+## Hard rules
+
+- **Stdlib only** in `plugins/audit/{hooks,scripts}/`. A guard that needs `pip install` is a
+  guard that is off on most machines. `py-launch.sh` stays POSIX-sh builtins only.
+- **No `typing`, no `dataclasses`, no annotations, no walrus, no `from __future__`.** Not a style
+  guide — `_output.house_style_violations()` reads the AST and fails the build. The 3.8 floor and
+  hooks that must start fast on every tool call are the reason.
+- **Python 3.8 floor**, held by `vermin -t=3.8-` in CI. Formatting is `%`-style throughout; the
+  tree contains no f-strings.
+- **All `.py` stays flat, one directory deep.** The CI selftest glob and `_output.py`'s own guard
+  are non-recursive *by design*: a `.py` dropped into a subdirectory silently stops being tested.
+  `scripts/ui/` is the one exception and holds no `.py` at all.
+- **Fail-open for advisory paths, fail-loud for guards** — the table is in `SECURITY.md`.
+- **Every claim in output carries the basis that makes it true, and when the basis is missing,
+  that is the thing to say.** Never fall back to a default to fill the gap; a basis with no claim
+  is noise. See `CONTRIBUTING.md` for the worked example (cost, and the five surfaces that
+  render it).
+- Every command that mutates the manifest revalidates via `scripts/validate-manifest.py`.
+
+## Adding a `.py` under `hooks/` or `scripts/`
+
+Four things beyond the code, and three of them fail CI *by name* if missed:
+
+1. a `--selftest` printing the `N/M cases passed` contract — CI globs the directories and fails a
+   file that has none;
+2. `safe_stdio()` as the **first** statement in `__main__` (AST-enforced by `_output.py`);
+3. a layer assignment in `_deps.LAYERS` (the import-graph lint fails an unplaced file);
+4. a tree line **and** a section in `PLUGIN-BUILD-GUIDE.md` (the enumeration lint).
+
+Name by role: `_underscore.py` for an importable helper, `hyphen-name.py` for an entry point.
+Files of 400+ lines need at least two top-level `# --- name ---` markers to stay navigable.
+New behaviour means new selftest cases — the selftests are this project's test suite.
+
+## Which skill covers what
+
+Read the one for the language before writing, not after. Each states the house dialect, the
+modular structure, the DRY rule, what makes the code testable, and the anti-patterns that have
+actually bitten here.
+
+| Writing… | Skill |
+|---|---|
+| Python | `writing-python` |
+| browser JavaScript | `writing-javascript` |
+| CSS | `writing-css` |
+| any `--selftest` case, guard or lint | `no-silent-pass` |
+| splitting or sharing `ui/` parts | `refactoring-the-assembled-ui` |
+| a sync/batch job against a remote API | `running-resumable-sync-jobs` |
+| anything depending on an external API's behaviour | `verifying-external-behavior` |
+| a check that passes locally and fails in CI | `reproducing-ci-locally` |
+
+## The front end is not ordinary files
+
+`plugins/audit/scripts/ui/` holds **ordered parts of one artifact**, not standalone files: Python
+concatenates them into exactly one inline `<style>` and one inline `<script>` in a self-contained
+page opened over `file://`. No ESM, no bundler, no external resource of any kind, and ~70 exact
+substring assertions in `render-report.py` and `panel-server.py` guard the assembled output —
+some of which currently *require* duplication to stay as it is.
+
+**Read the `refactoring-the-assembled-ui` skill before editing `report.{css,js}`,
+`panel.{css,js}` or `_ui_theme.py`.** Assets of 400+ lines also owe one section marker per 400
+lines, enforced by `_deps.ui_navigability_violations()`.
+
+## Tests
+
+```bash
+for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do python3 "$f" --selftest || exit 1; done
+ruff check plugins/audit tools
+vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks
+```
+
+`CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set. The
+browser-level gates (`tools/capture-screenshots.mjs --check`,
+`tools/check-report-interactive.mjs`) are the only thing that can prove the report actually
+paints and stays interactive — a selftest can only assert what the CSS *says*.
+
+A check that has only ever been seen passing may be asserting nothing. Break the thing it guards
+and confirm it goes red before trusting it.
+
+## Releasing
+
+One release is **one commit** that bumps `plugin.json`, finalizes the `CHANGELOG.md` section, and
+carries the annotated `v<version>` tag. Push only after CI is green **on that commit**. A pushed
+tag is never moved or deleted — fix forward.
+
+**Do not commit, push, tag or release without being asked.** Permission to commit is not
+permission to push.
+
+## Before proposing a change
+
+`CONTRIBUTING.md` ends with a **Decision record** — settled questions, each with an observable
+revisit trigger: `commands/` alongside thin skills, flat `scripts/`, the `typing` ban, in-product
+help as an endpoint plus an invoked agent rather than an auto-triggering skill. Read it before
+re-opening one of them, and if a trigger has genuinely fired, say which.
+
+Bugs found along the way go into the plan's Faults section when one is active, rather than being
+fixed inline in an unrelated change.
