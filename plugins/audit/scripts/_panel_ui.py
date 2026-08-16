@@ -29,11 +29,18 @@ either, since those are filled in per-request, not at import.
 
 The result is cached in a module global — the assets are read once per process,
 the same "read once, keep serving from memory" contract UI_HTML always had.
+
+The read itself is not ours. `ui/` sits in front of this module and of
+`_report_ui.py` alike, and the two are layer-2 peers that may not import each
+other, so the directory, the `newline=""` open, the CR check and the
+"exists and decodes" probe all live one layer down in `_ui_theme` — see
+`read_asset` there for why the newline flag is load-bearing. What stays here
+is the panel's own half: the markers, the splice, and what it pins about them.
 """
-import io
 import os
 
-_UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
+import _ui_theme as _theme   # same dir; sys.path[0] when run standalone, or the
+                              # importer's own sys.path.insert(0, _HERE) otherwise
 
 CSS_MARK = "/*@CSS@*/"
 JS_MARK = "/*@JS@*/"
@@ -42,23 +49,6 @@ _cache = None
 
 
 # --- template assembly --------------------------------------------------------
-def _read(name):
-    with io.open(os.path.join(_UI_DIR, name), "r", encoding="utf-8", newline="") as fh:
-        return fh.read()
-
-
-def _cr_violations(assets):
-    """Given [(name, text), ...], return the names whose text carries a "\\r".
-
-    The three ui/ assets are read with newline="" on purpose (see module
-    docstring) — no line-ending translation happens on the read, so a CRLF
-    checkout (e.g. windows-latest CI with autocrlf rewriting the repo) shows
-    up here as a literal "\\r" in the loaded text. This is a pure function of
-    the given (name, text) pairs — no filesystem access — so a test can feed
-    it fixture content directly, without touching the module's own _UI_DIR."""
-    return [name for name, text in assets if "\r" in text]
-
-
 def raw_template(cache=True):
     """Return the pre-substitution UI_HTML string, assembled from ui/panel.*.
 
@@ -67,9 +57,9 @@ def raw_template(cache=True):
     global _cache
     if cache and _cache is not None:
         return _cache
-    skeleton = _read("panel.html")
-    css = _read("panel.css")
-    js = _read("panel.js")
+    skeleton = _theme.read_asset("panel.html")
+    css = _theme.read_asset("panel.css")
+    js = _theme.read_asset("panel.js")
     out = skeleton.replace(CSS_MARK, css, 1).replace(JS_MARK, js, 1)
     if cache:
         _cache = out
@@ -100,19 +90,13 @@ def _selftest():
 
     # --- the three asset files exist and decode as utf-8 ------------------------
     names = ("panel.html", "panel.css", "panel.js")
+    unreadable = _theme.unreadable_assets(names)
     for name in names:
-        path = os.path.join(_UI_DIR, name)
-        try:
-            with io.open(path, "r", encoding="utf-8", newline="") as fh:
-                fh.read()
-            readable = True
-        except (IOError, OSError, UnicodeDecodeError):
-            readable = False
-        check("%s exists and decodes as utf-8" % name, readable)
+        check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
-    skeleton = _read("panel.html")
-    css = _read("panel.css")
-    js = _read("panel.js")
+    skeleton = _theme.read_asset("panel.html")
+    css = _theme.read_asset("panel.css")
+    js = _theme.read_asset("panel.js")
     template = raw_template(cache=False)
 
     # --- each insertion marker appears exactly once in the skeleton -------------
@@ -145,13 +129,12 @@ def _selftest():
     check("the JS lives inside the <script> block, not beside it", script_span == js)
 
     # --- CSS brace balance, via _ui_theme's existing lints -----------------------
-    import _ui_theme as _theme
     check("panel.css braces balance", css.count("{") == css.count("}"))
     check("no declaration in panel.css is left unterminated",
           not _theme.unterminated_css_decls(css))
 
     # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
-    ui_pyfiles = [f for f in os.listdir(_UI_DIR) if f.endswith(".py")]
+    ui_pyfiles = [f for f in os.listdir(_theme.UI_DIR) if f.endswith(".py")]
     check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
 
     # --- LF contract: none of the loaded ui/ assets (nor the assembled ------
@@ -159,7 +142,7 @@ def _selftest():
     # a .gitattributes eol=lf pin) would shift every cross-line selftest pin.
     real_assets = [("panel.html", skeleton), ("panel.css", css), ("panel.js", js),
                    ("raw_template()", template)]
-    real_cr = _cr_violations(real_assets)
+    real_cr = _theme.cr_violations(real_assets)
     check("no \\r (CRLF) in any loaded ui/ asset or the assembled template "
           "(found in: %r)" % (real_cr,), not real_cr)
 
@@ -167,7 +150,7 @@ def _selftest():
     fixture_assets = [("panel.html", "<html>\r\n<body></body>\r\n</html>"),
                        ("panel.css", "body { color: red; }\n"),
                        ("panel.js", "console.log(1);\n")]
-    fixture_cr = _cr_violations(fixture_assets)
+    fixture_cr = _theme.cr_violations(fixture_assets)
     check("fixture proof: a CRLF panel.html is named by the CR check "
           "(got %r, want ['panel.html'])" % (fixture_cr,),
           fixture_cr == ["panel.html"])

@@ -26,43 +26,30 @@ that wrap a block live in the Python that assembles it, never in the asset):
 
 `CSS` and `SCRIPT` are read once at import (module-global) — the same "read
 once, keep serving from memory" contract `_CSS`/`_SCRIPT` always had.
+
+The read itself is not ours. `ui/` sits in front of this module and of
+`_panel_ui.py` alike, and the two are layer-2 peers that may not import each
+other, so the directory, the `newline=""` open, the CR check and the
+"exists and decodes" probe all live one layer down in `_ui_theme` — see
+`read_asset` there for why the newline flag is load-bearing. What stays here
+is the report's own half: which assets it names, and what it pins about them.
 """
-import io
 import os
 
 import _ui_theme as _theme   # same dir; sys.path[0] when run standalone, or the
                               # importer's own sys.path.insert(0, _HERE) otherwise
-
-_UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 
 _css_cache = None
 _script_cache = None
 
 
 # --- asset loading ------------------------------------------------------------
-def _read(name):
-    with io.open(os.path.join(_UI_DIR, name), "r", encoding="utf-8", newline="") as fh:
-        return fh.read()
-
-
-def _cr_violations(assets):
-    """Given [(name, text), ...], return the names whose text carries a "\\r".
-
-    The two ui/ assets are read with newline="" on purpose (see module
-    docstring) — no line-ending translation happens on the read, so a CRLF
-    checkout (e.g. windows-latest CI with autocrlf rewriting the repo) shows
-    up here as a literal "\\r" in the loaded text. This is a pure function of
-    the given (name, text) pairs — no filesystem access — so a test can feed
-    it fixture content directly, without touching the module's own _UI_DIR."""
-    return [name for name, text in assets if "\r" in text]
-
-
 def _css(cache=True):
     """The plain-CSS part of `_CSS` (without the TOKEN_CSS prefix)."""
     global _css_cache
     if cache and _css_cache is not None:
         return _css_cache
-    out = _read("report.css")
+    out = _theme.read_asset("report.css")
     if cache:
         _css_cache = out
     return out
@@ -75,7 +62,7 @@ def _script(cache=True):
     global _script_cache
     if cache and _script_cache is not None:
         return _script_cache
-    out = "<script>" + _read("report.js") + "</script>"
+    out = "<script>" + _theme.read_asset("report.js") + "</script>"
     if cache:
         _script_cache = out
     return out
@@ -110,18 +97,12 @@ def _selftest():
 
     # --- the two asset files exist and decode as utf-8 ---------------------------
     names = ("report.css", "report.js")
+    unreadable = _theme.unreadable_assets(names)
     for name in names:
-        path = os.path.join(_UI_DIR, name)
-        try:
-            with io.open(path, "r", encoding="utf-8", newline="") as fh:
-                fh.read()
-            readable = True
-        except (IOError, OSError, UnicodeDecodeError):
-            readable = False
-        check("%s exists and decodes as utf-8" % name, readable)
+        check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
-    css_file = _read("report.css")
-    js_file = _read("report.js")
+    css_file = _theme.read_asset("report.css")
+    js_file = _theme.read_asset("report.js")
 
     # --- CSS starts with the TOKEN_CSS block: the tokens sit in front -----------
     check("CSS starts with the TOKEN_CSS block", CSS.startswith(_theme.TOKEN_CSS))
@@ -152,7 +133,7 @@ def _selftest():
           not _theme.unterminated_css_decls(css_file))
 
     # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
-    ui_pyfiles = [f for f in os.listdir(_UI_DIR) if f.endswith(".py")]
+    ui_pyfiles = [f for f in os.listdir(_theme.UI_DIR) if f.endswith(".py")]
     check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
 
     # --- LF contract: none of the loaded ui/ assets (nor the assembled CSS/ ----
@@ -160,14 +141,14 @@ def _selftest():
     # .gitattributes eol=lf pin) would shift every cross-line selftest pin.
     real_assets = [("report.css", css_file), ("report.js", js_file),
                    ("CSS", CSS), ("SCRIPT", SCRIPT)]
-    real_cr = _cr_violations(real_assets)
+    real_cr = _theme.cr_violations(real_assets)
     check("no \\r (CRLF) in any loaded ui/ asset or the assembled CSS/SCRIPT "
           "(found in: %r)" % (real_cr,), not real_cr)
 
     # --- fixture red-proof: a CRLF asset IS named by the same helper ------------
     fixture_assets = [("report.css", "body { color: red; }\r\n"),
                        ("report.js", "console.log(1);\n")]
-    fixture_cr = _cr_violations(fixture_assets)
+    fixture_cr = _theme.cr_violations(fixture_assets)
     check("fixture proof: a CRLF report.css is named by the CR check "
           "(got %r, want ['report.css'])" % (fixture_cr,),
           fixture_cr == ["report.css"])
