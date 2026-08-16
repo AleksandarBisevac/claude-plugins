@@ -141,7 +141,138 @@ def _manifest_path(project, config):
 
 
 # --- who is looking at this panel -------------------------------------------------
+# {(project, mode): {"watch": [...], "stamp": [...], "env": [...], "viewer": {...}}}.
+# One entry per (project, mode): panel-server serves exactly one project, and the
+# CLI callers (audit-task through _panel_write) run once and exit — so this is not
+# a growth surface worth bounding.
+#
+# panel-server is a ThreadingHTTPServer, so two requests can be in here at once.
+# That is safe under one rule: an entry is REPLACED, never edited in place. A
+# reader holds the whole entry it fetched, so a concurrent writer swapping in a new
+# one cannot tear the stamp away from the watch list it belongs to. The worst
+# outcome is a redundant resolve. Do not "optimize" this by mutating the hit. Same
+# rule, same reason, as `_panel_discovery._DISCOVERY_CACHE`.
 _VIEWER_CACHE = {}
+
+# The validity token and the settle rule are `_panel_discovery`'s, by REFERENCE and
+# not by copy: both caches guard the same class of thing — a file a human edits by
+# hand, on filesystems whose mtime is often 1-second granular — and two
+# implementations of "has anything moved" is two answers to it. See `_stamp` there
+# for why size and inode ride along with mtime, and `_SETTLE_SECONDS` for the race
+# a same-second write opens.
+_stamp = _panel_discovery._stamp
+_settled = _panel_discovery._settled
+
+# The non-`GIT_CONFIG*` half of the environment the answer moves with: HOME and
+# XDG_CONFIG_HOME decide WHERE the global config is, and USER/USERNAME ARE the
+# answer when git has no identity to give.
+_IDENTITY_ENV = ("HOME", "XDG_CONFIG_HOME", "USER", "USERNAME")
+
+
+def _identity_env():
+    """The environment `resolve_author` reads, as sorted `(name, value)` pairs.
+
+    Every `GIT_CONFIG*` variable, because that family decides which files git opens
+    at all (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM`) and can
+    carry the config with no file involved (`GIT_CONFIG_COUNT` plus
+    `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`) — matched by PREFIX rather than listed,
+    so a variable a later git adds to that family is covered without this file being
+    edited. Pinned by value: none of these moves any file's mtime, so no stat could
+    ever see one change.
+    """
+    return sorted((k, v) for k, v in os.environ.items()
+                  if k.startswith("GIT_CONFIG") or k in _IDENTITY_ENV)
+
+
+def _git_config_origins(project):
+    """The config files git ITSELF says it read for `project` — absolute ones only.
+
+    Asked of git rather than reconstructed from its documented search order, because
+    that order is not something this file can hold honestly: the system config lives
+    wherever the build put it (on the machine this was written on, inside Xcode.app
+    rather than /etc/gitconfig), and `includeIf "gitdir:…"` — the standard way to
+    carry a second `user.email` for one tree — pulls in a path nothing here could
+    predict. A config file that decides the identity and is not watched is exactly
+    the stale answer this cache exists to have stopped having.
+
+    `--name-only` is not a nicety. A plain `--list` also hands back every VALUE, and
+    a git config routinely holds credential helpers and tokens; only the paths are
+    wanted here, so only the paths are read.
+
+    A RELATIVE origin (git spells the repo config `file:.git/config`) is dropped: it
+    is relative to the repository top-level, not to `project`, and
+    `_git_config_candidates` already stamps that same file from `project` and every
+    ancestor — which is where it sits when `project` is a subdirectory.
+    """
+    try:
+        res = subprocess.run(["git", "-C", str(project), "config", "--list",
+                              "--show-origin", "--name-only"],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=5)
+        text = (res.stdout or b"").decode("utf-8", "replace")
+    except Exception:
+        text = ""
+    out = []
+    for line in text.splitlines():
+        if not line.startswith("file:"):
+            continue
+        path = line[len("file:"):].split("\t", 1)[0]
+        if os.path.isabs(path):
+            out.append(path)
+    return out
+
+
+def _git_config_candidates(project):
+    """The config files that do NOT exist yet but would decide the answer if one
+    appeared.
+
+    The half a token built only from what was READ cannot have, and the half that
+    matters: `git config --global user.email` on a machine with no `~/.gitconfig`
+    writes a file the previous resolve never opened. `_stamp` records an absent path
+    as absent rather than dropping it, so one appearing is a mismatch.
+
+    Walking UP from `project` rather than testing it alone: `resolve_author` runs
+    `git -C project`, and git searches upward for the repository, so a `.git` created
+    anywhere above `project` is a place a repo-local identity can appear.
+    """
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
+    out = [os.environ.get("GIT_CONFIG_GLOBAL") or os.path.join(home, ".gitconfig"),
+           os.path.join(xdg, "git", "config"),
+           os.environ.get("GIT_CONFIG_SYSTEM") or "/etc/gitconfig"]
+    seen = set()
+    node = os.path.realpath(project)
+    while node not in seen:
+        seen.add(node)
+        out.append(os.path.join(node, ".git", "config"))
+        out.append(os.path.join(node, ".git", "config.worktree"))
+        node = os.path.dirname(node)
+    return out
+
+
+def _resolve_viewer(project, mode):
+    """One uncached resolve: `({author, mode}, watched_paths)`.
+
+    Split out so the cache has a seam to wrap, and so the watch list is produced BY
+    the resolve rather than guessed alongside it — `_panel_discovery._discover_scan`
+    's shape, for the reason stated there: a watch list maintained apart from the
+    read it describes drifts from it, and a drifted watch list is a cache that goes
+    stale in silence.
+
+    `mode: none` is deliberately NOT special-cased into an empty watch list, even
+    though `resolve_author` returns before reading anything in that mode: knowing
+    that here would be a second implementation of a rule that function owns, and the
+    two would eventually disagree. Over-watching costs a resolve; under-watching
+    costs a wrong name.
+    """
+    author = None
+    try:
+        ul = _loader.load_script("usage_ledger.py", modname="audit_usage_ledger")
+        author = ul.resolve_author(project, mode)
+    except Exception:
+        author = None
+    return ({"author": author, "mode": mode},
+            _git_config_origins(project) + _git_config_candidates(project))
 
 
 def _viewer(project, config):
@@ -157,21 +288,75 @@ def _viewer(project, config):
     `mode: none` is a real answer, not a failure: it means this project chose not
     to record who spent what, and the panel says so rather than inventing a name.
 
-    Cached per (project, mode) because resolve_author shells out to git and
-    build_state runs on every /api/state.
+    WHY THERE IS A CACHE. `resolve_author` shells out to git (up to two
+    `git config --get` runs) and `build_state` calls this on EVERY `/api/state`.
+
+    INVALIDATION — the whole design, so it is stated rather than implied. This
+    cache had none: keyed on `(project, mode)` and populated once, it never expired
+    and was never invalidated, so `git config user.email` changed against a panel
+    that had been up for hours kept answering with the old identity, and the Usage
+    tab's "my spend" filter silently selected the wrong rows. A stale answer is
+    worse than a slow one here — reflecting what is on disk is this panel's job.
+
+      * The token is a fresh `os.stat` of every file that can decide the answer:
+        every ABSOLUTE origin `git config --list --show-origin` reports for this
+        project (system, global, XDG, and whatever an `include`/`includeIf` pulled
+        in), plus the repo config of `project` and of each ancestor, plus the
+        global and system locations that do not exist yet. Absent paths are stamped
+        as absent, so `git config --global user.email` on a machine with no
+        `~/.gitconfig` invalidates by CREATING one of them — the case a token built
+        only from what was read gets wrong.
+      * Plus the environment, BY VALUE (`_identity_env`): `GIT_CONFIG_*` decides
+        which files git opens and can carry the config with no file involved,
+        `HOME`/`XDG_CONFIG_HOME` decide where the global one lives, and
+        `USER`/`USERNAME` IS the answer when git has no identity to give. None of
+        those moves a file's mtime, so no stat could see them.
+      * `mode` stays in the KEY, not the token: it is read out of the project's own
+        `.claude/audit.config.json`, which `build_state` re-reads per request, so a
+        changed `usage.authorMode` arrives here as a different key already.
+      * It is NOT a TTL. A TTL has a window in which the panel knowingly shows the
+        wrong person's name, and a window short enough to be honest is short enough
+        that the cache buys nothing. Measured on this repo on one developer
+        machine: 16 watched paths, revalidated in 0.05 ms, against the 30 ms the
+        resolve costs (module load plus up to three `git config` runs). Statting
+        more paths than a TTL would is the price of the token being honest, and it
+        is still the cheaper half by 600x.
+      * A resolve whose files were being written AS it ran is returned but not
+        cached (`_settled`): mtime is 1-second granular on plenty of filesystems,
+        so an edit landing in the same second as the read can be stamped under an
+        mtime the token already holds — after which the pre-edit name would be
+        served forever, which is the original bug wearing a smaller window.
+        Refusing to cache is the safe direction: the caller still gets the right
+        answer, it just costs a resolve.
+
+    `_panel_discovery.discover`'s docstring cites this cache as the codebase's
+    cautionary never-invalidating case. That citation is now historical and wants a
+    one-line correction there.
     """
     _, _, _, cfg_mod = _cores()
     mode = str((cfg_mod.usage_cfg(config) or {}).get("authorMode") or "email")
     key = (os.path.realpath(project), mode)
-    if key not in _VIEWER_CACHE:
-        author = None
-        try:
-            ul = _loader.load_script("usage_ledger.py", modname="audit_usage_ledger")
-            author = ul.resolve_author(project, mode)
-        except Exception:
-            author = None
-        _VIEWER_CACHE[key] = {"author": author, "mode": mode}
-    return _VIEWER_CACHE[key]
+    env = _identity_env()
+    hit = _VIEWER_CACHE.get(key)
+    if hit is not None and hit["env"] == env \
+            and _stamp(hit["watch"]) == hit["stamp"]:
+        return dict(hit["viewer"])
+    started = time.time()
+    viewer, watch = _resolve_viewer(project, mode)
+    watch = sorted(set(watch))
+    stamp = _stamp(watch)
+    if _settled(stamp, started):
+        _VIEWER_CACHE[key] = {"watch": watch, "stamp": stamp, "env": env,
+                              "viewer": viewer}
+    else:
+        # Not merely "do not store": an entry from an earlier, settled resolve
+        # would still be serving its own answer, and this resolve just saw an
+        # identity file move.
+        _VIEWER_CACHE.pop(key, None)
+    # A copy, always — the cached dict outlives the request, and one caller writing
+    # to the payload it was handed would corrupt the next caller's answer with
+    # nothing raised anywhere.
+    return dict(viewer)
 
 def _read_json(path):
     """Thin delegation to the plugin's ONE JSON reader (_manifest_io.read_json)."""
@@ -1913,6 +2098,164 @@ def _selftest():
     check("gt: a project with nothing on disk still gets a gate block, never "
           "a raise",
           isinstance(_run_status(_lvmiss, {}, {}).get("gate"), dict))
+
+    # --- who is looking: the identity cache, in BOTH directions -----------------
+    # A stale answer here is worse than a slow one: the Usage tab's "my spend"
+    # filter compares this name against the ledger's `author` column, so an
+    # identity that went out of date silently selects the wrong rows. Neither
+    # direction is taken on trust. Every case COUNTS resolves rather than timing
+    # anything — a wall-clock assertion is flaky on a loaded machine and cannot say
+    # WHICH work was skipped.
+    #
+    # The fixture owns its whole git identity: GIT_CONFIG_NOSYSTEM plus a
+    # GIT_CONFIG_GLOBAL under the temp dir, and USER/USERNAME both set (Windows
+    # reads the second), so nothing about this machine's real config can decide a
+    # case here — the `no-silent-pass` ambient-state rule, on the two CI platforms.
+    _vtmp = tempfile.mkdtemp(prefix="state-viewer-")
+    _venv_keys = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
+                  "XDG_CONFIG_HOME", "USER", "USERNAME")
+    _venv_saved = {k: os.environ.get(k) for k in _venv_keys}
+    _real_resolve_viewer = _resolve_viewer
+    _resolves = [0]
+
+    def _counting_resolve(project, mode):
+        _resolves[0] += 1
+        return _real_resolve_viewer(project, mode)
+
+    def _vwrite(path, email, settled=True):
+        """Write a git config carrying one identity.
+
+        Backdated by default because the settle guard is doing its job: a file
+        written this millisecond is deliberately NOT cached, so aging it is the
+        honest way to reach the cached path. `settled=False` is how the guard's
+        own case reaches the other branch."""
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("[user]\n\temail = %s\n" % email)
+        if settled:
+            _when = time.time() - 5
+            os.utime(path, (_when, _when))
+
+    try:
+        globals()["_resolve_viewer"] = _counting_resolve
+        _vproj = os.path.join(_vtmp, "proj")
+        os.makedirs(_vproj)
+        _vglobal = os.path.join(_vtmp, "gitconfig-global")
+        os.environ["GIT_CONFIG_NOSYSTEM"] = "1"
+        os.environ["GIT_CONFIG_GLOBAL"] = _vglobal
+        os.environ["XDG_CONFIG_HOME"] = os.path.join(_vtmp, "xdg")
+        os.environ["USER"] = os.environ["USERNAME"] = "fixture-user"
+        os.environ.pop("GIT_CONFIG_SYSTEM", None)
+
+        _vwrite(_vglobal, "alice@example.com")
+        _resolves[0] = 0
+        _v1 = _viewer(_vproj, {})
+        check("viewer: the first call really does resolve — the baseline the skip "
+              "case below is measured against, and the proof the counter works",
+              _v1 == {"author": "alice@example.com", "mode": "email"}
+              and _resolves[0] == 1)
+        _resolves[0] = 0
+        _v2 = _viewer(_vproj, {})
+        # THE SECOND-DIRECTION CASE. It looks vacuous and it is the only one that
+        # fails if invalidation becomes unconditional (a token that never compares
+        # equal, a bare recompute): the answer would still be right, and the cache
+        # would have bought nothing.
+        check("viewer: with no identity file and no environment moved, the second "
+              "call resolves NOTHING and hands back the same answer",
+              _resolves[0] == 0 and _v2 == _v1)
+
+        # THE BUG ITSELF (F-P): `git config user.email` edited under a running
+        # panel. The old cache was keyed on (project, mode) and populated once, so
+        # this returned alice forever.
+        _vwrite(_vglobal, "bob@example.com")
+        _resolves[0] = 0
+        _v3 = _viewer(_vproj, {})
+        check("viewer: user.email changed IN PLACE under a running process is "
+              "picked up — the whole bug: no directory listing changed, so only "
+              "stamping the config FILE can catch this",
+              _v3["author"] == "bob@example.com" and _resolves[0] == 1)
+
+        # The environment half. With no git identity anywhere, resolve_author's
+        # answer IS $USER — a value no stat of any file could ever see move.
+        _vlater = os.path.join(_vtmp, "gitconfig-later")
+        os.environ["GIT_CONFIG_GLOBAL"] = _vlater          # nothing there yet
+        _viewer(_vproj, {})                                # warm on the new env
+        _resolves[0] = 0
+        _v4 = _viewer(_vproj, {})
+        check("viewer: a project whose git knows no identity falls back to the "
+              "environment, and that answer caches too",
+              _v4["author"] == "fixture-user" and _resolves[0] == 0)
+        os.environ["USER"] = os.environ["USERNAME"] = "someone-else"
+        _resolves[0] = 0
+        _v5 = _viewer(_vproj, {})
+        check("viewer: the environment is pinned BY VALUE - USER changed moves no "
+              "file's mtime, so a stat-only token would have served the old name",
+              _v5["author"] == "someone-else" and _resolves[0] == 1)
+
+        # THE TTL-KILLER. The winning config file did not EXIST when the answer was
+        # resolved, so a token covering only what was read (or a plain TTL) cannot
+        # know it appeared.
+        _viewer(_vproj, {})                                # re-warm, settled
+        _resolves[0] = 0
+        _vwrite(_vlater, "carol@example.com")
+        _v6 = _viewer(_vproj, {})
+        check("viewer: a config file that did not EXIST at resolve time "
+              "invalidates when it appears — absent paths are stamped, never "
+              "dropped from the token",
+              _v6["author"] == "carol@example.com" and _resolves[0] == 1)
+
+        # The settle guard, both ways. A case that only ever saw it accept would be
+        # asserting nothing.
+        _vfresh = os.path.join(_vtmp, "gitconfig-fresh")
+        os.environ["GIT_CONFIG_GLOBAL"] = _vfresh
+        _vwrite(_vfresh, "dave@example.com", settled=False)
+        _viewer(_vproj, {})
+        _resolves[0] = 0
+        _v7 = _viewer(_vproj, {})
+        check("viewer: an identity file written a moment ago is NOT cached — a "
+              "1-second-granular mtime cannot prove the resolve saw the final "
+              "bytes, and serving the pre-edit name forever is the original bug",
+              _v7["author"] == "dave@example.com" and _resolves[0] == 1)
+        _vsettle = time.time() - 5
+        os.utime(_vfresh, (_vsettle, _vsettle))
+        _viewer(_vproj, {})                                # re-warm, now settled
+        _resolves[0] = 0
+        _v8 = _viewer(_vproj, {})
+        check("viewer: ...and the same file, once it has settled, IS cached",
+              _v8["author"] == "dave@example.com" and _resolves[0] == 0)
+
+        _vmine = _viewer(_vproj, {})
+        _vmine["author"] = "clobbered"
+        check("viewer: each caller gets its own copy — writing to a returned "
+              "viewer cannot poison the next caller's answer",
+              _viewer(_vproj, {})["author"] == "dave@example.com")
+
+        # The watch list is what the RESOLVE read, plus what it would have read.
+        # A file consulted but not stamped is precisely how a cache goes stale in
+        # silence, so the two halves are checked against each other rather than
+        # trusted from the docstring.
+        _vwatch = _real_resolve_viewer(_vproj, "email")[1]
+        check("viewer: the winning config file is in the watch list, and so is the "
+              "repo config of the project and of its parent — the places a "
+              "repo-local user.email can appear when the panel is opened on a "
+              "subdirectory",
+              _vfresh in _vwatch
+              and os.path.join(os.path.realpath(_vproj), ".git", "config")
+              in _vwatch
+              and os.path.join(os.path.realpath(_vtmp), ".git", "config")
+              in _vwatch)
+        check("viewer: the origin list carries PATHS only - `--name-only`, because "
+              "a plain --list also hands back every value and a git config "
+              "routinely holds credential helpers and tokens",
+              "--name-only" in _src.split("def _git_config_origins")[1]
+              .split("def _git_config_candidates")[0])
+    finally:
+        globals()["_resolve_viewer"] = _real_resolve_viewer
+        for _k, _v in _venv_saved.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+        shutil.rmtree(_vtmp, ignore_errors=True)
 
     # --- isolation cases (P12.3): the moved boundary stays real -----------------
     _imports = [l for l in _src.split("\n")

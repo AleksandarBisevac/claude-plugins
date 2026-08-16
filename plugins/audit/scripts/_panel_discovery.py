@@ -302,9 +302,12 @@ def discover(project, home=None, cache=True):
       * It is NOT a TTL and NOT a stat of the roots alone. A TTL has a window in
         which the panel knowingly lies; a root-only stat never notices a plugin
         installed three levels down, because adding it does not touch the root.
-        `_VIEWER_CACHE` in `_panel_state` is the cautionary case in this codebase:
-        it never expires at all, so `git config user.email` changed mid-session
-        shows the old name until the panel is restarted.
+        `_VIEWER_CACHE` in `_panel_state` used to be the cautionary case here — it
+        never expired at all, so `git config user.email` changed mid-session showed
+        the old name until the panel was restarted. It now carries a token of its
+        own, built the same way this one is, and reuses `_settled` below by
+        reference. The example is kept because the failure is worth recognising,
+        not because that cache still has it.
       * A scan of a tree that was being written AS it ran is returned but not
         cached — see `_SETTLE_SECONDS`. Refusing to cache is the safe direction:
         the caller still gets a correct answer, it just costs a walk.

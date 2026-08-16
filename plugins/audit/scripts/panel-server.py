@@ -873,18 +873,25 @@ def _selftest():
     finally:
         _sh.rmtree(_eproj, ignore_errors=True)
 
-    # This module's own source, for the handful of checks that must assert a
-    # server-side construct rather than a rendered string.
-    _src = _src_of_this_file()
-
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
     # from the project's own config, so there is nothing to traverse with. The
     # cases that RENDER a report moved to _panel_state.py (P12.3); what stays is
     # the route that reaches it and the button that opens it.
-    check("the export route derives its path and takes no parameter",
-          'if path == "/api/report"' in _src and 'if path == "/report"' in _src
-          and "paths = report_paths(project)" in _src)
+    #
+    # F-P-8: this searched the WHOLE of this file's own source, so each literal
+    # found the assertion line spelling it — the check matched itself, and renaming
+    # the route in do_POST left the suite green while the routes it claims to guard
+    # went unguarded. It reads the handler slices instead, which end at
+    # `def _free_port` well before this line. That makes the DEFINITION ORDER
+    # warning above this case's business too, and in the harder direction: a slice
+    # that swallowed the rest of the file would swallow these literals as well, and
+    # the check would go back to finding itself.
+    check("the export route derives its path and takes no parameter — POST "
+          "/api/report renders, GET /report serves what was written",
+          'if path == "/api/report"' in _write_src
+          and 'if path == "/report"' in _get_src
+          and "paths = report_paths(project)" in _get_src)
 
     # --- v0.34 C5 (lv): live data - polling + fingerprint -----------------------
     # The fingerprint's own cases (stability, what moves it) live in
