@@ -284,6 +284,108 @@ jobs:
             diff -q "$f" "/tmp/regen/$(basename "$f")"
           done
           echo "OK: committed ledger matches a fresh deterministic run"
+      - name: Committed example still matches a FRESH render (not just its own copy)
+        shell: bash
+        run: |
+          set -e
+          # The cmp in the step below proves docs/index.html is a byte copy of the
+          # example report. It does NOT prove either file still reflects the
+          # renderer — so when render-report.py changes and nobody refreshes the
+          # artifacts, both copies drift together and that gate stays green. That is
+          # not hypothetical: a share-formatting fix landed, the committed example
+          # kept showing the old value, and CI was green until a refactor happened to
+          # render from a pristine `git archive HEAD` tree for unrelated reasons and
+          # noticed. This step is the missing half — it re-renders and compares.
+          #
+          # --out-dir, not examples/report.sh, for one reason: report.sh renders IN
+          # PLACE (and copies to docs/index.html), so running it here would overwrite
+          # the very files being compared and the check could never fail. --out-dir is
+          # report.sh's own documented scratch mode; everything else is identical to
+          # what it runs — same script, same manifest, and CLAUDE_PROJECT_DIR pointed
+          # at the example so the Usage section reads THAT project's committed ledger.
+          # Verified faithful: a scratch render and the committed file differ in
+          # exactly two places, both of them the wall-clock stamp.
+          #
+          # Which is the hard part. A naive cmp always fails, because the report
+          # stamps `generated <UTC>` — the same reason the scale demo below is checked
+          # by content and not by bytes. And the stamp appears TWICE: once in the
+          # visible header, and once more inside the base64 Markdown twin embedded as
+          # window.AUDIT_MD_B64. A normalizer that only rewrites the visible one still
+          # reports a difference on every run forever, so the blob is decoded and
+          # normalized inside. The counts are printed on every run, and a zero is a
+          # failure rather than a quiet pass: if the twin's marker or the stamp format
+          # moves, this says so instead of silently checking half the document.
+          rm -rf /tmp/fresh-example && mkdir -p /tmp/fresh-example
+          CLAUDE_PROJECT_DIR=examples/acme-store \
+            python plugins/audit/scripts/render-report.py \
+              examples/acme-store/audit-plan.json --out-dir /tmp/fresh-example
+          python - <<'PYEOF'
+          import base64, io, re, sys
+
+          STAMP = re.compile(r"generated \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC")
+          BLOB = re.compile(r'window\.AUDIT_MD_B64="([A-Za-z0-9+/=]*)"')
+          PAIRS = [("examples/acme-store/acme-store-audit.html",
+                    "/tmp/fresh-example/acme-store-audit.html"),
+                   # The Markdown twin is committed too, is written by the same
+                   # command, and drifts by the same mechanism - CI only ever grepped
+                   # a fresh one for `## Usage`, never compared it to what shipped.
+                   ("examples/acme-store/acme-store-audit.md",
+                    "/tmp/fresh-example/acme-store-audit.md")]
+
+          def normalize(path):
+              """Stamp-free text, plus how many stamps were rewritten where.
+
+              The embedded twin is spliced back DECODED rather than re-encoded, so a
+              real difference inside it surfaces as readable Markdown instead of as
+              an unreadable base64 run."""
+              text = io.open(path, encoding="utf-8").read()
+              inner = [0]
+
+              def swap(m):
+                  md = base64.b64decode(m.group(1)).decode("utf-8")
+                  md, n = STAMP.subn("generated <STAMP>", md)
+                  inner[0] += n
+                  return "window.AUDIT_MD_B64=<decoded twin>\n" + md
+
+              blobs = len(BLOB.findall(text))
+              text = BLOB.sub(swap, text)
+              text, visible = STAMP.subn("generated <STAMP>", text)
+              return text, visible, blobs, inner[0]
+
+          bad = 0
+          for committed, fresh in PAIRS:
+              a, a_vis, a_blobs, a_inner = normalize(committed)
+              b, b_vis, b_blobs, b_inner = normalize(fresh)
+              if not a_vis or not b_vis:
+                  sys.exit("FAIL: no `generated <UTC>` stamp found in %s - the stamp "
+                           "format moved and this check normalizes nothing" % committed)
+              if committed.endswith(".html"):
+                  if a_blobs != 1 or b_blobs != 1:
+                      sys.exit("FAIL: expected exactly one window.AUDIT_MD_B64 blob in "
+                               "%s, found %d - the embedded Markdown twin moved and its "
+                               "stamp is no longer being normalized" % (committed, a_blobs))
+                  if not a_inner or not b_inner:
+                      sys.exit("FAIL: the embedded twin in %s carries no `generated "
+                               "<UTC>` stamp - decoding it reached nothing" % committed)
+              print("normalized %s: %d visible + %d embedded stamp(s)"
+                    % (committed, a_vis, a_inner))
+              if a == b:
+                  continue
+              bad += 1
+              i = 0
+              while i < min(len(a), len(b)) and a[i] == b[i]:
+                  i += 1
+              print("FAIL: %s no longer matches a fresh render" % committed)
+              print("  first difference at char %d (stamps already normalized)" % i)
+              print("  committed: %r" % a[max(0, i - 60):i + 60])
+              print("  fresh:     %r" % b[max(0, i - 60):i + 60])
+          if bad:
+              sys.exit("fix: run `examples/report.sh` and commit what it rewrites\n"
+                       "     (examples/acme-store/acme-store-audit.{html,md} and "
+                       "docs/index.html)")
+          print("OK: the committed example report and its Markdown twin are what "
+                "today's renderer produces")
+          PYEOF
       - name: Live demo is the committed example (docs/index.html has not drifted)
         shell: bash
         run: |
