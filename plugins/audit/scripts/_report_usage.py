@@ -20,6 +20,10 @@ Two rules the whole section is built on, and the reason it is worth a module:
 
 Formatting is not decided here: `_fmt_tokens` / `_fmt_cost` delegate to _fmt
 (P10.6), the one token/cost formatter shared with the panel and /audit:usage.
+Neither is the divide: every share and every bar width in this file goes through
+`_fmt.share_pct`, via `_fill_pct` (a bar's answer to "there is no whole") or
+`_hover_share` (a share string's). No `or 1` — that fabricates a denominator and
+turns an unmeasurable share into a confident one.
 
 render-report.py keeps thin module-level aliases (`load_usage`,
 `_usage_section`, `_usage_md`, `_fmt_tokens`, ...) so render_html / render_md
@@ -528,6 +532,43 @@ def _budget_block(u):
 
 
 # --- rankings + sparklines + tables -------------------------------------------
+def _fill_pct(part, whole):
+    """How wide a bar's fill is, in percent — 0.0 when there is no whole.
+
+    `_fmt.share_pct` owns the divide; this only names the BAR's answer to a share
+    nobody can compute, which is not the share string's answer. No bar in this
+    section travels alone: the ranked rows and the phase stacks each print their
+    own token count beside the track, so an empty track sits next to the number
+    that explains it, while a `width:` has nowhere to put a sentinel. Same
+    asymmetry, same reasoning as `_fmt.bar_cells`, which returns 0 cells here.
+
+    Not `_fmt.bar_cells(part, whole, 100)` itself: these tracks are drawn at one
+    decimal, and the ranked list floors a real-but-tiny row at 0.8% — a whole-cell
+    minimum would round that to 1.0% and change every measurable row that has it."""
+    pct = _fmt.share_pct(part, whole)
+    return 0.0 if pct is None else pct
+
+
+def _hover_share(part, whole):
+    """`part` as a percentage of `whole` for a hover line — `?` when there is no
+    whole to divide by.
+
+    The mirror of `_fill_pct`: this string sits alone inside a tooltip with
+    nothing beside it to contradict a fabricated denominator, so an unmeasurable
+    share must say it is unmeasurable rather than report a confident `0%` that
+    reads exactly like a measured one.
+
+    Deliberately NOT `_fmt.fmt_share`, which is otherwise the same function: it
+    also carries a `<1%` floor this hover has never had, so adopting it would
+    change a MEASURABLE share — a row at 0.4% of the grand total reads `0%` here
+    today and would start reading `<1%`. Whether this hover should gain that
+    floor is a separate decision from guarding the divide; only the divide moves,
+    through `_fmt.share_pct`. The sentinel is spelled to match `fmt_share`'s
+    default so the chips and the hover say one word for one absence."""
+    pct = _fmt.share_pct(part, whole)
+    return "?" if pct is None else "%.0f%%" % pct
+
+
 def _author_chips(u):
     """The author chip row — rendered only when the ledger records more than
     one author, because a set of one has nothing to compare.
@@ -586,8 +627,14 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
                      {"tokens": sum(v["tokens"] for _, v in tail),
                       "costUSD": sum(v["costUSD"] for _, v in tail),
                       "msgs": sum(v["msgs"] for _, v in tail)}))
-    peak = max(v["tokens"] for _, v in head) or 1
-    grand = sum(v["tokens"] for _, v in items) or 1
+    # No `or 1` on either denominator. It is not a divide guard — it fabricates a
+    # whole of one token and every number measured against it becomes a confident
+    # claim about a ledger that recorded nothing. The guard is `_fmt.share_pct`,
+    # once per divide, and the two answers below differ because a bar and a share
+    # string are read differently: `_fill_pct` (empty track, the count beside it)
+    # and `_hover_share` (`?`, because it travels alone).
+    peak = max(v["tokens"] for _, v in head)
+    grand = sum(v["tokens"] for _, v in items)
     rows = []
     for k, v in head:
         label = k
@@ -612,14 +659,16 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
             % (attr_bit,
                _tip(label.strip(), [
                 ("tokens", _fmt_tokens(v["tokens"], 2)),
-                ("share", "%.0f%%" % (100.0 * v["tokens"] / grand)),
+                ("share", _hover_share(v["tokens"], grand)),
                 ("cost", _fmt_cost(v["costUSD"])
                  if u.get("showCost", True) else None),
                 ("messages", "{:,}".format(v["msgs"]))]),
                e(label.strip()),
                # Floored: a row at 0.08% of the peak rounds to 0.0% and paints an
                # empty track, which reads as "no data" rather than "a little".
-               max(0.8 if v["tokens"] else 0.0, 100.0 * v["tokens"] / peak),
+               # The floor reads the row's OWN tokens, so a peak of zero (every
+               # row at zero) still floors nothing and draws nothing.
+               max(0.8 if v["tokens"] else 0.0, _fill_pct(v["tokens"], peak)),
                colour, amt))
     return '<div class="rankgrp"><h3 class="sub">%s</h3>%s</div>' % (
         e(title), "".join(rows))
@@ -640,7 +689,19 @@ def _spark(values, peak, colour, days=None, label="", width=140, height=30):
     the section by hundreds of marks to say "0"."""
     if not values:
         return ""
-    peak = peak or 1
+    if not peak:
+        # No `or 1`. `peak` is the SHARED peak of the whole small-multiples grid,
+        # so a peak of zero says every panel in it recorded nothing — and against
+        # a fabricated peak of 1 every column is still zero and skipped, leaving
+        # an empty <svg> frame drawn to a scale nobody measured. The same answer
+        # the daily trend gives (`_usage_trend`) and the same answer this section
+        # gives a zero-token ledger: no shape to plot, so nothing is plotted.
+        #
+        # Only a whole EMPTY GRID takes this exit. A panel that is all zeros
+        # against a real shared peak keeps its frame, because on a shared axis
+        # that empty frame is the finding — this author ran nothing on this model
+        # while the panel beside it ran plenty.
+        return ""
     n = len(values)
     slot = float(width) / n
     bw = max(1.0, slot - 1.0)
@@ -954,7 +1015,10 @@ def _phase_stacks(u, slots, models):
     if not allp:
         return ""
     phases, hidden = allp[:TOP_N], allp[TOP_N:]
-    peak = max(sum(v.values()) for _, v in phases) or 1
+    # No `or 1`; the divide is guarded once, in `_fill_pct`. A stack is a bar with
+    # its own total printed beside it, so an unmeasurable width draws an empty
+    # track rather than a sentinel — `_fill_pct` says why.
+    peak = max(sum(v.values()) for _, v in phases)
     # Segments carry no inline labels (an interior stacked segment has no free end
     # to put one on), so identity here MUST come from a legend — never colour alone.
     # The ranked "By model" list above direct-labels instead, which is why it does
@@ -979,7 +1043,7 @@ def _phase_stacks(u, slots, models):
             '<span class="stack" style="width:%.1f%%" role="img" '
             'aria-label="%s: %s tokens">%s</span>'
             '<span class="amt">%s</span></div>'
-            % (e(pid), e(label), 100.0 * total / peak, e(pid),
+            % (e(pid), e(label), _fill_pct(total, peak), e(pid),
                _fmt_tokens(total), segs, e(_fmt_tokens(total))))
     if hidden:
         out.append('<p class="muted small">+%d more phase(s) not shown; the ranked '
@@ -1653,6 +1717,103 @@ def _selftest():
     check("u25 a tiny non-zero bar still paints a sliver, never an empty track",
           "width:0.8%" in _tiny and "width:100.0%" in _tiny,
           re.findall(r"width:[\d.]+%", _tiny))
+
+    # --- ud: four fabricated denominators (`or 1` is not a divide guard) --------
+    # Four sites forced a divisor to 1: two bar peaks, one share denominator and
+    # one sparkline peak. An `or 1` does not prevent a wrong answer, it invents
+    # one and dresses it as a measurement. `_fmt.share_pct` is the single divide;
+    # the two answers to "there is no whole" are `_fill_pct` (an empty track,
+    # because the row prints its own count beside it) and `_hover_share` (`?`,
+    # because that string travels alone) — the split `_fmt.bar_cells` and
+    # `_fmt.fmt_share` already make, and the one u28b/ua8 already made here.
+    _udz = _ranked(dict(_u, byModel={
+        "quiet-a": {"tokens": 0, "costUSD": 0.0, "msgs": 3},
+        "quiet-b": {"tokens": 0, "costUSD": 0.0, "msgs": 2}}),
+        "byModel", "By model")
+    # COUNTED, not found: an implementation that answers `?` for one row and
+    # `0%` for the other satisfies a presence assertion and is still wrong.
+    check("ud1 with no tokens anywhere the ranked hover says the share could not "
+          "be computed, never the confident `0%` a denominator of 1 manufactured",
+          _udz.count("share\t?") == 2 and "share\t0%" not in _udz, _udz)
+    # The other direction, and the one that would be cut in review: it passes on
+    # the pre-fix code by construction, and it is the ONLY case that fails if the
+    # unmeasurable branch goes unconditional or if `_fmt.fmt_share` is swapped in
+    # here — fmt_share carries a `<1%` floor this hover has never had, and a row
+    # at 0.03% of the grand total reads `0%` today. Changing that is a separate
+    # decision from guarding the divide; this case is what makes it deliberate.
+    check("ud2 a share that CAN be computed is untouched: same rounding, and no "
+          "`<1%` floor smuggled in with the guard",
+          "share\t67%" in uh and _tiny.count("share\t0%") == 1
+          and "share\t<1%" not in _tiny,
+          re.findall(r"share\t[^\n\"]*", _tiny))
+    # Restoring `or 1` does NOT turn ud3/ud6 red, and that is stated rather than
+    # hidden: a peak of zero forces every part to zero, so the fabricated `1` and
+    # the honest `None` both render 0.0%. What these two separate is a guarded
+    # divide from an unguarded one (the raw expression raises ZeroDivisionError),
+    # and an empty track from a sentinel or a floor someone might add later.
+    check("ud3 an all-zero ranked list still draws every row - empty track, its "
+          "own count beside it - which is why the BAR answers 0 cells where the "
+          "hover answers `?`",
+          _udz.count('style="width:0.0%;') == 2
+          and _udz.count('<span class="amt">0 &middot; $0.00</span>') == 2, _udz)
+    _uddays = ["2026-08-01", "2026-08-02"]
+    check("ud4 a small-multiples grid whose every panel recorded nothing draws "
+          "nothing at all, rather than an empty frame scaled to a peak of one "
+          "token nobody spent",
+          _spark([0, 0], 0, "var(--viz-1)", _uddays, "m") == "")
+    _udfr = _spark([0, 0], 40, "var(--viz-1)", _uddays, "m")
+    _udbar = _spark([0, 40], 40, "var(--viz-1)", _uddays, "m")
+    check("ud5 ...and the other direction: on a REAL shared peak an all-zero "
+          "panel keeps its empty frame - beside a panel that ran plenty, that "
+          "emptiness is the finding",
+          '<svg class="spark"' in _udfr and "<rect" not in _udfr
+          and _udbar.count('<rect class="hit"') == 1
+          and _udbar.count("<rect") == 2,
+          "%r | %r" % (_udfr, _udbar))
+    _udzs = _phase_stacks(dict(_u, phaseModel={"P1": {"claude-opus-5": 0},
+                                               "P2": {"claude-opus-5": 0}}),
+                          _model_slots(["claude-opus-5"]), ["claude-opus-5"])
+    check("ud6 a phase stack with nothing in it draws an empty track beside its "
+          "own total - the ranked bar's answer, for the same reason",
+          _udzs.count('style="width:0.0%"') == 2
+          and _udzs.count('<span class="amt">0</span>') == 2, _udzs)
+    check("ud6b ...and the measurable stacks are pixel-identical to what the "
+          "`or 1` version drew",
+          'style="width:100.0%"' in _stack and 'style="width:50.0%"' in _stack,
+          re.findall(r'class="stack" style="width:[\d.]+%"', _stack))
+
+    # The removed expressions, restored verbatim, so the manufactured answers are
+    # in the suite rather than only in a commit message. `_fmt.py` proves its own
+    # the same way. 5-of-0 is not reachable through today's `load_usage` (every
+    # breakdown sums to the same total the section gates on), but it is the shape
+    # that was written, and it is one filtered `items` away from being served.
+    def _share_with_the_or_1(part, whole):
+        whole = whole or 1
+        return "%.0f%%" % (100.0 * part / whole)
+
+    def _fill_with_the_or_1(part, whole):
+        whole = whole or 1
+        return 100.0 * part / whole
+
+    check("ud7 mutation proof: the removed `or 1` answers `0%` for 0-of-0 and "
+          "fabricates `500%` for 5-of-0, so ud1 goes red on it",
+          _share_with_the_or_1(0, 0) == "0%"
+          and _share_with_the_or_1(5, 0) == "500%"
+          and _hover_share(0, 0) == "?" and _hover_share(5, 0) == "?")
+    check("ud7b mutation proof (the bar half): the same guard puts a 500%-wide "
+          "fill in a track that cannot hold it, where `_fill_pct` draws none",
+          _fill_with_the_or_1(5, 0) == 500.0 and _fill_pct(5, 0) == 0.0
+          # ...and the blind spot ud3/ud6 name: at a REACHABLE zero peak every
+          # part is zero too, and the two agree exactly. Said here so nobody
+          # reads those cases as proof the peaks ever rendered differently.
+          and _fill_with_the_or_1(0, 0) == _fill_pct(0, 0) == 0.0)
+    check("ud7c mutation proof (measurable side): every computable divide is "
+          "bit-for-bit the removed expression, so no bar or stack moves a pixel "
+          "and no hover changes a digit",
+          all(_fill_pct(p, w) == 100.0 * p / w == _fill_with_the_or_1(p, w)
+              for p, w in ((1, 3), (900000, 1500000), (7, 12), (0, 5), (300, 1000300)))
+          and all(_hover_share(p, w) == "%.0f%%" % (100.0 * p / w)
+                  for p, w in ((1, 3), (300, 1000300), (0, 5), (900000, 1500000))))
 
     # --- one number format, everywhere ------------------------------------------
     check("u26 tokens are compact at one decimal, and two on hover",
