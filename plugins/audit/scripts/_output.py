@@ -61,6 +61,39 @@ def safe_stdio():
                 pass
 
 
+# --- finding the files to check ------------------------------------------------
+def py_files(directory):
+    """Sorted `(relname, path)` for every `.py` under `directory`, RECURSIVELY.
+
+    The recursion is the point. Both lints below used a flat `os.listdir`, and so
+    did CI's selftest glob and `_deps`' scanners — which is why `CONTRIBUTING.md`
+    had to carry a rule saying `.py` must stay one directory deep: a file dropped
+    into a subdirectory silently stopped being checked. The hazard was never the
+    subdirectory, it was the SILENCE. A recursive walk removes the hazard instead
+    of forbidding the shape, and it costs nothing today because there is no `.py`
+    in a subdirectory yet — this change is a no-op on the current tree and only
+    ever matters for a file somebody adds later.
+
+    `relname` is relative to `directory` and uses forward slashes, so a violation
+    in `usage/core.py` reports as `usage/core.py` rather than as a bare `core.py`
+    that could be any of several files once folders exist. Today, with everything
+    flat, it is exactly the basename it always was.
+
+    Sorted so the output is stable across filesystems; `os.walk` order is not.
+    """
+    found = []
+    for root, dirnames, filenames in os.walk(directory):
+        dirnames.sort()
+        for fname in filenames:
+            if not fname.endswith(".py"):
+                continue
+            path = os.path.join(root, fname)
+            rel = os.path.relpath(path, directory).replace(os.sep, "/")
+            found.append((rel, path))
+    found.sort()
+    return found
+
+
 # --- entry-point guard check --------------------------------------------------
 def _is_entry(node):
     """True for `if __name__ == "__main__":`, however the comparison is spelled."""
@@ -117,11 +150,9 @@ def entries_missing_guard(script_dir=None):
     """
     script_dir = script_dir or _HERE
     missing = []
-    for name in sorted(os.listdir(script_dir)):
-        if not name.endswith(".py"):
-            continue
+    for name, path in py_files(script_dir):
         try:
-            with open(os.path.join(script_dir, name), "r", encoding="utf-8") as fh:
+            with open(path, "r", encoding="utf-8") as fh:
                 tree = ast.parse(fh.read(), filename=name)
         except (OSError, SyntaxError):
             missing.append(name)
@@ -184,10 +215,7 @@ def house_style_violations(dirs=None):
     dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR)
     violations = []
     for d in dirs:
-        for name in sorted(os.listdir(d)):
-            if not name.endswith(".py"):
-                continue
-            path = os.path.join(d, name)
+        for name, path in py_files(d):
             try:
                 with open(path, "r", encoding="utf-8") as fh:
                     tree = ast.parse(fh.read(), filename=name)
@@ -383,6 +411,53 @@ def _selftest():
     real_style = house_style_violations()
     check("g10 neither scripts/ nor hooks/ carries any of the four house-style bans: %r"
           % (real_style,), not real_style)
+
+    # ------------------------------------------------- the lints reach a subdirectory
+    # The rule these replace said `.py` must stay one directory deep BECAUSE the
+    # scanners were flat - a file in a subdirectory silently stopped being checked.
+    # A fixture tree proves the recursion rather than the docstring claiming it: one
+    # clean file at the top, one banned import a level down, one entry point a level
+    # down with no guard.
+    rec = tempfile.mkdtemp(prefix="audit-output-rec-")
+    try:
+        with open(os.path.join(rec, "flat_ok.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 1\n")
+        os.makedirs(os.path.join(rec, "usage"))
+        with open(os.path.join(rec, "usage", "banned.py"), "w", encoding="utf-8") as fh:
+            fh.write("import typing\nx = 1\n")
+        with open(os.path.join(rec, "usage", "unguarded.py"), "w", encoding="utf-8") as fh:
+            fh.write('import sys\nif __name__ == "__main__":\n    print("hi")\n')
+        with open(os.path.join(rec, "usage", "clean_entry.py"), "w", encoding="utf-8") as fh:
+            fh.write('import sys\nif __name__ == "__main__":\n    safe_stdio()\n'
+                     '    print("hi")\n')
+
+        found = py_files(rec)
+        names = [n for n, _ in found]
+        check("r1 py_files walks into a subdirectory and names the file by its "
+              "RELATIVE path, so `usage/banned.py` cannot be mistaken for a "
+              "top-level `banned.py` once folders exist: %r" % (names,),
+              names == ["flat_ok.py", "usage/banned.py", "usage/clean_entry.py",
+                        "usage/unguarded.py"])
+
+        hs = house_style_violations([rec])
+        check("r2 a banned import one directory down IS reported - the flat scan "
+              "this replaced returned [] for exactly this tree: %r" % (hs,),
+              any(n == "usage/banned.py" for n, _l, _w in hs))
+        check("r3 ...and the clean files beside it are NOT reported. Reads vacuous, "
+              "and is the only case that fails if the walk starts flagging "
+              "everything it can now see: %r" % (hs,),
+              not any(n in ("flat_ok.py", "usage/clean_entry.py")
+                      for n, _l, _w in hs))
+
+        missing = entries_missing_guard(rec)
+        check("r4 an entry point one directory down with no safe_stdio() guard is "
+              "named: %r" % (missing,),
+              "usage/unguarded.py" in missing)
+        check("r5 ...and a guarded one a level down is not - the second direction "
+              "for the guard check too: %r" % (missing,),
+              "usage/clean_entry.py" not in missing)
+    finally:
+        shutil.rmtree(rec, ignore_errors=True)
 
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:

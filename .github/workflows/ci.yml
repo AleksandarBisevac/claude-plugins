@@ -39,8 +39,15 @@ jobs:
           # Every .py under hooks/ and scripts/ MUST carry a --selftest. A new file
           # without one now fails this step rather than being silently skipped, which
           # is the failure mode a list can never catch.
+          #
+          # RECURSIVE, not `*.py`. The glob was flat, and that is the only reason
+          # CONTRIBUTING.md had to carry a rule forbidding subdirectories: a file one
+          # level down stopped being run here without anything going red. `find`
+          # removes the hazard instead of forbidding the shape. It is a no-op on a
+          # flat tree, so this changes nothing today and everything the day somebody
+          # adds scripts/usage/core.py.
           total=0
-          for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
+          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
             echo "== $f"
             # Capture, but PRINT IN FULL on failure. The first version stored stdout
             # in a variable and echoed only the last line — so when the Windows leg
@@ -61,7 +68,7 @@ jobs:
             n=$(echo "$out" | tail -1 | grep -oE '[0-9]+/[0-9]+' | cut -d/ -f1)
             total=$((total + n))
           done
-          echo "== $total cases across $(ls plugins/audit/hooks/*.py plugins/audit/scripts/*.py | wc -l | tr -d ' ') suites"
+          echo "== $total cases across $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | wc -l | tr -d ' ') suites"
       - name: ...and again on a stream that cannot spell every character
         shell: bash
         run: |
@@ -76,7 +83,7 @@ jobs:
           # legs: scripts/ are guarded by _output.safe_stdio() (whose own selftest lints
           # that every entry point installs it), and hooks/ - which stay importless on
           # purpose - are covered by exactly this pass.
-          for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
+          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
             if ! out=$(PYTHONIOENCODING=cp1252 python "$f" --selftest 2>&1); then
               echo "$out"
               echo "FAIL: $f cannot print its own output on a cp1252 stream"
