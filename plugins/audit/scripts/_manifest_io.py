@@ -185,6 +185,47 @@ def phase_of_task(manifest):
     return {t["id"]: p.get("id") for p, t in iter_tasks(manifest) if t.get("id")}
 
 
+# --- readiness ------------------------------------------------------------------
+# The statuses that mean the work will not move again. `cancelled` is the second
+# one and it arrived later, which is exactly how the rule ended up written three
+# ways: `audit-status` and `validate-manifest` each declared this tuple, and
+# `audit-task._waiting_on` tested `!= "done"` and never followed. A task blocked
+# by a CANCELLED task was therefore ready according to `/audit:status` and still
+# waiting according to `/audit:task add` — the same manifest, two answers.
+TERMINAL = ("done", "cancelled")
+
+
+def unsatisfied(refs, status_by_id):
+    """Which of `refs` are not settled yet, each as a string safe to print.
+
+    `status_by_id` maps phase AND task ids to their status; a ref naming neither
+    is unsatisfied, because nothing says it is finished.
+
+    THE REFS ARE UNVALIDATED INPUT. This runs on the read-only surfaces whose job
+    is to render a manifest the validator has already faulted, so `blockedBy`
+    holds whatever the file holds. Two things went wrong when each caller did its
+    own `status_by_id.get(r)`:
+
+    - a NON-HASHABLE ref (`blockedBy: [[1, 2]]`) raised `TypeError` inside `.get`
+      itself, taking down `audit-status` entirely;
+    - a hashable non-string (`null`, `7`) survived the lookup and was carried out
+      to a `", ".join(...)` that then died on it.
+
+    So every ref that is not a string is reported as unsatisfied — it names no
+    task, so nothing can ever settle it — and rendered with `repr` rather than
+    dropped. Dropping would be the worse bug: the row would go quietly blank and
+    the reader would never learn WHICH entry the validator is complaining about.
+    A crash and a silent blank are both worse than showing `None` in the column.
+    """
+    out = []
+    for ref in (refs or []):
+        if not isinstance(ref, str):
+            out.append(repr(ref))
+        elif status_by_id.get(ref) not in TERMINAL:
+            out.append(ref)
+    return out
+
+
 # --- derived bug status ---------------------------------------------------------
 def effective_bug_status(bug, task_by_id):
     """A bug's status, DERIVING 'fixed' from its linked task.
@@ -595,6 +636,57 @@ def _selftest():
               == [(p.get("id"), t.get("id")) for p, t in trav_pairs])
         check("traversal: sharded storage yields the identical id -> phase map",
               phase_of_task(trav_sharded) == trav_pot)
+
+        # 11b. unsatisfied - the rule that had THREE homes, one of them wrong.
+        _st = {"P1.1": "done", "P1.2": "cancelled", "P1.3": "pending",
+               "P1.4": "in_progress", "P1": "blocked"}
+
+        def _uns(refs):
+            """`unsatisfied`, with a raise turned into a reportable value.
+
+            This module's `check` prints nothing until every case has run, so an
+            exception escaping a case argument loses the WHOLE suite's output —
+            and the regression un5 guards against is precisely an exception. A
+            bare call would make that regression print no case at all; this makes
+            it print `FAIL un5` with the exception in the label."""
+            try:
+                return unsatisfied(refs, _st)
+            except Exception as exc:
+                return "RAISED %s: %s" % (type(exc).__name__, exc)
+        check("un1 a ref whose task is done is satisfied, one that is pending is "
+              "not: %r" % (unsatisfied(["P1.1", "P1.3"], _st),),
+              unsatisfied(["P1.1", "P1.3"], _st) == ["P1.3"])
+        check("un2 a CANCELLED ref is satisfied too - it is the second terminal "
+              "state, and this is the disagreement that made /audit:status call a "
+              "task ready while /audit:task add called it blocked: %r"
+              % (unsatisfied(["P1.2"], _st),),
+              unsatisfied(["P1.2"], _st) == [])
+        check("un3 ...and in_progress is NOT terminal, so the tuple cannot quietly "
+              "grow into 'anything that started'",
+              unsatisfied(["P1.4"], _st) == ["P1.4"])
+        check("un4 a ref naming nothing at all is unsatisfied - an id nobody "
+              "declares is not an id that is finished",
+              unsatisfied(["P9.9"], _st) == ["P9.9"])
+        check("un5 a NON-HASHABLE ref does not raise. `status.get([1, 2])` used to "
+              "die inside the lookup and take audit-status down whole, on a "
+              "manifest it exists to RENDER rather than refuse: %r"
+              % (_uns([[1, 2]]),),
+              _uns([[1, 2]]) == ["[1, 2]"])
+        check("un6 a hashable non-string is reported as a STRING, because it used "
+              "to survive the lookup and die later in `\", \".join(...)`: %r"
+              % (_uns([None, 7]),),
+              _uns([None, 7]) == ["None", "7"])
+        check("un7 a malformed ref is SHOWN, never dropped - a silently blank "
+              "'waiting on' column is worse than the crash it replaced, because "
+              "nothing tells the reader which entry is broken",
+              len(unsatisfied([None], _st)) == 1)
+        check("un8 order is the caller's order, and duplicates survive - this "
+              "renders a column, it does not deduplicate a set",
+              unsatisfied(["P1.3", "P1.1", "P1.3"], _st) == ["P1.3", "P1.3"])
+        check("un9 no refs at all, and a None refs list, are both satisfied",
+              unsatisfied([], _st) == [] and unsatisfied(None, _st) == [])
+        check("un10 TERMINAL is exactly the two settled states: %r" % (TERMINAL,),
+              TERMINAL == ("done", "cancelled"))
 
         # 12. effective_bug_status - the rule that had two homes.
         check("effective_bug_status: a bug whose linked task is done reads 'fixed'",

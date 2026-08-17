@@ -180,7 +180,7 @@ def ready_tasks(manifest):
     status = _status_index(manifest)
 
     def satisfied(refs):
-        return all(status.get(r) in TERMINAL for r in (refs or []))
+        return not _mio.unsatisfied(refs, status)
 
     out = []
     # The phase arrives WITH the task, so its `blockedBy` needs no second lookup —
@@ -347,7 +347,7 @@ def discovery_block(project, home=None):
 # treats a cancelled blocker as settled on purpose: a plan whose dropped work
 # still gates everything behind it deadlocks, and a deadlock nobody can clear is
 # a worse answer than a ready task worth a second look.
-TERMINAL = ("done", "cancelled")
+TERMINAL = _mio.TERMINAL
 
 
 def rollup(manifest, findings, warnings, usage=None):
@@ -438,7 +438,7 @@ def unmet_refs(manifest):
     status = _status_index(manifest)
 
     def unmet(refs):
-        return [r for r in (refs or []) if status.get(r) not in TERMINAL]
+        return _mio.unsatisfied(refs, status)
 
     # `_mio.iter_tasks` is deliberately NOT used here, for `_status_index`'s second
     # reason: this dict is keyed by phase ids AND task ids together, and the phase
@@ -1936,6 +1936,47 @@ def _selftest():
     # layer 7 did not quietly grow its own again.
     check("si4 effective_bug_status IS _manifest_io's, not a second copy",
           effective_bug_status is _mio.effective_bug_status)
+    # si5-si7: this command RENDERS a manifest the validator has already faulted,
+    # so blockedBy holds whatever the file holds. Each of these three shapes used
+    # to end the whole run: a non-hashable ref died inside `status.get` itself,
+    # and a hashable non-string survived the lookup only to die in the `", ".join`
+    # that builds the column. Driven through render_status, not through the
+    # helper, because the join is where it actually died.
+    # The non-hashable ref is FIRST, and that ordering is the whole case. With it
+    # last, `ready_tasks`' `all(...)` short-circuits on the `None` before ever
+    # reaching it, so the pre-fix code neither crashes nor changes its answer and
+    # si7 passes while asserting nothing. Found by reverting `satisfied()` and
+    # watching the suite stay green.
+    _bad_ref_m = {"meta": {"version": 2}, "phases": [{
+        "id": "P1", "title": "p", "status": "in_progress",
+        "tasks": [{"id": "P1.1", "title": "t", "status": "pending",
+                   "blockedBy": [[1, 2], None, 7]}]}]}
+    try:
+        _bad_out = render_status(_bad_ref_m, rollup(_bad_ref_m, [], []))
+    except Exception as _exc:
+        _bad_out = "RAISED %s: %s" % (type(_exc).__name__, _exc)
+    check("si5 a malformed blockedBy ref does not take the command down: %r"
+          % (_bad_out[:60],),
+          not _bad_out.startswith("RAISED"))
+    check("si6 ...and each malformed ref is SHOWN, so the reader learns WHICH "
+          "entry the validator is complaining about",
+          "None" in _bad_out and "7" in _bad_out and "[1, 2]" in _bad_out)
+    try:
+        _bad_ready = ready_tasks(_bad_ref_m)
+    except Exception as _exc:
+        _bad_ready = "RAISED %s: %s" % (type(_exc).__name__, _exc)
+    check("si7 ...and READINESS survives it too and still calls the task not "
+          "ready - a separate code path from the column above, with its own copy "
+          "of the same lookup: %r" % (_bad_ready,),
+          isinstance(_bad_ready, list) and "P1.1" not in _bad_ready)
+    check("si8 readiness and the unmet column come from _manifest_io, so the "
+          "terminal-state rule cannot drift back apart",
+          _mio.unsatisfied(["X"], {"X": "cancelled"}) == []
+          and unmet_refs({"meta": {}, "phases": [{
+              "id": "P1", "status": "in_progress", "tasks": [
+                  {"id": "P1.1", "status": "cancelled"},
+                  {"id": "P1.2", "status": "pending",
+                   "blockedBy": ["P1.1"]}]}]}).get("P1.2") is None)
 
     # (c) CLI: exit codes 0 / 1 / 2
     import tempfile

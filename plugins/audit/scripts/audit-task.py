@@ -478,7 +478,7 @@ def _waiting_on(assembled, task):
         if t.get("id"):
             status[t["id"]] = t.get("status")
     refs = list(task.get("blockedBy") or []) + list(task.get("dependsOn") or [])
-    return [r for r in refs if status.get(r) != "done"]
+    return _mio.unsatisfied(refs, status)
 
 
 # --- the add -------------------------------------------------------------------
@@ -1447,6 +1447,30 @@ def _selftest():
               _waiting_on(_wm, {"blockedBy": ["P1"], "dependsOn": []}) == ["P1"])
         check("w3 a task ref resolves through the same index",
               _waiting_on(_wm, {"dependsOn": ["P1.1"]}) == ["P1.1"])
+        # w4: this call site tested `!= "done"` while audit-status' readiness
+        # used ("done", "cancelled"), so a task blocked by a CANCELLED task was
+        # ready to /audit:status and still waiting to /audit:task add - one
+        # manifest, two answers. `cancelled` arrived as the second terminal state
+        # and this line never followed. The rule now has one home.
+        _wc = {"phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                           "tasks": [{"id": "P1.1", "title": "dropped",
+                                      "status": "cancelled"}]}]}
+        check("w4 a ref to a CANCELLED task counts as satisfied, exactly as "
+              "/audit:status' readiness has always counted it: %r"
+              % (_waiting_on(_wc, {"blockedBy": ["P1.1"]}),),
+              _waiting_on(_wc, {"blockedBy": ["P1.1"]}) == [])
+        # w5-w6: same unvalidated-input class audit-status carries. A
+        # non-hashable ref used to raise inside the index lookup here too.
+        try:
+            _wbad = _waiting_on(_wm, {"blockedBy": [None, 7, [1, 2]]})
+        except Exception as _wexc:
+            _wbad = "RAISED %s: %s" % (type(_wexc).__name__, _wexc)
+        check("w5 a malformed ref does not raise here either - the same defect "
+              "lived at this call site, not only in audit-status: %r" % (_wbad,),
+              _wbad == ["None", "7", "[1, 2]"])
+        check("w6 ...and _waiting_on returns only strings, so whatever joins "
+              "them cannot die on the row: %r" % (_wbad,),
+              isinstance(_wbad, list) and all(isinstance(x, str) for x in _wbad))
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

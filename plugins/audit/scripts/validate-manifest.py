@@ -39,7 +39,7 @@ import _areas  # noqa: E402  (meta.areas registry + the resolution every surface
 # below: a phase signs off when every task is finished, and a claim on a finished
 # phase is stale whichever way it finished.
 STATUS = ("pending", "in_progress", "blocked", "done", "cancelled")
-TERMINAL = ("done", "cancelled")
+TERMINAL = _mio.TERMINAL
 TESTS_MODE = ("tdd", "regression", "gate-only")
 RISK = ("low", "med", "high", None)
 BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix")
