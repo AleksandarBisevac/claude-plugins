@@ -41,6 +41,20 @@ Five dogfooding findings, each reproduced in a real browser before the fix.
   and in `/audit:usage`; the panel paints it in the warn role so a reader can find how much
   of the bill has no plan behind it. Storage keys, the `--attr unattributed` selector and the
   CSV are untouched: a file that is parsed is not a surface that is read.
+- **`/audit:status` and `/audit:task add` disagreed about a cancelled blocker.** One tested
+  "is it done", the other "is it done **or** cancelled" — so the same manifest gave a task
+  blocked by cancelled work two answers depending on which command you asked. `cancelled`
+  arrived as the second terminal state and one call site never followed it. The rule now has
+  a single home, and the two commands that each declared it — plus the one that disagreed with
+  both — all read it from there.
+- **`/audit:status` died on a malformed blocker reference.** `blockedBy` is unvalidated input
+  on the one surface whose job is to *render* a manifest the validator has already faulted
+  rather than refuse it, and two different shapes killed the command outright: a non-hashable
+  entry crashed inside the id lookup, and a non-string one survived the lookup only to die
+  building the column. Both now appear in the "waiting on" column as what they are, and count
+  as unmet — a ref naming no task can never be satisfied. Shown rather than dropped, because a
+  quietly blank column would hide which entry is broken, which is worse than the crash it
+  replaced.
 
 ### Added
 
