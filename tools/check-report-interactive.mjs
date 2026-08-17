@@ -167,7 +167,7 @@ if (gone.length) {
     : 'The file names no renderer at all, so it predates the version stamp too.');
   console.error('Nothing here is inert -- the elements these checks drive are simply not in');
   console.error('this document. Render the manifest again and run this against the fresh file:');
-  console.error('  python3 plugins/audit/scripts/render-report.py <manifest> --out-dir <dir> --format html');
+  console.error('  python3 plugins/audit/scripts/report/render-report.py <manifest> --out-dir <dir> --format html');
   await browser.close();
   process.exit(2);
 }

@@ -105,12 +105,13 @@ claude-plugins/                           # this repo (personal, public)
         audit-lock.py                     # the /audit concurrency lock as an executable acquire/release/status
         audit-task.py                     # /audit:task add doer: id allocation, full template init, lock+journal
         audit-usage.py                    # /audit:usage: token spend, attributed
-        render-report.py                  # self-contained HTML+MD report (CI artifact)
-        _report_ui.py                     # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
-        _report_html.py                   # HTML fragment builders for the report: escaping, chips, table cells
-        _report_usage.py                  # the report's Usage section: ledger load + every chart over it
-        _report_page.py                   # the report as a whole document: vocab, table, render_html
-        _report_md.py                     # the report's Markdown twin (render_md), embedded in the page
+        report/                           # the report domain: the FIRST subdirectory under scripts/
+          render-report.py                # self-contained HTML+MD report (CI artifact)
+          _report_ui.py                   # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
+          _report_html.py                 # HTML fragment builders for the report: escaping, chips, table cells
+          _report_usage.py                # the report's Usage section: ledger load + every chart over it
+          _report_page.py                 # the report as a whole document: vocab, table, render_html
+          _report_md.py                   # the report's Markdown twin (render_md), embedded in the page
         migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
         _panel_ui.py                      # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
@@ -758,7 +759,7 @@ refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-valid
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
 
-### `plugins/audit/scripts/render-report.py` (v0.5.0)
+### `plugins/audit/scripts/report/render-report.py` (v0.5.0)
 Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero network fetches):
 phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's rollup
 (single source of truth). Every manifest string is HTML-escaped — manifest content is
@@ -772,7 +773,7 @@ read a report `main()` actually wrote into a temp directory. Those cases pin the
 DOCUMENT (its markup, its emission order, the stylesheet, the embedded script), so they can
 live nowhere else: a fragment module cannot render one. `--selftest` (includes XSS cases).
 
-### `plugins/audit/scripts/_report_page.py`
+### `plugins/audit/scripts/report/_report_page.py`
 The report as a whole document, moved out of `render-report.py`: the report's vocabulary
 (`_plural`, the gate's condition labels, which optional columns a plan has earned), the
 phase-row builder, and `render_html` itself — the function that glues `_report_html`'s
@@ -787,7 +788,7 @@ layer lint reads runtime `_loader` calls, so it would report it. With no verdict
 the hero renders the "could not be evaluated" state the product already has for a gate that
 raises: an honest unknown, never a fabricated Clear.
 
-### `plugins/audit/scripts/_report_md.py`
+### `plugins/audit/scripts/report/_report_md.py`
 The report's Markdown twin, `render_md`. It could not stay behind when `render_html` left:
 the HTML page embeds this output base64-encoded as its "Download .md" payload, so
 `_report_page` calls it — the single edge that makes the split two files rather than one
@@ -798,7 +799,7 @@ source. It also keeps the manifest's own machine vocabulary and the manifest's o
 order, where the HTML segments and re-words: this table is read by GitHub and by `diff`, and
 reordering it would change every diff against an earlier render for a presentational reason.
 
-### `plugins/audit/scripts/_report_ui.py`
+### `plugins/audit/scripts/report/_report_ui.py`
 The report's CSS and inline JS, off disk as real files under `scripts/ui/report.{css,js}`,
 mirroring `_panel_ui.py`'s split so both surfaces follow one convention. `render-report.py`
 used to carry `_CSS`/`_SCRIPT` as raw-string literals (plain CSS plus `_ui_theme.TOKEN_CSS`,
@@ -807,7 +808,7 @@ this module reads the real files at import with explicit utf-8 and reassembles t
 constants byte-identically, so the rendered report page stays one self-contained file even
 though its source no longer is.
 
-### `plugins/audit/scripts/_report_html.py`
+### `plugins/audit/scripts/report/_report_html.py`
 Pure HTML fragment builders moved out of `render-report.py`: escaping, chips/badges, table
 cells and the filter panel, over already-computed values only — no layout decisions, no usage
 data, no whole-document assembly (that lives in `_report_page.render_html` /
@@ -817,7 +818,7 @@ each fragment routes through `e()` before it reaches the page, and `_safe_url` i
 a URL passes before it may become an `href`. `render-report.py` keeps thin aliases so its
 existing call sites and selftest are unchanged.
 
-### `plugins/audit/scripts/_report_usage.py`
+### `plugins/audit/scripts/report/_report_usage.py`
 The report's Usage section, moved out of `render-report.py` as its largest single block:
 `_usage_section` builds the HTML, `_usage_md` the Markdown twin, both off the dict
 `load_usage()` reads from the usage ledger — tiles, trend, ranked lists, budgets, small

@@ -483,11 +483,6 @@ def _cases(check):
                                   "scripts/_panel_write.py",
                                   "scripts/_policy.py",
                                   "scripts/_refs.py",
-                                  "scripts/_report_html.py",
-                                  "scripts/_report_md.py",
-                                  "scripts/_report_page.py",
-                                  "scripts/_report_ui.py",
-                                  "scripts/_report_usage.py",
                                   "scripts/_ui_theme.py",
                                   "scripts/_usage_analytics.py",
                                   "scripts/_usage_core.py",
@@ -501,7 +496,12 @@ def _cases(check):
                                   "scripts/gen-demo-usage.py",
                                   "scripts/migrate-manifest.py",
                                   "scripts/panel-server.py",
-                                  "scripts/render-report.py",
+                                  "scripts/report/_report_html.py",
+                                  "scripts/report/_report_md.py",
+                                  "scripts/report/_report_page.py",
+                                  "scripts/report/_report_ui.py",
+                                  "scripts/report/_report_usage.py",
+                                  "scripts/report/render-report.py",
                                   "scripts/usage_ledger.py",
                                   "scripts/validate-config.py",
                                   "scripts/validate-manifest.py"])
@@ -539,11 +539,6 @@ def _cases(check):
                                      "plugins/audit/scripts/_panel_write.py",
                                      "plugins/audit/scripts/_policy.py",
                                      "plugins/audit/scripts/_refs.py",
-                                     "plugins/audit/scripts/_report_html.py",
-                                     "plugins/audit/scripts/_report_md.py",
-                                     "plugins/audit/scripts/_report_page.py",
-                                     "plugins/audit/scripts/_report_ui.py",
-                                     "plugins/audit/scripts/_report_usage.py",
                                      "plugins/audit/scripts/_ui_theme.py",
                                      "plugins/audit/scripts/_usage_analytics.py",
                                      "plugins/audit/scripts/_usage_core.py",
@@ -557,7 +552,12 @@ def _cases(check):
                                      "plugins/audit/scripts/gen-demo-usage.py",
                                      "plugins/audit/scripts/migrate-manifest.py",
                                      "plugins/audit/scripts/panel-server.py",
-                                     "plugins/audit/scripts/render-report.py",
+                                     "plugins/audit/scripts/report/_report_html.py",
+                                     "plugins/audit/scripts/report/_report_md.py",
+                                     "plugins/audit/scripts/report/_report_page.py",
+                                     "plugins/audit/scripts/report/_report_ui.py",
+                                     "plugins/audit/scripts/report/_report_usage.py",
+                                     "plugins/audit/scripts/report/render-report.py",
                                      "plugins/audit/scripts/usage_ledger.py",
                                      "plugins/audit/scripts/validate-config.py",
                                      "plugins/audit/scripts/validate-manifest.py"]
@@ -576,12 +576,24 @@ def _cases(check):
     # `.py` under scripts/ proves the claim for all thirty-seven and keeps proving it
     # for the thirty-eighth. `_ab`/`_ab2`/`_ab4` are the three depths that were
     # actually spelled in the tree (`dirname` once, twice and four times).
-    _paths = [p for _rel, p in M.script_files()]
+    #
+    # SCOPED TO THE FILES STILL AT DEPTH 0, AND THAT SCOPE IS THE FINDING RATHER THAN
+    # A CONVENIENCE. `dirname(abspath(__file__))` is a claim about how deep a file
+    # sits; it was true of all thirty-eight while `scripts/` was flat, and the six now
+    # in `scripts/report/` are precisely the files for which it stopped being true.
+    # Recomputing it over them would not measure "the anchor equals what the old code
+    # produced" — it would measure that the old code is the thing the preamble
+    # replaced. `an8` carries the other half: a file AT DEPTH resolves to the same
+    # anchor, by walking up to `_output.py` rather than by counting `dirname` calls,
+    # which is the claim the preamble makes and the one no `dirname` chain can make.
+    _paths = [p for rel, p in M.script_files() if "/" not in rel]
+    _nested = [p for rel, p in M.script_files() if "/" in rel]
     _ab = [os.path.dirname(os.path.abspath(p)) for p in _paths]
     _ab2 = [os.path.dirname(d) for d in _ab]
     _ab4 = [os.path.dirname(os.path.dirname(d)) for d in _ab2]
-    check("an1 SCRIPTS_DIR is what every file's old `dirname(abspath(__file__))` "
-          "produced - %d files, one answer: %r" % (len(_paths), M.SCRIPTS_DIR),
+    check("an1 SCRIPTS_DIR is what a TOP-LEVEL file's old `dirname(abspath("
+          "__file__))` produced - %d files, one answer: %r"
+          % (len(_paths), M.SCRIPTS_DIR),
           _paths and set(_ab) == set([M.SCRIPTS_DIR]))
     check("an2 PLUGIN_ROOT is what `_areas`/`_policy`'s old "
           "`dirname(dirname(abspath(__file__)))` and `_help`'s old `dirname(_HERE)` "
@@ -618,6 +630,29 @@ def _cases(check):
           == os.path.join(M.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md")
           and os.path.isfile(os.path.normpath(_old_gc))
           and os.path.isfile(os.path.normpath(_old_guide)))
+    def _walk_up(path):
+        """The preamble's own loop, verbatim: up from the file until `_output.py` is
+        beside it. Reproduced here rather than imported because the thing under test
+        IS the loop - reading it off the module it bootstraps would be the module
+        agreeing with itself."""
+        d = os.path.dirname(os.path.abspath(path))
+        while not os.path.isfile(os.path.join(d, "_output.py")):
+            up = os.path.dirname(d)
+            if up == d:
+                return None
+            d = up
+        return d
+
+    check("an8 a file AT DEPTH reaches the SAME anchor - the preamble walks up to "
+          "_output.py instead of counting dirnames, so `scripts/report/*.py` lands on "
+          "SCRIPTS_DIR where `dirname(abspath(__file__))` would have landed on "
+          "scripts/report. %d nested file(s); this is the case that had nothing to "
+          "measure while the tree was flat" % (len(_nested),),
+          _nested and set(_walk_up(p) for p in _nested) == set([M.SCRIPTS_DIR]))
+    check("an9 ...and the OLD expression would have got it wrong, which is the "
+          "direction that fails if the preamble is quietly replaced by a dirname "
+          "count again",
+          all(os.path.dirname(os.path.abspath(p)) != M.SCRIPTS_DIR for p in _nested))
     check("an7 ...and all five anchors are real directories, so a typo in one is a "
           "failure here rather than an empty scan somewhere downstream",
           all(os.path.isdir(d) for d in (M.SCRIPTS_DIR, M.PLUGIN_ROOT, M.HOOKS_DIR,
@@ -655,10 +690,20 @@ def _cases(check):
         check("ip2 SCRIPTS_DIR is first, and every entry is on sys.path",
               _installed[0] == M.SCRIPTS_DIR
               and all(d in sys.path for d in _installed))
-        check("ip3 on today's FLAT tree it is exactly one directory - this is the "
-              "case that says the mechanism is a no-op right now, and the one that "
-              "will change on the day a script moves: %r" % (_installed,),
-              _installed == [M.SCRIPTS_DIR])
+        check("ip3 the day a script moved has arrived: the list is SCRIPTS_DIR plus "
+              "scripts/report/, the first subdirectory ever created under scripts/. "
+              "It said `exactly one directory` for as long as the tree was flat, and "
+              "editing it is what the move COSTS - the mechanism is no longer a "
+              "no-op and this is where that is stated: %r" % (_installed,),
+              _installed == [M.SCRIPTS_DIR,
+                             os.path.join(M.SCRIPTS_DIR, "report")])
+        check("ip3b ...and it is DERIVED from the walk, not a constant: every entry "
+              "past the root is a real directory holding at least one `.py`, so a "
+              "later domain joins the list by existing rather than by being added "
+              "here",
+              all(os.path.isdir(d)
+                  and any(f.endswith(".py") for f in os.listdir(d))
+                  for d in _installed[1:]))
         check("ip4 scripts/ui/ is NOT on it, and not by an exemption: the list is "
               "derived from the `.py` walk, and ui/ holds CSS and JS only",
               os.path.isdir(os.path.join(M.SCRIPTS_DIR, "ui"))

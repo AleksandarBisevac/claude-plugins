@@ -20,7 +20,7 @@
       "validate": "python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json",
       "plugin-validate": "claude plugin validate . && claude plugin validate plugins/audit",
       "gate": "python3 plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate",
-      "report": "python3 plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
+      "report": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
       "sweep": "for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) $(find plugins/audit/tests -name '*.py' | sort); do python3 \"$f\" --selftest >/dev/null || { echo \"FAIL $f\"; exit 1; }; done",
       "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests",
       "shots": "node tools/capture-screenshots.mjs --check",
@@ -392,16 +392,16 @@
     "plugins/audit/scripts/_policy.py": [
       "P15.4"
     ],
-    "plugins/audit/scripts/_report_html.py": [
+    "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
       "P15.4"
     ],
-    "plugins/audit/scripts/_report_ui.py": [
+    "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
       "BF2.1",
       "P15.4"
     ],
-    "plugins/audit/scripts/_report_usage.py": [
+    "plugins/audit/scripts/report/_report_usage.py": [
       "P13.2",
       "P15.4",
       "P16.1"
@@ -449,7 +449,7 @@
       "P12.5",
       "P14.1"
     ],
-    "plugins/audit/scripts/render-report.py": [
+    "plugins/audit/scripts/report/render-report.py": [
       "P3.3",
       "P8.3",
       "P10.3",
@@ -585,7 +585,7 @@
       "files": [
         ".gitattributes",
         "plugins/audit/scripts/_panel_ui.py",
-        "plugins/audit/scripts/_report_ui.py"
+        "plugins/audit/scripts/report/_report_ui.py"
       ],
       "taskId": "BF2.1",
       "fixedIn": null,
@@ -600,12 +600,12 @@
       "reportedBy": "P13.3 mutation pass (recorded as F10 in the private fault ledger)",
       "description": "Corrupting _report_usage's fmt_cost delegation and rerunning its own selftest stayed green - no fixture in that suite spends under a cent, so the <$0.01 rule is exercised only in _fmt's goldens. The consumer could stop delegating (or mangle the arguments) and its 49 cases would not notice; the parallel fmt_tokens mutation goes red in three cases by name, which is what the cost side should look like.",
       "repro": [
-        "weaken _fmt.fmt_cost delegation in _report_usage; python3 plugins/audit/scripts/_report_usage.py --selftest stays green"
+        "weaken _fmt.fmt_cost delegation in _report_usage; python3 plugins/audit/scripts/report/_report_usage.py --selftest stays green"
       ],
       "expected": "A sub-cent spend asserted through the rendered tile string in _report_usage's own suite.",
       "actual": "Delegation-coverage gap; the rule is proven only where it is defined, not where it renders.",
       "files": [
-        "plugins/audit/scripts/_report_usage.py"
+        "plugins/audit/scripts/report/_report_usage.py"
       ],
       "taskId": "P16.1",
       "fixedIn": null,

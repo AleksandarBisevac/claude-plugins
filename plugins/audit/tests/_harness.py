@@ -19,6 +19,17 @@ hook - it runs from a shell, once, with no launcher and no tool call behind it. 
 cannot matter: `_deps`' r8 case fails the build if a `hooks/**.py` basename ever collides
 with a `scripts/**.py` one.
 
+AND EVERY SUBDIRECTORY OF `scripts/` HOLDING A `.py`, THROUGH `_output.install_path()`.
+The two directories above are not enough the moment a script sits one level down: the
+folders under `scripts/` are LABELS, NOT NAMESPACES, so `import _report_html` has to
+resolve out of `scripts/report/` from a test exactly as it does from a production
+sibling. That answer is not recomputed here - `install_path()` derives it from the one
+recursive `.py` walk `_loader.script_index()` also reads, and a second walk in this file
+would be a second answer to "what is in the tree". Found by the first real move: four
+suites went red with `ModuleNotFoundError` while two stayed green purely because they
+happened to `import _ui_theme` (whose own preamble bootstraps the path) BEFORE the module
+under test - green by import order, which is not green.
+
 THE VOCABULARY THIS UNIFIES, AND WHY THIS SHAPE WON. Measured across the 48 files, not
 guessed:
 
@@ -87,6 +98,13 @@ def _install_paths(dirs):
 
 
 _install_paths((HOOKS_DIR, SCRIPTS_DIR))
+
+import _output  # noqa: E402  (the anchor: reachable now that SCRIPTS_DIR is on the path)
+
+# The subdirectories of `scripts/`, from the anchor rather than from a second walk here.
+# Returns the list it installed, which is why the cases can assert this ran instead of
+# asserting that some import happened to work.
+SCRIPT_DIRS = _output.install_path()
 
 
 # --- the shared runner --------------------------------------------------------
@@ -266,6 +284,17 @@ def _cases(check):
           os.path.isdir(SCRIPTS_DIR) and os.path.isdir(HOOKS_DIR)
           and os.path.basename(SCRIPTS_DIR) == "scripts"
           and os.path.basename(HOOKS_DIR) == "hooks")
+    _subdirs = [d for d in SCRIPT_DIRS if d != SCRIPTS_DIR]
+    check("h2b every SUBDIRECTORY of scripts/ holding a `.py` is on sys.path too, so "
+          "`import _report_html` resolves out of scripts/report/ from a test exactly "
+          "as it does from a sibling - the folders there are labels, not namespaces: "
+          "%r" % (_subdirs,),
+          SCRIPT_DIRS[0] == SCRIPTS_DIR
+          and all(d in sys.path for d in SCRIPT_DIRS))
+    check("h2c ...and there IS at least one, which is the direction that fails if "
+          "this becomes the no-op it was while the tree was flat. Four suites went "
+          "red on the first real move and two stayed green only by import order",
+          _subdirs and all(os.path.isdir(d) for d in _subdirs))
     check("h3 _install_paths is idempotent - importing twice must not grow "
           "sys.path, and 'already there' is the answer, not 'insert again'",
           _install_paths((SCRIPTS_DIR, HOOKS_DIR)) == [])

@@ -34,8 +34,8 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/_report_html.py",
-        "plugins/audit/scripts/render-report.py"
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/render-report.py"
       ],
       "docs": [],
       "description": "Move lines 1642-1895 (e, _safe_url, _report_basename, fragment builders through _bar). Escaping/XSS and chip-grammar selftest cases move along.",
@@ -79,8 +79,8 @@
         "P13.1"
       ],
       "files": [
-        "plugins/audit/scripts/_report_usage.py",
-        "plugins/audit/scripts/render-report.py"
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/report/render-report.py"
       ],
       "docs": [],
       "description": "Move lines 1896-2760 (the largest Python block: load_usage through _usage_section) plus _usage_md; formatting comes from _fmt. Usage-section, cost-band, phase-budget and routing-advice cases move along. Verify includes the acme-store render carrying id=\"usage\".",
@@ -126,7 +126,7 @@
         "P13.2"
       ],
       "files": [
-        "plugins/audit/scripts/render-report.py",
+        "plugins/audit/scripts/report/render-report.py",
         "docs/index.html",
         "examples/acme-store/acme-store-audit.html",
         "examples/acme-store/acme-store-audit.md"

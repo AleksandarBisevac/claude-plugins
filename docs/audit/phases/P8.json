@@ -103,7 +103,7 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/render-report.py",
+        "plugins/audit/scripts/report/render-report.py",
         "plugins/audit/commands/status.md"
       ],
       "docs": [],

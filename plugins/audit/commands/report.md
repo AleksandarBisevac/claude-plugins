@@ -11,7 +11,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
 (read-only: no git-root/submodule check, no lock).
 
 Run
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath>`
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report/render-report.py" <manifestPath>`
 (pass `--out-dir <dir>` through from `$ARGUMENTS` when given; artifacts otherwise land next to the
 manifest) and print the written paths.
 
@@ -50,7 +50,7 @@ precisely so that nothing leaves without a decision behind it.
 Then:
 
 1. Render the embeddable form — **not** the standalone file:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath> --format artifact`
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report/render-report.py" <manifestPath> --format artifact`
    (add `--out-dir`/`--summary-file` exactly as above). It writes `<basename>.artifact.html`
    beside the normal outputs and never overwrites them.
 2. Publish that path with the **Artifact** tool. Give it `favicon: "🛡"`, and a `description` that

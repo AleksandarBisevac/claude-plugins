@@ -681,11 +681,19 @@ def _cases(check):
     # look rather than arriving uncovered.
     _REPORT_SOURCES = ["_report_html.py", "_report_md.py", "_report_page.py",
                        "_report_ui.py", "_report_usage.py", "render-report.py"]
-    _scanned = sorted(n for n in os.listdir(_harness.SCRIPTS_DIR)
-                      if n in _REPORT_SOURCES)
+    #
+    # RESOLVED BY BASENAME, NOT BY `listdir(SCRIPTS_DIR)`. All six sit in
+    # `scripts/report/` now, and the flat listing found none of them - `_scanned`
+    # narrowed to `[]`, which is exactly the "reads as all clear" failure the
+    # paragraph above is about, and the `_scanned == _REPORT_SOURCES` half of the
+    # assertion is the only reason it was a red line instead of a green one.
+    # `script_index()` is the tree's one answer to where a basename lives, so this
+    # keeps finding them wherever a later domain move puts them.
+    _index = _loader.script_index()
+    _scanned = sorted(n for n in _REPORT_SOURCES if n in _index)
     _bad = []
     for _n in _scanned:
-        with open(os.path.join(_harness.SCRIPTS_DIR, _n), encoding="utf-8") as _fh:
+        with open(_index[_n][0], encoding="utf-8") as _fh:
             _src = _fh.read()
         _bad += [(_n, x)
                  for x in re.findall(r'"\{:,\}"\.format\(([^)]*)\)', _src)

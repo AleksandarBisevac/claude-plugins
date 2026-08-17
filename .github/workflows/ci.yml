@@ -313,7 +313,7 @@ jobs:
       - name: CI gate + report smoke on the dogfood manifest
         run: |
           python plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate
-          python plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report
+          python plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report
           test -s /tmp/audit-report/audit-report.html
           test -s /tmp/audit-report/audit-report.md
       - name: Example renders its Usage section (asserts content, not just a file)
@@ -321,7 +321,7 @@ jobs:
         run: |
           set -e
           CLAUDE_PROJECT_DIR=examples/acme-store \
-            python plugins/audit/scripts/render-report.py \
+            python plugins/audit/scripts/report/render-report.py \
               examples/acme-store/audit-plan.json --out-dir /tmp/acme
           grep -q 'id="usage"' /tmp/acme/acme-store-audit.html
           grep -q '## Usage' /tmp/acme/acme-store-audit.md
@@ -369,7 +369,7 @@ jobs:
           # moves, this says so instead of silently checking half the document.
           rm -rf /tmp/fresh-example && mkdir -p /tmp/fresh-example
           CLAUDE_PROJECT_DIR=examples/acme-store \
-            python plugins/audit/scripts/render-report.py \
+            python plugins/audit/scripts/report/render-report.py \
               examples/acme-store/audit-plan.json --out-dir /tmp/fresh-example
           python - <<'PYEOF'
           import base64, io, re, sys
@@ -473,7 +473,7 @@ jobs:
           # so a fresh render always differs by that line. Refresh with
           #   python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
           #   python plugins/audit/scripts/gen-demo-usage.py /tmp/dl/audit-plan.json
-          #   CLAUDE_PROJECT_DIR=/tmp/dl python plugins/audit/scripts/render-report.py \
+          #   CLAUDE_PROJECT_DIR=/tmp/dl python plugins/audit/scripts/report/render-report.py \
           #     /tmp/dl/audit-plan.json --out-dir /tmp/dl --format html
           #   cp /tmp/dl/demo-large.html docs/demo-large.html
           python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
@@ -569,7 +569,7 @@ jobs:
           # the case now has a permanent fixture rather than being rediscovered by
           # whoever next finishes a plan and runs the tool on it.
           rm -rf /tmp/one-status && mkdir -p /tmp/one-status
-          python plugins/audit/scripts/render-report.py docs/audit/audit-plan.json \
+          python plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
             --out-dir /tmp/one-status --format html
           node tools/check-report-interactive.mjs /tmp/one-status/*.html
           # ...and one document none of the four above can stand in for either: a

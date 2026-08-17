@@ -1160,7 +1160,13 @@ KNOWN_LAYER_DEBT = (
     # fails on a new one, and the list may only shrink, deliberately.
     ("migrate-manifest.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    ("render-report.py",
+    # KEYED BY RELNAME, WHICH IS WHY THIS ONE MOVED AND THE `render-report` ENTRY
+    # UNDER `_panel_state.py` DID NOT. `layer_violations()` reports `named[importer]`
+    # - `_named_by()`'s relname, so an importer that moves into a subdirectory is
+    # spelled with it - while the IMPORTED module inside the message is a node name,
+    # which is the BASENAME at any depth. One entry changed when the six report files
+    # moved into `scripts/report/`; the target spellings above are untouched.
+    ("report/render-report.py",
      "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
 )
 

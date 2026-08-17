@@ -30,7 +30,7 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/_report_usage.py"
+        "plugins/audit/scripts/report/_report_usage.py"
       ],
       "docs": [],
       "description": "TDD: FIRST break the fmt_cost delegation (e.g. bypass _fmt for costs) and confirm the existing 49 cases stay green - that is the bug, reproduced. THEN add the case: a fixture ledger row with spend under $0.01 asserted through the RENDERED string (_tile or _usage_tiles output must carry '<$0.01'), confirm it is red against the broken delegation by name, restore the delegation, confirm 50+ green. The rule is then proven where it renders, not only where it is defined.",

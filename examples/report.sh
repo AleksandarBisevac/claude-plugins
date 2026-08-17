@@ -69,7 +69,7 @@ done
 
 "$PY" "$scripts/validate-manifest.py" "$manifest"
 
-out=$(CLAUDE_PROJECT_DIR=$project "$PY" "$scripts/render-report.py" "$manifest" "$@")
+out=$(CLAUDE_PROJECT_DIR=$project "$PY" "$scripts/report/render-report.py" "$manifest" "$@")
 printf '%s\n' "$out"
 
 # render-report.py prints one `wrote <path>` line per artifact; the last .html is

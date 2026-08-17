@@ -319,7 +319,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 per project, tracked by a `.claude/audit-panel.json` pidfile.
 
 **Headless entry points** (no Claude, run in CI or any terminal): `scripts/audit-status.py
---json | --gate` turns the manifest into a pipeline gate, `scripts/render-report.py` renders
+--json | --gate` turns the manifest into a pipeline gate, `scripts/report/render-report.py` renders
 the report, and `scripts/validate-manifest.py` runs the referential validator (exit 0 valid /
 1 findings / 2 unreadable).
 
@@ -668,7 +668,7 @@ phases with no tags, phases the plan does not know, and rows that never carried 
 network fetches, read-only** (it never mutates the manifest). Under the hood it runs:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py" <manifestPath> \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report/render-report.py" <manifestPath> \
   [--out-dir DIR] [--format html|md|both|artifact] [--summary-file PATH] [--basename NAME]
 ```
 

@@ -4294,7 +4294,7 @@ async function main() {
     if (ONLY === 'all' || ONLY === 'report') {
       const acme = path.join(work, 'acme');
       mkdirSync(acme, { recursive: true });
-      py([path.join(SCRIPTS, 'render-report.py'),
+      py([path.join(SCRIPTS, 'report', 'render-report.py'),
           'examples/acme-store/audit-plan.json', '--out-dir', acme],
          { CLAUDE_PROJECT_DIR: path.join(REPO, 'examples', 'acme-store') });
 
