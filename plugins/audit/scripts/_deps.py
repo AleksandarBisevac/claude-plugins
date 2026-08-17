@@ -1090,8 +1090,15 @@ KNOWN_LAYER_DEBT = (
      "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
     ("audit-doctor.py",
      "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
-    ("audit-doctor.py",
-     "runtime-loads gen-demo-manifest (layer 7) from layer 7 - not strictly downward"),
+    # audit-doctor -> gen-demo-manifest was RETIRED when that file's `--selftest`
+    # moved to `tests/test_audit_doctor.py`: the ONE `_load(...)` call naming it
+    # built the sharded-layout fixture and lived inside the suite. Measured per
+    # call site by AST rather than assumed - the other five audit-doctor edges
+    # below and above each keep at least one PRODUCTION site, which is why only
+    # this one went. A test file has no position in the product's import order
+    # (`tests/` is deliberately absent from LAYERS), so the edge is gone from the
+    # tree and the entry had to go with it - r2 fails on a RETIRED entry exactly
+    # as it fails on a new one, and the list may only shrink, deliberately.
     ("audit-doctor.py",
      "runtime-loads validate-config (layer 7) from layer 7 - not strictly downward"),
     ("audit-doctor.py",

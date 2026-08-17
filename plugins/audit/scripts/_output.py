@@ -911,7 +911,7 @@ def _selftest():
           not (real_cov["both"] or real_cov["neither"] or real_cov["orphans"]
                or real_cov["collisions"] or real_cov["unreadable"]))
     check("sc11 ...and the migrated set is exactly the three pilots plus batches "
-          "A, B and C. "
+          "A, B, C and D. "
           "Editing this list is what a migration step COSTS, which is the point: "
           "the end state (0 inline, every file covered) is asserted here, never "
           "assumed: %r" % (real_cov["covered"],),
@@ -919,6 +919,7 @@ def _selftest():
                                   "scripts/_areas.py",
                                   "scripts/_cli_fmt.py",
                                   "scripts/_fmt.py",
+                                  "scripts/_help.py",
                                   "scripts/_loader.py",
                                   "scripts/_manifest_io.py",
                                   "scripts/_panel_discovery.py",
@@ -936,7 +937,11 @@ def _selftest():
                                   "scripts/_ui_theme.py",
                                   "scripts/_usage_analytics.py",
                                   "scripts/_usage_core.py",
+                                  "scripts/audit-doctor.py",
+                                  "scripts/audit-journal.py",
                                   "scripts/audit-lock.py",
+                                  "scripts/audit-status.py",
+                                  "scripts/audit-task.py",
                                   "scripts/audit-usage.py",
                                   "scripts/gen-demo-manifest.py",
                                   "scripts/gen-demo-usage.py",
@@ -944,7 +949,8 @@ def _selftest():
                                   "scripts/panel-server.py",
                                   "scripts/render-report.py",
                                   "scripts/usage_ledger.py",
-                                  "scripts/validate-config.py"])
+                                  "scripts/validate-config.py",
+                                  "scripts/validate-manifest.py"])
     check("sc12 every production file is accounted for, so a file can neither be "
           "double-counted nor quietly dropped: %d + %d == %d"
           % (len(real_cov["inline"]), len(real_cov["covered"]), real_cov["total"]),
@@ -957,6 +963,7 @@ def _selftest():
                                    "plugins/audit/scripts/_areas.py",
                                    "plugins/audit/scripts/_cli_fmt.py",
                                    "plugins/audit/scripts/_fmt.py",
+                                   "plugins/audit/scripts/_help.py",
                                    "plugins/audit/scripts/_loader.py",
                                    "plugins/audit/scripts/_manifest_io.py",
                                    "plugins/audit/scripts/_panel_discovery.py",
@@ -974,7 +981,11 @@ def _selftest():
                                    "plugins/audit/scripts/_ui_theme.py",
                                    "plugins/audit/scripts/_usage_analytics.py",
                                    "plugins/audit/scripts/_usage_core.py",
+                                   "plugins/audit/scripts/audit-doctor.py",
+                                   "plugins/audit/scripts/audit-journal.py",
                                    "plugins/audit/scripts/audit-lock.py",
+                                   "plugins/audit/scripts/audit-status.py",
+                                   "plugins/audit/scripts/audit-task.py",
                                    "plugins/audit/scripts/audit-usage.py",
                                    "plugins/audit/scripts/gen-demo-manifest.py",
                                    "plugins/audit/scripts/gen-demo-usage.py",
@@ -982,7 +993,8 @@ def _selftest():
                                    "plugins/audit/scripts/panel-server.py",
                                    "plugins/audit/scripts/render-report.py",
                                    "plugins/audit/scripts/usage_ledger.py",
-                                   "plugins/audit/scripts/validate-config.py"]
+                                   "plugins/audit/scripts/validate-config.py",
+                                   "plugins/audit/scripts/validate-manifest.py"]
           and all(os.path.isfile(os.path.join(_REPO_ROOT, p.replace("/", os.sep)))
                   for p in covered_repo_paths()))
 

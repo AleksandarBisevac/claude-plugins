@@ -191,7 +191,7 @@ L2:
   _usage_analytics -> _output, _usage_core
 
 L3:
-  _help -> _areas, _loader, _output, _panel_settings, _policy, _ui_theme
+  _help -> _areas, _loader, _output, _policy, _ui_theme
   usage_ledger -> _manifest_io, _output, _usage_analytics, _usage_core
 
 L4:
@@ -889,8 +889,8 @@ one-minute manifest overview.
 
 45% of this tree (22,363 of 49,393 lines) was `--selftest` blocks living inside the modules
 they test, and all 48 files carried their own copy of `check()`. Those blocks are moving out,
-one file at a time — 30 of the 48 have moved (three pilots, batch A, batch B, batch C), and
-`_output.py --selftest` prints the running count as `sc10`. This section describes the whole
+one file at a time — 36 of the 48 have moved (three pilots, batch A, batch B, batch C, batch D),
+and `_output.py --selftest` prints the running count as `sc10`. This section describes the whole
 directory on purpose: §2 exists to answer
 "what does this file decide", and a test file's answer is always "the cases of the file beside
 it" — `_deps.guide_enumeration()` is scoped to `scripts/` + `hooks/` so that this stays one
@@ -987,9 +987,16 @@ planted in `_report_page.py` leaves the two-file form green and turns the six-fi
 `_loader.load_script(...)` that only ever ran inside a suite is a real edge in the graph until the
 suite moves — and then it is gone. Batch A retired two `KNOWN_LAYER_DEBT` entries this way
 (`gen-demo-manifest` → `validate-config`, → `validate-manifest`) and shifted one line of the
-generated module map (`validate-config` no longer imports `_loader`). Both are the lints working:
-delete the retired entries deliberately, regenerate the fence with `_deps.py --render`, and never
-add an entry to make a migration go green.
+generated module map (`validate-config` no longer imports `_loader`). Batch D retired a third
+(`audit-doctor` → `gen-demo-manifest`, down to 17 entries) and shifted one more line of the map
+(`_help` no longer imports `_panel_settings` — a *static* import that lived inside a case).
+Both are the lints working: delete the retired entries deliberately, regenerate the fence with
+`_deps.py --render`, and never add an entry to make a migration go green.
+
+**Retirement is measured PER CALL SITE, not per module.** `audit-doctor` names five other entry
+points besides `gen-demo-manifest`, and each one's `_load(...)` sites have to be classified by
+AST before an entry can be deleted: `audit-journal` and `audit-lock` are loaded from *both* the
+checks and the suite, so their entries stay. A whole-file grep would have retired three.
 
 **What the boundary lints say.** `_output.selftest_coverage()` classifies every production
 file as `inline` / `covered` / `both` / `neither` (plus orphan and colliding test files), and
