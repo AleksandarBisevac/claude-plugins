@@ -910,7 +910,8 @@ def _selftest():
              real_cov["total"]),
           not (real_cov["both"] or real_cov["neither"] or real_cov["orphans"]
                or real_cov["collisions"] or real_cov["unreadable"]))
-    check("sc11 ...and the migrated set is exactly the three pilots plus batch A. "
+    check("sc11 ...and the migrated set is exactly the three pilots plus batches "
+          "A and B. "
           "Editing this list is what a migration step COSTS, which is the point: "
           "the end state (0 inline, every file covered) is asserted here, never "
           "assumed: %r" % (real_cov["covered"],),
@@ -922,13 +923,21 @@ def _selftest():
                                   "scripts/_manifest_io.py",
                                   "scripts/_panel_ui.py",
                                   "scripts/_policy.py",
+                                  "scripts/_report_html.py",
                                   "scripts/_report_md.py",
+                                  "scripts/_report_page.py",
                                   "scripts/_report_ui.py",
+                                  "scripts/_report_usage.py",
+                                  "scripts/_ui_theme.py",
+                                  "scripts/_usage_analytics.py",
                                   "scripts/_usage_core.py",
                                   "scripts/audit-lock.py",
+                                  "scripts/audit-usage.py",
                                   "scripts/gen-demo-manifest.py",
                                   "scripts/gen-demo-usage.py",
                                   "scripts/migrate-manifest.py",
+                                  "scripts/render-report.py",
+                                  "scripts/usage_ledger.py",
                                   "scripts/validate-config.py"])
     check("sc12 every production file is accounted for, so a file can neither be "
           "double-counted nor quietly dropped: %d + %d == %d"
@@ -946,13 +955,21 @@ def _selftest():
                                    "plugins/audit/scripts/_manifest_io.py",
                                    "plugins/audit/scripts/_panel_ui.py",
                                    "plugins/audit/scripts/_policy.py",
+                                   "plugins/audit/scripts/_report_html.py",
                                    "plugins/audit/scripts/_report_md.py",
+                                   "plugins/audit/scripts/_report_page.py",
                                    "plugins/audit/scripts/_report_ui.py",
+                                   "plugins/audit/scripts/_report_usage.py",
+                                   "plugins/audit/scripts/_ui_theme.py",
+                                   "plugins/audit/scripts/_usage_analytics.py",
                                    "plugins/audit/scripts/_usage_core.py",
                                    "plugins/audit/scripts/audit-lock.py",
+                                   "plugins/audit/scripts/audit-usage.py",
                                    "plugins/audit/scripts/gen-demo-manifest.py",
                                    "plugins/audit/scripts/gen-demo-usage.py",
                                    "plugins/audit/scripts/migrate-manifest.py",
+                                   "plugins/audit/scripts/render-report.py",
+                                   "plugins/audit/scripts/usage_ledger.py",
                                    "plugins/audit/scripts/validate-config.py"]
           and all(os.path.isfile(os.path.join(_REPO_ROOT, p.replace("/", os.sep)))
                   for p in covered_repo_paths()))

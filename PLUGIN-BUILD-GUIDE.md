@@ -889,7 +889,9 @@ one-minute manifest overview.
 
 45% of this tree (22,363 of 49,393 lines) was `--selftest` blocks living inside the modules
 they test, and all 48 files carried their own copy of `check()`. Those blocks are moving out,
-one file at a time. This section describes the whole directory on purpose: §2 exists to answer
+one file at a time — 24 of the 48 have moved (three pilots, batch A, batch B), and
+`_output.py --selftest` prints the running count as `sc10`. This section describes the whole
+directory on purpose: §2 exists to answer
 "what does this file decide", and a test file's answer is always "the cases of the file beside
 it" — `_deps.guide_enumeration()` is scoped to `scripts/` + `hooks/` so that this stays one
 section rather than becoming forty-eight.
@@ -922,20 +924,44 @@ name is on. **Case labels move byte-identical** — a changed label is a changed
 migration proves the multiset before and after.
 
 **What a move is NOT allowed to carry over literally.** Batch A (13 files) found three shapes
-that mean something different once the code sits one directory over, and every one of them fails
-QUIETLY rather than loudly if carried:
+that mean something different once the code sits one directory over, and batch B (8 files) added
+two more. Every one of them fails QUIETLY rather than loudly if carried:
 
 * `globals()["x"] = stub` — a suite that swaps a module global for a counting or mocking stub was
   rebinding a name in the module it lived in. From `tests/` it rebinds a name nothing calls, the
   production function keeps using the real one, and the counter reads 0. Write `M.x = stub`, and
   restore on `M` in the same `finally`. `test__usage_core.py`'s `ag` group is the worked example;
-  the literal move was run and goes red with `got 0` on four cases.
+  the literal move was run and goes red with `got 0` on four cases. Batch B found three more
+  (`test__usage_analytics.py`'s `bn4`, `test_usage_ledger.py`'s `_home`), and the `_home` one is
+  the reason this is stated as *dangerous* rather than merely wrong: the real function stayed
+  live, the ledger walk left the fixture, and the three `discover:` cases went looking in the
+  developer's own `~/.claude/usage` — the exact escape they exist to forbid.
+* `globals()` / `vars()` read for INTROSPECTION, not for rebinding — "which public names does
+  this module define", "is this name served here". The subject is the module, so it is
+  `vars(M)`, `hasattr(M, n)`, `M.__name__`. Carried literally these answer about the test file,
+  which is empty of the thing being asked about: `usage_ledger`'s `rx1` reports all 40 re-exports
+  missing (loud), while `_usage_analytics`' `bn5` reduces to `set() - _timed == set()` and
+  `render-report`'s `bn6` to a clause that is true forever (both silent, both green).
 * `__file__` — meant "the module under test's source" (`_policy`'s `m3b` reads it to pin which
   `fnmatch` function is called) or "some real file with an mtime" (`audit-lock`'s `a-mtime`). The
-  first must become `M.__file__`; the second may be anything, but should say which it is.
+  first must become `M.__file__`; the second may be anything, but should say which it is. A third
+  reading turned up in batch B: `_report_usage`'s `u27` used it to mean "one of the files this
+  source lint scans", where re-pointing it at `M.__file__` is correct but not sufficient — the
+  set it belonged to was two files because two files existed when the rule was written, and the
+  report is assembled by six now.
 * a path built with `os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` — `scripts/` and
   `tests/` are both one level under the plugin directory, so this resolves *correctly by
   coincidence*. Spell it off `_harness.SCRIPTS_DIR` / `_harness.HOOKS_DIR` so it stays correct.
+  `_ui_theme`'s `ua1` is the variant that resolves *incorrectly* rather than by luck — it
+  asserted `ui/` sits beside the module, which from `tests/` is simply false — and it is the case
+  that shows the rule: say the same thing about the SUBJECT (`UI_DIR == SCRIPTS_DIR/ui`) rather
+  than editing the assertion until it passes.
+
+**A moved case may have to become a better case.** Not licence to rewrite: labels move
+byte-identical and the multiset is proven. But where the inline spelling depended on the suite's
+location, re-pointing it is a real change and owes a red proof, and sometimes re-pointing alone
+would preserve a scope that was itself accidental. `u27` is the worked example — a magnitude
+planted in `_report_page.py` leaves the two-file form green and turns the six-file form red.
 
 **A moved suite can retire an import edge.** `_deps` walks the whole AST, selftest included, so a
 `_loader.load_script(...)` that only ever ran inside a suite is a real edge in the graph until the
