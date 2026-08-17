@@ -45,7 +45,7 @@ jobs:
           # level down stopped being run here without anything going red. `find`
           # removes the hazard instead of forbidding the shape. It is a no-op on a
           # flat tree, so this changes nothing today and everything the day somebody
-          # adds scripts/usage/core.py.
+          # adds a script one directory down.
           total=0
           for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
             echo "== $f"

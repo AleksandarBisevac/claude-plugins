@@ -87,7 +87,7 @@ LAYERS = (
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
     # other member of this layer - so it belongs beside them, not in a layer of its own.
     ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
-     "_usage_core", "_deps"),
+     "_usage_core", "_deps", "_refs"),
     ("_panel_settings", "_panel_ui", "_report_html", "_report_ui", "_usage_analytics"),
     # The usage metering stack is a three-link chain, `_usage_core` -> `_usage_analytics`
     # -> `usage_ledger`, so it needs three layers under its lowest consumer. That consumer

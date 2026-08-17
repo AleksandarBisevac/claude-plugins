@@ -94,6 +94,7 @@ claude-plugins/                           # this repo (personal, public)
         _loader.py                        # the one way scripts/ loads a sibling script as a library, one cache policy
         _ui_theme.py                      # shared visual tokens (colour/spacing/type/labels) for report + panel
         _deps.py                          # the module layer table, checked against the real import graph every run
+        _refs.py                          # every script path a document names, stat'd against the files on disk
         _usage_core.py                    # usage arithmetic: the price table, the hour bucket, the roll-ups
         _usage_analytics.py               # what the ledger MEANS: series, bands, budgets, routing, coverage
         usage_ledger.py                   # token-usage metering core: transcript scan, dedup, attribution
@@ -160,6 +161,7 @@ L1:
   _loader -> _output
   _manifest_io -> _output
   _policy -> _output
+  _refs -> _output
   _ui_theme -> _output
   _usage_core -> _output
 
@@ -495,6 +497,28 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it. `--selftest`.
+
+### `plugins/audit/scripts/_refs.py`
+The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
+spell a route to a `.py` under `plugins/audit/` — the command files, CI's own steps, this
+guide, the plugin README, the schema descriptions, the worked example's shell scripts — and
+until this module nothing stat'd any of them. `validate-manifest.py` compares `fileIndex`
+against task `files` and never touches the filesystem; `guide_enumeration()` above matches by
+BASENAME, so a `### ` heading survives the file moving into a subdirectory. `referenced_paths()`
+returns EVERY match rather than only the broken ones, because the count is the check — a
+pattern that quietly stops matching otherwise reports "0 missing", which reads like a clean
+tree. Two matching modes: BARE in documents, and ANCHORED (`plugins/audit/`,
+`${CLAUDE_PLUGIN_ROOT}/`, `$scripts/`) inside the plugin's own `.py`, which is what keeps
+`guard-secrets-read.py`'s unanchored build-script literal — a fixture about a CONSUMER repo's
+file — out of the scan while still catching `require-plan.py`'s three real lock-script
+strings. `CHANGELOG.md` and `docs/design/` are excluded with the reason in the table: a path
+that has since moved was true when it was written. `manifest_moved_files()` splits a MOVE
+(loud: stale reference) from a DELETION (silent: correct history) by asking whether the
+basename still exists anywhere in the plugin, and `sweep_glob_drift()` pins the six documents
+that show the selftest sweep to the recursive `find` form — scoped to the runnable line, so
+the two places this guide writes the flat glob as prose stay legal. This file is an anchored
+surface itself, and its own fixture paths are BUILT rather than spelled for that reason.
+`--selftest` (32 cases).
 
 ### `plugins/audit/scripts/_usage_core.py`
 The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`

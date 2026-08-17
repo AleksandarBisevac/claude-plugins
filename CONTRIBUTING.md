@@ -275,9 +275,12 @@ done task, and the `#no-plan` bypass round-trip.
 
 Helpers stay flat, namespaced by prefix rather than by directory. Reasons:
 
-- The CI selftest glob (`hooks/*.py scripts/*.py`) and `_output.py`'s own
+- ~~The CI selftest glob (`hooks/*.py scripts/*.py`) and `_output.py`'s own
   guard are both non-recursive by design — a file in a subdirectory silently
-  stops being tested.
+  stops being tested.~~ **No longer true.** Every scanner is recursive now, and
+  the last three flat sweeps were converted in `cf50f9f`. This reason is dead
+  and is struck rather than deleted, so the record shows what the decision
+  actually rested on.
 - Every file stays directly runnable; a folder buys nothing a prefix does not
   already say.
 - Hooks reach scripts by flat basename paths, and a folder would mean

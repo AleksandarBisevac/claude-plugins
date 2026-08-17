@@ -46,8 +46,10 @@ comprehensions, and **6 `global` statements in ~42,000 lines**. That is the patt
 
 - **Name by role.** `_underscore.py` is an importable helper; `hyphen-name.py` is an entry point
   something invokes. The name is the contract.
-- **Flat, one directory deep.** The CI glob and `_output.py`'s guard are non-recursive *by
-  design*; a file in a subdirectory silently stops being tested.
+- **A basename must be unique across all of `scripts/`.** A file may sit in a subdirectory — every
+  scanner walks recursively — but `import`, `_loader` and `_deps.LAYERS` all resolve by basename, so
+  two files sharing one would be a single node in the layer graph wearing both files' edges.
+  `layer_violations()` fails the build by name on it. Directories are labels, not namespaces.
 - **Imports go down, never sideways or up.** `_deps.LAYERS` assigns every module a layer and
   `layer_violations()` fails an unplaced or wrongly-layered file **by name**. `hooks/` may import
   nothing from `scripts/` at all. If a new helper does not fit a layer, that is information about
