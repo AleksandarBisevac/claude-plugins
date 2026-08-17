@@ -38,7 +38,11 @@ Roles - the minimal set the three consumers actually use:
   header                section headings (bold)
   dim                   footnote-ish caveats (faint)
 
-Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
+This module carries no `--selftest` of its own any more; its 16 cases live in
+`plugins/audit/tests/test__cli_fmt.py`, byte-identical labels and all. It is one of
+the three pilots of that migration - see `plugins/audit/tests/_harness.py`.
+
+Exit codes (as a command): 0 the pointer above - 2 usage error.
 """
 import os
 import re
@@ -120,88 +124,17 @@ def strip(text):
     return _ANSI_RE.sub("", str(text))
 
 
-# --- selftest ---------------------------------------------------------------
-class _Tty(object):
-    def isatty(self):
-        return True
-
-
-class _Pipe(object):
-    def isatty(self):
-        return False
-
-
-class _NoIsatty(object):
-    pass
-
-
-def _selftest():
-    cases = []
-
-    def check(label, ok, detail=""):
-        cases.append((label, bool(ok), detail))
-
-    tty, pipe = _Tty(), _Pipe()
-
-    # -- mode resolution ------------------------------------------------------
-    check("cf1 never is plain even on a TTY with no NO_COLOR",
-          enabled("never", stream=tty, env={}) is False)
-    check("cf2 always is colored even through a pipe",
-          enabled("always", stream=pipe, env={}) is True)
-    check("cf3 auto on a TTY with no NO_COLOR is colored",
-          enabled("auto", stream=tty, env={}) is True)
-    check("cf4 auto through a pipe is plain - the model-facing path",
-          enabled("auto", stream=pipe, env={}) is False)
-    check("cf5 NO_COLOR beats auto: a set variable turns a TTY plain",
-          enabled("auto", stream=tty, env={"NO_COLOR": "1"}) is False)
-    check("cf6 an explicit always outranks NO_COLOR - the documented decision: "
-          "the flag is the more explicit signal and must not be a no-op",
-          enabled("always", stream=tty, env={"NO_COLOR": "1"}) is True)
-    check("cf7 an EMPTY NO_COLOR does not count as set (the spec's reading)",
-          enabled("auto", stream=tty, env={"NO_COLOR": ""}) is True)
-    check("cf8 a stream without isatty() resolves to plain, not a crash",
-          enabled("auto", stream=_NoIsatty(), env={}) is False)
-
-    # -- paint ----------------------------------------------------------------
-    on, off = painter("always"), painter("never")
-    check("cf9 every role paints: the code goes on and RESET closes it",
-          all(on.paint("x", r) == CODES[r] + "x" + RESET for r in CODES))
-    check("cf10 a disabled painter returns its input unchanged - identity, "
-          "which is what makes plain mode byte-identical",
-          all(off.paint("x", r) == "x" for r in CODES)
-          and off.paint("x", "ok") is not None)
-    check("cf11 an unknown role paints nothing rather than raising",
-          on.paint("x", "no-such-role") == "x")
-    check("cf12 painted text strips back to the plain text exactly - "
-          "painting wraps content, never changes it",
-          all(strip(on.paint(s, r)) == s
-              for r in CODES
-              for s in ("", "x", "[OK     ]", "USAGE  repo r   window w",
-                        "100% #### [x] P1.1")))
-    check("cf13 strip() on already-plain text is the identity",
-          strip("no escapes here [x] 42%") == "no escapes here [x] 42%")
-    check("cf14 every escape code is pure ASCII, so cp1252 CI cannot choke",
-          all(ord(c) < 128 for c in RESET + "".join(CODES.values())))
-    check("cf15 PLAIN is off and painter() honors each mode end to end",
-          PLAIN.on is False and painter("never").on is False
-          and painter("always").on is True
-          and painter("auto", stream=pipe, env={}).on is False
-          and painter("auto", stream=tty, env={}).on is True)
-    check("cf16 MODES names exactly the flag's vocabulary",
-          MODES == ("auto", "always", "never"))
-
-    passed = sum(1 for _, ok, _ in cases if ok)
-    for label, ok, detail in cases:
-        print("%s %s%s" % ("PASS" if ok else "FAIL", label,
-                           (" (%s)" % detail) if detail and not ok else ""))
-    print("\n_cli_fmt: %d/%d cases passed" % (passed, len(cases)))
-    return 0 if passed == len(cases) else 1
-
-
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
+        # Answers rather than exits silently: `--selftest` is what every other
+        # file here still accepts, so nothing would tell a reader whether this
+        # one ran nothing or has nothing. It deliberately does NOT print the
+        # suite contract - that literal is how `_output.selftest_coverage()`
+        # tells an inline suite from a migrated one.
+        print("_cli_fmt.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test__cli_fmt.py - run that file instead.")
+        raise SystemExit(0)
     sys.stderr.write("usage: _cli_fmt.py --selftest\n")
     raise SystemExit(2)

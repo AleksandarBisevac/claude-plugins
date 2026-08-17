@@ -93,6 +93,17 @@ SURFACES = (
     # somebody else's repo rather than a reference to ours. See the module docstring.
     ("plugins/audit/hooks", ANCHORED),
     ("plugins/audit/scripts", ANCHORED),
+    # `tests/` is the plugin's Python too, and ANCHORED for a reason that is already
+    # visible rather than anticipated: `hooks/_config.py` carries `"tests/test_cart.py"`
+    # and `"tests/cart_test.py"` as fixtures for a CONSUMER repo's test globs, and when
+    # that file's suite migrates those fixtures move into this directory. A bare match
+    # here would then look for that consumer-repo filename inside the plugin's own
+    # tests/ and report this tree as broken because a hook knows what a Python test is
+    # usually called. (The path is described rather than written: this file is itself
+    # an anchored surface, and spelling it here would BE a reference to a file that
+    # does not exist - which is the trap the header warns about, and which the first
+    # run of this very change walked into twice.)
+    ("plugins/audit/tests", ANCHORED),
 )
 
 # Excluded on purpose, with the reason attached rather than left to a commit message.
@@ -127,16 +138,30 @@ _ROOT_ANCHOR = r"(?:plugins/audit/|\$\{CLAUDE_PLUGIN_ROOT\}/|\$CLAUDE_PLUGIN_ROO
 # the alternation above and needs its own branch and its own group.
 _SCRIPTS_VAR = r"\$scripts/"
 
-_BARE_RE = re.compile(r"%s?(%s%s)|%s(%s)"
-                      % (_ROOT_ANCHOR, _DIR, _TAIL, _SCRIPTS_VAR, _TAIL))
-_ANCHORED_RE = re.compile(r"%s(%s%s)|%s(%s)"
-                          % (_ROOT_ANCHOR, _DIR, _TAIL, _SCRIPTS_VAR, _TAIL))
+# `tests/` gets its own branch instead of joining `_DIR`, and the anchor is REQUIRED on
+# it in both modes — this is the only directory whose bare name means somebody else's
+# repo more often than it means ours. `scripts/x.py` in a document is unambiguous;
+# `tests/test_cart.py` is what half the prose about testing a CONSUMER project says, and
+# `hooks/_config.py` already carries two of those as fixtures. Requiring the anchor
+# removes that whole class rather than asking each future document to phrase itself
+# around a lint, and it costs nothing real: every reference to this plugin's own test
+# tree from outside it is written `plugins/audit/tests/...` anyway.
+_TESTS_DIR = r"tests/"
+
+_BARE_RE = re.compile(r"%s?(%s%s)|%s(%s)|%s(%s%s)"
+                      % (_ROOT_ANCHOR, _DIR, _TAIL, _SCRIPTS_VAR, _TAIL,
+                         _ROOT_ANCHOR, _TESTS_DIR, _TAIL))
+_ANCHORED_RE = re.compile(r"%s(%s%s)|%s(%s)|%s(%s%s)"
+                          % (_ROOT_ANCHOR, _DIR, _TAIL, _SCRIPTS_VAR, _TAIL,
+                             _ROOT_ANCHOR, _TESTS_DIR, _TAIL))
 
 
 def _match_rel(match):
     """The repo-relative path a match names, whichever branch of the pattern fired."""
     if match.group(1):
         return "%s/%s" % (PLUGIN_REL, match.group(1))
+    if match.group(3):
+        return "%s/%s" % (PLUGIN_REL, match.group(3))
     return "%s/scripts/%s" % (PLUGIN_REL, match.group(2))
 
 
@@ -424,6 +449,7 @@ _ANCHOR_LITERAL = "${CLAUDE_PLUGIN_ROOT}/"
 _FX_SCRIPTS = PLUGIN_REL + "/scripts/"
 _FX_HOOKS = PLUGIN_REL + "/hooks/"
 _FX_COMMANDS = PLUGIN_REL + "/commands/"
+_FX_TESTS = PLUGIN_REL + "/tests/"
 
 
 def _write(root, rel, text):
@@ -557,16 +583,35 @@ def _selftest():
     # The same two claims on the REAL files, because a hand-written fixture and a
     # hand-written matcher can encode one assumption twice and agree about nothing.
     real = referenced_paths()
-    hook_hits = [h for h in real if h[0].startswith("plugins/audit/hooks/")]
-    check("a3 the real hooks/ tree yields exactly the three "
+    hook_hits = [h for h in real if h[0].startswith(_FX_HOOKS)]
+    hook_script_hits = [h for h in hook_hits if h[3].startswith(_FX_SCRIPTS)]
+    check("a3 the real hooks/ tree reaches SCRIPTS exactly three times - the three "
           "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py strings require-plan.py carries",
-          len(hook_hits) == 3
-          and set(h[0] for h in hook_hits) == set(["plugins/audit/hooks/require-plan.py"])
-          and set(h[3] for h in hook_hits)
-          == set(["plugins/audit/scripts/audit-lock.py"]), repr(hook_hits))
+          len(hook_script_hits) == 3
+          and set(h[0] for h in hook_script_hits) == set([_FX_HOOKS + "require-plan.py"])
+          and set(h[3] for h in hook_script_hits)
+          == set([_FX_SCRIPTS + "audit-lock.py"]), repr(hook_script_hits))
     check("a4 ...and guard-secrets-read.py's build.py fixture contributes none of them",
           [h for h in hook_hits
            if h[0].endswith("guard-secrets-read.py")] == [], repr(hook_hits))
+    # The tests/ branch, on the real tree rather than on a fixture: `remind-tdd.py` is
+    # a migrated hook, and its docstring and its `--selftest` pointer both name where
+    # its cases went. Those are references, they are anchored, and they are now stat'd
+    # - which is the whole reason the branch was added.
+    hook_test_hits = [h for h in hook_hits if h[3].startswith(_FX_TESTS)]
+    check("a5 an ANCHORED tests/ path in the plugin's own source is a reference and "
+          "is resolved into plugins/audit/tests/: %r" % (hook_test_hits,),
+          hook_test_hits
+          and all(h[0] == _FX_HOOKS + "remind-tdd.py" for h in hook_test_hits)
+          and set(h[3] for h in hook_test_hits)
+          == set([_FX_TESTS + "test_remind_tdd.py", _FX_TESTS + "_harness.py"]))
+    check("a6 ...and an UNanchored one is not - `hooks/_config.py` carries two "
+          "consumer-repo test filenames as glob fixtures, and neither may be looked "
+          "for in this plugin. Reads vacuous, and is the only case that fails if "
+          "`tests` ever joins the bare alternation: %r"
+          % ([h for h in real if h[0].endswith("_config.py")],),
+          not any(h[3].startswith(_FX_TESTS)
+                  for h in real if h[0].endswith("_config.py")))
 
     # --- anti-vacuity ----------------------------------------------------------------
     tmp = tempfile.mkdtemp()

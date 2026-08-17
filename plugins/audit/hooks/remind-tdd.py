@@ -35,7 +35,12 @@ State: <stateDir>/tdd-reminder-<session_id>.json
 Contract: ALWAYS exits 0. Any unexpected input / exception also exits 0 —
 a reminder must never break legitimate work.
 
-Run `python3 remind-tdd.py --selftest` to exercise the decision core.
+This hook carries no `--selftest` of its own any more; its 16 cases live in
+`plugins/audit/tests/test_remind_tdd.py` (hyphens become underscores - a hyphenated
+name is not importable). It is one of the three pilots of that migration; see
+`plugins/audit/tests/_harness.py`. A test of a hook may import from `scripts/` even
+though the hook itself may not - the isolation rule is about what a hook costs at
+import time under a launcher, and a test has no launcher above it.
 """
 import json
 import os
@@ -179,146 +184,13 @@ def main() -> None:
     sys.exit(0)
 
 
-# --- selftest -----------------------------------------------------------------
-def _selftest() -> int:
-    import tempfile
-
-    tmp = Path(tempfile.mkdtemp(prefix="remind-tdd-selftest-"))
-    sd = tmp / "state"
-    sd.mkdir(parents=True, exist_ok=True)
-    # Pin repo_root to the temp dir regardless of the caller's environment.
-    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
-    os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
-
-    cfg = dict(_config.DEFAULTS)
-    t0 = 1_000_000.0
-
-    def payload(file_path, *, sid, tool="Edit"):
-        ti = ({"notebook_path": file_path} if tool == "NotebookEdit"
-              else {"file_path": file_path})
-        return {"tool_name": tool, "tool_input": ti,
-                "session_id": sid, "cwd": str(tmp)}
-
-    results = []
-
-    def check(name, expected, data, *, use_cfg=None, now=t0):
-        try:
-            verdict, _ = decide(data, cfg=use_cfg or cfg, state_dir=sd, now=now)
-        except Exception as exc:  # pragma: no cover
-            verdict = "EXC:%s" % exc
-        ok = verdict == expected
-        results.append(ok)
-        print("%s %s (expected %s, got %s)"
-              % ("PASS" if ok else "FAIL", name, expected, verdict))
-
-    # (a) test-file edit → record; a later source edit in that session → silent
-    sess_a = "tdd-session-a"
-    check("a1 test file recorded", "record",
-          payload("src/foo/bar.test.ts", sid=sess_a))
-    check("a2 source after test touch", "silent",
-          payload("src/foo/bar.ts", sid=sess_a))
-
-    # (b) source edit with no test touched → warn; same file again → silent
-    sess_b = "tdd-session-b"
-    check("b1 source without test warns", "warn",
-          payload("src/foo/a.ts", sid=sess_b))
-    check("b2 same file again", "silent",
-          payload("src/foo/a.ts", sid=sess_b))
-    check("b3 second file inside throttle window", "silent",
-          payload("src/foo/b.ts", sid=sess_b), now=t0 + 60)
-    check("b4 second file after throttle window", "warn",
-          payload("src/foo/b.ts", sid=sess_b), now=t0 + 11 * 60)
-
-    # (c) exempt + non-source paths → silent
-    check("c1 exempt .md", "silent", payload("README.md", sid="tdd-session-c"))
-    check("c2 non-source file", "silent",
-          payload("assets/logo.svg", sid="tdd-session-c"))
-
-    # (d) file covered by a gate-only in_progress task → silent (default policy)
-    manifest_dir = tmp / "docs" / "audit"
-    manifest_dir.mkdir(parents=True, exist_ok=True)
-    (manifest_dir / "audit-plan.json").write_text(json.dumps({
-        "meta": {"version": 2},
-        "phases": [{"id": "P0", "title": "p", "status": "in_progress", "tasks": [
-            {"id": "P0.1", "title": "t", "status": "in_progress",
-             "files": ["src/covered/mod.ts"], "tests": {"mode": "gate-only"}},
-        ]}],
-    }), encoding="utf-8")
-    check("d1 gate-only in_progress coverage", "silent",
-          payload("src/covered/mod.ts", sid="tdd-session-d"))
-    # warn-always ignores that coverage
-    cfg_wa = dict(cfg)
-    cfg_wa["tddReminder"] = dict(_config.DEFAULTS["tddReminder"],
-                                 inProgressPolicy="warn-always")
-    check("d2 warn-always ignores coverage", "warn",
-          payload("src/covered/mod.ts", sid="tdd-session-d2"), use_cfg=cfg_wa)
-
-    # (e) disabled → silent
-    cfg_off = dict(cfg)
-    cfg_off["tddReminder"] = dict(_config.DEFAULTS["tddReminder"], enabled=False)
-    check("e1 disabled", "silent",
-          payload("src/foo/z.ts", sid="tdd-session-e"), use_cfg=cfg_off)
-
-    # (g) NotebookEdit counts as a source edit (notebook_path, *.ipynb glob)
-    check("g1 notebook edit without test warns", "warn",
-          payload("notebooks/train.ipynb", sid="tdd-session-g",
-                  tool="NotebookEdit"))
-
-    # (h) A1 (v0.36): a build config named like a test must not SATISFY the
-    # discipline. `tsconfig.test.json` matched testGlobs' `**/*.test.*`, so one
-    # config edit marked the whole session as having touched tests and every
-    # later source edit went unreminded.
-    sess_h = "tdd-session-h"
-    check("h1 tsconfig.test.json is not a test touch", "silent",
-          payload("tsconfig.test.json", sid=sess_h))
-    check("h2 ...so a later source edit in the same session still warns", "warn",
-          payload("src/foo/h.ts", sid=sess_h))
-
-    # (i) the state dir this hook creates must be SELF-IGNORING. It used to be
-    # made with a bare mkdir, which left stateDir as the one local dir with no
-    # `*` .gitignore inside, and audit-doctor.check_local_artifacts then reported
-    # the plugin's own directory as a hygiene finding. A fresh dir is used on
-    # purpose: the marker has to be created by the hook, not inherited. The
-    # state-file half of the assertion is the other-direction guard - a "fix"
-    # that made the directory and stopped writing the state would pass the
-    # marker check alone, and every later case in this file would still pass
-    # because they use a different state dir.
-    sd_i = tmp / "state-selfignoring"          # deliberately NOT pre-created
-    sess_i = "tdd-session-i"
-    verdict_i, _ = decide(payload("src/foo/i.ts", sid=sess_i),
-                          cfg=cfg, state_dir=sd_i, now=t0)
-    marker_i = sd_i / ".gitignore"
-    ok = (verdict_i == "warn"
-          and marker_i.is_file()
-          and marker_i.read_text(encoding="utf-8") == _config.LOCAL_IGNORE_MARKER
-          and _state_file(sd_i, sess_i).is_file())
-    results.append(ok)
-    print("%s i1 the state dir it creates carries the `*` .gitignore marker "
-          "(and the state file still lands in it)" % ("PASS" if ok else "FAIL"))
-
-    # (f) warn detail is valid additionalContext JSON when serialized
-    verdict, detail = decide(payload("src/foo/f.ts", sid="tdd-session-f"),
-                             cfg=cfg, state_dir=sd, now=t0)
-    blob = json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PostToolUse", "additionalContext": detail}})
-    ok = verdict == "warn" and json.loads(blob)["hookSpecificOutput"][
-        "additionalContext"].startswith("[tdd-reminder]")
-    results.append(ok)
-    print("%s f1 warn payload serializes" % ("PASS" if ok else "FAIL"))
-
-    if prev_env is None:
-        os.environ.pop("CLAUDE_PROJECT_DIR", None)
-    else:
-        os.environ["CLAUDE_PROJECT_DIR"] = prev_env
-
-    all_pass = all(results)
-    print("\n%s: %d/%d cases passed"
-          % ("ALL PASS" if all_pass else "SELFTEST FAILED",
-             sum(1 for r in results if r), len(results)))
-    return 0 if all_pass else 1
-
-
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
-        sys.exit(_selftest())
+        # Answered rather than fallen through to main(), which would block on stdin
+        # waiting for a hook payload that is never coming. It deliberately does NOT
+        # print the `N/M cases passed` contract - that string is how
+        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
+        print("remind-tdd.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test_remind_tdd.py - run that file instead.")
+        sys.exit(0)
     main()

@@ -124,6 +124,11 @@ claude-plugins/                           # this repo (personal, public)
         gen-demo-usage.py                 # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
         audit-journal.py                  # append-only hash-chained audit trail (append/verify/show)
+      tests/                              # selftest blocks moved OUT of the modules they test (in progress)
+        _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
+        test__cli_fmt.py                  # pilot 1: an importable helper
+        test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
+        test_remind_tdd.py                # pilot 3: a hook (a test may import scripts/; the hook may not)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -867,6 +872,54 @@ set the `$schema` URL to your published raw path and fill `repo`/`createdISO`.
 End-user docs: install, run, the config table, the three-layer extensibility model, and a
 one-minute manifest overview.
 
+### `plugins/audit/tests/` — ONE section, not one per file (v0.40.0, in progress)
+
+45% of this tree (22,363 of 49,393 lines) was `--selftest` blocks living inside the modules
+they test, and all 48 files carried their own copy of `check()`. Those blocks are moving out,
+one file at a time. This section describes the whole directory on purpose: §2 exists to answer
+"what does this file decide", and a test file's answer is always "the cases of the file beside
+it" — `_deps.guide_enumeration()` is scoped to `scripts/` + `hooks/` so that this stays one
+section rather than becoming forty-eight.
+
+**`_harness.py`** owns the two things a moved block cannot bring with it. *Path setup*, at
+import time: `scripts/` and `hooks/` go on `sys.path`, derived from the harness's own location,
+so a test file writes `import _output` or `import _config`. *The runner*: `run(body)` calls
+`body(check)` and prints the `PASS`/`FAIL` lines and the `N/M cases passed` tally CI greps for.
+It unified a measured vocabulary — 18 files took `check(label, cond)`, 18 took a third `detail`
+argument, 22 called the first parameter `label` and 20 called it `name`, 39 printed `ALL PASS`
+and 9 printed their own module name *with no failure sentinel at all* — into one shape:
+`check(label, cond, detail="")`, detail rendered only on failure, `ALL PASS` / `SELFTEST
+FAILED`. `run()` also puts the body in a `try`: nothing here prints until every case has run,
+so an exception raised while computing a case argument used to take the whole suite's output
+with it (measured: 0 `PASS` lines survived; through `run()`, 8 of 9 print and the escape is
+reported as the failing ninth).
+
+**Naming.** a production `x.py` becomes `tests/test_x.py`, with **hyphens becoming underscores**:
+`migrate-manifest.py` → `test_migrate_manifest.py`, because a hyphenated name is not
+importable and the entry points are hyphenated by convention. The rule lives in
+`_output._test_name_for()` and nowhere else.
+
+**The transformation is explicit.** The module under test is imported as `M` and its names
+carry the prefix (`M.enabled(...)`). Not `globals().update(vars(mod))` — ruff selects `F`, and
+a body of runtime-injected names is undefined-name noise waiting to happen. Not a
+`from x import (a, b, c)` list either: two of the three shapes (a hyphenated entry point, a
+hook) are unspellable in an `import` statement and must come through `_loader`, which returns a
+module object. One style that works for all three, and `M.` says which side of the boundary a
+name is on. **Case labels move byte-identical** — a changed label is a changed test, and the
+migration proves the multiset before and after.
+
+**What the boundary lints say.** `_output.selftest_coverage()` classifies every production
+file as `inline` / `covered` / `both` / `neither` (plus orphan and colliding test files), and
+`_output.py --selftest` asserts the counts — because a rule with an OR in it (`inline or
+covered`) is exactly the shape that lets a file with NEITHER through. `both` is a defect too:
+two suites for one module drift. CI's sweep takes its skip list from `_output.py --covered`,
+the same function, so it cannot skip a file nobody is testing. `_deps.tests_import_violations()`
+holds the other direction: nothing under `scripts/` or `hooks/` may import from `tests/`, so the
+test tree stays deletable. `tests/` is deliberately absent from `_deps.LAYERS` (a test file has
+no position in the product's import order) but IS in scope for `_output.house_style_violations()`
+and `entries_missing_guard()` — the 3.8 dialect and the `safe_stdio()` guard apply to a test
+exactly as they apply to a script.
+
 ---
 
 ## 3. Finish & publish — DONE (v0.2.0), hardened (v0.3.0), release-quality (v0.4.0+)
@@ -896,6 +949,11 @@ ubuntu + windows for every push/PR. Locally:
 #    stops at the top level, so a file one directory down is silently never run and
 #    the sweep still exits 0 — a green build over a partial tree.
 for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
+  python3 "$f" --selftest || exit 1
+done
+# ...plus the suites that have moved out into tests/ (see §2). A migrated file still
+# exits 0 on --selftest, so the loop above stays green over a suite it no longer runs.
+for f in $(find plugins/audit/tests -name '*.py' | sort); do
   python3 "$f" --selftest || exit 1
 done
 # launcher fails LOUD without an interpreter (permissionDecision "ask" JSON):

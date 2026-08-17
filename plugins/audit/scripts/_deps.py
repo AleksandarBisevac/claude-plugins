@@ -50,6 +50,17 @@ every real edge still points strictly downward. `validate-config.py` imports onl
 is the checker correctly treating "nothing imports an entry point" as permission to place it
 wherever its group belongs, same idea named in the exercise's own validate-config example.
 
+`tests/` IS NOT IN `LAYERS`, AND THE OMISSION IS THE DESIGN. A layer table answers "may
+this module import that one", and it answers it for the shipped product: `scripts/` and
+`hooks/` are what a user installs and what a hook loads on every tool call. A test file
+imports downward into whatever it tests and is imported by nothing, so it has no position
+in that order to be wrong about — giving it one would mean inventing a layer above every
+existing layer whose only rule is "nothing may point here". That rule is worth having, and
+`tests_import_violations()` states it directly instead: nothing under `scripts/` or
+`hooks/` may import from `tests/`. A test is allowed to reach into the product; the
+product is never allowed to reach into its tests, because the day it does, the tests stop
+being removable and start being a dependency a consumer has to install.
+
 THE ONE EXCEPTION THIS FILE USED TO CARRY IS GONE. Its first run found exactly one violation of
 "hooks import nothing from scripts": `hooks/_config.py`'s guarded, static `import _manifest_io`,
 reached by inserting scripts/ at the FRONT of `sys.path`. It was named in an allow-list here
@@ -68,6 +79,7 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _HOOKS_DIR = os.path.join(os.path.dirname(_HERE), "hooks")
+_TESTS_DIR = os.path.join(os.path.dirname(_HERE), "tests")
 
 # Run as a command, `sys.path[0]` is already this directory; imported from anywhere else
 # it is not. The same two-line preamble `_help.py` and `_panel_state.py` carry, for the
@@ -592,6 +604,63 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
     return violations
 
 
+# --- the tests/ boundary ------------------------------------------------------
+def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
+    """(file, what) for every scripts/ or hooks/ file that reaches into `tests/`.
+
+    The rule `LAYERS` cannot express (see the module docstring): the product may not
+    depend on its tests. It is not a style preference — `tests/` is where the suites
+    that used to live inside each module went, and the whole value of moving them is
+    that they can be deleted, skipped or shipped separately. One `from _harness import
+    run` in a script takes that back, quietly, and the first person to notice is a
+    consumer whose install is missing a directory.
+
+    Both edge kinds are read, the same two `layer_violations()` reads: a static
+    `import`, and a `_loader` call carrying a `tests/` filename as a literal. The
+    second inherits `_runtime_loaded_sibling_names`' limitation exactly — only a
+    literal spelled INSIDE the call counts — and it is why a docstring or an error
+    message naming `tests/test_x.py` is not an edge. Three files in `scripts/` and
+    `hooks/` name a test file in prose today (the migrated pilots, pointing readers at
+    where their cases went), and a looser scan would report all three.
+
+    A file that will not parse is reported here as well as by the lints that already
+    say so; a scan that silently skips it is a scan claiming a clean answer about a
+    file it never read.
+    """
+    script_dir = script_dir or _HERE
+    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
+    tests_dir = tests_dir if tests_dir is not None else _TESTS_DIR
+
+    if not os.path.isdir(tests_dir):
+        return []
+    test_names = set(os.path.basename(rel)[:-3]
+                     for rel, _path in _output.py_files(tests_dir))
+    if not test_names:
+        return []
+
+    violations = []
+    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+        if not os.path.isdir(directory):
+            continue
+        for rel, path in _output.py_files(directory):
+            named = "%s/%s" % (kind, rel)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
+            except (OSError, SyntaxError):
+                violations.append((named, "file does not parse; cannot be scanned "
+                                          "for tests/ imports"))
+                continue
+            for name in sorted(set(_imported_sibling_names(tree, test_names, None))):
+                violations.append((named, "imports %s from tests/ - the product may "
+                                          "not depend on its own test tree" % name))
+            for name in sorted(set(_runtime_loaded_sibling_names(tree, test_names,
+                                                                 None))):
+                violations.append((named, "runtime-loads %s from tests/ - the product "
+                                          "may not depend on its own test tree" % name))
+    return violations
+
+
 # --- rendering ----------------------------------------------------------------
 def render(script_dir=None, layers=None):
     """A deterministic module map: every layer, its members, each member's STATIC
@@ -817,6 +886,16 @@ def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
 
     A missing heading OR missing tree entry is reported once per file, in
     `_real_source_files()` order (scripts before hooks, each alphabetical).
+
+    SCOPED TO `scripts/` + `hooks/`, AND `tests/` IS DELIBERATELY OUT. Section 2 is
+    "File-by-file logic" because each of those files answers a question a reader of the
+    PRODUCT has - what does `_areas.py` decide, what does `require-plan.py` refuse. A
+    test file answers no such question: it is the cases of the file beside it, and its
+    entry would say so 47 times. What the guide owes instead is ONE section describing
+    `tests/` - the harness, the naming rule, the transformation - which is a thing a
+    reader genuinely needs and which no per-file enumeration would ever produce.
+    Widening this function would make that one section 48, and would put the guide's
+    length in the way of finishing the migration.
 
     MATCHED BY BASENAME, REPORTED BY RELNAME. A directory tree draws a nested
     file as an indented `core.py` under a `usage/` line, not as the string
@@ -1832,6 +1911,84 @@ def _selftest():
               rec_collisions == [])
     finally:
         shutil.rmtree(rec, ignore_errors=True)
+
+    # ---- the tests/ boundary: the product may not depend on its own test tree ----
+    # Fixtures, because the real tree is (and must stay) clean, and a rule only ever
+    # seen returning [] is a rule that might be returning [] for the wrong reason.
+    tb_s = tempfile.mkdtemp(prefix="deps-testboundary-s-")
+    tb_h = tempfile.mkdtemp(prefix="deps-testboundary-h-")
+    tb_t = tempfile.mkdtemp(prefix="deps-testboundary-t-")
+    try:
+        def _wtb(root, name, text):
+            with open(os.path.join(root, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        _wtb(tb_t, "_harness.py", "def run(body):\n    return 0\n")
+        _wtb(tb_t, "test_thing.py", "x = 1\n")
+        _wtb(tb_s, "reaches_in.py", "import _harness\nx = 1\n")
+        _wtb(tb_s, "reaches_in_from.py", "from _harness import run\nx = 1\n")
+        _wtb(tb_s, "loads_it.py",
+             'import _loader\n\n\ndef f():\n'
+             '    return _loader.load_script("test_thing.py")\n')
+        # The shape the three migrated files actually have: a test file named in
+        # PROSE, so a reader knows where the cases went. Not an edge, and the only
+        # case that fails if this lint is ever widened to "any .py literal".
+        #
+        # The anchor is BUILT, never spelled beside the filename: this file is one of
+        # `_refs`' anchored surfaces, so an anchor written immediately in front of a
+        # tests/ filename here would be a real reference to a fixture that exists for
+        # four milliseconds, and `_refs.missing_references()` reports it. Learned by
+        # doing it twice - the second time inside the comment saying not to.
+        _anchor = "plugins/audit/"
+        _wtb(tb_s, "only_points_at_it.py",
+             '"""Its cases live in %stests/test_thing.py."""\n'
+             'import _loader\n\n\ndef f():\n'
+             '    print("moved to %stests/test_thing.py")\n'
+             '    return _loader\n' % (_anchor, _anchor))
+        _wtb(tb_h, "hook_reaches_in.py", "import _harness\nx = 1\n")
+        _wtb(tb_h, "hook_clean.py", "import json\nx = 1\n")
+
+        tb = tests_import_violations(tb_s, tb_h, tb_t)
+        named_tb = sorted(n for n, _w in tb)
+        check("tb1 a scripts/ file that imports the harness is reported, and so is "
+              "the `from ... import` form - one rule, both spellings: %r" % (named_tb,),
+              "scripts/reaches_in.py" in named_tb
+              and "scripts/reaches_in_from.py" in named_tb)
+        check("tb2 a HOOK that reaches into tests/ is reported too. hooks/ may not "
+              "import scripts/ either, and both rules exist so the thing that runs on "
+              "every tool call stays loadable from a launcher: %r" % (named_tb,),
+              "hooks/hook_reaches_in.py" in named_tb)
+        check("tb3 a `_loader` call naming a tests/ file is an edge as much as an "
+              "import is - most of this tree's real edges are loader calls: %r"
+              % (named_tb,), "scripts/loads_it.py" in named_tb)
+        check("tb4 a file that merely NAMES a test file in a docstring and a print is "
+              "NOT reported. Reads vacuous, and is the only case that fails if this "
+              "widens to any `.py` literal - which would report all three migrated "
+              "files, whose pointer messages say exactly that: %r" % (named_tb,),
+              "scripts/only_points_at_it.py" not in named_tb
+              and "hooks/hook_clean.py" not in named_tb)
+        check("tb5 the message names the kind of edge, so the reader knows whether to "
+              "look for an `import` or a loader call: %r" % ([w for _n, w in tb],),
+              any("imports _harness from tests/" in w for _n, w in tb)
+              and any("runtime-loads test_thing from tests/" in w for _n, w in tb))
+        check("tb6 an empty (or absent) tests/ yields no violations, and is not "
+              "confused with a clean scan of a populated one",
+              tests_import_violations(tb_s, tb_h,
+                                      os.path.join(tb_t, "no-such-dir")) == [])
+    finally:
+        shutil.rmtree(tb_s, ignore_errors=True)
+        shutil.rmtree(tb_h, ignore_errors=True)
+        shutil.rmtree(tb_t, ignore_errors=True)
+
+    check("tb7 ...and the REAL tree carries none. This is the case that goes red the "
+          "day a script imports the harness: %r" % (tests_import_violations(),),
+          tests_import_violations() == [])
+    check("tb8 tests/ is deliberately absent from LAYERS - a test file has no position "
+          "in the product's import order, and tb7 is the rule that replaces one: %r"
+          % (sorted(set(_all_names()) & set(os.path.basename(r)[:-3]
+                                            for r, _p in _output.py_files(_TESTS_DIR))),),
+          not (set(_all_names()) & set(os.path.basename(r)[:-3]
+                                       for r, _p in _output.py_files(_TESTS_DIR))))
 
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:

@@ -23,6 +23,11 @@ Safe by default:
   - validates the RESULT; on any failure it RESTORES the backup and exits non-zero
 
 Exit codes: 0 ok / already-sharded · 1 refused or validation failure · 2 usage/unreadable.
+
+This script carries no `--selftest` of its own any more; its 11 cases live in
+`plugins/audit/tests/test_migrate_manifest.py` (hyphens become underscores - a
+hyphenated name is not importable). It is one of the three pilots of that migration;
+see `plugins/audit/tests/_harness.py`.
 """
 import datetime
 import os
@@ -150,7 +155,14 @@ def migrate(path, *, dry_run=False, force=False, renumber=False, out=None):
 # --- cli ------------------------------------------------------------------------
 def main(argv):
     if "--selftest" in argv:
-        return _selftest()
+        # Kept, rather than left to fall through to the usage error below: every
+        # other file here still answers `--selftest`, so silence or an exit 2 would
+        # read as a broken flag rather than as a moved suite. It deliberately does
+        # NOT print the `N/M cases passed` contract - that string is how
+        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
+        print("migrate-manifest.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test_migrate_manifest.py - run that file instead.")
+        return 0
     args = [a for a in argv if not a.startswith("--")]
     flags = set(a for a in argv if a.startswith("--"))
     out = None
@@ -165,98 +177,6 @@ def main(argv):
                         force="--force" in flags, renumber="--renumber" in flags, out=out)
     (sys.stderr if code else sys.stdout).write(msg + "\n")
     return code
-
-
-# --- selftest -------------------------------------------------------------------
-def _selftest():
-    import json
-    import tempfile
-
-    cases = []
-
-    def check(label, cond):
-        cases.append((label, bool(cond)))
-
-    def legacy():
-        return {
-            "meta": {"version": 2, "repo": "demo"},
-            "phases": [
-                {"id": "P1", "title": "One", "status": "done",
-                 "tasks": [{"id": "P1.1", "title": "a", "status": "done", "files": ["src/a.ts"]}]},
-                {"id": "P2", "title": "Two", "status": "pending",
-                 "tasks": [{"id": "P2.1", "title": "b", "status": "pending",
-                            "dependsOn": ["P1.1"], "files": ["src/b.ts"], "bugId": "BUG-1"}]},
-            ],
-            "fileIndex": {"src/a.ts": ["P1.1"], "src/b.ts": ["P2.1"]},
-            "bugs": [{"id": "BUG-1", "title": "bug", "status": "in_progress", "taskId": "P2.1",
-                      "severity": "high"}],
-        }
-
-    tmp = tempfile.mkdtemp(prefix="migrate-selftest-")
-    try:
-        # 1. lossless in-place migration + backup + result validates
-        p = os.path.join(tmp, "c1", "audit-plan.json")
-        os.makedirs(os.path.dirname(p))
-        with open(p, "w", encoding="utf-8") as fh:
-            json.dump(legacy(), fh)
-        code, msg = migrate(p)
-        check("migrate exit 0", code == 0)
-        check("index still at manifest path", os.path.isfile(p))
-        check("shards written", os.path.isfile(os.path.join(tmp, "c1", "phases", "P1.json"))
-              and os.path.isfile(os.path.join(tmp, "c1", "phases", "P2.json")))
-        check("backup written", any(n.startswith("audit-plan.json.bak-")
-              for n in os.listdir(os.path.join(tmp, "c1"))))
-        reloaded = _mio.load_manifest(p)
-        expect = legacy()
-        expect["meta"]["version"] = 3
-        check("reload == source (modulo meta.version)", reloaded == expect)
-
-        # 2. already-sharded is a no-op
-        code2, msg2 = migrate(p)
-        check("second migrate: already-sharded exit 0", code2 == 0 and "already sharded" in msg2)
-
-        # 3. refuses on in_progress phase (unless --force)
-        p3 = os.path.join(tmp, "c3", "audit-plan.json")
-        os.makedirs(os.path.dirname(p3))
-        m3 = legacy()
-        m3["phases"][1]["status"] = "in_progress"
-        m3["phases"][1]["tasks"][0]["status"] = "in_progress"
-        with open(p3, "w", encoding="utf-8") as fh:
-            json.dump(m3, fh)
-        code3, msg3 = migrate(p3)
-        check("in_progress -> refused (exit 1)", code3 == 1 and "in_progress" in msg3)
-        code3f, _ = migrate(p3, force=True)
-        check("in_progress + --force -> migrates", code3f == 0)
-
-        # 4. dry-run writes nothing
-        p4 = os.path.join(tmp, "c4", "audit-plan.json")
-        os.makedirs(os.path.dirname(p4))
-        with open(p4, "w", encoding="utf-8") as fh:
-            json.dump(legacy(), fh)
-        code4, msg4 = migrate(p4, dry_run=True)
-        check("dry-run exit 0 + no phases dir", code4 == 0
-              and not os.path.isdir(os.path.join(tmp, "c4", "phases")))
-
-        # 5. --renumber repairs duplicate BUG- ids and fixes reciprocal links
-        m5 = legacy()
-        m5["bugs"].append({"id": "BUG-1", "title": "dup", "status": "open",
-                           "taskId": "P1.1", "severity": "low"})
-        m5["phases"][0]["tasks"][0]["bugId"] = "BUG-1"
-        changed = renumber_duplicate_bugs(m5)
-        ids = [b["id"] for b in m5["bugs"]]
-        check("renumber: duplicate BUG-1 -> distinct ids", len(set(ids)) == len(ids)
-              and changed and changed[0][0] == "BUG-1")
-        check("renumber: reciprocal task.bugId updated",
-              m5["phases"][0]["tasks"][0]["bugId"] == changed[0][1])
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    passed = sum(1 for _, ok in cases if ok)
-    for label, ok in cases:
-        print("%s %s" % ("PASS" if ok else "FAIL", label))
-    print("\n%s: %d/%d cases passed" % (
-        "ALL PASS" if passed == len(cases) else "FAILURES", passed, len(cases)))
-    return 0 if passed == len(cases) else 1
 
 
 if __name__ == "__main__":

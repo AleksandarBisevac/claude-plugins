@@ -39,6 +39,18 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+# `tests/` is a sibling of scripts/ and hooks/, not a subdirectory of either, so no
+# existing walk reaches it and every lint that should cover it has to say so. The
+# scope decision, recorded once here and again on each function: the DIALECT rules
+# apply to tests too (`house_style_violations`, `entries_missing_guard`), because a
+# test written with `typing` or a walrus is exactly as unrunnable on 3.8 as a script
+# written that way, and a test that crashes on a cp1252 stream hides its own result.
+_TESTS_DIR = os.path.join(os.path.dirname(_HERE), "tests")
+
+# scripts -> audit -> plugins -> the repo root. Only `covered_repo_paths()` needs it,
+# and it needs it because CI's sweep speaks repo-relative paths.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))
+
 
 # --- safe stdio ---------------------------------------------------------------
 def safe_stdio():
@@ -133,12 +145,20 @@ def _call_lines(stmts, func):
             and isinstance(s.value.func, ast.Name) and s.value.func.id == func]
 
 
-def entries_missing_guard(script_dir=None):
-    """Names of scripts/*.py that run as a command but do not call safe_stdio() first.
+def entries_missing_guard(dirs=None):
+    """Names of .py files that run as a command but do not call safe_stdio() first.
 
-    Returns a sorted list of basenames. Two ways to be listed, because both ship the same
-    crash: never calling it, or calling it after something has already printed — a guard
-    installed after the output it guards is decoration.
+    SCOPE: `scripts/` AND `tests/`, and deliberately not `hooks/` — hooks stay
+    importless on purpose (see the module docstring) and are covered by CI's cp1252
+    pass instead. `tests/` is in because a test file is run exactly the way a script
+    is, prints far more prose than a script does, and would take its own result down
+    with it on a Windows pipe; there is no reason it is exempt except that nothing
+    used to look there.
+
+    Returns a sorted list of names, each relative to the directory it was found in.
+    Two ways to be listed, because both ship the same crash: never calling it, or
+    calling it after something has already printed — a guard installed after the
+    output it guards is decoration.
 
     "First" is judged on what EXECUTES, via `ast`, not on where text appears. Every one of
     these scripts defines printing functions hundreds of lines above its `__main__` block,
@@ -148,24 +168,25 @@ def entries_missing_guard(script_dir=None):
     `safe_stdio()` call. A file that cannot be parsed is reported rather than skipped,
     since a syntax error is a worse thing to pass over in silence.
     """
-    script_dir = script_dir or _HERE
+    dirs = dirs if dirs is not None else (_HERE, _TESTS_DIR)
     missing = []
-    for name, path in py_files(script_dir):
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=name)
-        except (OSError, SyntaxError):
-            missing.append(name)
-            continue
-        entries = [n for n in tree.body if _is_entry(n)]
-        if not entries:
-            continue  # imported module: its importer holds the guard
-        runs = list(_straight_line(tree.body))
-        guards = _call_lines(runs, "safe_stdio")
-        prints = _call_lines(runs, "print")
-        if not guards or (prints and min(prints) < min(guards)):
-            missing.append(name)
-    return missing
+    for d in dirs:
+        for name, path in py_files(d):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=name)
+            except (OSError, SyntaxError):
+                missing.append(name)
+                continue
+            entries = [n for n in tree.body if _is_entry(n)]
+            if not entries:
+                continue  # imported module: its importer holds the guard
+            runs = list(_straight_line(tree.body))
+            guards = _call_lines(runs, "safe_stdio")
+            prints = _call_lines(runs, "print")
+            if not guards or (prints and min(prints) < min(guards)):
+                missing.append(name)
+    return sorted(missing)
 
 
 # --- house-style AST checks ---------------------------------------------------
@@ -207,12 +228,19 @@ def house_style_violations(dirs=None):
     House style, not the 3.8 floor: walrus, `from __future__ import ...`, `typing` and
     `dataclasses` are all legal on Python 3.8, so vermin's version gate cannot see any
     of them — they are banned by convention, and conventions drift unless something
-    reads the AST. Scans every `.py` under `scripts/` and `hooks/` RECURSIVELY through
-    `py_files`, the same walk `entries_missing_guard` uses — and for the same reason
-    a file that will not parse is reported as a violation rather than skipped, since a
-    syntax error is a worse thing to pass over in silence than any single banned import.
+    reads the AST. Scans every `.py` under `scripts/`, `hooks/` AND `tests/`
+    RECURSIVELY through `py_files`, the same walk `entries_missing_guard` uses — and
+    for the same reason a file that will not parse is reported as a violation rather
+    than skipped, since a syntax error is a worse thing to pass over in silence than
+    any single banned import.
+
+    `tests/` is in scope from the first day it existed. A test file is the most
+    tempting place in the tree to reach for `typing` or a walrus — nothing ships it,
+    so the usual argument feels weaker — and it is also the place where a 3.8
+    violation costs most: the suite that would have caught the regression is itself
+    the thing that will not start.
     """
-    dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR)
+    dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR, _TESTS_DIR)
     violations = []
     for d in dirs:
         for name, path in py_files(d):
@@ -288,6 +316,12 @@ def redundant_constants(dirs=None):
       merged.
 
     Scanned per directory through `py_files`, so a file one level down counts.
+
+    `tests/` is NOT scanned, unlike the two dialect lints above, and the asymmetry is
+    the point: this lint's whole remedy is DELETION, and two test files legitimately
+    declaring the same fixture string are two independent fixtures, not one fact with
+    two homes. Widening it here would produce a stream of reports whose correct answer
+    is "no", which is how a lint stops being read.
     """
     dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR)
     violations = []
@@ -319,6 +353,158 @@ def redundant_constants(dirs=None):
                                    "%s = %r is never read here and is already "
                                    "declared in %s" % (const_name, value, elsewhere)))
     return violations
+
+
+# --- selftest coverage, during the migration ----------------------------------
+# The rule while the move from inline `--selftest` blocks to `tests/` is half done:
+# every `.py` under scripts/ and hooks/ has EITHER an inline suite OR a file in
+# tests/. A rule with an OR in it is exactly the shape that lets a file with NEITHER
+# through, because the natural way to write it is `inline or covered` and that reads
+# green for a file nobody has looked at. So nothing here returns a boolean: every
+# production file is placed in exactly one of four classes, two of which are defects,
+# and the caller asserts the COUNTS.
+#
+# `both` is a defect and not a belt-and-braces bonus: two suites for one module drift,
+# and the day they disagree there is no answer to "which one is the test".
+_CONTRACT = "cases passed"
+
+_TEST_PREFIX = "test_"
+
+
+def _test_name_for(rel):
+    """The `tests/` filename that covers the production file `rel`.
+
+    Hyphens become underscores because a hyphenated name is not importable and never
+    will be: `import test_migrate-manifest` is a syntax error, so the entry points -
+    which are hyphenated BY CONVENTION here, to mark a thing something invokes - could
+    not otherwise have a test module at all. Stated in code, in one place, because CI
+    and the guide both need the same answer and a rule spelled twice is a rule with a
+    disagreement waiting in it.
+    """
+    return "%s%s.py" % (_TEST_PREFIX, os.path.basename(rel)[:-3].replace("-", "_"))
+
+
+def _carries_inline_selftest(path):
+    """True / False / None (unreadable or unparseable) for "this file has its own suite".
+
+    Judged on the file's STRING LITERALS carrying both `--selftest` and the
+    `N/M cases passed` contract - the same literal CI greps for in a suite's OUTPUT.
+    A file with a `_selftest()` that never prints the contract is not counted as
+    inline here, and is also a file CI already fails by name; the two agree about
+    what a suite is, which is the only property this proxy has to have.
+
+    READ OFF THE AST, AND NOT OFF THE TEXT, for a reason found the hard way: the
+    first version matched the raw source, and the COMMENT this module's own migration
+    added to each migrated file - "it deliberately does NOT print the `N/M cases
+    passed` contract" - contains the literal, so two of the three pilots came back
+    classified as `both`. A comment is not in the AST at all, which removes that
+    whole class rather than asking the next person to phrase a comment carefully.
+
+    The MODULE DOCSTRING is dropped for the same reason one step up: it is the one
+    place a file legitimately DESCRIBES its suite ("its 11 cases live in ..."), and a
+    description is not an implementation. Every other string still counts. Both ways
+    of being wrong here are loud - a suite misread as migrated is reported as
+    `neither` or `both`, and a migrated file misread as inline is failed by CI's
+    sweep for not printing the contract - so the proxy never fails silently.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), filename=os.path.basename(path))
+    except (OSError, UnicodeDecodeError, SyntaxError):
+        return None
+    body = tree.body
+    if body and isinstance(body[0], ast.Expr) \
+            and isinstance(body[0].value, ast.Constant) \
+            and isinstance(body[0].value.value, str):
+        body = body[1:]
+    texts = [node.value for stmt in body for node in ast.walk(stmt)
+             if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+    return (any(_CONTRACT in t for t in texts)
+            and any("--selftest" in t for t in texts))
+
+
+def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
+    """Where every production suite lives right now — a classification, not a verdict.
+
+    Returns a dict of sorted lists, keyed by what is true of a file rather than by
+    whether it is allowed:
+
+      inline      carries its own `--selftest` printing the contract, no test file
+      covered     no inline suite, and `tests/test_<name>.py` exists  (the migrated ones)
+      both        DEFECT: an inline suite AND a test file. Which one is the test?
+      neither     DEFECT: no suite anywhere. The file the OR-shaped rule would hide
+      orphans     DEFECT: a `tests/test_*.py` naming no production file that exists
+      collisions  DEFECT: two production files mapping to one test name (`a-b.py`
+                  and `a_b.py` both want `test_a_b.py`). `_deps` forbids two files
+                  sharing a BASENAME; this is the same hazard one transform later
+      unreadable  a production file that could not be read or parsed
+      total       how many production files were classified — `checked`, so that
+                  "no defects" and "nothing was looked at" cannot print the same way
+
+    Production names are kind-prefixed (`scripts/_cli_fmt.py`, `hooks/remind-tdd.py`)
+    so a violation names a path the reader can open; orphans are named `tests/x.py`.
+    `tests/_harness.py` is not a test file and is not an orphan candidate: the rule is
+    about `test_*.py`, and the harness is the thing they all import.
+
+    The end state is assertable, not hoped for: when the migration finishes this
+    returns 0 inline and every production file under `covered`, and the case that
+    pins the `covered` list is the one that has to be edited to say so.
+    """
+    script_dir = script_dir or _HERE
+    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
+    tests_dir = tests_dir if tests_dir is not None else _TESTS_DIR
+
+    test_files = set(rel for rel, _path in py_files(tests_dir)
+                     if os.path.basename(rel).startswith(_TEST_PREFIX))
+
+    out = {"inline": [], "covered": [], "both": [], "neither": [],
+           "orphans": [], "collisions": [], "unreadable": [], "total": 0}
+    claimed = {}
+    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+        if not os.path.isdir(directory):
+            continue
+        for rel, path in py_files(directory):
+            named = "%s/%s" % (kind, rel)
+            out["total"] += 1
+            expected = _test_name_for(rel)
+            claimed.setdefault(expected, []).append(named)
+            inline = _carries_inline_selftest(path)
+            if inline is None:
+                out["unreadable"].append(named)
+                continue
+            covered = expected in test_files
+            if inline and covered:
+                out["both"].append(named)
+            elif inline:
+                out["inline"].append(named)
+            elif covered:
+                out["covered"].append(named)
+            else:
+                out["neither"].append(named)
+
+    for name in sorted(test_files - set(claimed)):
+        out["orphans"].append("tests/%s" % name)
+    for expected in sorted(claimed):
+        if len(claimed[expected]) > 1:
+            out["collisions"].append("tests/%s <- %s"
+                                     % (expected, ", ".join(sorted(claimed[expected]))))
+    for key in ("inline", "covered", "both", "neither", "unreadable"):
+        out[key].sort()
+    return out
+
+
+def covered_repo_paths(repo_root=None):
+    """Repo-relative paths of the production files whose cases have moved to `tests/`.
+
+    CI's selftest sweep reads this. A migrated file no longer prints the `N/M cases
+    passed` contract, so the sweep has to skip it — and the skip list is derived from
+    the same function that reports `neither`, rather than re-derived in shell, so the
+    sweep cannot skip a file this lint has not accounted for.
+    """
+    root = repo_root if repo_root is not None else _REPO_ROOT
+    plugin_dir = os.path.dirname(_HERE)
+    return [os.path.relpath(os.path.join(plugin_dir, rel), root).replace(os.sep, "/")
+            for rel in selftest_coverage()["covered"]]
 
 
 # --- selftest -----------------------------------------------------------------
@@ -417,7 +603,7 @@ def _selftest():
                      '    render()\n')
         with open(os.path.join(fake, "broken.py"), "w", encoding="utf-8") as fh:
             fh.write('if __name__ == "__main__"\n    safe_stdio(\n')
-        found = entries_missing_guard(fake)
+        found = entries_missing_guard((fake,))
         check("e1 the lint names an entry point that never installs the guard",
               "forgot.py" in found)
         check("e2 ...and one that installs it AFTER printing, which crashes on the "
@@ -435,12 +621,17 @@ def _selftest():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    # The gate this module exists for. Every command under scripts/ is covered, and a new
-    # one that forgets fails HERE - in a suite CI already runs - rather than on a Windows
-    # runner, in one leg of a matrix, weeks later.
+    # The gate this module exists for. Every command under scripts/ AND tests/ is
+    # covered, and a new one that forgets fails HERE - in a suite CI already runs -
+    # rather than on a Windows runner, in one leg of a matrix, weeks later.
     real = entries_missing_guard()
     check("f1 every entry point under scripts/ installs the guard before it prints: %r"
           % (real,), not real)
+    check("f2 ...and the default scope now reaches tests/ too, which is the half a "
+          "sibling directory added: %r" % (sorted(n for n, _p in py_files(_TESTS_DIR)),),
+          entries_missing_guard() == sorted(entries_missing_guard((_HERE,))
+                                            + entries_missing_guard((_TESTS_DIR,)))
+          and py_files(_TESTS_DIR) != [])
 
     # --------------------------------------------------------- house-style AST bans
     # Same shape as the adoption-lint block above: a fixture directory per case, each
@@ -543,7 +734,7 @@ def _selftest():
               not any(n in ("flat_ok.py", "usage/clean_entry.py")
                       for n, _l, _w in hs))
 
-        missing = entries_missing_guard(rec)
+        missing = entries_missing_guard((rec,))
         check("r4 an entry point one directory down with no safe_stdio() guard is "
               "named: %r" % (missing,),
               "usage/unguarded.py" in missing)
@@ -620,6 +811,125 @@ def _selftest():
           "when somebody adds the next copy: %r" % (redundant_constants(),),
           redundant_constants() == [])
 
+    # ------------------------------------------- selftest coverage (transitional)
+    # Fixture trees first, because the two DEFECT classes do not exist in the real
+    # tree and a classifier only ever seen returning empty lists is a classifier that
+    # might be returning empty lists for the wrong reason. Each fixture is one file
+    # with a known answer, and the `neither`/`both` pair is written on purpose -
+    # those are the two the OR-shaped version of this rule cannot see.
+    cov_s = tempfile.mkdtemp(prefix="audit-cov-s-")
+    cov_h = tempfile.mkdtemp(prefix="audit-cov-h-")
+    cov_t = tempfile.mkdtemp(prefix="audit-cov-t-")
+    try:
+        def _w2(root, rel, text):
+            with open(os.path.join(root, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        suite = ('if __name__ == "__main__":\n'
+                 '    if "--selftest" in sys.argv:\n'
+                 '        print("ALL PASS: 1/1 cases passed")\n')
+        _w2(cov_s, "keeps_its_own.py", suite)
+        _w2(cov_s, "moved_out.py", "x = 1\n")           # no suite; covered below
+        # A migrated file that DESCRIBES the contract in its docstring and mentions it
+        # again in a comment. Both were read as "carries a suite" by the text-matching
+        # first version, and two of the three real pilots came back as `both`.
+        _w2(cov_s, "talks_about_it.py",
+            '"""Its cases moved out; it no longer prints N/M cases passed."""\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    # deliberately does NOT print the `N/M cases passed` contract\n'
+            '    if "--selftest" in sys.argv:\n'
+            '        print("moved to tests/")\n')
+        _w2(cov_s, "has-both.py", suite)                # suite AND a test file
+        _w2(cov_s, "has_nothing.py", "x = 1\n")         # THE defect the OR hides
+        _w2(cov_h, "hook_with_suite.py", suite)
+        _w2(cov_t, "test_moved_out.py", suite)
+        _w2(cov_t, "test_talks_about_it.py", suite)
+        _w2(cov_t, "test_has_both.py", suite)           # hyphen -> underscore
+        _w2(cov_t, "test_ghost.py", suite)              # names no production file
+        _w2(cov_t, "_harness.py", suite)                # not a test file, not an orphan
+
+        cov = selftest_coverage(cov_s, cov_h, cov_t)
+        check("sc1 a file with an inline suite and no test file is `inline`: %r"
+              % (cov["inline"],),
+              cov["inline"] == ["hooks/hook_with_suite.py", "scripts/keeps_its_own.py"])
+        check("sc2 a file with a test file and no inline suite is `covered` - the "
+              "migrated shape: %r" % (cov["covered"],),
+              cov["covered"] == ["scripts/moved_out.py", "scripts/talks_about_it.py"])
+        check("sc2b a migrated file that DESCRIBES the contract - in its docstring "
+              "and again in a comment - is still `covered`, never `both`. Found by "
+              "this lint reporting two of its own three pilots: %r"
+              % (cov["both"],),
+              _carries_inline_selftest(os.path.join(cov_s, "talks_about_it.py"))
+              is False)
+        check("sc3 BOTH is reported as a defect, by name. Two suites for one module "
+              "drift, and there is no answer to which one is the test: %r"
+              % (cov["both"],), cov["both"] == ["scripts/has-both.py"])
+        check("sc4 NEITHER is reported as a defect, by name. This is the file an "
+              "`inline or covered` boolean waves through: %r" % (cov["neither"],),
+              cov["neither"] == ["scripts/has_nothing.py"])
+        check("sc5 a test file naming no production file is an orphan - dead weight "
+              "that survives a deletion and looks like coverage: %r" % (cov["orphans"],),
+              cov["orphans"] == ["tests/test_ghost.py"])
+        check("sc6 ...and `_harness.py` is not an orphan. Reads vacuous, and is the "
+              "only case that fails if the orphan rule stops looking at `test_` and "
+              "starts flagging every file in the directory",
+              not any("_harness" in o for o in cov["orphans"]))
+        check("sc7 the hyphen->underscore transform is what connects has-both.py to "
+              "test_has_both.py, so an ENTRY POINT can be covered at all",
+              _test_name_for("has-both.py") == "test_has_both.py"
+              and _test_name_for("migrate-manifest.py") == "test_migrate_manifest.py")
+        check("sc8 every production file lands in exactly one class, and `total` "
+              "says how many were looked at - so `no defects` and `nothing was "
+              "scanned` cannot print the same way: %r" % (cov["total"],),
+              cov["total"] == 6
+              and len(cov["inline"]) + len(cov["covered"]) + len(cov["both"]) \
+              + len(cov["neither"]) + len(cov["unreadable"]) == cov["total"])
+
+        _w2(cov_s, "clash-name.py", "x = 1\n")
+        _w2(cov_s, "clash_name.py", "x = 1\n")
+        clash = selftest_coverage(cov_s, cov_h, cov_t)
+        check("sc9 two production files wanting ONE test name is reported - `_deps` "
+              "forbids a shared basename, and this is the same hazard one transform "
+              "later: %r" % (clash["collisions"],),
+              clash["collisions"] == ["tests/test_clash_name.py <- "
+                                      "scripts/clash-name.py, scripts/clash_name.py"])
+    finally:
+        shutil.rmtree(cov_s, ignore_errors=True)
+        shutil.rmtree(cov_h, ignore_errors=True)
+        shutil.rmtree(cov_t, ignore_errors=True)
+
+    # The real tree. The counts are the migration's progress report, and the two
+    # defect classes are the invariant that has to hold on every commit in between.
+    real_cov = selftest_coverage()
+    check("sc10 the real tree: %d inline, %d covered, %d both, %d neither, %d "
+          "orphans, %d collisions, %d unreadable, %d files"
+          % (len(real_cov["inline"]), len(real_cov["covered"]), len(real_cov["both"]),
+             len(real_cov["neither"]), len(real_cov["orphans"]),
+             len(real_cov["collisions"]), len(real_cov["unreadable"]),
+             real_cov["total"]),
+          not (real_cov["both"] or real_cov["neither"] or real_cov["orphans"]
+               or real_cov["collisions"] or real_cov["unreadable"]))
+    check("sc11 ...and the migrated set is exactly the three pilots. Editing this "
+          "list is what a migration step COSTS, which is the point: the end state "
+          "(0 inline, every file covered) is asserted here, never assumed: %r"
+          % (real_cov["covered"],),
+          real_cov["covered"] == ["hooks/remind-tdd.py", "scripts/_cli_fmt.py",
+                                  "scripts/migrate-manifest.py"])
+    check("sc12 every production file is accounted for, so a file can neither be "
+          "double-counted nor quietly dropped: %d + %d == %d"
+          % (len(real_cov["inline"]), len(real_cov["covered"]), real_cov["total"]),
+          len(real_cov["inline"]) + len(real_cov["covered"]) == real_cov["total"]
+          and real_cov["total"] > 40)
+    check("sc13 covered_repo_paths() speaks the repo-relative paths CI's sweep "
+          "iterates, so the skip list and the `find` output are the same strings: %r"
+          % (covered_repo_paths(),),
+          covered_repo_paths() == ["plugins/audit/hooks/remind-tdd.py",
+                                   "plugins/audit/scripts/_cli_fmt.py",
+                                   "plugins/audit/scripts/migrate-manifest.py"]
+          and all(os.path.isfile(os.path.join(_REPO_ROOT, p.replace("/", os.sep)))
+                  for p in covered_repo_paths()))
+
     passed = sum(1 for _, ok in cases if ok)
     for label, ok in cases:
         print("%s %s" % ("PASS" if ok else "FAIL", label))
@@ -632,5 +942,14 @@ if __name__ == "__main__":
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
         raise SystemExit(_selftest())
-    sys.stderr.write("usage: _output.py --selftest\n")
+    if "--covered" in sys.argv[1:]:
+        # CI's sweep asks this, one line per path, so its skip list comes from the
+        # classifier that also reports `neither` rather than from a name transform
+        # re-implemented in shell. Empty output is the correct answer before the
+        # migration starts and after it ends for opposite reasons; `--selftest`'s
+        # sc10/sc11 are what tell those two apart, not this flag.
+        for _rel in covered_repo_paths():
+            print(_rel)
+        raise SystemExit(0)
+    sys.stderr.write("usage: _output.py --selftest | --covered\n")
     raise SystemExit(2)

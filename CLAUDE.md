@@ -77,9 +77,16 @@ lines, enforced by `_deps.ui_navigability_violations()`.
 
 ```bash
 for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
+for f in $(find plugins/audit/tests -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
 ruff check plugins/audit tools
-vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks
+vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 ```
+
+**The second line is not optional and not decoration.** `--selftest` blocks are moving out of
+the modules they test into `plugins/audit/tests/`; a migrated file still exits 0 on
+`--selftest` and prints where its cases went, so the first line stays green over a suite it
+no longer runs. `_output.selftest_coverage()` is what keeps the two halves honest — it fails
+on a file with an inline suite AND a test file, and on one with neither.
 
 `CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set. The
 browser-level gates (`tools/capture-screenshots.mjs --check`,

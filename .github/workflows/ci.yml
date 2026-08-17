@@ -46,9 +46,48 @@ jobs:
           # removes the hazard instead of forbidding the shape. It is a no-op on a
           # flat tree, so this changes nothing today and everything the day somebody
           # adds a script one directory down.
+          #
+          # tests/ IS SWEPT HERE TOO, and a MIGRATED production file is skipped. The
+          # --selftest blocks are moving out of the modules they test into
+          # plugins/audit/tests/, one file at a time, so during the migration a
+          # production file either prints the contract itself or has a test file that
+          # does. The skip list comes from _output.selftest_coverage() rather than
+          # from a name transform re-implemented in shell: that same function is what
+          # fails the build on a file with NEITHER suite, so this loop cannot skip a
+          # file nobody is testing. A migrated file still exits 0 on --selftest and
+          # says where its cases went; it just does not print `N/M cases passed`.
+          # `tr` because the membership test below is a space-delimited glob and the
+          # flag prints one path per line. Written without it first, and the skip
+          # silently never fired: the loop reached a migrated file and failed it for
+          # having no suite, which is the LOUD way for this to be wrong and the reason
+          # it was caught in the first local run.
+          covered=$(python plugins/audit/scripts/_output.py --covered | tr '\n' ' ')
+          echo "migrated to tests/ (no inline suite expected): ${covered:-(none yet)}"
           total=0
-          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
+          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) \
+                   $(find plugins/audit/tests -name '*.py' | sort); do
             echo "== $f"
+            case " $covered " in
+              *" $f "*)
+                out=$(python "$f" --selftest 2>&1) || {
+                  echo "$out"
+                  echo "FAIL: $f --selftest exited non-zero"
+                  exit 1
+                }
+                # Not redundant with the lint, and proven so: selftest_coverage()
+                # reads STRING LITERALS, so it classifies a file that assembles the
+                # contract line (`"0/0 cases " + "passed"`) as migrated while the
+                # file still prints it. That is the proxy's one blind spot and this
+                # is its net - shown red on purpose, with that exact mutation.
+                if echo "$out" | grep -qE '[0-9]+/[0-9]+ cases passed'; then
+                  echo "$out"
+                  echo "FAIL: $f is listed as migrated but still prints the suite contract"
+                  exit 1
+                fi
+                echo "   skipped: cases live in plugins/audit/tests/"
+                continue
+                ;;
+            esac
             # Capture, but PRINT IN FULL on failure. The first version stored stdout
             # in a variable and echoed only the last line — so when the Windows leg
             # went red the log showed the filename, then "exit code 1", and nothing
@@ -68,7 +107,7 @@ jobs:
             n=$(echo "$out" | tail -1 | grep -oE '[0-9]+/[0-9]+' | cut -d/ -f1)
             total=$((total + n))
           done
-          echo "== $total cases across $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | wc -l | tr -d ' ') suites"
+          echo "== $total cases across $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | wc -l | tr -d ' ') production files + $(find plugins/audit/tests -name '*.py' | wc -l | tr -d ' ') test files"
       - name: ...and again on a stream that cannot spell every character
         shell: bash
         run: |
@@ -83,7 +122,13 @@ jobs:
           # legs: scripts/ are guarded by _output.safe_stdio() (whose own selftest lints
           # that every entry point installs it), and hooks/ - which stay importless on
           # purpose - are covered by exactly this pass.
-          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
+          #
+          # tests/ is swept too, and NOTHING is skipped here. This pass asserts only
+          # that a file can print whatever it prints on a legacy code page, which a
+          # migrated file's one-line pointer has to survive exactly as much as a suite
+          # does - so the skip the step above needs would only narrow this one.
+          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) \
+                   $(find plugins/audit/tests -name '*.py' | sort); do
             if ! out=$(PYTHONIOENCODING=cp1252 python "$f" --selftest 2>&1); then
               echo "$out"
               echo "FAIL: $f cannot print its own output on a cp1252 stream"

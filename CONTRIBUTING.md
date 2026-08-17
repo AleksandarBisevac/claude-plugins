@@ -30,6 +30,13 @@ for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); 
   python3 "$f" --selftest || exit 1
 done
 
+# ...and the suites that have MOVED OUT of the files they test. A migrated file still
+# exits 0 on --selftest (it prints where its cases went), so the loop above stays green
+# over a suite it no longer runs — this line is what actually runs it.
+for f in $(find plugins/audit/tests -name '*.py' | sort); do
+  python3 "$f" --selftest || exit 1
+done
+
 # manifests: structural validator + JSON Schema
 python3 plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
 python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
