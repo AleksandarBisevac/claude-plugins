@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_deps.py`, moved out of it - the import-graph lint, scanning a
+The cases for `_deps.py`, moved out of it - the import-graph lint, scanning a
 tree that now holds this file too.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a

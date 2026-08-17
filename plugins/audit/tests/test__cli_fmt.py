@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_cli_fmt.py`, moved out of it - the importable-helper shape.
+The cases for `_cli_fmt.py`, moved out of it - the importable-helper shape.
 
 The simplest of the three pilots and the one that shows the transformation with nothing
 else in the way: `_cli_fmt` is an `_underscore.py` helper, so a plain `import` reaches it

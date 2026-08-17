@@ -175,7 +175,7 @@ hook noise).
 **Do not hand-roll the lock. Run the script and read its exit code:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py" acquire <name> \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" acquire <name> \
         --project <gitRoot> --note "<verb> <scope>"
 ```
 
@@ -214,7 +214,7 @@ exit 3 by looking at `startedAt` yourself** — that is the rule the script exis
 **Release** at the END of the command, including failure paths you control:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py" release <name> --project <gitRoot>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" release <name> --project <gitRoot>
 ```
 
 A refusal that never acquired it releases nothing. Human-confirmation pauses (AskUserQuestion) keep

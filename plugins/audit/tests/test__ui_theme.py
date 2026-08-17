@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_ui_theme.py`, moved out of it - an importable helper.
+The cases for `_ui_theme.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list. Nothing above layer 1 is imported here on purpose - the `ua`

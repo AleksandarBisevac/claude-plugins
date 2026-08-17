@@ -33,7 +33,7 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/usage_ledger.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
         "plugins/audit/scripts/ui/panel.js",
         "plugins/audit/scripts/panel-server.py"
       ],
@@ -81,7 +81,7 @@
       ],
       "files": [
         "plugins/audit/scripts/audit-status.py",
-        "plugins/audit/scripts/audit-usage.py"
+        "plugins/audit/scripts/usage/audit-usage.py"
       ],
       "docs": [],
       "description": "Internal section headers; import _fmt directly and retire the audit-usage fmt indirection once nothing external loads it.",

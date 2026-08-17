@@ -172,7 +172,7 @@
         "plugins/audit/scripts/_panel_ui.py",
         "plugins/audit/scripts/report/_report_ui.py",
         "plugins/audit/scripts/report/render-report.py",
-        "plugins/audit/scripts/_policy.py",
+        "plugins/audit/scripts/governance/_policy.py",
         "plugins/audit/scripts/validate-manifest.py",
         "plugins/audit/scripts/validate-config.py",
         "plugins/audit/scripts/gen-demo-manifest.py",

@@ -32,7 +32,7 @@ carries `'scripts/build.py'` inside a bash payload as a fixture for a CONSUMER r
 file, which no anchor precedes and which must never be looked for here. ANCHORED matching
 requires `plugins/audit/`, `${CLAUDE_PLUGIN_ROOT}/`, `$CLAUDE_PLUGIN_ROOT/` or the
 `$scripts/` shell variable in front, which drops that fixture and still catches
-`hooks/require-plan.py`'s three real `${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py`
+`hooks/require-plan.py`'s three real `${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py`
 strings. Both claims are pinned on the real files, not on a fixture that could encode the
 same assumption twice.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/gen-demo-manifest.py`, moved out of it - the entry-point shape.
+The cases for `gen-demo-manifest.py`, moved out of it - the entry-point shape.
 
 Hyphenated, so the file name substitutes underscores and the module comes through
 `_loader.load_script`; see `test_migrate_manifest.py` for that rule. `M` is the

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_areas.py`, moved out of it - an importable helper.
+The cases for `_areas.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list.
@@ -11,7 +11,7 @@ each was checked rather than carried:
   * `d1` builds a manifest whose area root is `"scripts"` and asks `missing_roots`
     to resolve it against the PLUGIN directory. Inline that read
     `os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` - two levels up
-    from `scripts/_areas.py`. From here the same expression would still land on the
+    from `_areas.py`. From here the same expression would still land on the
     plugin directory by coincidence (`tests/` is also one level down), and a case
     that is right by coincidence is a case that breaks the next time the file moves.
     It names `_harness.SCRIPTS_DIR`'s parent instead, which is the plugin directory

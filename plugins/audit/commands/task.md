@@ -177,7 +177,7 @@ the two phase SHARDS while `fileIndex`/`bugs[]` edits go to the index):
 4. **Record the move** — the explicit mapping row, appended by YOU via the CLI (this is the
    one journal action a command writes; the completion events stay hook-only):
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-journal.py" append --action task.move \
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-journal.py" append --action task.move \
            --target <manifest rel> \
            --summary "<oldId> -> <newId> (<oldPhase> -> <newPhase>)" \
            --details '{"fromId":"<oldId>","toId":"<newId>","fromPhase":"<oldPhase>","toPhase":"<newPhase>"}'

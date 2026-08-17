@@ -30,7 +30,7 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/audit-journal.py"
+        "plugins/audit/scripts/governance/audit-journal.py"
       ],
       "docs": [],
       "description": "scripts/audit-journal.py journal_dir(): wrap both returns in os.path.normpath. TDD: FIRST add the selftest case asserting journal_dir(project, {'manifestPath':'audit.json'}) == os.path.normpath(that) - it is RED on current code (proj/./journal), proving the bug on any platform; then fix; then a second case pinning the default-manifest shape. j12 in hooks/_config.py is untouched - the comparison was right, the API was wrong.",

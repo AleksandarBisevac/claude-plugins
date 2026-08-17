@@ -9,7 +9,7 @@ allowed-tools: Bash
 Run
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-usage.py" <manifestPath> --format md $ARGUMENTS
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/usage/audit-usage.py" <manifestPath> --format md $ARGUMENTS
 ```
 
 **Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it — and do

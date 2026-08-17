@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_usage_analytics.py`, moved out of it - an importable helper.
+The cases for `_usage_analytics.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list.
@@ -9,7 +9,7 @@ THE `bn` GROUP IS ABOUT THE `--bench` MODE, AND THAT MODE STAYED BEHIND. `_bench
 `_bench_cases`, `_bench_rows`, `_bench_manifest`, `_time_best` and the `_BENCH_*`
 constants are production code in `_usage_analytics.py` - a benchmark somebody runs,
 not a test - so only the CASES ABOUT them moved. They are reached as `M._bench(...)`
-like everything else, and `python3 plugins/audit/scripts/_usage_analytics.py --bench`
+like everything else, and `python3 plugins/audit/scripts/usage/_usage_analytics.py --bench`
 still runs the benchmark itself.
 
 TWO CASES FORCED A REAL CHANGE, AND BOTH ARE `globals()` REBINDS THAT FAIL IN

@@ -1147,7 +1147,12 @@ KNOWN_LAYER_DEBT = (
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
     ("audit-status.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    ("audit-usage.py",
+    # THIS ENTRY IS THE ASYMMETRY IN ONE LINE - see the `report/render-report.py`
+    # comment below for the rule. The IMPORTER moved into `scripts/usage/` and its
+    # key gained the directory; `audit-lock` moved into `scripts/governance/` in the
+    # same change and is spelled by BASENAME right here in the message, because a
+    # node name is a basename at any depth. Two files moved, one spelling changed.
+    ("usage/audit-usage.py",
      "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
     ("gen-demo-manifest.py",
      "runtime-loads gen-demo-usage (layer 7) from layer 7 - not strictly downward"),
@@ -1165,7 +1170,8 @@ KNOWN_LAYER_DEBT = (
     # - `_named_by()`'s relname, so an importer that moves into a subdirectory is
     # spelled with it - while the IMPORTED module inside the message is a node name,
     # which is the BASENAME at any depth. One entry changed when the six report files
-    # moved into `scripts/report/`; the target spellings above are untouched.
+    # moved into `scripts/report/`, and exactly one more when the usage and governance
+    # domains followed; the target spellings above are untouched by all three.
     ("report/render-report.py",
      "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
 )

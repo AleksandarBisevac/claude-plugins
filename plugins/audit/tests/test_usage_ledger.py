@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/usage_ledger.py`, moved out of it - a module loaded BY PATH.
+The cases for `usage_ledger.py`, moved out of it - a module loaded BY PATH.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list. Here the prefix is more than a convention: nothing imports

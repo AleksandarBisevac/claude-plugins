@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/audit-status.py`, moved out of it - an entry point.
+The cases for `audit-status.py`, moved out of it - an entry point.
 
 `audit-status.py` is hyphenated, so it comes through `_loader.load_script` and the
 test file substitutes underscores; see `test_migrate_manifest.py` for both halves

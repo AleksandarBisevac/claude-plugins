@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_help.py`, moved out of it - an importable helper.
+The cases for `_help.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list. `_areas` and `_policy` are imported the way `_help.py`
@@ -25,7 +25,7 @@ THREE THINGS ABOUT THIS SUITE READ THE REPOSITORY, AND ALL THREE STILL RESOLVE.
     is `plugins/audit` when this file is run from `tests/`, and `c1`/`a1` are the
     cases that go red if it ever is not.
   * three of the citations `c1` checks are the plugin-relative literals
-    `scripts/_areas.py`, `scripts/_policy.py` and `scripts/audit-journal.py`,
+    `_areas.py`, `_policy.py` and `audit-journal.py`,
     written out in `_help.topics()`. They stay literals and stay in the PRODUCT:
     they are among the only places in the tree that assert a `scripts/` path
     exists, and going red when one of those files is renamed is the feature.

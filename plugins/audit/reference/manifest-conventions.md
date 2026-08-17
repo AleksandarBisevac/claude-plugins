@@ -39,7 +39,7 @@ directory, `bugs[]`, `proposals[]`, `fileIndex`, id counters). Before your
 
 1. Take it with the script — never by hand:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py" acquire index \
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" acquire index \
            --project <gitRoot> --note "<command>"
    ```
    **0** → proceed. **3** → another `/audit:*` session is mutating this manifest:
@@ -208,7 +208,7 @@ row are what let a reader join the two halves.
 
 Absolute immutability of local files does not exist — the user owns the disk. The
 ceiling is **tamper-evidence plus three cross-anchors**: (1) the hash-chained journal
-(`scripts/audit-journal.py`), (2) git history, into which the journal is staged with
+(`scripts/governance/audit-journal.py`), (2) git history, into which the journal is staged with
 every task commit (so its committed past must stay a byte-prefix of the working copy —
 `verify` checks exactly that), and (3) the usage ledger, re-derivable from Claude
 Code's read-only transcripts via `/audit:usage --backfill`. A forger must rewrite all

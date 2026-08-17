@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_output.py`, moved out of it - the last of the forty-eight, and
+The cases for `_output.py`, moved out of it - the last of the forty-eight, and
 the one that classifies the other forty-seven.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
@@ -481,19 +481,16 @@ def _cases(check):
                                   "scripts/_panel_state.py",
                                   "scripts/_panel_ui.py",
                                   "scripts/_panel_write.py",
-                                  "scripts/_policy.py",
                                   "scripts/_refs.py",
                                   "scripts/_ui_theme.py",
-                                  "scripts/_usage_analytics.py",
-                                  "scripts/_usage_core.py",
                                   "scripts/audit-doctor.py",
-                                  "scripts/audit-journal.py",
-                                  "scripts/audit-lock.py",
                                   "scripts/audit-status.py",
                                   "scripts/audit-task.py",
-                                  "scripts/audit-usage.py",
                                   "scripts/gen-demo-manifest.py",
                                   "scripts/gen-demo-usage.py",
+                                  "scripts/governance/_policy.py",
+                                  "scripts/governance/audit-journal.py",
+                                  "scripts/governance/audit-lock.py",
                                   "scripts/migrate-manifest.py",
                                   "scripts/panel-server.py",
                                   "scripts/report/_report_html.py",
@@ -502,7 +499,10 @@ def _cases(check):
                                   "scripts/report/_report_ui.py",
                                   "scripts/report/_report_usage.py",
                                   "scripts/report/render-report.py",
-                                  "scripts/usage_ledger.py",
+                                  "scripts/usage/_usage_analytics.py",
+                                  "scripts/usage/_usage_core.py",
+                                  "scripts/usage/audit-usage.py",
+                                  "scripts/usage/usage_ledger.py",
                                   "scripts/validate-config.py",
                                   "scripts/validate-manifest.py"])
     check("sc12 every production file is accounted for, so a file can neither be "
@@ -537,19 +537,16 @@ def _cases(check):
                                      "plugins/audit/scripts/_panel_state.py",
                                      "plugins/audit/scripts/_panel_ui.py",
                                      "plugins/audit/scripts/_panel_write.py",
-                                     "plugins/audit/scripts/_policy.py",
                                      "plugins/audit/scripts/_refs.py",
                                      "plugins/audit/scripts/_ui_theme.py",
-                                     "plugins/audit/scripts/_usage_analytics.py",
-                                     "plugins/audit/scripts/_usage_core.py",
                                      "plugins/audit/scripts/audit-doctor.py",
-                                     "plugins/audit/scripts/audit-journal.py",
-                                     "plugins/audit/scripts/audit-lock.py",
                                      "plugins/audit/scripts/audit-status.py",
                                      "plugins/audit/scripts/audit-task.py",
-                                     "plugins/audit/scripts/audit-usage.py",
                                      "plugins/audit/scripts/gen-demo-manifest.py",
                                      "plugins/audit/scripts/gen-demo-usage.py",
+                                     "plugins/audit/scripts/governance/_policy.py",
+                                     "plugins/audit/scripts/governance/audit-journal.py",
+                                     "plugins/audit/scripts/governance/audit-lock.py",
                                      "plugins/audit/scripts/migrate-manifest.py",
                                      "plugins/audit/scripts/panel-server.py",
                                      "plugins/audit/scripts/report/_report_html.py",
@@ -558,7 +555,10 @@ def _cases(check):
                                      "plugins/audit/scripts/report/_report_ui.py",
                                      "plugins/audit/scripts/report/_report_usage.py",
                                      "plugins/audit/scripts/report/render-report.py",
-                                     "plugins/audit/scripts/usage_ledger.py",
+                                     "plugins/audit/scripts/usage/_usage_analytics.py",
+                                     "plugins/audit/scripts/usage/_usage_core.py",
+                                     "plugins/audit/scripts/usage/audit-usage.py",
+                                     "plugins/audit/scripts/usage/usage_ledger.py",
                                      "plugins/audit/scripts/validate-config.py",
                                      "plugins/audit/scripts/validate-manifest.py"]
           and all(os.path.isfile(os.path.join(M.REPO_ROOT, p.replace("/", os.sep)))
@@ -579,8 +579,9 @@ def _cases(check):
     #
     # SCOPED TO THE FILES STILL AT DEPTH 0, AND THAT SCOPE IS THE FINDING RATHER THAN
     # A CONVENIENCE. `dirname(abspath(__file__))` is a claim about how deep a file
-    # sits; it was true of all thirty-eight while `scripts/` was flat, and the six now
-    # in `scripts/report/` are precisely the files for which it stopped being true.
+    # sits; it was true of all thirty-eight while `scripts/` was flat, and the files
+    # now filed under a domain (`scripts/report/`, `scripts/usage/`,
+    # `scripts/governance/`) are precisely the ones for which it stopped being true.
     # Recomputing it over them would not measure "the anchor equals what the old code
     # produced" — it would measure that the old code is the thing the preamble
     # replaced. `an8` carries the other half: a file AT DEPTH resolves to the same
@@ -691,12 +692,15 @@ def _cases(check):
               _installed[0] == M.SCRIPTS_DIR
               and all(d in sys.path for d in _installed))
         check("ip3 the day a script moved has arrived: the list is SCRIPTS_DIR plus "
-              "scripts/report/, the first subdirectory ever created under scripts/. "
-              "It said `exactly one directory` for as long as the tree was flat, and "
-              "editing it is what the move COSTS - the mechanism is no longer a "
-              "no-op and this is where that is stated: %r" % (_installed,),
+              "every domain under it - governance/, report/ (the first ever created) "
+              "and usage/, in the walk's own sorted order rather than the order they "
+              "were created. It said `exactly one directory` for as long as the tree "
+              "was flat, and editing it is what each move COSTS - the mechanism is no "
+              "longer a no-op and this is where that is stated: %r" % (_installed,),
               _installed == [M.SCRIPTS_DIR,
-                             os.path.join(M.SCRIPTS_DIR, "report")])
+                             os.path.join(M.SCRIPTS_DIR, "governance"),
+                             os.path.join(M.SCRIPTS_DIR, "report"),
+                             os.path.join(M.SCRIPTS_DIR, "usage")])
         check("ip3b ...and it is DERIVED from the walk, not a constant: every entry "
               "past the root is a real directory holding at least one `.py`, so a "
               "later domain joins the list by existing rather than by being added "

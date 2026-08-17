@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_refs.py`, moved out of it - a lint that scans the tree, from
+The cases for `_refs.py`, moved out of it - a lint that scans the tree, from
 inside the tree it scans.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
@@ -231,13 +231,16 @@ def _cases(check):
     hook_hits = [h for h in real if h[0].startswith(_FX_HOOKS)]
     hook_script_hits = [h for h in hook_hits if h[3].startswith(_FX_SCRIPTS)]
     check("a3 the real hooks/ tree reaches SCRIPTS exactly three times - the three "
-          "${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py strings require-plan.py carries",
+          "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py strings "
+          "require-plan.py carries. The DEPTH is part of the claim: the anchored "
+          "pattern's tail spans directories, so a domain folder appearing in the "
+          "path must keep the hit resolving to the file rather than dropping it",
           len(hook_script_hits) == 3
           and set(h[0] for h in hook_script_hits) == set([_FX_HOOKS + "require-plan.py"])
           and set(h[3] for h in hook_script_hits)
-          == set([_FX_SCRIPTS + "audit-lock.py"]), repr(hook_script_hits))
+          == set([_FX_SCRIPTS + "governance/audit-lock.py"]), repr(hook_script_hits))
     # a4's subject moved with the suite it belongs to. The unanchored
-    # `scripts/build.py` and `hooks/require-plan.py` inside guard-secrets-read's
+    # `build.py` and `hooks/require-plan.py` inside guard-secrets-read's
     # Bash payloads are text a CONSUMER's shell command carries, and those cases now
     # live in `tests/test_guard_secrets_read.py`. The claim is unchanged - an
     # unanchored plugin path inside the plugin's OWN Python is a fixture, not a

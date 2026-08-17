@@ -136,10 +136,10 @@ _LOCK_DENY = (
     "Writing it now would overwrite their work with no conflict and no warning —\n"
     "one working tree, so git never sees two versions.\n"
     "Wait for that run, or check it with:\n"
-    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py\" status\n"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py\" status\n"
     "If you believe that session is gone, do NOT edit around this — take the lock\n"
     "over properly so the record says who holds it:\n"
-    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py\" acquire %s --takeover"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py\" acquire %s --takeover"
 )
 
 _LOCK_WARN = (
@@ -147,7 +147,7 @@ _LOCK_WARN = (
     "(%s). Nothing is writing against you, so this edit is allowed. But the lock is\n"
     "still there and the takeover was never performed, so the next session will be\n"
     "told this phase is held by someone who has not been here for a while. Clear it:\n"
-    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/audit-lock.py\" acquire %s --takeover"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py\" acquire %s --takeover"
 )
 
 

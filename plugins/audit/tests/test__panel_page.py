@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_panel_page.py`, moved out of it - an importable helper.
+The cases for `_panel_page.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list. This is the biggest single move in the migration: 1,636 of

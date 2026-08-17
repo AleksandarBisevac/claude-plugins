@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_loader.py`, moved out of it - an importable helper.
+The cases for `_loader.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list.
@@ -24,7 +24,7 @@ outlives its case is one the next case silently inherits.
 ONE EXPRESSION HAD TO CHANGE, because it named the file it lives in. Case 4 loads
 one file under two spellings (`x.py` and `./x.py`) to prove both hit one cache
 entry, and inline it wrote `os.path.basename(__file__)` - which WAS `_loader.py`.
-Carried over literally, that would spell `scripts/test__loader.py`, a file that
+Carried over literally, that would spell `test__loader.py`, a file that
 does not exist, and the case would fail on a missing file instead of testing the
 cache key. It reads `os.path.basename(M.__file__)` here: still derived from the
 module rather than hard-coded, and still the same file it always loaded.

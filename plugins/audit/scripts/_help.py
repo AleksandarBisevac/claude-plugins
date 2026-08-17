@@ -495,7 +495,7 @@ def _policy_topic():
             "rows": rows,
         },
         "sources": ["README.md#capability-policy--policy",
-                    "../../SECURITY.md", "scripts/_policy.py"],
+                    "../../SECURITY.md", "scripts/governance/_policy.py"],
     }
 
 
@@ -532,7 +532,7 @@ def _journal_topic():
         ],
         "table": None,
         "sources": ["README.md#audit-trail", "../../SECURITY.md",
-                    "scripts/audit-journal.py"],
+                    "scripts/governance/audit-journal.py"],
     }
 
 

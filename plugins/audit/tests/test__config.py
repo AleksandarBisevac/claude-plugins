@@ -115,17 +115,36 @@ def _cases(check):
           "path - `_load_scripts_module` turns any answer into a module or into "
           "None, so a confident wrong path is the one failure it cannot report",
           M.find_script("no-such-script-xyz.py") is None)
-    # The recursion, proven on a file that really does sit one directory down.
-    # scripts/ holds no `.py` in a subdirectory today - that is the whole premise
-    # of this change - so a `.py` fixture would have to be planted in the real
-    # tree; `ui/report.css` is already there and answers the same question about
-    # the WALK, which is the part that would silently stop working.
+    # The recursion. `ui/report.css` was the only file one directory down when this
+    # was written, so fs4 asked about the WALK through a non-`.py`; fs4b now asks the
+    # question that was actually meant, because the four files this hook reaches have
+    # since been filed under domains and a `.py` at depth is no longer hypothetical.
+    # Both are kept: fs4 fails if the walk stops descending at all, fs4b if it
+    # descends but the resolved path is wrong, and those are different defects.
     _fs_deep = M.find_script("report.css")
     check("fs4 the walk is RECURSIVE - it reaches scripts/ui/report.css, which is "
           "the property a `.py` filed one directory down depends on. Without it "
           "that file comes back None and reads as 'not installed': %r" % (_fs_deep,),
           _fs_deep is not None and os.path.isfile(_fs_deep)
           and os.path.basename(os.path.dirname(_fs_deep)) == "ui")
+    # THE FOUR THIS FILE ACTUALLY LOADS, and each one is now at depth. A flat
+    # resolver returns None for all four, `_load_scripts_module` turns that into
+    # None, and the capability policy, the journal, the ledger and the lock switch
+    # themselves off with every gate still green. The expected DIRECTORY is spelled
+    # out rather than derived: reading it back off the same walk would let a
+    # resolver that has gone wrong agree with itself.
+    _fs_domains = {"_policy.py": "governance", "audit-journal.py": "governance",
+                   "audit-lock.py": "governance", "usage_ledger.py": "usage"}
+    _fs_landed = dict((_n, M.find_script(_n)) for _n in sorted(_fs_domains))
+    _fs_bad = sorted(_n for _n, _d in _fs_domains.items()
+                     if _fs_landed[_n] is None
+                     or not os.path.isfile(_fs_landed[_n])
+                     or os.path.basename(os.path.dirname(_fs_landed[_n])) != _d)
+    check("fs4b ...and every module `_load_scripts_module` loads is found IN ITS "
+          "DOMAIN - _policy/audit-journal/audit-lock under governance/, "
+          "usage_ledger under usage/. All four are at depth, so this is the case "
+          "that goes red if the resolver is ever flattened again: %r" % (_fs_bad,),
+          len(_fs_domains) == 4 and not _fs_bad)
     check("fs5 `_load_scripts_module` really goes through it: the policy module it "
           "loads at import time is present, which is the fail-open that would "
           "otherwise be indistinguishable from `policy` never having shipped",

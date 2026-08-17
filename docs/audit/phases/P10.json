@@ -113,7 +113,7 @@
       ],
       "files": [
         "plugins/audit/scripts/audit-status.py",
-        "plugins/audit/scripts/audit-usage.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
         "plugins/audit/scripts/report/render-report.py",
         "plugins/audit/scripts/audit-doctor.py",
         "plugins/audit/scripts/gen-demo-manifest.py",
@@ -247,7 +247,7 @@
       ],
       "files": [
         "plugins/audit/scripts/_fmt.py",
-        "plugins/audit/scripts/audit-usage.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
         "plugins/audit/scripts/report/render-report.py",
         "plugins/audit/scripts/audit-status.py"
       ],

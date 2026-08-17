@@ -276,7 +276,7 @@ page behind it, read against the form rather than instead of it. All of it is
   referential validator (unique ids, dependency **cycles**, reciprocal bug↔task links,
   bidirectional fileIndex, typo warnings; exit 0 valid / 1 findings / 2 unreadable) the
   commands run after every manifest mutation.
-- **Audit trail** — `scripts/audit-journal.py`: an append-only, hash-chained record of every
+- **Audit trail** — `scripts/governance/audit-journal.py`: an append-only, hash-chained record of every
   write to the plan and to the config, `verify`-able from the CLI, from `/audit:doctor` and
   from CI. **Tamper-evident, not tamper-proof**, and it says so in every place it is
   described. See [Audit trail](#audit-trail).
@@ -956,8 +956,8 @@ docs/audit/journal/2026-08.<writerId>.jsonl        # one file per writer per mon
 ```
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-journal.py" verify   # 0 intact · 1 broken
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-journal.py" show --limit 20
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-journal.py" verify   # 0 intact · 1 broken
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-journal.py" show --limit 20
 ```
 
 `verify` catches an **edited**, **deleted** or **reordered** row (the chain breaks at that
@@ -1177,7 +1177,7 @@ commands and will tell you when it finds none.
 Mutating subcommands hold a lock in the **shared git dir**
 (`$(git rev-parse --git-common-dir)/audit-locks/`), **two-tier**: a brief **index lock**
 (structural writes + id allocation) and a per-phase **shard lock** (a phase run). Taking, judging
-and releasing a lock is `scripts/audit-lock.py`, not prose — a lock held by a **live** run refuses
+and releasing a lock is `scripts/governance/audit-lock.py`, not prose — a lock held by a **live** run refuses
 a second session with the holder's info, and one whose holder is **gone** offers a confirmed
 takeover. It decides which by probing the holder's pid on this host rather than by the lock's age:
 a healthy 90-minute phase run is not a crashed one, and a run that died after ten minutes should

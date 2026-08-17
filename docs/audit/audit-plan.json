@@ -389,7 +389,7 @@
     "plugins/audit/scripts/_panel_write.py": [
       "P12.4"
     ],
-    "plugins/audit/scripts/_policy.py": [
+    "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
@@ -410,7 +410,7 @@
       "P10.3",
       "P14.3"
     ],
-    "plugins/audit/scripts/audit-journal.py": [
+    "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1"
     ],
     "plugins/audit/scripts/audit-status.py": [
@@ -420,7 +420,7 @@
       "P10.6",
       "P14.2"
     ],
-    "plugins/audit/scripts/audit-usage.py": [
+    "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
       "P10.6",
       "P14.2"
@@ -476,7 +476,7 @@
     "plugins/audit/scripts/ui/report.js": [
       "P11.2"
     ],
-    "plugins/audit/scripts/usage_ledger.py": [
+    "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1"
     ],
     "plugins/audit/scripts/validate-config.py": [
@@ -543,7 +543,7 @@
       "expected": "journal_dir returns one normalized spelling on every platform.",
       "actual": "Mixed separators on Windows; a redundant ./ segment on POSIX with a root manifest.",
       "files": [
-        "plugins/audit/scripts/audit-journal.py"
+        "plugins/audit/scripts/governance/audit-journal.py"
       ],
       "taskId": "BF1.1",
       "fixedIn": null,

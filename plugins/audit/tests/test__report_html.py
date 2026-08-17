@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/_report_html.py`, moved out of it - an importable helper.
+The cases for `_report_html.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list. `_areas`, `_manifest_io` and `_ui_theme` are imported the

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The cases for `scripts/migrate-manifest.py`, moved out of it - the entry-point shape.
+The cases for `migrate-manifest.py`, moved out of it - the entry-point shape.
 
 The pilot that proves the naming rule has to exist. `migrate-manifest.py` is hyphenated,
 which is this repo's mark of a thing something INVOKES rather than imports, and a hyphen
