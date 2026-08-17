@@ -98,6 +98,22 @@ tag is never moved or deleted — fix forward.
 **Do not commit, push, tag or release without being asked.** Permission to commit is not
 permission to push.
 
+## Recommending between options
+
+**The recommended option is the structurally correct one** — the one that produces the better
+structure, the better-established practice, the clearer syntax, the better-optimised code. Effort,
+blast radius and risk are reported as **facts about** an option, in numbers, and never as the reason
+it is recommended. When the correct option is expensive, that is a schedule problem to state plainly
+— not grounds for relabelling the cheap one.
+
+A cost that is not merely effort but a real consequence — a published URL breaking, a user's CI
+failing on upgrade — is named as a consequence to publish, not as a reason to retreat.
+
+`plugins/audit/{commands,skills,agents,hooks}/` are the plugin's **product**, not this project's
+configuration. They share their names with `.claude/`'s directories and answer a different question:
+`commands/status.md` is what a user invokes as `/audit:status`. Advice about organising `.claude/`
+does not apply to them.
+
 ## Before proposing a change
 
 `CONTRIBUTING.md` ends with a **Decision record** — settled questions, each with an observable

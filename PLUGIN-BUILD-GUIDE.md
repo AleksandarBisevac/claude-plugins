@@ -868,8 +868,10 @@ ubuntu + windows for every push/PR. Locally:
 
 ```bash
 # 1. Hooks + scripts pass their own selftests (every hook and script carries its own
-#    selftest; CI sweeps the directories — stdlib only)
-for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do
+#    selftest; CI sweeps the directories — stdlib only). `find`, not `*.py`: a glob
+#    stops at the top level, so a file one directory down is silently never run and
+#    the sweep still exits 0 — a green build over a partial tree.
+for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
   python3 "$f" --selftest || exit 1
 done
 # launcher fails LOUD without an interpreter (permissionDecision "ask" JSON):

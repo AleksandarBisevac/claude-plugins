@@ -16,12 +16,12 @@
       "coauthor": "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     },
     "buildCommands": {
-      "selftests": "for f in plugins/audit/hooks/_config.py plugins/audit/hooks/require-plan.py plugins/audit/hooks/detect-plan-skip.py plugins/audit/hooks/guard-edits.py plugins/audit/hooks/guard-secrets-read.py plugins/audit/hooks/guard-bash-writes.py plugins/audit/hooks/remind-tdd.py plugins/audit/scripts/validate-manifest.py plugins/audit/scripts/audit-status.py plugins/audit/scripts/render-report.py; do python3 \"$f\" --selftest || exit 1; done",
+      "selftests": "for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do python3 \"$f\" --selftest || exit 1; done",
       "validate": "python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json",
       "plugin-validate": "claude plugin validate . && claude plugin validate plugins/audit",
       "gate": "python3 plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate",
       "report": "python3 plugins/audit/scripts/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
-      "sweep": "for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py; do python3 \"$f\" --selftest >/dev/null || { echo \"FAIL $f\"; exit 1; }; done",
+      "sweep": "for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do python3 \"$f\" --selftest >/dev/null || { echo \"FAIL $f\"; exit 1; }; done",
       "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks",
       "shots": "node tools/capture-screenshots.mjs --check",
       "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
