@@ -99,11 +99,19 @@ discover = _panel_discovery.discover
 
 
 # --- lazy import of the plugin's own pure cores (hyphenated filenames) ----------
-def _load(modname, path):
+def _load(modname, filename, directory=None):
     """Thin per-call wrapper: callers here pass an explicit modname (the file is
     hyphenated and not otherwise importable). Delegates to `_loader`, the one
-    shared path-importlib loader — see its docstring for the caching policy."""
-    return _loader.load(path, modname=modname)
+    shared path-importlib loader — see its docstring for the caching policy.
+
+    With no `directory` this goes through `_loader.load_script`, which resolves a
+    scripts/ file by BASENAME wherever it sits — the same shape `audit-doctor._load`
+    and `audit-usage._load` already take. The one `hooks/` caller passes
+    `_output.HOOKS_DIR` and keeps the explicit join, because `hooks/` is not on that
+    walk (and must not be: hooks may not be reached by an import at all)."""
+    if directory is None:
+        return _loader.load_script(filename, modname=modname)
+    return _loader.load(os.path.join(directory, filename), modname=modname)
 
 
 _VM = _VC = _AS = _CFG = None
@@ -612,15 +620,29 @@ def _journalmod():
     """`audit-journal.py`, loaded by path — or None, which is the normal answer
     today: the module ships with v0.29 and this call site ships before it, on
     purpose, so that the release which adds the journal does not also have to reach
-    back into every writer. Loaded once; a missing file is not retried per save."""
+    back into every writer. Loaded once; a missing file is not retried per save.
+
+    `script_path()` ON ONE LINE AND `load()` ON THE NEXT, NOT `load_script()`, AND
+    THE TWO-STEP IS THE POINT. Both spellings resolve the file identically at any
+    depth. What they do not share is VISIBILITY: `_deps._runtime_loaded_sibling_names`
+    reads only a `.py` literal spelled INSIDE a loader call, and says so — the
+    one-call form would make a `_panel_state -> audit-journal` edge appear for the
+    first time and demand an 18th `KNOWN_LAYER_DEBT` entry, against a list whose
+    whole contract is that it may only shrink. This edge is real and it is
+    UNRECORDED; laundering that change through a mechanical path fix would be the
+    wrong session to record it in, so the shape is preserved deliberately rather
+    than by accident, and `rt4` still pins the blind spot.
+
+    The resolution moved INSIDE the `try` because `script_path()` raises on a name
+    it cannot find, where the old `os.path.isfile()` returned False — same outcome
+    (`mod` stays None, nothing is retried), one fewer way to spell "not there"."""
     if not _JOURNAL["tried"]:
         _JOURNAL["tried"] = True
-        path = os.path.join(_output.SCRIPTS_DIR, "audit-journal.py")
-        if os.path.isfile(path):
-            try:
-                _JOURNAL["mod"] = _loader.load(path, modname="audit_journal")
-            except Exception:
-                _JOURNAL["mod"] = None
+        try:
+            path = _loader.script_path("audit-journal.py")
+            _JOURNAL["mod"] = _loader.load(path, modname="audit_journal")
+        except Exception:
+            _JOURNAL["mod"] = None
     return _JOURNAL["mod"]
 
 JOURNAL_PAGE = 200
@@ -781,8 +803,8 @@ def _policy_enforcement(project, config):
     out = {"seen": False, "ageDays": None}
     try:
         cfg_mod = _cores()[3]
-        gc_mod = _load("audit_guard_capabilities",
-                       os.path.join(_output.HOOKS_DIR, "guard-capabilities.py"))
+        gc_mod = _load("audit_guard_capabilities", "guard-capabilities.py",
+                       _output.HOOKS_DIR)
         import pathlib
         marker = os.path.join(
             str(cfg_mod.state_dir(pathlib.Path(project), config)), gc_mod.SEEN_FILE)
@@ -1200,8 +1222,7 @@ def usage_state(project):
                         "sessions": 0, "days": 0, "from": None, "to": None},
              "rolled": False, "totalRows": 0}
     try:
-        ul = _load("audit_usage_ledger",
-                   os.path.join(_output.SCRIPTS_DIR, "usage_ledger.py"))
+        ul = _load("audit_usage_ledger", "usage_ledger.py")
         rows = ul.read_ledger(ledger_dir)
     except Exception:
         return empty
@@ -1365,8 +1386,7 @@ def report_paths(project):
     if not _within(project, out_dir):
         return None
     try:
-        rr = _load("audit_render_report",
-                   os.path.join(_output.SCRIPTS_DIR, "render-report.py"))
+        rr = _load("audit_render_report", "render-report.py")
         manifest = _mio.load_manifest_safe(mpath)
         # `_report_basename` takes META, not the manifest — it reads
         # `reportBasename` off the mapping it is handed. Passed the whole manifest
@@ -1392,8 +1412,7 @@ def render_report(project):
                              "project) — run /audit:init first"]}
     mpath, out_dir, html_path = paths
     try:
-        rr = _load("audit_render_report",
-                   os.path.join(_output.SCRIPTS_DIR, "render-report.py"))
+        rr = _load("audit_render_report", "render-report.py")
     except Exception as exc:
         return {"ok": False, "findings": ["cannot load the renderer: %s" % exc]}
     buf = io.StringIO()

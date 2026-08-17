@@ -362,8 +362,14 @@ def _bench_fixture(out_dir, phases, tasks):
     caller to time an empty directory and report a suspiciously fast render.
     """
     import subprocess
-    gen_manifest = os.path.join(_output.SCRIPTS_DIR, "gen-demo-manifest.py")
-    gen_usage = os.path.join(_output.SCRIPTS_DIR, "gen-demo-usage.py")
+    # `script_path`, not `join(SCRIPTS_DIR, ...)`: the generators are resolved by
+    # BASENAME wherever they sit, and resolving a path is not loading a module — the
+    # subprocess boundary above is exactly why no edge is added here, and
+    # `_deps._LOADER_FUNCS` records that `script_path` is a resolver and not a
+    # loader. A miss raises here, naming the file and how many were searched,
+    # instead of handing `subprocess` a path nothing put a file at.
+    gen_manifest = _loader.script_path("gen-demo-manifest.py")
+    gen_usage = _loader.script_path("gen-demo-usage.py")
     manifest_path = os.path.join(out_dir, "audit-plan.json")
     # The generators do not read it, but the bench must never be one environment
     # variable away from resolving a ledger somewhere else on this machine.

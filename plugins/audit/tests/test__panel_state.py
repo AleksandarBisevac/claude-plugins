@@ -59,6 +59,7 @@ import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _loader                                     # noqa: E402  (script_path: resolve a sibling by basename)
 import _manifest_io as _mio                        # noqa: E402  (as _panel_state imports it)
 import _panel_state as M                           # noqa: E402
 
@@ -363,8 +364,8 @@ def _cases(check):
         # Off `_harness.HOOKS_DIR`, not off this file: scripts/ and tests/ are
         # both one level under the plugin directory, so the module's own
         # `<dir>/../hooks` would resolve right here by coincidence.
-        _gc = M._load("audit_guard_capabilities_t",
-                      os.path.join(_harness.HOOKS_DIR, "guard-capabilities.py"))
+        _gc = M._load("audit_guard_capabilities_t", "guard-capabilities.py",
+                      _harness.HOOKS_DIR)
         with open(os.path.join(_sd, _gc.SEEN_FILE), "w", encoding="utf-8") as _fh:
             _fh.write("{}")
         _pe = M._policy_enforcement(_pproj, M.read_config(_pproj))
@@ -934,7 +935,11 @@ def _cases(check):
     check("this module never imports panel-server - the read side sits BELOW the "
           "server, so nothing that imports it can form a cycle",
           not any("panel_server" in l or "panel-server" in l for l in _imports))
-    _panel_src = open(os.path.join(_harness.SCRIPTS_DIR, "panel-server.py"),
+    # `_loader.script_path`, not `join(_harness.SCRIPTS_DIR, ...)`: this reads
+    # another file's SOURCE, so a joined root would keep working for exactly as long
+    # as `panel-server.py` sits at the top of `scripts/` and would then fail as a
+    # missing file rather than as the resolvable basename it still is.
+    _panel_src = open(_loader.script_path("panel-server.py"),
                       encoding="utf-8").read()
     _moved = ["_load", "_cores", "_defaults", "_within", "_config_path",
               "_declared_as_of", "_manifest_path", "_viewer", "_read_json",

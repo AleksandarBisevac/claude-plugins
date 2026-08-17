@@ -199,6 +199,14 @@ def _layer_of(name, layers=None):
 # violation in its own words, so the day `usage/core.py` and `panel/core.py` both exist
 # the build says so instead of quietly keeping whichever the walk saw last. This is the
 # same shape as `r8`, which asserts the hooks/-vs-scripts/ half of the same precondition.
+#
+# AND `_loader.script_path()` REFUSES THE SAME TREE AT RUN TIME. That is one rule with
+# two enforcement points, not two rules: this one fails the BUILD, in a checkout, where
+# a CI job runs it; that one fails a RUN, in a consumer's installed plugin, where this
+# lint has never executed and never will. The failure it prevents is the only silent one
+# either of them can produce - the wrong module loaded under the right name - so the
+# duplication is deliberate and the two messages name each other rather than drifting
+# into two accounts of what the rule is.
 def _module_files(directory):
     """`(modules, collisions)` for every `.py` under `directory`, RECURSIVELY.
 
@@ -237,10 +245,24 @@ def _named_by(modules):
 # runtime loads as violations would fail a design decision rather than a defect.
 _LOADER_MODULE = "_loader"
 
-# `_loader`'s public API is `load`, `load_script` and `load_hooks_config`. The third
-# is left out on purpose rather than forgotten: it takes no path at all and resolves
-# `../hooks/_config.py` by construction, so it can never name a scripts/ sibling, and
-# listing it would imply an edge it cannot produce.
+# `_loader`'s public API is `load`, `load_script`, `load_hooks_config`,
+# `script_index` and `script_path`. THREE ARE LEFT OUT ON PURPOSE rather than
+# forgotten, and each for the same test: does the call, by itself, make this module
+# depend on that one?
+#
+#   * `load_hooks_config` takes no path at all and resolves `../hooks/_config.py` by
+#     construction, so it can never name a scripts/ sibling.
+#   * `script_index` takes no name at all - it returns the whole map.
+#   * `script_path` RESOLVES, it does not LOAD. It returns a string; nothing is
+#     imported, nothing is executed, and a caller that only wants the path has no
+#     dependency on the module at that path. `render-report._bench_fixture` is the
+#     worked example: it spells `script_path("gen-demo-manifest.py")` and then runs
+#     that file as a SUBPROCESS, precisely so the fixture build stays out of this
+#     process - listing `script_path` here would invent a `render-report ->
+#     gen-demo-manifest` edge out of a `sys.executable` argument. The edges that ARE
+#     real remain visible either way: a `script_path(...)` sitting inside a
+#     `_load(...)` wrapper call is still a `.py` literal inside that call, which is
+#     what `_py_literal_basenames` reads.
 _LOADER_FUNCS = ("load", "load_script")
 
 
@@ -344,9 +366,9 @@ def _runtime_loaded_sibling_names(tree, sibling_names, self_name):
     hooks/ filename is not one (no such sibling), so neither invents an edge.
 
     LIMITATION, deliberate and load-bearing: only a filename SPELLED AS A LITERAL
-    INSIDE THE CALL counts. `_loader.load(os.path.join(SCRIPTS_DIR,
-    "render-report.py"))` is read, because the literal is right there in the call
-    expression; `path = os.path.join(SCRIPTS_DIR, "audit-journal.py")` followed by
+    INSIDE THE CALL counts. `_loader.load_script("render-report.py")` is read,
+    because the literal is right there in the call expression;
+    `path = _loader.script_path("audit-journal.py")` on one line followed by
     `_loader.load(path)` on the next is NOT, and neither is any genuinely computed
     name. A target this function cannot READ is not a target it may GUESS - widening
     the scan to "any `.py` literal in the file" would manufacture edges out of error

@@ -547,6 +547,28 @@ file or an import-time exception propagates, and a caller that wants a soft-fail
 itself. `hooks/` keeps its own two loader copies rather than importing this module, since hooks
 must not depend on `scripts/` being on the launcher's path.
 
+Resolution is **by basename at any depth**. `script_index()` is one
+`{basename: [abspath, ...]}` map built lazily from `_output.script_files()` — the same walk
+`install_path()` derives its `sys.path` directories from, so what can be loaded and what can be
+imported are one fact rather than two that can drift. `script_path()` reads it and **raises
+rather than guessing**, in three ways, each naming what it promises: a name that matches nothing
+is an `ImportError` carrying the basename *and how many files were searched* (`among 0` is a
+tree that was never walked, `among 41` is a typo, and a caller has to be able to tell those
+apart); a name claimed by two files is an `ImportError` naming *both* paths; and a value
+carrying a path separator is a `ValueError` naming *the value*, because silently dropping a
+directory the caller spelled is how a caller comes to believe the directory mattered. There is
+deliberately **no fallback** to `join(SCRIPTS_DIR, basename)` on a miss — that retry turns a
+typo into a plausible-looking `FileNotFoundError` about a path nothing ever put a file at.
+`load_script(basename)` is `load(script_path(basename))` and nothing else.
+
+The collision refusal restates a rule `_deps.layer_violations()` already enforces, and the
+duplication is deliberate: that lint fails the **build**, in a checkout; this one fails a
+**run**, inside a consumer's installed plugin, where the lint has never executed. It is the one
+failure the design could otherwise produce silently — the wrong module loaded under the right
+name. `script_path` is deliberately **not** in `_deps._LOADER_FUNCS`: it resolves, it does not
+load, so listing it would invent graph edges out of paths that are handed to `subprocess` or to
+an `open()` (`render-report._bench_fixture` is the worked example).
+
 ### `plugins/audit/scripts/_ui_theme.py`
 The shared visual system — colour tokens (light + both dark forms), spacing, type, motion and
 status-label vocabulary — imported by both the report renderer and the control panel so the two

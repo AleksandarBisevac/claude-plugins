@@ -22,7 +22,10 @@ THREE EXPRESSIONS COULD NOT MOVE LITERALLY.
     panel-server's own siblings and would have answered about the wrong module.
   * `os.path.join(_HERE, "panel-server.py")` - `_HERE` was `scripts/`; from `tests/`
     that path does not exist, so the read would have raised. It is
-    `_harness.SCRIPTS_DIR` now, and the 17 exact alias lines it looks for keep their
+    `_loader.script_path("panel-server.py")` now - a joined `SCRIPTS_DIR` would keep
+    working right up until `panel-server.py` moved into a subdirectory, and would
+    then fail as a missing file rather than as the resolvable name it is. The 17
+    exact alias lines it looks for keep their
     literal `"\n%s = _panel_write.%s\n"` form: that exact text is what catches a
     rename, and a fuzzier match would accept the very drift it exists to find.
   * `[n for n in _moved if n in globals()]` - INTROSPECTION about the subject
@@ -44,6 +47,7 @@ import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _loader                                     # noqa: E402  (script_path: resolve a sibling by basename)
 import _manifest_io as _mio                        # noqa: E402  (as _panel_write imports it)
 import _panel_state                                # noqa: E402  (as _panel_write imports it)
 import _policy                                     # noqa: E402  (as _panel_write imports it)
@@ -1035,7 +1039,7 @@ def _cases(check):
     check("this module never imports panel-server - the write path sits BELOW the "
           "server and ABOVE the read side, so nothing here can form a cycle",
           not any("panel_server" in l or "panel-server" in l for l in _imports))
-    _panel_src = open(os.path.join(_harness.SCRIPTS_DIR, "panel-server.py"),
+    _panel_src = open(_loader.script_path("panel-server.py"),
                       encoding="utf-8").read()
     _moved = ["_atomic_write_json", "write_policy", "write_areas", "_panel_session",
               "_acquire_write_lock", "_release_write_lock", "_flat_paths",
