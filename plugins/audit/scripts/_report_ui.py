@@ -33,9 +33,11 @@ other, so the directory, the `newline=""` open, the CR check and the
 "exists and decodes" probe all live one layer down in `_ui_theme` — see
 `read_asset` there for why the newline flag is load-bearing. What stays here
 is the report's own half: which assets it names, and what it pins about them.
-"""
-import os
 
+This module carries no `--selftest` of its own any more; its 19 cases live in
+`plugins/audit/tests/test__report_ui.py`, byte-identical labels and all - see
+`plugins/audit/tests/_harness.py`.
+"""
 import _ui_theme as _theme   # same dir; sys.path[0] when run standalone, or the
                               # importer's own sys.path.insert(0, _HERE) otherwise
 
@@ -58,7 +60,7 @@ def _css(cache=True):
 def _script(cache=True):
     """`<script>...</script>`, assembled from ui/report.js.
 
-    `cache=False` forces a fresh read (used by the selftest)."""
+    `cache=False` forces a fresh read (used by `tests/test__report_ui.py`)."""
     global _script_cache
     if cache and _script_cache is not None:
         return _script_cache
@@ -82,98 +84,17 @@ def css_with_tokens(token_css):
     return (token_css or _theme.TOKEN_CSS) + _css()
 
 
-# --- selftest -----------------------------------------------------------------
-def _selftest():
-    ok = bad = 0
-
-    def check(name, cond):
-        nonlocal ok, bad
-        if cond:
-            ok += 1
-            print("PASS %s" % name)
-        else:
-            bad += 1
-            print("FAIL %s" % name)
-
-    # --- the two asset files exist and decode as utf-8 ---------------------------
-    names = ("report.css", "report.js")
-    unreadable = _theme.unreadable_assets(names)
-    for name in names:
-        check("%s exists and decodes as utf-8" % name, name not in unreadable)
-
-    css_file = _theme.read_asset("report.css")
-    js_file = _theme.read_asset("report.js")
-
-    # --- CSS starts with the TOKEN_CSS block: the tokens sit in front -----------
-    check("CSS starts with the TOKEN_CSS block", CSS.startswith(_theme.TOKEN_CSS))
-    check("CSS is TOKEN_CSS immediately followed by report.css's own content",
-          CSS == _theme.TOKEN_CSS + css_file)
-
-    # --- exactly one <script> open/close in SCRIPT -------------------------------
-    check("exactly one <script> open tag in SCRIPT", SCRIPT.count("<script>") == 1)
-    check("exactly one </script> close tag in SCRIPT", SCRIPT.count("</script>") == 1)
-    check("SCRIPT opens with <script> and closes with </script>, tags added by "
-          "this module rather than carried in report.js",
-          SCRIPT.startswith("<script>") and SCRIPT.endswith("</script>"))
-    inner = SCRIPT[len("<script>"):-len("</script>")]
-    check("the JS between the tags is exactly report.js's own content, unmodified",
-          inner == js_file)
-    check("report.js itself carries no <script> tags — those live in this module",
-          "<script>" not in js_file and "</script>" not in js_file)
-
-    # --- mutation proof: a doubled open tag is caught by the same check ----------
-    doubled = SCRIPT.replace("<script>", "<script><script>", 1)
-    check("mutation proof: a doubled <script> open tag is caught by the same "
-          "check that just passed (doubled count is %d, not 1)"
-          % doubled.count("<script>"), doubled.count("<script>") != 1)
-
-    # --- CSS lints, via _ui_theme's existing helpers (same ones panel/_panel_ui use)
-    check("report.css braces balance", css_file.count("{") == css_file.count("}"))
-    check("no declaration in report.css is left unterminated",
-          not _theme.unterminated_css_decls(css_file))
-
-    # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
-    ui_pyfiles = [f for f in os.listdir(_theme.UI_DIR) if f.endswith(".py")]
-    check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
-
-    # --- LF contract: none of the loaded ui/ assets (nor the assembled CSS/ ----
-    # SCRIPT) carry a "\r" — a CRLF checkout (e.g. windows-latest CI without a
-    # .gitattributes eol=lf pin) would shift every cross-line selftest pin.
-    real_assets = [("report.css", css_file), ("report.js", js_file),
-                   ("CSS", CSS), ("SCRIPT", SCRIPT)]
-    real_cr = _theme.cr_violations(real_assets)
-    check("no \\r (CRLF) in any loaded ui/ asset or the assembled CSS/SCRIPT "
-          "(found in: %r)" % (real_cr,), not real_cr)
-
-    # --- fixture red-proof: a CRLF asset IS named by the same helper ------------
-    fixture_assets = [("report.css", "body { color: red; }\r\n"),
-                       ("report.js", "console.log(1);\n")]
-    fixture_cr = _theme.cr_violations(fixture_assets)
-    check("fixture proof: a CRLF report.css is named by the CR check "
-          "(got %r, want ['report.css'])" % (fixture_cr,),
-          fixture_cr == ["report.css"])
-
-    # --- caching: repeat calls return the identical cached string ---------------
-    a = _css()
-    b = _css()
-    check("_css() caches — repeat calls return the SAME object", a is b)
-    check("_css(cache=False) bypasses the cache and still matches",
-          _css(cache=False) == a)
-    c = _script()
-    d = _script()
-    check("_script() caches — repeat calls return the SAME object", c is d)
-    check("_script(cache=False) bypasses the cache and still matches",
-          _script(cache=False) == c)
-
-    print(("ALL PASS: %d/%d cases passed" if not bad else
-           "SELFTEST FAILED: %d/%d cases passed") % (ok, ok + bad))
-    return 1 if bad else 0
-
-
 if __name__ == "__main__":
     import sys
     from _output import safe_stdio      # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        sys.exit(_selftest())
+        # Answers rather than exits silently: `--selftest` is what every other
+        # file here still accepts, so nothing would tell a reader whether this
+        # one ran nothing or has nothing. It deliberately does NOT print the
+        # suite contract - that literal is how `_output.selftest_coverage()`
+        # tells an inline suite from a migrated one.
+        print("_report_ui.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test__report_ui.py - run that file instead.")
+        sys.exit(0)
     print(__doc__.strip())

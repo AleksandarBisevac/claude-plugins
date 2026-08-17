@@ -43,6 +43,10 @@ without risking the same "not installed" failure it exists to degrade gracefully
 from. Hooks stay import-light and self-contained by design (see `_output.py`'s
 docstring for the parallel reasoning about why hooks skip `safe_stdio()`); this
 module is for `scripts/`-to-`scripts/` (and `scripts/`-to-`hooks/`) loading only.
+
+This module carries no `--selftest` of its own any more; its 11 cases live in
+`plugins/audit/tests/test__loader.py`, byte-identical labels and all - see
+`plugins/audit/tests/_harness.py`.
 """
 import importlib.util
 import os
@@ -109,90 +113,17 @@ def load_hooks_config(modname=None, cache=True):
     return load(path, modname=modname or "audit_loaded_hooks_config", cache=cache)
 
 
-# --- selftest ---------------------------------------------------------------
-def _selftest():
-    import tempfile
-
-    cases = []
-
-    def check(label, cond):
-        cases.append((label, bool(cond)))
-
-    # 1. loading a real sibling returns a module carrying a known attribute.
-    mod = load(os.path.join(_HERE, "_ui_theme.py"), cache=False)
-    check("load(): sibling module carries a known attribute (TOKEN_CSS)",
-          hasattr(mod, "TOKEN_CSS"))
-
-    # 2. cache=True: two calls return the SAME object (identity).
-    a = load(os.path.join(_HERE, "_ui_theme.py"), modname="loader_selftest_cache")
-    b = load(os.path.join(_HERE, "_ui_theme.py"), modname="loader_selftest_cache")
-    check("cache=True: repeat load() returns the identical object", a is b)
-
-    # 3. cache=False: a fresh object every call, and the cached copy untouched.
-    c = load(os.path.join(_HERE, "_ui_theme.py"), modname="loader_selftest_cache",
-             cache=False)
-    check("cache=False: returns a DIFFERENT object than the cached one", c is not a)
-    d = load(os.path.join(_HERE, "_ui_theme.py"), modname="loader_selftest_cache")
-    check("cache=False call did not disturb the shared cache entry", d is a)
-
-    # 4. two different paths to the same file hit the same cache entry.
-    dotted = os.path.join(_HERE, ".", os.path.basename(__file__))
-    plain = os.path.join(_HERE, os.path.basename(__file__))
-    e = load(dotted, modname="loader_selftest_realpath")
-    f = load(plain, modname="loader_selftest_realpath")
-    check("realpath key: './x.py' and 'x.py' share one cache entry", e is f)
-
-    # 5. missing file raises.
-    raised_type = None
-    try:
-        load(os.path.join(_HERE, "does-not-exist-selftest.py"), cache=False)
-    except Exception as exc:                              # noqa: BLE001
-        raised_type = type(exc)
-    check("missing file raises (got %r)" % (raised_type,),
-          raised_type is not None)
-
-    # 6. sys.modules is never polluted.
-    before = set(sys.modules.keys())
-    load(os.path.join(_HERE, "_ui_theme.py"), modname="loader_selftest_sysmod",
-         cache=False)
-    after = set(sys.modules.keys())
-    check("sys.modules gains no new entries", after == before)
-
-    # 7. load_script + load_hooks_config resolve correctly.
-    ls = load_script("_ui_theme.py", modname="loader_selftest_script")
-    check("load_script(): resolves a sibling in the scripts dir",
-          hasattr(ls, "TOKEN_CSS"))
-    hc = load_hooks_config()
-    check("load_hooks_config(): resolves ../hooks/_config.py (has DEFAULTS)",
-          hasattr(hc, "DEFAULTS"))
-
-    # 8. a file that raises at exec time propagates, and does not poison the cache.
-    tmp_dir = tempfile.mkdtemp(prefix="loader-selftest-")
-    bad_path = os.path.join(tmp_dir, "bad_module.py")
-    with open(bad_path, "w", encoding="utf-8") as fh:
-        fh.write("raise RuntimeError('boom')\n")
-    exec_raised = False
-    try:
-        load(bad_path, modname="loader_selftest_bad")
-    except Exception:                                      # noqa: BLE001
-        exec_raised = True
-    check("exec-time failure propagates rather than being swallowed",
-          exec_raised)
-    check("exec-time failure does not poison the cache",
-          os.path.realpath(bad_path) not in _CACHE)
-
-    passed = sum(1 for _, ok in cases if ok)
-    for label, ok in cases:
-        print("%s %s" % ("PASS" if ok else "FAIL", label))
-    print("\n%s: %d/%d cases passed" % (
-        "ALL PASS" if passed == len(cases) else "FAILURES", passed, len(cases)))
-    return 0 if passed == len(cases) else 1
-
-
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
+        # Answers rather than exits silently: `--selftest` is what every other
+        # file here still accepts, so nothing would tell a reader whether this
+        # one ran nothing or has nothing. It deliberately does NOT print the
+        # suite contract - that literal is how `_output.selftest_coverage()`
+        # tells an inline suite from a migrated one.
+        print("_loader.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test__loader.py - run that file instead.")
+        raise SystemExit(0)
     sys.stderr.write("usage: _loader.py --selftest\n")
     raise SystemExit(2)

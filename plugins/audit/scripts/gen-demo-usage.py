@@ -14,8 +14,10 @@ actually there, rather than only asserting the output file is non-empty.
 
 DETERMINISTIC BY CONSTRUCTION. A fixed seed, no wall-clock, no unseeded random.
 Two runs produce byte-identical output, so the committed ledger is reviewable in a
-diff and a regeneration that changes nothing shows as no change. `--selftest` pins
-that, along with referential integrity against the manifest.
+diff and a regeneration that changes nothing shows as no change.
+`plugins/audit/tests/test_gen_demo_usage.py` pins that, along with referential
+integrity against the manifest - this file carries no inline `--selftest` any
+more, and its 19 cases live there with byte-identical labels.
 
     gen-demo-usage.py <manifest> [--out-dir DIR] [--seed N] [--authors a,b,c]
                                  [--adhoc-days N] [--stdout] [--selftest]
@@ -262,124 +264,15 @@ def main(argv):
     return 0
 
 
-# --- selftest -------------------------------------------------------------------
-def _selftest():
-    import shutil
-    import tempfile
-
-    cases = []
-
-    def check(label, ok, detail=""):
-        cases.append((label, bool(ok), detail))
-
-    ul = _load_ledger_lib()
-    manifest = {
-        "meta": {"version": 2, "repo": "demo"},
-        "phases": [
-            {"id": "P1", "title": "Alpha", "model": "opus", "tasks": [
-                {"id": "P1.1", "status": "done", "risk": "high", "model": "opus",
-                 "attempts": 1, "startedAt": "2026-06-02T09:00:00Z",
-                 "completedAt": "2026-06-02T15:00:00Z"},
-                {"id": "P1.2", "status": "done", "risk": "low", "model": "haiku",
-                 "attempts": 1, "startedAt": "2026-06-08T10:00:00Z",
-                 "completedAt": "2026-06-08T12:00:00Z"}]},
-            {"id": "P2", "title": "Beta", "model": "sonnet", "tasks": [
-                {"id": "P2.1", "status": "blocked", "risk": "med", "model": "sonnet",
-                 "attempts": 3, "startedAt": "2026-07-13T09:00:00Z"},
-                {"id": "P2.2", "status": "pending", "risk": "low", "model": "haiku"}]},
-        ],
-    }
-
-    rows_a = generate(manifest, seed=7, adhoc_days=2)
-    rows_b = generate(manifest, seed=7, adhoc_days=2)
-    check("determinism: two runs are byte-identical",
-          json.dumps(rows_a, sort_keys=True) == json.dumps(rows_b, sort_keys=True))
-    check("determinism: a different seed gives different output",
-          json.dumps(generate(manifest, seed=8, adhoc_days=2), sort_keys=True)
-          != json.dumps(rows_a, sort_keys=True))
-
-    task_ids = {t["id"] for p in manifest["phases"] for t in p["tasks"]}
-    phase_ids = {p["id"] for p in manifest["phases"]}
-    check("integrity: every taskId exists in the manifest",
-          all(r["taskId"] in task_ids for r in rows_a if r["taskId"]))
-    check("integrity: every phaseId exists in the manifest",
-          all(r["phaseId"] in phase_ids for r in rows_a if r["phaseId"]))
-    check("integrity: pending tasks (no startedAt) spend nothing",
-          not any(r["taskId"] == "P2.2" for r in rows_a))
-
-    windows = {"P1.1": ("2026-06-02T09", "2026-06-02T15")}
-    inside = [r for r in rows_a if r["taskId"] == "P1.1"]
-    check("integrity: rows land inside the task's own window",
-          inside and all(windows["P1.1"][0] <= r["ts"] <= windows["P1.1"][1]
-                         for r in inside))
-
-    models = {r["model"] for r in rows_a}
-    check("shape: manifest tiers map to concrete ledger model ids",
-          "claude-opus-5" in models and "claude-haiku-4-5" in models
-          and not any(m in ("opus", "haiku", "sonnet") for m in models))
-    check("shape: more than one author appears",
-          len({r["author"] for r in rows_a}) > 1)
-    check("shape: an author is stable for a given task",
-          len({r["author"] for r in rows_a if r["taskId"] == "P1.1"}) == 1)
-    attrs = {r["attr"] for r in rows_a}
-    check("shape: task, phase and unattributed buckets all present",
-          {"task", "phase", "unattributed"} <= attrs, repr(attrs))
-
-    by_task = ul.aggregate([r for r in rows_a if r["attr"] == "task"], "task")
-    check("shape: a 3-attempt task generates more OUTPUT than a low-risk 1-attempt one",
-          by_task["P2.1"]["out"] > by_task["P1.2"]["out"])
-    # Worth pinning, because it is counter-intuitive and it constrains how the
-    # dashboards may present things: cache-read volume dwarfs every other tier, so
-    # a well-cached small task can out-TOTAL a heavy retried one. Raw token totals
-    # are therefore not a valid cross-task comparator — output tokens and cost are.
-    check("shape: raw totals can invert across cache regimes (why cost is the comparator)",
-          by_task["P1.2"]["tokens"] > by_task["P2.1"]["tokens"]
-          and by_task["P1.2"]["out"] < by_task["P2.1"]["out"],
-          "P1.2 tok=%d out=%d vs P2.1 tok=%d out=%d" % (
-              by_task["P1.2"]["tokens"], by_task["P1.2"]["out"],
-              by_task["P2.1"]["tokens"], by_task["P2.1"]["out"]))
-
-    p2 = [r for r in rows_a if r["phaseId"] == "P2" and r["attr"] == "task"]
-    p1 = [r for r in rows_a if r["phaseId"] == "P1" and r["attr"] == "task"]
-    check("shape: the blocked phase has a visibly degraded cache hit rate",
-          ul.totals(p2)["cacheHitPct"] < ul.totals(p1)["cacheHitPct"] - 20,
-          "P2 %.1f vs P1 %.1f" % (ul.totals(p2)["cacheHitPct"],
-                                  ul.totals(p1)["cacheHitPct"]))
-    check("shape: cost is priced per row and non-zero",
-          all(r["costUSD"] > 0 for r in rows_a))
-
-    tmp = tempfile.mkdtemp(prefix="gen-demo-usage-selftest-")
-    try:
-        written = write_ledger(rows_a, tmp)
-        check("io: monthly files written", len(written) == 2)
-        back = ul.read_ledger(tmp)
-        check("io: round-trips through the real ledger reader",
-              ul.totals(back)["tokens"] == ul.totals(rows_a)["tokens"])
-        first = open(written[0], encoding="utf-8").read()
-        write_ledger(generate(manifest, seed=7, adhoc_days=2), tmp)
-        check("io: regenerating produces an identical file (no diff churn)",
-              open(written[0], encoding="utf-8").read() == first)
-
-        empty = {"meta": {}, "phases": [{"id": "P1", "tasks": [
-            {"id": "P1.1", "status": "pending"}]}]}
-        check("edge: a manifest with no started tasks yields no rows",
-              generate(empty) == [])
-        check("edge: CLI exits 2 on a manifest that cannot produce rows",
-              main([os.path.join(tmp, "nope.json")]) == 2)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    passed = sum(1 for _, ok, _ in cases if ok)
-    for label, ok, detail in cases:
-        print("%s %s%s" % ("PASS" if ok else "FAIL", label,
-                           (" (%s)" % detail) if detail and not ok else ""))
-    print("\ngen-demo-usage: %d/%d cases passed" % (passed, len(cases)))
-    return 0 if passed == len(cases) else 1
-
-
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
+        # Answers rather than falling through to main(), which would treat the
+        # flag as a manifest path. It deliberately does NOT print the
+        # `N/M cases passed` contract - that literal is how
+        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
+        print("gen-demo-usage.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test_gen_demo_usage.py - run that file instead.")
+        raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

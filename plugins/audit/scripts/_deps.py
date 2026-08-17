@@ -1102,10 +1102,13 @@ KNOWN_LAYER_DEBT = (
      "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
     ("gen-demo-manifest.py",
      "runtime-loads gen-demo-usage (layer 7) from layer 7 - not strictly downward"),
-    ("gen-demo-manifest.py",
-     "runtime-loads validate-config (layer 7) from layer 7 - not strictly downward"),
-    ("gen-demo-manifest.py",
-     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
+    # gen-demo-manifest -> validate-config and -> validate-manifest were RETIRED
+    # when that file's `--selftest` moved to `tests/test_gen_demo_manifest.py`:
+    # the only `_loader.load_script` calls naming those two lived in the suite,
+    # and a test file has no position in the product's import order (`tests/` is
+    # deliberately absent from LAYERS). The edges are gone from the tree, so the
+    # entries had to go with them - r2 fails on a RETIRED entry exactly as it
+    # fails on a new one, and the list may only shrink, deliberately.
     ("migrate-manifest.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
     ("render-report.py",

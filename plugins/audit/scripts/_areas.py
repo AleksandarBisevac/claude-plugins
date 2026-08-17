@@ -38,6 +38,10 @@ the validator can warn instead of letting the tie-break stay silent.
 Paths are PROJECT-DIR-RELATIVE, the same as `task.files` and the `fileIndex` keys
 (so they carry the `meta.gitRoot` prefix when the workspace sits in a subdirectory).
 An absolute root would not survive a second clone; the validator says so.
+
+This module carries no `--selftest` of its own any more; its 80 cases live in
+`plugins/audit/tests/test__areas.py`, byte-identical labels and all - see
+`plugins/audit/tests/_harness.py`.
 """
 import os
 import re
@@ -407,7 +411,7 @@ def missing_roots(manifest, project):
 # repository has already shipped once (`exemptGlobs` and `tddReminder.testGlobs`
 # disagreeing about what a test file is), and prose drift is worse than code drift
 # because nothing runs it. So the sentence is pinned: every file that states the rule
-# must state THIS, and the selftest reads them to check.
+# must state THIS, and `tests/test__areas.py` reads them to check.
 REVIEW_RULE = ("phase.reviewSkill ?? meta.areas[tag].reviewSkill "
                "?? meta.reviewSkill")
 SKILLS_RULE = "then task.skills, deduped, area first"
@@ -457,342 +461,18 @@ def rule_drift(plugin_root=None):
     return out
 
 
-# --- selftest -----------------------------------------------------------------
-def _selftest():
-    """Four surfaces resolve against this module, so it carries its own gate."""
-    ok = bad = 0
-
-    def check(name, cond, detail=""):
-        nonlocal ok, bad
-        if cond:
-            ok += 1
-            print("PASS %s" % name)
-        else:
-            bad += 1
-            print("FAIL %s%s" % (name, (" :: %s" % detail) if detail else ""))
-
-    # --- normalisation -----------------------------------------------------------
-    check("a1 a bare string is one tag", areas_of("api") == ["api"])
-    check("a2 a list keeps written order", areas_of(["b", "a"]) == ["b", "a"])
-    check("a3 absent/empty/wrong-typed areas are no tags",
-          areas_of(None) == [] and areas_of("") == [] and areas_of(7) == []
-          and areas_of(["", None, 3]) == [])
-    check("a4 tags are trimmed, so ' api' and 'api' are one tag on both sides",
-          areas_of([" api ", "api"]) == ["api"])
-    check("a5 a repeated tag is ONE tag - the double-count that made a 1/1 phase "
-          "read 2/2 in the rollup's per-area totals",
-          areas_of(["api", "api", "web"]) == ["api", "web"])
-
-    MAN = {"meta": {"reviewSkill": "house-review",
-                    "areas": {"api": {"root": "services/api",
-                                      "reviewSkill": "backend-review",
-                                      "skills": ["python-conv"]},
-                              "web": {"root": "apps/web", "skills": ["ts-conv"]},
-                              "sec": {"root": ".", "reviewSkill": "sec-review"}}},
-           "phases": [{"id": "P1", "area": "api"},
-                      {"id": "P2", "area": ["web", "sec"]},
-                      {"id": "P3"}]}
-
-    # --- registry access ---------------------------------------------------------
-    check("r1 the registry reads from a manifest",
-          sorted(registry(MAN)) == ["api", "sec", "web"])
-    check("r2 ...and from a bare meta, which is what the panel holds",
-          sorted(registry({"areas": MAN["meta"]["areas"]})) == ["api", "sec", "web"])
-    check("r3 a missing or malformed registry is {}, never a raise",
-          registry({}) == {} and registry({"meta": {"areas": []}}) == {}
-          and registry(None) == {} and registry({"meta": 5}) == {})
-    check("r4 a malformed ENTRY is dropped from resolution and left to the "
-          "validator to report",
-          registry({"meta": {"areas": {"a": "nope", "b": {"root": "x"}}}}) == {"b": {"root": "x"}})
-    check("r5 an unknown tag resolves to {}, so callers can .get without a guard",
-          entry_of(MAN, "nope") == {} and entry_of(MAN, None) == {})
-    check("r6 root_of trims and drops the trailing slash",
-          root_of({"root": " apps/web/ "}) == "apps/web" and root_of({}) == ""
-          and root_of({"root": "  "}) == "" and root_of({"root": "/"}) == ".")
-
-    # --- review skill resolution -------------------------------------------------
-    sk, basis = resolve_review_skill(MAN, MAN["phases"][0])
-    check("v1 an area answers when the phase does not, and names itself",
-          (sk, basis) == ("backend-review", "area api"), repr((sk, basis)))
-    sk, basis = resolve_review_skill(MAN, MAN["phases"][1])
-    check("v2 a tag that declares nothing is skipped, not treated as an answer: "
-          "web is first and silent, so sec answers",
-          (sk, basis) == ("sec-review", "area sec"), repr((sk, basis)))
-    # v2 alone does NOT test precedence — with only one declaring area, any order
-    # gives the same answer, and reversing the loop left it green. Two DECLARING
-    # areas is the only shape that can tell written order from any other rule.
-    sk, basis = resolve_review_skill(MAN, {"id": "PX", "area": ["api", "sec"]})
-    check("v2b written order decides between two areas that BOTH declare",
-          (sk, basis) == ("backend-review", "area api"), repr((sk, basis)))
-    sk, basis = resolve_review_skill(MAN, {"id": "PX", "area": ["sec", "api"]})
-    check("v2c ...and the same two tags the other way round answer the other way",
-          (sk, basis) == ("sec-review", "area sec"), repr((sk, basis)))
-    sk, basis = resolve_review_skill(MAN, MAN["phases"][2])
-    check("v3 an untagged phase falls through to meta",
-          (sk, basis) == ("house-review", "meta"), repr((sk, basis)))
-    sk, basis = resolve_review_skill(MAN, {"id": "P4", "area": "api",
-                                           "reviewSkill": "phase-review"})
-    check("v4 the phase still wins over its area",
-          (sk, basis) == ("phase-review", "phase"), repr((sk, basis)))
-    sk, basis = resolve_review_skill(MAN, {"id": "P5", "area": "api",
-                                           "reviewSkill": None})
-    check("v5 an explicit null on the phase is an ANSWER - 'not this one' must not "
-          "fall through to the area that would have reviewed it",
-          (sk, basis) == (None, "phase"), repr((sk, basis)))
-    sk, basis = resolve_review_skill({"meta": {"areas": {"api": {"reviewSkill": None}}}},
-                                     {"area": "api"})
-    check("v6 ...and the same at the area level, over a meta default",
-          (sk, basis) == (None, "area api"), repr((sk, basis)))
-    check("v7 nothing anywhere is (None, '') - no basis to print",
-          resolve_review_skill({"meta": {}}, {"id": "P1"}) == (None, ""))
-    check("v8 resolution never raises on hostile shapes",
-          resolve_review_skill(None, None) == (None, "")
-          and resolve_review_skill({"meta": {"areas": {"a": 3}}}, {"area": "a"})
-          == (None, ""))
-
-    # --- skills resolution -------------------------------------------------------
-    check("s1 area skills come first, then the task's",
-          resolve_skills(MAN, MAN["phases"][0], {"skills": ["task-skill"]})
-          == ["python-conv", "task-skill"])
-    check("s2 several areas union in written order",
-          resolve_skills(MAN, MAN["phases"][1], {"skills": ["t"]}) == ["ts-conv", "t"])
-    check("s3 a skill named in both places is loaded once, area-first",
-          resolve_skills(MAN, MAN["phases"][0], {"skills": ["python-conv", "x"]})
-          == ["python-conv", "x"])
-    check("s4 no area and no task skills is an empty list, not None",
-          resolve_skills(MAN, MAN["phases"][2], None) == [])
-    check("s5 junk entries are dropped, not rendered",
-          resolve_skills({"meta": {"areas": {"a": {"skills": ["ok", 3, "  "]}}}},
-                         {"area": "a"}, {"skills": [None, " y "]}) == ["ok", "y"])
-
-    # --- (e) explicit-null opt-out (v0.37 B1) ------------------------------------
-    # `task.skills: null` is an ANSWER — "no skills apply to this task" — and
-    # STOPS the area fallback, mirroring reviewSkill (v5/v6) and owner (o4).
-    # `[]`/absent stays "unconsidered": the area default applies, as before.
-    check("e1 task.skills null loads NOTHING - the area default is stopped, "
-          "not merged",
-          resolve_skills(MAN, MAN["phases"][0], {"skills": None}) == [])
-    check("e2 skills_opted_out tells null (an answer) from []/absent/junk (not)",
-          skills_opted_out({"skills": None}) is True
-          and skills_opted_out({"skills": []}) is False
-          and skills_opted_out({}) is False
-          and skills_opted_out(None) is False
-          and skills_opted_out({"skills": "x"}) is False)
-    check("e3 [] and absent still take the area default - the two unconsidered "
-          "shapes did not change meaning",
-          resolve_skills(MAN, MAN["phases"][0], {"skills": []}) == ["python-conv"]
-          and resolve_skills(MAN, MAN["phases"][0], {}) == ["python-conv"])
-    check("e4 an area-level null contributes nothing and stops nothing - the "
-          "area IS the fallback; there is no level beneath it to stop",
-          resolve_skills({"meta": {"areas": {"a": {"skills": None}}}},
-                         {"area": "a"}, {"skills": ["t"]}) == ["t"])
-    check("e5 a junk skills CONTAINER contributes nothing - a bare string used "
-          "to load one 'skill' per character (found during v0.37 B, fixed here)",
-          resolve_skills({}, {}, {"skills": "my-skill"}) == []
-          and resolve_skills({"meta": {"areas": {"a": {"skills": "conv"}}}},
-                             {"area": "a"}, None) == [])
-
-    # --- conflicts + unregistered tags -------------------------------------------
-    check("c1 two areas declaring DIFFERENT reviewers is a conflict worth naming",
-          review_skill_conflicts(MAN, {"area": ["api", "sec"]})
-          == [("api", "backend-review"), ("sec", "sec-review")])
-    check("c2 agreement is not a conflict",
-          review_skill_conflicts({"meta": {"areas": {"a": {"reviewSkill": "r"},
-                                                     "b": {"reviewSkill": "r"}}}},
-                                 {"area": ["a", "b"]}) == [])
-    check("c3 one declaring area is not a conflict",
-          review_skill_conflicts(MAN, {"area": ["web", "api"]}) == [])
-    check("c4 unregistered tags are reported per phase, in order",
-          unregistered_tags({"meta": {"areas": {"api": {}}},
-                             "phases": [{"id": "P1", "area": ["api", "apu"]},
-                                        {"id": "P2", "area": "web"}]})
-          == [("P1", "apu"), ("P2", "web")])
-    check("c5 NO registry means no unregistered tags - free-text tagging is the "
-          "v0.16 feature and stays legal",
-          unregistered_tags({"meta": {}, "phases": [{"id": "P1", "area": "x"}]}) == [])
-    check("c6 used_tags lists every tag in first-seen order",
-          used_tags(MAN) == ["api", "web", "sec"])
-
-    # --- phase_tags: the read-time spend-attribution join ------------------------
-    check("t1 phase_tags maps every phase id to its tags in written order",
-          phase_tags(MAN) == {"P1": ["api"], "P2": ["web", "sec"], "P3": []})
-    check("t2 an untagged phase is PRESENT with [] - 'known phase, no tags' must "
-          "stay distinguishable from 'phase the plan never heard of'",
-          phase_tags(MAN).get("P3") == [] and "P9" not in phase_tags(MAN))
-    check("t3 tags arrive trimmed and deduped, the same normalisation both sides "
-          "of every other lookup get",
-          phase_tags({"phases": [{"id": "P1", "area": [" api ", "api", ""]}]})
-          == {"P1": ["api"]})
-    check("t4 hostile shapes are an empty map, never a raise - a phase without an "
-          "id or that is not a dict is skipped",
-          phase_tags(None) == {} and phase_tags({}) == {}
-          and phase_tags({"phases": [3, {"area": "x"}, {"id": "P1"}]})
-          == {"P1": []})
-
-    # --- owner resolution ----------------------------------------------------------
-    OMAN = {"meta": {"areas": {"api": {"root": "services/api", "owner": "jane@x.com"},
-                               "web": {"root": "apps/web"},
-                               "sec": {"root": ".", "owner": "raj@x.com"},
-                               "none": {"root": "lib", "owner": None}}},
-            "phases": [{"id": "P1", "area": "api"}]}
-    check("o1 the area that declares an owner answers, and names itself",
-          owner_of(OMAN, OMAN["phases"][0]) == ("jane@x.com", "api"))
-    check("o2 a tag with no owner KEY is skipped, not read as 'nobody' - web is "
-          "first and silent, so api answers",
-          owner_of(OMAN, {"area": ["web", "api"]}) == ("jane@x.com", "api"))
-    check("o3 written order decides between two areas that BOTH declare",
-          owner_of(OMAN, {"area": ["api", "sec"]}) == ("jane@x.com", "api")
-          and owner_of(OMAN, {"area": ["sec", "api"]}) == ("raj@x.com", "sec"))
-    check("o4 an explicit null is an ANSWER - 'nobody owns this' stops the lookup "
-          "and still names the area that said so",
-          owner_of(OMAN, {"area": ["none", "api"]}) == (None, "none"))
-    check("o5 nothing declared anywhere is (None, '') - distinguishable from o4",
-          owner_of(OMAN, {"area": "web"}) == (None, "")
-          and owner_of(OMAN, {"id": "PX"}) == (None, ""))
-    check("o6 hostile shapes never raise",
-          owner_of(None, None) == (None, "")
-          and owner_of({"meta": {"areas": {"a": 3}}}, {"area": "a"}) == (None, "")
-          and owner_of({"meta": {"areas": {"a": {"owner": 7}}}}, {"area": "a"})
-          == (None, "a"))
-    check("o7 an owner arrives trimmed; a whitespace-only owner reads as nobody "
-          "but keeps the declaring tag",
-          owner_of({"meta": {"areas": {"a": {"owner": " jane "}}}}, {"area": "a"})
-          == ("jane", "a")
-          and owner_of({"meta": {"areas": {"a": {"owner": "  "}}}}, {"area": "a"})
-          == (None, "a"))
-    f, w = validate_registry({"api": {"root": "a", "owner": "jane@x.com"}})
-    check("o8 'owner' is a KNOWN key - it must not draw the unknown-key warning",
-          not f and not w, repr((f, w)))
-    f, _ = validate_registry({"api": {"root": "a", "owner": 3}})
-    check("o9 a non-string non-null owner is a finding",
-          len(f) == 1 and "owner" in f[0], repr(f))
-    f, _ = validate_registry({"api": {"root": "a", "owner": ""}})
-    check("o10 an empty-string owner is a finding - null is how you say nobody",
-          len(f) == 1 and "owner" in f[0] and "null" in f[0], repr(f))
-    f, w = validate_registry({"api": {"root": "a", "owner": None}})
-    check("o11 an explicit null owner is legal and quiet - and NOTHING here asks "
-          "the ledger whether the identity exists; that is the doctor's question",
-          not f and not w, repr((f, w)))
-
-    # --- (n) declared non-string reviewSkill values (v0.36 A5) -------------------
-    # The validator flags `reviewSkill: 3` as a finding; resolution must not hand
-    # the raw junk to display surfaces meanwhile — it reached the panel as the
-    # integer 3. Same hardening owner_of got in group o: invalid -> None, the
-    # basis still names the level that declared it.
-    sk, basis = resolve_review_skill({"meta": {"areas": {"x": {"reviewSkill": 3}}}},
-                                     {"area": "x"})
-    check("n1 a non-string area reviewSkill resolves to None but keeps its "
-          "basis - the o6 hardening, applied to the reviewer lookup",
-          (sk, basis) == (None, "area x"), repr((sk, basis)))
-    check("n2 ...and at the phase level",
-          resolve_review_skill({}, {"reviewSkill": 3}) == (None, "phase"))
-    check("n3 ...and at the meta level",
-          resolve_review_skill({"meta": {"reviewSkill": ["x"]}}, {})
-          == (None, "meta"))
-    check("n4 a padded skill name arrives trimmed, like every other value here",
-          resolve_review_skill({}, {"reviewSkill": " backend-review "})
-          == ("backend-review", "phase"))
-    check("n5 an empty string reads as None with the declaring basis - it was "
-          "already falsy, pinned now",
-          resolve_review_skill({}, {"reviewSkill": ""}) == (None, "phase"))
-
-    # --- registry validation -----------------------------------------------------
-    f, w = validate_registry(MAN["meta"]["areas"])
-    check("g1 a good registry has no findings", not f, repr(f))
-    check("g2 ...and no warnings either, so a clean manifest stays quiet",
-          not w, repr(w))
-    check("g3 an absent registry is silent", validate_registry(None) == ([], []))
-    f, _ = validate_registry([])
-    check("g4 a non-object registry is a finding", len(f) == 1 and "must be an object" in f[0])
-    f, _ = validate_registry({"api": "services/api"})
-    check("g5 the likeliest typo - a bare path where the object goes - is a finding",
-          len(f) == 1 and "got str" in f[0], repr(f))
-    f, _ = validate_registry({"api": {"root": 3}})
-    check("g6 a non-string root is a finding", len(f) == 1 and "root" in f[0], repr(f))
-    f, w = validate_registry({"api": {}})
-    check("g7 no root at all is a WARNING - the registry is informational",
-          not f and len(w) == 1 and "no 'root'" in w[0], repr((f, w)))
-    _, w = validate_registry({"api": {"root": "/Users/me/proj/services/api"}})
-    check("g8 an absolute root warns: it cannot resolve in a second clone",
-          len(w) == 1 and "absolute" in w[0], repr(w))
-    _, w = validate_registry({"api": {"root": "C:/proj/api"}})
-    check("g9 ...including the Windows spelling, which has no leading slash",
-          len(w) == 1 and "absolute" in w[0], repr(w))
-    _, w = validate_registry({"api": {"root": "../sibling"}})
-    check("g10 a root outside the project directory warns",
-          len(w) == 1 and "outside" in w[0], repr(w))
-    _, w = validate_registry({"api": {"root": "a", "reviewskill": "x"}})
-    check("g11 a miscased key warns rather than being a reviewer that never runs",
-          len(w) == 1 and "unknown key" in w[0], repr(w))
-    f, _ = validate_registry({"api": {"root": "a", "skills": "one-skill"}})
-    check("g12 a bare string where the skills ARRAY goes is a finding - it would "
-          "otherwise load one skill per character", len(f) == 1 and "skills" in f[0],
-          repr(f))
-    f, _ = validate_registry({"api": {"root": "a", "skills": ["ok", ""]}})
-    check("g13 an empty skill name in the array is a finding", len(f) == 1, repr(f))
-    f, _ = validate_registry({"api": {"root": "a", "description": 3}})
-    check("g14 a non-string description is a finding", len(f) == 1, repr(f))
-    f, _ = validate_registry({"api": {"reviewSkill": None, "root": "a"}})
-    check("g15 ...but an explicitly null reviewSkill is legal - it is how an area "
-          "says 'tests are the signer here'", not f, repr(f))
-    f, _ = validate_registry({"  ": {"root": "a"}})
-    check("g16 a blank tag name is a finding", len(f) == 1, repr(f))
-    _, w = validate_registry({" api": {"root": "a"}})
-    check("g17 a padded tag warns, since it is MATCHED trimmed and would otherwise "
-          "look unregistered", len(w) == 1 and "whitespace" in w[0], repr(w))
-    check("g18 validation never raises on hostile shapes",
-          validate_registry({"a": None})[0] and validate_registry("x")[0])
-
-    # --- roots on disk -----------------------------------------------------------
-    here = os.path.dirname(os.path.abspath(__file__))
-    man = {"meta": {"areas": {"here": {"root": "scripts"},
-                              "gone": {"root": "no/such/dir"},
-                              "unstated": {"description": "no root"}}}}
-    miss = missing_roots(man, os.path.dirname(here))
-    check("d1 a root that is not a directory is reported, one that is is not, and "
-          "an area with no root is skipped rather than called missing",
-          miss == [("gone", "no/such/dir")], repr(miss))
-
-    # --- the prose says what the code does ---------------------------------------
-    drift = rule_drift()
-    check("p1 every document that states the resolution states the SAME one - the "
-          "orchestrator reads prose, and prose drift is worse than code drift "
-          "because nothing runs it: %r" % (drift,), not drift)
-    check("p2 the lint can fail: a doc missing the rule is reported",
-          [r for r in rule_drift(os.path.dirname(os.path.abspath(__file__)))
-           if "unreadable" in str(r[1])])
-    _fake = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_ruledoc")
-    os.makedirs(os.path.join(_fake, "reference"), exist_ok=True)
-    os.makedirs(os.path.join(_fake, "commands"), exist_ok=True)
-    try:
-        for rel in _RULE_DOCS:
-            with open(os.path.join(_fake, rel), "w", encoding="utf-8") as fh:
-                fh.write("The reviewer is `phase.reviewSkill ?? meta.reviewSkill`, "
-                         "then `task.skills`, deduped, **area first**.\n")
-        _d = rule_drift(_fake)
-        check("p3 the pre-v0.28 two-level wording is caught wherever it survives - "
-              "one file learning about areas while the others do not is exactly "
-              "how this drifts",
-              len([x for x in _d if "without the area" in str(x[1])]) == 4
-              and all("phase.reviewSkill" in str(x[1])
-                      for x in _d if "without the area" in str(x[1])), repr(_d))
-        check("p4 ...and the same run reports the rule as missing, so a file can "
-              "fail for both reasons at once",
-              len([x for x in _d if x[1] == REVIEW_RULE]) == 4, repr(_d))
-    finally:
-        import shutil
-        shutil.rmtree(_fake, ignore_errors=True)
-
-    print(("ALL PASS: %d/%d cases passed" if not bad else
-           "SELFTEST FAILED: %d/%d cases passed") % (ok, ok + bad))
-    return 1 if bad else 0
-
-
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        sys.exit(_selftest())
+        # Answers rather than exits silently: `--selftest` is what every other
+        # file here still accepts, so nothing would tell a reader whether this
+        # one ran nothing or has nothing. It deliberately does NOT print the
+        # suite contract - that literal is how `_output.selftest_coverage()`
+        # tells an inline suite from a migrated one.
+        print("_areas.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test__areas.py - run that file instead.")
+        sys.exit(0)
     print(__doc__.strip())

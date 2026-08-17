@@ -910,12 +910,26 @@ def _selftest():
              real_cov["total"]),
           not (real_cov["both"] or real_cov["neither"] or real_cov["orphans"]
                or real_cov["collisions"] or real_cov["unreadable"]))
-    check("sc11 ...and the migrated set is exactly the three pilots. Editing this "
-          "list is what a migration step COSTS, which is the point: the end state "
-          "(0 inline, every file covered) is asserted here, never assumed: %r"
-          % (real_cov["covered"],),
-          real_cov["covered"] == ["hooks/remind-tdd.py", "scripts/_cli_fmt.py",
-                                  "scripts/migrate-manifest.py"])
+    check("sc11 ...and the migrated set is exactly the three pilots plus batch A. "
+          "Editing this list is what a migration step COSTS, which is the point: "
+          "the end state (0 inline, every file covered) is asserted here, never "
+          "assumed: %r" % (real_cov["covered"],),
+          real_cov["covered"] == ["hooks/remind-tdd.py",
+                                  "scripts/_areas.py",
+                                  "scripts/_cli_fmt.py",
+                                  "scripts/_fmt.py",
+                                  "scripts/_loader.py",
+                                  "scripts/_manifest_io.py",
+                                  "scripts/_panel_ui.py",
+                                  "scripts/_policy.py",
+                                  "scripts/_report_md.py",
+                                  "scripts/_report_ui.py",
+                                  "scripts/_usage_core.py",
+                                  "scripts/audit-lock.py",
+                                  "scripts/gen-demo-manifest.py",
+                                  "scripts/gen-demo-usage.py",
+                                  "scripts/migrate-manifest.py",
+                                  "scripts/validate-config.py"])
     check("sc12 every production file is accounted for, so a file can neither be "
           "double-counted nor quietly dropped: %d + %d == %d"
           % (len(real_cov["inline"]), len(real_cov["covered"]), real_cov["total"]),
@@ -925,8 +939,21 @@ def _selftest():
           "iterates, so the skip list and the `find` output are the same strings: %r"
           % (covered_repo_paths(),),
           covered_repo_paths() == ["plugins/audit/hooks/remind-tdd.py",
+                                   "plugins/audit/scripts/_areas.py",
                                    "plugins/audit/scripts/_cli_fmt.py",
-                                   "plugins/audit/scripts/migrate-manifest.py"]
+                                   "plugins/audit/scripts/_fmt.py",
+                                   "plugins/audit/scripts/_loader.py",
+                                   "plugins/audit/scripts/_manifest_io.py",
+                                   "plugins/audit/scripts/_panel_ui.py",
+                                   "plugins/audit/scripts/_policy.py",
+                                   "plugins/audit/scripts/_report_md.py",
+                                   "plugins/audit/scripts/_report_ui.py",
+                                   "plugins/audit/scripts/_usage_core.py",
+                                   "plugins/audit/scripts/audit-lock.py",
+                                   "plugins/audit/scripts/gen-demo-manifest.py",
+                                   "plugins/audit/scripts/gen-demo-usage.py",
+                                   "plugins/audit/scripts/migrate-manifest.py",
+                                   "plugins/audit/scripts/validate-config.py"]
           and all(os.path.isfile(os.path.join(_REPO_ROOT, p.replace("/", os.sep)))
                   for p in covered_repo_paths()))
 

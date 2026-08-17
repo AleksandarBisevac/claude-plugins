@@ -129,6 +129,19 @@ claude-plugins/                           # this repo (personal, public)
         test__cli_fmt.py                  # pilot 1: an importable helper
         test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
         test_remind_tdd.py                # pilot 3: a hook (a test may import scripts/; the hook may not)
+        test__areas.py                    # batch A: 13 more suites, same three shapes, one file each
+        test__fmt.py                      #   (one test_<name>.py per migrated production file; see §2)
+        test__loader.py
+        test__manifest_io.py
+        test__panel_ui.py
+        test__policy.py
+        test__report_md.py
+        test__report_ui.py
+        test__usage_core.py
+        test_audit_lock.py
+        test_gen_demo_manifest.py
+        test_gen_demo_usage.py
+        test_validate_config.py
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -206,7 +219,7 @@ L7:
   migrate-manifest -> _loader, _manifest_io, _output
   panel-server -> _help, _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _loader, _manifest_io, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _ui_theme
-  validate-config -> _loader, _output, _policy
+  validate-config -> _output, _policy
   validate-manifest -> _areas, _manifest_io, _output
 ```
 
@@ -907,6 +920,30 @@ hook) are unspellable in an `import` statement and must come through `_loader`, 
 module object. One style that works for all three, and `M.` says which side of the boundary a
 name is on. **Case labels move byte-identical** — a changed label is a changed test, and the
 migration proves the multiset before and after.
+
+**What a move is NOT allowed to carry over literally.** Batch A (13 files) found three shapes
+that mean something different once the code sits one directory over, and every one of them fails
+QUIETLY rather than loudly if carried:
+
+* `globals()["x"] = stub` — a suite that swaps a module global for a counting or mocking stub was
+  rebinding a name in the module it lived in. From `tests/` it rebinds a name nothing calls, the
+  production function keeps using the real one, and the counter reads 0. Write `M.x = stub`, and
+  restore on `M` in the same `finally`. `test__usage_core.py`'s `ag` group is the worked example;
+  the literal move was run and goes red with `got 0` on four cases.
+* `__file__` — meant "the module under test's source" (`_policy`'s `m3b` reads it to pin which
+  `fnmatch` function is called) or "some real file with an mtime" (`audit-lock`'s `a-mtime`). The
+  first must become `M.__file__`; the second may be anything, but should say which it is.
+* a path built with `os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` — `scripts/` and
+  `tests/` are both one level under the plugin directory, so this resolves *correctly by
+  coincidence*. Spell it off `_harness.SCRIPTS_DIR` / `_harness.HOOKS_DIR` so it stays correct.
+
+**A moved suite can retire an import edge.** `_deps` walks the whole AST, selftest included, so a
+`_loader.load_script(...)` that only ever ran inside a suite is a real edge in the graph until the
+suite moves — and then it is gone. Batch A retired two `KNOWN_LAYER_DEBT` entries this way
+(`gen-demo-manifest` → `validate-config`, → `validate-manifest`) and shifted one line of the
+generated module map (`validate-config` no longer imports `_loader`). Both are the lints working:
+delete the retired entries deliberately, regenerate the fence with `_deps.py --render`, and never
+add an entry to make a migration go green.
 
 **What the boundary lints say.** `_output.selftest_coverage()` classifies every production
 file as `inline` / `covered` / `both` / `neither` (plus orphan and colliding test files), and

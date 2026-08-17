@@ -36,9 +36,11 @@ other, so the directory, the `newline=""` open, the CR check and the
 "exists and decodes" probe all live one layer down in `_ui_theme` — see
 `read_asset` there for why the newline flag is load-bearing. What stays here
 is the panel's own half: the markers, the splice, and what it pins about them.
-"""
-import os
 
+This module carries no `--selftest` of its own any more; its 25 cases live in
+`plugins/audit/tests/test__panel_ui.py`, byte-identical labels and all - see
+`plugins/audit/tests/_harness.py`.
+"""
 import _ui_theme as _theme   # same dir; sys.path[0] when run standalone, or the
                               # importer's own sys.path.insert(0, _HERE) otherwise
 
@@ -52,8 +54,8 @@ _cache = None
 def raw_template(cache=True):
     """Return the pre-substitution UI_HTML string, assembled from ui/panel.*.
 
-    `cache=False` forces a fresh read+splice (used by the selftest, which mutates
-    the marker count to prove the exactly-once check can fail)."""
+    `cache=False` forces a fresh read+splice (used by `tests/test__panel_ui.py`,
+    which mutates the marker count to prove the exactly-once check can fail)."""
     global _cache
     if cache and _cache is not None:
         return _cache
@@ -75,103 +77,17 @@ _IMPORT_TIME_PLACEHOLDERS = (
 _REQUEST_TIME_PLACEHOLDERS = ("__AUDIT_TOKEN__", "__AUDIT_PROJECT__")
 
 
-# --- selftest -----------------------------------------------------------------
-def _selftest():
-    ok = bad = 0
-
-    def check(name, cond):
-        nonlocal ok, bad
-        if cond:
-            ok += 1
-            print("PASS %s" % name)
-        else:
-            bad += 1
-            print("FAIL %s" % name)
-
-    # --- the three asset files exist and decode as utf-8 ------------------------
-    names = ("panel.html", "panel.css", "panel.js")
-    unreadable = _theme.unreadable_assets(names)
-    for name in names:
-        check("%s exists and decodes as utf-8" % name, name not in unreadable)
-
-    skeleton = _theme.read_asset("panel.html")
-    css = _theme.read_asset("panel.css")
-    js = _theme.read_asset("panel.js")
-    template = raw_template(cache=False)
-
-    # --- each insertion marker appears exactly once in the skeleton -------------
-    check("the CSS marker appears exactly once in panel.html",
-          skeleton.count(CSS_MARK) == 1)
-    check("the JS marker appears exactly once in panel.html",
-          skeleton.count(JS_MARK) == 1)
-
-    # --- mutation proof: doubling a marker must fail the exactly-once case ------
-    doubled = skeleton.replace(CSS_MARK, CSS_MARK + CSS_MARK, 1)
-    check("mutation proof: a doubled CSS marker is caught by the same check "
-          "that just passed (doubled count is %d, not 1)" % doubled.count(CSS_MARK),
-          doubled.count(CSS_MARK) != 1)
-
-    # --- every __*__ placeholder panel-server.py substitutes is present ---------
-    for ph in _IMPORT_TIME_PLACEHOLDERS + _REQUEST_TIME_PLACEHOLDERS:
-        check("assembled template still carries %s (panel-server.py's own "
-              "substitution chain fills it in, unmodified)" % ph, ph in template)
-
-    # --- exactly one <style> and one <script> block in the assembled string -----
-    check("exactly one <style> block", template.count("<style>") == 1
-          and template.count("</style>") == 1)
-    check("exactly one <script> block", template.count("<script>") == 1
-          and template.count("</script>") == 1)
-    style_span = template[template.index("<style>") + len("<style>"):
-                           template.index("</style>")]
-    check("the CSS lives inside the <style> block, not beside it", style_span == css)
-    script_span = template[template.index("<script>") + len("<script>"):
-                            template.index("</script>")]
-    check("the JS lives inside the <script> block, not beside it", script_span == js)
-
-    # --- CSS brace balance, via _ui_theme's existing lints -----------------------
-    check("panel.css braces balance", css.count("{") == css.count("}"))
-    check("no declaration in panel.css is left unterminated",
-          not _theme.unterminated_css_decls(css))
-
-    # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
-    ui_pyfiles = [f for f in os.listdir(_theme.UI_DIR) if f.endswith(".py")]
-    check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
-
-    # --- LF contract: none of the loaded ui/ assets (nor the assembled ------
-    # template) carry a "\r" — a CRLF checkout (e.g. windows-latest CI without
-    # a .gitattributes eol=lf pin) would shift every cross-line selftest pin.
-    real_assets = [("panel.html", skeleton), ("panel.css", css), ("panel.js", js),
-                   ("raw_template()", template)]
-    real_cr = _theme.cr_violations(real_assets)
-    check("no \\r (CRLF) in any loaded ui/ asset or the assembled template "
-          "(found in: %r)" % (real_cr,), not real_cr)
-
-    # --- fixture red-proof: a CRLF asset IS named by the same helper ------------
-    fixture_assets = [("panel.html", "<html>\r\n<body></body>\r\n</html>"),
-                       ("panel.css", "body { color: red; }\n"),
-                       ("panel.js", "console.log(1);\n")]
-    fixture_cr = _theme.cr_violations(fixture_assets)
-    check("fixture proof: a CRLF panel.html is named by the CR check "
-          "(got %r, want ['panel.html'])" % (fixture_cr,),
-          fixture_cr == ["panel.html"])
-
-    # --- caching: repeat calls return the identical cached string ---------------
-    a = raw_template()
-    b = raw_template()
-    check("raw_template() caches — repeat calls return the SAME object",
-          a is b)
-    check("cache=False bypasses the cache and still matches",
-          raw_template(cache=False) == a)
-
-    print(("ALL PASS: %d/%d cases passed" if not bad else
-           "SELFTEST FAILED: %d/%d cases passed") % (ok, ok + bad))
-    return 1 if bad else 0
-
-
 if __name__ == "__main__":
     import sys
     from _output import safe_stdio      # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        sys.exit(_selftest())
+        # Answers rather than exits silently: `--selftest` is what every other
+        # file here still accepts, so nothing would tell a reader whether this
+        # one ran nothing or has nothing. It deliberately does NOT print the
+        # suite contract - that literal is how `_output.selftest_coverage()`
+        # tells an inline suite from a migrated one.
+        print("_panel_ui.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test__panel_ui.py - run that file instead.")
+        sys.exit(0)
     print(__doc__.strip())
