@@ -61,7 +61,14 @@ jobs:
           # silently never fired: the loop reached a migrated file and failed it for
           # having no suite, which is the LOUD way for this to be wrong and the reason
           # it was caught in the first local run.
-          covered=$(python plugins/audit/scripts/_output.py --covered | tr '\n' ' ')
+          # `tr -d '\r'` FIRST, and it is load-bearing on the Windows leg. `print()`
+          # writes CRLF there, so `tr '\n' ' '` alone leaves a `\r` glued to every
+          # path and the `case` below matches nothing — every migrated file gets run,
+          # finds a pointer where the contract should be, and the sweep dies on the
+          # first one. That is how 44c4971 went green on ubuntu and red on windows.
+          # It fails LOUD in this direction, which is the only reason it was cheap:
+          # a stray `\r` can never make a path match something it should not.
+          covered=$(python plugins/audit/scripts/_output.py --covered | tr -d '\r' | tr '\n' ' ')
           echo "migrated to tests/ (no inline suite expected): ${covered:-(none yet)}"
           total=0
           for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) \

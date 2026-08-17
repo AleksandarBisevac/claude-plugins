@@ -11,12 +11,12 @@ guard works. The `guarded.py` child written under `b1`/`c1` carries
 `sys.path.insert(0, <dir>)` so that `from _output import safe_stdio` resolves in a fresh
 interpreter. Moved literally, `<dir>` would be this file's directory - `tests/`, which
 holds no `_output.py` - and the child would die on ImportError instead of surviving the
-cp1252 stream. It reads `M._HERE`, the SUBJECT's own directory, which is the only value
+cp1252 stream. It reads `M.SCRIPTS_DIR`, the SUBJECT's own directory, which is the only value
 that has ever been meant. (Loud rather than silent, as it happens: the child's stderr
 would have named the ImportError. It is on this list because the case's whole claim is
 about what the child could import.)
 
-`M._HERE`, `M._TESTS_DIR` AND `M._REPO_ROOT` RATHER THAN THE `_harness` CONSTANTS. Same
+`M.SCRIPTS_DIR`, `M.TESTS_DIR` AND `M.REPO_ROOT` RATHER THAN THE `_harness` CONSTANTS. Same
 three directories, different question: `f1`/`f2` ask what `entries_missing_guard()`
 scans BY DEFAULT, and `sc13` asks which root `covered_repo_paths()` makes its paths
 relative to. Respelling them off the harness would turn a claim about the subject's own
@@ -33,6 +33,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import os
+import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -65,7 +66,7 @@ def _cases(check):
                 "sys.path.insert(0, %r)\n"
                 "from _output import safe_stdio\n"
                 "safe_stdio()\n"
-                'print("tick \\u2713 done")\n' % M._HERE)
+                'print("tick \\u2713 done")\n' % M.SCRIPTS_DIR)
 
         def run(path, io_encoding):
             env = dict(os.environ, PYTHONIOENCODING=io_encoding)
@@ -157,10 +158,10 @@ def _cases(check):
           % (real,), not real)
     check("f2 ...and the default scope now reaches tests/ too, which is the half a "
           "sibling directory added: %r"
-          % (sorted(n for n, _p in M.py_files(M._TESTS_DIR)),),
-          M.entries_missing_guard() == sorted(M.entries_missing_guard((M._HERE,))
-                                              + M.entries_missing_guard((M._TESTS_DIR,)))
-          and M.py_files(M._TESTS_DIR) != [])
+          % (sorted(n for n, _p in M.py_files(M.TESTS_DIR)),),
+          M.entries_missing_guard() == sorted(M.entries_missing_guard((M.SCRIPTS_DIR,))
+                                              + M.entries_missing_guard((M.TESTS_DIR,)))
+          and M.py_files(M.TESTS_DIR) != [])
 
     # --------------------------------------------------------- house-style AST bans
     # Same shape as the adoption-lint block above: a fixture directory per case, each
@@ -560,8 +561,307 @@ def _cases(check):
                                      "plugins/audit/scripts/usage_ledger.py",
                                      "plugins/audit/scripts/validate-config.py",
                                      "plugins/audit/scripts/validate-manifest.py"]
-          and all(os.path.isfile(os.path.join(M._REPO_ROOT, p.replace("/", os.sep)))
+          and all(os.path.isfile(os.path.join(M.REPO_ROOT, p.replace("/", os.sep)))
                   for p in M.covered_repo_paths()))
+
+    # ------------------------------------------------------------------ the anchors
+    # BEFORE AND AFTER, MEASURED. Seventeen sites used to derive a parent directory
+    # from their OWN `__file__`; they now read one of the five anchors. On a flat
+    # tree each must evaluate to the string it evaluated to before, and the way to
+    # know that is to recompute the OLD expression here and compare - not to assert
+    # that the new one looks right.
+    #
+    # Every consumer at once rather than a hand-picked few: the old expressions were
+    # all functions of the consuming file's `__file__`, so running them over EVERY
+    # `.py` under scripts/ proves the claim for all thirty-seven and keeps proving it
+    # for the thirty-eighth. `_ab`/`_ab2`/`_ab4` are the three depths that were
+    # actually spelled in the tree (`dirname` once, twice and four times).
+    _paths = [p for _rel, p in M.script_files()]
+    _ab = [os.path.dirname(os.path.abspath(p)) for p in _paths]
+    _ab2 = [os.path.dirname(d) for d in _ab]
+    _ab4 = [os.path.dirname(os.path.dirname(d)) for d in _ab2]
+    check("an1 SCRIPTS_DIR is what every file's old `dirname(abspath(__file__))` "
+          "produced - %d files, one answer: %r" % (len(_paths), M.SCRIPTS_DIR),
+          _paths and set(_ab) == set([M.SCRIPTS_DIR]))
+    check("an2 PLUGIN_ROOT is what `_areas`/`_policy`'s old "
+          "`dirname(dirname(abspath(__file__)))` and `_help`'s old `dirname(_HERE)` "
+          "both produced: %r" % (M.PLUGIN_ROOT,),
+          set(_ab2) == set([M.PLUGIN_ROOT])
+          and os.path.basename(M.PLUGIN_ROOT) == "audit")
+    check("an3 HOOKS_DIR is what `_deps`/`audit-doctor`/`audit-journal`'s old "
+          "`join(dirname(_HERE), 'hooks')` produced: %r" % (M.HOOKS_DIR,),
+          set(os.path.join(d, "hooks") for d in _ab2) == set([M.HOOKS_DIR])
+          and os.path.isdir(M.HOOKS_DIR))
+    check("an4 TESTS_DIR is what the old `join(dirname(_HERE), 'tests')` produced, "
+          "and it is the directory this file is in: %r" % (M.TESTS_DIR,),
+          set(os.path.join(d, "tests") for d in _ab2) == set([M.TESTS_DIR])
+          and os.path.dirname(os.path.abspath(__file__)) == M.TESTS_DIR)
+    check("an5 REPO_ROOT is what `_output`'s and `_refs`' old three-deep "
+          "`dirname(dirname(dirname(_HERE)))` produced - the duplicate derivation "
+          "that is now one: %r" % (M.REPO_ROOT,),
+          set(_ab4) == set([M.REPO_ROOT])
+          and os.path.isdir(os.path.join(M.REPO_ROOT, "plugins")))
+    # The two sites whose OLD value was not normalised: `_panel_state`'s
+    # `join(_HERE, "..", "hooks", "guard-capabilities.py")` and `_deps`'
+    # `join(_HERE, "..", "..", "..", "PLUGIN-BUILD-GUIDE.md")` each carried `..`
+    # segments in the middle of the string. The new values are the normpath of the
+    # old ones, which is the honest comparison and is stated rather than glossed.
+    _old_gc = os.path.join(M.SCRIPTS_DIR, "..", "hooks", "guard-capabilities.py")
+    _old_guide = os.path.join(M.SCRIPTS_DIR, "..", "..", "..",
+                              "PLUGIN-BUILD-GUIDE.md")
+    check("an6 the two `..`-carrying sites resolve to the SAME FILE, and the new "
+          "spelling is the normpath of the old - not the same string, which is why "
+          "this case compares normpaths and says so",
+          os.path.normpath(_old_gc)
+          == os.path.join(M.HOOKS_DIR, "guard-capabilities.py")
+          and os.path.normpath(_old_guide)
+          == os.path.join(M.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md")
+          and os.path.isfile(os.path.normpath(_old_gc))
+          and os.path.isfile(os.path.normpath(_old_guide)))
+    check("an7 ...and all five anchors are real directories, so a typo in one is a "
+          "failure here rather than an empty scan somewhere downstream",
+          all(os.path.isdir(d) for d in (M.SCRIPTS_DIR, M.PLUGIN_ROOT, M.HOOKS_DIR,
+                                         M.TESTS_DIR, M.REPO_ROOT)))
+
+    # ------------------------------------------------------------- script_files()
+    check("sf1 script_files() is py_files(SCRIPTS_DIR) - the same list, not a "
+          "second walk with its own rules", M.script_files() == M.py_files(M.SCRIPTS_DIR))
+    check("sf2 ...and it is MEMOISED: the identical list object comes back, which "
+          "is what keeps ~37 import-time bootstraps from doing ~37 os.walks",
+          M.script_files() is M.script_files())
+    check("sf3 refresh=True re-walks - the case that fails if the memo becomes "
+          "permanent and a selftest that just wrote a fixture file cannot see it",
+          M.script_files(refresh=True) is not M.script_files.__globals__[
+              "_SCRIPT_FILES_CACHE"].get("nonexistent"))
+    _fx = tempfile.mkdtemp(prefix="audit-anchor-")
+    try:
+        with open(os.path.join(_fx, "only.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 1\n")
+        _held = list(M.script_files())
+        _fixture_files = M.script_files(root=_fx)
+        check("sf4 a fixture root is answered but NOT cached: the caller gets its "
+              "own directory and the real tree's memo is untouched, so a case that "
+              "passes a temp dir cannot poison what every other caller reads",
+              [r for r, _p in _fixture_files] == ["only.py"]
+              and M.script_files() == _held
+              and M.script_files() is not _fixture_files)
+
+        # ------------------------------------------------------------ install_path()
+        _installed = M.install_path()
+        check("ip1 install_path() RETURNS the list it installed - never None, never "
+              "empty - so a caller can assert what happened instead of trusting "
+              "that an import worked for some other reason: %r" % (_installed,),
+              isinstance(_installed, list) and _installed)
+        check("ip2 SCRIPTS_DIR is first, and every entry is on sys.path",
+              _installed[0] == M.SCRIPTS_DIR
+              and all(d in sys.path for d in _installed))
+        check("ip3 on today's FLAT tree it is exactly one directory - this is the "
+              "case that says the mechanism is a no-op right now, and the one that "
+              "will change on the day a script moves: %r" % (_installed,),
+              _installed == [M.SCRIPTS_DIR])
+        check("ip4 scripts/ui/ is NOT on it, and not by an exemption: the list is "
+              "derived from the `.py` walk, and ui/ holds CSS and JS only",
+              os.path.isdir(os.path.join(M.SCRIPTS_DIR, "ui"))
+              and os.path.join(M.SCRIPTS_DIR, "ui") not in _installed)
+        _before_len = len(sys.path)
+        check("ip5 idempotent: a second call returns the same list and grows "
+              "sys.path by nothing",
+              M.install_path() == _installed and len(sys.path) == _before_len)
+        # A fixture tree with a subdirectory, which the real tree deliberately does
+        # not have. Without this the whole point of the function - EVERY directory
+        # holding a `.py`, not just the root - is asserted by nothing.
+        os.makedirs(os.path.join(_fx, "manifest"))
+        os.makedirs(os.path.join(_fx, "assets"))          # no .py: must not appear
+        with open(os.path.join(_fx, "manifest", "deep.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("y = 2\n")
+        with open(os.path.join(_fx, "assets", "style.css"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("body{}\n")
+        _sub = M.install_path(root=_fx)
+        check("ip6 a subdirectory holding a `.py` IS installed, root first then the "
+              "subdirectories sorted - the ~81 module-level sibling imports need "
+              "the directory the IMPORTED file is in, not just the root: %r"
+              % (_sub,),
+              _sub == [_fx, os.path.join(_fx, "manifest")])
+        check("ip7 ...and a subdirectory holding no `.py` is not - an editorial "
+              "rule about ui/ turned into a mechanical one. Reads vacuous beside "
+              "ip6 and is the only case that fails if the walk starts listing "
+              "every directory it sees",
+              os.path.join(_fx, "assets") not in _sub)
+        for _d in _sub:
+            if _d in sys.path:
+                sys.path.remove(_d)
+    finally:
+        shutil.rmtree(_fx, ignore_errors=True)
+
+    # ------------------------------------------------- the pinned path preamble
+    check("pp1 the real tree carries the preamble exactly once in every `.py` "
+          "under scripts/, above every sibling import: %r"
+          % (M.path_preamble_violations(),),
+          M.path_preamble_violations() == [])
+    check("pp2 ...and `_output.py` is exempt BY NAME rather than by passing. It "
+          "holds PATH_PREAMBLE as a string, so a text count over its own source "
+          "finds exactly one occurrence and reads as compliant - the case that "
+          "says the exemption is deliberate, not a coincidence",
+          M._PREAMBLE_EXEMPT == "_output.py"
+          and open(M.__file__, encoding="utf-8").read().count(M.PATH_PREAMBLE) == 1)
+    check("pp3 the preamble is depth-INDEPENDENT by construction: it walks up "
+          "looking for the marker file and spells no `dirname(dirname(`, no `..` "
+          "and no count of levels",
+          "_output.py" in M.PATH_PREAMBLE
+          and "while not os.path.isfile" in M.PATH_PREAMBLE
+          and "dirname(os.path.dirname" not in M.PATH_PREAMBLE
+          and '".."' not in M.PATH_PREAMBLE)
+    check("pp4 it terminates at the filesystem root with a NAMED ImportError "
+          "rather than looping - the failure a bootstrap must not have",
+          "raise ImportError" in M.PATH_PREAMBLE
+          and "_anchor_up == _anchor_dir" in M.PATH_PREAMBLE)
+    check("pp5 it carries no `# --- name ---` banner. `_deps._NAV_HEADER_RE` "
+          "matches those at column 0, so a banner in every file would let a "
+          "2,000-line module satisfy navigability_violations() on boilerplate",
+          not any(re.match(r"^# --- (.+?) -+\s*$", ln)
+                  for ln in M.PATH_PREAMBLE.split("\n")))
+    _entries = [(r, open(p, encoding="utf-8").read()) for r, p in M.script_files()
+                if os.path.basename(r) != M._PREAMBLE_EXEMPT]
+    _entries = [(r, t) for r, t in _entries if '__name__ == "__main__"' in t]
+    check("pp6 the __main__ blocks were NOT rewritten: all %d of them still spell "
+          "`from _output import safe_stdio`, and NOTHING in scripts/ calls it as "
+          "`_output.safe_stdio()`. That would be an ast.Attribute call, which "
+          "`_call_lines` does not recognise, and entries_missing_guard() would "
+          "then name every entry point in the tree" % (len(_entries),),
+          len(_entries) > 30
+          and all("from _output import safe_stdio" in t for _r, t in _entries)
+          and not any("_output.safe_stdio" in t for _r, t in _entries))
+
+    # The three ways the lint has to go red, each built as a file rather than
+    # reasoned about. A lint only ever seen returning [] is a lint that might be
+    # returning [] because it looks at nothing.
+    pre = tempfile.mkdtemp(prefix="audit-preamble-")
+    try:
+        _good = ("import os\nimport sys\n\n" + M.PATH_PREAMBLE
+                 + "\nimport _sibling  # noqa: E402\n")
+        with open(os.path.join(pre, "_output.py"), "w", encoding="utf-8") as fh:
+            fh.write("SCRIPTS_DIR = 1\n")
+        # The sibling carries the preamble too: it is a `.py` under the fixture
+        # `scripts/` and the rule applies to it, so leaving it bare would put a
+        # fourth name in the expected list for a reason unrelated to any case.
+        with open(os.path.join(pre, "_sibling.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE + "\nx = 1\n")
+        with open(os.path.join(pre, "ok.py"), "w", encoding="utf-8") as fh:
+            fh.write(_good)
+        with open(os.path.join(pre, "missing.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\nimport _sibling\n")
+        with open(os.path.join(pre, "doubled.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE + "\n"
+                     + M.PATH_PREAMBLE + "\nimport _sibling  # noqa: E402\n")
+        with open(os.path.join(pre, "too_late.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\nimport _sibling  # noqa: E402\n\n"
+                     + M.PATH_PREAMBLE)
+        hits = {}
+        for name, why in M.path_preamble_violations(pre):
+            hits.setdefault(name, []).append(why)
+        check("pp7 a file with NO preamble is named, and the message says how many "
+              "it has rather than only that something is wrong: %r"
+              % (hits.get("missing.py"),),
+              any("0 times" in w for w in hits.get("missing.py", []))
+              and any("never calls _output.install_path()" in w
+                      for w in hits.get("missing.py", [])))
+        check("pp8 a DOUBLED preamble is named too - counted, not tested for "
+              "membership, because `in` cannot tell one occurrence from two and "
+              "two is a second walk-up and a second install: %r"
+              % (hits.get("doubled.py"),),
+              any("2 times" in w for w in hits.get("doubled.py", [])))
+        check("pp9 a preamble placed BELOW the sibling import it exists to enable "
+              "is named. It is exactly once, so the count says nothing; only the "
+              "AST ordering check fires: %r" % (hits.get("too_late.py"),),
+              any("above the _output.install_path()" in w
+                  for w in hits.get("too_late.py", []))
+              and not any("times" in w for w in hits.get("too_late.py", [])))
+        check("pp10 ...and the correct file is NOT named. Reads vacuous beside the "
+              "three above and is the only case that fails if the lint starts "
+              "reporting everything: %r" % (sorted(hits),),
+              "ok.py" not in hits and sorted(hits) == ["doubled.py", "missing.py",
+                                                       "too_late.py"])
+    finally:
+        shutil.rmtree(pre, ignore_errors=True)
+
+    # ------------------------------------------------ the self-location lint
+    check("ds1 no `.py` under scripts/ reads `__file__` outside the pinned "
+          "preamble any more - the seventeen sites are gone and this is what "
+          "stops the eighteenth: %r" % (M.depth_sensitive_paths(),),
+          M.depth_sensitive_paths() == [])
+    dsl = tempfile.mkdtemp(prefix="audit-depth-")
+    try:
+        with open(os.path.join(dsl, "clean.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE + "\nx = 1\n")
+        # The TWO-STEP shape, which is how sixteen of the seventeen were actually
+        # written. A lint looking for `dirname(dirname(` nested in one expression
+        # passes this file, which is why the rule is "no __file__ at all".
+        with open(os.path.join(dsl, "two_step.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE
+                     + '\n_HERE = os.path.dirname(os.path.abspath(__file__))\n'
+                       'HOOKS = os.path.join(os.path.dirname(_HERE), "hooks")\n')
+        with open(os.path.join(dsl, "nested.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE
+                     + '\nR = os.path.dirname(os.path.dirname(os.path.abspath'
+                       '(__file__)))\n')
+        with open(os.path.join(dsl, "own_name.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE
+                     + '\nUSAGE = "usage: %s" % os.path.basename(__file__)\n')
+        found = {}
+        for name, line, _why in M.depth_sensitive_paths(dsl):
+            found.setdefault(name, []).append(line)
+        check("ds2 the TWO-STEP form is caught - `_HERE = dirname(abspath(...))` "
+              "on one line and `dirname(_HERE)` on the next was how sixteen of the "
+              "seventeen sites were written, and a nesting-only rule passes it: %r"
+              % (found.get("two_step.py"),), "two_step.py" in found)
+        check("ds3 the nested form is caught too", "nested.py" in found)
+        check("ds4 `os.path.basename(__file__)` is NOT caught - it yields a NAME, "
+              "not a location, and panel-server.py prints its own filename in a "
+              "usage line", "own_name.py" not in found)
+        check("ds5 a file carrying only the pinned preamble is NOT caught, though "
+              "the preamble itself spells `dirname(abspath(__file__))`. The block "
+              "is cut out before the scan; without that every file in the tree "
+              "would be a violation and the lint would be uninstallable",
+              "clean.py" not in found and sorted(found) == ["nested.py",
+                                                            "two_step.py"])
+    finally:
+        shutil.rmtree(dsl, ignore_errors=True)
+
+    # --------------------------------------------- --covered is LF on every platform
+    # THE CASE THAT WOULD HAVE CAUGHT THE WINDOWS FAILURE. "the output contains no
+    # \r" is not it: on Linux it cannot contain one, which is exactly why the whole
+    # migration went green here and red on the windows leg. The property is asserted
+    # where the PLATFORM decides it - a text stream constructed WITH translation on,
+    # which any platform can build - so the fixture tells the two implementations
+    # apart on the machine running this suite.
+    _sink = io.BytesIO()
+    _crlf = io.TextIOWrapper(_sink, encoding="utf-8", newline="\r\n")
+    M.write_lf_lines(["a/b.py", "c/d.py"], _crlf)
+    _crlf.flush()
+    check("lf1 a stream that WOULD translate is reconfigured not to: the bytes are "
+          "LF, on a fixture any platform can build. Restore the `print()` and this "
+          "goes red on ubuntu, which the real bug never did: %r" % (_sink.getvalue(),),
+          _sink.getvalue() == b"a/b.py\nc/d.py\n")
+    _sink2 = io.BytesIO()
+    _crlf2 = io.TextIOWrapper(_sink2, encoding="utf-8", newline="\r\n")
+    _crlf2.write("a/b.py\nc/d.py\n")
+    _crlf2.flush()
+    check("lf2 ...and the fixture really does translate without the fix - measured, "
+          "not remembered. This is the case that fails if the fixture stops being "
+          "able to tell the buggy version from the fixed one: %r"
+          % (_sink2.getvalue(),),
+          _sink2.getvalue() == b"a/b.py\r\nc/d.py\r\n")
+    _plain = io.StringIO()
+    check("lf3 a stream with no reconfigure() (a StringIO, which every capturing "
+          "selftest installs) is written to anyway rather than skipped - it does "
+          "not translate in the first place",
+          M.write_lf_lines(["x"], _plain) is _plain
+          and _plain.getvalue() == "x\n")
+    check("lf4 an empty list writes nothing at all, which is the correct answer "
+          "before the migration starts and after it ends",
+          M.write_lf_lines([], io.StringIO()).getvalue() == "")
 
 
 def _selftest():

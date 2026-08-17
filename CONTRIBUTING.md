@@ -84,6 +84,26 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   holds ordered parts of one assembled artifact rather than standalone files, and
   `_panel_ui.py` and `_report_ui.py` each carry a selftest pinning it as
   containing no `.py`.
+- **The bootstrap that makes a subdirectory actually runnable.** `sys.path[0]` is
+  the running script's own directory, so a file at `scripts/<area>/<name>.py`
+  executed directly — which is exactly what CI does — used to die on
+  `from _output import safe_stdio` before anything ran. Every `.py` under
+  `scripts/` except `_output.py` now carries `_output.PATH_PREAMBLE` byte for
+  byte: it walks UP to the directory holding `_output.py` (no `dirname(dirname(`,
+  no magic constant, a named `ImportError` at the filesystem root), then calls
+  `_output.install_path()`, which puts `scripts/` **and every subdirectory of it
+  holding a `.py`** on the path — the root alone is not enough, because ~81
+  module-level sibling imports need the directory the IMPORTED file sits in.
+  `path_preamble_violations()` counts occurrences (a doubled preamble is as wrong
+  as a missing one) and AST-checks that `install_path()` runs above the first
+  sibling import. `depth_sensitive_paths()` then forbids any other read of
+  `__file__` under `scripts/`, so the seventeen sites that used to derive a parent
+  directory from their own location cannot come back. The directories to reach for
+  instead are `_output.SCRIPTS_DIR` / `PLUGIN_ROOT` / `HOOKS_DIR` / `TESTS_DIR` /
+  `REPO_ROOT`. `hooks/` is outside all of it — hooks may import nothing from
+  `scripts/`, so they resolve a scripts file by basename through
+  `hooks/_config.find_script()`, and `tests/test__config.py` pins that third copy
+  against `_output.script_files()` by reading both rather than merging them.
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
 - Every command that mutates the manifest must revalidate

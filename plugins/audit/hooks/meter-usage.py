@@ -66,16 +66,25 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
 
-_SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "scripts")
-
-
 # --- loading ------------------------------------------------------------------
 def _load_ledger_lib():
-    """Load scripts/usage_ledger.py by path — the scripts dir is not a package,
-    and this mirrors how the other cross-module loads in this plugin work."""
-    spec = importlib.util.spec_from_file_location(
-        "usage_ledger", os.path.join(_SCRIPTS, "usage_ledger.py"))
+    """Load `usage_ledger.py` by path, wherever it sits under `scripts/`.
+
+    THE DIRECTORY IS NOT SPELLED HERE ANY MORE. It was
+    `join(dirname(dirname(__file__)), "scripts")` plus a flat join with the
+    filename, which is this hook's own depth AND the assumption that `scripts/` is
+    flat, written down twice. `_config.find_script()` is the one resolver on this
+    side of the layer wall — `hooks/` may not import `scripts/`, so `_output`'s
+    anchors are out of reach, and one copy in `hooks/` is the fewest there can be.
+    `_config` is already a hard module-level dependency of this file, so leaning on
+    it adds no failure mode.
+
+    A missing file raises here rather than returning None, which is the existing
+    contract: `meter()` calls this only after `usage_enabled(cfg)` says the feature
+    is on, and a ledger that is switched on but unloadable is worth a traceback.
+    """
+    path = _config.find_script("usage_ledger.py")
+    spec = importlib.util.spec_from_file_location("usage_ledger", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

@@ -317,6 +317,18 @@ rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
 Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selftest`.
 
+`find_script(filename)` is the hooks-side resolver: `filename` **anywhere** under
+`../scripts`, recursively, by basename — the folders there are labels, not namespaces, and
+a flat join is right only while the tree is flat. It is the third derivation of "where is
+`scripts/`" and it is irreducible, because `hooks/` may import nothing from `scripts/` and
+so cannot read `_output.SCRIPTS_DIR`; `tests/test__config.py`'s `fs1`–`fs5` hold it true by
+READING both answers and comparing them, the way the pricing-table pair is held.
+`hooks/meter-usage.py` calls it rather than keeping a second copy. Getting it wrong is the
+most dangerous edit in this file: `_load_scripts_module` wraps its load in
+`except Exception: return None` and every caller reads that as "the feature is not
+installed", so a wrong path silently switches off the capability policy, the journal, the
+ledger and the sharded-manifest read with every gate still green.
+
 ### `plugins/audit/hooks/require-plan.py`
 Plan-first gate on Edit/Write/MultiEdit/NotebookEdit, registered under BOTH PreToolUse and
 PostToolUse. ALLOW/BLOCK order: unknown tool/no path → allow; exempt glob (config) → allow;
@@ -466,6 +478,45 @@ raises instead of printing). Every `scripts/` entry point calls it as its first 
 enforced rather than remembered — `entries_missing_guard()` reads the directory and names any
 `__main__` block that skips it. `hooks/` deliberately does not import this module: its only
 output is `json.dumps` (ASCII by construction) plus its own selftest.
+
+It is also **the anchor**, and that is why it is the one file that never moves.
+`SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR` and `REPO_ROOT` are the single
+written-down statement of where the tree's directories are; seventeen sites used to derive
+a parent from their own `__file__` and none does now. `script_files()` is `py_files()` over
+`scripts/`, walked once per process and memoised (only for the default root, so a fixture
+directory can neither poison nor read the cache). `install_path()` puts `scripts/` **and
+every subdirectory of it holding a `.py`** on `sys.path`, front, root first, and **returns
+the list it installed** — never None, never empty — so a caller can assert what happened
+instead of trusting that an import worked. `scripts/ui/` drops out on its own because it
+holds no `.py`, which turns an editorial rule into a mechanical one.
+
+**`PATH_PREAMBLE` is the eleven lines every other `.py` under `scripts/` carries**, byte
+for byte, after the stdlib imports and above the first sibling import. It walks UP until it
+finds the directory containing `_output.py`, so it encodes no depth and terminates at the
+filesystem root with a named `ImportError` rather than looping; then it imports `_output`
+and calls `install_path()`. `path_preamble_violations()` COUNTS occurrences rather than
+testing membership (a doubled preamble is as wrong as a missing one) and AST-checks that
+`install_path()` runs above the first sibling import — a preamble below the imports it
+exists to enable is decoration. `_output.py` is exempt by name, for two reasons: it *is*
+the marker, and it holds `PATH_PREAMBLE` as a string, so a text count over its own source
+would read as compliant.
+
+The consequence worth stating out loud: **the folders under `scripts/` are labels, not
+namespaces.** Everything stays in one flat name-space, `import` and `_loader.load_script()`
+both resolve by bare basename, and basename uniqueness — enforced by
+`_deps.layer_violations()` — is the load-bearing invariant. `depth_sensitive_paths()` is
+what keeps it that way: no `.py` under `scripts/` may read `__file__` outside the pinned
+preamble, except as `os.path.basename(__file__)`, which yields a name and not a location.
+The rule is deliberately stronger than "no parent of `__file__`" — sixteen of the
+seventeen old sites were written as a two-step (`_HERE = dirname(abspath(__file__))`, then
+`dirname(_HERE)` far below), which any nesting-only rule waves through.
+
+`--covered` writes through `write_lf_lines()` rather than `print()`. A machine-readable
+list is not platform-dependent data: `print()` emits CRLF on Windows, CI's
+`--covered | tr '\n' ' '` then leaves a `\r` glued to every path, its membership test
+matches nothing, every migrated file gets run anyway, and the first one fails for printing
+its "cases moved" pointer instead of the contract — green on ubuntu, red on windows, for a
+defect in neither.
 
 ### `plugins/audit/scripts/_fmt.py`
 The one token/cost/count formatter, unifying three copies that had drifted (`audit-usage.py`,

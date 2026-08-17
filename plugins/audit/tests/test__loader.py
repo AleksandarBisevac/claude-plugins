@@ -31,9 +31,23 @@ from _output import safe_stdio                     # noqa: E402
 import _loader as M                                # noqa: E402
 
 
+# --- helpers ------------------------------------------------------------------
+def _raises_with(fn, *args):
+    """True when `fn(*args)` raises AND the message names the path it tried.
+
+    Two halves on purpose: "it raised" alone would pass on a bare
+    `raise ImportError("nope")`, which is the version of this that sends the
+    reader hunting instead of to the file."""
+    try:
+        fn(*args)
+    except Exception as exc:                                  # noqa: BLE001
+        return args[0] in str(exc)
+    return False
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    here = M._HERE
+    here = M._output.SCRIPTS_DIR
 
     # 1. loading a real sibling returns a module carrying a known attribute.
     mod = M.load(os.path.join(here, "_ui_theme.py"), cache=False)
@@ -82,6 +96,34 @@ def _cases(check):
     hc = M.load_hooks_config()
     check("load_hooks_config(): resolves ../hooks/_config.py (has DEFAULTS)",
           hasattr(hc, "DEFAULTS"))
+
+    # 7b. load_script resolves BY BASENAME off the one recursive walk, not by
+    # joining the scripts root. The two are the same string today - the tree is
+    # flat - so the check is WHICH LIST the answer came from: every basename
+    # `_output.script_files()` knows must resolve, and to that walk's own path.
+    # Joining the root would keep passing here and would fail silently the day a
+    # file moves, which is the whole failure this indirection exists to remove.
+    _walked = dict((os.path.basename(_r), _p) for _r, _p in M._output.script_files())
+    _resolved = M.load_script("_ui_theme.py", modname="loader_basename_probe",
+                              cache=False).__file__
+    check("load_script(): the file it loaded is the one the recursive walk names, "
+          "not a path built by joining the scripts root: %r" % (_resolved,),
+          os.path.realpath(_resolved)
+          == os.path.realpath(_walked["_ui_theme.py"]))
+    check("load_script(): a basename the walk does not know falls through to "
+          "SCRIPTS_DIR and raises `load()`'s own error, which NAMES the path it "
+          "tried - the message somebody debugging a missing file needs",
+          _raises_with(M.load_script, "no-such-sibling-xyz.py"))
+
+    # 7c. load_hooks_config takes the hooks directory from the one anchor. On a
+    # flat tree that is the same string the old `join(dirname(_HERE), "hooks")`
+    # produced, and this is the case that says so rather than assuming it.
+    check("load_hooks_config(): _output.HOOKS_DIR is what the old "
+          "`join(dirname(dirname(abspath(__file__))), 'hooks')` produced",
+          M._output.HOOKS_DIR
+          == os.path.join(os.path.dirname(os.path.dirname(
+              os.path.abspath(M.__file__))), "hooks")
+          and os.path.isfile(os.path.join(M._output.HOOKS_DIR, "_config.py")))
 
     # 8. a file that raises at exec time propagates, and does not poison the cache.
     tmp_dir = tempfile.mkdtemp(prefix="loader-selftest-")

@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 """
-Terminal output that cannot be killed by a character it cannot spell — stdlib only.
+Terminal output that cannot be killed by a character it cannot spell, and the anchor
+every other script finds itself by — stdlib only.
+
+TWO JOBS, AND THE SECOND ONE IS WHY THIS FILE NEVER MOVES. `safe_stdio()` is the
+first and the older one. The second is the path bootstrap: `SCRIPTS_DIR` and its
+four companions below are the one written-down statement of where the tree's
+directories are, `install_path()` puts `scripts/` AND every subdirectory of it
+holding a `.py` on `sys.path`, and `PATH_PREAMBLE` is the eleven lines every other
+`.py` here carries to reach this module without knowing how deep it sits.
+`path_preamble_violations()` counts them. The consequence is worth stating where the
+mechanism lives: the folders under `scripts/` are LABELS, NOT NAMESPACES — every
+module is still reached by a bare basename, and basename uniqueness (enforced by
+`_deps.layer_violations()`) is what holds the whole arrangement up.
 
 Python does not degrade an unprintable character; it raises. When stdout is a PIPE on
 Windows, its encoding is the machine's legacy code page (cp1252 on a US/EU runner), and
@@ -45,7 +57,21 @@ import ast
 import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# --- the anchors ----------------------------------------------------------------
+# THIS FILE IS THE MARKER, WHICH IS WHY IT IS THE ONE THAT NEVER MOVES. Every other
+# `.py` under `scripts/` finds this directory by walking UP from its own `__file__`
+# until it sees `_output.py` — the preamble `PATH_PREAMBLE` pins and
+# `path_preamble_violations()` counts — so these five names are the ONE place the
+# tree's shape is written down. A `dirname(dirname(...))` anywhere else is that
+# file's own depth, hard-coded, and it is wrong the moment the file is moved.
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# scripts -> audit. `hooks/`, `tests/`, `commands/`, `agents/`, `schema/` and
+# `.claude-plugin/plugin.json` all hang off this one; six files derived it for
+# themselves before, each spelling its own distance from the plugin root.
+PLUGIN_ROOT = os.path.dirname(SCRIPTS_DIR)
+
+HOOKS_DIR = os.path.join(PLUGIN_ROOT, "hooks")
 
 # `tests/` is a sibling of scripts/ and hooks/, not a subdirectory of either, so no
 # existing walk reaches it and every lint that should cover it has to say so. The
@@ -53,11 +79,13 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # apply to tests too (`house_style_violations`, `entries_missing_guard`), because a
 # test written with `typing` or a walrus is exactly as unrunnable on 3.8 as a script
 # written that way, and a test that crashes on a cp1252 stream hides its own result.
-_TESTS_DIR = os.path.join(os.path.dirname(_HERE), "tests")
+TESTS_DIR = os.path.join(PLUGIN_ROOT, "tests")
 
-# scripts -> audit -> plugins -> the repo root. Only `covered_repo_paths()` needs it,
-# and it needs it because CI's sweep speaks repo-relative paths.
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))
+# audit -> plugins -> the repo root. `covered_repo_paths()` needs it because CI's
+# sweep speaks repo-relative paths, and `_refs` needs it because every `rel` it
+# produces already starts with `plugins/audit/`. Both used to derive it separately,
+# from their own `__file__`, which is two answers to a question with one.
+REPO_ROOT = os.path.dirname(os.path.dirname(PLUGIN_ROOT))
 
 
 # --- safe stdio ---------------------------------------------------------------
@@ -112,6 +140,319 @@ def py_files(directory):
             found.append((rel, path))
     found.sort()
     return found
+
+
+# --- the path bootstrap -------------------------------------------------------
+# Two memos, keyed by a fixed string rather than by the root, because ONLY the
+# default root is ever cached: a caller handing in a fixture directory must not be
+# able to poison what the real tree sees, nor to read a cached answer about a
+# directory it never asked about. `_loader._CACHE` is the precedent for a module
+# memo here; the rule against module STATE is about values a function writes that
+# another function then reads as input, which neither of these is.
+_SCRIPT_FILES_CACHE = {}
+_INSTALLED_CACHE = {}
+
+_CACHE_KEY = "default root"
+
+
+def script_files(refresh=False, root=None):
+    """`py_files(SCRIPTS_DIR)`, walked ONCE per process and memoised.
+
+    Every `.py` under `scripts/` runs this walk at import time through the path
+    preamble, so on a run that imports twenty modules the difference between
+    memoised and not is twenty `os.walk`s of the same directory. `refresh=True` is
+    for the one caller that has just written or deleted a file and needs the walk
+    redone — every selftest that builds a fixture tree does.
+
+    `root` is a TEST SEAM and is deliberately NOT cached: a fixture directory must
+    neither poison the real tree's memo nor read it. Pass it and you get a fresh
+    `py_files` every time, which is what a case mutating a temp directory needs
+    anyway.
+    """
+    if root is not None:
+        return py_files(root)
+    if refresh or _CACHE_KEY not in _SCRIPT_FILES_CACHE:
+        _SCRIPT_FILES_CACHE[_CACHE_KEY] = py_files(SCRIPTS_DIR)
+    return _SCRIPT_FILES_CACHE[_CACHE_KEY]
+
+
+def _py_dirs(root, refresh):
+    """`[root] + every subdirectory of it holding a `.py``, root first, rest sorted.
+
+    Derived from the walk rather than from a listing, which is what makes
+    `scripts/ui/` drop out on its own: it holds CSS and JS and no `.py`, so no file
+    in it contributes a directory. An editorial rule ("do not put `ui/` on the
+    path") becomes a mechanical one, and the day somebody adds a `.py` there it
+    joins the path because it earned it, not because a constant was updated.
+    """
+    base = os.path.abspath(root if root is not None else SCRIPTS_DIR)
+    subs = set(os.path.dirname(os.path.abspath(path))
+               for _rel, path in script_files(refresh=refresh, root=root))
+    subs.discard(base)
+    return [base] + sorted(subs)
+
+
+def install_path(refresh=False, root=None):
+    """Put `SCRIPTS_DIR` and every subdirectory of it holding a `.py` on `sys.path`.
+
+    THE ROOT ALONE IS NOT ENOUGH, and that is the whole reason this is a function
+    rather than one `sys.path.insert`. There are ~81 module-level sibling imports in
+    this tree. Put `_areas.py` in a `manifest/` folder and `_help.py` in a `config/`
+    one, and `_help`'s `import _areas` needs `scripts/manifest/` on the path — not
+    `scripts/`. So every directory that holds a `.py` goes on, which is exactly what
+    makes the folders LABELS AND NOT NAMESPACES: one flat name-space, every module
+    reached by bare basename, and `_deps.layer_violations()`' basename-uniqueness
+    rule doing the load-bearing work.
+
+    RETURNS THE LIST IT INSTALLED — never None, never empty, and the same list on
+    every call. A caller that wants to know the bootstrap ran can assert on that
+    instead of asserting that some import happened to work, which is a thing that
+    can be true for reasons having nothing to do with this function.
+
+    Idempotent: a directory already on `sys.path` is left where it is rather than
+    inserted a second time. Order on a fresh path is root first, then the
+    subdirectories sorted — inserting in reverse at the front is what produces it.
+    """
+    cached = root is None and not refresh and _CACHE_KEY in _INSTALLED_CACHE
+    dirs = _INSTALLED_CACHE[_CACHE_KEY] if cached else _py_dirs(root, refresh)
+    if root is None:
+        _INSTALLED_CACHE[_CACHE_KEY] = dirs
+    for directory in reversed(dirs):
+        if directory not in sys.path:
+            sys.path.insert(0, directory)
+    return dirs
+
+
+# --- the pinned preamble ------------------------------------------------------
+# The name of this module, spelled once. The preamble searches for the FILE and the
+# lint looks for calls on the MODULE, and those two spellings drifting apart is the
+# kind of thing that turns a lint into decoration.
+_ANCHOR_MODULE = "_output"
+
+# THE ONE FILE THAT MUST NOT CARRY THE PREAMBLE, EXEMPTED BY NAME. Two reasons, and
+# the second is the one that would have bitten silently: this module IS the marker
+# the preamble walks up to find, so a copy here would be a bootstrap searching for
+# itself; and this module holds `PATH_PREAMBLE` as a string, so a text count over
+# its own source finds exactly one occurrence and would read as COMPLIANT. That is
+# the same self-matching trap `_harness`' m1 needle and `_refs`' fixture constants
+# each document — a scanner that lives in the tree it scans must not plant its own
+# needle there.
+_PREAMBLE_EXEMPT = "_output.py"
+
+# Byte-identical in every `.py` under `scripts/` except this one, placed after the
+# stdlib imports and above the first sibling import. Three things it deliberately
+# does NOT do, each already known to break something here:
+#
+#   * it does not touch the `__main__` blocks. `from _output import safe_stdio`
+#     stays exactly as it is: rewritten to `_output.safe_stdio()` it becomes an
+#     `ast.Attribute` call, which `entries_missing_guard`'s `_call_lines` does not
+#     recognise, and every entry point in the tree would be reported as unguarded.
+#   * it carries no `# --- name ---` banner. `_deps._NAV_HEADER_RE` matches those at
+#     column 0, so a banner in every file would let a 2,000-line module satisfy
+#     `navigability_violations()` on boilerplate.
+#   * it adds no graph edge. Every one of these files already reaches `_output`
+#     through the `from _output import safe_stdio` in its `__main__`, which
+#     `_deps._imported_sibling_names` counts — the fence draws `_areas -> _output`
+#     although `_areas.py` had no module-level import of it. `--render`'s output is
+#     therefore byte-identical across this change, and that was verified, not
+#     assumed.
+PATH_PREAMBLE = '''\
+# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
+# `_output.path_preamble_violations()`. It walks UP to the directory holding
+# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
+# this file sits and keeps working if the file is moved into a subdirectory.
+# `install_path()` then adds that directory AND every subdirectory of it holding a
+# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
+# reached by a bare basename.
+_anchor_dir = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_dir)
+    if _anchor_up == _anchor_dir:
+        raise ImportError("audit plugin: walked to the filesystem root from %s "
+                          "without finding _output.py - the scripts/ anchor is "
+                          "gone and no sibling can be imported" % (__file__,))
+    _anchor_dir = _anchor_up
+if _anchor_dir not in sys.path:
+    sys.path.insert(0, _anchor_dir)
+
+import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+
+_output.install_path()
+'''
+
+
+def _install_path_line(tree):
+    """Line of the module-level `_output.install_path()` statement, or None.
+
+    Module level via `_straight_line`, which stops at every `def` boundary: a call
+    buried in a function is a plan to bootstrap later, and later is after the sibling
+    imports it was supposed to enable.
+    """
+    for stmt in _straight_line(tree.body):
+        if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+            continue
+        func = stmt.value.func
+        if (isinstance(func, ast.Attribute) and func.attr == "install_path"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == _ANCHOR_MODULE):
+            return stmt.lineno
+    return None
+
+
+def _first_sibling_import_line(tree, sibling_names):
+    """Lowest line number at which `tree` imports a scripts/ sibling, or None.
+
+    `_output` itself does not count — the preamble's own `import _output` is the
+    line that makes every other import possible, so counting it would report every
+    correctly-written file. Anywhere in the tree, not only module level: an import
+    fifty lines inside a function still has to sit below the bootstrap textually,
+    and every file here puts the preamble at the top, so a whole-tree scan is
+    strictly the safer reading.
+
+    `_deps._imported_sibling_names` walks the same node shapes and cannot be shared:
+    `_deps` imports THIS module, not the other way round, so the layer rule forbids
+    the edge that would let this call it. Different questions in any case — that one
+    returns the names for the graph, this one returns a line number for an ordering.
+    """
+    lines = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            bases = [alias.name.split(".")[0] for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            bases = [(node.module or "").split(".")[0]]
+        else:
+            continue
+        for base in bases:
+            if base in sibling_names and base != _ANCHOR_MODULE:
+                lines.append(node.lineno)
+    return min(lines) if lines else None
+
+
+def path_preamble_violations(script_dir=None):
+    """(relname, problem) for every `.py` under `scripts/` whose bootstrap is wrong.
+
+    Three ways to be wrong, and the second and third are the reason this is not one
+    `if PATH_PREAMBLE in src`:
+
+      * NOT EXACTLY ONCE. Counted, not tested for membership — a doubled preamble is
+        as wrong as a missing one (it is a second `install_path()` call and a second
+        walk-up under two more leaked names), and `in` cannot tell one from two.
+      * NO `install_path()` CALL AT MODULE LEVEL. A file could carry the text inside
+        a docstring and satisfy a text count; this is read off the AST.
+      * A SIBLING IMPORT ABOVE THE CALL. A preamble pasted below the imports it
+        exists to enable is decoration: those imports resolved for some other
+        reason, and the day that reason goes away the file breaks with the bootstrap
+        sitting right there looking correct.
+
+    `_output.py` is exempt BY NAME — see `_PREAMBLE_EXEMPT` for the two reasons,
+    one of which is that a naive count over this file's own source reads as
+    compliant.
+
+    A file that cannot be read or parsed is a violation rather than a skip, the same
+    rule `entries_missing_guard` and `house_style_violations` follow.
+    """
+    files = py_files(script_dir) if script_dir is not None else script_files()
+    sibling_names = set(os.path.basename(rel)[:-3] for rel, _path in files)
+    violations = []
+    for rel, path in files:
+        if os.path.basename(rel) == _PREAMBLE_EXEMPT:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                src = fh.read()
+            tree = ast.parse(src, filename=rel)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            violations.append((rel, "cannot be read or parsed: %s" % exc))
+            continue
+        found = src.count(PATH_PREAMBLE)
+        if found != 1:
+            violations.append((rel, "carries the pinned path preamble %d times, "
+                                    "not once" % found))
+        installed = _install_path_line(tree)
+        first_sibling = _first_sibling_import_line(tree, sibling_names)
+        if installed is None:
+            violations.append((rel, "never calls %s.install_path() at module level"
+                                    % _ANCHOR_MODULE))
+        elif first_sibling is not None and first_sibling < installed:
+            violations.append((rel, "imports a sibling on line %d, above the "
+                                    "%s.install_path() on line %d - a bootstrap "
+                                    "below the imports it exists to enable is "
+                                    "decoration" % (first_sibling, _ANCHOR_MODULE,
+                                                    installed)))
+    return violations
+
+
+# --- self-location lint -------------------------------------------------------
+# `os.path.basename(__file__)` yields a NAME, not a location: `panel-server.py`
+# prints its own filename in a usage line, which is depth-independent and stays
+# legal. Every other read of `__file__` computes WHERE the file is, which is the
+# thing this forbids.
+_SELF_LOCATION_ALLOWED = "basename"
+
+
+def _self_location_lines(tree):
+    """Lines where `__file__` is read for anything but `os.path.basename(...)`."""
+    named = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or len(node.args) != 1:
+            continue
+        func = node.func
+        arg = node.args[0]
+        if (isinstance(func, ast.Attribute) and func.attr == _SELF_LOCATION_ALLOWED
+                and isinstance(arg, ast.Name) and arg.id == "__file__"):
+            named.add(id(arg))
+    return sorted(node.lineno for node in ast.walk(tree)
+                  if isinstance(node, ast.Name) and node.id == "__file__"
+                  and id(node) not in named)
+
+
+def depth_sensitive_paths(script_dir=None):
+    """(relname, line, what) for a `.py` under `scripts/` that locates ITSELF.
+
+    THE RULE IS "NO `__file__` AT ALL", NOT "NO PARENT OF `__file__`", and the
+    stronger form is the only one that works. The seventeen sites this replaced
+    were almost all written in TWO steps —
+    `_HERE = os.path.dirname(os.path.abspath(__file__))` on one line and
+    `os.path.join(os.path.dirname(_HERE), "hooks")` two hundred lines later — so a
+    lint that only looked for `dirname(dirname(...))` nested in ONE expression
+    would have passed every single one of them. Once the two-step is legal there
+    is no version of "one level is fine" that a lint can hold.
+
+    What makes the strong form affordable is that the pinned preamble carries the
+    ONLY `os.path.dirname(os.path.abspath(__file__))` left in the tree, and it is
+    cut out before the scan — replaced by blank lines rather than deleted, so a
+    violation still reports the line number the reader will open. Anything a file
+    genuinely needs is on `_output`: `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`,
+    `TESTS_DIR`, `REPO_ROOT`.
+
+    `hooks/` IS NOT SCANNED. Hooks may not import `scripts/` (`_deps` r5/r6), so
+    the anchors are out of their reach by design and `hooks/_config.find_script()`
+    has to derive the directory from its own `__file__`. Reporting that would be
+    demanding a fix the layer rule forbids — the same reason `redundant_constants`
+    stops at a directory boundary.
+
+    `_output.py` is exempt for the two reasons `_PREAMBLE_EXEMPT` records: it holds
+    `PATH_PREAMBLE` as a string, and it is the file the anchors are defined in.
+    """
+    files = py_files(script_dir) if script_dir is not None else script_files()
+    blanked = "\n" * PATH_PREAMBLE.count("\n")
+    violations = []
+    for rel, path in files:
+        if os.path.basename(rel) == _PREAMBLE_EXEMPT:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                src = fh.read()
+            tree = ast.parse(src.replace(PATH_PREAMBLE, blanked), filename=rel)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            violations.append((rel, 0, "cannot be read or parsed: %s" % exc))
+            continue
+        for line in _self_location_lines(tree):
+            violations.append((rel, line,
+                               "reads __file__ outside the pinned preamble - a file "
+                               "that locates itself carries its own depth; take the "
+                               "directory from _output's anchors instead"))
+    return violations
 
 
 # --- entry-point guard check --------------------------------------------------
@@ -176,7 +517,7 @@ def entries_missing_guard(dirs=None):
     `safe_stdio()` call. A file that cannot be parsed is reported rather than skipped,
     since a syntax error is a worse thing to pass over in silence.
     """
-    dirs = dirs if dirs is not None else (_HERE, _TESTS_DIR)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, TESTS_DIR)
     missing = []
     for d in dirs:
         for name, path in py_files(d):
@@ -198,8 +539,6 @@ def entries_missing_guard(dirs=None):
 
 
 # --- house-style AST checks ---------------------------------------------------
-_HOOKS_DIR = os.path.join(os.path.dirname(_HERE), "hooks")
-
 # The four bans: legal Python 3.8, illegal in this repo, and none of them caught by a
 # version gate (vermin flags syntax the interpreter cannot run at all — every one of
 # these runs fine on 3.8, it is just not this repo's style). Named here once so the
@@ -248,7 +587,7 @@ def house_style_violations(dirs=None):
     violation costs most: the suite that would have caught the regression is itself
     the thing that will not start.
     """
-    dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR, _TESTS_DIR)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR)
     violations = []
     for d in dirs:
         for name, path in py_files(d):
@@ -331,7 +670,7 @@ def redundant_constants(dirs=None):
     two homes. Widening it here would produce a stream of reports whose correct answer
     is "no", which is how a lint stops being read.
     """
-    dirs = dirs if dirs is not None else (_HERE, _HOOKS_DIR)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR)
     violations = []
     for d in dirs:
         declared = {}
@@ -494,9 +833,9 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     production file under `covered`, and the case that pins the `covered` list is the
     one that had to be edited to say so.
     """
-    script_dir = script_dir or _HERE
-    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
-    tests_dir = tests_dir if tests_dir is not None else _TESTS_DIR
+    script_dir = script_dir or SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else HOOKS_DIR
+    tests_dir = tests_dir if tests_dir is not None else TESTS_DIR
 
     test_files = set(rel for rel, _path in py_files(tests_dir)
                      if os.path.basename(rel).startswith(_TEST_PREFIX))
@@ -548,10 +887,40 @@ def covered_repo_paths(repo_root=None):
     the same function that reports `neither`, rather than re-derived in shell, so the
     sweep cannot skip a file this lint has not accounted for.
     """
-    root = repo_root if repo_root is not None else _REPO_ROOT
-    plugin_dir = os.path.dirname(_HERE)
-    return [os.path.relpath(os.path.join(plugin_dir, rel), root).replace(os.sep, "/")
+    root = repo_root if repo_root is not None else REPO_ROOT
+    return [os.path.relpath(os.path.join(PLUGIN_ROOT, rel), root).replace(os.sep, "/")
             for rel in selftest_coverage()["covered"]]
+
+
+def write_lf_lines(lines, stream=None):
+    """Write each of `lines` followed by ONE `\\n` byte, on every platform.
+
+    `print()` was here, and `print()` on Windows emits `\\r\\n`: a text stream
+    translates, so `--covered` was not a list of paths, it was a list of paths in the
+    local line-ending dialect. CI pipes that through `tr '\\n' ' '`, which leaves a
+    `\\r` glued to every path, so the membership test
+    `case " $covered " in *" $f "*` matched nothing, every migrated file was run
+    anyway, and the first of them printed its "cases moved to tests/" pointer instead
+    of the contract. Green on ubuntu, red on windows, for a defect in neither.
+
+    A MACHINE-READABLE LIST IS NOT PLATFORM-DEPENDENT DATA. The fix belongs at the
+    producer, not in each consumer's `tr -d '\\r'`: `reconfigure(newline="")` turns
+    the translation off for this write only. `safe_stdio()` is deliberately left
+    alone — it runs in every script in the tree and changing what they all print to
+    fix one flag's output would be a much larger blast radius than the bug.
+
+    A stream with no `reconfigure` (a `StringIO`, which is what a selftest capture
+    installs) does not translate in the first place, so the failure to reconfigure it
+    is not a failure at all. Returns the stream it wrote to, so a case can inspect
+    what actually happened rather than trust that something did.
+    """
+    out = stream if stream is not None else sys.stdout
+    try:
+        out.reconfigure(newline="")
+    except (AttributeError, ValueError, OSError):
+        pass
+    out.write("".join("%s\n" % line for line in lines))
+    return out
 
 
 if __name__ == "__main__":
@@ -572,8 +941,10 @@ if __name__ == "__main__":
         # re-implemented in shell. Empty output is the correct answer before the
         # migration starts and after it ends for opposite reasons; `--selftest`'s
         # sc10/sc11 are what tell those two apart, not this flag.
-        for _rel in covered_repo_paths():
-            print(_rel)
+        #
+        # `write_lf_lines`, not `print`: this is machine-readable output and it is
+        # LF on every platform. See that function for the Windows failure it fixes.
+        write_lf_lines(covered_repo_paths())
         raise SystemExit(0)
     sys.stderr.write("usage: _output.py --selftest | --covered\n")
     raise SystemExit(2)

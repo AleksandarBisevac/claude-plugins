@@ -85,16 +85,27 @@ import os
 import re
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_HOOKS_DIR = os.path.join(os.path.dirname(_HERE), "hooks")
-_TESTS_DIR = os.path.join(os.path.dirname(_HERE), "tests")
+# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
+# `_output.path_preamble_violations()`. It walks UP to the directory holding
+# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
+# this file sits and keeps working if the file is moved into a subdirectory.
+# `install_path()` then adds that directory AND every subdirectory of it holding a
+# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
+# reached by a bare basename.
+_anchor_dir = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_dir)
+    if _anchor_up == _anchor_dir:
+        raise ImportError("audit plugin: walked to the filesystem root from %s "
+                          "without finding _output.py - the scripts/ anchor is "
+                          "gone and no sibling can be imported" % (__file__,))
+    _anchor_dir = _anchor_up
+if _anchor_dir not in sys.path:
+    sys.path.insert(0, _anchor_dir)
 
-# Run as a command, `sys.path[0]` is already this directory; imported from anywhere else
-# it is not. The same two-line preamble `_help.py` and `_panel_state.py` carry, for the
-# same reason - and `_output` was already an edge of this module (the `safe_stdio` import
-# in `__main__` below), so hoisting it to module level adds no new one.
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+
+_output.install_path()
 
 import _output  # noqa: E402  (py_files: the ONE recursive `.py` walk, shared not copied)
 
@@ -307,7 +318,7 @@ def _loader_wrapper_names(tree, module_names, function_names):
 def _py_literal_basenames(node):
     """Module basenames of every `"....py"` string literal anywhere inside `node`.
 
-    The directory is dropped, so `os.path.join(_HERE, "..", "hooks",
+    The directory is dropped, so `os.path.join(_output.HOOKS_DIR,
     "guard-capabilities.py")` yields `guard-capabilities` - not a scripts/ sibling,
     therefore not an edge, which is how audit-doctor's two hooks/ loads stay out of
     this graph. That is also this rule's one false-positive shape: a `../hooks/x.py`
@@ -333,9 +344,9 @@ def _runtime_loaded_sibling_names(tree, sibling_names, self_name):
     hooks/ filename is not one (no such sibling), so neither invents an edge.
 
     LIMITATION, deliberate and load-bearing: only a filename SPELLED AS A LITERAL
-    INSIDE THE CALL counts. `_loader.load(os.path.join(_HERE, "render-report.py"))`
-    is read, because the literal is right there in the call expression;
-    `path = os.path.join(_HERE, "audit-journal.py")` on one line followed by
+    INSIDE THE CALL counts. `_loader.load(os.path.join(SCRIPTS_DIR,
+    "render-report.py"))` is read, because the literal is right there in the call
+    expression; `path = os.path.join(SCRIPTS_DIR, "audit-journal.py")` followed by
     `_loader.load(path)` on the next is NOT, and neither is any genuinely computed
     name. A target this function cannot READ is not a target it may GUESS - widening
     the scan to "any `.py` literal in the file" would manufacture edges out of error
@@ -404,7 +415,7 @@ def _scan_edges(script_dir=None):
     instead of "imports" tells the reader which kind of line to go and find, and there
     is no `import` line to find for most of them.
     """
-    script_dir = script_dir or _HERE
+    script_dir = script_dir or _output.SCRIPTS_DIR
     modules, _collisions = _module_files(script_dir)
     sibling_names = set(modules)
 
@@ -550,8 +561,8 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
     A file that will not parse is its own violation in every one of the four passes it
     would otherwise take part in, rather than being dropped from the scan.
     """
-    script_dir = script_dir or _HERE
-    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
+    script_dir = script_dir or _output.SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     layers = layers if layers is not None else LAYERS
     violations = []
 
@@ -636,9 +647,9 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
     say so; a scan that silently skips it is a scan claiming a clean answer about a
     file it never read.
     """
-    script_dir = script_dir or _HERE
-    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
-    tests_dir = tests_dir if tests_dir is not None else _TESTS_DIR
+    script_dir = script_dir or _output.SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
+    tests_dir = tests_dir if tests_dir is not None else _output.TESTS_DIR
 
     if not os.path.isdir(tests_dir):
         return []
@@ -714,16 +725,16 @@ def render(script_dir=None, layers=None):
 
 # --- guide drift --------------------------------------------------------------
 _GUIDE_HEADING = "## 1a. Module map (generated)"
-# _HERE is plugins/audit/scripts; the guide lives at the repo root, three levels up
-# (scripts -> audit -> plugins -> repo root) - same anchor `_help._AGENT_DOCS` uses
-# from `plugins/audit` (two levels up from there).
-_GUIDE_REL_PATH = os.path.join("..", "..", "..", "PLUGIN-BUILD-GUIDE.md")
+# The guide lives at the repo root. Counted off `_output.REPO_ROOT` rather than by
+# three `..` segments from this file's own directory: the count WAS this module's
+# depth written down, and it was wrong the moment the file moved.
+_GUIDE_REL_PATH = "PLUGIN-BUILD-GUIDE.md"
 
 
 def _guide_path(guide_path=None):
     if guide_path is not None:
         return guide_path
-    return os.path.join(_HERE, _GUIDE_REL_PATH)
+    return os.path.join(_output.REPO_ROOT, _GUIDE_REL_PATH)
 
 
 def _fenced_block_after(text, heading):
@@ -863,8 +874,8 @@ def _real_source_files(script_dir=None, hooks_dir=None):
     that does not exist and would make "no hooks at all" indistinguishable from
     "hooks, all clean".
     """
-    script_dir = script_dir or _HERE
-    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
+    script_dir = script_dir or _output.SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     out = [(rel, "scripts", path) for rel, path in _output.py_files(script_dir)]
     if os.path.isdir(hooks_dir):
         out.extend((rel, "hooks", path) for rel, path in _output.py_files(hooks_dir))
@@ -959,8 +970,8 @@ def navigability_violations(script_dir=None, hooks_dir=None):
     `# --- selftest ---` itself is exempt from the count - a file's own test
     block does not make its PRODUCTION code any easier to navigate.
     """
-    script_dir = script_dir or _HERE
-    hooks_dir = hooks_dir if hooks_dir is not None else _HOOKS_DIR
+    script_dir = script_dir or _output.SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     violations = []
     for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
         try:
@@ -1001,7 +1012,7 @@ def navigability_violations(script_dir=None, hooks_dir=None):
 # IIFE and column 0 is therefore unavailable to it. A marker indented deeper
 # than that sits inside a function and is not a landmark the left margin gives
 # you - the same reason the .py rule insists on column 0.
-_UI_DIR = os.path.join(_HERE, "ui")
+_UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
 
 _UI_MARKER_RES = (
     (".css", re.compile(r"^/\*\s+-{2,}\s+(.+?)\s+-{2,}")),

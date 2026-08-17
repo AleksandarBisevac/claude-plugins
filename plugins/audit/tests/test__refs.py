@@ -67,6 +67,20 @@ def _fixture_tree(tmp, command_line, hook_line=None):
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     """Nothing else in the tree stats a referenced script path, so this is the gate."""
+    # --- the repo root ---------------------------------------------------------------
+    # This module used to derive REPO_ROOT itself, three `dirname`s off its own
+    # `__file__`, beside an identical derivation in `_output`. One went. The case
+    # recomputes the OLD expression rather than asserting the new one looks right.
+    import _output as _out
+    check("rr1 REPO_ROOT is the one in `_output`, not a second walk that happens "
+          "to agree: %r" % (M.REPO_ROOT,), M.REPO_ROOT is _out.REPO_ROOT)
+    check("rr2 ...and it is exactly what the old "
+          "`dirname(dirname(dirname(_HERE)))` produced, with `plugins/audit` "
+          "under it where every `rel` this module emits expects to find it",
+          M.REPO_ROOT == os.path.dirname(os.path.dirname(os.path.dirname(
+              os.path.dirname(os.path.abspath(M.__file__)))))
+          and os.path.isdir(os.path.join(M.REPO_ROOT, M.PLUGIN_REL.replace("/", os.sep))))
+
     # --- the tables ----------------------------------------------------------------
     surfaces = [s for s, _m in M.SURFACES]
     check("t1 every SURFACES entry is a real path - a surface pointing at nothing "

@@ -225,16 +225,56 @@ DEFAULTS = {
 
 
 # --- config load --------------------------------------------------------------
+def find_script(filename):
+    """Full path of `filename` ANYWHERE under `../scripts`, recursively, or None.
+
+    BY BASENAME, because the folders under `scripts/` are labels and not
+    namespaces: `_output.install_path()` puts every one of them on `sys.path` and
+    `_loader.load_script()` resolves the same way. A flat
+    `join(scripts_dir, filename)` is right only while the tree is flat, and when it
+    stops being right it fails SILENTLY — see `_load_scripts_module` below for what
+    that costs.
+
+    THE THIRD COPY OF "WHERE IS scripts/", AND IT IS IRREDUCIBLE. `hooks/` may not
+    import `scripts/` at all (`_deps` r5/r6, and there is no allow-list any more),
+    so this cannot read `_output.SCRIPTS_DIR` and has to walk from its own
+    `__file__`. It is held true by READING rather than by merging: a case in
+    `tests/test__config.py` loads this file by path and asserts this resolver and
+    `_output.script_files()` agree on every basename — the same shape as the
+    pricing-table pair in `tests/test__usage_core.py`.
+
+    Deterministic: `os.walk` yields the root before its subdirectories and the
+    subdirectory names are sorted, so the flat file wins and a tie below it always
+    resolves the same way. `_deps.layer_violations()` forbids the tie existing at
+    all.
+    """
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        if "__pycache__" in dirnames:
+            dirnames.remove("__pycache__")
+        if filename in filenames:
+            return os.path.join(dirpath, filename)
+    return None
+
+
 def _load_scripts_module(name, filename):
     """Load a sibling module out of ../scripts by path. None when it cannot be
     loaded — every caller reads that as "the feature this module owns is not
-    installed" rather than raising into a hook."""
+    installed" rather than raising into a hook.
+
+    THAT FAIL-OPEN IS WHY `find_script` HAS TO BE RIGHT. A wrong path here does not
+    raise: it returns None, and the capability policy, the journal, the ledger and
+    the sharded-manifest read all switch themselves off with every gate still
+    green. There is no louder symptom to notice later, which is why the resolver
+    above is tested directly rather than through the features that depend on it.
+    """
     try:
         import importlib.util
-        scripts_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
-        spec = importlib.util.spec_from_file_location(
-            name, os.path.join(scripts_dir, filename))
+        path = find_script(filename)
+        if path is None:
+            return None
+        spec = importlib.util.spec_from_file_location(name, path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod

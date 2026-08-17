@@ -74,6 +74,63 @@ def _cases(check):
     import subprocess
     import tempfile
 
+    # --- fs: the third copy of "where is scripts/", held true by READING -------
+    # `hooks/` may import nothing from `scripts/` (`_deps` r5/r6, and there is no
+    # allow-list any more), so `find_script()` cannot read `_output.SCRIPTS_DIR`
+    # and walks from its own `__file__` instead. That is an irreducible third
+    # derivation, the same shape as the pricing table above: it cannot be merged,
+    # so it is pinned by comparing the two answers rather than by a comment in each
+    # file claiming they agree.
+    #
+    # THIS IS THE MOST DANGEROUS FUNCTION IN THE FILE TO GET WRONG.
+    # `_load_scripts_module` wraps its load in `except Exception: return None`, and
+    # every caller reads None as "the feature is not installed". A wrong path there
+    # does not raise - it silently switches off the capability policy, the journal,
+    # the ledger and the sharded-manifest read, with every gate still green. So it
+    # is tested directly, not through the features that depend on it.
+    #
+    # `M` is `hooks/_config.py` imported by name (see the module docstring), which
+    # IS "loaded by path" in the only sense that matters here: `_harness` puts
+    # `hooks/` on `sys.path` and the module resolves off its own `__file__`, the
+    # same value a hook process gives it.
+    import _output as _out
+
+    _fs_names = sorted(os.path.basename(_r) for _r, _p in _out.script_files())
+    _fs_found = dict((_n, M.find_script(_n)) for _n in _fs_names)
+    _fs_missing = sorted(_n for _n in _fs_names if _fs_found[_n] is None)
+    check("fs1 the hooks-side resolver finds EVERY basename `_output.script_files()`"
+          " knows about - %d of them, and the list is the check: a resolver that "
+          "narrowed to nothing would report no disagreement at all: %r"
+          % (len(_fs_names), _fs_missing),
+          _fs_names and not _fs_missing)
+    _fs_wrong = sorted(_n for _n in _fs_names
+                       if _fs_found[_n] is not None
+                       and os.path.realpath(_fs_found[_n])
+                       != os.path.realpath(dict((os.path.basename(_r), _p)
+                                                for _r, _p in _out.script_files())[_n]))
+    check("fs2 ...and resolves each one to the SAME FILE the scripts-side walk "
+          "does, compared by realpath because the hooks side reaches it through "
+          "`..`: %r" % (_fs_wrong,), not _fs_wrong)
+    check("fs3 a basename that is not there returns None rather than a plausible "
+          "path - `_load_scripts_module` turns any answer into a module or into "
+          "None, so a confident wrong path is the one failure it cannot report",
+          M.find_script("no-such-script-xyz.py") is None)
+    # The recursion, proven on a file that really does sit one directory down.
+    # scripts/ holds no `.py` in a subdirectory today - that is the whole premise
+    # of this change - so a `.py` fixture would have to be planted in the real
+    # tree; `ui/report.css` is already there and answers the same question about
+    # the WALK, which is the part that would silently stop working.
+    _fs_deep = M.find_script("report.css")
+    check("fs4 the walk is RECURSIVE - it reaches scripts/ui/report.css, which is "
+          "the property a `.py` filed one directory down depends on. Without it "
+          "that file comes back None and reads as 'not installed': %r" % (_fs_deep,),
+          _fs_deep is not None and os.path.isfile(_fs_deep)
+          and os.path.basename(os.path.dirname(_fs_deep)) == "ui")
+    check("fs5 `_load_scripts_module` really goes through it: the policy module it "
+          "loads at import time is present, which is the fail-open that would "
+          "otherwise be indistinguishable from `policy` never having shipped",
+          M._POLICY_MOD is not None and "policy" in M.DEFAULTS)
+
     tmp = Path(tempfile.mkdtemp(prefix="config-selftest-"))
 
     # (a) absent config → pure defaults, no error marker

@@ -44,8 +44,8 @@ This module carries no `--selftest` of its own any more; its 67 cases live in
 that file, byte-identical labels and all - see `plugins/audit/tests/_harness.py`.
 Three of them are CITATION cases: `source_drift()` and `agent_doc_drift()` read
 this repository's own `README.md`, `SECURITY.md`, `PLUGIN-BUILD-GUIDE.md`,
-`reference/*.md` and `agents/*.md` through `plugin_root()` - which is spelled off
-THIS file's `_HERE`, so they keep resolving from `tests/` unchanged. Three of the
+`reference/*.md` and `agents/*.md` through `plugin_root()` - which is `_output`'s
+one `PLUGIN_ROOT` anchor, so they keep resolving from `tests/` unchanged. Three of the
 citations are plugin-relative paths into `scripts/` (`_areas.py`, `_policy.py`,
 `audit-journal.py`); they are literals on purpose, and their going red when one of
 those files moves is the feature.
@@ -61,12 +61,27 @@ import os
 import re
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
+# `_output.path_preamble_violations()`. It walks UP to the directory holding
+# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
+# this file sits and keeps working if the file is moved into a subdirectory.
+# `install_path()` then adds that directory AND every subdirectory of it holding a
+# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
+# reached by a bare basename.
+_anchor_dir = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_dir)
+    if _anchor_up == _anchor_dir:
+        raise ImportError("audit plugin: walked to the filesystem root from %s "
+                          "without finding _output.py - the scripts/ anchor is "
+                          "gone and no sibling can be imported" % (__file__,))
+    _anchor_dir = _anchor_up
+if _anchor_dir not in sys.path:
+    sys.path.insert(0, _anchor_dir)
 
-# Run as a command, `sys.path[0]` is already this directory; imported from anywhere
-# else it is not, and the two siblings below are the whole point of the module.
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+
+_output.install_path()
 
 import _areas                                    # noqa: E402  (the areas rule)
 import _policy                                   # noqa: E402  (the policy verdicts)
@@ -128,7 +143,7 @@ READ_ONLY_TOOLS = ("Glob", "Grep", "Read")
 
 
 def plugin_root(root=None):
-    return root or os.path.dirname(_HERE)
+    return root or _output.PLUGIN_ROOT
 
 
 # --- schema extraction -----------------------------------------------------------

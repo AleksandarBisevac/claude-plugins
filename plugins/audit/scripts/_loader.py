@@ -52,7 +52,27 @@ import importlib.util
 import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
+# `_output.path_preamble_violations()`. It walks UP to the directory holding
+# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
+# this file sits and keeps working if the file is moved into a subdirectory.
+# `install_path()` then adds that directory AND every subdirectory of it holding a
+# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
+# reached by a bare basename.
+_anchor_dir = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_dir)
+    if _anchor_up == _anchor_dir:
+        raise ImportError("audit plugin: walked to the filesystem root from %s "
+                          "without finding _output.py - the scripts/ anchor is "
+                          "gone and no sibling can be imported" % (__file__,))
+    _anchor_dir = _anchor_up
+if _anchor_dir not in sys.path:
+    sys.path.insert(0, _anchor_dir)
+
+import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+
+_output.install_path()
 
 _CACHE = {}
 
@@ -103,13 +123,31 @@ def load(path, modname=None, cache=True):
 
 
 def load_script(basename, modname=None, cache=True):
-    """`load()` of `basename` in this same directory (the scripts dir)."""
-    return load(os.path.join(_HERE, basename), modname=modname, cache=cache)
+    """`load()` of `basename` WHEREVER it sits under `scripts/`.
+
+    BY BASENAME, NOT BY DIRECTORY, and that is the half that lets a file move. The
+    folders under `scripts/` are labels, not namespaces: `_output.install_path()`
+    puts every one of them on `sys.path`, so `import x` already resolves by
+    basename, and this resolves the same way rather than through a
+    `join(SCRIPTS_DIR, basename)` that would look one directory too high the day
+    somebody files a script under `usage/`. The answer is unique because
+    `_deps.layer_violations()` fails a tree in which two `.py` share a basename.
+
+    A basename that matches nothing falls through to `SCRIPTS_DIR`, so the error is
+    `load()`'s own "cannot load module from <path>" — which names the path that was
+    tried. Raising something different here would replace a message that locates
+    the problem with one that only says it exists.
+    """
+    for rel, path in _output.script_files():
+        if os.path.basename(rel) == basename:
+            return load(path, modname=modname, cache=cache)
+    return load(os.path.join(_output.SCRIPTS_DIR, basename),
+                modname=modname, cache=cache)
 
 
 def load_hooks_config(modname=None, cache=True):
-    """`load()` of `../hooks/_config.py`, relative to this file."""
-    path = os.path.join(os.path.dirname(_HERE), "hooks", "_config.py")
+    """`load()` of `hooks/_config.py`, off the one anchor rather than off `..`."""
+    path = os.path.join(_output.HOOKS_DIR, "_config.py")
     return load(path, modname=modname or "audit_loaded_hooks_config", cache=cache)
 
 

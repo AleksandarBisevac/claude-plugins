@@ -150,8 +150,8 @@ def _cases(check):
           and (_help_pay["agent"] or {}).get("model") == "haiku")
     check("the payload is documentation, not state: it names no path on this "
           "machine, so it cannot be read as a report about this project",
-          M._HERE not in json.dumps(_help_pay)
-          and os.path.dirname(M._HERE) not in json.dumps(_help_pay))
+          M._output.SCRIPTS_DIR not in json.dumps(_help_pay)
+          and M._output.PLUGIN_ROOT not in json.dumps(_help_pay))
 
     # --- who is looking --------------------------------------------------------
     _vw = M._viewer(proj, M.read_config(proj))

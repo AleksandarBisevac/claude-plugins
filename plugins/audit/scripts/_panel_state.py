@@ -64,13 +64,29 @@ import subprocess
 import sys
 import time
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-CONFIG_REL = ".claude/audit.config.json"
+# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
+# `_output.path_preamble_violations()`. It walks UP to the directory holding
+# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
+# this file sits and keeps working if the file is moved into a subdirectory.
+# `install_path()` then adds that directory AND every subdirectory of it holding a
+# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
+# reached by a bare basename.
+_anchor_dir = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_dir)
+    if _anchor_up == _anchor_dir:
+        raise ImportError("audit plugin: walked to the filesystem root from %s "
+                          "without finding _output.py - the scripts/ anchor is "
+                          "gone and no sibling can be imported" % (__file__,))
+    _anchor_dir = _anchor_up
+if _anchor_dir not in sys.path:
+    sys.path.insert(0, _anchor_dir)
 
-# Run as a command, `sys.path[0]` is already this directory; imported from
-# elsewhere it might not be.
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+
+_output.install_path()
+
+CONFIG_REL = ".claude/audit.config.json"
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
@@ -599,7 +615,7 @@ def _journalmod():
     back into every writer. Loaded once; a missing file is not retried per save."""
     if not _JOURNAL["tried"]:
         _JOURNAL["tried"] = True
-        path = os.path.join(_HERE, "audit-journal.py")
+        path = os.path.join(_output.SCRIPTS_DIR, "audit-journal.py")
         if os.path.isfile(path):
             try:
                 _JOURNAL["mod"] = _loader.load(path, modname="audit_journal")
@@ -766,7 +782,7 @@ def _policy_enforcement(project, config):
     try:
         cfg_mod = _cores()[3]
         gc_mod = _load("audit_guard_capabilities",
-                       os.path.join(_HERE, "..", "hooks", "guard-capabilities.py"))
+                       os.path.join(_output.HOOKS_DIR, "guard-capabilities.py"))
         import pathlib
         marker = os.path.join(
             str(cfg_mod.state_dir(pathlib.Path(project), config)), gc_mod.SEEN_FILE)
@@ -1184,7 +1200,8 @@ def usage_state(project):
                         "sessions": 0, "days": 0, "from": None, "to": None},
              "rolled": False, "totalRows": 0}
     try:
-        ul = _load("audit_usage_ledger", os.path.join(_HERE, "usage_ledger.py"))
+        ul = _load("audit_usage_ledger",
+                   os.path.join(_output.SCRIPTS_DIR, "usage_ledger.py"))
         rows = ul.read_ledger(ledger_dir)
     except Exception:
         return empty
@@ -1348,7 +1365,8 @@ def report_paths(project):
     if not _within(project, out_dir):
         return None
     try:
-        rr = _load("audit_render_report", os.path.join(_HERE, "render-report.py"))
+        rr = _load("audit_render_report",
+                   os.path.join(_output.SCRIPTS_DIR, "render-report.py"))
         manifest = _mio.load_manifest_safe(mpath)
         # `_report_basename` takes META, not the manifest — it reads
         # `reportBasename` off the mapping it is handed. Passed the whole manifest
@@ -1374,7 +1392,8 @@ def render_report(project):
                              "project) — run /audit:init first"]}
     mpath, out_dir, html_path = paths
     try:
-        rr = _load("audit_render_report", os.path.join(_HERE, "render-report.py"))
+        rr = _load("audit_render_report",
+                   os.path.join(_output.SCRIPTS_DIR, "render-report.py"))
     except Exception as exc:
         return {"ok": False, "findings": ["cannot load the renderer: %s" % exc]}
     buf = io.StringIO()

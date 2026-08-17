@@ -23,6 +23,11 @@ two copies of a procedure is one copy and one lie.
   silently stopped being tested; that reason is gone. The one cost is that a `.py` **basename must
   be unique** across the whole of `scripts/`, since `import` and `_loader` both resolve by
   basename — `layer_violations()` reports a collision by name. `scripts/ui/` still holds no `.py`.
+- **`_output.py` is the anchor and never moves.** `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`,
+  `TESTS_DIR` and `REPO_ROOT` live there and nowhere else; `install_path()` puts `scripts/` and
+  every subdirectory of it holding a `.py` on `sys.path`. **The folders are labels, not
+  namespaces** — one flat name-space, every module reached by bare basename. No other `.py` under
+  `scripts/` may read `__file__` outside the pinned preamble (`depth_sensitive_paths()`).
 - **Fail-open for advisory paths, fail-loud for guards** — the table is in `SECURITY.md`.
 - **Every claim in output carries the basis that makes it true, and when the basis is missing,
   that is the thing to say.** Never fall back to a default to fill the gap; a basis with no claim
@@ -32,13 +37,19 @@ two copies of a procedure is one copy and one lie.
 
 ## Adding a `.py` under `hooks/` or `scripts/`
 
-Four things beyond the code, and three of them fail CI *by name* if missed:
+Five things beyond the code, and four of them fail CI *by name* if missed:
 
 1. a `--selftest` printing the `N/M cases passed` contract — CI globs the directories and fails a
    file that has none;
 2. `safe_stdio()` as the **first** statement in `__main__` (AST-enforced by `_output.py`);
 3. a layer assignment in `_deps.LAYERS` (the import-graph lint fails an unplaced file);
-4. a tree line **and** a section in `PLUGIN-BUILD-GUIDE.md` (the enumeration lint).
+4. a tree line **and** a section in `PLUGIN-BUILD-GUIDE.md` (the enumeration lint);
+5. **`scripts/` only** — `_output.PATH_PREAMBLE`, pasted byte for byte after the stdlib
+   imports and above the first sibling import. Copy it from any neighbour;
+   `path_preamble_violations()` counts it (once, never twice) and checks the ordering, and
+   `depth_sensitive_paths()` fails any file that reads `__file__` outside it. `hooks/` gets
+   none of this — hooks may not import `scripts/`, so they resolve by basename through
+   `hooks/_config.find_script()` instead.
 
 Name by role: `_underscore.py` for an importable helper, `hyphen-name.py` for an entry point.
 Files of 400+ lines need at least two top-level `# --- name ---` markers to stay navigable.

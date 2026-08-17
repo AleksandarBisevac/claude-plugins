@@ -19,6 +19,13 @@ strictly more than the inline version saw. Proven red by adding `import _loader`
 `_report_page.py` and again by adding a bare `"audit-status.py"` literal inside a
 function - the shape the deleted filter used to hide.
 
+It now cuts `_output.PATH_PREAMBLE` out of the source before parsing, because that
+block - identical in every `.py` under `scripts/` - carries `"_output.py"` as the
+marker its walk-up searches for. Subtracting one exact constant is not the same move
+as the `_selftest` filter that was deleted above: that one narrowed by a PATTERN
+which had stopped matching anything, while this removes a byte-for-byte block a lint
+independently proves is present exactly once.
+
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
@@ -29,6 +36,7 @@ import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PATH_PREAMBLE, for pg2c)
 from _output import safe_stdio                     # noqa: E402
 import _report_page as M                           # noqa: E402
 import _report_md                                  # noqa: E402  (as _report_page imports it)
@@ -135,8 +143,18 @@ def _cases(check):
     # nothing: a filter that narrows to nothing while still reading as "all
     # clear" is the exact shape this repo refuses. Dropping it also makes the
     # scan STRICTER than it was, because the whole module body is now read.
+    #
+    # THE PINNED PATH PREAMBLE IS CUT OUT FIRST, and this is not the filter that
+    # was just deleted wearing a new hat. That block is byte-identical in every
+    # `.py` under `scripts/` and `_output.path_preamble_violations()` counts it,
+    # so it is not part of what this module CHOSE to spell; the one `.py` literal
+    # it carries is `"_output.py"`, the marker the walk-up searches for, which no
+    # loader call can reach and which every scripts/ file would otherwise report.
+    # Removing exactly that constant - not a pattern that could match a real
+    # target - is what keeps the case about `_report_page.py`'s own reach.
     with open(os.path.abspath(M.__file__), "r", encoding="utf-8") as _fh:
         _src = _fh.read()
+    _src = _src.replace(_output.PATH_PREAMBLE, "")
     _tree = ast.parse(_src)
     _imported = set()
     for _n in ast.walk(_tree):

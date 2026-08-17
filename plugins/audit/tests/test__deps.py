@@ -23,13 +23,16 @@ contains the suite making them. Three of those are worth knowing by name:
     to `scripts/` + `hooks/` and stay so. `tests/` owes the guide ONE section, not one
     per file, and a widened scope would demand forty-eight.
 
-`M._HERE` / `M._HOOKS_DIR` / `M._TESTS_DIR` RATHER THAN `_harness.SCRIPTS_DIR` AND ITS
-SIBLINGS. They are the same three directories, and the choice is not cosmetic: these
-cases ask what the lint scans BY DEFAULT (`r5` reads the module list
-`layer_violations()` would read with no argument; `f4` hands it the real `scripts/`
-while swapping the hooks half for a fixture). Respelling them off the harness would
-quietly turn a claim about the subject's own default into a claim about two paths that
-happen to agree today.
+THE SUBJECT'S OWN ANCHORS RATHER THAN `_harness.SCRIPTS_DIR` AND ITS SIBLINGS. They
+are the same three directories, and the choice is not cosmetic: these cases ask what
+the lint scans BY DEFAULT (`r5` reads the module list `layer_violations()` would read
+with no argument; `f4` hands it the real `scripts/` while swapping the hooks half for a
+fixture). Respelling them off the harness would quietly turn a claim about the subject's
+own default into a claim about two paths that happen to agree today. They used to be
+`_deps`' own `_HERE` / `_HOOKS_DIR` / `_TESTS_DIR`, three constants it derived from its
+own `__file__`; the module now reads them off the single anchor in `_output`, and
+reaching them THROUGH the subject keeps each case pointed at what the subject actually
+resolves rather than at a second copy of the same walk.
 
 ONE ODDITY IS PRESERVED RATHER THAN TIDIED. `m2` passes `hooks_dir=tmp`, and `tmp` at
 that point names the fixtures directory the block above already removed in its
@@ -83,9 +86,9 @@ def _cases(check):
     # different facts while an allow-list sat between them, and the point of removing it is
     # that they are now one - so both are asserted, and a suppression reintroduced anywhere
     # in between makes exactly one of them fail.
-    real_modules, real_collisions = M._module_files(M._HERE)
+    real_modules, real_collisions = M._module_files(M._output.SCRIPTS_DIR)
     real_on_disk = set(real_modules)
-    real_hooks_raw = [(f, m) for f, m in M._hooks_scripts_imports(M._HOOKS_DIR,
+    real_hooks_raw = [(f, m) for f, m in M._hooks_scripts_imports(M._output.HOOKS_DIR,
                                                                  real_on_disk)
                       if m is not None]
     check("r5 hooks/ statically imports nothing from scripts/ AT ALL - no allow-list, no "
@@ -114,8 +117,8 @@ def _cases(check):
 
     real_hook_modules = {}
     real_hook_collisions = []
-    if os.path.isdir(M._HOOKS_DIR):
-        real_hook_modules, real_hook_collisions = M._module_files(M._HOOKS_DIR)
+    if os.path.isdir(M._output.HOOKS_DIR):
+        real_hook_modules, real_hook_collisions = M._module_files(M._output.HOOKS_DIR)
     real_hook_names = set(real_hook_modules)
     check("r8 no hooks/**.py basename collides with a scripts/**.py one. The runtime-load "
           "rule reads a literal's BASENAME and ignores its directory (audit-doctor loads "
@@ -200,7 +203,7 @@ def _cases(check):
             fh.write("import _fmt\n")  # _fmt is a real scripts/ module name
         with open(os.path.join(hooksfix, "_config.py"), "w", encoding="utf-8") as fh:
             fh.write("pass\n")  # a hook's own sibling, never flagged
-        hook_hits = M.layer_violations(script_dir=M._HERE, hooks_dir=hooksfix)
+        hook_hits = M.layer_violations(script_dir=M._output.SCRIPTS_DIR, hooks_dir=hooksfix)
         check("f4 hooks/*.py importing a real scripts/ module name is named, with the "
               "hook file and the module both in the message: %r" % (hook_hits,),
               any(v == ("sneaky.py", "imports scripts module _fmt - hooks must not "
@@ -334,6 +337,22 @@ def _cases(check):
               len([v for v in rt_again if "runtime-loads" in v[1]]) == 3)
     finally:
         shutil.rmtree(rt, ignore_errors=True)
+
+    # ------------------------------------------------------- the guide's location
+    # `_guide_path()` counted three `..` segments off this module's own directory,
+    # which was `_deps.py`'s depth written into a constant. It reads
+    # `_output.REPO_ROOT` now, and on a flat tree the two must name the same file:
+    # compared by normpath, because the old spelling carried its `..` segments
+    # right through into the string.
+    _old_guide = os.path.join(M._output.SCRIPTS_DIR, "..", "..", "..",
+                              "PLUGIN-BUILD-GUIDE.md")
+    check("gp1 _guide_path() resolves to the file the old three-deep `..` walk "
+          "resolved to, and it is really there: %r" % (M._guide_path(),),
+          M._guide_path() == os.path.normpath(_old_guide)
+          and os.path.isfile(M._guide_path()))
+    check("gp2 ...and an explicit argument still wins, so every map_drift case "
+          "below can point the lint at a fixture",
+          M._guide_path("/nowhere/x.md") == "/nowhere/x.md")
 
     # --------------------------------------------------- map_drift: guide vs --render output
     check("g1 the shipped guide's module map fence matches `_deps.py --render` "
@@ -922,9 +941,9 @@ def _cases(check):
           "in the product's import order, and tb7 is the rule that replaces one: %r"
           % (sorted(set(M._all_names()) & set(os.path.basename(r)[:-3]
                                               for r, _p in _output.py_files(
-                                                  M._TESTS_DIR))),),
+                                                  M._output.TESTS_DIR))),),
           not (set(M._all_names()) & set(os.path.basename(r)[:-3]
-                                         for r, _p in _output.py_files(M._TESTS_DIR))))
+                                         for r, _p in _output.py_files(M._output.TESTS_DIR))))
 
 
 def _selftest():

@@ -50,6 +50,11 @@ comprehensions, and **6 `global` statements in ~42,000 lines**. That is the patt
   scanner walks recursively — but `import`, `_loader` and `_deps.LAYERS` all resolve by basename, so
   two files sharing one would be a single node in the layer graph wearing both files' edges.
   `layer_violations()` fails the build by name on it. Directories are labels, not namespaces.
+- **Never derive a directory from your own `__file__`.** `_output.py` is the anchor:
+  `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR`, `REPO_ROOT`. The pinned
+  `PATH_PREAMBLE` is the only place under `scripts/` allowed to touch `__file__` at all, and
+  `depth_sensitive_paths()` enforces it — the rule is "none", not "not a parent", because the
+  sites it replaced were written as a two-step that any nesting-only lint waves through.
 - **Imports go down, never sideways or up.** `_deps.LAYERS` assigns every module a layer and
   `layer_violations()` fails an unplaced or wrongly-layered file **by name**. `hooks/` may import
   nothing from `scripts/` at all. If a new helper does not fit a layer, that is information about
@@ -103,9 +108,10 @@ The rule is not "never repeat a line". It is **one fact, one home**.
   job reports success over half the work.
 - **Reaching around the layer rule** by importing inside a function to dodge the lint. The lint
   reads the AST; more importantly, the layering is the design.
-- **Adding a file without its four obligations** — `--selftest`, `safe_stdio()` first in
-  `__main__`, a `_deps.LAYERS` entry, a `PLUGIN-BUILD-GUIDE.md` tree line and section. Three of
-  the four fail CI by name.
+- **Adding a file without its five obligations** — `--selftest`, `safe_stdio()` first in
+  `__main__`, a `_deps.LAYERS` entry, a `PLUGIN-BUILD-GUIDE.md` tree line and section, and
+  (under `scripts/`) `_output.PATH_PREAMBLE` pasted byte for byte above the first sibling
+  import. Four of the five fail CI by name.
 
 ## Testability
 

@@ -45,6 +45,29 @@ This module carries no `--selftest` of its own any more; its 80 cases live in
 """
 import os
 import re
+import sys
+
+# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
+# `_output.path_preamble_violations()`. It walks UP to the directory holding
+# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
+# this file sits and keeps working if the file is moved into a subdirectory.
+# `install_path()` then adds that directory AND every subdirectory of it holding a
+# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
+# reached by a bare basename.
+_anchor_dir = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_dir)
+    if _anchor_up == _anchor_dir:
+        raise ImportError("audit plugin: walked to the filesystem root from %s "
+                          "without finding _output.py - the scripts/ anchor is "
+                          "gone and no sibling can be imported" % (__file__,))
+    _anchor_dir = _anchor_up
+if _anchor_dir not in sys.path:
+    sys.path.insert(0, _anchor_dir)
+
+import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+
+_output.install_path()
 
 # Keys an area entry may carry. Unknown ones warn — a typo'd `reviewskill` would
 # otherwise be a reviewer that silently never runs.
@@ -438,7 +461,7 @@ def rule_drift(plugin_root=None):
     the area. That is the specific way this drifts: an area is added to one file
     and the other three keep describing the old lookup.
     """
-    root = plugin_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = plugin_root or _output.PLUGIN_ROOT
     out = []
     for rel, rules in sorted(_RULE_DOCS.items()):
         path = os.path.join(root, rel)

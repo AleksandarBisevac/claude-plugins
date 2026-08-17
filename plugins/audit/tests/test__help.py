@@ -9,15 +9,15 @@ imports them, because three cases compare against those modules' own objects
 
 THREE THINGS ABOUT THIS SUITE READ THE REPOSITORY, AND ALL THREE STILL RESOLVE.
 
-  * `_HERE` was `_help.py`'s own module constant, i.e. `scripts/`, and the suite
+  * the scripts directory was `_help.py`'s own `_HERE` constant, and the suite
     used it four times as SCRATCH SPACE: `_helpdoc/` and `_helpagents/` (fake
     plugin roots the two drift lints are pointed at), `_helpfm.md` (a frontmatter
     fixture) and `_nope` (a plugin root that must not exist). Carried literally
     they would name `tests/` - which for scratch paths resolves correctly BY
     COINCIDENCE, and that is exactly the shape the guide says to spell about the
-    subject instead. They are `M._HERE`, so each one still says "beside the
-    module under test".
-  * `plugin_root()` is `_help.py`'s own function (`dirname(_HERE)`), so every
+    subject instead. They read the ONE anchor through the module under test, so
+    each one still says "beside the module under test".
+  * `plugin_root()` is `_help.py`'s own function (now `_output.PLUGIN_ROOT`), so every
     case that reads a real document - `source_drift()` over `README.md`,
     `SECURITY.md`, `../../PLUGIN-BUILD-GUIDE.md` and the `reference/` pages,
     `agent_doc_drift()` over `agents/*.md` - resolves off the SUBJECT's location
@@ -230,10 +230,26 @@ def _cases(check):
           isinstance(json.dumps(M.topics()), str))
 
     # --- citations ----------------------------------------------------------------
+    # `plugin_root()` used to be `dirname(_HERE)`, spelled off this module's own
+    # `__file__`; it is `_output.PLUGIN_ROOT` now. Same string on a flat tree, and
+    # this recomputes the OLD expression rather than asserting the new one reads
+    # right - every citation case below resolves through it.
+    check("pr1 plugin_root() is what the old `dirname(_HERE)` produced, and it is "
+          "the plugin directory the schemas and reference pages hang off: %r"
+          % (M.plugin_root(),),
+          M.plugin_root()
+          == os.path.dirname(os.path.dirname(os.path.abspath(M.__file__)))
+          and os.path.basename(M.plugin_root()) == "audit"
+          and os.path.isfile(os.path.join(M.plugin_root(), "schema",
+                                          "audit-plan.schema.json")))
+    check("pr2 ...and an explicit root still wins, which is what lets the two "
+          "drift lints below be pointed at a fixture",
+          M.plugin_root("/nowhere") == "/nowhere")
+
     drift = M.source_drift()
     check("c1 every citation resolves to a file and, where it names one, to a "
           "real heading: %r" % (drift,), not drift)
-    _fake = os.path.join(M._HERE, "_helpdoc")
+    _fake = os.path.join(M._output.SCRIPTS_DIR, "_helpdoc")
     os.makedirs(_fake, exist_ok=True)
     try:
         with open(os.path.join(_fake, "README.md"), "w", encoding="utf-8") as fh:
@@ -270,7 +286,7 @@ def _cases(check):
     check("g5 it is spelled the way a policy or a Task call would name it",
           (guide or {}).get("qualified") == "audit:guide")
     check("g6 an install without the agent gets None, not a hint pointing at "
-          "nothing", M.guide_card(os.path.join(M._HERE, "_nope")) is None)
+          "nothing", M.guide_card(os.path.join(M._output.SCRIPTS_DIR, "_nope")) is None)
     check("g7 the guide is REQUIRED by the policy resolver, because it is read "
           "off the agents directory - so a deny-all policy cannot switch off the "
           "one thing that explains the policy",
@@ -280,7 +296,7 @@ def _cases(check):
     adrift = M.agent_doc_drift()
     check("a1 every doc that enumerates the agents names all of them, and any "
           "count it states agrees with the directory: %r" % (adrift,), not adrift)
-    _fake2 = os.path.join(M._HERE, "_helpagents")
+    _fake2 = os.path.join(M._output.SCRIPTS_DIR, "_helpagents")
     os.makedirs(os.path.join(_fake2, "agents"), exist_ok=True)
     try:
         for _n in ("alpha", "beta"):
@@ -300,7 +316,7 @@ def _cases(check):
         shutil.rmtree(_fake2, ignore_errors=True)
 
     # --- frontmatter --------------------------------------------------------------
-    _fm = os.path.join(M._HERE, "_helpfm.md")
+    _fm = os.path.join(M._output.SCRIPTS_DIR, "_helpfm.md")
     try:
         with open(_fm, "w", encoding="utf-8") as fh:
             fh.write("---\nname: x\ndescription: 'a: b'\ntools: Read, Grep\n"
