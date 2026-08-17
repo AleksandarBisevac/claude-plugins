@@ -182,7 +182,7 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/validate-manifest.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/templates/audit-plan.starter.json"
       ],

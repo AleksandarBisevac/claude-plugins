@@ -20,7 +20,7 @@ Proposal lifecycle: `proposed → materialized | dropped`.
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init`.
 After EVERY mutation: revalidate with
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` —
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` —
 on findings, fix and re-run until clean.
 `materialize` and `drop` hold the **index lock** (conventions → Concurrency lock)
 around their writes — they mutate the phase directory and `fileIndex`; `list` is

@@ -30,7 +30,7 @@
       "dependsOn": [],
       "files": [
         "pyproject.toml",
-        "plugins/audit/scripts/_help.py"
+        "plugins/audit/scripts/config/_help.py"
       ],
       "docs": [],
       "description": "Add a repo-root pyproject.toml carrying only [tool.ruff]: target-version py38, lint.select [E9,F]. No formatter: ruff format would churn thousands of aligned selftest labels for zero safety. Fix any true findings it surfaces (expected near zero given selftest coverage).",

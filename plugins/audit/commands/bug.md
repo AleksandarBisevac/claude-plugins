@@ -18,7 +18,7 @@ Bug lifecycle: `open → triaged → in_progress (materialized) → fixed | wont
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
 After EVERY mutation: revalidate with
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>`.
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>`.
 The write subcommands (`add`/`fix`/`close`) hold the **concurrency lock** (see conventions →
 Concurrency lock) around their writes; `list` is read-only and never locks.
 

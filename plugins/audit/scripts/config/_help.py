@@ -446,7 +446,7 @@ def _areas_topic():
             "rows": rows,
         },
         "sources": ["README.md#monorepo-areas--metaareas",
-                    "reference/manifest-conventions.md", "scripts/_areas.py"],
+                    "reference/manifest-conventions.md", "scripts/manifest/_areas.py"],
     }
 
 

@@ -279,9 +279,9 @@ jobs:
           python-version: "3.12"
       - name: Structural validator (the plugin's own) on starter + dogfood + example
         run: |
-          python plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
-          python plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
-          python plugins/audit/scripts/validate-manifest.py examples/acme-store/audit-plan.json
+          python plugins/audit/scripts/manifest/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
+          python plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
+          python plugins/audit/scripts/manifest/validate-manifest.py examples/acme-store/audit-plan.json
       - name: Sharded layout intact (index stubs + every shard assembles)
         run: |
           python - <<'PY'
@@ -477,7 +477,7 @@ jobs:
           #     /tmp/dl/audit-plan.json --out-dir /tmp/dl --format html
           #   cp /tmp/dl/demo-large.html docs/demo-large.html
           python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
-          python plugins/audit/scripts/validate-manifest.py /tmp/dl/audit-plan.json
+          python plugins/audit/scripts/manifest/validate-manifest.py /tmp/dl/audit-plan.json
           # F-A-1 (v0.37): these probes used to grep the WHOLE document, embedded
           # report.js included - the same blindness render-report's selftest pins
           # carried (F-C-1, v0.36). Judged over the markup with <script> blocks

@@ -191,7 +191,7 @@ page behind it, read against the form rather than instead of it. All of it is
   with a recorded reason.
 - **`/audit:task`** — add a tracked task: the command gathers answers (including a skills
   step fed by `audit-status --json --discovery`, with the explicit `null — none applies`
-  choice) and calls `scripts/audit-task.py` for the write itself.
+  choice) and calls `scripts/manifest/audit-task.py` for the write itself.
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
   task** (the repro test must fail before the fix) executed by `/audit:run`.
 - **`/audit:sync`** — mirror bugs/tasks into **Azure DevOps work items** (`push`), import
@@ -272,7 +272,7 @@ page behind it, read against the form rather than instead of it. All of it is
     gap indistinguishable from one somebody hid. See [Audit trail](#audit-trail).
   - Stale session state (incl. forgotten armed bypasses) is garbage-collected after 7 days.
 - **`schema/audit-plan.schema.json`** — a JSON Schema (draft 2020-12) for the manifest, so
-  editors and CI validate it — plus `scripts/validate-manifest.py`, a dependency-free
+  editors and CI validate it — plus `scripts/manifest/validate-manifest.py`, a dependency-free
   referential validator (unique ids, dependency **cycles**, reciprocal bug↔task links,
   bidirectional fileIndex, typo warnings; exit 0 valid / 1 findings / 2 unreadable) the
   commands run after every manifest mutation.
@@ -309,7 +309,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in, backed up, reversible; single-file manifests keep working without it. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:doctor` | `[--json]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
-| `/audit:task` | `add "<title>" [--phase <id>] \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>"` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. |
+| `/audit:task` | `add "<title>" [--phase <id>] \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>"` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
 | `/audit:sync` | `push [bugs\|tasks\|all] \| pull \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
 
@@ -320,7 +320,7 @@ per project, tracked by a `.claude/audit-panel.json` pidfile.
 
 **Headless entry points** (no Claude, run in CI or any terminal): `scripts/audit-status.py
 --json | --gate` turns the manifest into a pipeline gate, `scripts/report/render-report.py` renders
-the report, and `scripts/validate-manifest.py` runs the referential validator (exit 0 valid /
+the report, and `scripts/manifest/validate-manifest.py` runs the referential validator (exit 0 valid /
 1 findings / 2 unreadable).
 
 ## Requirements
@@ -1246,14 +1246,14 @@ sign-off (ff, or `--no-ff` with your confirmation when the branch advanced).
 Validate anytime — in-session:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" docs/audit/audit-plan.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" docs/audit/audit-plan.json
 ```
 
 or from any terminal (exit 0 = valid, 1 = findings, 2 = unreadable; also works from a
-checkout of this repo as `python3 plugins/audit/scripts/validate-manifest.py <manifest>`):
+checkout of this repo as `python3 plugins/audit/scripts/manifest/validate-manifest.py <manifest>`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/scripts/validate-manifest.py -o /tmp/validate-manifest.py
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/scripts/manifest/validate-manifest.py -o /tmp/validate-manifest.py
 python3 /tmp/validate-manifest.py docs/audit/audit-plan.json
 ```
 

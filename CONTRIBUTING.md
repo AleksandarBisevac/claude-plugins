@@ -38,8 +38,8 @@ for f in $(find plugins/audit/tests -name '*.py' | sort); do
 done
 
 # manifests: structural validator + JSON Schema
-python3 plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
-python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
+python3 plugins/audit/scripts/manifest/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
+python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
 npx --yes ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.schema.json \
   -d plugins/audit/templates/audit-plan.starter.json
 
@@ -107,7 +107,7 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
 - Every command that mutates the manifest must revalidate
-  (`scripts/validate-manifest.py`, exit codes 0/1/2).
+  (`scripts/manifest/validate-manifest.py`, exit codes 0/1/2).
 - **Every claim in output carries the basis that makes it true — and when the
   basis is missing, that is the thing to say.** The routing advisory stays
   silent without enough in-repo evidence; the projection is a range, suppressed

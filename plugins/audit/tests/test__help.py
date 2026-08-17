@@ -231,17 +231,40 @@ def _cases(check):
 
     # --- citations ----------------------------------------------------------------
     # `plugin_root()` used to be `dirname(_HERE)`, spelled off this module's own
-    # `__file__`; it is `_output.PLUGIN_ROOT` now. Same string on a flat tree, and
-    # this recomputes the OLD expression rather than asserting the new one reads
-    # right - every citation case below resolves through it.
-    check("pr1 plugin_root() is what the old `dirname(_HERE)` produced, and it is "
-          "the plugin directory the schemas and reference pages hang off: %r"
-          % (M.plugin_root(),),
-          M.plugin_root()
-          == os.path.dirname(os.path.dirname(os.path.abspath(M.__file__)))
+    # `__file__`; it is `_output.PLUGIN_ROOT` now. This case recomputed that OLD
+    # expression, which was the right way to ask the question for exactly as long as
+    # `_help.py` sat at the top of `scripts/`.
+    #
+    # IT NO LONGER DOES, AND THAT IS THE FINDING RATHER THAN AN INCONVENIENCE - the
+    # same one `an7`/`an8` record in `test__output.py`. `dirname(dirname(__file__))`
+    # is a claim about HOW DEEP A FILE SITS, and `_help.py` is now `scripts/config/`,
+    # so the old expression yields `scripts/` and would fail a `plugin_root()` that is
+    # perfectly correct. Recomputing it here would no longer measure "the anchor equals
+    # what the old code produced"; it would measure that the old code is precisely the
+    # thing the path preamble replaced.
+    #
+    # So the claim is respelled DEPTH-INDEPENDENTLY, and it is not weaker: the plugin
+    # root is the directory holding `scripts/`, it is the one `_output` anchor rather
+    # than a second computation of it, and it really carries the schemas every citation
+    # below resolves against. A `plugin_root()` that drifted by one level fails all
+    # three - which is what the old expression was there to catch.
+    check("pr1 plugin_root() is the ONE `_output` anchor, and it is the plugin "
+          "directory the schemas and reference pages hang off - asserted without "
+          "respelling how deep this module sits, because it now sits in "
+          "`scripts/config/` and the old `dirname(dirname(__file__))` would fail a "
+          "correct answer: %r" % (M.plugin_root(),),
+          M.plugin_root() == M._output.PLUGIN_ROOT
+          and M.plugin_root() == os.path.dirname(M._output.SCRIPTS_DIR)
           and os.path.basename(M.plugin_root()) == "audit"
           and os.path.isfile(os.path.join(M.plugin_root(), "schema",
                                           "audit-plan.schema.json")))
+    check("pr1b ...and this module really is AT DEPTH, so pr1 is not quietly asking "
+          "the flat-tree question any more. The old expression is recomputed here "
+          "purely to show it now disagrees - if `_help.py` ever returns to the top "
+          "of `scripts/` this goes red and pr1's rewrite can be reconsidered",
+          os.path.basename(os.path.dirname(os.path.abspath(M.__file__))) == "config"
+          and os.path.dirname(os.path.dirname(os.path.abspath(M.__file__)))
+          != M.plugin_root())
     check("pr2 ...and an explicit root still wins, which is what lets the two "
           "drift lints below be pointed at a fixture",
           M.plugin_root("/nowhere") == "/nowhere")

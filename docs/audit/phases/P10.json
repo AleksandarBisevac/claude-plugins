@@ -72,7 +72,7 @@
       ],
       "files": [
         "plugins/audit/scripts/panel-server.py",
-        "plugins/audit/scripts/_help.py"
+        "plugins/audit/scripts/config/_help.py"
       ],
       "docs": [],
       "description": "panel-server (_load/_cores, _lockmod, _journalmod, _viewer ledger load) and _help (x3) call _loader instead of hand-rolled spec_from_file_location. Pure mechanical migration; behavior pinned by the existing selftests of both files.",
@@ -118,7 +118,7 @@
         "plugins/audit/scripts/audit-doctor.py",
         "plugins/audit/scripts/gen-demo-manifest.py",
         "plugins/audit/scripts/gen-demo-usage.py",
-        "plugins/audit/scripts/migrate-manifest.py"
+        "plugins/audit/scripts/manifest/migrate-manifest.py"
       ],
       "docs": [],
       "description": "Same mechanical migration for audit-status (x3), audit-usage (x2), render-report (x3), audit-doctor, gen-demo-manifest (x3), gen-demo-usage (x2), migrate-manifest. Each file\u2019s own selftest pins behavior.",
@@ -159,7 +159,7 @@
         "P10.3"
       ],
       "files": [
-        "plugins/audit/scripts/_manifest_io.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
         "plugins/audit/scripts/panel-server.py"
       ],
       "docs": [],
@@ -203,7 +203,7 @@
         "P10.4"
       ],
       "files": [
-        "plugins/audit/scripts/_help.py",
+        "plugins/audit/scripts/config/_help.py",
         "plugins/audit/scripts/panel-server.py"
       ],
       "docs": [],

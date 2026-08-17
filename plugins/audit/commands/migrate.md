@@ -25,7 +25,7 @@ this is **opt-in** and **reversible** (a timestamped backup is written); a legac
 
 **Run:**
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-manifest.py" <manifestPath>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/migrate-manifest.py" <manifestPath>
 ```
 Pass `--dry-run` (preview the split, write nothing), `--renumber` (repair duplicate `BUG-` ids from a
 cross-machine collision before migrating), or `--force` through from `$ARGUMENTS`. The script validates

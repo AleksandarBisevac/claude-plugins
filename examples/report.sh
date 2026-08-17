@@ -67,7 +67,7 @@ while [ "$i" -lt "$n" ]; do
   esac
 done
 
-"$PY" "$scripts/validate-manifest.py" "$manifest"
+"$PY" "$scripts/manifest/validate-manifest.py" "$manifest"
 
 out=$(CLAUDE_PROJECT_DIR=$project "$PY" "$scripts/report/render-report.py" "$manifest" "$@")
 printf '%s\n' "$out"

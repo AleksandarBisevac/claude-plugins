@@ -85,8 +85,12 @@ claude-plugins/                           # this repo (personal, public)
         audit-plan.schema.json            # JSON Schema (draft 2020-12) for the manifest
         audit-config.schema.json          # JSON Schema for .claude/audit.config.json (panel validation)
       scripts/
-        _manifest_io.py                   # dual-format loader/writer (single-file OR index+shards)
-        _areas.py                         # meta.areas registry + reviewSkill/skills resolution
+        manifest/                         # the manifest domain: the layout, the registry, the validator, the writers
+          _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
+          _areas.py                       # meta.areas registry + reviewSkill/skills resolution
+          validate-manifest.py            # dependency-free referential validator (cycles, links)
+          audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
+          migrate-manifest.py             # /audit:migrate doer: single-file -> sharded (backup+restore)
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
           audit-lock.py                   # the /audit concurrency lock as an executable acquire/release/status
@@ -103,11 +107,11 @@ claude-plugins/                           # this repo (personal, public)
           _usage_analytics.py             # what the ledger MEANS: series, bands, budgets, routing, coverage
           usage_ledger.py                 # token-usage metering core: transcript scan, dedup, attribution
           audit-usage.py                  # /audit:usage: token spend, attributed
-        validate-manifest.py              # dependency-free referential validator (cycles, links)
-        validate-config.py                # validates .claude/audit.config.json against its schema
+        config/                           # the config domain: the config file's validator and the self-description over both schemas
+          validate-config.py              # validates .claude/audit.config.json against its schema
+          _help.py                        # zero-token self-description: schema field help + how-it-works topics
         audit-status.py                   # headless rollup + CI gate (--json/--gate)
         audit-doctor.py                   # /audit:doctor: read-only "is this working?" diagnostics
-        audit-task.py                     # /audit:task add doer: id allocation, full template init, lock+journal
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
@@ -115,7 +119,6 @@ claude-plugins/                           # this repo (personal, public)
           _report_usage.py                # the report's Usage section: ledger load + every chart over it
           _report_page.py                 # the report as a whole document: vocab, table, render_html
           _report_md.py                   # the report's Markdown twin (render_md), embedded in the page
-        migrate-manifest.py               # /audit:migrate doer: single-file -> sharded (backup+restore)
         panel-server.py                   # localhost control-panel web UI (config + composition)
         _panel_ui.py                      # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
         _panel_page.py                    # the assembled page: the substitution chain -> UI_HTML + UI_TEMPLATE
@@ -123,7 +126,6 @@ claude-plugins/                           # this repo (personal, public)
         _panel_settings.py                # the Settings form's schema + the write-path key allow-lists
         _panel_state.py                   # the panel's READ side: everything GET /api/* answers with
         _panel_write.py                   # the panel's WRITE side: everything PUT /api/* actually does
-        _help.py                          # zero-token self-description: schema field help + how-it-works topics
         gen-demo-manifest.py              # synthetic LARGE manifest fixture for demos/screenshots/CI
         gen-demo-usage.py                 # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
@@ -389,7 +391,7 @@ The fourth, `guide` (qualified `audit:guide`; Read/Grep/Glob, `model: haiku`), i
 the pipeline: it answers questions about the plugin from the plugin's own README, reference
 docs, schemas and SECURITY.md, with a citation per claim. It is deliberately not a skill —
 a skill auto-triggers, and billing a model for a question `/api/help` already answers for
-free is the failure mode this whole feature exists to avoid. `scripts/_help.py` reads its
+free is the failure mode this whole feature exists to avoid. `scripts/config/_help.py` reads its
 frontmatter, so the panel's "Ask audit:guide" hint cannot advertise a tool the agent does not
 hold, and the build fails if it ever gains one that writes.
 
@@ -457,7 +459,7 @@ it stays correct regardless of which of the three events fired. Config lives und
 `.claude/audit.config.json` -> `usage` (enabled/ledgerDir/authorMode/backfillOnFirstRun/
 maxScanBytes/pricing); the mechanics (dedup, attribution precedence) live in `usage_ledger.py`.
 
-### `plugins/audit/scripts/_areas.py`
+### `plugins/audit/scripts/manifest/_areas.py`
 The `meta.areas` registry and everything that resolves against it. A phase's `area` tag (free
 text, since v0.16) is only a grouping label; this module is where a tag becomes a thing with
 properties — a `root`, a `description`, a `reviewSkill`, `skills` — and it implements, once, the
@@ -699,7 +701,7 @@ as a command): manifest path resolution, the Edit-and-revalidate rule, id alloca
 (task `<phase>.<n>`, bug `BUG-<n>`, bugfix phase `BF<n>`), status enums, new-task/new-phase
 templates, fileIndex maintenance, done-phase immutability.
 
-### `plugins/audit/scripts/validate-manifest.py`
+### `plugins/audit/scripts/manifest/validate-manifest.py`
 Dependency-free referential validator the commands run after every manifest mutation —
 checks the JSON Schema can't express: unique ids, resolvable `blockedBy`/`dependsOn`,
 dependency **cycles** (incl. task-blocked-by-own-phase deadlocks), **bidirectional**
@@ -735,7 +737,7 @@ running is refused (exit 3); a holder that is not alive can be seized with `--ta
 (exit 4) — because the old "older than 60 minutes = crashed" rule was wrong in both
 directions. `--session`/`--pid` override the identity written into the lock for testing.
 
-### `plugins/audit/scripts/audit-task.py` (v0.37.0)
+### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'
 15-field new-task template into the model's hands per add — a class of error (a missed field,
 a misspelled enum, a fileIndex nobody extended) this script deletes: the command gathers
@@ -760,7 +762,7 @@ attr` it prints one focused table; without it, the full dashboard. `--backfill` 
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
 path that rewrites (and therefore locks) rather than only appending.
 
-### `plugins/audit/scripts/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
+### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
 `load_manifest` reads BOTH the legacy single file and the v3 index+shards form into the same assembled
 dict (so every script + hook stays format-agnostic — it's wired into all five scripts' `main()` and
@@ -922,7 +924,7 @@ four writers (`write_config`, `apply_composition`, `write_policy`, `write_areas`
 `_panel_state` and below `panel-server`, forming the DAG `_panel_state -> _panel_write ->
 panel-server`; a selftest case asserts it never imports `panel-server` back.
 
-### `plugins/audit/scripts/_help.py`
+### `plugins/audit/scripts/config/_help.py`
 The zero-token half of "what does this field mean" and "how does this actually work", backing
 `/api/help` and the panel's help drawer. Field descriptions are extracted from
 `schema/audit-config.schema.json`/`schema/audit-plan.schema.json` via `fields()`, never
@@ -933,7 +935,7 @@ policy precedence from a worked `_policy.resolve` example) and are pointers, not
 where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
 so the panel cannot advertise a tool that agent does not hold.
 
-### `plugins/audit/scripts/validate-config.py`
+### `plugins/audit/scripts/config/validate-config.py`
 Structural validator for `.claude/audit.config.json`, dependency-free, mirroring `hooks/_config.py`
 DEFAULTS. Complements `schema/audit-config.schema.json` with checks a schema pass doesn't surface
 nicely (regex compilability of custom rules, positive thresholds) and hands the control panel a
@@ -1186,8 +1188,8 @@ done
 env PATH=/nonexistent /bin/sh plugins/audit/hooks/py-launch.sh guard-edits.py ask < /dev/null
 
 # 2. Schema + validator accept the starter AND the dogfood manifest
-python3 plugins/audit/scripts/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
-python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json
+python3 plugins/audit/scripts/manifest/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
+python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
 npx ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.schema.json \
   -d plugins/audit/templates/audit-plan.starter.json
 claude plugin validate . && claude plugin validate plugins/audit
@@ -1213,7 +1215,7 @@ grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
 **Creation**: `/audit:init` interviews you, fans out parallel read-only explorers, and
 synthesizes the manifest; `/audit:task add` appends planned work; `/audit:bug add` records
 bugs and `/audit:bug fix` materializes one into a red-first `tdd` task in a `BF<n>` phase.
-Every mutation revalidates via `scripts/validate-manifest.py`.
+Every mutation revalidates via `scripts/manifest/validate-manifest.py`.
 
 **Execution**: the `/audit:*` verbs drive the manifest, spawning model-assigned subagents that load
 `task.skills`, run `tests.gate`, and commit per task on a phase branch, then sign the phase

@@ -142,7 +142,7 @@ never hardcode branch names, package ids, skills, or build tools here:
 - **Never read secrets** and **never log tokens** — enforced by the plugin's guard hooks; do not work around them.
 - If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command.
 - Every manifest write goes through `Edit` and must keep the JSON valid — after each mutation run
-  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` and fix any findings
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` and fix any findings
   before proceeding (exit 0 = valid, 1 = findings, 2 = unreadable; `WARNING:` lines are advisory).
 - **Task fields:** `commit` (SHA after task commit), `dependsOn` (task-id array), `attempts` (int, increment per
   execution), `startedAt`/`completedAt` (ISO), `risk` (`low`|`med`|`high`|null), `verifiedBy` (test names added),

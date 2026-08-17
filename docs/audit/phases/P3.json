@@ -32,7 +32,7 @@
       "files": [
         "plugins/audit/commands/sync.md",
         "plugins/audit/schema/audit-plan.schema.json",
-        "plugins/audit/scripts/validate-manifest.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
         "plugins/audit/README.md"
       ],
       "docs": [],

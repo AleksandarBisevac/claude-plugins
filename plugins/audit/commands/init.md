@@ -268,7 +268,7 @@ from `payload.phase.tasks[].files`.
 1. `mkdir -p` the manifest's parent directory; Write the manifest as decided in
    step 6 (approved phases in `phases[]` with their `fileIndex` entries; parked
    phases in `proposals[]`).
-2. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` —
+2. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` —
    on findings, fix and re-run until clean (this is mandatory).
 3. If `npx` is available, also run
    `npx ajv-cli validate --spec=draft2020 -s "${CLAUDE_PLUGIN_ROOT}/schema/audit-plan.schema.json" -d <manifestPath>`;

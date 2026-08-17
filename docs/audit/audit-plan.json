@@ -17,7 +17,7 @@
     },
     "buildCommands": {
       "selftests": "for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) $(find plugins/audit/tests -name '*.py' | sort); do python3 \"$f\" --selftest || exit 1; done",
-      "validate": "python3 plugins/audit/scripts/validate-manifest.py docs/audit/audit-plan.json",
+      "validate": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json",
       "plugin-validate": "claude plugin validate . && claude plugin validate plugins/audit",
       "gate": "python3 plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate",
       "report": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
@@ -339,7 +339,7 @@
       "P5.2",
       "P7.2"
     ],
-    "plugins/audit/scripts/_areas.py": [
+    "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4"
     ],
     "plugins/audit/scripts/_deps.py": [
@@ -352,7 +352,7 @@
       "P10.6",
       "P15.4"
     ],
-    "plugins/audit/scripts/_help.py": [
+    "plugins/audit/scripts/config/_help.py": [
       "P10.2",
       "P10.5",
       "P12.1",
@@ -362,7 +362,7 @@
       "P10.1",
       "P15.4"
     ],
-    "plugins/audit/scripts/_manifest_io.py": [
+    "plugins/audit/scripts/manifest/_manifest_io.py": [
       "P10.4",
       "P15.4"
     ],
@@ -433,7 +433,7 @@
       "P10.3",
       "P15.4"
     ],
-    "plugins/audit/scripts/migrate-manifest.py": [
+    "plugins/audit/scripts/manifest/migrate-manifest.py": [
       "P10.3",
       "P15.4"
     ],
@@ -479,10 +479,10 @@
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1"
     ],
-    "plugins/audit/scripts/validate-config.py": [
+    "plugins/audit/scripts/config/validate-config.py": [
       "P15.4"
     ],
-    "plugins/audit/scripts/validate-manifest.py": [
+    "plugins/audit/scripts/manifest/validate-manifest.py": [
       "P1.5",
       "P3.1",
       "P5.1",

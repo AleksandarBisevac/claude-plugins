@@ -33,7 +33,7 @@ two copies of a procedure is one copy and one lie.
   that is the thing to say.** Never fall back to a default to fill the gap; a basis with no claim
   is noise. See `CONTRIBUTING.md` for the worked example (cost, and the five surfaces that
   render it).
-- Every command that mutates the manifest revalidates via `scripts/validate-manifest.py`.
+- Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
 
 ## Adding a `.py` under `hooks/` or `scripts/`
 

@@ -467,13 +467,10 @@ def _cases(check):
                                   "hooks/meter-usage.py",
                                   "hooks/remind-tdd.py",
                                   "hooks/require-plan.py",
-                                  "scripts/_areas.py",
                                   "scripts/_cli_fmt.py",
                                   "scripts/_deps.py",
                                   "scripts/_fmt.py",
-                                  "scripts/_help.py",
                                   "scripts/_loader.py",
-                                  "scripts/_manifest_io.py",
                                   "scripts/_output.py",
                                   "scripts/_panel_discovery.py",
                                   "scripts/_panel_page.py",
@@ -485,13 +482,18 @@ def _cases(check):
                                   "scripts/_ui_theme.py",
                                   "scripts/audit-doctor.py",
                                   "scripts/audit-status.py",
-                                  "scripts/audit-task.py",
+                                  "scripts/config/_help.py",
+                                  "scripts/config/validate-config.py",
                                   "scripts/gen-demo-manifest.py",
                                   "scripts/gen-demo-usage.py",
                                   "scripts/governance/_policy.py",
                                   "scripts/governance/audit-journal.py",
                                   "scripts/governance/audit-lock.py",
-                                  "scripts/migrate-manifest.py",
+                                  "scripts/manifest/_areas.py",
+                                  "scripts/manifest/_manifest_io.py",
+                                  "scripts/manifest/audit-task.py",
+                                  "scripts/manifest/migrate-manifest.py",
+                                  "scripts/manifest/validate-manifest.py",
                                   "scripts/panel-server.py",
                                   "scripts/report/_report_html.py",
                                   "scripts/report/_report_md.py",
@@ -502,9 +504,7 @@ def _cases(check):
                                   "scripts/usage/_usage_analytics.py",
                                   "scripts/usage/_usage_core.py",
                                   "scripts/usage/audit-usage.py",
-                                  "scripts/usage/usage_ledger.py",
-                                  "scripts/validate-config.py",
-                                  "scripts/validate-manifest.py"])
+                                  "scripts/usage/usage_ledger.py"])
     check("sc12 every production file is accounted for, so a file can neither be "
           "double-counted nor quietly dropped: %d + %d == %d"
           % (len(real_cov["inline"]), len(real_cov["covered"]), real_cov["total"]),
@@ -523,13 +523,10 @@ def _cases(check):
                                      "plugins/audit/hooks/meter-usage.py",
                                      "plugins/audit/hooks/remind-tdd.py",
                                      "plugins/audit/hooks/require-plan.py",
-                                     "plugins/audit/scripts/_areas.py",
                                      "plugins/audit/scripts/_cli_fmt.py",
                                      "plugins/audit/scripts/_deps.py",
                                      "plugins/audit/scripts/_fmt.py",
-                                     "plugins/audit/scripts/_help.py",
                                      "plugins/audit/scripts/_loader.py",
-                                     "plugins/audit/scripts/_manifest_io.py",
                                      "plugins/audit/scripts/_output.py",
                                      "plugins/audit/scripts/_panel_discovery.py",
                                      "plugins/audit/scripts/_panel_page.py",
@@ -541,13 +538,18 @@ def _cases(check):
                                      "plugins/audit/scripts/_ui_theme.py",
                                      "plugins/audit/scripts/audit-doctor.py",
                                      "plugins/audit/scripts/audit-status.py",
-                                     "plugins/audit/scripts/audit-task.py",
+                                     "plugins/audit/scripts/config/_help.py",
+                                     "plugins/audit/scripts/config/validate-config.py",
                                      "plugins/audit/scripts/gen-demo-manifest.py",
                                      "plugins/audit/scripts/gen-demo-usage.py",
                                      "plugins/audit/scripts/governance/_policy.py",
                                      "plugins/audit/scripts/governance/audit-journal.py",
                                      "plugins/audit/scripts/governance/audit-lock.py",
-                                     "plugins/audit/scripts/migrate-manifest.py",
+                                     "plugins/audit/scripts/manifest/_areas.py",
+                                     "plugins/audit/scripts/manifest/_manifest_io.py",
+                                     "plugins/audit/scripts/manifest/audit-task.py",
+                                     "plugins/audit/scripts/manifest/migrate-manifest.py",
+                                     "plugins/audit/scripts/manifest/validate-manifest.py",
                                      "plugins/audit/scripts/panel-server.py",
                                      "plugins/audit/scripts/report/_report_html.py",
                                      "plugins/audit/scripts/report/_report_md.py",
@@ -558,9 +560,7 @@ def _cases(check):
                                      "plugins/audit/scripts/usage/_usage_analytics.py",
                                      "plugins/audit/scripts/usage/_usage_core.py",
                                      "plugins/audit/scripts/usage/audit-usage.py",
-                                     "plugins/audit/scripts/usage/usage_ledger.py",
-                                     "plugins/audit/scripts/validate-config.py",
-                                     "plugins/audit/scripts/validate-manifest.py"]
+                                     "plugins/audit/scripts/usage/usage_ledger.py"]
           and all(os.path.isfile(os.path.join(M.REPO_ROOT, p.replace("/", os.sep)))
                   for p in M.covered_repo_paths()))
 
@@ -692,13 +692,16 @@ def _cases(check):
               _installed[0] == M.SCRIPTS_DIR
               and all(d in sys.path for d in _installed))
         check("ip3 the day a script moved has arrived: the list is SCRIPTS_DIR plus "
-              "every domain under it - governance/, report/ (the first ever created) "
-              "and usage/, in the walk's own sorted order rather than the order they "
-              "were created. It said `exactly one directory` for as long as the tree "
-              "was flat, and editing it is what each move COSTS - the mechanism is no "
-              "longer a no-op and this is where that is stated: %r" % (_installed,),
+              "every domain under it - config/, governance/, manifest/, report/ (the "
+              "first ever created) and usage/, in the walk's own sorted order rather "
+              "than the order they were created. It said `exactly one directory` for "
+              "as long as the tree was flat, and editing it is what each move COSTS - "
+              "the mechanism is no longer a no-op and this is where that is stated: "
+              "%r" % (_installed,),
               _installed == [M.SCRIPTS_DIR,
+                             os.path.join(M.SCRIPTS_DIR, "config"),
                              os.path.join(M.SCRIPTS_DIR, "governance"),
+                             os.path.join(M.SCRIPTS_DIR, "manifest"),
                              os.path.join(M.SCRIPTS_DIR, "report"),
                              os.path.join(M.SCRIPTS_DIR, "usage")])
         check("ip3b ...and it is DERIVED from the walk, not a constant: every entry "

@@ -68,7 +68,7 @@ Config keys (all optional; defaults in DEFAULTS below):
         ("deny"|"ask"|"warn"), and one block per kind (skills/agents/mcp) of
         {default: "allow"|"deny", allow: [pattern], deny: [pattern],
         areas: {tag: {allow, deny}}}. The shape, the defaults and the resolution
-        all live in scripts/_policy.py — see DEFAULTS below for why they are not
+        all live in _policy.py — see DEFAULTS below for why they are not
         restated here.
 
 This module also hosts the path/manifest helpers shared by require-plan.py and
@@ -79,7 +79,7 @@ run on every tool call, launched by a process that may not have scripts/ on its
 sys.path, so scripts/-owned features (policy, journal, manifest assembly) are
 loaded by path via `_load_scripts_module` and treated as optional, not required.
 
-That sentence is machine-checked — `scripts/_deps.py` fails the build on any static
+That sentence is machine-checked — `_deps.py` fails the build on any static
 hooks->scripts import, with no allow-list. It had one, for one import: this
 module's own manifest read, which the checker's first run found (F11) and which
 was the only thing standing between the rule and being true.
@@ -168,7 +168,7 @@ DEFAULTS = {
     # purpose: model rates change, and a stale rate should be a one-line fix in the
     # consuming repo rather than a plugin release. Cache rates follow the published
     # multipliers off base input — write 1.25x at the 5-minute TTL, 2x at the
-    # 1-hour TTL, read 0.1x. Keep in sync with scripts/usage_ledger.py
+    # 1-hour TTL, read 0.1x. Keep in sync with usage_ledger.py
     # DEFAULT_PRICING, which mirrors this so the module works standalone.
     "usage": {
         "enabled": True,
@@ -208,7 +208,7 @@ DEFAULTS = {
     # The audit trail. `dir` is null on purpose rather than a literal path: the
     # journal belongs beside the manifest, so it travels with a repo that moved its
     # plan and is committed by the same commit that carries the change it records.
-    # scripts/audit-journal.py owns the resolution; journal_dir() below is the one
+    # audit-journal.py owns the resolution; journal_dir() below is the one
     # copy of it the hooks read, and its selftest pins the two together.
     # `strictManifestState` ("off" | "ask", default off) is guard-edits' opt-in
     # confirmation prompt on manifest STATE edits (status/completedAt/commit/
@@ -282,7 +282,7 @@ def _load_scripts_module(name, filename):
         return None
 
 
-# The capability policy's defaults are NOT written out here. scripts/_policy.py owns
+# The capability policy's defaults are NOT written out here. _policy.py owns
 # the block — its shape, its resolution order and what "inert" means — and a second
 # copy of the shipped values in this file is the drift this repository has already
 # shipped once (`exemptGlobs` and `tddReminder.testGlobs` disagreeing about what a
@@ -415,7 +415,7 @@ _LEDGER_LIB = {"tried": False, "mod": None}
 
 
 def _ledger_lib():
-    """scripts/usage_ledger.py, loaded once — the `_load_journal_lib` caching.
+    """usage_ledger.py, loaded once — the `_load_journal_lib` caching.
 
     Honest accounting: a hook process resolves an author once per run, so in
     production this cache saves almost nothing. What it buys is parity (the
@@ -435,7 +435,7 @@ _JOURNAL_LIB = {"tried": False, "mod": None}
 
 
 def _load_journal_lib():
-    """scripts/audit-journal.py, loaded by path and cached — the same pattern as
+    """audit-journal.py, loaded by path and cached — the same pattern as
     _load_lock_lib, and for the same reason: the journal's own module owns where a
     journal lives and what a row means, and a second copy of that rule in here is
     two implementations that can disagree. None when it cannot be loaded, which
@@ -491,7 +491,7 @@ def in_journal(root, cfg, path):
 
 # --- policy -------------------------------------------------------------------
 def policy_mod():
-    """scripts/_policy.py, or None when this install has no policy engine."""
+    """_policy.py, or None when this install has no policy engine."""
     return _POLICY_MOD
 
 
@@ -515,7 +515,7 @@ _AREAS_LIB = {"tried": False, "mod": None}
 
 
 def _areas_lib():
-    """scripts/_areas.py, loaded once — the same caching `_load_journal_lib` uses,
+    """_areas.py, loaded once — the same caching `_load_journal_lib` uses,
     and for the plainer reason: this sits behind a blocking guard, and executing a
     module per tool call to normalise a list of tags is work nobody asked for."""
     if not _AREAS_LIB["tried"]:
@@ -562,7 +562,7 @@ def active_area_tags(root, manifest_rel):
 
 
 def _areas_of_fallback(area):
-    """`_areas.areas_of` when scripts/_areas.py cannot be loaded. Deliberately the
+    """`_areas.areas_of` when _areas.py cannot be loaded. Deliberately the
     same normalisation (trim, drop empties, dedupe) and nothing more — the module
     is the source of truth and this exists only so a missing file degrades to a
     plain reading of the tag rather than to no tags at all."""
@@ -753,7 +753,7 @@ def _load_manifest_assembled(path):
 
 
 def _load_lock_lib():
-    """Load scripts/audit-lock.py by path — same pattern as _load_manifest_assembled
+    """Load audit-lock.py by path — same pattern as _load_manifest_assembled
     and meter-usage's ledger load. None if it cannot be loaded; every caller treats
     that as "no verdict" and allows."""
     return _load_scripts_module("audit_lock", "audit-lock.py")
@@ -1073,7 +1073,7 @@ def utc_stamp():
     and `time.strptime(s, "%Y-%m-%dT%H:%M:%SZ")` still parses it without a
     murmur. What breaks is downstream and silent: a lock taken at 14:00 CEST is
     recorded as `14:00Z`, so every reader that compares it to real UTC — the
-    stale-lock age in scripts/audit-lock.py, the doctor's clock-drift check, the
+    stale-lock age in audit-lock.py, the doctor's clock-drift check, the
     panel's Overview — sees an event two hours in the future and computes a
     negative age. On a machine that happens to run in UTC the two versions are
     indistinguishable, which is why the mistake survives review and a CI run.

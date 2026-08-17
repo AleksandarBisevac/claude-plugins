@@ -44,7 +44,7 @@ heals whatever the echo missed.
    the config, or any file; never echo one (the secret guard blocks it anyway). Auth
    belongs to `az` / the MCP server.
 6. After EVERY manifest mutation: revalidate with
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>`.
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>`.
 7. `push`/`pull` write the manifest — hold the **concurrency lock** (see conventions →
    Concurrency lock) around those writes; `status` is read-only and never locks.
 

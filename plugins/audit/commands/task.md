@@ -14,13 +14,13 @@ Unknown/empty subcommand → print usage and stop.
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
-`add` writes through `scripts/audit-task.py`, which takes and releases the **index lock**
+`add` writes through `scripts/manifest/audit-task.py`, which takes and releases the **index lock**
 itself; hold the lock by hand (conventions → Concurrency lock) only around writes YOU make
 with Edit — the `move` subcommand, and the new-phase creation in `add` step 1.
 
 ## Subcommand: `add "<title>" [--phase <id>]`
 
-The add is a SCRIPT call, not a hand-templated edit. `scripts/audit-task.py` allocates
+The add is a SCRIPT call, not a hand-templated edit. `scripts/manifest/audit-task.py` allocates
 the id under the index lock, initializes every orchestrator field from the conventions'
 new-task template exactly once, extends `fileIndex`, revalidates from disk (rolling the
 write back on findings) and journals a `task.add` row. Your job is to gather the answers
@@ -82,7 +82,7 @@ per add is the class of error the script exists to delete.
    - `--blocked-by` / `--depends-on` — comma-separated ids (omit when none).
 3. **Run it** (Bash):
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-task.py" add "<title>" \
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add "<title>" \
            --phase <id> --description "<why & how>" --files a,b \
            --tests-mode regression --risk low --skills a,b
    ```
@@ -105,12 +105,12 @@ approach was abandoned, the phase ends with whatever landed. This is not failure
 not `done`: `cancelled` is the second TERMINAL state (the phase/task twin of a bug's
 `wontfix`), and the report files it under **Archived** beside the finished work.
 
-Like `add`, this is a SCRIPT call — `scripts/audit-task.py cancel <id> --reason "<why>"`,
+Like `add`, this is a SCRIPT call — `scripts/manifest/audit-task.py cancel <id> --reason "<why>"`,
 which takes the index lock itself. Never hand-edit the status: the script is what records
 all three things a hand-edit loses — the reason, the moment, and the journal row.
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-task.py" cancel P3.2 \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" cancel P3.2 \
   --reason "search rewrite dropped; the endpoint stays as-is" [--json]
 ```
 
@@ -182,7 +182,7 @@ the two phase SHARDS while `fileIndex`/`bugs[]` edits go to the index):
            --summary "<oldId> -> <newId> (<oldPhase> -> <newPhase>)" \
            --details '{"fromId":"<oldId>","toId":"<newId>","fromPhase":"<oldPhase>","toPhase":"<newPhase>"}'
    ```
-5. **Revalidate**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>` —
+5. **Revalidate**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` —
    fix and re-run until clean (the id-prefix warning for the moved task must be gone).
 6. **Release the lock**, then **report**: old id, new id, target phase, whether the task is
    **ready now** (readiness rule), and this ledger note verbatim in spirit:

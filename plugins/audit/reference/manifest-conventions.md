@@ -21,7 +21,7 @@ Every manifest mutation goes through `Edit`/`Write` and must keep the JSON valid
 After EVERY mutation, run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate-manifest.py" <manifestPath>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>
 ```
 
 Exit 0 = valid. On findings: fix the manifest and re-run before doing anything else.

@@ -35,7 +35,7 @@
       "files": [
         "plugins/audit/scripts/_panel_settings.py",
         "plugins/audit/scripts/panel-server.py",
-        "plugins/audit/scripts/_help.py"
+        "plugins/audit/scripts/config/_help.py"
       ],
       "docs": [],
       "description": "Move lines 75-352 (FIELD_HELP, COMPOSITION_HELP, SETTINGS_GROUPS, _settings_paths, _cfg_enums via _loader) plus the _META/_PHASE/_TASK key sets. _help.py:783 stops importlib-execing panel-server for _settings_paths and does a plain import _panel_settings \u2014 same commit, with the coverage cases proving resolution still works. Each moved selftest case moves with its code.",

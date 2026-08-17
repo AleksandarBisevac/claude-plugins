@@ -1111,7 +1111,7 @@ def ui_navigability_violations(ui_dir=None):
 # permanent; this one cannot, because fixing something breaks it too.
 KNOWN_LAYER_DEBT = (
     # -- upward inversions: a helper reaching an entry point (7) --
-    ("_help.py",
+    ("config/_help.py",
      "runtime-loads audit-journal (layer 7) from layer 3 - not strictly downward"),
     ("_panel_settings.py",
      "runtime-loads validate-config (layer 7) from layer 2 - not strictly downward"),
@@ -1163,15 +1163,21 @@ KNOWN_LAYER_DEBT = (
     # deliberately absent from LAYERS). The edges are gone from the tree, so the
     # entries had to go with them - r2 fails on a RETIRED entry exactly as it
     # fails on a new one, and the list may only shrink, deliberately.
-    ("migrate-manifest.py",
+    # BOTH ENDS OF THIS EDGE MOVED IN ONE CHANGE, AND ONLY THE KEY CHANGED SPELLING.
+    # `migrate-manifest` and `validate-manifest` went into `scripts/manifest/` together,
+    # so this is the clearest instance of the rule stated below: the key is a relname
+    # and gained the directory, the target inside the message is a node name and did
+    # not. An entry naming the same file on both sides would otherwise look inconsistent.
+    ("manifest/migrate-manifest.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
     # KEYED BY RELNAME, WHICH IS WHY THIS ONE MOVED AND THE `render-report` ENTRY
     # UNDER `_panel_state.py` DID NOT. `layer_violations()` reports `named[importer]`
     # - `_named_by()`'s relname, so an importer that moves into a subdirectory is
     # spelled with it - while the IMPORTED module inside the message is a node name,
     # which is the BASENAME at any depth. One entry changed when the six report files
-    # moved into `scripts/report/`, and exactly one more when the usage and governance
-    # domains followed; the target spellings above are untouched by all three.
+    # moved into `scripts/report/`, exactly one more when the usage and governance
+    # domains followed, and exactly one more when the manifest and config domains did;
+    # the target spellings above are untouched by all four.
     ("report/render-report.py",
      "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
 )
