@@ -788,6 +788,184 @@ def _cases(record):
            ok)
     os.unlink(path)
 
+    # --- ds: the seams validate() was decomposed along --------------------------
+    # `validate()` was 354 lines threading seven accumulating locals through six
+    # unrelated questions. It is orchestration now, and every question lives in a
+    # piece that takes a NAMED index and returns its own (findings, warnings).
+    # The 131 cases above prove the BEHAVIOUR is unchanged; these prove the seams
+    # are the ones claimed, and each is reachable only because the piece became
+    # callable — which is the other half of what the cut bought.
+    _ds_phases = [
+        {"id": "P0", "title": "Phase", "status": "pending", "tasks": [
+            {"id": "P0.1", "title": "T", "status": "pending",
+             "files": ["src/a.ts"]},
+            {"id": "P0.2", "title": "T2", "status": "pending", "files": [],
+             "bugId": "BUG-1"}]},
+        {"id": "P1", "title": "Two", "status": "pending", "tasks": []},
+    ]
+
+    _f_ds1, _w_ds1 = M._check_meta({"meta": {"version": 2}, "phazes": []})
+    record("ds1 _check_meta answers for the ROOT object's key vocabulary as "
+           "well as for meta - one piece for the document's header, so the "
+           "root's unknown-key warning does not go missing the moment "
+           "validate() stops spelling it itself",
+           _f_ds1 == [] and any("manifest root" in x and "phazes" in x
+                                for x in _w_ds1),
+           (_f_ds1, _w_ds1))
+    _f_ds2, _w_ds2 = M._check_meta({"meta": "nope"})
+    record("ds2 ...and a non-object meta is ONE finding: the guard returns "
+           "instead of falling through to the version rule, which would name "
+           "one defect twice",
+           _f_ds2 == ["meta: missing or not an object"] and _w_ds2 == [],
+           (_f_ds2, _w_ds2))
+
+    _ix, _f_ds3, _w_ds3 = M._walk_phases(_ds_phases)
+    record("ds3 _walk_phases hands back a NAMED index instead of five "
+           "positional lists - the shape that made the cut possible at all: %r"
+           % (sorted(_ix),),
+           sorted(_ix) == ["bug_links", "phase_ids", "task_by_id",
+                           "task_files", "task_ids"])
+    record("ds4 ...and it carries what the four checks after it read: ids in "
+           "DOCUMENT order, the task OBJECT for the reciprocity check, and "
+           "each bug link as a (where, task, bug) triple",
+           _ix["phase_ids"] == ["P0", "P1"]
+           and _ix["task_ids"] == ["P0.1", "P0.2"]
+           and _ix["task_by_id"]["P0.2"] is _ds_phases[0]["tasks"][1]
+           and _ix["bug_links"] == [("task P0.2", "P0.2", "BUG-1")],
+           _ix)
+    record("ds5 ...and task_files holds only the tasks that CLAIM files - a "
+           "`files: []` task is absent rather than mapped to [], because the "
+           "fileIndex check walks it with .items() and an empty entry is a lap "
+           "around nothing",
+           _ix["task_files"] == {"P0.1": ["src/a.ts"]}, _ix["task_files"])
+    # The accumulator rule in the direction that fails SILENTLY: a piece keeping
+    # its answer in a list it did not build fresh returns the same list twice,
+    # and the second caller reads the first caller's findings.
+    _ix_a, _f_dsa, _w_dsa = M._walk_phases(_ds_phases)
+    _f_dsa.append("scribbled on by a caller")
+    _ix_b, _f_dsb, _w_dsb = M._walk_phases(_ds_phases)
+    record("ds6 every call returns its OWN lists and its own index - writing "
+           "to one caller's findings cannot reach the next caller's, which is "
+           "exactly what passing the accumulator in used to permit",
+           _f_dsb == [] and _w_dsb == [] and _f_dsa != _f_dsb
+           and _ix_a is not _ix_b, (_f_dsa, _f_dsb))
+
+    _ds_bug_rows = [{"id": "BUG-1", "title": "b", "status": "open"}, "junk",
+                    {"title": "no id"}]
+    record("ds7 _index_bugs is an index and not a check: a junk entry and an "
+           "id-less bug are skipped silently, because bugs[]'s own rules "
+           "belong to _check_bugs and two messages about one defect are how "
+           "they start disagreeing",
+           M._index_bugs({"bugs": _ds_bug_rows})
+           == {"bug_list": _ds_bug_rows, "bug_ids": ["BUG-1"],
+               "bug_by_id": {"BUG-1": _ds_bug_rows[0]}})
+    _f_ds8, _w_ds8 = M._check_unique_ids(
+        {"phase_ids": ["P0"], "task_ids": ["P0.1"], "bug_ids": ["P0.1"]})
+    record("ds8 phases, tasks and bugs share ONE id namespace - a bug wearing "
+           "a task's id IS a duplicate, and a _live_ids that unioned only the "
+           "first two would report nothing here",
+           _f_ds8 == ["duplicate id: P0.1"] and _w_ds8 == [], (_f_ds8, _w_ds8))
+
+    _f_ds9, _w_ds9 = M._check_refs_and_cycles(
+        [{"id": "P0", "title": "p", "status": "pending", "tasks": [
+            {"id": "P0.1", "title": "t", "status": "pending",
+             "blockedBy": ["P9"], "dependsOn": ["P9"]}]}],
+        {"phase_ids": ["P0", "P9"], "task_ids": ["P0.1"]})
+    record("ds9 the two universes stay apart across the seam: blockedBy may "
+           "name a PHASE, dependsOn may name only a task - so one id in both "
+           "fields is exactly one finding, and either way of swapping the "
+           "arguments changes which one",
+           _f_ds9 == ["task P0.1: dependsOn 'P9' does not resolve to a task"]
+           and _w_ds9 == [], (_f_ds9, _w_ds9))
+
+    _f_ds10, _w_ds10 = M._check_file_index(
+        {"fileIndex": {"src/a.ts:10-20": ["P0.1"]}},
+        {"task_ids": ["P0.1"], "task_files": {"P0.1": ["src/b.ts"]}})
+    record("ds10 _check_file_index takes the BACKWARD direction from the index "
+           "it is handed rather than re-walking phases it never sees - and the "
+           "line suffix is still stripped on the way in, so the forward half "
+           "of this fixture stays clean",
+           _f_ds10 == ["task P0.1: file 'src/b.ts' missing from fileIndex "
+                       "(fileIndex['src/b.ts'] must include 'P0.1')"]
+           and _w_ds10 == [], (_f_ds10, _w_ds10))
+
+    _ds_bug_m = {"bugs": [{"id": "BUG-1", "title": "b", "status": "open",
+                           "taskId": "P0.1"}]}
+    _ds_bix = {"task_ids": ["P0.1"], "task_by_id": {"P0.1": {"bugId": "BUG-2"}},
+               "bug_links": []}
+    _ds_bix.update(M._index_bugs(_ds_bug_m))
+    _f_ds11, _w_ds11 = M._check_bugs(_ds_bug_m, _ds_bix)
+    record("ds11 _check_bugs decides reciprocity from the index's task OBJECT, "
+           "so a bug pointing at a task that points somewhere else is caught "
+           "from the bug's end - the half neither record can see alone",
+           len(_f_ds11) == 1 and "link must be reciprocal" in _f_ds11[0]
+           and "'BUG-2'" in _f_ds11[0] and _w_ds11 == [], (_f_ds11, _w_ds11))
+
+    _ds_prop_m = {"bugs": [{"id": "BUG-1", "title": "b", "status": "open"}],
+                  "proposals": [{"id": "PROP-1", "name": "n",
+                                 "status": "proposed",
+                                 "payload": {"phase": {
+                                     "id": "BUG-1", "title": "T",
+                                     "status": "pending", "tasks": []}}}]}
+    _ds_pix = {"phase_ids": [], "task_ids": []}
+    _ds_pix.update(M._index_bugs(_ds_prop_m))
+    _f_ds12, _w_ds12 = M._check_proposals(_ds_prop_m, _ds_pix)
+    record("ds12 a parked payload id is measured against the WHOLE live "
+           "namespace, bugs included - _live_ids is one function, so the "
+           "reserved-id rule and the duplicate-id sweep cannot drift apart "
+           "about what 'live' means",
+           any("reserved id 'BUG-1' collides" in x for x in _f_ds12),
+           (_f_ds12, _w_ds12))
+
+    # The uniform contract, asserted over every direct child at once: a new
+    # piece that returns a bare list (or writes into an argument) is named here
+    # rather than discovered by the orchestrator folding None.
+    _ds_m = _valid_manifest()
+    # Snapshotted HERE and not beside ds14, which is where it was first written:
+    # the pieces are already called once by ds13 below, so a snapshot taken after
+    # that loop records the damage as the baseline and ds14 passes over a
+    # manifest a piece really did edit. Caught by mutating _check_areas to
+    # `setdefault("proposals", [])` and watching ds14 stay green.
+    _ds_before = json.dumps(_ds_m, sort_keys=True)
+    _ds_index, _, _ = M._walk_phases(_ds_m["phases"])
+    _ds_index.update(M._index_bugs(_ds_m))
+    _ds_calls = [("_check_meta", (_ds_m,)),
+                 ("_check_areas", (_ds_m,)),
+                 ("_check_unique_ids", (_ds_index,)),
+                 ("_check_refs_and_cycles", (_ds_m["phases"], _ds_index)),
+                 ("_check_model_typos", (_ds_m,)),
+                 ("_check_skills", (_ds_m,)),
+                 ("_check_skill_typos", (_ds_m,)),
+                 ("_check_file_index", (_ds_m, _ds_index)),
+                 ("_check_bugs", (_ds_m, _ds_index)),
+                 ("_check_proposals", (_ds_m, _ds_index))]
+    _ds_wrong = []
+    for _n, _a in _ds_calls:
+        _pair = getattr(M, _n)(*_a)
+        if not (isinstance(_pair, tuple) and len(_pair) == 2
+                and all(isinstance(_half, list) for _half in _pair)):
+            _ds_wrong.append((_n, _pair))
+    record("ds13 every direct child of validate() answers with the SAME "
+           "(findings, warnings) pair - the four that used to be handed a list "
+           "to write into included - so the orchestrator folds them all one "
+           "way and a piece growing a hard rule needs no new signature: %r"
+           % (_ds_wrong,),
+           not _ds_wrong)
+    for _n, _a in _ds_calls:
+        getattr(M, _n)(*_a)
+    record("ds14 ...and none of them writes to the manifest it was handed. It "
+           "reads vacuous beside ds13 and is the only case that fails if a "
+           "piece starts normalizing the document it was given to inspect",
+           json.dumps(_ds_m, sort_keys=True) == _ds_before)
+    _ds_dirty = copy.deepcopy(_valid_manifest())
+    _ds_dirty["phases"][0]["tasks"][0]["status"] = "doing"
+    _ds_one = M.validate(copy.deepcopy(_ds_dirty))
+    _ds_two = M.validate(copy.deepcopy(_ds_dirty))
+    record("ds15 validate() is repeatable across calls: one finding stays one "
+           "finding the second time round, which is the case that goes red if "
+           "any piece ever parks its answer in module state",
+           _ds_one == _ds_two and len(_ds_one[0]) == 1, _ds_one)
+
 
 def _selftest():
     return _harness.run(_cases)

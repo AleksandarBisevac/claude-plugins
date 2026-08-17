@@ -39,7 +39,7 @@ and a phase at 105% may be entirely justified. Opt in when a budget is a commitm
 Exit codes: 0 pass · 1 gate failed · 2 usage error / unreadable manifest
 (matching validate-manifest.py's convention).
 
-This module carries no `--selftest` of its own any more; its 178 cases live in
+This module carries no `--selftest` of its own any more; its 182 cases live in
 `plugins/audit/tests/test_audit_status.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. The `_fixture()` most of them start from went
 with them (no caller outside the suite), and so did the guard that keeps two case
@@ -516,26 +516,49 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     selftest enforces on its own output, so this reads in any terminal. `pt` is
     a _cli_fmt.Painter; None (every pre-color caller) means plain, and a
     disabled painter returns its input unchanged, so plain mode stays
-    byte-identical to the pre-color render."""
+    byte-identical to the pre-color render.
+
+    Every block is a `_*_lines()` helper returning its own list, in print order.
+    Three of them used to be written out inline here — the header, the phase
+    table and READY NOW — which made this function four times the length of any
+    block it sits beside and hid that they are all the same kind of thing.
+    """
+    pt = pt or _cli_fmt.PLAIN
+    lines = _header_lines(manifest, summary, width, pt=pt)
+    lines += _phase_table_lines(manifest, summary, only_phase)
+    lines += _ready_lines(manifest, summary, pt=pt)
+    lines += _area_lines(summary, pt=pt)
+    lines += _bug_lines(manifest, summary, pt=pt)
+    lines += _proposal_lines(manifest, summary, pt=pt)
+    lines += _resumable_lines(manifest, summary, pt=pt)
+    return "\n".join(lines)
+
+
+def _header_lines(manifest, summary, width=18, pt=None):
+    """Who this plan is, the whole-plan bar, and every notice that qualifies it.
+
+    The notices sit here rather than in their own blocks because each one is a
+    caveat ON the bar directly above it: an invalid manifest means the counts are
+    not to be trusted, a plan with no phases but parked proposals is not the
+    "nothing to do" the bar reads as, and the usage/budget lines are what the
+    same numbers cost."""
     pt = pt or _cli_fmt.PLAIN
     meta = (manifest or {}).get("meta") or {}
-    lines = []
-    title = meta.get("title") or "audit"
-    repo = meta.get("repo") or "-"
-    lines.append(pt.paint("AUDIT  %s   repo %s" % (title, repo), "header"))
-    lines.append("")
+    out = [pt.paint("AUDIT  %s   repo %s"
+                    % (meta.get("title") or "audit", meta.get("repo") or "-"),
+                    "header"), ""]
 
     t_total = summary["tasks"]["total"]
     t_done = summary["tasks"]["byStatus"].get("done", 0)
     ph_done = sum(1 for p in summary["phases"] if p.get("status") == "done")
     bugs = summary["bugs"]
-    lines.append("  %s  %d/%d tasks done - %d/%d phases signed off - "
-                 "%d open bug(s) - %d ready now"
-                 % (_fmt.fmt_bar(t_done, t_total, width), t_done, t_total,
-                    ph_done, len(summary["phases"]), bugs["open"],
-                    len(summary["ready"])))
+    out.append("  %s  %d/%d tasks done - %d/%d phases signed off - "
+               "%d open bug(s) - %d ready now"
+               % (_fmt.fmt_bar(t_done, t_total, width), t_done, t_total,
+                  ph_done, len(summary["phases"]), bugs["open"],
+                  len(summary["ready"])))
     if not summary["valid"]:
-        lines.append(pt.paint(
+        out.append(pt.paint(
             "  INVALID MANIFEST: %d validator finding(s) - fix before "
             "running a phase" % summary["findings"], "finding"))
     # A park-all /audit:init leaves a valid plan with zero phases. Without this
@@ -543,32 +566,43 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     # checks first, when the actual state is "everything is waiting for you".
     props_sum = summary.get("proposals") or {}
     if not summary["phases"] and props_sum.get("parked"):
-        lines.append(pt.paint("  empty plan - %d parked proposal(s) waiting: "
-                              "/audit:propose list" % props_sum["parked"],
-                              "warn"))
+        out.append(pt.paint("  empty plan - %d parked proposal(s) waiting: "
+                            "/audit:propose list" % props_sum["parked"],
+                            "warn"))
 
     usage = summary.get("usage")
     if usage:
-        lines.append("  " + _usage_line(summary, usage))
-        lines += _budget_lines(summary, usage, pt=pt)
+        out.append("  " + _usage_line(summary, usage))
+        out += _budget_lines(summary, usage, pt=pt)
+    return out
 
+
+def _phase_table_lines(manifest, summary, only_phase=None):
+    """The phase-by-phase table: one header row, then a block per phase.
+
+    Column widths are computed across EVERY task, then the header is printed
+    once. Per-phase tables re-printed their own header and re-derived their own
+    widths, so a fifty-phase manifest produced fifty header rows and fifty
+    different alignments — the columns stopped being columns. That shared
+    `widths` is why `fmt_row` is a closure, and why this block is one function:
+    the rows and the measurement of the rows cannot be separated.
+
+    `only_phase` scopes only which phases are LISTED. The overall line, the usage
+    line and the bug counts stay whole-plan on purpose (they are `_header_lines`'
+    business): a phase view that silently rescoped the totals would misreport the
+    project, so the scope note says so where the scoping happens.
+    """
     unmet = unmet_refs(manifest)
     ready = set(summary["ready"])
     by_id = {p.get("id"): p for p in (manifest.get("phases") or [])
              if isinstance(p, dict)}
-    # Scoping affects only which phases are LISTED. The overall line, the usage
-    # line and the bug counts stay whole-plan on purpose: a phase view that
-    # silently rescoped the totals would misreport the project.
     shown_phases = [p for p in summary["phases"]
                     if not only_phase or p.get("id") == only_phase]
+    out = []
     if only_phase:
-        lines.append("  scoped to phase %s - totals above are whole-plan"
-                     % only_phase)
+        out.append("  scoped to phase %s - totals above are whole-plan"
+                   % only_phase)
 
-    # Column widths are computed across EVERY task, then the header is printed once.
-    # Per-phase tables re-printed their own header and re-derived their own widths,
-    # so a fifty-phase manifest produced fifty header rows and fifty different
-    # alignments — the columns stopped being columns.
     all_rows = {}
     for pe in shown_phases:
         ph = by_id.get(pe.get("id")) or {}
@@ -599,11 +633,11 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
         return "     " + "  ".join("%-*s" % (widths[i], cells[i])
                                    for i in range(len(cols))).rstrip()
 
-    lines.append("")
-    lines.append(fmt_row(list(cols)))
+    out.append("")
+    out.append(fmt_row(list(cols)))
 
     for pe in shown_phases:
-        lines.append("")
+        out.append("")
         pdone, ptotal = pe.get("done", 0), pe.get("total", 0)
         ph = by_id.get(pe.get("id")) or {}
         head = "  %-4s %-26s %-11s %s %d/%d" % (
@@ -612,50 +646,53 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
             _fmt.fmt_bar(pdone, ptotal, 12), pdone, ptotal)
         if ph.get("branch"):
             head += "  %s" % ph["branch"]
-        lines.append(head)
+        out.append(head)
         if pe.get("desiredOutcome"):
-            lines.append("       desired: %s"
-                         % _clip(_one_line(pe["desiredOutcome"]), 88))
+            out.append("       desired: %s"
+                       % _clip(_one_line(pe["desiredOutcome"]), 88))
         scope = _scope_line(manifest, ph, pe)
         if scope:
-            lines.append(scope)
+            out.append(scope)
         if pe.get("id") in unmet and ph.get("status") != "done":
-            lines.append("       blocked by: %s"
-                         % _clip(", ".join(unmet[pe["id"]]), 70))
+            out.append("       blocked by: %s"
+                       % _clip(", ".join(unmet[pe["id"]]), 70))
         for r in all_rows.get(pe.get("id")) or []:
-            lines.append(fmt_row(r))
+            out.append(fmt_row(r))
+    return out
 
-    lines.append("")
-    if summary["ready"]:
-        ready_list = summary["ready"]
-        # A wide-open plan can have hundreds of ready tasks, and a 464-line list is
-        # a list nobody reads. Fold it, and SAY the count — a silent cap would read
-        # as "that is all of them", which is the worse failure.
-        shown = ready_list[:READY_LIST_MAX]
-        lines.append(pt.paint("  READY NOW  %d task(s)%s"
-                              % (len(ready_list),
-                                 "" if len(shown) == len(ready_list)
-                                 else ", first %d shown" % len(shown)),
-                              "header"))
-        task_by_id = _mio.tasks_by_id(manifest)
-        for tid in shown:
-            t = task_by_id.get(tid) or {}
-            lines.append("    %-9s %-44s %-7s run: /audit:run %s"
-                         % (tid, _clip(_one_line(t.get("title")), 44),
-                            t.get("model") or "-", tid))
-        if len(shown) < len(ready_list):
-            lines.append("    ... and %d more - /audit:next runs the first in order"
-                         % (len(ready_list) - len(shown)))
-    else:
-        lines.append(pt.paint("  READY NOW  nothing - every pending task is "
-                              "waiting on something, or the plan is complete",
-                              "header"))
 
-    lines += _area_lines(summary, pt=pt)
-    lines += _bug_lines(manifest, summary, pt=pt)
-    lines += _proposal_lines(manifest, summary, pt=pt)
-    lines += _resumable_lines(manifest, summary, pt=pt)
-    return "\n".join(lines)
+def _ready_lines(manifest, summary, pt=None):
+    """READY NOW — what can be started right this second, and how many there are.
+
+    A wide-open plan can have hundreds of ready tasks, and a 464-line list is a
+    list nobody reads. Fold it, and SAY the count — a silent cap would read as
+    "that is all of them", which is the worse failure. The empty case is a
+    sentence rather than an absent heading, because "nothing is ready" and "this
+    surface forgot to say" must not look the same."""
+    pt = pt or _cli_fmt.PLAIN
+    out = [""]
+    ready_list = summary["ready"]
+    if not ready_list:
+        out.append(pt.paint("  READY NOW  nothing - every pending task is "
+                            "waiting on something, or the plan is complete",
+                            "header"))
+        return out
+    shown = ready_list[:READY_LIST_MAX]
+    out.append(pt.paint("  READY NOW  %d task(s)%s"
+                        % (len(ready_list),
+                           "" if len(shown) == len(ready_list)
+                           else ", first %d shown" % len(shown)),
+                        "header"))
+    task_by_id = _mio.tasks_by_id(manifest)
+    for tid in shown:
+        t = task_by_id.get(tid) or {}
+        out.append("    %-9s %-44s %-7s run: /audit:run %s"
+                   % (tid, _clip(_one_line(t.get("title")), 44),
+                      t.get("model") or "-", tid))
+    if len(shown) < len(ready_list):
+        out.append("    ... and %d more - /audit:next runs the first in order"
+                   % (len(ready_list) - len(shown)))
+    return out
 
 
 def _scope_line(manifest, phase, entry):

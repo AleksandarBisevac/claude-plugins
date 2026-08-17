@@ -202,8 +202,14 @@ def _check_area_tag(phase, pwhere, findings):
                         % (pwhere, len(bad), bad[:3]))
 
 
-def _check_areas(manifest, findings, warnings):
+def _check_areas(manifest):
     """The `meta.areas` registry, and the phases that name it (v0.28).
+
+    Returns (findings, warnings). It used to take both lists and write into
+    them; every direct child of `validate()` returns its own pair now, so no
+    caller can depend on the order two of them happen to run in, and a piece
+    can be exercised from a case without being handed two lists to inspect
+    afterwards.
 
     Three questions, and only the first can invalidate a manifest:
 
@@ -220,6 +226,7 @@ def _check_areas(manifest, findings, warnings):
         winner, because written order decides and a silent tie-break is a
         reviewer nobody can explain.
     """
+    findings, warnings = [], []
     meta = manifest.get("meta")
     meta = meta if isinstance(meta, dict) else {}
     if "areas" in meta:
@@ -246,6 +253,7 @@ def _check_areas(manifest, findings, warnings):
                 % (phase.get("id") or "?",
                    ", ".join("%s=%s" % (t, json.dumps(s)) for t, s in clash),
                    json.dumps(clash[0][1]), clash[0][0]))
+    return (findings, warnings)
 
 
 def _strip_line_suffix(entry):
@@ -553,8 +561,13 @@ def _model_near_miss(a, b):
     return True
 
 
-def _check_model_typos(manifest, warnings):
+def _check_model_typos(manifest):
     """Intra-manifest model-id near-miss detector (WARNING only).
+
+    Returns (findings, warnings) — findings is ALWAYS empty, and the pair is
+    still the shape, because every direct child of `validate()` answers the
+    same way and a detector that grows a hard rule later should not change its
+    signature to say so. Converted from taking the `warnings` list.
 
     Flags a model value that is used EXACTLY ONCE while a case-insensitive or
     edit-distance-1 neighbour is used elsewhere in the manifest, or appears
@@ -567,6 +580,7 @@ def _check_model_typos(manifest, warnings):
     (manifest vs rate table vs ledger) lives in the panel, which has all three
     in hand.
     """
+    warnings = []
     sites = {}   # model value -> [where, ...] in document order
 
     def note_use(val, where):
@@ -622,6 +636,7 @@ def _check_model_typos(manifest, warnings):
                 "%s: model '%s' is used once and is a near-miss of '%s' (%s) "
                 "-- a one-slip model id routes work to a model nobody priced "
                 "or intended" % (sites[val][0], val, near[0], near[1]))
+    return ([], warnings)
 
 
 def _skills_in_use(manifest):
@@ -650,8 +665,12 @@ def _skills_in_use(manifest):
     return False
 
 
-def _check_skills(manifest, warnings):
+def _check_skills(manifest):
     """Unresolved-skills advisory (v0.37 B2). WARNING only, never a finding.
+
+    Returns (findings, warnings) — findings is always empty; see
+    `_check_model_typos` for why the pair is still the shape. Converted from
+    taking the `warnings` list.
 
     A task whose RESOLVED skills are empty while the manifest uses skills
     elsewhere is usually an oversight -- the executor for that one task loads
@@ -663,8 +682,9 @@ def _check_skills(manifest, warnings):
 
     GATED on _skills_in_use: a manifest that never touches the feature gets
     zero new lines, which is the whole back-compat contract here."""
+    warnings = []
     if not _skills_in_use(manifest):
-        return
+        return ([], warnings)
     for phase in _safe_list(manifest.get("phases")):
         if not isinstance(phase, dict):
             continue
@@ -697,6 +717,7 @@ def _check_skills(manifest, warnings):
                 "default skills on an area in meta.areas, or write "
                 "\"skills\": null to say 'none applies'"
                 % (twhere, tpart, apart))
+    return ([], warnings)
 
 
 def _skill_near_miss(a, b):
@@ -728,9 +749,13 @@ def _skill_near_miss(a, b):
     return prev[-1] <= 2
 
 
-def _check_skill_typos(manifest, warnings):
+def _check_skill_typos(manifest):
     """Intra-manifest skill-name near-miss detector (WARNING only) -- the md
     model detector applied to skill names.
+
+    Returns (findings, warnings) — findings is always empty; see
+    `_check_model_typos` for why the pair is still the shape. Converted from
+    taking the `warnings` list.
 
     Flags a name used EXACTLY ONCE beside a near-miss neighbour used two or
     more times anywhere in the manifest (task.skills or meta.areas defaults).
@@ -738,6 +763,7 @@ def _check_skill_typos(manifest, warnings):
     deliberately intra-manifest: whether a name exists in the DISCOVERY
     inventory is the panel's hint (the modelHints precedent) -- this validator
     stays an offline shape-checker with no inventory in hand."""
+    warnings = []
     sites = {}   # skill name -> [where, ...] in document order
 
     def note_use(val, where):
@@ -774,6 +800,7 @@ def _check_skill_typos(manifest, warnings):
                     "skill name names a skill that never loads"
                     % (sites[val][0], val, other, len(sites[other])))
                 break
+    return ([], warnings)
 
 
 def _cycle_findings(phases, findings):
@@ -840,40 +867,71 @@ def _cycle_findings(phases, findings):
                 path.append(nxt)
 
 
-# --- validate -------------------------------------------------------------------
-def validate(manifest):
-    """Return (findings, warnings) — two lists of strings; empty findings = valid."""
-    f, w = [], []
-    if not isinstance(manifest, dict):
-        return (["manifest root must be a JSON object"], w)
+# --- validate: one walk, then one question per piece -----------------------------
+# `validate()` was 354 lines, and its size was never the reason it was hard to
+# cut. The reason was the INDEX: seven accumulating locals built by one pass over
+# the phases and read afterwards by four checks that have nothing else in common.
+# Naming that index is the whole trick — each piece below takes it, answers one
+# question, and returns its OWN (findings, warnings) instead of writing into the
+# caller's lists. One contract for every direct child of `validate()`, so a piece
+# can be called from a case with a hand-built index and no accumulators to
+# inspect afterwards, and so no two of them can quietly depend on running order.
+def _check_meta(manifest):
+    """The document's header: the ROOT object's key vocabulary, and `meta`.
 
+    Both live here because they answer one question — is this file's outermost
+    layer the shape the orchestrator reads — and neither needs anything the
+    phase walk builds, so this piece runs before it and depends on nothing.
+    """
+    f, w = [], []
     _unknown_keys(manifest, KNOWN_ROOT, "manifest root", w)
 
     meta = manifest.get("meta")
     if not isinstance(meta, dict):
         f.append("meta: missing or not an object")
-    else:
-        _unknown_keys(meta, KNOWN_META, "meta", w)
-        version = meta.get("version")
-        if not isinstance(version, int) or isinstance(version, bool):
-            # bool is an int subclass in Python — `true` must NOT pass as a version.
-            f.append("meta.version: missing or not an integer")
-        # meta.ado: the whole connector config goes through check_ado_meta --
-        # the ONE front door shared with the panel's write_ado, so the CLI
-        # and the panel cannot disagree. (It keeps F-C-1's object-or-null rule
-        # and folds in _check_identity_map.)
-        if "ado" in meta:
-            af, aw = check_ado_meta(meta.get("ado"))
-            f.extend(af)
-            w.extend(aw)
+        return (f, w)
 
-    _check_areas(manifest, f, w)
+    _unknown_keys(meta, KNOWN_META, "meta", w)
+    version = meta.get("version")
+    if not isinstance(version, int) or isinstance(version, bool):
+        # bool is an int subclass in Python — `true` must NOT pass as a version.
+        f.append("meta.version: missing or not an integer")
+    # meta.ado: the whole connector config goes through check_ado_meta --
+    # the ONE front door shared with the panel's write_ado, so the CLI
+    # and the panel cannot disagree. (It keeps F-C-1's object-or-null rule
+    # and folds in _check_identity_map.)
+    if "ado" in meta:
+        af, aw = check_ado_meta(meta.get("ado"))
+        f.extend(af)
+        w.extend(aw)
+    return (f, w)
 
-    phases = manifest.get("phases")
-    if not isinstance(phases, list):
-        f.append("phases: missing or not an array")
-        phases = []
 
+def _walk_phases(phases):
+    """One pass over every phase and every task: (index, findings, warnings).
+
+    THE INDEX IS WHY THIS WAS NEVER CUT OUT BEFORE. Five accumulating locals
+    ride this single walk and each is read by a DIFFERENT check further down,
+    which is exactly the coupling that kept `validate()` in one 354-line piece.
+    Naming them turns the coupling into an argument:
+
+      phase_ids     every phase id, document order   -> unique ids, proposals
+      task_ids      every task id, document order    -> unique ids, refs,
+                                                        fileIndex, bugs
+      task_by_id    id -> the task object            -> bug reciprocity
+      task_files    id -> its non-empty `files` list -> fileIndex, both ways
+      bug_links     (twhere, task id, bugId) per link-> bug reciprocity
+
+    `task_files` holds only tasks whose `files` is a non-empty list, because
+    that is the question `_check_file_index` asks of it; a task with no files
+    is absent rather than mapped to [], and the fileIndex check reads it with
+    `.items()` only.
+
+    The walk stays ONE pass on purpose. Splitting it per-question would visit
+    every task four times to build four dicts, and would let two of them
+    disagree about which objects were skipped as malformed.
+    """
+    f, w = [], []
     phase_ids, task_ids = [], []
     task_bug_links = []       # (twhere, task_id, bugId)
     task_by_id = {}
@@ -925,7 +983,7 @@ def validate(manifest):
                         if isinstance(t, dict) and t.get("status") not in TERMINAL]
             if not_done:
                 f.append("%s: status 'done' but %d task(s) are not finished (%s) "
-                         "\u2014 a phase is done only after ALL its tasks are done "
+                         "— a phase is done only after ALL its tasks are done "
                          "or cancelled (sign-off)"
                          % (pwhere, len(not_done), ", ".join(not_done[:6])))
         for ti, task in enumerate(_safe_list(tasks_val)):
@@ -985,86 +1043,165 @@ def validate(manifest):
             if task.get("bugId"):
                 task_bug_links.append((twhere, tid, task["bugId"]))
 
-    # -- unique ids across phases + tasks + bugs -------------------------------
+    return ({"phase_ids": phase_ids, "task_ids": task_ids,
+             "task_by_id": task_by_id, "task_files": task_files,
+             "bug_links": task_bug_links}, f, w)
+
+
+def _index_bugs(manifest):
+    """The bugs[] half of the index — `bug_list`, `bug_ids`, `bug_by_id`.
+
+    Separate from `_check_bugs` because two checks need it BEFORE the bug rules
+    run: the duplicate-id sweep unions bug ids with phase and task ids, and the
+    proposals' reserved-id rule counts a bug id as a live id. An index is not a
+    check — this function reports nothing and cannot fail, which is why it
+    returns a plain dict rather than a pair.
+    """
     bugs = manifest.get("bugs")
     bug_list = bugs if isinstance(bugs, list) else []
-    bug_ids = [b.get("id") for b in bug_list if isinstance(b, dict) and b.get("id")]
-    bug_by_id = {b["id"]: b for b in bug_list
-                 if isinstance(b, dict) and b.get("id")}
+    return {"bug_list": bug_list,
+            "bug_ids": [b.get("id") for b in bug_list
+                        if isinstance(b, dict) and b.get("id")],
+            "bug_by_id": {b["id"]: b for b in bug_list
+                          if isinstance(b, dict) and b.get("id")}}
 
-    all_ids = phase_ids + task_ids + bug_ids
+
+def _live_ids(index):
+    """Every id the live plan spends: phases, then tasks, then bugs, in
+    document order and WITH duplicates — `_check_unique_ids` is the thing that
+    finds those, so this must not quietly dedupe them away."""
+    return index["phase_ids"] + index["task_ids"] + index["bug_ids"]
+
+
+def _check_unique_ids(index):
+    """One id names one thing. Returns (findings, warnings); warnings is always
+    empty.
+
+    Phases, tasks and bugs share ONE namespace because `blockedBy` resolves
+    against phase and task ids together — a phase and a task wearing the same
+    id make every reference to it ambiguous, and the orchestrator would follow
+    whichever the lookup happened to reach.
+    """
+    f = []
     seen = set()
-    for i in all_ids:
+    for i in _live_ids(index):
         if i in seen:
             f.append("duplicate id: %s" % i)
         seen.add(i)
+    return (f, [])
 
-    known = set(phase_ids) | set(task_ids)
 
-    # -- blockedBy / dependsOn resolve + cycles ---------------------------------
+def _ref_findings(refs_val, where, field, universe, kind):
+    """Report a non-array value, a non-string entry (which would crash
+    the set-membership test), or an unresolved id — never raise.
+
+    Was a closure inside `validate()`, REDEFINED once per phase over the shared
+    findings list. A free function returning its own list is the same three
+    rules with nothing captured, and it can be called from a case with five
+    arguments and no manifest anywhere near it.
+    """
+    findings = []
+    if refs_val is not None and not isinstance(refs_val, list):
+        findings.append("%s: %s must be an array, got %s"
+                        % (where, field, type(refs_val).__name__))
+    for ref in _safe_list(refs_val):
+        if not isinstance(ref, str):
+            findings.append("%s: %s entry must be a string id, got %r"
+                            % (where, field, ref))
+        elif ref not in universe:
+            findings.append("%s: %s '%s' does not resolve to %s"
+                            % (where, field, ref, kind))
+    return findings
+
+
+def _check_refs_and_cycles(phases, index):
+    """Every blockedBy/dependsOn resolves, and the waits-on graph is acyclic.
+    Returns (findings, warnings); warnings is always empty.
+
+    The two halves are one piece because they are one question asked twice: a
+    reference that names nothing can never be satisfied, and a reference that
+    names something in a cycle can never be satisfied either. The universes
+    differ on purpose — `blockedBy` may name a phase OR a task, `dependsOn` may
+    name only a task.
+    """
+    f = []
+    known = set(index["phase_ids"]) | set(index["task_ids"])
+    task_ids = index["task_ids"]
+
     for pi, phase in enumerate(phases):
         if not isinstance(phase, dict):
             continue
         pwhere = "phase %s" % (phase.get("id") or ("phases[%d]" % pi))
-
-        def _check_refs(refs_val, where, field, universe, kind):
-            """Report a non-array value, a non-string entry (which would crash
-            the set-membership test), or an unresolved id — never raise."""
-            if refs_val is not None and not isinstance(refs_val, list):
-                f.append("%s: %s must be an array, got %s"
-                         % (where, field, type(refs_val).__name__))
-            for ref in _safe_list(refs_val):
-                if not isinstance(ref, str):
-                    f.append("%s: %s entry must be a string id, got %r"
-                             % (where, field, ref))
-                elif ref not in universe:
-                    f.append("%s: %s '%s' does not resolve to %s"
-                             % (where, field, ref, kind))
-
-        _check_refs(phase.get("blockedBy"), pwhere, "blockedBy", known,
-                    "any task/phase")
+        f.extend(_ref_findings(phase.get("blockedBy"), pwhere, "blockedBy",
+                               known, "any task/phase"))
         for ti, task in enumerate(_safe_list(phase.get("tasks"))):
             if not isinstance(task, dict):
                 continue
             twhere = "task %s" % (task.get("id") or ("%s.tasks[%d]" % (pwhere, ti)))
-            _check_refs(task.get("blockedBy"), twhere, "blockedBy", known,
-                        "any task/phase")
-            _check_refs(task.get("dependsOn"), twhere, "dependsOn", task_ids,
-                        "a task")
+            f.extend(_ref_findings(task.get("blockedBy"), twhere, "blockedBy",
+                                   known, "any task/phase"))
+            f.extend(_ref_findings(task.get("dependsOn"), twhere, "dependsOn",
+                                   task_ids, "a task"))
 
     _cycle_findings(phases, f)
-    _check_model_typos(manifest, w)
-    _check_skills(manifest, w)
-    _check_skill_typos(manifest, w)
+    return (f, [])
 
-    # -- fileIndex integrity (both directions) -----------------------------------
+
+def _check_file_index(manifest, index):
+    """fileIndex integrity in BOTH directions. Returns (findings, warnings);
+    warnings is always empty.
+
+    Forward: every task id a fileIndex entry names must exist. Backward: every
+    file a task claims must appear under that task in the index. Only the
+    second direction catches the common drift — a task gaining a file without
+    the index being updated — and it is the direction a schema cannot express.
+
+    An absent or non-dict fileIndex is silent: the key is optional, and its
+    wrong-type diagnostic is not this function's to give twice.
+    """
+    f = []
     file_index = manifest.get("fileIndex")
-    if isinstance(file_index, dict):
-        stripped_index = {}
-        for fpath, refs in file_index.items():
-            key = _strip_line_suffix(fpath)
-            bucket = stripped_index.setdefault(key, set())
-            if not isinstance(refs, list):
-                f.append("fileIndex['%s']: value must be an array of task ids, "
-                         "got %s" % (fpath, type(refs).__name__))
-                continue
-            for ref in refs:
-                if isinstance(ref, str):
-                    bucket.add(ref)  # only hashable str ids enter the set
-                if ref not in task_ids:
-                    f.append("fileIndex['%s']: task '%s' does not exist" % (fpath, ref))
-        for tid, files in task_files.items():
-            for fentry in files:
-                key = _strip_line_suffix(fentry)
-                if tid not in stripped_index.get(key, set()):
-                    f.append("task %s: file '%s' missing from fileIndex "
-                             "(fileIndex['%s'] must include '%s')"
-                             % (tid, fentry, key, tid))
+    if not isinstance(file_index, dict):
+        return (f, [])
 
-    # -- bugs[] ------------------------------------------------------------------
+    task_ids = index["task_ids"]
+    stripped_index = {}
+    for fpath, refs in file_index.items():
+        key = _strip_line_suffix(fpath)
+        bucket = stripped_index.setdefault(key, set())
+        if not isinstance(refs, list):
+            f.append("fileIndex['%s']: value must be an array of task ids, "
+                     "got %s" % (fpath, type(refs).__name__))
+            continue
+        for ref in refs:
+            if isinstance(ref, str):
+                bucket.add(ref)  # only hashable str ids enter the set
+            if ref not in task_ids:
+                f.append("fileIndex['%s']: task '%s' does not exist" % (fpath, ref))
+    for tid, files in index["task_files"].items():
+        for fentry in files:
+            key = _strip_line_suffix(fentry)
+            if tid not in stripped_index.get(key, set()):
+                f.append("task %s: file '%s' missing from fileIndex "
+                         "(fileIndex['%s'] must include '%s')"
+                         % (tid, fentry, key, tid))
+    return (f, [])
+
+
+def _check_bugs(manifest, index):
+    """bugs[] shape and vocabulary, and the RECIPROCAL task <-> bug link.
+
+    Returns (findings, warnings). Both directions of the link are checked from
+    here because a one-sided link is invisible from either end alone: a bug
+    naming a task whose bugId names a different bug is two records that each
+    look fine and disagree about which fix belongs to which report.
+    """
+    f, w = [], []
+    bugs = manifest.get("bugs")
     if bugs is not None and not isinstance(bugs, list):
         f.append("bugs: not an array")
-    for bi, bug in enumerate(bug_list):
+    task_ids = index["task_ids"]
+    for bi, bug in enumerate(index["bug_list"]):
         if not isinstance(bug, dict):
             f.append("bugs[%d]: not an object" % bi)
             continue
@@ -1081,32 +1218,40 @@ def validate(manifest):
             if bug["taskId"] not in task_ids:
                 f.append("%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"]))
             else:
-                linked = task_by_id.get(bug["taskId"]) or {}
+                linked = index["task_by_id"].get(bug["taskId"]) or {}
                 if linked.get("bugId") != bid:
                     f.append("%s: taskId '%s' but that task's bugId is %r — "
                              "link must be reciprocal"
                              % (bwhere, bug["taskId"], linked.get("bugId")))
 
-    for twhere, tid, bug_ref in task_bug_links:
-        if bug_ref not in bug_ids:
+    for twhere, tid, bug_ref in index["bug_links"]:
+        if bug_ref not in index["bug_ids"]:
             f.append("%s: bugId '%s' does not resolve to a bug" % (twhere, bug_ref))
         else:
-            linked = bug_by_id.get(bug_ref) or {}
+            linked = index["bug_by_id"].get(bug_ref) or {}
             if linked.get("taskId") != tid:
                 f.append("%s: bugId '%s' but that bug's taskId is %r — "
                          "link must be reciprocal"
                          % (twhere, bug_ref, linked.get("taskId")))
+    return (f, w)
 
-    # -- proposals[] (parked phases; /audit:init park + /audit:propose) ----------
-    # Two classes of entry share this array. Payload-bearing proposals are
-    # structured records the /audit:propose lifecycle depends on — their
-    # vocabulary IS enforced (findings). Legacy free-form entries (pre-0.33)
-    # are tolerated: unknown-key warnings at most, so no old manifest goes red.
+
+def _check_proposals(manifest, index):
+    """proposals[] — parked phases (/audit:init park + /audit:propose).
+
+    Returns (findings, warnings). Two classes of entry share this array.
+    Payload-bearing proposals are structured records the /audit:propose
+    lifecycle depends on — their vocabulary IS enforced (findings). Legacy
+    free-form entries (pre-0.33) are tolerated: unknown-key warnings at most,
+    so no old manifest goes red.
+    """
+    f, w = [], []
     proposals = manifest.get("proposals")
     if proposals is not None and not isinstance(proposals, list):
         f.append("proposals: not an array")
     prop_list = proposals if isinstance(proposals, list) else []
-    live_ids = set(all_ids)
+    phase_ids = index["phase_ids"]
+    live_ids = set(_live_ids(index))
     prop_ids_seen = set()
     reserved_ids = set()   # payload phase+task ids across still-parked proposals
     staged_refs = []       # (where, ref) — blockedBy/dependsOn inside payloads
@@ -1193,7 +1338,51 @@ def validate(manifest):
             w.append("%s: staged blockedBy/dependsOn '%s' names nothing in the "
                      "live plan or any parked proposal — materialize will ask "
                      "about it" % (xwhere, ref))
+    return (f, w)
 
+
+# --- validate -------------------------------------------------------------------
+def validate(manifest):
+    """Return (findings, warnings) — two lists of strings; empty findings = valid.
+
+    ORCHESTRATION ONLY. Every question lives in a piece above that answers it
+    and returns its own pair; this decides the ORDER, which is the one thing
+    that cannot live in a piece. The order is not arbitrary: `_walk_phases`
+    builds the index the four checks after it read, so it runs once and first.
+
+    Findings and warnings each keep the order they were produced in — the CLI
+    prints them in that order and a reader walks the file top-down against it.
+    """
+    f, w = [], []
+    if not isinstance(manifest, dict):
+        return (["manifest root must be a JSON object"], w)
+
+    def add(pair):
+        """Fold one piece's (findings, warnings) into the two answers."""
+        f.extend(pair[0])
+        w.extend(pair[1])
+
+    add(_check_meta(manifest))
+    add(_check_areas(manifest))
+
+    phases = manifest.get("phases")
+    if not isinstance(phases, list):
+        f.append("phases: missing or not an array")
+        phases = []
+
+    index, walk_f, walk_w = _walk_phases(phases)
+    f.extend(walk_f)
+    w.extend(walk_w)
+    index.update(_index_bugs(manifest))
+
+    add(_check_unique_ids(index))
+    add(_check_refs_and_cycles(phases, index))
+    add(_check_model_typos(manifest))
+    add(_check_skills(manifest))
+    add(_check_skill_typos(manifest))
+    add(_check_file_index(manifest, index))
+    add(_check_bugs(manifest, index))
+    add(_check_proposals(manifest, index))
     return (f, w)
 
 

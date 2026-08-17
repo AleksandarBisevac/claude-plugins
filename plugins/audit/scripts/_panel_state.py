@@ -1189,52 +1189,92 @@ def _run_status(project, config, manifest):
             "fingerprint": data_fingerprint(project, config),
             "gate": _gate_block(project, config)}
 
+# --- the Usage tab's payload ------------------------------------------------------
+# WHY THIS IS A SET OF PIECES AND NOT ONE FUNCTION. `usage_state` had two returns
+# -- an `empty` dict for the no-data path and a populated one at the end -- and
+# they spelled the SAME eighteen keys twice with nothing comparing them. A key
+# added to one and forgotten in the other is an `undefined` in the panel that
+# appears only on a repo with no ledger yet: only on a FRESH INSTALL, i.e. only
+# for a new user and never for anyone in a position to notice it. Three of the
+# cases in tests/ (monthlyPlan, phaseAreas, areaOwners) exist because that
+# happened three times, and each of them pins ONE key by name. `_usage_shape` is
+# the general answer: both branches now return it, so the two cannot disagree by
+# construction rather than by three cases and a comment.
 _MAX_FACTS = 20000
 
+# The positional columns of a `facts` row, in order. The client reads its rows
+# against this list, so the two travel together in the payload.
+_FACT_FIELDS = ("ts", "phase", "task", "model", "author", "agent", "attr",
+                "tokens", "cost", "msgs")
 
-def usage_state(project):
-    """Payload for the Usage tab.
 
-    Ships FACTS rather than finished tables — compact positional arrays the browser
-    re-aggregates on every filter change, so switching model/author/phase/range is
-    instant and never round-trips. Beyond _MAX_FACTS hourly rows the facts are rolled
-    up to daily first, which keeps the payload bounded on a long-lived ledger; the
-    response says so via `rolled` rather than silently truncating.
+def _usage_shape(**overrides):
+    """The /api/usage payload: ONE key list, with what an empty project gets.
 
-    Read-only: no lock, no writes, nothing that can collide with a running phase."""
-    _, _, _, cfg_mod = _cores()
-    config = read_config(project)
-    ucfg = cfg_mod.usage_cfg(config)
-    ledger_dir = str(cfg_mod.ledger_dir(project, config))
-    empty = {"enabled": bool(ucfg.get("enabled", True)), "ledgerDir": ledger_dir,
-             "showCost": bool(ucfg.get("showCost", True)),
-             "pricingAsOf": ucfg.get("pricingAsOf"),
-             "pricingAsOfDeclared": _declared_as_of(config),
-             "facts": [], "fields": [],
-             # Every key the populated branch returns must appear here too: the
-             # client reads this shape on a repo with no ledger yet, and a missing
-             # key there is an `undefined` that only shows up on a fresh install.
-             "phaseTitles": {}, "taskMeta": {}, "phaseBudgets": {},
-             "routingAdvice": [], "monthlyPlan": {}, "phaseAreas": {},
-             "areaOwners": {},
-             "bands": ucfg.get("bands") or {},
-             "counts": {"phases": 0, "tasks": 0, "models": 0, "authors": 0,
-                        "sessions": 0, "days": 0, "from": None, "to": None},
-             "rolled": False, "totalRows": 0}
-    try:
-        ul = _load("audit_usage_ledger", "usage_ledger.py")
-        rows = ul.read_ledger(ledger_dir)
-    except Exception:
-        return empty
-    if not rows:
-        return empty
+    Every branch of `usage_state` returns this, so "the key set" is a thing that
+    exists in one place instead of being an agreement between two dict literals.
+    `counts` comes from `_ledger_counts([])` rather than a second literal of its
+    own -- the same eight keys were also spelled twice, one level down.
 
-    # Orientation counts for the context line. Computed over the WHOLE ledger on
-    # purpose — they describe the shape of the data you are looking at, not the
-    # current filter — and `sessionId` deliberately never enters `facts`, where it
-    # would multiply row cardinality for a number shown once.
+    RAISES on an override this shape has no key for, and that is the point: a
+    typo'd override (`phaseTitle` for `phaseTitles`) is exactly the defect this
+    function exists to make impossible, and silently accepting it would put the
+    key back in one branch only. The overrides are spelled in this file, never
+    derived from data, so the only way to reach the raise is an edit -- which
+    the suite fails on before it can ship.
+
+    The dict is rebuilt per call on purpose: a module-level template would hand
+    every caller the SAME `{}` for `phaseTitles`, and one caller writing to a
+    payload it was handed would poison the next request's.
+    """
+    shape = {
+        "enabled": True,
+        "ledgerDir": "",
+        "showCost": True,
+        "pricingAsOf": None,
+        "pricingAsOfDeclared": False,
+        "facts": [],
+        # Empty on the no-ledger path even though the populated branch ships the
+        # ten column names: there are no rows to read against them. Same KEY,
+        # different value -- which is the distinction that matters to a client
+        # reading `payload.fields.length`.
+        "fields": [],
+        "phaseTitles": {},
+        "taskMeta": {},
+        "phaseBudgets": {},
+        "routingAdvice": [],
+        "monthlyPlan": {},
+        "phaseAreas": {},
+        "areaOwners": {},
+        "bands": {},
+        "counts": _ledger_counts([]),
+        "rolled": False,
+        "totalRows": 0,
+    }
+    unknown = sorted(k for k in overrides if k not in shape)
+    if unknown:
+        raise KeyError(
+            "_usage_shape(): %s is not a key of the /api/usage payload. Add it "
+            "to the shape above -- adding it here only would put it in one "
+            "branch, which is the `undefined` on a fresh install this function "
+            "exists to prevent." % ", ".join(repr(k) for k in unknown))
+    shape.update(overrides)
+    return shape
+
+
+def _ledger_counts(rows):
+    """The orientation counts for the tab's context line.
+
+    Computed over the WHOLE ledger on purpose -- they describe the shape of the
+    data you are looking at, not the current filter. `sessionId` is counted here
+    and deliberately never enters `facts`, where it would multiply row
+    cardinality for a number shown once.
+
+    `_ledger_counts([])` is the empty answer, which is why `_usage_shape` calls
+    it for its default instead of writing the same eight keys a second time.
+    """
     days = sorted({(r.get("ts") or "")[:10] for r in rows} - {""})
-    counts = {
+    return {
         "phases": len({r.get("phaseId") for r in rows if r.get("phaseId")}),
         "tasks": len({r.get("taskId") for r in rows if r.get("taskId")}),
         "models": len({r.get("model") for r in rows if r.get("model")}),
@@ -1245,7 +1285,20 @@ def usage_state(project):
         "to": days[-1] if days else None,
     }
 
-    rolled = len(rows) > _MAX_FACTS
+
+def _usage_facts(rows, token_keys, rolled):
+    """`(facts, seen)` -- ledger rows folded onto the fact key, then flattened.
+
+    FACTS RATHER THAN FINISHED TABLES: compact positional arrays the browser
+    re-aggregates on every filter change, so switching model/author/phase/range
+    is instant and never round-trips. `rolled` folds the timestamp to a DAY
+    instead of an hour, which is what keeps the payload bounded on a long-lived
+    ledger; the caller reports that it happened rather than truncating silently.
+
+    `seen` is counted here rather than taken as `len(rows)` because it is the
+    number of ledger rows that reached the fold, and a future filter in this
+    loop would make the two differ without anything saying so.
+    """
     facts, seen = {}, 0
     for r in rows:
         seen += 1
@@ -1257,33 +1310,31 @@ def usage_state(project):
         slot = facts.get(key)
         if slot is None:
             slot = facts[key] = [0, 0.0, 0]
-        slot[0] += sum(int(r.get(k) or 0) for k in ul.TOKEN_KEYS)
+        slot[0] += sum(int(r.get(k) or 0) for k in token_keys)
         slot[1] += float(r.get("costUSD") or 0.0)
         slot[2] += int(r.get("msgs") or 0)
+    return ([list(k) + [v[0], round(v[1], 6), v[2]]
+             for k, v in sorted(facts.items())], seen)
 
-    # Ship the small slice of manifest the analytics need — task status, risk and
-    # attempts — so EVERY panel recomputes client-side under the current filter. The
-    # alternative (server-computed metrics) would leave half the tab silently
-    # ignoring the filter bar, which is worse than a slightly larger payload.
+
+def _usage_manifest_slice(manifest):
+    """`(titles, task_meta, budgets)` -- the small slice of plan the analytics need.
+
+    Shipped so EVERY panel recomputes client-side under the current filter. The
+    alternative (server-computed metrics) would leave half the tab silently
+    ignoring the filter bar, which is worse than a slightly larger payload.
+
+    `titles`/`budgets` are per-PHASE and must cover a phase with no tasks (it
+    still has a name and can still declare a budget), so that half stays a phase
+    walk; the task half is `_mio.iter_tasks`. Three id-keyed dicts, so the split
+    costs nothing: the same document order still decides the same last-wins
+    winner it did when the two walks were nested.
+
+    All three reset together on a shape surprise -- a half-built slice would let
+    the tab label some tasks and not others with no way to tell which happened.
+    """
     titles, task_meta, budgets = {}, {}, {}
-    mpath = _manifest_path(project, config)
-    # ONE read for the five consumers below. They each used to call
-    # `load_manifest_safe(mpath)` for themselves, which on a sharded manifest is
-    # 1 index + 1 file per phase EVERY TIME: measured at 100 file opens and 5 JSON
-    # parse passes for a 19-phase plan, per GET /api/usage, to answer five
-    # questions about one document. Hoisting is safe outside the try blocks
-    # because `load_manifest_safe` is total — it returns {} on any error and never
-    # raises — so the guards below still cover exactly what they were protecting
-    # against: the CONSUMERS (routing, monthly_activity, phase_tags, registry).
-    # Reading once is also the more correct answer: five reads could straddle a
-    # concurrent manifest write and ship five mutually inconsistent views of it.
-    manifest = _mio.load_manifest_safe(mpath)
     try:
-        # `titles`/`budgets` are per-PHASE and must cover a phase with no tasks
-        # (it still has a name and can still declare a budget), so that half stays
-        # a phase walk; the task half is `_mio.iter_tasks`. Three id-keyed dicts,
-        # so the split costs nothing: the same document order still decides the
-        # same last-wins winner it did when the two walks were nested.
         for ph in (manifest.get("phases") or []):
             if not isinstance(ph, dict) or not ph.get("id"):
                 continue
@@ -1300,8 +1351,17 @@ def usage_state(project):
                     "attempts": t.get("attempts") or 1,
                     "title": t.get("title") or ""}
     except Exception:
-        titles, task_meta, budgets = {}, {}, {}
+        return ({}, {}, {})
+    return (titles, task_meta, budgets)
 
+
+def _usage_derived(ul, manifest, rows, ucfg):
+    """The four blocks that need the assembled MANIFEST, keyed by payload key.
+
+    Returned as payload keys so the caller hands them straight to `_usage_shape`
+    and no name is spelled twice on the way. Each is independently fail-soft:
+    one of these going wrong must cost the tab that one card, never the tab.
+    """
     # Needs the assembled manifest and the per-tier counts, so it cannot be done
     # on the client. Fail-soft: no advice is the normal outcome anyway.
     try:
@@ -1343,33 +1403,66 @@ def usage_state(project):
     except Exception:
         area_owners = {}
 
-    return {
-        "enabled": bool(ucfg.get("enabled", True)),
-        "ledgerDir": ledger_dir,
-        "showCost": bool(ucfg.get("showCost", True)),
-        "pricingAsOf": ucfg.get("pricingAsOf"),
-        "pricingAsOfDeclared": _declared_as_of(config),
-        "fields": ["ts", "phase", "task", "model", "author", "agent", "attr",
-                   "tokens", "cost", "msgs"],
-        "facts": [list(k) + [v[0], round(v[1], 6), v[2]]
-                  for k, v in sorted(facts.items())],
-        "phaseTitles": titles,
-        "taskMeta": task_meta,
-        "phaseBudgets": budgets,
-        # Server-computed, unlike every other metric here: the counterfactual
-        # re-prices the per-tier token counts, and `facts` are already aggregated
-        # to [tokens, cost, msgs]. Shipping the breakdown to do it client-side
-        # would multiply the payload to serve one paragraph. So this is a
-        # statement about the PROJECT, and the panel labels it as such.
-        "routingAdvice": advice,
-        "monthlyPlan": monthly_plan,
-        "phaseAreas": phase_areas,
-        "areaOwners": area_owners,
-        "bands": ucfg.get("bands") or {},
-        "counts": counts,
-        "rolled": rolled,
-        "totalRows": seen,
-    }
+    return {"routingAdvice": advice, "monthlyPlan": monthly_plan,
+            "phaseAreas": phase_areas, "areaOwners": area_owners}
+
+
+def usage_state(project):
+    """Payload for the Usage tab.
+
+    Ships FACTS rather than finished tables — compact positional arrays the browser
+    re-aggregates on every filter change, so switching model/author/phase/range is
+    instant and never round-trips. Beyond _MAX_FACTS hourly rows the facts are rolled
+    up to daily first, which keeps the payload bounded on a long-lived ledger; the
+    response says so via `rolled` rather than silently truncating.
+
+    THE THREE EXITS ALL GO THROUGH `_usage_shape`, which is the whole reason the
+    pieces above exist: an unreadable ledger, an empty one and a populated one
+    cannot ship different key sets, because none of them writes a dict literal.
+
+    Read-only: no lock, no writes, nothing that can collide with a running phase."""
+    _, _, _, cfg_mod = _cores()
+    config = read_config(project)
+    ucfg = cfg_mod.usage_cfg(config)
+    ledger_dir = str(cfg_mod.ledger_dir(project, config))
+    # What the CONFIG says, which is answerable with no ledger at all and so is
+    # true of every exit below.
+    declared = {"enabled": bool(ucfg.get("enabled", True)),
+                "ledgerDir": ledger_dir,
+                "showCost": bool(ucfg.get("showCost", True)),
+                "pricingAsOf": ucfg.get("pricingAsOf"),
+                "pricingAsOfDeclared": _declared_as_of(config),
+                "bands": ucfg.get("bands") or {}}
+    try:
+        ul = _load("audit_usage_ledger", "usage_ledger.py")
+        rows = ul.read_ledger(ledger_dir)
+    except Exception:
+        return _usage_shape(**declared)
+    if not rows:
+        return _usage_shape(**declared)
+
+    rolled = len(rows) > _MAX_FACTS
+    facts, seen = _usage_facts(rows, ul.TOKEN_KEYS, rolled)
+    # ONE read for the five consumers below. They each used to call
+    # `load_manifest_safe(mpath)` for themselves, which on a sharded manifest is
+    # 1 index + 1 file per phase EVERY TIME: measured at 100 file opens and 5 JSON
+    # parse passes for a 19-phase plan, per GET /api/usage, to answer five
+    # questions about one document. Reading once is also the more correct answer:
+    # five reads could straddle a concurrent manifest write and ship five
+    # mutually inconsistent views of it. It sits outside every guard because
+    # `load_manifest_safe` is TOTAL -- it returns {} on any error and never
+    # raises -- so the try blocks below still cover exactly what they covered
+    # before the hoist: the CONSUMERS, not the read.
+    manifest = _mio.load_manifest_safe(_manifest_path(project, config))
+    titles, task_meta, budgets = _usage_manifest_slice(manifest)
+
+    payload = dict(declared)
+    payload.update(_usage_derived(ul, manifest, rows, ucfg))
+    payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
+                    "phaseTitles": titles, "taskMeta": task_meta,
+                    "phaseBudgets": budgets, "counts": _ledger_counts(rows),
+                    "rolled": rolled, "totalRows": seen})
+    return _usage_shape(**payload)
 
 
 def report_paths(project):

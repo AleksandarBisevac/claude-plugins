@@ -259,6 +259,62 @@ def _cases(check):
           _rows.count("<td") == 2
           and re.search(r'<tr class="taskdetail"', _rows) is not None)
 
+    # --- the block seam: one return carries the anchor AND the nav entry --------
+    # `render_html` used to hold a `sections` list and a `section()` closure that
+    # both the nav and the anchors read, defended by a comment asking the next
+    # reader to remember to call it. Each block now hands back `(parts, records)`
+    # together, so the two halves are one value out of one place. These cases are
+    # what makes that a checked contract rather than a nicer-looking one.
+    _mb = dict(_m, bugs=[{"id": "BUG-1", "title": "b", "status": "open",
+                          "severity": "high", "taskId": "P2.1"}])
+    _sb = dict(_s, bugs={"total": 1, "open": 1, "openHighSeverity": 1})
+    _blocks = [
+        ("head", M._head_block(_m["meta"], None, False)),
+        ("nojs", M._nojs_block()),
+        ("topbar", M._topbar_block(_m, _m["meta"], _s, None, {})),
+        ("invalid", M._invalid_block(dict(_s, valid=False, findings=2))),
+        ("gate", M._gate_block(_m["meta"], _s, None)),
+        ("phases", M._phases_block(_m, _s, {})),
+        ("usage", M._usage_block(None)),
+        ("bugs", M._bugs_block(_mb, _sb)),
+        ("ready", M._ready_block(_m, _s)),
+        ("tail", M._tail_block(_m, _s, None, "b", False)),
+    ]
+    # Orphans in BOTH directions would be invisible to a bare "no orphans"
+    # assertion over an empty record list, so the anchors are listed out too: a
+    # block that stopped returning its record reads as "nothing orphaned".
+    _orphans = ["%s/%s" % (_name, _rec[0])
+                for _name, (_parts, _recs) in _blocks for _rec in _recs
+                if ('id="%s"' % _rec[0]) not in "\n".join(_parts)]
+    _anchors = sorted(_rec[0] for _, (_p, _recs) in _blocks for _rec in _recs)
+    check("pg11 every section record a block returns is carried by the HTML that "
+          "same block returned - the nav entry and the anchor are one value from "
+          "one place, so neither can exist without the other. %r / %r"
+          % (_orphans, _anchors),
+          _orphans == [] and _anchors == ["bugs", "gate", "phases", "ready"])
+    # And the other direction, at the document: the nav lists exactly the
+    # anchors, in emission order, and each resolves to exactly ONE id. Counted
+    # rather than probed - two sections claiming one id is precisely the shape a
+    # presence assertion cannot see.
+    _nav = re.search(r'<nav class="snav".*?</nav>', _doc, re.S).group(0)
+    _hrefs = re.findall(r'href="#([^"]+)"', _nav)
+    check("pg12 the rendered nav links exactly the sections the page emitted, in "
+          "emission order, and every link resolves to exactly one id. %r"
+          % (_hrefs,),
+          _hrefs == ["gate", "phases", "ready"]
+          and all(_doc.count('id="%s"' % _a) == 1 for _a in _hrefs))
+    # A block's parts are a LIST so that "contributes nothing" and "contributes
+    # one empty line" stay different answers. The Usage block emits the second
+    # when there is no ledger - the page has always carried that line - and
+    # returning `[]` there moves a newline in every report without usage. Proven
+    # red by making exactly that change: six of thirteen rendered fixtures moved.
+    check("pg13 an absent ledger emits the Usage LINE and no nav entry ([\"\"], "
+          "not []), while an absent bugs table and an empty ready list emit "
+          "nothing at all - the two are different answers, not one",
+          M._usage_block(None) == ([""], [])
+          and M._bugs_block(dict(_m, bugs=[]), _s) == ([], [])
+          and M._ready_block(_m, dict(_s, ready=[])) == ([], []))
+
 
 def _selftest():
     return _harness.run(_cases)

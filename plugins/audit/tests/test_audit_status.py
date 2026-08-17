@@ -404,6 +404,61 @@ def _cases(_record):
           "more" not in M.render_status(_few, M.rollup(_few, [], []))
           .split("READY NOW")[1].split("BUGS")[0])
 
+    # --- (rs) the blocks render_status is made of --------------------------------
+    # Every part of the render is a `_*_lines()` helper. Three of them used to be
+    # written out inline, and these cases are what makes "uniform with the blocks
+    # beside it" a checked property instead of a description of the diff.
+    check("rs1 the render is EXACTLY its blocks joined, in order - nothing is "
+          "emitted outside one, so a line added straight into render_status "
+          "shows up here rather than only in whatever it displaced",
+          M.render_status(_fx, _sum) == "\n".join(
+              M._header_lines(_fx, _sum, 18)
+              + M._phase_table_lines(_fx, _sum, None)
+              + M._ready_lines(_fx, _sum)
+              + M._area_lines(_sum)
+              + M._bug_lines(_fx, _sum)
+              + M._proposal_lines(_fx, _sum)
+              + M._resumable_lines(_fx, _sum)))
+    # --phase scoping is now structural: `_header_lines` is not even given
+    # `only_phase`, so the totals it prints cannot be rescoped. Asserted on the
+    # BYTES rather than on the "totals above are whole-plan" sentence, which a
+    # rescoped header would still print.
+    _hdr_bytes = "\n".join(M._header_lines(_fx, _sum, 18))
+    _rdy_bytes = "\n".join(M._ready_lines(_fx, _sum))
+    _scoped = M.render_status(_fx, _sum, only_phase="P1")
+    check("rs2 --phase reaches the phase table and nothing else: the header and "
+          "READY NOW blocks come out byte-identical scoped or not, while the "
+          "render as a whole does change",
+          _txt.startswith(_hdr_bytes) and _scoped.startswith(_hdr_bytes)
+          and _rdy_bytes in _txt and _rdy_bytes in _scoped
+          and _scoped != _txt)
+    _sum_e = M.rollup(_empty, [], [])
+    check("rs3 READY NOW carries its OWN leading blank line, in the populated "
+          "and the empty branch alike - the separator belongs to the block, not "
+          "to whatever happened to print before it",
+          M._ready_lines(_fx, _sum)[0] == ""
+          and M._ready_lines(_empty, _sum_e)[0] == ""
+          and len(M._ready_lines(_empty, _sum_e)) == 2)
+    # ONE width measurement across the whole table is why `fmt_row` closes over
+    # `widths` and why the table is one function: a long id in the second phase
+    # has to move the first phase's title column too. Per-phase widths are what
+    # produced fifty different alignments before, and this is what catches them
+    # coming back.
+    _wfx = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "a", "status": "pending", "tasks": [
+            {"id": "P1.1", "title": "short-one", "status": "pending"}]},
+        {"id": "P2", "title": "b", "status": "pending", "tasks": [
+            {"id": "P2.1-a-deliberately-long-task-id", "title": "long-one",
+             "status": "pending"}]}]}
+    _wt = M._phase_table_lines(_wfx, M.rollup(_wfx, [], []), None)
+    _l_short = [ln for ln in _wt if "short-one" in ln][0]
+    _l_long = [ln for ln in _wt if "long-one" in ln][0]
+    check("rs4 the table is measured once across every phase shown, so a long "
+          "id in one phase moves another phase's title column with it (%d vs %d)"
+          % (_l_short.index("short-one"), _l_long.index("long-one")),
+          _l_short.index("short-one") == _l_long.index("long-one")
+          and _l_short.index("short-one") > len("     P1.1  "))
+
     # --- (col) color: --color through _cli_fmt -----------------------------------
     # Plain mode must stay byte-identical to the pre-color render: a disabled
     # painter is the identity, and every pre-color caller (this selftest
