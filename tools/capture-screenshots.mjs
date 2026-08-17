@@ -107,6 +107,122 @@ export const firstNonRawNumberLine = (lines, numericCols) => {
   return null;
 };
 
+/**
+ * Every spelling of a directory separator on this platform — the mirror of
+ * `_loader._SEPARATORS`. `'/'` is always one; `path.sep` is the same character on
+ * POSIX and a backslash on Windows, so the Set is one entry there and two here.
+ */
+const SEPARATORS = [...new Set(['/', path.sep])];
+
+/** Memoised for the DEFAULT tree only. See scriptIndex(). */
+let scriptIndexMemo = null;
+
+/**
+ * `Map` of basename -> [absolute path, ...] for every `.py` under scripts/, at ANY
+ * DEPTH. The JavaScript half of `_loader.script_index()`.
+ *
+ * WHY THIS EXISTS AT ALL. This file used to build each script path by joining the
+ * SCRIPTS constant with a filename, nine times over. Two things were wrong with that.
+ * No lint could see those lines — `_refs.py` matched a directory-plus-name PATH per
+ * line, and a join carries the name only — so they failed at RUN time, in a browser
+ * gate, instead of at lint time. And when `render-report.py` moved into a subdirectory,
+ * one join was patched by inserting the folder's name into it, which hard-codes a
+ * DOMAIN NAME into a tool: the folders under scripts/ are labels, not namespaces, and
+ * no consumer should have to know which one a script was filed under. Seven more
+ * domains are due to move.
+ *
+ * Exactly ONE join of the SCRIPTS constant survives in this file, and it is not a
+ * script — see `assertNoHandAssignedPolledState`, where the reason is written down.
+ * `test__refs.py` asserts that count, so a tenth join cannot creep back in quietly.
+ *
+ * WHY IT IS A COPY. This is the fourth statement of one resolution rule (`_loader.py`,
+ * `_config.py`'s find_script, `_output.py`'s script_files are the other three) and the
+ * copy is not avoidable, because `.mjs` cannot import Python. It is held true by
+ * READING rather than by merging: `test__refs.py` runs this function under node and
+ * compares its answer with `_loader.script_index()`, basename by basename — the same
+ * shape as the pricing table this repo holds equal between `_config.py` and
+ * `_usage_core.py`.
+ *
+ * A LIST PER NAME, NEVER A PATH, for `_loader`'s reason: a Map of name -> path keeps
+ * whichever file the walk saw last and leaves nothing to report about the other.
+ *
+ * `__pycache__` is deliberately NOT skipped, because `_output.py_files()` does not skip
+ * it either and it holds `.pyc` and no `.py`. A filter here would be this walk and that
+ * walk answering "what is in the tree" differently about a directory neither ever finds
+ * a file in.
+ *
+ * `root` is a TEST SEAM and is deliberately NOT memoised — a fixture tree must neither
+ * poison the real tree's answer nor read it. Same rule, same reason, as
+ * `_output.script_files()`.
+ */
+export function scriptIndex(root = null) {
+  if (root === null && scriptIndexMemo) return scriptIndexMemo;
+  const index = new Map();
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.py')) index.set(entry.name, [...(index.get(entry.name) || []), full]);
+    }
+  };
+  walk(root === null ? SCRIPTS : root);
+  // Sorted so a duplicate-name refusal names the two files in a stable order;
+  // readdirSync order is not stable across filesystems, os.walk's is not either.
+  for (const paths of index.values()) paths.sort();
+  if (root === null) scriptIndexMemo = index;
+  return index;
+}
+
+/**
+ * The absolute path of `basename` WHEREVER it sits under scripts/.
+ *
+ * THROWS, NEVER GUESSES, and there is no fallback join behind any of the three
+ * refusals — they are `_loader.script_path()`'s, restated where the resolution
+ * actually happens:
+ *
+ *   * NOTHING WITH THAT NAME -> naming the basename AND how many files were searched.
+ *     The count is not decoration: "not found among 39" is a typo in a filename, "not
+ *     found among 0" is a tree that was never walked, and whoever is reading the
+ *     failure has to be able to tell those two apart.
+ *   * TWO FILES WITH THAT NAME -> naming BOTH paths. Picking the one the walk saw first
+ *     is the only failure this shape can produce SILENTLY: the wrong script, run under
+ *     the right name, behaving plausibly.
+ *   * A VALUE CARRYING A PATH SEPARATOR -> naming the value. The index is keyed by
+ *     basename, so 'report/render-report.py' would either miss and report a name nobody
+ *     spelled, or be quietly reduced to the basename and resolved out of a different
+ *     directory than the caller wrote down. Dropping a directory the caller spelled is
+ *     how a caller comes to believe the directory mattered — which is the exact belief
+ *     this function exists to remove.
+ */
+export function resolveScript(basename, root = null) {
+  const name = String(basename);
+  const sep = SEPARATORS.find((s) => name.includes(s));
+  if (sep !== undefined) {
+    throw new Error(`resolveScript() takes a BASENAME and "${name}" carries the `
+      + `directory separator "${sep}". The index is keyed by basename — the folders `
+      + `under scripts/ are labels, not namespaces — so the directory you spelled `
+      + 'would be dropped rather than honoured.');
+  }
+  const index = scriptIndex(root);
+  const found = index.get(name) || [];
+  if (found.length === 0) {
+    let total = 0;
+    for (const paths of index.values()) total += paths.length;
+    throw new Error(`no script named "${name}" among the ${total} Python file(s) found `
+      + `under ${root === null ? SCRIPTS : root}. (0 searched means the walk found `
+      + 'nothing at all — a tree that is not there — which is a different problem from '
+      + 'a misspelled name)');
+  }
+  if (found.length > 1) {
+    throw new Error(`the basename "${name}" is claimed by ${found.length} files `
+      + `(${found.join(', ')}) — import and every resolver here go by basename, so `
+      + 'picking one would run the WRONG script under the RIGHT name. '
+      + '_deps.layer_violations() fails the build on this same rule; this is it '
+      + 'holding at capture time.');
+  }
+  return found[0];
+}
+
 function py(args, env = {}) {
   return execFileSync(PY, args, {
     cwd: REPO, encoding: 'utf8', env: { ...process.env, ...env },
@@ -140,7 +256,7 @@ function serveDir(dir) {
  * and CI logs). The pidfile is the durable interface.
  */
 async function startPanel(project, env = {}) {
-  const proc = spawn(PY, [path.join(SCRIPTS, 'panel-server.py'),
+  const proc = spawn(PY, [resolveScript('panel-server.py'),
                           '--project', project, '--no-open'],
                      { cwd: REPO, stdio: 'ignore', env: { ...process.env, ...env } });
   const pidfile = path.join(project, '.claude', 'audit-panel.json');
@@ -1612,6 +1728,14 @@ async function captureConfirmDialog(page) {
  * coverage check derives its expected paths from validate-config's own key sets.
  */
 function assertNoHandAssignedPolledState() {
+  // NOT resolveScript(). This is a UI ASSET, not a script: the index that function
+  // reads is `.py`-only, because it mirrors `_loader.script_index()`, which is built
+  // from `_output.script_files()`. scripts/ui/ holds no `.py` at all — which is also
+  // why `_output.install_path()` leaves it off sys.path, mechanically rather than by
+  // an editorial rule — so it is not part of the migration and this join cannot go
+  // stale the way a domain join can. The files under ui/ are ordered parts of one
+  // assembled artifact whose position is pinned by ~70 substring assertions, not
+  // scripts filed under a label that may be relabelled.
   const src = readFileSync(path.join(SCRIPTS, 'ui', 'panel.js'), 'utf8');
   const at = src.indexOf('async function pollRunStatus');
   if (at < 0) {
@@ -3653,7 +3777,7 @@ const POL_MCP = ['acme-tickets', 'vector-store'];
 function writePolicyFixture(work) {
   const project = path.join(work, 'pol');
   const home = path.join(work, 'polhome');
-  py([path.join(SCRIPTS, 'gen-demo-manifest.py'), project, '--phases', '6', '--tasks', '3']);
+  py([resolveScript('gen-demo-manifest.py'), project, '--phases', '6', '--tasks', '3']);
   for (const [name, description] of POL_SKILLS) {
     const dir = path.join(home, '.claude', 'skills', name);
     mkdirSync(dir, { recursive: true });
@@ -4294,7 +4418,7 @@ async function main() {
     if (ONLY === 'all' || ONLY === 'report') {
       const acme = path.join(work, 'acme');
       mkdirSync(acme, { recursive: true });
-      py([path.join(SCRIPTS, 'report', 'render-report.py'),
+      py([resolveScript('render-report.py'),
           'examples/acme-store/audit-plan.json', '--out-dir', acme],
          { CLAUDE_PROJECT_DIR: path.join(REPO, 'examples', 'acme-store') });
 
@@ -4538,8 +4662,8 @@ async function main() {
     // ---- panel shots, from a generated 50 x 20 fixture --------------------------
     if (ONLY === 'all' || ONLY === 'panel') {
       const big = path.join(work, 'big');
-      py([path.join(SCRIPTS, 'gen-demo-manifest.py'), big, '--phases', '50', '--tasks', '20']);
-      py([path.join(SCRIPTS, 'gen-demo-usage.py'), path.join(big, 'audit-plan.json')]);
+      py([resolveScript('gen-demo-manifest.py'), big, '--phases', '50', '--tasks', '20']);
+      py([resolveScript('gen-demo-usage.py'), path.join(big, 'audit-plan.json')]);
 
       // The panel names the identity it writes as, in the topbar and again in the
       // confirm dialog — resolved by usage_ledger.resolve_author, which asks git.
@@ -4598,7 +4722,7 @@ async function main() {
       // ships. Both halves are asserted: the cards exist, and every declared setting
       // put a control in the document — so a field added in Python and never wired
       // up in the UI fails here rather than silently not existing.
-      const declared = JSON.parse(py([path.join(SCRIPTS, 'panel-server.py'),
+      const declared = JSON.parse(py([resolveScript('panel-server.py'),
                                       '--settings-paths']));
       const rendered = await page.evaluate((paths) => ({
         cards: [...document.querySelectorAll('#guards > .card')].map((c) => c.id),
@@ -5468,12 +5592,12 @@ async function main() {
   } finally {
     await browser.close();
     if (panel) {
-      try { py([path.join(SCRIPTS, 'panel-server.py'), '--project',
+      try { py([resolveScript('panel-server.py'), '--project',
                 path.join(work, 'big'), '--stop']); } catch { /* best effort */ }
       try { panel.proc.kill('SIGTERM'); } catch { /* already gone */ }
     }
     if (polPanel) {
-      try { py([path.join(SCRIPTS, 'panel-server.py'), '--project',
+      try { py([resolveScript('panel-server.py'), '--project',
                 polPanel.project, '--stop']); } catch { /* best effort */ }
       try { polPanel.proc.kill('SIGTERM'); } catch { /* already gone */ }
     }

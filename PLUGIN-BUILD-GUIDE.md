@@ -610,6 +610,19 @@ basename still exists anywhere in the plugin, and `sweep_glob_drift()` pins the 
 that show the selftest sweep to the recursive `find` form — scoped to the runnable line, so
 the two places this guide writes the flat glob as prose stay legal. This file is an anchored
 surface itself, and its own fixture paths are BUILT rather than spelled for that reason.
+
+`tool_basename_drift()` covers the shape none of the above can see. `tools/` never spells a
+route: it says `resolveScript('panel-server.py')`, so there is no `scripts/…py` on the line for
+a per-line rule to match, and the reference fails at RUN time — when someone drives a browser —
+instead of at lint time. The rule is therefore about the NAME: a `.py` basename literal
+anywhere under `tools/` must name a file that exists. **What it catches is a rename or a
+deletion; what it does not catch is a MOVE**, and that division of labour is deliberate rather
+than a gap — a tool that resolves by basename is genuinely unaffected by a move, so only the
+resolver covers that half and only the lint covers a name that stopped existing. Both halves
+are cased, including the one asserting the move stays green. The four trees it accepts a name
+from include `tests/` and `tools/` themselves, because a tool's usage line names itself and a
+docstring names where its behaviour is pinned; excluding them would make every usage string a
+violation, and a lint that cries about correct code is one somebody switches off.
 `--selftest` (32 cases).
 
 ### `plugins/audit/scripts/_usage_core.py`

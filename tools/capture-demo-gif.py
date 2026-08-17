@@ -36,6 +36,40 @@ HOOKS = os.path.join(REPO, "plugins", "audit", "hooks")
 SCRIPTS = os.path.join(REPO, "plugins", "audit", "scripts")
 PY = sys.executable
 
+if SCRIPTS not in sys.path:
+    sys.path.insert(0, SCRIPTS)
+
+import _loader  # noqa: E402  (reachable now that SCRIPTS is on the path)
+
+
+def resolve_script(basename):
+    """The absolute path of `basename` WHEREVER it sits under the scripts tree.
+
+    NOT A COPY OF THE RESOLUTION RULE, AND THAT IS THE WHOLE POINT OF THE FUNCTION.
+    `capture-screenshots.mjs` had to grow its own index because `.mjs` cannot import
+    Python; this file is Python, so it asks the module that already owns the answer and
+    inherits all three of `script_path()`'s refusals unchanged — nothing found (naming
+    the basename and how many files were searched), two files claiming the name (naming
+    both), a value carrying a directory separator (naming the value). A second Python
+    walk here would be a fifth statement of one rule with nothing comparing it to the
+    other four.
+
+    IT IS STILL A NAMED FUNCTION rather than an inline call, so that this file has one
+    place where "which script" is decided, exactly as the JavaScript tool does, and so a
+    reader meeting either tool finds the same shape.
+
+    WHY IT REPLACED A JOIN. Joining the SCRIPTS constant with a filename looks one
+    directory too high the moment that script is filed under a domain folder, and the fix
+    that suggests itself — inserting the folder's name into the join — hard-codes a label
+    into a consumer. The folders under the scripts tree are labels, not namespaces. No
+    such join is left in this file, and `test__refs.py` asserts that.
+
+    The `require-plan.py` join below is deliberately left alone: the hooks tree is not
+    being reorganised, it is flat by design and has to stay reachable from a launcher
+    that knows only its directory, so a resolver there would buy nothing.
+    """
+    return _loader.script_path(basename)
+
 # The report's own dark tokens. The GIF and the product should look like one thing,
 # and these are the values `render-report.py` ships, not an approximation of them.
 BG, SURFACE, TEXT = "#0a1120", "#111a2b", "#e6edf6"
@@ -116,7 +150,7 @@ def fire_gate(d, rel, new_body, session):
 
 def capture(d):
     """Run the real commands and collect their real output."""
-    status = subprocess.run([PY, os.path.join(SCRIPTS, "audit-status.py"),
+    status = subprocess.run([PY, resolve_script("audit-status.py"),
                              os.path.join(d, "audit-plan.json")],
                             capture_output=True, text=True).stdout.rstrip("\n")
     inplan = fire_gate(d, "src/checkout.ts",

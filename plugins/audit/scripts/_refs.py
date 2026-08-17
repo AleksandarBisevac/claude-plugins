@@ -322,15 +322,19 @@ def _read_json(path):
         return json.load(fh)
 
 
-def _plugin_py_index(repo_root):
-    """{basename: [repo-relative path, ...]} for every `.py` under `plugins/audit/`.
+def _py_index(repo_root, rel_root=None):
+    """{basename: [repo-relative path, ...]} for every `.py` under one tree.
 
     Basename-keyed because that is the question a moved file poses: the recorded path is
     gone, is the FILE gone too or did it just move? `_deps` already forbids two `.py`
     sharing a basename, so a list with more than one entry means the tree is broken in a
-    way that lint reports by name."""
+    way that lint reports by name.
+
+    `rel_root` defaults to the plugin, which is what `manifest_moved_files()` asks about;
+    `tool_basename_drift()` asks the same question of three narrower trees, and one walk
+    answering for both is a walk that cannot drift from itself."""
     index = {}
-    base = os.path.join(repo_root, PLUGIN_REL.replace("/", os.sep))
+    base = os.path.join(repo_root, (rel_root or PLUGIN_REL).replace("/", os.sep))
     for root, dirnames, filenames in os.walk(base):
         dirnames.sort()
         if "__pycache__" in dirnames:
@@ -401,7 +405,7 @@ def manifest_moved_files(repo_root=None):
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     recorded, unreadable = _recorded_paths(root)
-    index = _plugin_py_index(root)
+    index = _py_index(root)
     prefix = PLUGIN_REL + "/"
     moved = []
     gone = []
@@ -419,6 +423,94 @@ def manifest_moved_files(repo_root=None):
         else:
             gone.append((source, path))
     return {"moved": moved, "gone": gone, "unreadable": unreadable, "checked": checked}
+
+
+# --- the basenames tools/ names -----------------------------------------------
+# THE HOLE THIS CLOSES. Everything above matches a PATH — `<dir>/<name>.py` — per line.
+# `tools/` does not write paths: it runs the plugin's scripts as subprocesses, and it
+# builds each command by joining a directory constant with a bare filename, so the line
+# carries `'panel-server.py'` and nothing a path pattern can catch. Nine such sites went
+# unseen by every lint in this tree and failed at RUN time instead, inside a browser gate
+# that only a machine with Playwright installed ever executes.
+TOOLS_REL = "tools"
+
+# The four trees a `.py` basename written in `tools/` may legitimately name. The first
+# two are what a tool RUNS. `tools/` itself is not a loophole: a tool's own usage line
+# names its own file (`--check` instructions, an `argparse` prog) and a sibling tool is a
+# real file too — leaving it out would make every usage string a violation, and a lint
+# everyone has to argue with is a lint that gets deleted. The test tree is here for the
+# same reason and was added by this lint's FIRST run, which reported the cross-language
+# pin's own name: a tool that says where its behaviour is pinned is doing the right
+# thing, and that name goes stale on a rename exactly like any other.
+TOOL_NAME_TREES = (PLUGIN_REL + "/scripts", PLUGIN_REL + "/hooks",
+                   PLUGIN_REL + "/tests", TOOLS_REL)
+
+# A basename, not a path: at least one leading word character (so `*.py` and the `.py`
+# in a bare `.py file(s)` are not tokens), then the name, then `.py` not followed by a
+# word character (so `x.pyc` is not read as `x.py`). `<name>.py` cannot match either —
+# `<` and `>` are outside the class and the name must reach `.py` uninterrupted — which
+# is why nothing here calls `is_placeholder()`: the placeholder shapes are excluded at
+# the regex, and stating that is cheaper than a filter that can never fire.
+_TOOL_BASENAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\.py(?![A-Za-z0-9_])")
+
+
+def _tool_known_basenames(repo_root):
+    """{basename: [repo-relative path, ...]} across TOOL_NAME_TREES, merged.
+
+    Merged rather than kept per tree because the question is only "does a file with this
+    name exist anywhere a tool may name", and a name found in two of the trees is a
+    `_deps.layer_violations()` matter, not this one's."""
+    known = {}
+    for tree in TOOL_NAME_TREES:
+        for name, rels in _py_index(repo_root, tree).items():
+            known.setdefault(name, []).extend(rels)
+    return known
+
+
+def tool_basename_drift(repo_root=None):
+    """{"unknown": [(tool_rel, lineno, basename), ...], "checked": n, "files": n}.
+
+    THE RULE, PLAINLY: a `.py` basename literal written anywhere under `tools/` must name
+    a file that exists under one of TOOL_NAME_TREES. Comments and docstrings count — a
+    tool's prose names the script it drives as often as its code does, and a reader
+    following stale prose is misled exactly as far as a stale argument list would take
+    a process.
+
+    WHAT IT CATCHES: a RENAME and a DELETION. Both are the shape where the basename stops
+    existing anywhere, which is the only shape a name-only rule can see.
+
+    WHAT IT DOES NOT CATCH, SAID RATHER THAN IMPLIED: a MOVE. `render-report.py` filed
+    under a domain folder still has the same basename, so a tool naming it stays green —
+    which is correct, because a tool that resolves BY BASENAME is genuinely unaffected by
+    the move. That is the whole division of labour here and it is worth being explicit
+    about: this lint cannot make a join safe, so the joins were replaced by resolvers
+    (`resolveScript` in the JavaScript tool, `resolve_script` in the Python one) and this
+    lint covers what a resolver cannot — a name that has ceased to exist at all. A lint
+    whose limits are written down is worth more than one that implies it covers
+    everything; nothing here should be read as proof that a tool still points at the
+    right file, only that it points at a file.
+
+    NOT SCANNED: nothing. Every readable text file under `tools/` is read, `.md` and
+    `.mjs` and `.py` alike, and `checked` is the number of basename literals examined
+    while `files` is the number of files read. Those two counts are the check on the
+    check: an empty `unknown` list means one thing when 20 literals across 3 files were
+    examined and something entirely different when the walk found nothing at all.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    known = _tool_known_basenames(root)
+    files = _surface_files(root, TOOLS_REL, BARE)
+    unknown = []
+    checked = 0
+    for rel_file in files:
+        path = os.path.join(root, rel_file.replace("/", os.sep))
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+        for lineno, line in enumerate(lines, 1):
+            for match in _TOOL_BASENAME_RE.finditer(line):
+                checked += 1
+                if match.group(0) not in known:
+                    unknown.append((rel_file, lineno, match.group(0)))
+    return {"unknown": unknown, "checked": checked, "files": len(files)}
 
 
 # --- the selftest sweep -------------------------------------------------------

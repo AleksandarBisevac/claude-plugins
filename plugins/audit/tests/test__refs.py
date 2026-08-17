@@ -29,13 +29,17 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _refs as M                                  # noqa: E402
+import _loader                                     # noqa: E402  (the reference resolver)
 
 
 # --- fixture paths: built, never spelled --------------------------------------
@@ -44,6 +48,44 @@ _FX_SCRIPTS = M.PLUGIN_REL + "/scripts/"
 _FX_HOOKS = M.PLUGIN_REL + "/hooks/"
 _FX_COMMANDS = M.PLUGIN_REL + "/commands/"
 _FX_TESTS = M.PLUGIN_REL + "/tests/"
+
+
+# The two tools, named rather than spelled as paths, for the same reason every fixture
+# path above is built: a basename is what survives a move, and `tool_basename_drift()`
+# is the lint that makes that true of `tools/` prose as well.
+_MJS_TOOL = "capture-screenshots.mjs"
+_GIF_TOOL = "capture-demo-gif.py"
+
+# ONE node invocation, every answer. Each JavaScript string is injected with
+# `json.dumps`, which emits a valid JS string literal too - and on Windows that is not a
+# nicety, it is the only thing that stops a backslash in a temp path from being read as
+# an escape sequence. The import is a `file://` URL rather than a relative specifier
+# because `--input-type=module -e` resolves relative imports against the cwd, which is a
+# second thing that would have to be right.
+_JS_PROBE = """
+import { scriptIndex, resolveScript } from %(url)s;
+const err = (fn) => {
+  try { return { ok: true, value: fn() }; }
+  catch (e) { return { ok: false, message: String((e && e.message) || e) }; }
+};
+const index = {};
+for (const [name, paths] of scriptIndex()) index[name] = paths;
+process.stdout.write(JSON.stringify({
+  index: index,
+  depth: err(() => resolveScript(%(depth)s)),
+  missing: err(() => resolveScript(%(nosuch)s)),
+  emptyTree: err(() => resolveScript(%(nosuch)s, %(empty)s)),
+  duplicate: err(() => resolveScript(%(dup)s, %(fixture)s)),
+  single: err(() => resolveScript(%(one)s, %(fixture)s)),
+  separator: err(() => resolveScript(%(sep)s))
+}));
+"""
+
+
+def _tool_src(name):
+    """The source text of a `tools/` file, read off the repo root."""
+    with open(os.path.join(M.REPO_ROOT, "tools", name), "r", encoding="utf-8") as fh:
+        return fh.read()
 
 
 def _write(root, rel, text):
@@ -333,6 +375,224 @@ def _cases(check):
               and "unreadable" in res["unreadable"][0][1], repr(res))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- the basenames tools/ names --------------------------------------------------
+    tb = M.tool_basename_drift()
+    check("tb1 no `.py` basename written anywhere in tools/ names a file that is gone: "
+          "%r" % (tb["unknown"],), tb["unknown"] == [])
+    check("tb2 ...and the run says how much it looked at - %d basename literals across "
+          "%d files. `unknown == []` means one thing at the count printed here and "
+          "something else entirely at 0, and a regex that quietly stopped matching "
+          "would report the calm version of both" % (tb["checked"], tb["files"]),
+          tb["checked"] >= 20 and tb["files"] >= 3,
+          repr((tb["checked"], tb["files"])))
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, _FX_SCRIPTS + "real.py", "# a real file\n")
+        _write(tmp, "tools/t.mjs", "spawn(PY, [join(S, 'no-such-name.py')]);\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb3 a tools/ file naming a `.py` that exists nowhere is reported, with "
+              "the file, the line and the name - this is the RENAME and the DELETION "
+              "the path-matching lint above cannot see, because the line carries a "
+              "basename and no directory in front of it",
+              res["unknown"] == [("tools/t.mjs", 1, "no-such-name.py")],
+              repr(res["unknown"]))
+        # MUTATION, THE OTHER DIRECTION. One character apart from tb3 and nothing else
+        # differs, so a version that merely matched the regex scores both the same.
+        _write(tmp, "tools/t.mjs", "spawn(PY, [join(S, 'real.py')]);\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb4 ...and the same shape naming a script that IS there is not reported, "
+              "while the run still says it examined one - the check is the lookup, not "
+              "the regex", res["unknown"] == [] and res["checked"] == 1, repr(res))
+        # The tool trees, each proven by a name only that tree can supply.
+        _write(tmp, _FX_HOOKS + "h.py", "# a hook\n")
+        _write(tmp, _FX_TESTS + "test_h.py", "# a suite\n")
+        _write(tmp, "tools/self.py", "usage: self.py --check; drives h.py, test_h.py\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb5 a tool naming ITSELF, a hook, and a test file is green on all three "
+              "- the four trees in TOOL_NAME_TREES are the ones a tool may legitimately "
+              "name, and a rule that flagged a usage line would be switched off",
+              res["unknown"] == [] and res["checked"] == 4, repr(res))
+        # THE LIMIT, AS A CASE RATHER THAN AS A SENTENCE IN A DOCSTRING.
+        _write(tmp, _FX_SCRIPTS + "domain/moved.py", "# filed under a label\n")
+        _write(tmp, "tools/t.mjs", "spawn(PY, [join(S, 'domain', 'moved.py')]);\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb6 a file that MOVED into a subdirectory is NOT reported - the basename "
+              "still exists, so this lint is blind to it by construction. That is the "
+              "whole reason the joins became resolvers: this covers a name that ceased "
+              "to exist, and only a resolver covers a name that moved",
+              res["unknown"] == [], repr(res["unknown"]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, "tools/t.mjs", "docs say <name>.py and *.py and cached.pyc\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb7 the placeholder shapes and a `.pyc` are not tokens at all - excluded "
+              "at the regex, which is why nothing filters them afterwards. Its own tmp "
+              "root, because `checked` is a whole-tree count and a fixture carried over "
+              "from tb5 would have made this read 3",
+              res["unknown"] == [] and res["files"] == 1 and res["checked"] == 0,
+              repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        res = M.tool_basename_drift(tmp)
+        check("tb8 a root with no tools/ at all reads as 0 files and 0 literals, never "
+              "as a clean tree - `unknown == []` is the same empty list either way and "
+              "the counts are the only thing that tells them apart",
+              res["unknown"] == [] and (res["files"], res["checked"]) == (0, 0),
+              repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- the JS resolver, held equal to `_loader`'s by READING both -------------------
+    # `.mjs` cannot import Python, so `capture-screenshots.mjs` states the basename
+    # resolution rule a fourth time (`_loader.py`, `_config.py`'s find_script and
+    # `_output.py`'s script_files are the other three). It cannot be merged, so it is
+    # pinned the way the pricing table is pinned between `_config.py` and
+    # `_usage_core.py`: by a case that obtains both answers and compares them. The WHOLE
+    # index, not one lookup - a probe asking about a single name would agree on that name
+    # and know nothing about the other thirty-seven.
+    _node = shutil.which("node")
+    if _node is None:
+        print("SKIP js1-js9 (node is not on PATH; the cross-language pin needs it)")
+    else:
+        tmp = tempfile.mkdtemp()
+        try:
+            _write(tmp, "fixture/one.py", "# the only claimant\n")
+            _write(tmp, "fixture/a/dup.py", "# claimant one\n")
+            _write(tmp, "fixture/b/dup.py", "# claimant two\n")
+            os.makedirs(os.path.join(tmp, "empty"))
+            _probe = _JS_PROBE % {
+                "url": json.dumps(Path(os.path.join(M.REPO_ROOT, "tools",
+                                                    _MJS_TOOL)).as_uri()),
+                "depth": json.dumps("render-report.py"),
+                "nosuch": json.dumps("no-such-script.py"),
+                "dup": json.dumps("dup.py"),
+                "one": json.dumps("one.py"),
+                "sep": json.dumps("domain/render-report.py"),
+                "empty": json.dumps(os.path.join(tmp, "empty")),
+                "fixture": json.dumps(os.path.join(tmp, "fixture")),
+            }
+            _proc = subprocess.run([_node, "--input-type=module", "-e", _probe],
+                                   cwd=M.REPO_ROOT, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+            check("js1 the probe ran - every case below is about its output, so a node "
+                  "that refused to import the tool must fail HERE rather than leave "
+                  "eight cases quietly asking about an empty dict",
+                  _proc.returncode == 0 and _proc.stdout.strip(),
+                  _proc.stderr.decode("utf-8", "replace")[-600:])
+            js = json.loads(_proc.stdout.decode("utf-8")) if _proc.returncode == 0 \
+                else {"index": {}}
+            py_index = _loader.script_index()
+            _only_py = sorted(set(py_index) - set(js["index"]))
+            _only_js = sorted(set(js["index"]) - set(py_index))
+            check("js2 the JavaScript index covers exactly the basenames "
+                  "`_loader.script_index()` does - %d names, and the two difference "
+                  "lists are the check: a walk that narrowed to nothing would disagree "
+                  "about everything and a walk that widened would disagree about the "
+                  "extras" % (len(py_index),),
+                  py_index and not _only_py and not _only_js,
+                  repr((_only_py, _only_js)))
+            def _real(p):
+                """Both sides build absolute paths their own way - one through
+                `os.path.abspath`, one through node's path.join - and on macOS the
+                temp root is a symlink, so the comparison has to be by realpath or it
+                compares two spellings rather than two files."""
+                return os.path.realpath(p or "")
+
+            _differ = sorted(
+                name for name in py_index
+                if name in js["index"]
+                and sorted(_real(p) for p in py_index[name])
+                != sorted(_real(p) for p in js["index"][name]))
+            check("js3 ...and every one of them resolves to the SAME FILE on both "
+                  "sides, compared by realpath: %r" % (_differ,), not _differ)
+            _depth = js.get("depth") or {}
+            _py_depth = _loader.script_path("render-report.py")
+            check("js4 the depth proof, and the one the migration turns on: the script "
+                  "that has already moved resolves out of a SUBDIRECTORY of scripts/, "
+                  "the same file `_loader` finds, and the tool never spelled the folder "
+                  "- %r" % (_depth.get("value"),),
+                  _depth.get("ok")
+                  and _real(_depth.get("value") or "") == _real(_py_depth)
+                  and os.path.dirname(_real(_py_depth))
+                  != _real(_harness.SCRIPTS_DIR), repr(_depth))
+            _miss = js.get("missing") or {}
+            check("js5 refusal one: nothing with that name names the basename AND how "
+                  "many files were searched, and the count here is non-zero",
+                  not _miss.get("ok")
+                  and "no-such-script.py" in (_miss.get("message") or "")
+                  and ("among the %d " % sum(len(v) for v in py_index.values())
+                       in (_miss.get("message") or "")), repr(_miss))
+            _empty = js.get("emptyTree") or {}
+            check("js6 ...and the SAME call over an empty tree says 0, which is what "
+                  "keeps a typo distinguishable from a tree that was never walked. "
+                  "Reads redundant beside js5 and is the only case that fails if the "
+                  "count becomes a constant",
+                  not _empty.get("ok")
+                  and "among the 0 " in (_empty.get("message") or ""), repr(_empty))
+            _dup = js.get("duplicate") or {}
+            _single = js.get("single") or {}
+            check("js7 refusal two: two files claiming one basename is refused naming "
+                  "BOTH paths - picking either would run the wrong script under the "
+                  "right name, which is the only failure this shape can produce in "
+                  "silence",
+                  not _dup.get("ok")
+                  and os.path.join("a", "dup.py") in (_dup.get("message") or "")
+                  and os.path.join("b", "dup.py") in (_dup.get("message") or ""),
+                  repr(_dup))
+            check("js8 ...and the very same fixture resolves the name only ONE file "
+                  "claims, so js7 fails for the duplication and not because the test "
+                  "seam was broken",
+                  _single.get("ok")
+                  and _real(_single.get("value") or "")
+                  == _real(os.path.join(tmp, "fixture", "one.py")), repr(_single))
+            _sep = js.get("separator") or {}
+            check("js9 refusal three: a value carrying a directory separator is refused "
+                  "naming the value, rather than being reduced to its basename - "
+                  "dropping the directory a caller spelled is how a caller comes to "
+                  "believe the directory mattered",
+                  not _sep.get("ok")
+                  and "domain/render-report.py" in (_sep.get("message") or ""),
+                  repr(_sep))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- the domain name is gone from the tools --------------------------------------
+    _mjs = _tool_src(_MJS_TOOL)
+    _joins = re.findall(r"path\.join\(SCRIPTS,[^)]*\)", _mjs)
+    check("d1 exactly ONE join of the SCRIPTS constant is left in the capture tool, and "
+          "it is the ui/ ASSET, not a script - the eight script sites all go through "
+          "the resolver now, and this is the case that goes red when a ninth join "
+          "creeps back: %r" % (_joins,),
+          len(_joins) == 1 and "panel.js" in _joins[0])
+    check("d2 ...and the eight are really there, resolving by BASENAME with no folder "
+          "argument. Reads vacuous beside d1 and is the half that fails if the call "
+          "sites were deleted rather than converted",
+          _mjs.count("resolveScript('") == 8
+          and not re.search(r"resolveScript\('[^']*[/\\]", _mjs))
+    _gif = _tool_src(_GIF_TOOL)
+    check("d3 the Python tool carries no join of the SCRIPTS constant at all - it can "
+          "import the resolver that already owns the answer, so it does, and there is "
+          "no fifth copy of the rule",
+          "os.path.join(SCRIPTS" not in _gif and 'resolve_script("' in _gif)
+    check("d4 ...while its HOOKS join is untouched, because hooks/ is not being "
+          "reorganised - flat by design, reached by a launcher that knows only the "
+          "directory. The scope of the change is a claim, so it is asserted",
+          "os.path.join(HOOKS" in _gif)
+    _gif_mod = _loader.load(os.path.join(M.REPO_ROOT, "tools", _GIF_TOOL))
+    check("d5 and the Python tool's resolver IS `_loader`'s, not a lookalike: it "
+          "returns the identical path for the script it drives, at depth or not",
+          _gif_mod.resolve_script("audit-status.py")
+          == _loader.script_path("audit-status.py")
+          and _gif_mod.resolve_script("render-report.py")
+          == _loader.script_path("render-report.py"))
 
     # --- the sweep -------------------------------------------------------------------
     drift = M.sweep_glob_drift()
