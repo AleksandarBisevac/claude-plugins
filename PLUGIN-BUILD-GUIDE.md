@@ -124,7 +124,7 @@ claude-plugins/                           # this repo (personal, public)
         gen-demo-usage.py                 # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
         audit-journal.py                  # append-only hash-chained audit trail (append/verify/show)
-      tests/                              # selftest blocks moved OUT of the modules they test (in progress)
+      tests/                              # selftest blocks moved OUT of the modules they test (all 48)
         _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
         test__cli_fmt.py                  # pilot 1: an importable helper
         test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
@@ -885,14 +885,14 @@ set the `$schema` URL to your published raw path and fill `repo`/`createdISO`.
 End-user docs: install, run, the config table, the three-layer extensibility model, and a
 one-minute manifest overview.
 
-### `plugins/audit/tests/` — ONE section, not one per file (v0.40.0, in progress)
+### `plugins/audit/tests/` — ONE section, not one per file (v0.40.0, done)
 
 45% of this tree (22,363 of 49,393 lines) was `--selftest` blocks living inside the modules
-they test, and all 48 files carried their own copy of `check()`. Those blocks are moving out,
-one file at a time — 45 of the 48 have moved (three pilots, then batches A through E), and
-`_output.py --selftest` prints the running count as `sc10`. Batch E was the nine files under
-`hooks/`, which leaves only `_output.py`, `_deps.py` and `_refs.py` — the three lints that own
-this boundary — still carrying a suite of their own. This section describes the whole
+they test, and all 48 files carried their own copy of `check()`. Those blocks moved out, one
+file at a time — three pilots, then batches A through E, then batch F: `_refs.py`, `_deps.py`
+and `_output.py`, the three lints that own this boundary, migrating themselves with themselves.
+**All 48 have moved**, `tests/test__output.py`'s `sc10`/`sc11` assert that end state by name,
+and no production file carries a suite of its own. This section describes the whole
 directory on purpose: §2 exists to answer
 "what does this file decide", and a test file's answer is always "the cases of the file beside
 it" — `_deps.guide_enumeration()` is scoped to `scripts/` + `hooks/` so that this stays one
@@ -1015,11 +1015,41 @@ static hooks→scripts import ban, never as graph nodes, and each of those loads
 `_config.py`, which keeps it and still serves it to production through `manifest_lock_conflict()`
 and `guard-capabilities`. `KNOWN_LAYER_DEBT` stayed at 17 and the generated module map did not move.
 
+**Batch F retired nothing either, and the reason is worth one line: none of the three lints
+makes a `_loader` call at all.** Their only sibling edges are static `import _output`
+(`_refs.py` once, in `__main__`; `_deps.py` twice, at module level and in `__main__`), and all
+three call sites are production. `KNOWN_LAYER_DEBT` is still 17 and `_deps.py --render` is
+byte-identical across the batch — which the fence below required rather than merely allowed.
+
+**A lint that scans the tree it lives in must not plant its own needle there, and batch F paid
+that three times.** `_refs.py` had already learned it: its fixture paths are BUILT from
+`PLUGIN_REL` because an anchor spelled beside a `scripts/…py` is a real reference to a file that
+exists for four milliseconds, and `c5` reports it — the constants moved to `tests/` with the
+cases, since `tests/` is an anchored surface too. `_output.py` hit the same class twice on its
+own first run and came back classified `both`: `_CONTRACT = "cases passed"` IS a string constant
+carrying the contract, and two of its function docstrings spell the contract while explaining
+what it is. Both are fixed at the source rather than exempted — the constant is assembled from
+two tokens, and the proxy now drops every docstring (any `ast.Expr` holding a string, at any
+depth) instead of only `tree.body[0]`. A `print(...)` argument is not a statement, so a real
+inline suite is still seen.
+
+**The rule stopped being permissive when it ran out of things to permit.** `inline` was the
+clean half of an OR while the migration ran; with 0 inline and 48 covered it is now a DEFECT
+class beside `both` and `neither`, so a file that ships a new inline suite is named rather than
+accepted. `selftest_coverage()` answers that in one place — a `defects` list, every offending
+name tagged with its class — instead of each caller re-spelling which keys count. Proven red
+by giving the real tree a throwaway production file with an inline suite and no test file: the
+old predicate passed, the new one failed with one `inline` entry naming that file, and `sc10`
+printed it. (The probe's path is described here rather than written: this document is one of
+`_refs`' BARE surfaces, and spelling a `scripts/` path that no longer exists is a missing
+reference `c5` reports — which is how this paragraph was caught the first time it was written.)
+
 **What the boundary lints say.** `_output.selftest_coverage()` classifies every production
 file as `inline` / `covered` / `both` / `neither` (plus orphan and colliding test files), and
-`_output.py --selftest` asserts the counts — because a rule with an OR in it (`inline or
-covered`) is exactly the shape that lets a file with NEITHER through. `both` is a defect too:
-two suites for one module drift. CI's sweep takes its skip list from `_output.py --covered`,
+`tests/test__output.py` asserts the counts — because a rule with an OR in it (`inline or
+covered`) is exactly the shape that lets a file with NEITHER through. `covered` is now the only
+clean class; `inline`, `both` and `neither` are all defects, and all of them reach the `defects`
+list a caller asserts on. CI's sweep takes its skip list from `_output.py --covered`,
 the same function, so it cannot skip a file nobody is testing. `_deps.tests_import_violations()`
 holds the other direction: nothing under `scripts/` or `hooks/` may import from `tests/`, so the
 test tree stays deletable. `tests/` is deliberately absent from `_deps.LAYERS` (a test file has

@@ -82,11 +82,12 @@ ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 ```
 
-**The second line is not optional and not decoration.** `--selftest` blocks are moving out of
-the modules they test into `plugins/audit/tests/`; a migrated file still exits 0 on
-`--selftest` and prints where its cases went, so the first line stays green over a suite it
-no longer runs. `_output.selftest_coverage()` is what keeps the two halves honest — it fails
-on a file with an inline suite AND a test file, and on one with neither.
+**The second line is not optional and not decoration.** Every `--selftest` block has moved out
+of the module it tests into `plugins/audit/tests/`, all 48 of them; a migrated file still exits
+0 on `--selftest` and prints where its cases went, so the first line stays green over suites it
+no longer runs. `_output.selftest_coverage()` is what keeps the two halves honest — the
+migration is finished, so `covered` is the only clean class: a file with a suite INLINE, with
+both, or with neither is a defect it names.
 
 `CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set. The
 browser-level gates (`tools/capture-screenshots.mjs --check`,
