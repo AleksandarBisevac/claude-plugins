@@ -26,8 +26,11 @@ _help.py's own selftest — keeps working unchanged.
 This module sits at the BOTTOM of the panel's own import graph: it must never
 import _help or panel-server, so nothing that imports THIS module (both of them
 do) can ever form a cycle through it.
+
+This module carries no `--selftest` of its own any more; its 44 cases live in
+`plugins/audit/tests/test__panel_settings.py`, byte-identical labels and all -
+see `plugins/audit/tests/_harness.py`.
 """
-import json
 import os
 import sys
 
@@ -394,134 +397,17 @@ def _cfg_enums():
             "planGate": list(vc.PLAN_GATE_MODES)}
 
 
-# --- selftest ---------------------------------------------------------------
-def _selftest():
-    cases = []
-
-    def check(label, cond):
-        cases.append((label, bool(cond)))
-
-    # --- Settings: the whole config, named by what it does ---------------------
-    # The claim this tab makes is "here is the configuration". It was not true: the
-    # form covered part of the config and nothing anywhere said which part, so the
-    # `usage.*` block and four of five `tddReminder.*` keys were invisible on the one
-    # surface built to make them legible.
-    #
-    # The expected set is DERIVED from validate-config's own key sets rather than
-    # listed here. A hand-kept list would be a third place to forget a key — the
-    # exact failure this chunk exists to fix, one level up.
-    _vc = _validate_config()
-    _containers = {"secretPatterns": _vc.KNOWN_SECRET, "guardEdits": _vc.KNOWN_GUARD,
-                   "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
-                   "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL}
-    # `policy` is a root key with no control on this form, on purpose — the one
-    # kind of exemption, and it is stated rather than silently subtracted. It is
-    # not a setting with a value; it is a rule set whose meaning is the verdict it
-    # produces for each installed capability, which is what /api/policy serves and
-    # what the **Policy tab** renders, switch by switch. The exemption is pinned
-    # below: it must name a key the validator actually knows, or it would silently
-    # excuse nothing. (panel-server.py's own selftest confirms it is served by its
-    # own endpoint — that needs the server's source, so it stays there.)
-    #
-    # `enforce` (v0.34 B1) is exempt for the opposite reason: it IS editable from
-    # this form, through the planGate control — the select's preset reads the
-    # legacy flag, and saving rewrites it as planGate while deleting enforce. A
-    # second, dedicated checkbox would be two controls writing one gate, free to
-    # disagree about it. The check below pins that the planGate control exists,
-    # so this exemption cannot outlive the control that justifies it.
-    #
-    # `ui` (th, F-P-6) is exempt for the policy reason, not the enforce one: it
-    # HAS a surface, and that surface is the Appearance tab — a token editor
-    # with a live preview, light/dark pairs and a contrast check. A text field
-    # here holding a theme name beside it would be a second control writing the
-    # same key, free to disagree with the tab about which theme is on.
-    _settings_exempt = {"policy", "enforce", "ui"}
-    _expected = {k for k in _vc.KNOWN_ROOT
-                 if k not in _containers and k not in _settings_exempt}
-    for _parent, _keys in _containers.items():
-        _expected |= {"%s.%s" % (_parent, k) for k in _keys}
-    check("the Settings exemption names a real config key - an exemption for a key "
-          "the validator has never heard of excuses nothing and hides the next one",
-          _settings_exempt <= _vc.KNOWN_ROOT)
-    # The container map above IS hand-kept — there is no machine link from a
-    # top-level key to the set of keys inside it — so the one thing it can get
-    # wrong is naming a container the validator has never heard of. Then the
-    # derived set would keep expecting `journal.*` after `journal` was dropped from
-    # KNOWN_ROOT, and this whole check would agree with itself about a key the
-    # hooks ignore.
-    check("every container the form groups is a real top-level key",
-          set(_containers) <= _vc.KNOWN_ROOT)
-    _bound = set(_settings_paths())
-    check("Settings binds a control to EVERY key the validator accepts - the "
-          "missing ones were the whole usage block and most of tddReminder",
-          _bound == _expected)
-    if _bound != _expected:
-        print("     missing: %s" % sorted(_expected - _bound))
-        print("     unknown: %s" % sorted(_bound - _expected))
-    check("every bound setting has help text, and no help text names a key the "
-          "validator does not know",
-          set(FIELD_HELP) == _bound)
-    check("no path is bound twice (a duplicate would render two controls writing "
-          "the same key)", len(_settings_paths()) == len(_bound))
-    # Named by what they DO, with the key beside them. Every heading used to BE a
-    # JSON path, uppercased by the h2 rule: "GUARDEDITS.TOKENVARS". That reads as a
-    # config dump and assumes the schema the reader came here to learn.
-    for _g in SETTINGS_GROUPS:
-        for _f in _g["fields"]:
-            check("%r is labelled %r rather than shown as a bare key"
-                  % (_f["path"], _f["label"]),
-                  bool(_f["label"]) and _f["label"] != _f["path"]
-                  and not _f["label"][0].islower())
-    check("the groups are the decisions the config makes, not one list",
-          tuple(g["id"] for g in SETTINGS_GROUPS)
-          == ("paths", "guards", "tdd", "usage", "journal")
-          and all(g["blurb"] for g in SETTINGS_GROUPS))
-    check("the audit trail's card states the limit of the claim, where someone "
-          "deciding whether to rely on it will read it",
-          "not tamper-proof" in dict(
-              (g["id"], g["blurb"]) for g in SETTINGS_GROUPS)["journal"])
-    check("no blurb writes markdown - they are rendered as text, so a backtick "
-          "reaches the screen as a backtick",
-          not any("`" in g["blurb"] or "**" in g["blurb"]
-                  for g in SETTINGS_GROUPS))
-
-    # --- the write allow-lists ---------------------------------------------------
-    check("the meta form keys exclude the api-only ones",
-          set(_META_FORM_KEYS) == set(_META_KEYS) - set(_META_API_ONLY))
-    check("areas is meta-only and api-only, not a phase or task key",
-          "areas" in _META_KEYS and "areas" in _META_API_ONLY
-          and "areas" not in _PHASE_KEYS and "areas" not in _TASK_KEYS)
-
-    # The enforce exemption's justification, pinned: the planGate control is on
-    # the form, custom-rendered (planGateField owns the legacy-flag rewrite).
-    _pg = [f for g in SETTINGS_GROUPS for f in g["fields"]
-           if f["path"] == "planGate"]
-    check("enforce is exempt BECAUSE planGate's control edits it - that control "
-          "must exist, custom, or the exemption excuses a hole",
-          len(_pg) == 1 and _pg[0]["kind"] == "custom")
-
-    # --- _cfg_enums --------------------------------------------------------------
-    check("the enum choices ARE the validator's tuples, not a copy of them",
-          set(_cfg_enums()["inProgressPolicy"]) == set(_vc.IN_PROGRESS_POLICY)
-          and set(_cfg_enums()["authorMode"]) == set(_vc.AUTHOR_MODES))
-    check("the planGate tiers reach the form from the validator's own tuple, "
-          "in escalation order",
-          _cfg_enums()["planGate"] == list(_vc.PLAN_GATE_MODES))
-    check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
-          "with json.dumps)", json.dumps(_cfg_enums(), sort_keys=True))
-
-    passed = sum(1 for _, ok in cases if ok)
-    for label, ok in cases:
-        print("%s %s" % ("PASS" if ok else "FAIL", label))
-    print("\n%s: %d/%d cases passed" % (
-        "ALL PASS" if passed == len(cases) else "FAILURES", passed, len(cases)))
-    return 0 if passed == len(cases) else 1
-
-
 # --- cli --------------------------------------------------------------------
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
+        # Answers rather than falling through to the docstring dump, which would
+        # exit 0 with no word about the flag. It deliberately does NOT print the
+        # `N/M cases passed` contract - that literal is how
+        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
+        print("_panel_settings.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test__panel_settings.py - run that file "
+              "instead.")
+        raise SystemExit(0)
     print(__doc__.strip())

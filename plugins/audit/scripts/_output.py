@@ -911,7 +911,7 @@ def _selftest():
           not (real_cov["both"] or real_cov["neither"] or real_cov["orphans"]
                or real_cov["collisions"] or real_cov["unreadable"]))
     check("sc11 ...and the migrated set is exactly the three pilots plus batches "
-          "A and B. "
+          "A, B and C. "
           "Editing this list is what a migration step COSTS, which is the point: "
           "the end state (0 inline, every file covered) is asserted here, never "
           "assumed: %r" % (real_cov["covered"],),
@@ -921,7 +921,12 @@ def _selftest():
                                   "scripts/_fmt.py",
                                   "scripts/_loader.py",
                                   "scripts/_manifest_io.py",
+                                  "scripts/_panel_discovery.py",
+                                  "scripts/_panel_page.py",
+                                  "scripts/_panel_settings.py",
+                                  "scripts/_panel_state.py",
                                   "scripts/_panel_ui.py",
+                                  "scripts/_panel_write.py",
                                   "scripts/_policy.py",
                                   "scripts/_report_html.py",
                                   "scripts/_report_md.py",
@@ -936,6 +941,7 @@ def _selftest():
                                   "scripts/gen-demo-manifest.py",
                                   "scripts/gen-demo-usage.py",
                                   "scripts/migrate-manifest.py",
+                                  "scripts/panel-server.py",
                                   "scripts/render-report.py",
                                   "scripts/usage_ledger.py",
                                   "scripts/validate-config.py"])
@@ -953,7 +959,12 @@ def _selftest():
                                    "plugins/audit/scripts/_fmt.py",
                                    "plugins/audit/scripts/_loader.py",
                                    "plugins/audit/scripts/_manifest_io.py",
+                                   "plugins/audit/scripts/_panel_discovery.py",
+                                   "plugins/audit/scripts/_panel_page.py",
+                                   "plugins/audit/scripts/_panel_settings.py",
+                                   "plugins/audit/scripts/_panel_state.py",
                                    "plugins/audit/scripts/_panel_ui.py",
+                                   "plugins/audit/scripts/_panel_write.py",
                                    "plugins/audit/scripts/_policy.py",
                                    "plugins/audit/scripts/_report_html.py",
                                    "plugins/audit/scripts/_report_md.py",
@@ -968,6 +979,7 @@ def _selftest():
                                    "plugins/audit/scripts/gen-demo-manifest.py",
                                    "plugins/audit/scripts/gen-demo-usage.py",
                                    "plugins/audit/scripts/migrate-manifest.py",
+                                   "plugins/audit/scripts/panel-server.py",
                                    "plugins/audit/scripts/render-report.py",
                                    "plugins/audit/scripts/usage_ledger.py",
                                    "plugins/audit/scripts/validate-config.py"]

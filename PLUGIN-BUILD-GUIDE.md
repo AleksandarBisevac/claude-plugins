@@ -196,7 +196,7 @@ L3:
 
 L4:
   _panel_discovery -> _help, _manifest_io, _output
-  _panel_page -> _help, _loader, _output, _panel_settings, _panel_ui, _ui_theme
+  _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _report_usage -> _fmt, _loader, _output, _report_html, _ui_theme
 
 L5:
@@ -217,7 +217,7 @@ L7:
   gen-demo-manifest -> _loader, _output
   gen-demo-usage -> _loader, _output
   migrate-manifest -> _loader, _manifest_io, _output
-  panel-server -> _help, _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
+  panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _loader, _manifest_io, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _ui_theme
   validate-config -> _output, _policy
   validate-manifest -> _areas, _manifest_io, _output
@@ -889,7 +889,7 @@ one-minute manifest overview.
 
 45% of this tree (22,363 of 49,393 lines) was `--selftest` blocks living inside the modules
 they test, and all 48 files carried their own copy of `check()`. Those blocks are moving out,
-one file at a time — 24 of the 48 have moved (three pilots, batch A, batch B), and
+one file at a time — 30 of the 48 have moved (three pilots, batch A, batch B, batch C), and
 `_output.py --selftest` prints the running count as `sc10`. This section describes the whole
 directory on purpose: §2 exists to answer
 "what does this file decide", and a test file's answer is always "the cases of the file beside
@@ -909,6 +909,17 @@ so an exception raised while computing a case argument used to take the whole su
 with it (measured: 0 `PASS` lines survived; through `run()`, 8 of 9 print and the escape is
 reported as the failing ninth).
 
+It also owns the two things a *source-reading* case cannot spell from `tests/`. **`module_source(mod)`**
+replaces three identical `_src_of_this_file()` helpers (`panel-server.py`, `_panel_state.py`,
+`_panel_write.py`) whose six call sites were all inside their own suites and none in the product:
+moved literally, each would read the TEST file. **`between(text, start, end)`** replaces
+`text.split(start)[1].split(end)[0]`, whose halves fail in opposite ways — a missing `start`
+raises, a missing `end` *silently returns the rest of the file*. Measured on the real sources:
+the panel's read-route slice widened from 4,011 to 16,507 characters and swallowed a write
+route, and `_panel_state`'s `--name-only` **security** slice widened from 3,747 to 71,084 and
+still "found" the flag. `between()` raises on either marker, and `run()` reports the escape as a
+named failing case.
+
 **Naming.** a production `x.py` becomes `tests/test_x.py`, with **hyphens becoming underscores**:
 `migrate-manifest.py` → `test_migrate_manifest.py`, because a hyphenated name is not
 importable and the entry points are hyphenated by convention. The rule lives in
@@ -924,8 +935,9 @@ name is on. **Case labels move byte-identical** — a changed label is a changed
 migration proves the multiset before and after.
 
 **What a move is NOT allowed to carry over literally.** Batch A (13 files) found three shapes
-that mean something different once the code sits one directory over, and batch B (8 files) added
-two more. Every one of them fails QUIETLY rather than loudly if carried:
+that mean something different once the code sits one directory over, batch B (8 files) added
+two more, and batch C (the six panel files) added a sixth. Every one of them fails QUIETLY
+rather than loudly if carried:
 
 * `globals()["x"] = stub` — a suite that swaps a module global for a counting or mocking stub was
   rebinding a name in the module it lived in. From `tests/` it rebinds a name nothing calls, the
@@ -956,6 +968,14 @@ two more. Every one of them fails QUIETLY rather than loudly if carried:
   asserted `ui/` sits beside the module, which from `tests/` is simply false — and it is the case
   that shows the rule: say the same thing about the SUBJECT (`UI_DIR == SCRIPTS_DIR/ui`) rather
   than editing the assertion until it passes.
+* a source SLICE spelled `src.split(start)[1].split(end)[0]` — batch C's addition, and the only
+  one on this list that was already unsafe *before* the move. The two halves fail in opposite
+  ways: a missing `start` raises, a missing `end` returns the whole remainder, so every
+  `"x not in slice"` case over it passes by describing a region it never meant. Use
+  `_harness.between()`, which raises on either. `_panel_state`'s `--name-only` case is the one
+  that makes this a security rule rather than a tidiness one: a plain `git config --list` hands
+  back credential helpers and tokens, and the vacuous form was measured passing over a
+  71,084-character slice of a module whose real slice is 3,747.
 
 **A moved case may have to become a better case.** Not licence to rewrite: labels move
 byte-identical and the multiset is proven. But where the inline spelling depended on the suite's

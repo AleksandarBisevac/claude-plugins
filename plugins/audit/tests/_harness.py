@@ -108,6 +108,58 @@ def attempt(fn, *args, **kwargs):
         return False, "%s: %s" % (type(exc).__name__, exc)
 
 
+def module_source(mod):
+    """The SOURCE TEXT of `mod`, read off `mod.__file__`.
+
+    THE ONE THING A SOURCE-READING CASE CANNOT SPELL FROM HERE. Three files -
+    `panel-server.py`, `_panel_state.py` and `_panel_write.py` - each carried an
+    identical `_src_of_this_file()` reading `open(__file__)`, and each one's ONLY
+    caller was its own `--selftest` (six call sites, all inside the three suites;
+    nothing in the product ever asked). Moved literally they would each read the
+    TEST file: every "this route is only a GET", "these aliases exist", "this
+    command passes --name-only" case would then be asking about a file that
+    contains none of those things, and the `... not in ...` halves would pass by
+    describing an empty room. Naming the module is the whole fix, and one helper
+    is why three copies did not become three more.
+
+    `mod` is a module OBJECT, so this works for a `_loader.load_script()` return
+    (a hyphenated entry point has no importable name) exactly as it does for an
+    `import x as M`.
+    """
+    with open(mod.__file__, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def between(text, start, end):
+    """The slice of `text` after the first `start` and before the next `end`.
+
+    RAISES on a marker that is not there, and that is the entire point. The
+    hand-rolled form this replaces was `text.split(start)[1].split(end)[0]`, whose
+    two halves fail in OPPOSITE ways: a missing `start` raises IndexError (loud),
+    while a missing `end` quietly returns the whole remainder of the file. The
+    slices that matter here are exactly the ones where the second half is the
+    dangerous one - `_write_src` ran from `def do_PUT` to `def _free_port` and
+    ended there only because `_free_port` happened to be the next top-level def,
+    so moving that one function would have silently widened the slice to the rest
+    of the file and turned four `"... not in _write_src"` cases vacuously true.
+
+    An escape from here is not a crash: `run()` records it as a failing case with
+    the traceback, so a marker that has moved is reported by name.
+    """
+    i = text.find(start)
+    if i < 0:
+        raise ValueError("between(): start marker %r is not in the text - the "
+                         "slice cannot be taken, and a whole-text fallback would "
+                         "be a check about the wrong region" % (start,))
+    j = text.find(end, i + len(start))
+    if j < 0:
+        raise ValueError("between(): end marker %r is not in the text after %r - "
+                         "the slice would silently run to the end of the file and "
+                         "every `not in` case over it would pass vacuously"
+                         % (end, start))
+    return text[i + len(start):j]
+
+
 def _render(cases):
     """`(text, passed, total)` - the report, not printed yet.
 
@@ -298,6 +350,45 @@ def _cases(check):
     check("l1 _labels() recovers the labels a report printed, and nothing else - "
           "the tally line is not a case",
           _labels(text) == ["one", "two (why)"])
+
+    # -- module_source(): the subject's file, never the test's -----------------
+    import _output as _ms_probe
+
+    # Assembled at runtime, not written out: a literal here would plant itself in
+    # THIS file and the second half of the case would fail on its own text - which
+    # is the same self-matching bug (F-P-8) that made a panel route check find its
+    # own assertion line.
+    _ms_needle = "def " + "covered_repo_paths("
+    check("m1 module_source() reads the module it is HANDED, and this is the "
+          "whole reason it exists: a source-slice case moved to tests/ that kept "
+          "reading `__file__` would be asking about this file instead",
+          _ms_needle in module_source(_ms_probe)
+          and _ms_needle not in open(__file__, encoding="utf-8").read())
+    check("m2 ...and it is the file on disk, byte for byte - not a re-render, so "
+          "an assertion about whitespace or comment text still means something",
+          module_source(_ms_probe)
+          == open(_ms_probe.__file__, encoding="utf-8").read())
+
+    # -- between(): both markers are load-bearing ------------------------------
+    _bt = "aaa START middle END zzz"
+    check("s1 between() returns what sits between the two markers",
+          between(_bt, "START", "END") == " middle ")
+    _s_ok, _s_msg = attempt(between, _bt, "NOPE", "END")
+    check("s2 a missing START raises rather than returning something - the half "
+          "the hand-rolled `.split(x)[1]` already got right",
+          _s_ok is False and "start marker" in _s_msg, _s_msg)
+    _e_ok, _e_msg = attempt(between, _bt, "START", "NOPE")
+    check("s3 ...and a missing END raises TOO, which is the half `.split(y)[0]` "
+          "got wrong: it returns the whole remainder, and every `not in` case "
+          "over that slice then passes by describing a region it never meant",
+          _e_ok is False and "end marker" in _e_msg, _e_msg)
+    check("s4 the naive form really does fail silently - measured, not asserted "
+          "from memory: splitting on an absent END hands back everything after "
+          "START, including the `zzz` the slice was supposed to exclude",
+          _bt.split("START")[1].split("NOPE")[0] == " middle END zzz")
+    check("s5 END is looked for AFTER start, so a marker that also appears "
+          "before it cannot produce an empty slice",
+          between("END aaa START middle END zzz", "START", "END") == " middle ")
 
 
 def _selftest():
