@@ -591,27 +591,52 @@ def _selftest():
           and set(h[0] for h in hook_script_hits) == set([_FX_HOOKS + "require-plan.py"])
           and set(h[3] for h in hook_script_hits)
           == set([_FX_SCRIPTS + "audit-lock.py"]), repr(hook_script_hits))
+    # a4's subject moved with the suite it belongs to. The unanchored
+    # `scripts/build.py` and `hooks/require-plan.py` inside guard-secrets-read's
+    # Bash payloads are text a CONSUMER's shell command carries, and those cases now
+    # live in `tests/test_guard_secrets_read.py`. The claim is unchanged - an
+    # unanchored plugin path inside the plugin's OWN Python is a fixture, not a
+    # reference - so it is made where the fixture actually is. Both halves matter:
+    # the hook no longer carries it, and the test file must not start counting it.
+    _fx_file = _FX_TESTS + "test_guard_secrets_read.py"
     check("a4 ...and guard-secrets-read.py's build.py fixture contributes none of them",
-          [h for h in hook_hits
-           if h[0].endswith("guard-secrets-read.py")] == [], repr(hook_hits))
-    # The tests/ branch, on the real tree rather than on a fixture: `remind-tdd.py` is
-    # a migrated hook, and its docstring and its `--selftest` pointer both name where
-    # its cases went. Those are references, they are anchored, and they are now stat'd
-    # - which is the whole reason the branch was added.
+          [h for h in real if h[0] == _fx_file] == []
+          and [h for h in hook_script_hits
+               if h[0].endswith("guard-secrets-read.py")] == [],
+          repr([h for h in real if h[0] == _fx_file]))
+    # The tests/ branch, on the real tree rather than on a fixture: every hook is a
+    # migrated hook now, and each one's docstring and `--selftest` pointer name where
+    # its cases went. Those are references, they are anchored, and they are stat'd -
+    # which is the whole reason the branch was added. Asserted as a MAP rather than as
+    # a count: every hit must resolve either to `_harness.py` or to the test file
+    # `_output._test_name_for()` derives from that hook's own name, so a docstring
+    # pointing a reader at some OTHER hook's suite fails here rather than passing as
+    # one more anchored path that happens to exist.
     hook_test_hits = [h for h in hook_hits if h[3].startswith(_FX_TESTS)]
-    check("a5 an ANCHORED tests/ path in the plugin's own source is a reference and "
-          "is resolved into plugins/audit/tests/: %r" % (hook_test_hits,),
-          hook_test_hits
-          and all(h[0] == _FX_HOOKS + "remind-tdd.py" for h in hook_test_hits)
-          and set(h[3] for h in hook_test_hits)
-          == set([_FX_TESTS + "test_remind_tdd.py", _FX_TESTS + "_harness.py"]))
-    check("a6 ...and an UNanchored one is not - `hooks/_config.py` carries two "
+
+    def _own_suite(hook_rel):
+        base = os.path.basename(hook_rel)[:-3].replace("-", "_")
+        return _FX_TESTS + "test_%s.py" % base
+
+    check("a5 an ANCHORED tests/ path in the plugin's own source is a reference, is "
+          "resolved into plugins/audit/tests/, and names that file's OWN suite (or "
+          "the harness): %d hits over %d hooks"
+          % (len(hook_test_hits),
+             len(set(h[0] for h in hook_test_hits))),
+          len(set(h[0] for h in hook_test_hits)) == 10
+          and all(h[3] in (_FX_TESTS + "_harness.py", _own_suite(h[0]))
+                  for h in hook_test_hits), repr(hook_test_hits))
+    # The two consumer-repo glob fixtures moved WITH `_config.py`'s suite, from
+    # `hooks/_config.py` into `tests/test__config.py` - which is the arrival this
+    # surface was made ANCHORED for, and the reason the case now names the file they
+    # live in rather than the file they came from.
+    _consumer = (_FX_TESTS + "test_cart.py", _FX_TESTS + "cart_test.py")
+    check("a6 ...and an UNanchored one is not - `tests/test__config.py` carries two "
           "consumer-repo test filenames as glob fixtures, and neither may be looked "
           "for in this plugin. Reads vacuous, and is the only case that fails if "
           "`tests` ever joins the bare alternation: %r"
-          % ([h for h in real if h[0].endswith("_config.py")],),
-          not any(h[3].startswith(_FX_TESTS)
-                  for h in real if h[0].endswith("_config.py")))
+          % ([h for h in real if h[3] in _consumer],),
+          not any(h[3] in _consumer for h in real))
 
     # --- anti-vacuity ----------------------------------------------------------------
     tmp = tempfile.mkdtemp()

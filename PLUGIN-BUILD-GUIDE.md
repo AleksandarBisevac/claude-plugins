@@ -889,8 +889,10 @@ one-minute manifest overview.
 
 45% of this tree (22,363 of 49,393 lines) was `--selftest` blocks living inside the modules
 they test, and all 48 files carried their own copy of `check()`. Those blocks are moving out,
-one file at a time — 36 of the 48 have moved (three pilots, batch A, batch B, batch C, batch D),
-and `_output.py --selftest` prints the running count as `sc10`. This section describes the whole
+one file at a time — 45 of the 48 have moved (three pilots, then batches A through E), and
+`_output.py --selftest` prints the running count as `sc10`. Batch E was the nine files under
+`hooks/`, which leaves only `_output.py`, `_deps.py` and `_refs.py` — the three lints that own
+this boundary — still carrying a suite of their own. This section describes the whole
 directory on purpose: §2 exists to answer
 "what does this file decide", and a test file's answer is always "the cases of the file beside
 it" — `_deps.guide_enumeration()` is scoped to `scripts/` + `hooks/` so that this stays one
@@ -954,6 +956,12 @@ rather than loudly if carried:
   which is empty of the thing being asked about: `usage_ledger`'s `rx1` reports all 40 re-exports
   missing (loud), while `_usage_analytics`' `bn5` reduces to `set() - _timed == set()` and
   `render-report`'s `bn6` to a clause that is true forever (both silent, both green).
+  Batch E added the worst-behaved member of the family: `journal-writes`' `j4` read
+  `getattr(sys.modules[__name__], "record_plugin_write", lambda *a: None)(...)`. From `tests/`
+  `sys.modules[__name__]` is the TEST module, the `getattr` default hands back the lambda, the
+  lambda returns `None`, and the case passes — measured PASS with the production function deleted.
+  Name the subject **and drop the swallowing default**: `M.record_plugin_write(...)` raises
+  `AttributeError`, which `run()` reports as a named failing case.
 * `__file__` — meant "the module under test's source" (`_policy`'s `m3b` reads it to pin which
   `fnmatch` function is called) or "some real file with an mtime" (`audit-lock`'s `a-mtime`). The
   first must become `M.__file__`; the second may be anything, but should say which it is. A third
@@ -997,6 +1005,15 @@ Both are the lints working: delete the retired entries deliberately, regenerate 
 points besides `gen-demo-manifest`, and each one's `_load(...)` sites have to be classified by
 AST before an entry can be deleted: `audit-journal` and `audit-lock` are loaded from *both* the
 checks and the suite, so their entries stay. A whole-file grep would have retired three.
+
+**`hooks/` cannot retire a debt entry at all, and batch E is where that became worth saying.**
+Three loader names left the hooks' ASTs with their suites (`guard-bash-writes` dropped
+`_config._load_journal_lib`, `_config._load_lock_lib` and an `importlib` load of
+`journal-writes.py`; `require-plan` dropped `_config._load_lock_lib`; `_config` dropped the only
+in-file call of its own `policy_mod`). None was an edge: `_deps` scans `hooks/` **only** for the
+static hooks→scripts import ban, never as graph nodes, and each of those loads physically lives in
+`_config.py`, which keeps it and still serves it to production through `manifest_lock_conflict()`
+and `guard-capabilities`. `KNOWN_LAYER_DEBT` stayed at 17 and the generated module map did not move.
 
 **What the boundary lints say.** `_output.selftest_coverage()` classifies every production
 file as `inline` / `covered` / `both` / `neither` (plus orphan and colliding test files), and

@@ -911,11 +911,21 @@ def _selftest():
           not (real_cov["both"] or real_cov["neither"] or real_cov["orphans"]
                or real_cov["collisions"] or real_cov["unreadable"]))
     check("sc11 ...and the migrated set is exactly the three pilots plus batches "
-          "A, B, C and D. "
+          "A, B, C, D and E - so the only files still carrying their own suite "
+          "are the three lints that own this boundary. "
           "Editing this list is what a migration step COSTS, which is the point: "
           "the end state (0 inline, every file covered) is asserted here, never "
           "assumed: %r" % (real_cov["covered"],),
-          real_cov["covered"] == ["hooks/remind-tdd.py",
+          real_cov["covered"] == ["hooks/_config.py",
+                                  "hooks/detect-plan-skip.py",
+                                  "hooks/guard-bash-writes.py",
+                                  "hooks/guard-capabilities.py",
+                                  "hooks/guard-edits.py",
+                                  "hooks/guard-secrets-read.py",
+                                  "hooks/journal-writes.py",
+                                  "hooks/meter-usage.py",
+                                  "hooks/remind-tdd.py",
+                                  "hooks/require-plan.py",
                                   "scripts/_areas.py",
                                   "scripts/_cli_fmt.py",
                                   "scripts/_fmt.py",
@@ -959,7 +969,16 @@ def _selftest():
     check("sc13 covered_repo_paths() speaks the repo-relative paths CI's sweep "
           "iterates, so the skip list and the `find` output are the same strings: %r"
           % (covered_repo_paths(),),
-          covered_repo_paths() == ["plugins/audit/hooks/remind-tdd.py",
+          covered_repo_paths() == ["plugins/audit/hooks/_config.py",
+                                   "plugins/audit/hooks/detect-plan-skip.py",
+                                   "plugins/audit/hooks/guard-bash-writes.py",
+                                   "plugins/audit/hooks/guard-capabilities.py",
+                                   "plugins/audit/hooks/guard-edits.py",
+                                   "plugins/audit/hooks/guard-secrets-read.py",
+                                   "plugins/audit/hooks/journal-writes.py",
+                                   "plugins/audit/hooks/meter-usage.py",
+                                   "plugins/audit/hooks/remind-tdd.py",
+                                   "plugins/audit/hooks/require-plan.py",
                                    "plugins/audit/scripts/_areas.py",
                                    "plugins/audit/scripts/_cli_fmt.py",
                                    "plugins/audit/scripts/_fmt.py",
