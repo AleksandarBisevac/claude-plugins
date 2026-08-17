@@ -26,6 +26,14 @@ docs/audit/audit-report.artifact.html
 .claude/state/
 .claude/logs/
 
+# Per-developer permission overrides. Claude Code writes this file itself, and it
+# accumulates whatever paths that developer happened to allow — here, paths into a
+# private sibling repo. It was invisible in this checkout only because a PERSONAL
+# global ignore (~/.config/git/ignore) happened to carry the pattern; nothing in
+# the repo did, so it was untracked for one machine and one machine only. The
+# committed counterpart is .claude/settings.json.
+.claude/settings.local.json
+
 # Token-usage ledger. Local by default: it records counts, model ids, timestamps,
 # branch and author - never prompt content - but it is per-developer telemetry and
 # most repos will not want it in history. To share it across a team instead, delete
