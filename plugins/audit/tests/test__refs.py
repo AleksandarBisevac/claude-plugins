@@ -650,6 +650,103 @@ def _cases(check):
           _guide.count("scripts/*.py") == 2 and M.SWEEP_FIND in _guide
           and M.SWEEP_FLAT not in _guide, repr(_guide.count("scripts/*.py")))
 
+    # --- published fetch instructions -----------------------------------------
+    check("p1 the tree publishes no runnable fetch from a moving ref, and no stale "
+          "pin in the plugin README", M.raw_url_pin_drift() == [],
+          repr(M.raw_url_pin_drift()))
+    with open(os.path.join(M.REPO_ROOT, "plugins", "audit", ".claude-plugin",
+                           "plugin.json"), "r", encoding="utf-8") as fh:
+        _pv = json.load(fh)["version"]
+    check("p2 the version the currency rule compares against is READ from plugin.json, "
+          "never defaulted - a guessed version would fail every pin for the wrong "
+          "reason", M.plugin_version() is not None and M.plugin_version() == _pv,
+          repr(M.plugin_version()))
+
+    tmp = tempfile.mkdtemp()
+    try:
+        for rel in ("plugins/audit/README.md", "docs/examples/azure-pipelines.yml",
+                    "plugins/audit/.claude-plugin/plugin.json",
+                    "docs/audit/audit-plan.json"):
+            dst = os.path.join(tmp, rel.replace("/", os.sep))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy(os.path.join(M.REPO_ROOT, rel.replace("/", os.sep)), dst)
+        _rp = os.path.join(tmp, "plugins", "audit", "README.md")
+        with open(_rp, "r", encoding="utf-8") as fh:
+            _orig = fh.read()
+
+        check("p3 ...and that fixture is green, so the cases below fail for the "
+              "reason they name", M.raw_url_pin_drift(tmp) == [],
+              repr(M.raw_url_pin_drift(tmp)))
+
+        with open(_rp, "w", encoding="utf-8") as fh:
+            fh.write(_orig.replace("/v0.39.0/", "/main/"))
+        _d = M.raw_url_pin_drift(tmp)
+        check("p4 a README reverted to the moving ref reports EVERY runnable fetch, "
+              "not just the first", len(_d) == 3
+              and all("moving ref" in r[2] for r in _d), repr(_d))
+        check("p5 ...and names the line, because a file with three fetches needs the "
+              "one that is wrong", all(isinstance(r[1], int) and r[1] > 0 for r in _d),
+              repr(_d))
+        with open(_rp, "w", encoding="utf-8") as fh:
+            fh.write(_orig)
+
+        # The release moment: plugin.json moves first, and the README must follow.
+        _pj = os.path.join(tmp, "plugins", "audit", ".claude-plugin", "plugin.json")
+        with open(_pj, "r", encoding="utf-8") as fh:
+            _data = json.load(fh)
+        _data["version"] = "0.40.0"
+        with open(_pj, "w", encoding="utf-8") as fh:
+            json.dump(_data, fh, indent=2)
+        _d = M.raw_url_pin_drift(tmp)
+        check("p6 bumping plugin.json without the README turns the pin red - the rule "
+              "fires at the moment it is needed", len(_d) == 3
+              and all("plugin.json says 0.40.0" in r[2] for r in _d), repr(_d))
+        check("p7 ...and the report names both versions, since 'stale' without the "
+              "pair is not actionable",
+              all("v0.39.0" in r[2] and "0.40.0" in r[2] for r in _d), repr(_d))
+        _data["version"] = "0.39.0"
+        with open(_pj, "w", encoding="utf-8") as fh:
+            json.dump(_data, fh, indent=2)
+
+        # Two things that must STAY green. Without these the rule would "work" by
+        # flagging everything, which is the failure mode a pin-checker falls into.
+        check("p8 a deliberate historical pin outside the README is legal: "
+              "azure-pipelines.yml names v0.5.0 on purpose and is not reported",
+              [r for r in M.raw_url_pin_drift(tmp) if "azure" in r[0]] == [],
+              repr(M.raw_url_pin_drift(tmp)))
+        with open(os.path.join(tmp, "docs", "audit", "audit-plan.json"),
+                  "r", encoding="utf-8") as fh:
+            _mf = fh.read()
+        check("p9 a `$schema` identity URL on `main` is NOT a fetch instruction - "
+              "pinning an $id per release would break $ref resolution, so the rule "
+              "must never reach it",
+              "raw.githubusercontent.com" in _mf and "/main/" in _mf
+              and [r for r in M.raw_url_pin_drift(tmp)
+                   if r[0].endswith(".json")] == [], repr(_mf[:80]))
+
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # The boundary that makes the whole rule usable: PROSE IS NOT AN INSTRUCTION.
+    # CHANGELOG.md quotes the dead `main` URL as history and must keep doing so. The
+    # fence scope is what allows that - there is no CHANGELOG exemption, and this case
+    # is what proves one would be dead code rather than a safety net.
+    with open(os.path.join(M.REPO_ROOT, "CHANGELOG.md"), "r", encoding="utf-8") as fh:
+        _ch = fh.read()
+    check("p10 the CHANGELOG really does quote a `main` raw URL, so this case is not "
+          "vacuous", len(re.findall(M._RAW_RE, _ch)) >= 1,
+          repr(len(re.findall(M._RAW_RE, _ch))))
+    check("p11 ...and it is reported by nothing, because it sits in prose rather than "
+          "in a runnable fence - the scope, not an exemption, is what spares it",
+          M._executable_raw_refs(_ch) == []
+          and [r for r in M.raw_url_pin_drift() if r[0] == "CHANGELOG.md"] == [],
+          repr(M._executable_raw_refs(_ch)))
+    check("p12 a fenced URL in the SAME text is caught, which is what tells p11 apart "
+          "from a scanner that simply never looks at this file",
+          M._executable_raw_refs(
+              "```bash\ncurl https://raw.githubusercontent.com/o/r/main/x\n```") != [],
+          "the fence scope must be able to fire here")
+
 
 def _selftest():
     return _harness.run(_cases)
