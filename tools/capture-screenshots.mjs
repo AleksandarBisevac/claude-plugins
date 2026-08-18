@@ -3131,6 +3131,43 @@ async function assertUncategorizedNamed(page) {
  *   d. A mousedown on the menu's own padding/footer/scrollbar blurred the input
  *      and closed the menu 150ms later. The menu swallows mousedown.
  */
+
+/** The gutter place() keeps between the menu and the viewport edge. */
+const COMBO_GUT = 8;
+
+/**
+ * Why the menu's x is where it is — or null when no rule explains it.
+ *
+ * place() writes `Math.min(Math.max(gut, r.left), vw - gut - w)`: under its input
+ * where a menu of that width fits, and pulled flush against the viewport gutter
+ * where it does not. So "aligned with the input, always" is not the product's
+ * rule, and asserting it fails a CORRECTLY clamped menu. It did: the phase
+ * header's review-model input is right-aligned (`.comp-review{margin-left:auto}`)
+ * and lands within ~15px of the clamp threshold, and 15px is exactly what
+ * `html{scrollbar-gutter:stable}` reserves under classic scrollbar metrics and
+ * does not reserve under overlay ones. Input at 1011 → no clamp, green by one
+ * pixel; input at 1026 → clamp fires at 1200-8-180=1012, red. Same code, same
+ * viewport; the difference was which scrollbar model the host chose. (The launch
+ * flag in main() now pins that, so the two halves of this are independent fixes.)
+ *
+ * Asserting the RULE keeps the check honest without widening a tolerance until it
+ * stops complaining: a menu at a stale x, at an unset left, or anchored to the
+ * wrong element is neither under its input nor flush against a gutter it could
+ * have been clamped to, and still fails.
+ */
+function comboMenuX(g, gut) {
+  const right = g.menuLeft + g.menuWidth;
+  if (Math.abs(g.menuLeft - g.inputLeft) <= 2) return 'under its input';
+  // Flush alone is not enough: a menu that HAD room under its input and sits at
+  // the gutter anyway is misplaced, so the clamp must also have been reachable.
+  if (g.inputLeft + g.menuWidth > g.vw - gut && Math.abs(right - (g.vw - gut)) <= 2) {
+    return `clamped flush to the right gutter (it needs ${g.menuWidth}px from `
+         + `x=${g.inputLeft} in a ${g.vw}px viewport)`;
+  }
+  if (g.inputLeft < gut && Math.abs(g.menuLeft - gut) <= 2) return 'clamped flush to the left gutter';
+  return null;
+}
+
 async function assertComboOverlay(page, project) {
   await page.evaluate(() => { COMPF.q = ''; COMPF.status = ''; COMPF.needs = false;
     if (COMPF.apply) COMPF.apply(); showTab('comp'); });
@@ -3149,6 +3186,10 @@ async function assertComboOverlay(page, project) {
       inputBottom: Math.round(r.bottom), inputLeft: Math.round(r.left),
       menuTop: m ? Math.round(m.top) : null, menuLeft: m ? Math.round(m.left) : null,
       frame: [wrap.scrollWidth, wrap.scrollHeight, wrap.clientWidth, wrap.clientHeight],
+      // The three place() reads, so the clamp can be re-derived here rather than
+      // assumed away — see comboMenuX.
+      menuWidth: m ? Math.round(m.width) : null,
+      vw: document.documentElement.clientWidth,
     };
   }, REV);
   // a. open with the pointer parked away, then hover the phase row itself.
@@ -3177,12 +3218,17 @@ async function assertComboOverlay(page, project) {
        + `moved the menu ${g0.menuTop},${g0.menuLeft} → ${g1.menuTop},${g1.menuLeft} `
        + `and/or grew the table frame ${JSON.stringify(g0.frame)} → `
        + `${JSON.stringify(g1.frame)} — the row is the menu's containing block`);
-  } else if (Math.abs(g1.menuTop - g1.inputBottom) > 12 || Math.abs(g1.menuLeft - g1.inputLeft) > 2) {
-    fail(`combo(a): the menu sits at ${g1.menuTop},${g1.menuLeft} for an input whose `
-       + `bottom/left is ${g1.inputBottom},${g1.inputLeft} — not under its input`);
+  } else if (Math.abs(g1.menuTop - g1.inputBottom) > 12) {
+    fail(`combo(a): the menu's top is ${g1.menuTop} for an input whose bottom is `
+       + `${g1.inputBottom} — not under its input`);
+  } else if (!comboMenuX(g1, COMBO_GUT)) {
+    fail(`combo(a): the menu spans x ${g1.menuLeft}..${g1.menuLeft + g1.menuWidth} for an `
+       + `input at x ${g1.inputLeft} in a ${g1.vw}px viewport — neither under its input nor `
+       + `flush against the ${COMBO_GUT}px gutter a clamp would have pulled it to`);
   } else {
     note(`combo(a): the phase review-model menu lives on <body>, stays at `
-       + `${g1.menuTop},${g1.menuLeft} under hover, and the table frame does not grow`);
+       + `${g1.menuTop},${g1.menuLeft} under hover (${comboMenuX(g1, COMBO_GUT)}), and the `
+       + `table frame does not grow`);
   }
   // d. a mousedown on the menu's padding (not an item) must not close it.
   const pad = await page.evaluate(() => {
@@ -4411,7 +4457,19 @@ async function main() {
   const servers = [];
   let panel = null;
   let polPanel = null;          // the policy fixture's own panel — its own HOME
-  const browser = await chromium.launch();
+  // SCROLLBAR METRICS ARE AMBIENT, AND THIS FILE MEASURES WIDTHS. Chromium picks
+  // overlay scrollbars or classic ones from the host: on macOS from a system
+  // preference whose default ("Automatic") flips with whether a mouse is plugged
+  // in, on CI Linux from the platform default. `html{scrollbar-gutter:stable}`
+  // then reserves 15px or nothing, which moves every right-aligned box by 15px —
+  // and 15px was enough to fail combo(a) on the maintainer's Mac while CI stayed
+  // green through a release, the check people then learn to ignore locally. One
+  // model, pinned, so a width measured here is the width CI measures. Disable
+  // beats enable in Chromium's feature list, so this holds whatever the host
+  // would have chosen; it is the model CI resolves to today, so --check does not
+  // move there. A capture taken on a host that WAS choosing overlay will move by
+  // those 15px — which is the drift this removes, not one it introduces.
+  const browser = await chromium.launch({ args: ['--disable-features=OverlayScrollbar'] });
 
   try {
     // ---- report shots, from the committed example -------------------------------
