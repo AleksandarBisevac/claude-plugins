@@ -80,7 +80,7 @@
         "P14.1"
       ],
       "files": [
-        "plugins/audit/scripts/audit-status.py",
+        "plugins/audit/scripts/status/audit-status.py",
         "plugins/audit/scripts/usage/audit-usage.py"
       ],
       "docs": [],
@@ -121,7 +121,7 @@
         "P14.2"
       ],
       "files": [
-        "plugins/audit/scripts/audit-doctor.py"
+        "plugins/audit/scripts/status/audit-doctor.py"
       ],
       "docs": [],
       "description": "Use _loader for its six path-loads; prune the local wrapper.",

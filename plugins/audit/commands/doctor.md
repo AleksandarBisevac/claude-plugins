@@ -9,7 +9,7 @@ allowed-tools: Bash
 Run
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-doctor.py" --project "$(pwd)" $ARGUMENTS
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-doctor.py" --project "$(pwd)" $ARGUMENTS
 ```
 
 **Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it.**

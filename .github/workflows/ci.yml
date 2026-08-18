@@ -304,15 +304,15 @@ jobs:
           # produced a false FINDING by reporting the shell keyword `for` as a
           # missing binary (this repo's own selftests gate is a `for` loop). Exit 0
           # means no findings; warnings are expected and fine.
-          python plugins/audit/scripts/audit-doctor.py --project .
-          python plugins/audit/scripts/audit-doctor.py --project examples/acme-store
+          python plugins/audit/scripts/status/audit-doctor.py --project .
+          python plugins/audit/scripts/status/audit-doctor.py --project examples/acme-store
           # --json stays parseable, since that is the form other tools would consume
-          python plugins/audit/scripts/audit-doctor.py --project . --json \
+          python plugins/audit/scripts/status/audit-doctor.py --project . --json \
             | python -c 'import json,sys; d=json.load(sys.stdin); assert d["checks"]; \
               assert d["counts"]["FINDING"] == 0, d["counts"]; print("OK: doctor json clean")'
       - name: CI gate + report smoke on the dogfood manifest
         run: |
-          python plugins/audit/scripts/audit-status.py docs/audit/audit-plan.json --gate
+          python plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate
           python plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report
           test -s /tmp/audit-report/audit-report.html
           test -s /tmp/audit-report/audit-report.md
@@ -330,7 +330,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          python plugins/audit/scripts/gen-demo-usage.py \
+          python plugins/audit/scripts/demo/gen-demo-usage.py \
             examples/acme-store/audit-plan.json --out-dir /tmp/regen
           for f in examples/acme-store/.claude/usage/*.jsonl; do
             diff -q "$f" "/tmp/regen/$(basename "$f")"
@@ -471,12 +471,12 @@ jobs:
           #
           # Content assertions, not a byte diff: the render stamps a wall-clock time,
           # so a fresh render always differs by that line. Refresh with
-          #   python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
-          #   python plugins/audit/scripts/gen-demo-usage.py /tmp/dl/audit-plan.json
+          #   python plugins/audit/scripts/demo/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
+          #   python plugins/audit/scripts/demo/gen-demo-usage.py /tmp/dl/audit-plan.json
           #   CLAUDE_PROJECT_DIR=/tmp/dl python plugins/audit/scripts/report/render-report.py \
           #     /tmp/dl/audit-plan.json --out-dir /tmp/dl --format html
           #   cp /tmp/dl/demo-large.html docs/demo-large.html
-          python plugins/audit/scripts/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
+          python plugins/audit/scripts/demo/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
           python plugins/audit/scripts/manifest/validate-manifest.py /tmp/dl/audit-plan.json
           # F-A-1 (v0.37): these probes used to grep the WHOLE document, embedded
           # report.js included - the same blindness render-report's selftest pins

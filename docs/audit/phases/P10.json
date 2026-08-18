@@ -112,12 +112,12 @@
         "P10.1"
       ],
       "files": [
-        "plugins/audit/scripts/audit-status.py",
+        "plugins/audit/scripts/status/audit-status.py",
         "plugins/audit/scripts/usage/audit-usage.py",
         "plugins/audit/scripts/report/render-report.py",
-        "plugins/audit/scripts/audit-doctor.py",
-        "plugins/audit/scripts/gen-demo-manifest.py",
-        "plugins/audit/scripts/gen-demo-usage.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
         "plugins/audit/scripts/manifest/migrate-manifest.py"
       ],
       "docs": [],
@@ -249,7 +249,7 @@
         "plugins/audit/scripts/_fmt.py",
         "plugins/audit/scripts/usage/audit-usage.py",
         "plugins/audit/scripts/report/render-report.py",
-        "plugins/audit/scripts/audit-status.py"
+        "plugins/audit/scripts/status/audit-status.py"
       ],
       "docs": [],
       "description": "New flat module: fmt_tokens(n, dp=None), fmt_cost(x), fmt_int(n) parameterized to cover both the CLI shapes (audit-usage:54-72) and the report shapes (render-report:2039-2064). audit-usage keeps thin re-export aliases so audit-status\u2019s importlib load of the fmt helpers keeps working unchanged.",

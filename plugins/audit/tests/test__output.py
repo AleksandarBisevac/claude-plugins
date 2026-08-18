@@ -474,12 +474,10 @@ def _cases(check):
                                   "scripts/_output.py",
                                   "scripts/_refs.py",
                                   "scripts/_ui_theme.py",
-                                  "scripts/audit-doctor.py",
-                                  "scripts/audit-status.py",
                                   "scripts/config/_help.py",
                                   "scripts/config/validate-config.py",
-                                  "scripts/gen-demo-manifest.py",
-                                  "scripts/gen-demo-usage.py",
+                                  "scripts/demo/gen-demo-manifest.py",
+                                  "scripts/demo/gen-demo-usage.py",
                                   "scripts/governance/_policy.py",
                                   "scripts/governance/audit-journal.py",
                                   "scripts/governance/audit-lock.py",
@@ -501,6 +499,8 @@ def _cases(check):
                                   "scripts/report/_report_ui.py",
                                   "scripts/report/_report_usage.py",
                                   "scripts/report/render-report.py",
+                                  "scripts/status/audit-doctor.py",
+                                  "scripts/status/audit-status.py",
                                   "scripts/usage/_usage_analytics.py",
                                   "scripts/usage/_usage_core.py",
                                   "scripts/usage/audit-usage.py",
@@ -530,12 +530,10 @@ def _cases(check):
                                      "plugins/audit/scripts/_output.py",
                                      "plugins/audit/scripts/_refs.py",
                                      "plugins/audit/scripts/_ui_theme.py",
-                                     "plugins/audit/scripts/audit-doctor.py",
-                                     "plugins/audit/scripts/audit-status.py",
                                      "plugins/audit/scripts/config/_help.py",
                                      "plugins/audit/scripts/config/validate-config.py",
-                                     "plugins/audit/scripts/gen-demo-manifest.py",
-                                     "plugins/audit/scripts/gen-demo-usage.py",
+                                     "plugins/audit/scripts/demo/gen-demo-manifest.py",
+                                     "plugins/audit/scripts/demo/gen-demo-usage.py",
                                      "plugins/audit/scripts/governance/_policy.py",
                                      "plugins/audit/scripts/governance/audit-journal.py",
                                      "plugins/audit/scripts/governance/audit-lock.py",
@@ -557,6 +555,8 @@ def _cases(check):
                                      "plugins/audit/scripts/report/_report_ui.py",
                                      "plugins/audit/scripts/report/_report_usage.py",
                                      "plugins/audit/scripts/report/render-report.py",
+                                     "plugins/audit/scripts/status/audit-doctor.py",
+                                     "plugins/audit/scripts/status/audit-status.py",
                                      "plugins/audit/scripts/usage/_usage_analytics.py",
                                      "plugins/audit/scripts/usage/_usage_core.py",
                                      "plugins/audit/scripts/usage/audit-usage.py",
@@ -692,18 +692,22 @@ def _cases(check):
               _installed[0] == M.SCRIPTS_DIR
               and all(d in sys.path for d in _installed))
         check("ip3 the day a script moved has arrived: the list is SCRIPTS_DIR plus "
-              "every domain under it - config/, governance/, manifest/, panel/ (the "
-              "largest, seven files), report/ (the first ever created) and usage/, in "
-              "the walk's own sorted order rather than the order they were created. "
+              "every domain under it - config/, demo/, governance/, manifest/, panel/ "
+              "(the largest, seven files), report/ (the first ever created), status/ "
+              "and usage/, in the walk's own sorted order rather than the order they "
+              "were created. The list is now COMPLETE - the eighth and last domain "
+              "landed with it, and the root holds only the cross-cutting modules. "
               "It said `exactly one directory` for as long as the tree was flat, and "
               "editing it is what each move COSTS - the mechanism is no longer a "
               "no-op and this is where that is stated: %r" % (_installed,),
               _installed == [M.SCRIPTS_DIR,
                              os.path.join(M.SCRIPTS_DIR, "config"),
+                             os.path.join(M.SCRIPTS_DIR, "demo"),
                              os.path.join(M.SCRIPTS_DIR, "governance"),
                              os.path.join(M.SCRIPTS_DIR, "manifest"),
                              os.path.join(M.SCRIPTS_DIR, "panel"),
                              os.path.join(M.SCRIPTS_DIR, "report"),
+                             os.path.join(M.SCRIPTS_DIR, "status"),
                              os.path.join(M.SCRIPTS_DIR, "usage")])
         check("ip3b ...and it is DERIVED from the walk, not a constant: every entry "
               "past the root is a real directory holding at least one `.py`, so a "

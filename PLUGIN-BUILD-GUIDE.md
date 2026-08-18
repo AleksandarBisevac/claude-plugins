@@ -110,8 +110,9 @@ claude-plugins/                           # this repo (personal, public)
         config/                           # the config domain: the config file's validator and the self-description over both schemas
           validate-config.py              # validates .claude/audit.config.json against its schema
           _help.py                        # zero-token self-description: schema field help + how-it-works topics
-        audit-status.py                   # headless rollup + CI gate (--json/--gate)
-        audit-doctor.py                   # /audit:doctor: read-only "is this working?" diagnostics
+        status/                           # the status domain: the headless rollup and the setup diagnostics over it
+          audit-status.py                 # headless rollup + CI gate (--json/--gate)
+          audit-doctor.py                 # /audit:doctor: read-only "is this working?" diagnostics
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
@@ -127,8 +128,9 @@ claude-plugins/                           # this repo (personal, public)
           _panel_settings.py              # the Settings form's schema + the write-path key allow-lists
           _panel_state.py                 # the panel's READ side: everything GET /api/* answers with
           _panel_write.py                 # the panel's WRITE side: everything PUT /api/* actually does
-        gen-demo-manifest.py              # synthetic LARGE manifest fixture for demos/screenshots/CI
-        gen-demo-usage.py                 # synthetic usage ledger fixture, consistent with a real manifest
+        demo/                             # the demo domain: the two synthetic fixtures the screenshots and CI are built from
+          gen-demo-manifest.py            # synthetic LARGE manifest fixture for demos/screenshots/CI
+          gen-demo-usage.py               # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
       tests/                              # selftest blocks moved OUT of the modules they test (all 48)
         _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
@@ -677,7 +679,7 @@ a torn tail or out-of-band drift as a WARNING (exit 0). **Tamper-evident, not ta
 stated in the module, the README, the panel's own Settings card and SECURITY.md, because a
 forger who rewrites the whole file still verifies. `append()` never raises. `--selftest`.
 
-### `plugins/audit/scripts/gen-demo-manifest.py`
+### `plugins/audit/scripts/demo/gen-demo-manifest.py`
 Generates the synthetic LARGE manifest fixture behind `docs/demo-large.html` and the panel
 screenshots, on demand instead of committing it — the same flags always produce the same
 bytes, so CI builds it, captures from it, and discards it, and nothing drifts the way the
@@ -687,7 +689,7 @@ statuses, `blockedBy`, `dependsOn`, budgets over/under, `area` tags, a full bug 
 deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
 phase never contains an unfinished task). `--selftest`.
 
-### `plugins/audit/scripts/gen-demo-usage.py`
+### `plugins/audit/scripts/demo/gen-demo-usage.py`
 Generates a synthetic usage ledger consistent with a real manifest — task/phase ids that exist,
 timestamps inside each task's own `startedAt`/`completedAt` window — so the report's Usage
 section (and its screenshots) show something worth looking at instead of the empty state a
@@ -711,7 +713,7 @@ dependency **cycles** (incl. task-blocked-by-own-phase deadlocks), **bidirection
 keys (did-you-mean) and pre-0.3 status combinations.
 Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest`.
 
-### `plugins/audit/scripts/audit-status.py` (v0.5.0)
+### `plugins/audit/scripts/status/audit-status.py` (v0.5.0)
 Headless rollup + CI gate, stdlib-only; imports validate-manifest.py as a library via
 importlib. `--json` prints the machine-readable summary (phases done/total, tasks/bugs by
 status, ready-task list mirroring /audit's readiness rule); `--gate` exits 1 on tripped
@@ -721,7 +723,7 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
 .
 
-### `plugins/audit/scripts/audit-doctor.py`
+### `plugins/audit/scripts/status/audit-doctor.py`
 `/audit:doctor`'s "is this working?" diagnostics — every check reuses an existing
 implementation (`validate-config.validate_config`, `validate-manifest.validate`,
 `audit-status.submodule_conflicts`, `usage_ledger.find_ledger_dir`) rather than

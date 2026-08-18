@@ -1133,11 +1133,11 @@ KNOWN_LAYER_DEBT = (
     ("panel/_panel_state.py",
      "runtime-loads validate-manifest (layer 7) from layer 5 - not strictly downward"),
     # -- entry point reusing an entry point, all at L7 (13) --
-    ("audit-doctor.py",
+    ("status/audit-doctor.py",
      "runtime-loads audit-journal (layer 7) from layer 7 - not strictly downward"),
-    ("audit-doctor.py",
+    ("status/audit-doctor.py",
      "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
-    ("audit-doctor.py",
+    ("status/audit-doctor.py",
      "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
     # audit-doctor -> gen-demo-manifest was RETIRED when that file's `--selftest`
     # moved to `tests/test_audit_doctor.py`: the ONE `_load(...)` call naming it
@@ -1148,11 +1148,11 @@ KNOWN_LAYER_DEBT = (
     # (`tests/` is deliberately absent from LAYERS), so the edge is gone from the
     # tree and the entry had to go with it - r2 fails on a RETIRED entry exactly
     # as it fails on a new one, and the list may only shrink, deliberately.
-    ("audit-doctor.py",
+    ("status/audit-doctor.py",
      "runtime-loads validate-config (layer 7) from layer 7 - not strictly downward"),
-    ("audit-doctor.py",
+    ("status/audit-doctor.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    ("audit-status.py",
+    ("status/audit-status.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
     # THIS ENTRY IS THE ASYMMETRY IN ONE LINE - see the `report/render-report.py`
     # comment below for the rule. The IMPORTER moved into `scripts/usage/` and its
@@ -1161,7 +1161,13 @@ KNOWN_LAYER_DEBT = (
     # node name is a basename at any depth. Two files moved, one spelling changed.
     ("usage/audit-usage.py",
      "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
-    ("gen-demo-manifest.py",
+    # BOTH ENDS OF THIS EDGE MOVED INTO THE SAME DIRECTORY IN ONE CHANGE, AND ONLY THE
+    # KEY CHANGED SPELLING. `gen-demo-manifest` and `gen-demo-usage` went into
+    # `scripts/demo/` together, so the key gained `demo/` and the target beside it did
+    # not - the same asymmetry the `manifest/migrate-manifest.py` entry below carries,
+    # here with both files landing in the SAME folder, which is as close as this list
+    # comes to putting the two spellings side by side on one line.
+    ("demo/gen-demo-manifest.py",
      "runtime-loads gen-demo-usage (layer 7) from layer 7 - not strictly downward"),
     # gen-demo-manifest -> validate-config and -> validate-manifest were RETIRED
     # when that file's `--selftest` moved to `tests/test_gen_demo_manifest.py`:
@@ -1184,8 +1190,13 @@ KNOWN_LAYER_DEBT = (
     # is a node name, which is the BASENAME at any depth. One entry changed when the
     # six report files moved into `scripts/report/`, exactly one more when the usage
     # and governance domains followed, one more when the manifest and config domains
-    # did, and SIX when the panel domain did; the target spellings above are
-    # untouched by all five rounds.
+    # did, SIX when the panel domain did, and SEVEN in the last round (`status/` took
+    # audit-doctor's five and audit-status's one, `demo/` took gen-demo-manifest's);
+    # the target spellings above are untouched by all six rounds. `audit-status` is
+    # the proof at its sharpest: it is named as a TARGET three times up there - under
+    # `panel/_panel_state.py`, under `status/audit-doctor.py` and under
+    # `report/render-report.py` - and all three stayed bare while its own key gained
+    # `status/`. One file, one move, one spelling changed out of four.
     ("report/render-report.py",
      "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
 )

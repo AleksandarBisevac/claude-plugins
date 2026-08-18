@@ -70,7 +70,7 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/audit-status.py",
+        "plugins/audit/scripts/status/audit-status.py",
         "docs/examples/azure-pipelines.yml"
       ],
       "docs": [],

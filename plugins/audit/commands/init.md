@@ -95,7 +95,7 @@ If something matched, ask (AskUserQuestion, multi-select, all detected areas pre
   filesystem for skills yourself — use the same ONE mechanical source step 6.1 uses: no manifest
   exists yet at this step, so write a stub to a temp file (`mktemp`; content
   `{"meta": {"version": 2}, "phases": []}`), run
-  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <tmpfile> --json --discovery`, delete
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <tmpfile> --json --discovery`, delete
   the temp file, and offer names from `discovery.skills` only — never invented ones. A
   `discovery.error` key means the scan failed and the list is empty (fail-open): say so and skip
   skill offers rather than guessing.
@@ -188,7 +188,7 @@ Write the assembled candidate manifest (step 5.4) to a TEMP file (`mktemp` — n
 `manifestPath`; the gate below still decides what lands on disk), run
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <tmpfile> --json --discovery
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <tmpfile> --json --discovery
 ```
 
 and delete the temp file. The payload's `discovery` block is the inventory:

@@ -560,6 +560,109 @@ def sweep_glob_drift(repo_root=None):
     return out
 
 
+# --- published raw URLs -------------------------------------------------------
+# A raw.githubusercontent URL encodes a PATH into somebody else's CI. When it names a
+# moving ref, every layout change here is a silent 404 there, with no deprecation
+# window - which is exactly what the move of `validate-manifest.py` into `manifest/`
+# would have done to anyone who copied the README's `curl`.
+#
+# Scoped to EXECUTABLE fences, and that scope is the whole design. Four `main` URLs in
+# this repo are JSON Schema `$id`/`$schema` identities, and pinning those would be a
+# defect, not a fix: an `$id` is the schema's NAME, so a per-release `$id` gives every
+# release a different schema identity and breaks `$ref` resolution and cache keys for
+# consumers. Identity is not a download. Only what a reader is told to RUN is checked.
+_MOVING_REFS = ("main", "master", "HEAD")
+_RAW_HOST = "raw.githubusercontent.com"
+_RAW_RE = re.compile(r"%s/[^/\s]+/[^/\s]+/([^/\s]+)/" % re.escape(_RAW_HOST))
+_FENCE_RE = re.compile(r"```(?:bash|sh|shell|console)\n(.*?)```", re.S)
+
+# The canonical install document, and the only one required to name the CURRENT
+# release: a reader copies from here expecting today's plugin. Other documents may
+# pin an older tag on purpose - `docs/examples/azure-pipelines.yml` pins `v0.5.0` and
+# says in prose that the single-file layout is a snapshot of it. That is a correct
+# use of a tag, so the currency rule must not fail it.
+_PIN_CURRENT_REL = PLUGIN_REL + "/README.md"
+_PLUGIN_JSON_REL = PLUGIN_REL + "/.claude-plugin/plugin.json"
+
+
+def _executable_raw_refs(text):
+    """[(ref, line_no), ...] — every raw-URL ref inside a runnable fence."""
+    out = []
+    for fence in _FENCE_RE.finditer(text):
+        base = text.count("\n", 0, fence.start(1)) + 1
+        for i, line in enumerate(fence.group(1).split("\n")):
+            for m in _RAW_RE.finditer(line):
+                out.append((m.group(1), base + i))
+    return out
+
+
+def plugin_version(repo_root=None):
+    """The version string in plugin.json, or None when it cannot be read.
+
+    None rather than a default: the currency rule has no basis without it, and a
+    guessed version would fail every pin in the README for the wrong reason.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    data = _read_json(os.path.join(root, _PLUGIN_JSON_REL.replace("/", os.sep)))
+    if not isinstance(data, dict):
+        return None
+    v = data.get("version")
+    return v if isinstance(v, str) and v else None
+
+
+def raw_url_pin_drift(repo_root=None):
+    """[(rel, line, problem), ...] — published fetch instructions that will rot.
+
+    Two rules, and they answer different failures:
+
+    - a moving ref in ANY runnable fence: breaks the moment this repo moves a file;
+    - a tag in the plugin README that is not the current release: the README is what a
+      reader copies expecting today's plugin, so a stale pin hands them an old one.
+
+    The second is deliberately scoped to one file so that a considered historical pin
+    elsewhere stays legal. It fires at release time, when `plugin.json` is bumped and
+    the README has not been - which is the moment the pin needs a human.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    version = plugin_version(root)
+    out = []
+    for rel in _iter_text_docs(root):
+        try:
+            with open(os.path.join(root, rel.replace("/", os.sep)),
+                      "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, 0, "unreadable: %s" % exc))
+            continue
+        for ref, line in _executable_raw_refs(text):
+            if ref in _MOVING_REFS:
+                out.append((rel, line, "fetches from the moving ref %r - pin a tag" % ref))
+            elif rel == _PIN_CURRENT_REL and version is not None and ref != "v" + version:
+                out.append((rel, line,
+                            "pinned to %s but plugin.json says %s" % (ref, version)))
+    return out
+
+
+def _iter_text_docs(root):
+    """Relative paths of the documents that may publish a fetch instruction."""
+    out = []
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs
+                   if d not in ("node_modules", ".git", "__pycache__", ".claude")]
+        for name in sorted(files):
+            if not name.endswith((".md", ".yml", ".yaml")):
+                continue
+            rel = os.path.relpath(os.path.join(base, name), root).replace(os.sep, "/")
+            if rel in EXCLUDED:
+                continue
+            # No CHANGELOG exemption, and that is deliberate rather than an omission:
+            # it quotes the dead `main` URL as history, in prose. The fence scope
+            # already lets that through, so an exemption here would be dead code
+            # asserting nothing - measured, not assumed (test__refs p10).
+            out.append(rel)
+    return sorted(out)
+
+
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     import sys

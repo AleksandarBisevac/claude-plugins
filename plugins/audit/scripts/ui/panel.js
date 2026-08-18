@@ -4692,7 +4692,11 @@ function renderUsage(){closeCombo();const c=$('#usage');
   rows.forEach(r=>{tb.append(el('tr',{},el('td',{},r.risk===last?'':r.risk),
     el('td',{class:'mono'},r.model),el('td',{},String(r.tasks)),
     el('td',{},uCost(r.perTask)),el('td',{},r.att.toFixed(1))));last=r.risk;});
-  tbl.append(tb);card.append(tbl);}
+  // Framed like its monthly twin above. Unframed it was the panel's widest
+  // offender: 332px intrinsic in a card with no scroll frame, so the DOCUMENT
+  // scrolled sideways below 369px - 49px of it at 320px. The width ladder found
+  // it; the old 320px assertion could not, because it only ever ran on `guards`.
+  tbl.append(tb);card.append(el('div',{class:'umwrap'},tbl));}
 
  // The one recommendation in the tab. Computed server-side over the whole ledger
  // (see routingAdvice in usage_state), so it is a statement about the project and

@@ -59,7 +59,7 @@ per add is the class of error the script exists to delete.
    - **Skills** — do not scan the filesystem for skills yourself; there is ONE
      mechanical source. Run (Bash):
      ```bash
-     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> --json --discovery
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --json --discovery
      ```
      The payload's `discovery` block lists every skill this project can actually
      see (`{"skills": [{"name", "description", "source"}, …]}` — project

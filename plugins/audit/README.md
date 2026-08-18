@@ -204,7 +204,7 @@ page behind it, read against the form rather than instead of it. All of it is
 - **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
   composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
 - **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
-- **CI without Claude** — `scripts/audit-status.py --json | --gate` turns the manifest into
+- **CI without Claude** — `scripts/status/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`); see `docs/examples/azure-pipelines.yml`.
 - **Pinned-tool agents** (`agents/`) — the orchestrator spawns the plugin's own subagents
@@ -318,7 +318,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 `/audit:panel status` reports whether one is running; `--port <n>` pins the port. One panel
 per project, tracked by a `.claude/audit-panel.json` pidfile.
 
-**Headless entry points** (no Claude, run in CI or any terminal): `scripts/audit-status.py
+**Headless entry points** (no Claude, run in CI or any terminal): `scripts/status/audit-status.py
 --json | --gate` turns the manifest into a pipeline gate, `scripts/report/render-report.py` renders
 the report, and `scripts/manifest/validate-manifest.py` runs the referential validator (exit 0 valid /
 1 findings / 2 unreadable).
@@ -445,8 +445,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v0.39.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v0.39.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -1249,17 +1249,28 @@ Validate anytime — in-session:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" docs/audit/audit-plan.json
 ```
 
-or from any terminal (exit 0 = valid, 1 = findings, 2 = unreadable; also works from a
-checkout of this repo as `python3 plugins/audit/scripts/manifest/validate-manifest.py <manifest>`):
+or from a checkout of this repo (exit 0 = valid, 1 = findings, 2 = unreadable):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/scripts/manifest/validate-manifest.py -o /tmp/validate-manifest.py
-python3 /tmp/validate-manifest.py docs/audit/audit-plan.json
+python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
 ```
 
-or against the JSON Schema:
+**With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v0.39.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
+
+That is a genuinely smaller check, and the difference is worth knowing before you rely on it.
+JSON Schema validates structure; it cannot express **reference integrity**, so a `blockedBy`
+naming a task that does not exist passes the schema and fails the validator. Everything in the
+validator's cross-item half — dangling blockers, duplicate ids, a `fileIndex` pointing at a
+deleted path, an area tag no area declares — is outside what the schema can say.
+
+> **There is no "download one file and run it" form, and there has not been one since v0.14.0.**
+> The validator gained sibling imports on 2026-07-24 and stopped being a standalone script that
+> afternoon; a `curl` of it alone now stops with
+> `audit plugin: walked to the filesystem root … without finding _output.py`. It is named here
+> because the instruction was published for 26 releases after it stopped working, and anyone who
+> copied it deserves to know why rather than to find it quietly gone.

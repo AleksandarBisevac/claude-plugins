@@ -241,7 +241,11 @@ button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--mut
    own frame, never the document sideways - the rule every wide surface here
    already follows (.btblwrap, .dtblwrap, .poltblwrap). */
 .umwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.umwrap .utbl{min-width:34rem}
+/* Scoped to the MONTHLY table by the hook it already carries. `.umwrap` is now
+   worn by two tables, and only that one has twelve columns to keep legible; the
+   risk/model table is 332px intrinsic, so an unscoped 34rem would make it scroll
+   at every width to fix an overflow that only exists below 369px. */
+.umwrap .utbl[data-umonthly]{min-width:34rem}
 /* ---- tokens heatmap (D3) ---------------------------------------------------
    Proportions follow the tab's other charts: full card width, cells sized so
    seven rows land near the 190px the line chart owns. The ramp is built from
@@ -557,7 +561,15 @@ button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);curso
     they do not shrink either - so the pair takes a line of its own and each half
     takes half of it. Measured at 390px, which is where the report's own filter
     panel was found hanging off the left edge. */
- .udates{flex:1 1 100%}
+ /* `Measured at 390px` above is the whole bug: the pair still overflows below
+    ~350px, and the 320px assertion that would have caught it only ever ran on the
+    `guards` tab. Wrapping is the repair the owner asked for by name - a different
+    layout beats a broken one - and it costs nothing above the width where the two
+    halves already fit, because a flex line only breaks when it must.
+    Note the floor is NOT the date input: forced to `flex:0 0 1px` it measures
+    18px, so `min-width:0` is honoured and 126px is this rule's arithmetic, not an
+    engine limit. Wrapping is therefore a layout choice, not a workaround. */
+ .udates{flex:1 1 100%;flex-wrap:wrap}
  .ufil input[type=date]{flex:1 1 calc(50% - 3rem);min-width:0}
  .ufil .push{margin-left:0}
  /* And it stops pinning. Nine controls stacked at this width measure 311px, which

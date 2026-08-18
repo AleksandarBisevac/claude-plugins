@@ -59,7 +59,7 @@ mutating commands (`next`, `run`, `phase`, `review`, `resume`) run all of 1–6 
    cannot be committed alongside task work (resume's git reconstruction is limited) and recommend
    moving the manifest under the git root.
 4. **Submodule check** (mutating commands). If `<gitRoot>/.gitmodules` exists, run
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> --submodules "<gitRoot>/.gitmodules" --git-root "<gitRoot>"`
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --submodules "<gitRoot>/.gitmodules" --git-root "<gitRoot>"`
    (omit `--git-root` when gitRoot is `.`). Exit 1 means one or more `task.files` live inside a git
    **submodule** — a separate nested repo the parent CANNOT stage/commit (`git add` fails with
    "Pathspec is in submodule"). **STOP** and relay its output: point `meta.gitRoot` at that submodule
@@ -69,7 +69,7 @@ mutating commands (`next`, `run`, `phase`, `review`, `resume`) run all of 1–6 
 6. **Budget check** (`next`, `run`, `phase` — after the lock, so an ask keeps it). Only when
    the target phase declares `budgetUSD` AND metering has recorded something; otherwise skip
    silently. Read it, never recompute it:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> --json` carries
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --json` carries
    `usage.budgets.phases[]` with `spent`, `budget`, `pct` and `over` already resolved.
    - **`pct` under 80** — say nothing. A phase inside its budget is not news.
    - **`pct` 80–99** — one line, once per phase per session:
@@ -467,7 +467,7 @@ step happens** so a long run stays legible (not one dump at the end):
 Use simple ASCII markers (`>` `[OK]` `[FAIL]` `-`) so it reads in any terminal. Keep each line to one sentence.
 
 **What NOT to lay out by hand.** The *entry view* is already rendered: run
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-status.py" <manifestPath> [--phase <id>]`
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> [--phase <id>]`
 and print it verbatim. It carries the phase table, per-task status, what each pending task is
 waiting on, the ready list and the bug counts — so re-tabulating any of that costs tokens for a
 worse-aligned copy. The lines above are the ones a script genuinely cannot produce, because they

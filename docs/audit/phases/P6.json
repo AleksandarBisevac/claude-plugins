@@ -30,7 +30,7 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/audit-status.py",
+        "plugins/audit/scripts/status/audit-status.py",
         "plugins/audit/commands/audit.md",
         "plugins/audit/commands/init.md",
         "plugins/audit/README.md",
