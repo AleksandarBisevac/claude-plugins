@@ -139,13 +139,21 @@ def _cases(check):
             print("SKIP a* (git not installed)")
         else:
             subprocess.call(["git", "init", "-q", proj])
+            # THE HOLDER'S PID IS THIS PROCESS, not 1. `a2` needs the holder to
+            # be LIVE, and pid 1 is only live on POSIX -- on Windows it does not
+            # exist, so `_pid_alive_windows` correctly answered "gone" and the
+            # second session was told the lock looked ABANDONED instead of held.
+            # That failed only on windows-latest, after green on ubuntu and here.
+            # `os.getpid()` is alive by definition on every platform this runs on,
+            # which is the property the case actually needs.
+            live = os.getpid()
             lines = []
-            code = M.acquire(proj, "index", note="n", session="s-A", pid=1,
+            code = M.acquire(proj, "index", note="n", session="s-A", pid=live,
                              out=lines.append)
             check("a1 acquire on a free lock returns 0 and says what it did",
                   code == 0 and any("acquired index" in x for x in lines), lines)
             lines = []
-            code = M.acquire(proj, "index", note="n2", session="s-B", pid=1,
+            code = M.acquire(proj, "index", note="n2", session="s-B", pid=live,
                              out=lines.append)
             check("a2 a second session is refused with E_LIVE and told WHO holds "
                   "it - a refusal with no holder is a dead end",
