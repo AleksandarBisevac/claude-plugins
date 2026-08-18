@@ -29,6 +29,16 @@
 import { chromium } from 'playwright';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// The width ladder and the contract measured at each rung, defined once in the
+// panel's gate and imported here so the two surfaces are asked the SAME
+// question at the SAME widths. Two copies would drift the way the shell width
+// and the nav breakpoint already have between the two stylesheets (92rem vs
+// 96rem, 70rem vs 72rem), and a width present in only one copy is a width the
+// other surface is never asked about. Importing that file is inert: everything
+// at its top level is a const, and its `main()` runs only when it is the
+// process entry point.
+import { RESPONSIVE_LADDER, walkResponsiveLadder, assertLadderMeasuredSomething,
+         newLadderTally } from './capture-screenshots.mjs';
 
 const file = process.argv[2];
 if (!file) {
@@ -1573,6 +1583,64 @@ await page.emulateMedia({ media: null });
 await page.setViewportSize({ width: 1512, height: 945 });
 expect('the filter bar never reaches portrait paper, where its phone rules also apply', onPaper.bar, true);
 expect('...nor the panel inside it', onPaper.panel, true);
+
+// 10. The responsive contract, at every width either side of a breakpoint
+//     report.css or panel.css declares. What existed before this was two
+//     widths — 390 and 688 — and only `.gfilters` and `.filterpanel` at them:
+//     no whole-document assertion at any width, and nothing at all between 390
+//     and 688 or between 688 and 1200. The ladder and the four things measured
+//     at each rung live in tools/capture-screenshots.mjs, imported above, so
+//     the panel is asked the same question at the same widths.
+//
+//     Driven against the RESTING layout, deliberately. Everything above has
+//     been opening panels, typing filters and expanding rows, and a layout
+//     measured with a disclosure hanging open is a measurement of that
+//     disclosure. Deliberately layered UI — an open <details>, a dialog, the
+//     tooltip, a combo menu — is out of scope here and checked where it is
+//     opened; so is @media print, which section 7 owns; so is vertical extent,
+//     because a report is allowed to be tall.
+{
+  const clear = await page.$('.sectools [data-clear]:not([hidden])');
+  if (clear) await clear.click();
+  await page.click('#audit-q');
+  await page.keyboard.press('Escape');
+  //     The two disclosures are treated differently ON PURPOSE. `.fdetails` is
+  //     a popover — absolutely positioned, hung off its control — so it is a
+  //     layer, and a layer over the table is what a layer is for; it is closed.
+  //     `details.more` is IN FLOW: opening it does not cover anything, it makes
+  //     the document longer, and the heatmap, the small multiples and the
+  //     ranked lists are only laid out at all when it is open. It is opened, so
+  //     the ladder measures them rather than measuring their absence.
+  await page.evaluate(() => {
+    const d = document.querySelector('.fdetails');
+    if (d) d.open = false;
+    const m = document.querySelector('details.more');
+    if (m) m.open = true;
+    window.scrollTo(0, 0);
+  });
+  await page.waitForTimeout(300);
+  const openRows = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.task')].filter((r) => r.offsetParent !== null).length);
+  if (openRows) {
+    await page.click('#audit-expand');
+    await page.waitForTimeout(250);
+  }
+  const tally = newLadderTally();
+  await walkResponsiveLadder(page, 'report', tally, {
+    report: (m) => failures.push(`FAIL ${m}`),
+    ok: (m) => notes.push(`ok   ${m}`),
+  });
+  assertLadderMeasuredSomething('report', tally, {
+    report: (m) => failures.push(`FAIL ${m}`),
+    ok: (m) => notes.push(`ok   ${m}`),
+  });
+  if (tally.widths !== RESPONSIVE_LADDER.length) {
+    failures.push(`FAIL the ladder visited ${tally.widths} of `
+      + `${RESPONSIVE_LADDER.length} widths — it did not finish`);
+  }
+  await page.setViewportSize({ width: 1512, height: 945 });
+  await page.waitForTimeout(200);
+}
 
 if (pageErrors.length) failures.push(`FAIL the page raised ${pageErrors.length} error(s): ${pageErrors.slice(0, 3).join(' | ')}`);
 else notes.push('ok   no page errors');
