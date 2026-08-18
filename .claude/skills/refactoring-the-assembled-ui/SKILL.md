@@ -1,6 +1,6 @@
 ---
 name: refactoring-the-assembled-ui
-description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the 723 byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching report.css, report.js, panel.css, panel.js or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
+description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the 737 byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching report.css, report.js, panel.css, panel.js or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
 ---
 
 # Refactoring the assembled UI
@@ -82,17 +82,17 @@ pass untouched. That makes the cut provably behaviour-free.
 
 ## The pins are the budget
 
-**723 exact substring assertions** guard the assembled artifacts, and they live in
+**737 exact substring assertions** guard the assembled artifacts, and they live in
 `plugins/audit/tests/`. Budget by what a change touches, because the split is very uneven:
 
 | target | pins | a change to… |
 |---|---:|---|
-| `UI_HTML` | 564 | anything in `panel.{css,js}` |
+| `UI_HTML` | 578 | anything in `panel.{css,js}` |
 | `_SCRIPT` | 100 | `report.js` |
 | `_CSS` | 48 | `report.css` |
 | `TOKEN_CSS` | 11 | `_ui_theme.py` |
 
-**Only 59 of the 723 are CSS-shaped.** This section previously said "~70 … against the assembled
+**Only 59 of the 737 are CSS-shaped.** This section previously said "~70 … against the assembled
 stylesheet", which was about right *for CSS* — and that scoped number then got copied elsewhere as
 if it covered everything. Attach the scope to the number or it will travel without it.
 

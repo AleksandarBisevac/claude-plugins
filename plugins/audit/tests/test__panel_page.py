@@ -466,9 +466,56 @@ def _cases(check):
     check("a re-render does not stack up one more delegated listener per save",
           "if(VIEWAC[id])VIEWAC[id].abort();" in M.UI_HTML
           and M.UI_HTML.count("onViewEdit('") == 2)
+    # --- handing the caret back: one rule, every dialog and every redraw ------
+    # A <dialog> restores the NODE that was focused at showModal(). Every view
+    # here is rebuilt wholesale by its render*, so after a rebuild that node is
+    # detached and the platform's restore lands on nothing - the reader is left
+    # on <body>, and the next Tab starts at the top of the document.
+    check("every dialog opens through ONE opener, so a fifth cannot be added "
+          "that quietly skips the hand-back",
+          # Counted, not merely found: `in` would still pass with four dialogs
+          # calling showModal() directly and one going through the opener.
+          M.UI_HTML.count(".showModal();") == 1
+          and M.UI_HTML.count("dlgOpen(") == 5          # one def, four dialogs
+          and "function dlgOpen(d,sel){" in M.UI_HTML
+          and "const r=DLGBACK.get(d);DLGBACK.set(d,null);focusBack(r);});"
+          in M.UI_HTML)
+    check("the caret is remembered as a node AND as a selector - the node is "
+          "right whenever it survived, the selector is what a rebuilt view has",
+          "return {node:a,sel:s?((within?within+' ':'')+s):null};}" in M.UI_HTML
+          and "let n=(ref.node&&ref.node.isConnected)?ref.node:null;" in M.UI_HTML
+          and "if(!n&&ref.sel){const m=document.querySelectorAll(ref.sel);"
+          in M.UI_HTML)
+    check("a hook that names several controls restores NOTHING rather than "
+          "guessing - focus put somewhere the reader has never been looks "
+          "deliberate, which is worse than the top of the document",
+          "n=m.length===1?m[0]:null;" in M.UI_HTML)
+    check("a free-text hook value stays out of the selector - the ⓘ carries a "
+          "whole help sentence in data-tip and its first apostrophe would be a "
+          "syntax error",
+          "const selSafe=v=>v.length<=64&&!/[\"\\\\\\]]/.test(v);" in M.UI_HTML
+          and "(selSafe(a.value)?'=\"'+a.value+'\"':'')" in M.UI_HTML)
+    # The second-direction case (this fix is a conditional, so it has two wrong
+    # implementations): never firing is the original bug, always firing is a
+    # redraw of one view stealing the caret out of another. Scoping is what
+    # stops that, and this is the case that goes red if the scope is dropped.
+    check("a redraw hands the caret back only WITHIN the view it rebuilt, so "
+          "one view's repaint cannot take it out of another",
+          "if(!a||!a.closest||(within&&!a.closest(within)))return null;"
+          in M.UI_HTML
+          and M.UI_HTML.count("focusKeep(") == 5      # one def, four views
+          and M.UI_HTML.count("focusBack(") == 6      # one def, dlgOpen, four views
+          and "focusKeep('#policy')" in M.UI_HTML
+          and "focusKeep('#usage')" in M.UI_HTML
+          and "focusKeep('#over')" in M.UI_HTML
+          and "focusKeep('#look')" in M.UI_HTML)
     check("the dialog is the platform's here too — focus trap, backdrop, Esc",
           "el('dialog',{class:'confirm'})" in M.UI_HTML
-          and "d.showModal()" in M.UI_HTML
+          # ...opened through the shared opener, never showModal() direct. The
+          # bare "d.showModal()" this replaces went on passing after the change
+          # because dlgOpen's own body satisfies it - a pin that survives by
+          # matching somewhere else is a pin that has stopped saying anything.
+          and "cancel,go));\n  dlgOpen(d);" in M.UI_HTML
           and "if(ev.target===CFDLG)CFDLG.close()" in M.UI_HTML
           and "dialog.confirm::backdrop" in M.UI_HTML)
     check("a destructive primary is not one Enter away from the button that opened "
@@ -727,7 +774,7 @@ def _cases(check):
           "and - the one that matters here - handing focus back to the field",
           "el('dialog',{class:'drawer'" in M.UI_HTML
           and "dialog.drawer{" in M.UI_HTML
-          and "d.showModal()" in M.UI_HTML)
+          and "if(!d.open)dlgOpen(d);" in M.UI_HTML)
     check("the ⓘ that opens it is a real BUTTON. A focusable span inside a <label> "
           "is not interactive content, so pressing it also toggled the checkbox "
           "it was explaining, and a screen reader announced it as text",
@@ -888,7 +935,12 @@ def _cases(check):
           and "'browse all '+g.length" in M.UI_HTML)
     check("the dialog is the platform's, so focus trap/backdrop/Esc are not ours",
           "el('dialog',{class:'browse'})" in M.UI_HTML
-          and "BROWSE.showModal()" in M.UI_HTML
+          # ...and the row click applies the filter BEFORE closing, which repaints
+          # this tab - so the button that opened the dialog is already a different
+          # node by the time it closes. The selector is what gets the caret back,
+          # and the button carries the hook it names.
+          and "dlgOpen(BROWSE,'#usage [data-browse=\"'+dim+'\"]');" in M.UI_HTML
+          and "'data-browse':dim," in M.UI_HTML
           and "dialog.browse::backdrop" in M.UI_HTML
           and "ev.target===BROWSE" in M.UI_HTML)
     check("Esc closes the dialog without also dropping a filter",
@@ -1431,12 +1483,19 @@ def _cases(check):
           "the tab's copy of that box must not close anything",
           "POLFULL.addEventListener('keydown',ev=>{" in M.UI_HTML
           and "if(ev.key==='Escape'){ev.preventDefault();POLFULL.close();}});" in M.UI_HTML)
-    check("px: closing hands the caret back to the control that opened it",
-          "POLFULL.addEventListener('close',()=>{" in M.UI_HTML
-          and "POLBACK=$('#policy [data-polexpand]');" in M.UI_HTML
-          # ...and looked up fresh when the re-render replaced that node.
-          and "const b=(POLBACK&&POLBACK.isConnected)?POLBACK:$('#policy [data-polexpand]');"
-          in M.UI_HTML)
+    # The bespoke close listener this replaces DID hand the caret back, and the
+    # browser gate still went red about one run in nine. Measured over 20 opens
+    # with the 5s disk poll live: focus reached the Expand button inside 50ms
+    # every time, and the poll's redraw of this tab then took it away again on 9
+    # of them. So the pin is on BOTH halves - the hand-back, and the redraw that
+    # has to keep it - because only the pair is the fix.
+    check("px: closing hands the caret back to the control that opened it, and "
+          "the tab's own redraw keeps it there",
+          "dlgOpen(POLFULL,'#policy [data-polexpand]');" in M.UI_HTML
+          and "keepBack=keepId?null:focusKeep('#policy')," in M.UI_HTML
+          and " polFullFill();\n if(keepId){" in M.UI_HTML
+          and "}}}\n else focusBack(keepBack);\n if(scrolled){" in M.UI_HTML
+          and "POLBACK" not in M.UI_HTML)
     check("px: the dialog IS the frame - the table inside drops the 34rem cap "
           "rather than scrolling a frame inside a frame",
           ".poltblwrap.full{max-height:none" in M.UI_HTML

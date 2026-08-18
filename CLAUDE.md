@@ -83,19 +83,19 @@ each; **the report emits three `<script>` tags** — `window.AUDIT_USAGE`, the b
 and the code. The pin that reads `SCRIPT.count("<script>") == 1` counts tags in a **Python
 string**, not in the page, so it does not contradict this and never did.
 
-**723 exact substring assertions guard the assembled output**, and they live in
+**737 exact substring assertions guard the assembled output**, and they live in
 `plugins/audit/tests/` — not in the scripts that build it. Some *require* duplication to stay as
 it is. What a UI change has to budget for, by what it pins:
 
 | target | pins | built by |
 |---|---:|---|
-| `UI_HTML` | 564 | the panel page |
+| `UI_HTML` | 578 | the panel page |
 | `_SCRIPT` | 100 | the report's code block |
 | `_CSS` | 48 | the report's stylesheet |
 | `TOKEN_CSS` | 11 | `_ui_theme.py` |
 
-Only **59 are CSS-shaped** (`_CSS` + `TOKEN_CSS`); the other 664 pin JavaScript. A further
-**113 assertions slice by `.index()` for statement *order*** — 47 in `test__panel_page.py`, 39 in
+Only **59 are CSS-shaped** (`_CSS` + `TOKEN_CSS`); the other 678 pin JavaScript. A further
+**118 assertions slice by `.index()` for statement *order*** — 47 in `test__panel_page.py`, 39 in
 `test_render_report.py`.
 
 This figure stood at "~70", which is roughly the **CSS** count (49 on the day it was written, 59

@@ -254,6 +254,68 @@ function configChanges(cfg){
   rows.push(cfRow('config',p,ina?a[p]:null,inb?b[p]:null));});
  return rows;}
 
+// --- handing the caret back -----------------------------------------------------
+// ONE rule, and two places that need it: anything which REPLACES the element
+// holding the caret has to hand the caret back.
+//
+// A native <dialog> already does half of it — it restores the element that was
+// focused when showModal() was called. But it restores THE NODE, and every view
+// here is rebuilt wholesale by its render*: after a rebuild the opener is a
+// different node in the same place, the platform's restore lands on a detached
+// element, and the reader is dropped on <body> — the next Tab then starts at the
+// top of the document, several stops from where they were.
+//
+// MEASURED, not reasoned about. Driving the Policy tab's expanded table 20 times
+// with the 5s disk poll live: the caret reached the Expand button within 50ms of
+// Esc on 20 of 20 closes, and was then taken away again by the poll's redraw on
+// 9 of them — 200ms after the close on the one that the browser gate happened to
+// be looking at. The close was never the broken half; the redraw was.
+//
+// So an element is remembered twice: as the node (exact, and correct whenever it
+// survived) and as a selector that resolves again in the rebuilt view (durable).
+const DLGBACK=new WeakMap();
+// Name an element so the rebuilt view can be searched for it: the id when it has
+// one, otherwise every data- hook it carries. A hook's VALUE joins the selector
+// only when it is safe to write into one — most are short identifiers, but the ⓘ
+// carries a whole help sentence in data-tip, and quoting free text into a
+// selector is a syntax error waiting for its first apostrophe.
+const selSafe=v=>v.length<=64&&!/["\\\]]/.test(v);
+function focusSel(n){
+ if(!n||!n.attributes)return null;
+ if(n.id)return '#'+n.id;
+ const hooks=[...n.attributes].filter(a=>a.name.slice(0,5)==='data-')
+   .map(a=>'['+a.name+(selSafe(a.value)?'="'+a.value+'"':'')+']').join('');
+ return hooks||null;}
+// Remember the caret before a rebuild. `within` scopes it both ways: a redraw of
+// one view must not take the caret out of another, and must not put it back into
+// something that now belongs elsewhere.
+function focusKeep(within){
+ const a=document.activeElement;
+ if(!a||!a.closest||(within&&!a.closest(within)))return null;
+ const s=focusSel(a);
+ return {node:a,sel:s?((within?within+' ':'')+s):null};}
+function focusBack(ref){
+ if(!ref)return false;
+ let n=(ref.node&&ref.node.isConnected)?ref.node:null;
+ if(!n&&ref.sel){const m=document.querySelectorAll(ref.sel);
+  // Exactly one, or nothing. A hook that names several controls cannot say WHICH
+  // of them had the caret, and guessing puts the reader somewhere they have never
+  // been — worse than the top of the document, because it looks deliberate.
+  n=m.length===1?m[0]:null;}
+ if(!n||!n.focus)return false;
+ n.focus();return true;}
+// showModal(), plus the close that hands the caret back. EVERY dialog on this
+// page opens through here — `.showModal()` is written exactly once in this file
+// and a selftest counts it, so a fifth dialog cannot be added that quietly skips
+// the restore. The close listener is wired once per element; these are
+// singletons, reused for every opening.
+function dlgOpen(d,sel){
+ if(!DLGBACK.has(d))d.addEventListener('close',()=>{
+   const r=DLGBACK.get(d);DLGBACK.set(d,null);focusBack(r);});
+ const a=document.activeElement;
+ DLGBACK.set(d,{node:a,sel:sel||focusSel(a)});
+ d.showModal();}
+
 // --- the confirm dialog ---------------------------------------------------------
 let CFDLG=null;
 // Absent, empty-list and empty-string are three different values and the dialog
@@ -343,7 +405,7 @@ function confirmChanges(o){
   d.append(el('div',{class:'cffoot'},
     el('span',{class:'mut small','data-cfwho':who&&!o.danger?'1':null},
       (who&&!o.danger?'as '+who+' · ':'')+(o.note||'')),cancel,go));
-  d.showModal();
+  dlgOpen(d);
   // A destructive primary must not be one Enter away from a keyboard that opened
   // the dialog by pressing Enter on a button.
   (o.danger?cancel:go).focus();});}
@@ -671,7 +733,7 @@ async function hShow(view,push){
  const d=helpDrawer();
  if(push&&HVIEW)HSTACK.push(HVIEW);
  HVIEW=view;
- if(!d.open)d.showModal();
+ if(!d.open)dlgOpen(d);
  let doc;
  try{doc=await helpDoc();}
  catch(err){d.textContent='';
@@ -1888,7 +1950,8 @@ function renderAppearance(){closeCombo();
  const c=$('#look');
  const act=document.activeElement,
    keepId=act&&act.id&&act.id.indexOf('th-')===0?act.id:null,
-   caret=keepId&&act.setSelectionRange?act.selectionStart:0;
+   caret=keepId&&act.setSelectionRange?act.selectionStart:0,
+   keepBack=keepId?null:focusKeep('#look');
  c.textContent='';
  if(!THEME){c.append(el('div',{class:'card'},el('div',{class:'findings warn'},
    'The theme could not be read from this project.')));return;}
@@ -2142,6 +2205,7 @@ function renderAppearance(){closeCombo();
 
  if(keepId){const n=document.getElementById(keepId);
   if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
+ else focusBack(keepBack);
  tPaint();tPaintLayout();}
 
 // Rebuild the tab shortly after the typing stops. renderAppearance puts the
@@ -2445,7 +2509,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // it was, or typing a five-letter search while a colleague takes a phase lock
  // loses the last three letters and the focus with them.
  const act=document.activeElement,keepQ=!!(act&&act.id==='ovq'),
-   caret=keepQ?act.selectionStart:0;
+   caret=keepQ?act.selectionStart:0,
+   keepBack=keepQ?null:focusKeep('#over');
  c.textContent='';
  // data-card (th, F-P-6): the name the theme's layout.order refers to. Stamped
  // where the card is BUILT, so a renamed card renames its ordering key with it.
@@ -2690,7 +2755,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
 
  // th (F-P-6, layout): the theme's card order, applied to what was just drawn.
  applyCardOrder('over');
- if(keepQ){const n=$('#ovq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}}
+ if(keepQ){const n=$('#ovq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
+ else focusBack(keepBack);}
 // ---------- capability policy: the switchboard ----------
 // `{"default":"deny","allow":["code-*"]}` is four words that decide the fate of
 // every skill on the machine, and nobody can hold that cross-product in their
@@ -2820,7 +2886,7 @@ function pServerRules(kind){const m={};
 // whole tab on every keystroke, and a dialog inside it would be destroyed
 // mid-type), it is refilled from the same builder the tab uses, and the filter
 // it types into is the TAB's filter — expanding never costs you your place.
-let POLFULL=null,POLBACK=null;
+let POLFULL=null;
 function polFullFill(){
  if(!POLFULL||!POLFULL.open||!POLICY)return;
  const kind=PF.kind,rows=((POLICY.resolved||{})[kind]||[]);
@@ -2841,18 +2907,14 @@ function polFullOpen(){
   // close anything. One Escape, one effect.
   POLFULL.addEventListener('keydown',ev=>{
     if(ev.key==='Escape'){ev.preventDefault();POLFULL.close();}});
-  // Esc and the ✕ both land here. The control that opened it gets the caret
-  // back: a dialog that closes into nowhere leaves a keyboard reader at the top
-  // of the document, several tab stops from where they were.
-  // ...and it is looked up FRESH when the node that opened it is gone: typing in
-  // the dialog re-renders the tab underneath, which replaces that button. The
-  // captured node is only a preference, never the answer.
-  POLFULL.addEventListener('close',()=>{
-   const b=(POLBACK&&POLBACK.isConnected)?POLBACK:$('#policy [data-polexpand]');
-   if(b)b.focus();POLBACK=null;});
   document.body.append(POLFULL);}
- POLBACK=$('#policy [data-polexpand]');
- POLFULL.showModal();polFullFill();}
+ // Esc and the ✕ both land in dlgOpen's close handler, which gives the caret back
+ // to the control that opened it — a dialog that closes into nowhere leaves a
+ // keyboard reader at the top of the document. The selector is passed explicitly
+ // because the node is gone by then: typing in the dialog re-renders the tab
+ // underneath, which replaces that button. Keeping it AFTER the close is
+ // renderPolicy's job, not this one's.
+ dlgOpen(POLFULL,'#policy [data-polexpand]');polFullFill();}
 function pCapTable(kind,rows,full){
  const q=PF.q.trim().toLowerCase();
  const shown=rows.filter(r=>(!q||(r.name+' '+(r.source||'')).toLowerCase().includes(q))
@@ -2925,6 +2987,12 @@ function renderPolicy(){closeCombo();
    keepId=act&&act.id&&(act.id==='polq'||act.id==='polqfull'
      ||act.id==='poladdpat')?act.id:null,
    caret=keepId?act.selectionStart:0,
+   // The three ids cover the boxes with a caret in them. Everything else this
+   // redraw replaces — the Expand button above all, which is exactly where
+   // closing the expanded table puts a keyboard reader — was dropped on the
+   // floor, so a disk refresh landing a fifth of a second later threw them to
+   // <body>. Nothing is taken from another view: focusKeep is scoped to #policy.
+   keepBack=keepId?null:focusKeep('#policy'),
    scrolled=(()=>{const w=$('#poltbl');return w?w.scrollTop:0;})();
  c.textContent='';
  if(!POLICY){c.append(el('div',{class:'card'},el('div',{class:'findings warn'},
@@ -3128,6 +3196,7 @@ function renderPolicy(){closeCombo();
  polFullFill();
  if(keepId){const n=document.getElementById(keepId);
   if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
+ else focusBack(keepBack);
  if(scrolled){const w=$('#poltbl');if(w)w.scrollTop=scrolled;}}
 
 // How long ago, in words. The panel never decides whether that is TOO long: how
@@ -3915,6 +3984,7 @@ function uBars(facts,dim,title){
  if(limit>TOP)ctl.push(el('button',{class:'lnk',
    onclick:()=>{SHOWN[dim]=TOP;renderUsage();}},'show top '+TOP+' only'));
  if(g.length>TOP)ctl.push(el('button',{class:'lnk',
+   'data-browse':dim,
    onclick:()=>openBrowse(dim,title,facts)},'browse all '+g.length+' →'));
  if(ctl.length){
   const bar=el('div',{class:'uctl'});
@@ -4397,7 +4467,10 @@ function openBrowse(dim,title,facts){
    el('div',{class:'btblwrap'},el('table',{class:'btbl'},thead,tb)),
    el('div',{class:'mut small bfoot'},
      'click a header to sort · click a row to filter')].filter(Boolean));
- BROWSE.showModal();
+ // A row click applies the filter BEFORE closing, and that repaints this whole
+ // tab — so by the time the dialog closes the button that opened it has already
+ // been replaced. Hence the explicit selector: the node is never the answer here.
+ dlgOpen(BROWSE,'#usage [data-browse="'+dim+'"]');
  search.focus();}
 
 function renderUsage(){closeCombo();const c=$('#usage');
@@ -4406,11 +4479,16 @@ function renderUsage(){closeCombo();const c=$('#usage');
  // what typing in the search box IS. Without this, the third letter of a five
  // letter search goes into a box that no longer exists, and the caret with it.
  const act=document.activeElement,keepQ=!!(act&&act.id==='uq'),
-   caret=keepQ?act.selectionStart:0;
+   caret=keepQ?act.selectionStart:0,
+   // ...and the same for every control here that is not that box — the browse-all
+   // buttons are replaced by this redraw too, and one of them is where closing
+   // the browse dialog puts the caret.
+   keepBack=keepQ?null:focusKeep('#usage');
  c.textContent='';tipHide();
  const card=el('div',{class:'card'});
  const done=()=>{c.append(card);
-  if(keepQ){const n=$('#uq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}};
+  if(keepQ){const n=$('#uq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
+  else focusBack(keepBack);};
  if(!USAGE||!USAGE.facts.length){
   card.append(USAGE&&!USAGE.enabled
    ?el('div',{class:'mut'},'Token metering is off — ',
