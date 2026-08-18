@@ -2235,9 +2235,13 @@ async function assertConfirmFlowWorks(page) {
   const clean = await page.evaluate(() => {
     const ev = new Event('beforeunload', { cancelable: true });
     dispatchEvent(ev);
+    // aria-disabled, not `.disabled`: these buttons keep their tab stop (F16), so
+    // the DOM property is permanently false and reading it would report every
+    // Discard as live. The attribute is the state now.
+    const d = document.querySelector('#comp [data-discard=comp]');
     return { rows: dirtyRows(), comp: editRows('comp').length,
              blocked: ev.defaultPrevented,
-             discard: (document.querySelector('#comp [data-discard=comp]') || {}).disabled };
+             discard: d ? d.getAttribute('aria-disabled') === 'true' : undefined };
   });
   if (clean.rows.length || clean.blocked || clean.discard !== true) {
     fail(`panel: a freshly rendered panel reports ${clean.rows.length} unsaved `
@@ -2261,7 +2265,8 @@ async function assertConfirmFlowWorks(page) {
     dispatchEvent(ev);
     const d = document.querySelector('#comp [data-discard=comp]');
     return { rows: editRows('comp').length, blocked: ev.defaultPrevented,
-             label: d ? d.textContent : null, disabled: d ? d.disabled : null };
+             label: d ? d.textContent : null,
+             disabled: d ? d.getAttribute('aria-disabled') === 'true' : null };
   });
   if (dirty.rows !== 1 || !dirty.blocked) {
     fail(`composition: after one edit dirtyRows()=${dirty.rows} and beforeunload `
@@ -3867,7 +3872,8 @@ async function assertAdoCardWorks(page) {
   await page.waitForTimeout(250);
   const disc = await page.evaluate(() => {
     const d = document.querySelector('[data-discard=ado]');
-    return d ? { text: d.textContent, disabled: d.disabled } : null;
+    return d ? { text: d.textContent,
+                 disabled: d.getAttribute('aria-disabled') === 'true' } : null;
   });
   if (!disc || disc.disabled || disc.text !== 'Discard 1 change') {
     fail(`ado card: one toggled switch should read 'Discard 1 change', got `
@@ -3898,7 +3904,8 @@ async function assertAdoCardWorks(page) {
   const after = await page.evaluate(() => ({
     state: (document.querySelector('#adocard [data-adostate]') || {})
       .getAttribute?.('data-adostate'),
-    discardDead: (document.querySelector('[data-discard=ado]') || {}).disabled,
+    discardDead: document.querySelector('[data-discard=ado]')
+      ?.getAttribute('aria-disabled') === 'true',
   }));
   if (after.state !== 'linked' || !after.discardDead) {
     fail(`ado card: after Discard the card should be back to the saved manifest `
@@ -4614,7 +4621,11 @@ async function assertPolicyWorks(page, statePath) {
     dispatchEvent(ev);
     const d = document.querySelector('#policy [data-discard=policy]');
     return { rows: editRows('policy'), blocked: ev.defaultPrevented,
-             label: d ? d.textContent : null, disabled: d ? d.disabled : null,
+             label: d ? d.textContent : null,
+             // aria-disabled (F16). This one asserts the button is NOT dead, so
+             // reading `.disabled` would go on passing for the rest of time
+             // whatever the panel did — the direction that hides a regression.
+             disabled: d ? d.getAttribute('aria-disabled') === 'true' : null,
              pend: document.querySelectorAll('#policy td.pend').length };
   });
   if (dirty.rows.length !== 1 || dirty.rows[0].field !== 'policy.skills.deny'

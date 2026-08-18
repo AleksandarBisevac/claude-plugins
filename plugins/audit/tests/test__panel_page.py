@@ -615,8 +615,35 @@ def _cases(check):
     check("Discard exists on every writable surface, counts what it would throw "
           "away, and is dead while there is nothing to throw",
           M.UI_HTML.count("'data-discard':'") == 4
-          and M.UI_HTML.count("discard.disabled=!n;") == 3
-          and "discard.disabled=!pending.length;" in M.UI_HTML)
+          and M.UI_HTML.count("offState(discard,!n);") == 3
+          and "offState(discard,!pending.length);" in M.UI_HTML)
+
+    # --- F16: unavailable must not mean unreachable (WCAG 2.2 SC 2.4.3) ---------
+    # `disabled` takes the control OUT of the tab order and accepts .focus() in
+    # silence, so after a successful Discard the caret stayed on <body> and the
+    # next Tab restarted from the top of the document. WAI-ARIA APG uses
+    # aria-disabled for exactly this case: the control keeps its tab stop and its
+    # accessible name and refuses the activation instead. The cost is one extra
+    # tab stop per savebar, which is the point rather than a side effect.
+    check("f16a no Discard reaches for the disabled ATTRIBUTE — that is the whole "
+          "defect, and a single one left behind reintroduces it",
+          "discard.disabled" not in M.UI_HTML)
+    check("f16b offState writes the attribute in BOTH directions — a control that "
+          "goes unavailable and never comes back is the same bug in a hat",
+          "function offState(n,off){" in M.UI_HTML
+          and "n.setAttribute('aria-disabled',off?'true':'false');" in M.UI_HTML)
+    # The half a static file can still get wrong: aria-disabled is a PROMISE to
+    # assistive technology and the platform enforces none of it — unlike `disabled`
+    # the browser still dispatches the click. One capture-phase guard keeps the
+    # promise for every control that makes it, including ones added later, rather
+    # than leaving each handler to re-check a condition it already checked.
+    check("f16c one capture-phase guard refuses activation for anything claiming "
+          "aria-disabled, rather than trusting four handlers to agree",
+          "closest('[aria-disabled=\"true\"]')" in M.UI_HTML
+          and "},true);" in M.UI_HTML)
+    check("f16d the unavailable state is DRAWN, not only announced — aria-disabled "
+          "carries no user-agent styling the way :disabled does",
+          '[aria-disabled="true"]{opacity:' in M.UI_HTML)
     check("Usage: my-spend filters on the very string the topbar shows",
           "const me=((STATE||{}).viewer||{}).author;" in M.UI_HTML
           and "onclick:()=>setF('author',on?'':me)},'my spend')" in M.UI_HTML

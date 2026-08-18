@@ -322,13 +322,31 @@ function focusBack(ref){
  n.focus();
  if(ref.at&&n.setSelectionRange)try{n.setSelectionRange(ref.at[0],ref.at[1]);}catch(e){}
  // ASK THE DOCUMENT, do not assume .focus() took. A disabled control accepts the
- // call in silence and keeps the caret on <body>, which is exactly what the three
- // Discard buttons do to themselves: the rebuilt Discard is disabled (there is now
- // nothing to discard), the selector still resolves to exactly one node, and the
- // old `return true` reported a hand-back that had not happened. Measured on all
- // three savebars — [data-discard="guards"], ="comp" and ="ado" — every one
- // resolved to 1 match, focused it, and left document.activeElement on <body>.
+ // call in silence and keeps the caret on <body>. That is how this line was
+ // earned: the four Discard buttons used to disable themselves on a successful
+ // discard, so the selector still resolved to exactly one node, .focus() did
+ // nothing, and the old `return true` reported a hand-back that had not happened.
+ // The Discards no longer do that (see offState below), but the check stays —
+ // every OTHER control that can go unreachable between keep and restore fails the
+ // same way, and this is the only place that can notice.
  return document.activeElement===n;}
+// UNAVAILABLE MUST NOT MEAN UNREACHABLE (WCAG 2.2 SC 2.4.3).
+// `disabled` removes the tab stop, so a reader who tabs to a Discard, presses it,
+// and lands on the rebuilt one has the caret taken to <body> and the next Tab
+// restarts at the top of the document. WAI-ARIA APG uses aria-disabled precisely
+// so the control keeps its place and its name and refuses the ACTIVATION instead.
+// It costs one extra tab stop per savebar; that is the trade, not an oversight.
+function offState(n,off){
+ n.setAttribute('aria-disabled',off?'true':'false');
+ return n;}
+// aria-disabled is a promise to assistive technology and the platform enforces
+// none of it — unlike `disabled`, the browser still dispatches the click (and
+// Enter/Space arrive as one). Kept here, once, in the capture phase: four handlers
+// each re-checking their own emptiness would be four chances to disagree, and a
+// control added later would inherit the promise without the refusal.
+document.addEventListener('click',e=>{
+ const n=e.target&&e.target.closest&&e.target.closest('[aria-disabled="true"]');
+ if(n){e.preventDefault();e.stopPropagation();}},true);
 // showModal(), plus the close that hands the caret back. EVERY dialog on this
 // page opens through here — `.showModal()` is written exactly once in this file
 // and a selftest counts it, so a fifth dialog cannot be added that quietly skips
@@ -989,7 +1007,7 @@ function renderSettings(){closeCombo();
  // counter is refreshed from the events that reach the view rather than from a
  // hook added to each of the twenty-odd field builders.
  onViewEdit('guards',()=>{const n=configChanges(cfg).length;
-   discard.disabled=!n;
+   offState(discard,!n);
    discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';});
  const CUSTOM={
   'planGate':()=>planGateField(cfg),
@@ -1556,7 +1574,7 @@ function renderComp(){closeCombo();
    renderComp();toast('discarded — the table is back to the saved manifest');}},
    'Discard');
  onViewEdit('comp',()=>{const n=compChanges(patch).length;
-   discard.disabled=!n;
+   offState(discard,!n);
    discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';});
  tcard.append(el('div',{class:'row',style:'margin-top:.9rem'},save,discard),
    el('div',{class:'findings-slot'}));
@@ -1810,7 +1828,7 @@ function renderAdoCard(c){
    renderComp();toast('discarded — the card is back to the saved manifest');}},
    'Discard');
  const upd=()=>{const n=adoRows(saved,ADRAFT).length;
-  discard.disabled=!n;
+  offState(discard,!n);
   discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';};
  ['input','change','click'].forEach(e=>
   card.addEventListener(e,()=>requestAnimationFrame(upd)));
@@ -3244,7 +3262,7 @@ function renderPolicy(){closeCombo();
    toast('discarded — the form is back to the saved policy');}},
    pending.length?('Discard '+pending.length+' change'+(pending.length===1?'':'s'))
      :'Discard');
- discard.disabled=!pending.length;
+ offState(discard,!pending.length);
  c.append(el('div',{class:'savebar'},save,discard,
    el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));
 
