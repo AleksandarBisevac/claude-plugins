@@ -115,6 +115,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _locks                 # noqa: E402  (take and give back the index lock, at layer 1)
 import _panel_write           # noqa: E402  (one answer to "where is the manifest", the
 #                                            byte-shape writer, the A4 heal, the lock and
 #                                            journal module handles -- reused by identity,
@@ -208,15 +209,18 @@ def _acquire_lock(project, config, mpath, takeover, out):
     handle dict, or an int exit code AFTER printing the lock module's own
     message -- the standard shape a human already knows from audit-lock.py
     and the panel; this script adds only its own next step."""
-    lockmod = _panel_write._lockmod()
+    # `_locks.acquire` (layer 1), not `_panel_write._lockmod().main([...])`. The
+    # old spelling built an argv for a COMMAND and reached it through the panel's
+    # read-side accessor, which meant this file's very real dependency on the lock
+    # was attributed by `_deps` to `_panel_state` — the module holding the literal.
+    # A hidden edge is not a retired one; this one is an import now.
+    lockmod = _locks
     git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
     if lockmod is not None:
         lines = []
-        argv = ["acquire", "index", "--project", git_root, "--note", "task add"]
-        if takeover:
-            argv.append("--takeover")
         try:
-            code = lockmod.main(argv, out=lines.append)
+            code = _locks.acquire(git_root, "index", note="task add",
+                                  takeover=bool(takeover), out=lines.append)
         except Exception:
             code = None
         if code == 0:
@@ -257,8 +261,8 @@ def _release_lock(lock):
         if lock.get("legacy"):
             os.unlink(lock["legacy"])
             return
-        lock["mod"].main(["release", "index", "--project", lock["project"]],
-                         out=lambda *_a, **_k: None)
+        lock["mod"].release(lock["project"], "index",
+                            out=lambda *_a, **_k: None)
     except Exception:
         pass
 

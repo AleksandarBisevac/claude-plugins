@@ -89,6 +89,11 @@ _output.install_path()
 CONFIG_REL = ".claude/audit.config.json"
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _manifest_rules        # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
+import _locks                 # noqa: E402  (lock paths + the liveness verdict, at layer 1)
+import _status_facts          # noqa: E402  (rollup/readiness/gate facts, at layer 2)
+import _config_rules          # noqa: E402  (the audit.config.json rules, at layer 2)
+import _journal_io            # noqa: E402  (read/verify the audit trail, at layer 1)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _policy                # noqa: E402  (the capability policy + its resolution)
 import _help                  # noqa: E402  (schema-sourced field help + concept topics)
@@ -118,14 +123,19 @@ _VM = _VC = _AS = _CFG = None
 
 
 def _cores():
-    """Load (once) validate-manifest, validate-config, audit-status, _config."""
+    """The manifest rules, validate-config, audit-status and hooks/_config.
+
+    `_VM` and `_AS` are plain imports now (`_manifest_rules` and `_status_facts`,
+    both layer 2) rather than `_loader.load_script` of `validate-manifest.py` and
+    `audit-status.py`: this module is layer 5 and both of those are entry points,
+    two of the edges `_deps.KNOWN_LAYER_DEBT` recorded. They stay in the tuple, at
+    the same indexes, because the shape of `_cores()` is what `_panel_write` and
+    the panel's own suite read positionally."""
     global _VM, _VC, _AS, _CFG
     if _VM is None:
-        _VM = _loader.load_script("validate-manifest.py",
-                                   modname="audit_validate_manifest")
-        _VC = _loader.load_script("validate-config.py",
-                                   modname="audit_validate_config")
-        _AS = _loader.load_script("audit-status.py", modname="audit_status")
+        _VM = _manifest_rules
+        _VC = _config_rules
+        _AS = _status_facts
         _CFG = _loader.load_hooks_config(modname="audit__config")
     return _VM, _VC, _AS, _CFG
 
@@ -617,32 +627,27 @@ _JOURNAL = {"tried": False, "mod": None}
 
 
 def _journalmod():
-    """`audit-journal.py`, loaded by path — or None, which is the normal answer
-    today: the module ships with v0.29 and this call site ships before it, on
-    purpose, so that the release which adds the journal does not also have to reach
-    back into every writer. Loaded once; a missing file is not retried per save.
+    """`_journal_io` — the audit trail, at layer 1.
 
-    `script_path()` ON ONE LINE AND `load()` ON THE NEXT, NOT `load_script()`, AND
-    THE TWO-STEP IS THE POINT. Both spellings resolve the file identically at any
-    depth. What they do not share is VISIBILITY: `_deps._runtime_loaded_sibling_names`
-    reads only a `.py` literal spelled INSIDE a loader call, and says so — the
-    one-call form would make a `_panel_state -> audit-journal` edge appear for the
-    first time and demand an 18th `KNOWN_LAYER_DEBT` entry, against a list whose
-    whole contract is that it may only shrink. This edge is real and it is
-    UNRECORDED; laundering that change through a mechanical path fix would be the
-    wrong session to record it in, so the shape is preserved deliberately rather
-    than by accident, and `rt4` still pins the blind spot.
+    THIS IS THE EDGE `_deps` COULD NOT SEE, AND IT IS GONE RATHER THAN HIDDEN.
+    It used to spell `script_path("audit-journal.py")` on one line and `load(path)`
+    on the next, and the two-step was deliberate: `_runtime_loaded_sibling_names`
+    reads only a `.py` literal spelled INSIDE a loader call, so the one-call form
+    would have made a `_panel_state -> audit-journal` edge appear and demanded an
+    18th `KNOWN_LAYER_DEBT` entry against a list that may only shrink. The comment
+    that used to sit here said the edge was real and unrecorded, and it was right.
 
-    The resolution moved INSIDE the `try` because `script_path()` raises on a name
-    it cannot find, where the old `os.path.isfile()` returned False — same outcome
-    (`mod` stays None, nothing is retried), one fewer way to spell "not there"."""
+    A count that a blind spot flatters is not a smaller debt, so the answer was
+    never to keep the two-step: it was to make the dependency legal. The trail is
+    `_journal_io.py` at layer 1 now, this module is layer 5, and the edge is an
+    ordinary downward import that the lint can read and does not have to forgive.
+
+    Still a function returning a module, and callers still handle None: they were
+    written when the journal shipped a release later than this call site, and
+    "there may be no journal" is a state the panel renders rather than crashes on."""
     if not _JOURNAL["tried"]:
         _JOURNAL["tried"] = True
-        try:
-            path = _loader.script_path("audit-journal.py")
-            _JOURNAL["mod"] = _loader.load(path, modname="audit_journal")
-        except Exception:
-            _JOURNAL["mod"] = None
+        _JOURNAL["mod"] = _journal_io
     return _JOURNAL["mod"]
 
 JOURNAL_PAGE = 200
@@ -979,12 +984,15 @@ def _audit_lock_held(project, config):
 
 
 def _lockmod():
-    """audit-lock.py, loaded by path. None if it cannot be loaded — the panel
-    then shows the lock without a liveness verdict rather than showing nothing."""
-    try:
-        return _loader.load_script("audit-lock.py", modname="audit_lock")
-    except Exception:
-        return None
+    """`_locks`, the lock's read side — where one lives and whether it is live.
+
+    A plain import at layer 1 now, not a `_loader.load_script("audit-lock.py")`:
+    this module is layer 5 and that was an entry point, one of the edges
+    `_deps.KNOWN_LAYER_DEBT` recorded. Kept as a function returning a module,
+    with the None contract intact, because `_lock_info` below reads `None` as
+    "show the lock without a liveness verdict rather than show nothing" — and an
+    import that cannot fail is not a reason to delete a caller's fallback."""
+    return _locks
 
 
 def _lock_info(lockdir):

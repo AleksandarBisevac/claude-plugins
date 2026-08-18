@@ -60,6 +60,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _locks  # noqa: E402  (lock paths + the liveness verdict, at layer 1)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
 import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
@@ -684,8 +685,13 @@ def _jsonl_in(base):
 
 
 def _lockmod():
-    """audit-lock.py, loaded by path (hyphenated filename)."""
-    return _loader.load_script("audit-lock.py", modname="audit_lock", cache=False)
+    """`_locks`, the lock's read side, at layer 1.
+
+    A plain import rather than a `_loader.load_script("audit-lock.py")`: that was
+    this file (L7) loading an L7 peer, one of the edges `_deps.KNOWN_LAYER_DEBT`
+    recorded. Still a function, because `acquire_lock` below reads it as "the
+    module that owns the verdict" and there is one caller for a reason."""
+    return _locks
 
 
 def acquire_lock(ledger_dir, project):

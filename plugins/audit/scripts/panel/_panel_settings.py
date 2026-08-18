@@ -56,7 +56,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _loader  # noqa: E402  (the one path-importlib loader for scripts/)
+import _config_rules  # noqa: E402  (the rules that decide what this form may offer)
 
 # --- key allow-lists (composition write path) -------------------------------
 # Fields the composition patch is allowed to touch — the security allow-list.
@@ -381,21 +381,17 @@ def _settings_paths():
     return [f["path"] for g in SETTINGS_GROUPS for f in g["fields"]]
 
 
-_VC = None
-
-
 def _validate_config():
-    """Load validate-config.py (once) via the shared loader.
+    """`_config_rules` — the module that decides what this form may offer.
 
-    Own cache, not panel-server's `_cores()` — the loader's cache is keyed by
-    realpath, so this and panel-server's `_cores()` share the SAME underlying
-    module object the first time either loads it; this just avoids re-deriving
-    it through panel-server, which this module must not import."""
-    global _VC
-    if _VC is None:
-        _VC = _loader.load_script("validate-config.py",
-                                   modname="audit_validate_config")
-    return _VC
+    A plain import now, and the memo it used to need is gone with it. This was
+    `_loader.load_script("validate-config.py")`, which made a LAYER 2 module
+    depend on a layer 7 entry point: the deepest of the seventeen inversions
+    `_deps.KNOWN_LAYER_DEBT` recorded. The rules moved to layer 2 and this module
+    moved up to layer 3, so the edge points down and the lint can see that it
+    does. Still a function, because `_cfg_enums` reads it as "the module that
+    enforces these" and the indirection is where that sentence lives."""
+    return _config_rules
 
 
 def _cfg_enums():

@@ -84,6 +84,13 @@ def _panel_cfg(project):
     except Exception:
         return {}
 import _loader                # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _status_facts          # noqa: E402  (the gate's conditions + verdict, at layer 2)
+# The manifest rules, imported straight. Both call sites below used to spell
+# `_load_status_lib()._load_validator()` — reaching the validator THROUGH the
+# status command, because that was the only module that already knew how to load
+# a hyphenated entry point. Both of those are plain layer-2 modules now, so the
+# hop is gone along with the two `KNOWN_LAYER_DEBT` edges that paid for it.
+import _manifest_rules        # noqa: E402  (the manifest rules, at layer 2)
 import _report_ui             # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
 import _report_html           # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
@@ -103,8 +110,14 @@ _SCRIPT = _report_ui.SCRIPT
 
 
 def _load_status_lib():
-    return _loader.load_script("audit-status.py", modname="audit_status",
-                                cache=False)
+    """`_status_facts` (layer 2) — the gate's own conditions and verdict.
+
+    A plain import now, not a `_loader.load_script("audit-status.py")`: that was
+    this file (L7) loading an L7 peer, one of the edges `_deps.KNOWN_LAYER_DEBT`
+    recorded, and it pulled ~600 lines of terminal rendering in behind one call
+    to `evaluate_gate`. Kept as a function because `_verdict` below reads it as
+    "the module that owns the gate" and the suite substitutes it."""
+    return _status_facts
 
 
 # HTML fragment builders (escaping, chips, cells, filter panel) live in
@@ -259,7 +272,7 @@ def main(argv):
                              % (summary_file, exc))
 
     lib = _load_status_lib()
-    vm = lib._load_validator()
+    vm = _manifest_rules
     try:
         findings, warnings = vm.validate(manifest)
     except Exception as exc:  # defensive
@@ -410,7 +423,7 @@ def _bench_phases(manifest, manifest_path, project_dir):
     ledger instead of the fixture's, and the number would look perfectly reasonable.
     """
     lib = _load_status_lib()
-    vm = lib._load_validator()
+    vm = _manifest_rules
     out = {}
 
     def _validate():

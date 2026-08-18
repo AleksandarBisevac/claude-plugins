@@ -86,6 +86,7 @@ _output.install_path()
 import _areas                                    # noqa: E402  (the areas rule)
 import _policy                                   # noqa: E402  (the policy verdicts)
 import _loader                                   # noqa: E402  (the one path-importlib loader)
+import _journal_io                               # noqa: E402  (the journal row shape, at layer 1)
 
 # The schemas ARE the field documentation; these are the only two there are.
 SCHEMAS = {
@@ -292,7 +293,13 @@ def _config_mod():
 
 
 def _journal_mod():
-    return _loader.load_script("audit-journal.py", modname="audit_journal_help")
+    """`_journal_io` — the row shape this topic shows the reader.
+
+    A plain import at layer 1 now, not a `_loader.load_script("audit-journal.py")`:
+    this module is layer 3 and that was a layer 7 entry point, one of the edges
+    `_deps.KNOWN_LAYER_DEBT` recorded — a help topic reaching four layers UP to
+    normalise one example row."""
+    return _journal_io
 
 
 def _showable(value):

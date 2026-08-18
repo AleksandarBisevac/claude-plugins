@@ -118,8 +118,40 @@ LAYERS = (
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
     # other member of this layer - so it belongs beside them, not in a layer of its own.
     ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
-     "_usage_core", "_deps", "_refs"),
-    ("_panel_settings", "_panel_ui", "_report_html", "_report_ui", "_usage_analytics"),
+     "_usage_core", "_deps", "_refs",
+     # `_locks` is `audit-lock.py`'s read side: where a lock lives, what it may be
+     # called, and whether its holder is alive. It reaches nothing but `_output`,
+     # and it had to land at L1 rather than beside its command because
+     # `hooks/_config.py` loads it too - a hook may not import scripts/, so the
+     # SMALLER the module it resolves by path on every tool call, the better.
+     "_locks",
+     # `_journal_io` is `audit-journal.py`'s trail: the row shape, the chain, where
+     # a journal lives, and what `verify` checks. Same reasoning as `_locks`, and
+     # the same hook argument - `hooks/_config.py` asks it for `journal_dir` on
+     # every tool call. It reaches nothing but `_output`, and it had to be at L1
+     # because `_help` (L3) needs it too.
+     "_journal_io",
+     # `_demo_cast` is three fictional identities the two demo generators must
+     # agree on - the smallest module here, and the right size for the fact: the
+     # alternative was not a bigger module but a second copy nothing would compare.
+     "_demo_cast"),
+    ("_panel_ui", "_report_html", "_report_ui", "_usage_analytics",
+     # `_config_rules` is `validate-config.py` without its `main()`. It imports
+     # `_policy` (L1), so L2 is the lowest layer it can occupy - and its deepest
+     # consumer, `_panel_settings`, therefore had to move UP one, from here to L3.
+     # Moving ONE module was the whole cost of making that edge downward; inserting
+     # a layer would have renumbered every entry in KNOWN_LAYER_DEBT below without
+     # a single edge changing.
+     "_config_rules",
+     # `_manifest_rules` is `validate-manifest.py` without its `main()`. It lands
+     # here because its deepest reach is `_manifest_io`/`_areas` at L1, and it had
+     # to land BELOW `_panel_state` (L5) - the lowest of the four consumers that
+     # used to load the entry point - or the extraction would have retired nothing.
+     "_manifest_rules",
+     # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
+     # readiness, the submodule preflight and the gate. Same reasoning and the same
+     # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
+     "_status_facts"),
     # The usage metering stack is a three-link chain, `_usage_core` -> `_usage_analytics`
     # -> `usage_ledger`, so it needs three layers under its lowest consumer. That consumer
     # is `_report_usage`, which sat here beside `_help` and now sits one layer up: moving
@@ -127,7 +159,13 @@ LAYERS = (
     # renumbered every entry in KNOWN_LAYER_DEBT below without a single edge changing.
     # `_report_usage` reaches nothing at layer 4 or above, and only render-report (L7)
     # reaches it, so the move is free.
-    ("_help", "usage_ledger"),
+    # `_panel_settings` sits here rather than at L2, and the move was forced by
+    # `_config_rules`: it reads the four enum tuples off the module that ENFORCES
+    # them, and a consumer at the same layer is still not strictly downward. It
+    # reaches nothing at L3 and nothing at L3 reaches it, so the move was free -
+    # `_panel_page` (L4), `_panel_write` (L6) and `panel-server` (L7) are all
+    # still strictly above it.
+    ("_help", "usage_ledger", "_panel_settings"),
     # `_panel_page` (the panel's assembled page: the substitution chain and the
     # ~1,450 lines of cases that read the result) lands here rather than beside
     # `_panel_state`, and that placement is the whole cost of the split. Its
@@ -1084,121 +1122,67 @@ def ui_navigability_violations(ui_dir=None):
 
 
 # --- known layer debt ---------------------------------------------------------
-# The 21 edges that became visible the moment this module learned to read
-# `_loader` calls. NONE of them is new: every one has been in the tree for
-# months, certified clean by a lint that walked only `ast.Import` while most of
-# this codebase reaches its siblings at runtime. The lint was not wrong, it was
-# blind, and `layer_violations()` reported zero over a tree with 34 runtime edges.
+# ONE entry, down from the seventeen that became visible the moment this module
+# learned to read `_loader` calls. None of those seventeen was ever new: each had
+# been in the tree for months, certified clean by a lint that walked only
+# `ast.Import` while most of this codebase reaches its siblings at runtime.
 #
-# They are two different problems and want two different answers:
+# HOW THE OTHER SIXTEEN WENT, because the shape generalises. Every one of them was
+# a module being used as a LIBRARY that happened to be shaped as a COMMAND, and in
+# every case the answer was the same: move the logic, never the call. Five files
+# came out from under five entry points -
 #
-#   * SEVEN are real inversions - a helper reaching UP to an entry point.
-#     `_panel_state` (L5) reaching audit-lock / audit-status / render-report /
-#     validate-*, `_help` (L3) reaching audit-journal, `_panel_settings` (L2)
-#     reaching validate-config. These are debt, and the refactor retires them by
-#     giving the shared thing a home low enough to import - e.g. the lock-name
-#     grammar into an L1 `_locks.py` rather than `_panel_state` reimplementing
-#     `audit-lock`.
+#   `_manifest_rules` (L2)  <- validate-manifest.py   retired 4
+#   `_status_facts`  (L2)  <- audit-status.py        retired 3
+#   `_config_rules`  (L2)  <- validate-config.py     retired 3
+#   `_locks`         (L1)  <- audit-lock.py          retired 3
+#   `_journal_io`    (L1)  <- audit-journal.py       retired 2
+#   `_demo_cast`     (L1)  <- gen-demo-usage.py      retired 1
 #
-#   * THIRTEEN are entry point -> entry point. All thirteen commands sit at L7,
-#     so one command reusing another is a "peer" edge BY CONSTRUCTION. Whether
-#     that is a defect or a gap in the model is an open architecture question
-#     this list does not pretend to have answered.
+# - and each entry point kept its `main()`, which is the half that was genuinely a
+# command. `_panel_settings` moved from L2 to L3 in the same change, because
+# `_config_rules` imports `_policy` (L1) and so cannot sit below L2, and a consumer
+# AT L2 is still not strictly downward. Moving one module was the whole cost.
+#
+# A SEVENTEENTH EDGE WENT THAT WAS NEVER IN THIS TABLE, AND THAT MATTERS MORE THAN
+# THE COUNT. `_panel_state -> audit-journal` was real and deliberately invisible:
+# it spelled `script_path()` on one line and `load()` on the next, because
+# `_runtime_loaded_sibling_names` reads only a literal inside the call, and the
+# comment there said so out loud. `rt4` still pins that blindness as a decision -
+# the scan is narrow on purpose - but the edge itself is gone, not hidden: the
+# journal is `_journal_io` at L1 now and `_panel_state` imports it like anything
+# else. A count that a blind spot flatters is not a smaller debt, so the fix had
+# to be the dependency becoming legal rather than the spelling staying unreadable.
 #
 # THE LIST MAY ONLY SHRINK. `r2` asserts EXACT equality, so a new violation fails
 # the build, and retiring one also fails it until the entry is deleted on purpose.
 # An allowlist that silently absorbs both directions is how debt becomes
 # permanent; this one cannot, because fixing something breaks it too.
 KNOWN_LAYER_DEBT = (
-    # -- upward inversions: a helper reaching an entry point (7) --
-    ("config/_help.py",
-     "runtime-loads audit-journal (layer 7) from layer 3 - not strictly downward"),
-    # SIX KEYS AND NOT ONE TARGET, WHICH IS THE RULE BELOW AT ITS LARGEST SCALE.
-    # Both importers moved into `scripts/panel/` and their keys are relnames, so
-    # both gained the directory. `render-report` and `validate-manifest` inside the
-    # messages are node names - basenames at any depth - and they are ALREADY spelled
-    # bare here although those two files sit in `scripts/report/` and
-    # `scripts/manifest/`. That asymmetry is not a spelling inconsistency to tidy: a
-    # key says WHERE A FILE IS and a target says WHICH NODE AN EDGE POINTS AT.
-    ("panel/_panel_settings.py",
-     "runtime-loads validate-config (layer 7) from layer 2 - not strictly downward"),
-    ("panel/_panel_state.py",
-     "runtime-loads audit-lock (layer 7) from layer 5 - not strictly downward"),
-    ("panel/_panel_state.py",
-     "runtime-loads audit-status (layer 7) from layer 5 - not strictly downward"),
+    # THE ONE THAT DID NOT GO, AND WHY IT IS NOT A SPELLING PROBLEM.
+    # `_panel_state.render_report()` is the panel's Export button, and it calls
+    # `render-report.py`'s own `main()` in-process - deliberately, so the panel
+    # takes the same code path the CLI takes, with no interpreter discovery and
+    # the same behaviour on Windows.
+    #
+    # There is no logic here to extract downward. What the panel wants is not a
+    # rule it could share but the WHOLE report pipeline ending in two files on
+    # disk, and that pipeline reaches `_report_page` at L6 - above this module's
+    # own L5. A helper holding it could therefore not sit anywhere `_panel_state`
+    # may import from. The two real fixes are both larger decisions than this
+    # entry: move `_panel_state` above the report stack (which renumbers the
+    # table), or split a writer out of `render-report.main()` and rehome the
+    # report modules under it.
+    #
+    # WHAT WAS DELIBERATELY NOT DONE: swapping the in-process call for a
+    # `script_path()` + subprocess. `_deps` does not count that as an edge, by
+    # design and for a good reason (nothing is imported, nothing is executed
+    # here) - which is exactly why reaching for it would be laundering. It would
+    # also change behaviour: a second interpreter, a different failure surface,
+    # and an exit code where there is now an exception. A fix that makes an edge
+    # invisible rather than absent is a regression wearing a green suite.
     ("panel/_panel_state.py",
      "runtime-loads render-report (layer 7) from layer 5 - not strictly downward"),
-    ("panel/_panel_state.py",
-     "runtime-loads validate-config (layer 7) from layer 5 - not strictly downward"),
-    ("panel/_panel_state.py",
-     "runtime-loads validate-manifest (layer 7) from layer 5 - not strictly downward"),
-    # -- entry point reusing an entry point, all at L7 (13) --
-    ("status/audit-doctor.py",
-     "runtime-loads audit-journal (layer 7) from layer 7 - not strictly downward"),
-    ("status/audit-doctor.py",
-     "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
-    ("status/audit-doctor.py",
-     "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
-    # audit-doctor -> gen-demo-manifest was RETIRED when that file's `--selftest`
-    # moved to `tests/test_audit_doctor.py`: the ONE `_load(...)` call naming it
-    # built the sharded-layout fixture and lived inside the suite. Measured per
-    # call site by AST rather than assumed - the other five audit-doctor edges
-    # below and above each keep at least one PRODUCTION site, which is why only
-    # this one went. A test file has no position in the product's import order
-    # (`tests/` is deliberately absent from LAYERS), so the edge is gone from the
-    # tree and the entry had to go with it - r2 fails on a RETIRED entry exactly
-    # as it fails on a new one, and the list may only shrink, deliberately.
-    ("status/audit-doctor.py",
-     "runtime-loads validate-config (layer 7) from layer 7 - not strictly downward"),
-    ("status/audit-doctor.py",
-     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    ("status/audit-status.py",
-     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    # THIS ENTRY IS THE ASYMMETRY IN ONE LINE - see the `report/render-report.py`
-    # comment below for the rule. The IMPORTER moved into `scripts/usage/` and its
-    # key gained the directory; `audit-lock` moved into `scripts/governance/` in the
-    # same change and is spelled by BASENAME right here in the message, because a
-    # node name is a basename at any depth. Two files moved, one spelling changed.
-    ("usage/audit-usage.py",
-     "runtime-loads audit-lock (layer 7) from layer 7 - not strictly downward"),
-    # BOTH ENDS OF THIS EDGE MOVED INTO THE SAME DIRECTORY IN ONE CHANGE, AND ONLY THE
-    # KEY CHANGED SPELLING. `gen-demo-manifest` and `gen-demo-usage` went into
-    # `scripts/demo/` together, so the key gained `demo/` and the target beside it did
-    # not - the same asymmetry the `manifest/migrate-manifest.py` entry below carries,
-    # here with both files landing in the SAME folder, which is as close as this list
-    # comes to putting the two spellings side by side on one line.
-    ("demo/gen-demo-manifest.py",
-     "runtime-loads gen-demo-usage (layer 7) from layer 7 - not strictly downward"),
-    # gen-demo-manifest -> validate-config and -> validate-manifest were RETIRED
-    # when that file's `--selftest` moved to `tests/test_gen_demo_manifest.py`:
-    # the only `_loader.load_script` calls naming those two lived in the suite,
-    # and a test file has no position in the product's import order (`tests/` is
-    # deliberately absent from LAYERS). The edges are gone from the tree, so the
-    # entries had to go with them - r2 fails on a RETIRED entry exactly as it
-    # fails on a new one, and the list may only shrink, deliberately.
-    # BOTH ENDS OF THIS EDGE MOVED IN ONE CHANGE, AND ONLY THE KEY CHANGED SPELLING.
-    # `migrate-manifest` and `validate-manifest` went into `scripts/manifest/` together,
-    # so this is the clearest instance of the rule stated below: the key is a relname
-    # and gained the directory, the target inside the message is a node name and did
-    # not. An entry naming the same file on both sides would otherwise look inconsistent.
-    ("manifest/migrate-manifest.py",
-     "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    # KEYED BY RELNAME, WHICH IS WHY THIS ONE MOVED AND THE `render-report` TARGET
-    # UNDER `panel/_panel_state.py` DID NOT. `layer_violations()` reports
-    # `named[importer]` - `_named_by()`'s relname, so an importer that moves into a
-    # subdirectory is spelled with it - while the IMPORTED module inside the message
-    # is a node name, which is the BASENAME at any depth. One entry changed when the
-    # six report files moved into `scripts/report/`, exactly one more when the usage
-    # and governance domains followed, one more when the manifest and config domains
-    # did, SIX when the panel domain did, and SEVEN in the last round (`status/` took
-    # audit-doctor's five and audit-status's one, `demo/` took gen-demo-manifest's);
-    # the target spellings above are untouched by all six rounds. `audit-status` is
-    # the proof at its sharpest: it is named as a TARGET three times up there - under
-    # `panel/_panel_state.py`, under `status/audit-doctor.py` and under
-    # `report/render-report.py` - and all three stayed bare while its own key gained
-    # `status/`. One file, one move, one spelling changed out of four.
-    ("report/render-report.py",
-     "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
 )
 
 

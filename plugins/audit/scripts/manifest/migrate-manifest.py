@@ -58,12 +58,16 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio  # noqa: E402
-import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
 
 
 # --- migration ------------------------------------------------------------------
 def _load_validator():
-    return _loader.load_script("validate-manifest.py", modname="validate_manifest")
+    """The manifest rules. A plain module now, not a `_loader.load_script` of
+    `validate-manifest.py`: that was this file (L7) loading an L7 peer, one of the
+    edges `_deps.KNOWN_LAYER_DEBT` recorded, and the rules moved to layer 2 so
+    both of us could import the one implementation instead."""
+    return _manifest_rules
 
 
 def _utc_stamp():

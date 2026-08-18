@@ -57,6 +57,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-manifest)
 
 
 # --- loading --------------------------------------------------------------------
@@ -80,7 +81,12 @@ TIER_TO_MODEL = {
 }
 DEFAULT_MODEL = "claude-sonnet-5"
 
-DEFAULT_AUTHORS = ("alex@acme.example", "sara@acme.example", "milos@acme.example")
+# `_demo_cast` (layer 1) owns these: `gen-demo-manifest.py` hands the same
+# identities out as area owners, and the demo's whole point is that the doctor's
+# owner-versus-ledger join has something to match. Spelled here under the name
+# this file has always used, because `generate()`'s default argument is part of
+# its signature.
+DEFAULT_AUTHORS = _demo_cast.DEFAULT_AUTHORS
 
 # Rough per-hour token shape, scaled by task risk. Cache read dominates because a
 # stable prompt prefix is the normal case — that is what makes the cache-hit tile

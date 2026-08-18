@@ -14,9 +14,22 @@ about how many times a function ran. From `tests/` the bare form binds a name
 nothing reads: `verify()` looks the anchor up as a global of ITS OWN module, the
 real one would go on running, and `_anchor_calls` would stay `[]` - which is
 precisely what k5 asserts, so the case would have gone green while measuring
-nothing at all. It is `M._git_anchor_finding`, restored on `M` in the same
-`finally`. k6 is the case that fails loudly if the stub is ever not installed
-(`_anchor_calls == [basename(gfile)]`), and both directions were proven red.
+nothing at all. k6 is the case that fails loudly if the stub is ever not
+installed (`_anchor_calls == [basename(gfile)]`), and both directions were
+proven red.
+
+AND THE SAME BUG HAPPENED A SECOND TIME, WHICH IS WHY THE PAIRING IS THE POINT.
+The stub was moved to `M._git_anchor_finding` when the suite moved here - correct
+at the time, because `M` defined `verify`. It stopped being correct when the trail
+moved to `_journal_io.py` and `audit-journal.py` became a command over it: `M`'s
+`_git_anchor_finding` is an alias, and `verify` still reads its own module's
+global. k5 went green again; k6 went red again and named it. The stub is installed
+on `_journal_io` now - the module that DEFINES the function, which is the rule the
+next move should follow too.
+
+`M` is `audit-journal.py`, and it re-exports the whole trail because these 112
+cases are about the trail AS THE COMMAND SEES IT - the file a user runs. The cases
+that are about the library's own boundary live in `test__journal_io.py`.
 
 NOTHING ELSE ABOUT THIS SUITE DEPENDS ON WHERE IT SITS. It reads no source, names
 no `__file__`, builds no path off its own directory, and takes no
@@ -39,6 +52,7 @@ import time
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _journal_io                                 # noqa: E402  (k5-k8 patch target)
 
 M = _loader.load_script("audit-journal.py", modname="audit_journal")
 
@@ -578,20 +592,30 @@ def _cases(check):
                    config=gcfg)
             git("add", ".")
             git("commit", "-q", "-m", "all writers committed")
-            _orig_anchor = M._git_anchor_finding
+            _orig_anchor = _journal_io._git_anchor_finding
             _anchor_calls = []
 
             def _counting_anchor(path):
                 _anchor_calls.append(os.path.basename(path))
                 return _orig_anchor(path)
 
-            # `M._git_anchor_finding`, never `globals()[...]`: from `tests/` the
-            # bare form binds a name nothing calls. `verify()` reads this as a
-            # global of ITS module, so the real anchor would keep running, the
-            # counter would stay [] - and k5 asserts exactly `[]`, so it would
-            # have passed while measuring nothing. Restored on `M` in the same
-            # `finally`.
-            M._git_anchor_finding = _counting_anchor
+            # ON `_journal_io`, THE MODULE THAT DEFINES `verify`, never on `M` and
+            # never `globals()[...]`. `verify()` reads this name as a global of ITS
+            # OWN module, so a stub installed anywhere else leaves the real anchor
+            # running and the counter at [] - and k5 asserts exactly `[]`, so it
+            # passes while measuring nothing.
+            #
+            # THIS HAS NOW BEEN THE SAME BUG TWICE. First `globals()[...]` from
+            # `tests/`, fixed by moving the patch to `M`; then `M` itself stopped
+            # being the definer when the trail moved into `_journal_io.py` and
+            # `audit-journal.py` became a command over it. k5 went green both
+            # times and k6 - which asserts a NON-empty list - is what caught it
+            # both times. The lesson is in the pairing, not in either case:
+            # a monkeypatch case that asserts an empty list cannot tell "the stub
+            # ran and saw nothing" from "the stub was never installed", so it must
+            # be kept beside one that asserts the stub DID run. Restored on
+            # `_journal_io` in the same `finally`.
+            _journal_io._git_anchor_finding = _counting_anchor
             try:
                 resk = M.verify(gdir, gcfg)
                 check("k5 tracked-and-clean files never pay the single-file "
@@ -638,7 +662,7 @@ def _cases(check):
                       "again", M.verify(gdir, gcfg)["ok"],
                       repr(M.verify(gdir, gcfg)["findings"]))
             finally:
-                M._git_anchor_finding = _orig_anchor
+                _journal_io._git_anchor_finding = _orig_anchor
 
             # k9-k10 (F-D-1): status keys are JOURNAL-RELATIVE PATHS, not
             # basenames. The journal dir here sits three levels deep

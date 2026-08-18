@@ -349,7 +349,14 @@ def _cases(check):
             print("SKIP k* (git not installed)")
         else:
             projk, mpathk = mk("k-lock", base_manifest(), git=True)
-            lockmod = _panel_write._lockmod()
+            # `audit-lock.py`, not `_panel_write._lockmod()`. This group ACQUIRES
+            # and seizes a lock - it drives `main()` and `_write_lock`, which are
+            # the command's half. `_lockmod()` is the panel's READ-side accessor
+            # and returns `_locks` (layer 1) since the read side moved down there;
+            # it never promised a `main`, and reaching a command through an
+            # accessor named for reading is what made this case break when the
+            # two were finally separated.
+            lockmod = _loader.load_script("audit-lock.py", modname="audit_lock")
             check("k0 the lock library loads", lockmod is not None)
             if lockmod is not None:
                 held = lockmod.main(

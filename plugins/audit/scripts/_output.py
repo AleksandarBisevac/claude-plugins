@@ -806,7 +806,7 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     whether it is allowed:
 
       covered     no inline suite, and `tests/test_<name>.py` exists — the ONLY
-                  clean class, and since the migration finished, all 48 of them
+                  clean class, and since the migration finished, all 54 of them
       inline      DEFECT: carries its own `--selftest` printing the contract and has
                   no test file. Clean while the migration ran and a regression now:
                   CI's sweep would run it, it would pass, and `tests/` would look

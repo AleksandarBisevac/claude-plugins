@@ -443,8 +443,13 @@ def _load_journal_lib():
     nothing can write one."""
     if not _JOURNAL_LIB["tried"]:
         _JOURNAL_LIB["tried"] = True
-        _JOURNAL_LIB["mod"] = _load_scripts_module("audit_journal",
-                                                   "audit-journal.py")
+        # `_journal_io.py`, not `audit-journal.py`: the one function this hook
+        # asks for (`journal_dir`) moved down to layer 1 when two modules that
+        # are not commands needed the trail. This runs on every tool call, so
+        # the argument parser and four subcommand bodies were cost with no
+        # caller here — the same move `_load_lock_lib` makes above.
+        _JOURNAL_LIB["mod"] = _load_scripts_module("audit_journal_io",
+                                                   "_journal_io.py")
     return _JOURNAL_LIB["mod"]
 
 
@@ -753,10 +758,17 @@ def _load_manifest_assembled(path):
 
 
 def _load_lock_lib():
-    """Load audit-lock.py by path — same pattern as _load_manifest_assembled
+    """Load _locks.py by path — same pattern as _load_manifest_assembled
     and meter-usage's ledger load. None if it cannot be loaded; every caller treats
-    that as "no verdict" and allows."""
-    return _load_scripts_module("audit_lock", "audit-lock.py")
+    that as "no verdict" and allows.
+
+    `_locks.py`, not `audit-lock.py`: the three functions this hook asks for
+    (`lock_dir`, `read_lock`, `judge`) moved down to layer 1 when three scripts
+    that are not commands needed them, and this hook wants the module that OWNS
+    them rather than the command built on top. It runs on every tool call, so the
+    argparse-and-subcommands half of `audit-lock.py` was cost with no caller
+    here."""
+    return _load_scripts_module("audit_locks", "_locks.py")
 
 
 def governing_lock(manifest_rel, rel):

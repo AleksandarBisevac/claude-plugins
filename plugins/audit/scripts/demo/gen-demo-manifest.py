@@ -61,6 +61,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
+import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-usage)
 
 # --- demo vocab -----------------------------------------------------------------
 # No wall-clock anywhere: every timestamp is derived from this.
@@ -135,15 +136,17 @@ def _task_statuses(phase_status, n_tasks, rng):
 def _demo_areas():
     """The `meta.areas` registry, advisory owners included (v0.34).
 
-    The owner identities are gen-demo-usage.py's own DEFAULT_AUTHORS, loaded from
-    that script rather than restated here — an owner the ledger has never seen is
-    exactly the mismatch /audit:doctor warns about, and this fixture exists to
-    show the join working. `infra` stays ownerless on purpose: the no-owner case
-    must render too. Every entry carries a root because the validator warns on a
-    rootless area and the selftest holds the fixture to zero warnings.
+    The owner identities are `_demo_cast.DEFAULT_AUTHORS`, imported rather than
+    restated — an owner the ledger has never seen is exactly the mismatch
+    /audit:doctor warns about, and this fixture exists to show the join working.
+    They used to be read off `gen-demo-usage.py` through `_loader`, which is one
+    entry point loading another for one name: the last of the seventeen edges
+    `_deps.KNOWN_LAYER_DEBT` recorded. `infra` stays ownerless on purpose: the
+    no-owner case must render too. Every entry carries a root because the
+    validator warns on a rootless area and the selftest holds the fixture to zero
+    warnings.
     """
-    authors = _loader.load_script("gen-demo-usage.py",
-                                  modname="gen_demo_usage").DEFAULT_AUTHORS
+    authors = _demo_cast.DEFAULT_AUTHORS
     blurb = {"backend": "Service and API passes",
              "web": "Storefront web passes",
              "mobile": "Mobile app passes",

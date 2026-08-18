@@ -88,13 +88,16 @@ claude-plugins/                           # this repo (personal, public)
         manifest/                         # the manifest domain: the layout, the registry, the validator, the writers
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
-          validate-manifest.py            # dependency-free referential validator (cycles, links)
+          _manifest_rules.py              # every referential rule the manifest is held to (cycles, links)
+          validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
           migrate-manifest.py             # /audit:migrate doer: single-file -> sharded (backup+restore)
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
-          audit-lock.py                   # the /audit concurrency lock as an executable acquire/release/status
-          audit-journal.py                # append-only hash-chained audit trail (append/verify/show)
+          _locks.py                       # the lock library: where one lives, is it live, acquire/release
+          audit-lock.py                   # the CLI over it: acquire/release/status as exit codes
+          _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
+          audit-journal.py                # the CLI over it: append/verify/show/archive
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -108,10 +111,12 @@ claude-plugins/                           # this repo (personal, public)
           usage_ledger.py                 # token-usage metering core: transcript scan, dedup, attribution
           audit-usage.py                  # /audit:usage: token spend, attributed
         config/                           # the config domain: the config file's validator and the self-description over both schemas
-          validate-config.py              # validates .claude/audit.config.json against its schema
+          _config_rules.py                # every rule .claude/audit.config.json is held to + its enums
+          validate-config.py              # the command over those rules: read a file, print, exit 0/1/2
           _help.py                        # zero-token self-description: schema field help + how-it-works topics
         status/                           # the status domain: the headless rollup and the setup diagnostics over it
-          audit-status.py                 # headless rollup + CI gate (--json/--gate)
+          _status_facts.py                # what the manifest SAYS: rollup, readiness, submodules, the gate
+          audit-status.py                 # the command over those facts: human render + --json/--gate
           audit-doctor.py                 # /audit:doctor: read-only "is this working?" diagnostics
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
@@ -129,10 +134,11 @@ claude-plugins/                           # this repo (personal, public)
           _panel_state.py                 # the panel's READ side: everything GET /api/* answers with
           _panel_write.py                 # the panel's WRITE side: everything PUT /api/* actually does
         demo/                             # the demo domain: the two synthetic fixtures the screenshots and CI are built from
+          _demo_cast.py                   # the identities both fixtures attribute to, so the owner join matches
           gen-demo-manifest.py            # synthetic LARGE manifest fixture for demos/screenshots/CI
           gen-demo-usage.py               # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
-      tests/                              # selftest blocks moved OUT of the modules they test (all 48)
+      tests/                              # selftest blocks moved OUT of the modules they test (all 54)
         _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
         test__cli_fmt.py                  # pilot 1: an importable helper
         test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
@@ -182,9 +188,12 @@ L0:
 L1:
   _areas -> _output
   _cli_fmt -> _output
+  _demo_cast -> _output
   _deps -> _output
   _fmt -> _output
+  _journal_io -> _output
   _loader -> _output
+  _locks -> _output
   _manifest_io -> _output
   _policy -> _output
   _refs -> _output
@@ -192,14 +201,17 @@ L1:
   _usage_core -> _output
 
 L2:
-  _panel_settings -> _loader, _output
+  _config_rules -> _output, _policy
+  _manifest_rules -> _areas, _manifest_io, _output
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _manifest_io, _output, _ui_theme
   _report_ui -> _output, _ui_theme
+  _status_facts -> _areas, _manifest_io, _output
   _usage_analytics -> _output, _usage_core
 
 L3:
-  _help -> _areas, _loader, _output, _policy, _ui_theme
+  _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
+  _panel_settings -> _config_rules, _output
   usage_ledger -> _manifest_io, _output, _usage_analytics, _usage_core
 
 L4:
@@ -208,7 +220,7 @@ L4:
   _report_usage -> _fmt, _loader, _output, _report_html, _ui_theme
 
 L5:
-  _panel_state -> _areas, _help, _loader, _manifest_io, _output, _panel_discovery, _policy
+  _panel_state -> _areas, _config_rules, _help, _journal_io, _loader, _locks, _manifest_io, _manifest_rules, _output, _panel_discovery, _policy, _status_facts
   _report_md -> _output, _report_html, _report_usage
 
 L6:
@@ -216,19 +228,19 @@ L6:
   _report_page -> _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
-  audit-doctor -> _cli_fmt, _loader, _output
-  audit-journal -> _output
-  audit-lock -> _output
-  audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _output, _panel_discovery, _ui_theme
-  audit-task -> _manifest_io, _output, _panel_write
-  audit-usage -> _areas, _cli_fmt, _fmt, _loader, _output, _ui_theme
-  gen-demo-manifest -> _loader, _output
-  gen-demo-usage -> _loader, _output
-  migrate-manifest -> _loader, _manifest_io, _output
+  audit-doctor -> _cli_fmt, _config_rules, _journal_io, _loader, _locks, _manifest_rules, _output, _status_facts
+  audit-journal -> _journal_io, _output
+  audit-lock -> _locks, _output
+  audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
+  audit-task -> _locks, _manifest_io, _output, _panel_write
+  audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
+  gen-demo-manifest -> _demo_cast, _loader, _output
+  gen-demo-usage -> _demo_cast, _loader, _output
+  migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
-  render-report -> _loader, _manifest_io, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _ui_theme
-  validate-config -> _output, _policy
-  validate-manifest -> _areas, _manifest_io, _output
+  render-report -> _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  validate-config -> _config_rules, _output
+  validate-manifest -> _manifest_io, _manifest_rules, _output
 ```
 
 ---
@@ -668,8 +680,20 @@ public name they define is RE-EXPORTED here: nothing imports this module by name
 consumer loads `usage_ledger.py` by path and reads attributes off the module object — so the
 module object has to keep serving all of them, and the `rx` cases assert it does.
 
-### `plugins/audit/scripts/governance/audit-journal.py` (v0.29.0)
-The trail itself: `append(project, entry) -> bool` plus `append | verify | show` on the CLI.
+### `plugins/audit/scripts/governance/_journal_io.py` (v0.29.0)
+The trail itself (layer 1): `journal_dir`, `read_file`/`read_all`/`journal_files`,
+`append(project, entry) -> path|False`, `verify`, and the row/hash vocabulary underneath
+them. It sits at the bottom because two modules that are not commands need it — `_help`
+(layer 3) normalises one row to show a reader what a row looks like, `audit-doctor` reads
+and verifies — and because `hooks/_config.py` asks it for `journal_dir` on every tool call,
+where executing an argument parser and four subcommand bodies to resolve one path is cost
+with no caller. Three of those reaches were `_loader` loads of `audit-journal.py`; the
+fourth, `_panel_state`'s, was the edge `_deps` deliberately could not see (it spelled
+`script_path()` on one line and `load()` on the next) and is now an ordinary import.
+
+### `plugins/audit/scripts/governance/audit-journal.py`
+The CLI over `_journal_io`: `append | verify | show | archive`, turning the library's dicts
+into printed lines and an exit code (0 healthy, 1 the chain does not hold, 2 usage).
 One file per writer per month (`<journal dir>/<YYYY-MM>.<writerId>.jsonl`, default beside the
 manifest) so parallel worktrees never conflict; each row carries `{v, ts, actor, action,
 target, summary, stateHash, prev, hash}`, sha256 over canonical JSON, with the first row's
@@ -698,24 +722,55 @@ manifest with no spend produces. `gen-demo-usage.py <manifest> [--out-dir DIR] [
 a manifest's illustrative model tier to the concrete ledger model id the runtime actually
 records. `--selftest` pins determinism and referential integrity against the manifest.
 
+### `plugins/audit/scripts/demo/_demo_cast.py`
+Three fictional `.example` identities (layer 1), and the smallest module in the tree. Both
+demo generators must attribute to the SAME people: `gen-demo-usage.py` stamps them on every
+synthetic ledger row and `gen-demo-manifest.py` hands them out as `meta.areas[*].owner`,
+precisely so the shipped demo shows `/audit:doctor`'s owner-versus-ledger join succeeding.
+`gen-demo-manifest.py` used to read the tuple off `gen-demo-usage.py` through `_loader` —
+one entry point loading another for one name, the last of the seventeen
+`KNOWN_LAYER_DEBT` edges. The alternative to a small module was not a bigger one; it was a
+second copy of three addresses that nothing would ever compare.
+
 ### `plugins/audit/reference/manifest-conventions.md`
 Shared conventions every command reads first (lives OUTSIDE `commands/` so it can't register
 as a command): manifest path resolution, the Edit-and-revalidate rule, id allocation
 (task `<phase>.<n>`, bug `BUG-<n>`, bugfix phase `BF<n>`), status enums, new-task/new-phase
 templates, fileIndex maintenance, done-phase immutability.
 
+### `plugins/audit/scripts/manifest/_manifest_rules.py`
+The referential rules themselves (layer 2), dependency-free, run after every manifest
+mutation — the checks the JSON Schema can't express: unique ids, resolvable
+`blockedBy`/`dependsOn`, dependency **cycles** (incl. task-blocked-by-own-phase deadlocks),
+**bidirectional** `fileIndex ↔ task.files` integrity, `bugs[]` shape + **reciprocal**
+`bug.taskId ↔ task.bugId` cross-links, enums, `check_ado_meta`, plus non-fatal WARNINGs for
+unknown/typo'd keys (did-you-mean) and pre-0.3 status combinations. `validate(manifest)` is
+pure: parsed JSON in, `(findings, warnings)` out, never raises, no I/O, no module state.
+It sits below every consumer because FOUR modules need it and only one is a command —
+`_panel_state`, `audit-doctor`, `audit-status` and `migrate-manifest` all used to load
+`validate-manifest.py` through `_loader`, four of the seventeen `KNOWN_LAYER_DEBT` edges.
+
 ### `plugins/audit/scripts/manifest/validate-manifest.py`
-Dependency-free referential validator the commands run after every manifest mutation —
-checks the JSON Schema can't express: unique ids, resolvable `blockedBy`/`dependsOn`,
-dependency **cycles** (incl. task-blocked-by-own-phase deadlocks), **bidirectional**
-`fileIndex ↔ task.files` integrity, `bugs[]` shape + **reciprocal**
-`bug.taskId ↔ task.bugId` cross-links, enums, plus non-fatal WARNINGs for unknown/typo'd
-keys (did-you-mean) and pre-0.3 status combinations.
-Exit 0 clean (warnings allowed) / 1 findings / 2 usage-or-unreadable. `--selftest`.
+The command over those rules, and nothing else: read the file, print `WARNING:`/`FINDING:`
+lines, choose the exit code. Exit 0 clean (warnings allowed) / 1 findings / 2
+usage-or-unreadable. It re-exports exactly one name (`validate`), and a case fails if a
+second one creeps back.
+
+### `plugins/audit/scripts/status/_status_facts.py`
+What the manifest SAYS, as a machine-readable answer (layer 2) — the half of status that
+nobody prints: `rollup`, `ready_tasks`, `unmet_refs`, `_status_index`, the submodule
+preflight (`parse_gitmodules`, `submodule_conflicts`), the high-severity vocabulary, and
+the gate (`CONDITIONS`, `DEFAULT_GATE`, `evaluate_gate`, `budget_breaches`). Pure dict→dict
+throughout: nothing here opens a file or runs a process, which is what lets three modules
+share it — `_panel_state` (rollup), `audit-doctor` (submodules) and `render-report`
+(the gate verdict) each used to load `audit-status.py` for it, three of the seventeen
+`KNOWN_LAYER_DEBT` edges. `usage_summary` and `discovery_block` do read the world, so they
+stayed with the command.
 
 ### `plugins/audit/scripts/status/audit-status.py` (v0.5.0)
-Headless rollup + CI gate, stdlib-only; imports validate-manifest.py as a library via
-importlib. `--json` prints the machine-readable summary (phases done/total, tasks/bugs by
+Headless rollup + CI gate, stdlib-only; the facts come from `_status_facts`, the manifest
+rules from `_manifest_rules`, both by plain import. `--json` prints the machine-readable
+summary (phases done/total, tasks/bugs by
 status, ready-task list mirroring /audit's readiness rule); `--gate` exits 1 on tripped
 conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--fail-on`
 (also `open-bugs`, `in-progress` for release freezes). `--submodules <.gitmodules> [--git-root
@@ -732,12 +787,24 @@ read-only by construction: it never writes, never takes a lock, and for `buildCo
 resolves whether the named executable exists rather than running it. Output classes match the
 rest of the plugin (OK/WARNING/FINDING); exit 0 healthy, 1 findings, 2 usage error.
 
+### `plugins/audit/scripts/governance/_locks.py`
+The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called
+(`valid_name`), whether its holder is alive (`pid_alive`, `judge`), what is held
+(`read_lock`, `collect`), and taking or giving one back (`acquire`, `release`). Liveness,
+not age, decides a stale lock, and every verdict carries the BASIS sentence that makes it
+checkable. It is at the bottom of the graph because four callers ask about a lock and only
+one of them is a command: `_panel_state`, `audit-doctor` and `audit-usage` each loaded
+`audit-lock.py` through `_loader` (three of the seventeen `KNOWN_LAYER_DEBT` edges), and
+`hooks/_config.py` resolves it by path on every tool call — so the module it reaches for
+should be small. `audit-task.py`'s dependency was the one nothing could see: it took the
+index lock by building an argv and calling `main()` through `_panel_write._lockmod()`, so
+`_deps` attributed the edge to the panel. It is an ordinary import now.
+
 ### `plugins/audit/scripts/governance/audit-lock.py`
-The `/audit` concurrency lock as an executable decision instead of orchestrator prose:
-`acquire <name>`, `release <name>`, `status`, over the two tiers the orchestrator uses
-(`index`, `phase-<id>`). Liveness, not age, decides a stale lock — a holder that is still
-running is refused (exit 3); a holder that is not alive can be seized with `--takeover`
-(exit 4) — because the old "older than 60 minutes = crashed" rule was wrong in both
+The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the two tiers the
+orchestrator uses (`index`, `phase-<id>`), turning the library's answers into exit codes —
+a live holder is refused (exit 3); one that is not alive can be seized with `--takeover`
+(exit 4), because the old "older than 60 minutes = crashed" rule was wrong in both
 directions. `--session`/`--pid` override the identity written into the lock for testing.
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
@@ -938,12 +1005,22 @@ policy precedence from a worked `_policy.resolve` example) and are pointers, not
 where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
 so the panel cannot advertise a tool that agent does not hold.
 
+### `plugins/audit/scripts/config/_config_rules.py`
+The rules for `.claude/audit.config.json` (layer 2), dependency-free, mirroring
+`hooks/_config.py` DEFAULTS. Complements `schema/audit-config.schema.json` with checks a
+schema pass doesn't surface nicely (regex compilability of custom rules, positive
+thresholds) and hands the control panel a machine-usable findings list. Permissive: unknown
+keys are WARNINGs, not findings. It also owns the four enum tuples (`PLAN_GATE_MODES`,
+`AUTHOR_MODES`, `IN_PROGRESS_POLICY`, `STRICT_MANIFEST_STATE`) the panel's Settings form
+reads, so the form can never offer a value the validator rejects. Three modules needed it
+and all three used to load `validate-config.py` through `_loader` — including
+`_panel_settings` from LAYER 2, the deepest of the seventeen `KNOWN_LAYER_DEBT`
+inversions, which is why `_panel_settings` moved up to layer 3 in the same change.
+
 ### `plugins/audit/scripts/config/validate-config.py`
-Structural validator for `.claude/audit.config.json`, dependency-free, mirroring `hooks/_config.py`
-DEFAULTS. Complements `schema/audit-config.schema.json` with checks a schema pass doesn't surface
-nicely (regex compilability of custom rules, positive thresholds) and hands the control panel a
-machine-usable findings list. Permissive: unknown keys are WARNINGs, not findings. Exit 0 valid /
-1 findings / 2 usage-or-unreadable. `--selftest`.
+The command over those rules: read the file, print `WARNING:`/`FINDING:` lines, exit 0
+valid / 1 findings / 2 usage-or-unreadable. It re-exports exactly one name
+(`validate_config`), and a case fails if a second one creeps back.
 
 ### `plugins/audit/schema/audit-plan.schema.json`
 JSON Schema (draft 2020-12) for the manifest. Back-compatible: only `meta`/`phases` (and per-item

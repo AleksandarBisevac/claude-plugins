@@ -75,6 +75,11 @@ _HOOKS = _output.HOOKS_DIR
 sys.path.insert(0, _HOOKS)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
+import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
+import _locks  # noqa: E402  (lock paths + the liveness verdict, at layer 1)
+import _status_facts  # noqa: E402  (rollup/readiness/gate facts, at layer 2)
+import _config_rules  # noqa: E402  (the audit.config.json rules, at layer 2)
+import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
 
 # The interpreters py-launch.sh tries, in its order. Kept in sync deliberately:
 # what matters is the interpreter the HOOKS will find, not the one running this.
@@ -200,10 +205,12 @@ def check_config(rep, project):
                     % (path, cfg["_configError"]),
                     "fix the JSON; /audit:* commands refuse until it parses")
     else:
-        vc = _load("validate_config", "validate-config.py")
+        # `_config_rules` (layer 2), imported at the top rather than `_load(...)`-ed:
+        # this file (L7) loading `validate-config.py` (L7) was one of the edges
+        # `_deps.KNOWN_LAYER_DEBT` recorded.
         with open(path, "r", encoding="utf-8") as fh:
             raw = json.load(fh)
-        findings, warnings = vc.validate_config(raw)
+        findings, warnings = _config_rules.validate_config(raw)
         if findings:
             rep.finding("config", "; ".join(findings),
                         "fix the config, or run /audit:panel to edit it with "
@@ -286,8 +293,11 @@ def check_manifest(rep, project, cfg):
         _check_shards(rep, path, None)
         return manifest_rel, None
 
-    vm = _load("validate_manifest", "validate-manifest.py")
-    findings, warnings = vm.validate(manifest)
+    # `_manifest_rules`, imported at the top rather than `_load(...)`-ed here:
+    # this file (L7) loading `validate-manifest.py` (L7) was one of the edges
+    # `_deps.KNOWN_LAYER_DEBT` recorded, and the rules now sit at layer 2 where
+    # every consumer can import the one implementation.
+    findings, warnings = _manifest_rules.validate(manifest)
     n_phases = len(manifest.get("phases") or [])
     # Counted through layer 1 rather than by hand, and the difference is not
     # cosmetic: the hand-rolled `sum(len(p.get("tasks")...))` had no isinstance
@@ -373,12 +383,15 @@ def check_submodules(rep, project, cfg, manifest, git_root):
     gitmodules = os.path.join(git_root, ".gitmodules")
     if not os.path.exists(gitmodules):
         return
-    st = _load("audit_status", "audit-status.py")
+    # `_status_facts` (layer 2), imported at the top rather than `_load(...)`-ed:
+    # this file (L7) loading `audit-status.py` (L7) was one of the edges
+    # `_deps.KNOWN_LAYER_DEBT` recorded. Only the FACTS are wanted here — the
+    # ~600 lines of human rendering that used to come with them never were.
     try:
         with open(gitmodules, "r", encoding="utf-8") as fh:
-            paths = st.parse_gitmodules(fh.read())
-        conflicts = st.submodule_conflicts(manifest, paths,
-                                           git_root=cfg.get("gitRoot") or "")
+            paths = _status_facts.parse_gitmodules(fh.read())
+        conflicts = _status_facts.submodule_conflicts(
+            manifest, paths, git_root=cfg.get("gitRoot") or "")
     except Exception as exc:
         rep.warn("submodules", "could not check submodules: %s" % exc)
         return
@@ -977,7 +990,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
         # journal is not this run's business.
         has_rows = False
         try:
-            jr = _load("audit_journal", "audit-journal.py")
+            jr = _journal_io  # layer 1: imported, not loaded (KNOWN_LAYER_DEBT)
             res = jr.verify(project)
             has_rows = bool(res.get("exists") and res.get("rows"))
         except Exception:
@@ -993,7 +1006,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
                    "audit trail disabled in config (journal.enabled false)")
         return
     try:
-        jr = _load("audit_journal", "audit-journal.py")
+        jr = _journal_io  # layer 1: imported, not loaded (KNOWN_LAYER_DEBT)
         res = jr.verify(project)
     except Exception as exc:
         rep.warn("journal", "could not read the journal: %s" % exc,
@@ -1067,7 +1080,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     if not manifest:
         return
     try:
-        jr = _load("audit_journal", "audit-journal.py")
+        jr = _journal_io  # layer 1: imported, not loaded (KNOWN_LAYER_DEBT)
         rows = jr.read_all(project)
     except Exception as exc:
         rep.warn("completions", "could not check: %s" % exc)
@@ -1240,8 +1253,12 @@ def check_locks(rep, git_root, project, manifest_rel):
         rep.ok("locks", "no audit locks held")
         return
     try:
-        lock = _load("audit_lock", "audit-lock.py")
-        rows = lock.collect(git_root)
+        # `_locks` (layer 1), imported at the top rather than `_load(...)`-ed:
+        # this file (L7) loading `audit-lock.py` (L7) was one of the edges
+        # `_deps.KNOWN_LAYER_DEBT` recorded. The `try` stays — `collect` shells
+        # out to git, and a git that hangs or a lock dir that cannot be listed is
+        # still the failure this arm reports.
+        rows = _locks.collect(git_root)
     except Exception as exc:
         rep.warn("locks", "could not read the lock directory: %s" % exc,
                  "run `audit-lock.py status` by hand to see what is held")
