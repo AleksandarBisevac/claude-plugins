@@ -6,7 +6,7 @@ Moved out of render-report.py (P13.3) alongside `_report_page.py`, and it could
 not stay behind when `render_html` left: the HTML report embeds this output
 base64-encoded as its "Download .md" payload, so `_report_page` CALLS this
 module. That single edge is the whole reason the split is two files rather than
-one — `_report_page -> _report_md -> _report_html/_report_usage`, one way, no
+one — `_report_page -> _report_md -> _report_html/_usage_markdown`, one way, no
 cycle.
 
 Two audiences, one difference. `render_html` is the hardened artifact: every
@@ -19,9 +19,17 @@ manifest's own phase ORDER. It is read by GitHub and by diff tools, and
 reordering rows or prettying values for a human would change every diff against
 an earlier render for a purely presentational reason.
 
-Imports go one way only: `_report_html` (fragment helpers) and `_report_usage`
+Imports go one way only: `_report_html` (fragment helpers) and `_usage_markdown`
 (the Usage block's own twin) are below this file; it must never import
 `_report_page` or render-report.
+
+It reads `_usage_md` from `_usage_markdown` (layer 4) rather than through
+`_report_usage`, and that is a layer fact rather than a preference: when the
+Usage section was cut into five, its assembly moved to layer 5 — beside this
+file, not below it — so reaching the twin through the assembly would be a
+sideways edge. Going to the twin directly is both legal and the shorter
+sentence: the report's Markdown renderer calls the Usage section's Markdown
+renderer.
 
 This module carries no `--selftest` of its own any more; its 8 cases live in
 `plugins/audit/tests/test__report_md.py`, byte-identical labels and all - see
@@ -54,17 +62,17 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _report_html   # noqa: E402  (the shared lookups: dates, task index, bug view)
-import _report_usage  # noqa: E402  (the Usage section's own Markdown twin)
+import _usage_markdown  # noqa: E402  (the Usage section's own Markdown twin)
 
 
 # --- shared lookups -------------------------------------------------------------
 # Aliased rather than reached through the module at every call site, the same
-# convention _report_usage uses for `e`: these names are what the code moved from
+# convention _usage_viz uses for `e`: these names are what the code moved from
 # render-report.py already spelled.
 _short_date = _report_html._short_date
 _tasks_by_id = _report_html._tasks_by_id
 _bug_view = _report_html._bug_view
-_usage_md = _report_usage._usage_md
+_usage_md = _usage_markdown._usage_md
 
 
 # --- render_md ------------------------------------------------------------------

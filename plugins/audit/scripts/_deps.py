@@ -134,7 +134,15 @@ LAYERS = (
      # `_demo_cast` is three fictional identities the two demo generators must
      # agree on - the smallest module here, and the right size for the fact: the
      # alternative was not a bigger module but a second copy nothing would compare.
-     "_demo_cast"),
+     "_demo_cast",
+     # `_manifest_vocab` is the manifest's words - the status/risk/tests enums, the
+     # known-key sets per level, and the four shape checks every level shares. It
+     # holds no rule and reaches nothing but `_output`, which is exactly why it can
+     # sit at the floor: FOUR modules at L2 read it, and a vocabulary copied into
+     # four files is four vocabularies that disagree the first time one learns a
+     # word. `TERMINAL` is deliberately NOT here - it is `_manifest_io`'s, and
+     # holding it would put this module at L2 and its consumers at L3.
+     "_manifest_vocab"),
     ("_panel_ui", "_report_html", "_report_ui", "_usage_analytics",
      # `_config_rules` is `validate-config.py` without its `main()`. It imports
      # `_policy` (L1), so L2 is the lowest layer it can occupy - and its deepest
@@ -143,11 +151,17 @@ LAYERS = (
      # a layer would have renumbered every entry in KNOWN_LAYER_DEBT below without
      # a single edge changing.
      "_config_rules",
-     # `_manifest_rules` is `validate-manifest.py` without its `main()`. It lands
-     # here because its deepest reach is `_manifest_io`/`_areas` at L1, and it had
-     # to land BELOW `_panel_state` (L5) - the lowest of the four consumers that
-     # used to load the entry point - or the extraction would have retired nothing.
-     "_manifest_rules",
+     # The four pieces `_manifest_rules` was cut into. Each answers ONE of the
+     # subjects that file held, each reads `_manifest_vocab` at L1, and none reads
+     # another - which is what lets all four share a layer. `_manifest_phases` also
+     # reads `_manifest_io` (TERMINAL) and `_areas`, both L1.
+     #   `_manifest_phases`     the one walk over phases and tasks, and what a
+     #                          phase carries (claim, area tag, budget, sign-off)
+     #   `_manifest_ado`        `meta.ado`, the connector config - ONE front door,
+     #                          shared with the panel's PUT /api/ado
+     #   `_manifest_typos`      the did-you-mean detectors (model ids, skill names)
+     #   `_manifest_crossrefs`  ids, references, cycles, fileIndex, bugs, proposals
+     "_manifest_phases", "_manifest_ado", "_manifest_typos", "_manifest_crossrefs",
      # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
      # readiness, the submodule preflight and the gate. Same reasoning and the same
      # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
@@ -165,26 +179,63 @@ LAYERS = (
     # reaches nothing at L3 and nothing at L3 reaches it, so the move was free -
     # `_panel_page` (L4), `_panel_write` (L6) and `panel-server` (L7) are all
     # still strictly above it.
-    ("_help", "usage_ledger", "_panel_settings"),
+    # `_manifest_rules` sat at L2 and moved up one, which is the whole structural
+    # cost of cutting it into five: the four pieces it now orchestrates each sit at
+    # L2 above `_manifest_vocab`, and a consumer AT L2 is still not strictly
+    # downward. It reaches nothing at L3 and nothing at L3 reaches it, so the move
+    # is free - `_panel_state` (L5) and the four L7 commands that import it are all
+    # still strictly above it, and the alternative (inserting a layer) would have
+    # renumbered every entry in KNOWN_LAYER_DEBT below without one edge changing.
+    # `_usage_viz` - how the Usage section formats a number and draws a bar -
+    # lands here because it reaches `_report_html` at L2 and nothing deeper, and
+    # it has to be BELOW the three renderers that all read it. Its sibling
+    # `_usage_load` did NOT land beside it: it runtime-loads `usage_ledger`,
+    # which is at this layer, and a load at the same layer is not strictly
+    # downward. The lint said so the first time this table was written, and the
+    # answer was to put the reader above what it reads rather than to widen the
+    # rule.
+    ("_help", "usage_ledger", "_panel_settings", "_manifest_rules",
+     "_usage_viz"),
     # `_panel_page` (the panel's assembled page: the substitution chain and the
     # ~1,450 lines of cases that read the result) lands here rather than beside
     # `_panel_state`, and that placement is the whole cost of the split. Its
     # deepest reach is `usage_ledger` at L3 - `_panel_ui`/`_panel_settings` are
     # L2, `_ui_theme`/`_loader` L1, `_help` L3 - so L4 is the first layer that
     # holds every one of its edges strictly downward. Sitting beside
-    # `_panel_discovery` and `_report_usage` costs nothing: it reaches neither,
-    # and neither reaches it. The alternative was a new layer, which renumbers
-    # every entry in KNOWN_LAYER_DEBT below without a single edge changing.
-    ("_panel_discovery", "_panel_page", "_report_usage"),
+    # `_panel_discovery` and the Usage renderers costs nothing: it reaches none of
+    # them, and none of them reaches it. The alternative was a new layer, which
+    # renumbers every entry in KNOWN_LAYER_DEBT below without a single edge
+    # changing.
+    # The three renderers the Usage section was cut into land here for one reason:
+    # each reads `_usage_viz` at L3, so L4 is the first layer strictly above it.
+    # None of the three reaches another, which is what lets `_report_usage` fold
+    # all three into one order at L5.
+    #   `_usage_overview`  what shows on FIRST PAINT (strip, trend, ranked lists)
+    #   `_usage_detail`    everything folded behind the `Detail` disclosure
+    #   `_usage_markdown`  the Markdown twin - and `_report_md` (L5) reads it
+    #                      DIRECTLY rather than through `_report_usage`, which is
+    #                      now its own layer-mate and so not strictly below it
+    # `_usage_load` (the section's only I/O) is here for a different reason: it
+    # runtime-loads `usage_ledger` at L3, so this is the first layer that holds
+    # that edge strictly downward. It reaches none of the three renderers.
+    ("_panel_discovery", "_panel_page", "_usage_load",
+     "_usage_overview", "_usage_detail", "_usage_markdown"),
     # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
     # document) are the report's answer to the same question `_panel_page`
     # answered above, and they land the same way: at the FIRST layer that holds
     # every one of their edges strictly downward, beside whatever already lives
-    # there. `_report_md` reaches `_report_usage` (L4) and `_report_html` (L2),
+    # there. `_report_md` reaches `_usage_markdown` (L4) and `_report_html` (L2),
     # so L5; `_report_page` reaches `_report_md`, so L6. Neither touches
     # `_panel_state`/`_panel_write` and neither is touched by them, so sharing
     # their layers costs nothing - where a new layer for the pair would renumber
     # every entry in KNOWN_LAYER_DEBT below without a single edge changing.
+    #
+    # `_report_usage` moved L4 -> L5 and joins them, and that is the whole
+    # structural cost of cutting the Usage section into five: the three renderers
+    # it folds into one order sit at L4, so their only consumer has to sit above
+    # them. It reaches nothing at L5 and nothing at L5 reaches it - `_report_md`
+    # goes to `_usage_markdown` directly for exactly that reason - so the move is
+    # free, and `_report_page` (L6) is still strictly above.
     #
     # NOT above L6, and that is the design rather than a coincidence: the gate
     # verdict at the top of the report comes from `audit-status` (L7), so
@@ -192,7 +243,7 @@ LAYERS = (
     # already carries that L7 -> L7 runtime edge, recorded below - supplies it.
     # Reaching the gate from `_report_page` would be a helper calling up, and the
     # runtime-load half of this lint would report it.
-    ("_panel_state", "_report_md"),
+    ("_panel_state", "_report_md", "_report_usage"),
     ("_panel_write", "_report_page"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",

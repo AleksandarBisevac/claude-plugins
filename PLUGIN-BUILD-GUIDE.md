@@ -88,7 +88,12 @@ claude-plugins/                           # this repo (personal, public)
         manifest/                         # the manifest domain: the layout, the registry, the validator, the writers
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
-          _manifest_rules.py              # every referential rule the manifest is held to (cycles, links)
+          _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
+          _manifest_vocab.py              # the manifest's words + the shape checks every level shares
+          _manifest_phases.py             # the one walk over phases/tasks, and what a phase carries
+          _manifest_ado.py                # meta.ado: the connector config, one front door with the panel
+          _manifest_typos.py              # did-you-mean: a model id / skill name one slip from another
+          _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
           migrate-manifest.py             # /audit:migrate doer: single-file -> sharded (backup+restore)
@@ -122,7 +127,12 @@ claude-plugins/                           # this repo (personal, public)
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
           _report_html.py                 # HTML fragment builders for the report: escaping, chips, table cells
-          _report_usage.py                # the report's Usage section: ledger load + every chart over it
+          _report_usage.py                # the Usage section's ORDER: assembly + the shared data payload
+          _usage_viz.py                   # how the section formats a number and draws a bar
+          _usage_load.py                  # the ledger read - the Usage section's only I/O
+          _usage_overview.py              # what shows on first paint: strip, trend, ranked lists, budget
+          _usage_detail.py                # everything folded behind the `Detail` disclosure
+          _usage_markdown.py              # the Usage section's Markdown twin
           _report_page.py                 # the report as a whole document: vocab, table, render_html
           _report_md.py                   # the report's Markdown twin (render_md), embedded in the page
         panel/                            # the panel domain: the server, the page it assembles, the read and write sides
@@ -138,7 +148,7 @@ claude-plugins/                           # this repo (personal, public)
           gen-demo-manifest.py            # synthetic LARGE manifest fixture for demos/screenshots/CI
           gen-demo-usage.py               # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
-      tests/                              # selftest blocks moved OUT of the modules they test (all 54)
+      tests/                              # selftest blocks moved OUT of the modules they test (all 64)
         _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
         test__cli_fmt.py                  # pilot 1: an importable helper
         test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
@@ -195,6 +205,7 @@ L1:
   _loader -> _output
   _locks -> _output
   _manifest_io -> _output
+  _manifest_vocab -> _output
   _policy -> _output
   _refs -> _output
   _ui_theme -> _output
@@ -202,7 +213,10 @@ L1:
 
 L2:
   _config_rules -> _output, _policy
-  _manifest_rules -> _areas, _manifest_io, _output
+  _manifest_ado -> _manifest_vocab, _output
+  _manifest_crossrefs -> _manifest_vocab, _output
+  _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
+  _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _manifest_io, _output, _ui_theme
   _report_ui -> _output, _ui_theme
@@ -211,17 +225,23 @@ L2:
 
 L3:
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
+  _manifest_rules -> _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_settings -> _config_rules, _output
+  _usage_viz -> _fmt, _output, _report_html
   usage_ledger -> _manifest_io, _output, _usage_analytics, _usage_core
 
 L4:
   _panel_discovery -> _help, _manifest_io, _output
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
-  _report_usage -> _fmt, _loader, _output, _report_html, _ui_theme
+  _usage_detail -> _output, _ui_theme, _usage_viz
+  _usage_load -> _loader, _output, _report_html
+  _usage_markdown -> _output, _ui_theme, _usage_viz
+  _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
 
 L5:
   _panel_state -> _areas, _config_rules, _help, _journal_io, _loader, _locks, _manifest_io, _manifest_rules, _output, _panel_discovery, _policy, _status_facts
-  _report_md -> _output, _report_html, _report_usage
+  _report_md -> _output, _report_html, _usage_markdown
+  _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
   _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _ui_theme
@@ -739,16 +759,79 @@ as a command): manifest path resolution, the Edit-and-revalidate rule, id alloca
 templates, fileIndex maintenance, done-phase immutability.
 
 ### `plugins/audit/scripts/manifest/_manifest_rules.py`
-The referential rules themselves (layer 2), dependency-free, run after every manifest
-mutation — the checks the JSON Schema can't express: unique ids, resolvable
-`blockedBy`/`dependsOn`, dependency **cycles** (incl. task-blocked-by-own-phase deadlocks),
-**bidirectional** `fileIndex ↔ task.files` integrity, `bugs[]` shape + **reciprocal**
-`bug.taskId ↔ task.bugId` cross-links, enums, `check_ado_meta`, plus non-fatal WARNINGs for
-unknown/typo'd keys (did-you-mean) and pre-0.3 status combinations. `validate(manifest)` is
-pure: parsed JSON in, `(findings, warnings)` out, never raises, no I/O, no module state.
-It sits below every consumer because FOUR modules need it and only one is a command —
-`_panel_state`, `audit-doctor`, `audit-status` and `migrate-manifest` all used to load
-`validate-manifest.py` through `_loader`, four of the seventeen `KNOWN_LAYER_DEBT` edges.
+The referential rules, run after every manifest mutation — the checks the JSON Schema
+can't express: unique ids, resolvable `blockedBy`/`dependsOn`, dependency **cycles** (incl.
+task-blocked-by-own-phase deadlocks), **bidirectional** `fileIndex ↔ task.files` integrity,
+`bugs[]` shape + **reciprocal** `bug.taskId ↔ task.bugId` cross-links, enums,
+`check_ado_meta`, plus non-fatal WARNINGs for unknown/typo'd keys (did-you-mean) and pre-0.3
+status combinations. `validate(manifest)` is pure: parsed JSON in, `(findings, warnings)`
+out, never raises, no I/O, no module state. It sits below every consumer because FOUR
+modules need it and only one is a command — `_panel_state`, `audit-doctor`, `audit-status`
+and `migrate-manifest` all used to load `validate-manifest.py` through `_loader`, four of
+the seventeen `KNOWN_LAYER_DEBT` edges.
+
+The file itself is now 254 lines rather than 1,406, and holds **two** things: `_check_meta`
+(the document's header — the root key vocabulary and `meta`, which need nothing the walk
+builds) and `validate()`, which decides the **order** the pieces run in. The order is the
+one thing that could not move into a piece: `_walk_phases` builds the index the five checks
+after it read, so it runs once and first. Everything else is one of the five modules below,
+each re-exported here as a thin alias so no consumer had to learn a new import; a case pins
+every alias with `is`, so a pasted-back copy fails by name. It moved **layer 2 → layer 3**,
+which is the whole structural cost: the four pieces sit at layer 2 above `_manifest_vocab`
+at layer 1, and a consumer AT layer 2 is still not strictly downward.
+
+### `plugins/audit/scripts/manifest/_manifest_vocab.py`
+The manifest's **words** (layer 1), and the four shape checks every level of it shares.
+The status/tests/risk/bug enums, the `BUG-`/`PROP-` id patterns, the known-key set per level
+(root, `meta`, `meta.ado`, phase, task, bug, proposal), and `_unknown_keys`,
+`_require_fields`, `_safe_list`, `_strip_line_suffix`, `_check_ado` — asked of a phase, a
+task and a bug alike. It holds **no rule** and reaches nothing but `_output`, which is why
+it can sit at the floor where all four layer-2 pieces import it; a vocabulary copied into
+four files is four vocabularies that disagree the first time one learns a word. `TERMINAL`
+is deliberately **not** here — it is `_manifest_io`'s, and holding it would put this module
+at layer 2 and its consumers at layer 3.
+
+### `plugins/audit/scripts/manifest/_manifest_phases.py`
+The **one walk** over every phase and every task (layer 2), and the three checks it makes on
+the way. `_walk_phases` visits each object once and returns a five-key **index**
+(`phase_ids`, `task_ids`, `task_by_id`, `task_files`, `bug_links`) that every check in
+`_manifest_crossrefs` then reads — naming that index is what let the walk be cut out at all.
+It stays one pass on purpose: splitting it per-question would visit every task four times
+and would let two of them disagree about which objects were skipped as malformed. Also the
+per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
+an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
+over tasks that are not **finished** (done *or* cancelled).
+
+### `plugins/audit/scripts/manifest/_manifest_ado.py`
+`meta.ado` — the Azure DevOps connector's config, checked offline (layer 2). **ONE front
+door**: `validate()` calls `check_ado_meta` for the manifest and the panel's `write_ado`
+(PUT `/api/ado`) calls it for a candidate save, so the CLI and the panel cannot disagree
+about what a valid connector config is. Wrong **types** are findings (a config that would be
+misread); unknown **keys** are did-you-mean warnings — `statemap` configuring nothing is
+exactly the silence worth naming, and a typo'd `stateMap` status key silently never fires.
+`identityMap` is advisory in use and structural in shape; a duplicate target is only a
+warning, because one person can legitimately hold two ledger identities.
+
+### `plugins/audit/scripts/manifest/_manifest_typos.py`
+The **did-you-mean** detectors (layer 2): a model id or a skill name used exactly **once**
+while a near-miss neighbour is used often. Warnings only, `findings` always empty — a near
+miss is a guess about intent, not a structural defect. A spelling used twice is an
+established choice and is never flagged, which is what keeps this off two models a project
+picked on purpose. The window is one slip for a model id and two only for skill names of 6+
+characters, because on short names two edits turn one real name into another. Deliberately
+**intra-manifest**: whether a model exists or a skill is installed is the panel's question,
+since it has the rate table and the discovery inventory in hand and this validator has
+neither. `_check_skills` is gated on `_skills_in_use`, so a manifest that never touches the
+feature gets zero new lines.
+
+### `plugins/audit/scripts/manifest/_manifest_crossrefs.py`
+Every question about how one part of the manifest **refers** to another (layer 2): unique
+ids across the one phase/task/bug namespace, `blockedBy`/`dependsOn` resolution, dependency
+cycles, `fileIndex` integrity in **both** directions, the reciprocal `bug ↔ task` link, and
+parked `proposals[]` (reserved ids, staged refs, the `materializedAs`/status pair). Each
+takes the index `_manifest_phases` produced plus, for three of them, the manifest, and
+returns its own `(findings, warnings)` — no accumulator shared, no order depended on, so a
+case can call any of them with a hand-built index and no manifest anywhere near it.
 
 ### `plugins/audit/scripts/manifest/validate-manifest.py`
 The command over those rules, and nothing else: read the file, print `WARNING:`/`FINDING:`
@@ -906,13 +989,69 @@ a URL passes before it may become an `href`. `render-report.py` keeps thin alias
 existing call sites and selftest are unchanged.
 
 ### `plugins/audit/scripts/report/_report_usage.py`
-The report's Usage section, moved out of `render-report.py` as its largest single block:
-`_usage_section` builds the HTML, `_usage_md` the Markdown twin, both off the dict
-`load_usage()` reads from the usage ledger — tiles, trend, ranked lists, budgets, small
-multiples, phase stacks, economics, routing and a heatmap as private fragment builders over
-already-computed numbers. Two rules shape it: restraint on first paint (one dominant chart plus
-three ranked lists, the rest behind disclosure), and every number states its basis (rate date,
-attribution coverage, sample size) or it does not render. Formatting delegates to `_fmt.py`.
+The report's Usage section, moved out of `render-report.py` as its largest single block — and
+then cut into five, because at 1,477 lines it was five subjects sharing one file. What is left
+here is the **order**: `_usage_section` assembles the block, and `_usage_payload` emits the one
+`<script>` blob both halves read (the per-day data layer the range scoping and the heatmap
+navigation both need, in a page with no server to ask). Two rules shape the whole section, which
+is why they are stated here rather than in a piece: **restraint on first paint** (one dominant
+chart plus three ranked lists, the rest behind a disclosure), and **every number states its
+basis** (rate date, attribution coverage, sample size) or it does not render. It moved layer 4 →
+layer 5, which is the whole structural cost of the cut; `_report_md` reads the Markdown twin
+directly for that reason. Every name the five pieces hold is re-exported here as the same
+object, so `render-report`, `_report_page` and this section's suite kept their imports.
+
+### `plugins/audit/scripts/report/_usage_viz.py`
+How the Usage section formats a number and draws a bar (layer 3) — the primitives all four other
+pieces read, and nothing in it knows what a phase or an author is. The **one divide rule in two
+answers** lives here: `_fill_pct` and `_hover_share` answer "there is no whole to divide by"
+differently on purpose, because a bar never travels alone (its count is printed beside the track,
+so an unmeasurable width draws an empty track) while a tooltip line does (so it must say `?`
+rather than a confident `0%` that reads exactly like a measured one). Both go through
+`_fmt.share_pct`/`fmt_share`, once per divide — **no `or 1` anywhere**, which fabricates a
+denominator rather than guarding one. Also the token/cost/share wrappers over `_fmt`, the
+categorical slot assignment (by NAME, so re-sorting a chart cannot repaint the survivors), `_tip`
+(written once, used as both the native `title` and the styled tooltip payload), and the sparkline.
+
+### `plugins/audit/scripts/report/_usage_load.py`
+The Usage section's **only** read (layer 4): `load_usage()` turns the ledger into the dict every
+other piece renders from, and returns `None` when there is no ledger — the section then renders
+as nothing at all rather than as an empty frame. Deliberately not taken from `audit-status.rollup`
+(the rollup is printed into a model's context, so the bulky series are computed here instead of
+carried through a payload nobody reads). The comparison window is anchored to the **ledger's own
+last day**, not the wall clock, so a committed example report is byte-stable across re-renders
+and a shipped fixture cannot rot into a staleness warning on its own.
+
+### `plugins/audit/scripts/report/_usage_overview.py`
+What the Usage section shows on **first paint** (layer 4): the context line, the five-tile metric
+strip, the notices, the one dominant trend chart, the budget block, the author chips and the three
+ranked lists. The context line is where the rate basis lives — with costs shown and no date
+declared it says *that* rather than falling back to the default table's date, because the ledger
+prices at write time and records no vintage. The trend's axis labels live **outside** the SVG:
+the columns stretch to fill the width, which scales the coordinate system non-uniformly, and the
+labels once came out 49% too wide. The budget block renders nothing when no phase declares one,
+and names unbudgeted phases in a footnote rather than drawing them at 0% — an unbudgeted phase is
+not a phase at zero.
+
+### `plugins/audit/scripts/report/_usage_detail.py`
+Everything the section folds behind its `Detail` disclosure (layer 4): the per-author small
+multiples, the calendar-month table, the risk-band routing table and its advisory, unit economics
+and the cost-band note, the phase-composition stacks and the day×hour heatmap. These are the
+blocks that make **claims**, so each states what it refuses to say: models are compared only
+*within* a risk band (hard work is routed to the stronger model on purpose); the routing advisory
+renders nothing unless the ledger's own evidence clears every gate, and carries the caveat that
+it re-prices tokens a different model would not have emitted; the cost band names where its
+thresholds came from, or that it is still waiting for a sample; retried spend is stated as *not*
+the same as wasted spend, because the ledger buckets by hour rather than by attempt.
+
+### `plugins/audit/scripts/report/_usage_markdown.py`
+The Usage section's Markdown twin (layer 4) — not decoration and not a summary. Three light-mode
+categorical slots sit under 3:1 contrast and this table **is** the documented relief, so it holds
+every number the charts encode in colour, shares every gate with the HTML (a twin must not know a
+month the page does not), and applies the same `<1%` floor — a `0%` here where the page says
+`<1%` would make the accessibility relief the less honest of the two documents. `_report_md.py`
+reads `_usage_md` from here directly rather than through `_report_usage`, which keeps the
+report's Markdown renderer strictly below the Usage section's assembly instead of beside it.
 
 ### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel/panel-server.py` (v0.13.0–v0.14.0)
 `/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
