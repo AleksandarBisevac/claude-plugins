@@ -1201,6 +1201,31 @@ def _cases(check):
           uh.count("addEventListener('mouseover'") == 1
           and "mouseenter" not in uh)
 
+    # --- SC 1.4.11 for the sortable header: a pass, not an exemption ------------
+    # A measurement reports thead th[role=button] at 1.05:1, and the honest read of
+    # that number is that it measured the sticky header's FILL, not the information
+    # that identifies the control. So this is recorded as met by other visual
+    # information — and the three carriers are pinned, because the moment one of
+    # them goes the verdict becomes false and nothing else would notice.
+    check("ntc-r1 the sort control's state is carried by a glyph, not by the fill",
+          'th.sorted::after{content:"\\25B2"' in M._CSS
+          and 'th.sorted[data-sort="desc"]::after{content:"\\25BC"}' in M._CSS)
+    check("ntc-r2 ...its focus by a 2px ring at --accent",
+          'thead th[role="button"]:focus-visible{outline:2px solid var(--accent)'
+          in M._CSS)
+    # And the write-up itself: this one deliberately does NOT claim a normative
+    # exception name, so the case pins that it does not — reaching for `decoration`
+    # to describe a fill that is not what fails is how a register becomes a place
+    # to put things.
+    _ntcr = M._CSS[M._CSS.index("non-text-contrast: thead th"):]
+    _ntcr = _ntcr[:_ntcr.index("*/")]
+    check("ntc-r3 the verdict is written as NOT an exception, and claims none of "
+          "the five names",
+          "NOT an exception" in _ntcr
+          and not any(("exception=" + n) in _ntcr for n in
+                      ("inactive", "decoration", "invisible", "user-agent",
+                       "essential")))
+
     # --- F17: the tooltip is reachable without a pointer (WCAG 2.2 SC 1.4.13) ----
     # u24d restored the CARRIER — `title` is back in the accessibility tree, so a
     # screen-reader user and a JS-off reader are served. What that did not fix is

@@ -676,6 +676,17 @@ label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;flex:0 1 auto;min-
    the other half of the answer, wrapping the box in a <label> that clicks it, which
    takes the real target to 124x21 and 268x21 on the Settings cards. */
 label.f.cbf input{margin:0}
+/* non-text-contrast: input[type=checkbox] - exception=user-agent (WCAG 2.2 SC
+   1.4.11). The SAME proof as the target-size exception above, and it has to be,
+   because it is the same fact about the same control: an appearance:auto
+   checkbox is painted by the user agent and ignores what this sheet declares.
+   The shared `input,textarea,select` rule now sets a border and a background;
+   the checkbox renders NEITHER, which is why a computed-style reading of it
+   reports --bg on --surface (1.07:1) for a box the UA is actually drawing. The
+   author has not modified the appearance, so the exception applies -- and taking
+   it is the deliberate choice: restyling the box to reach 3:1 would forfeit the
+   native control, its OS-level high-contrast handling and its forced-colors
+   behaviour, which serves low-vision readers worse than the ratio helps. */
 /* Reachable from any of the four cards. A form this long with the Save at the
    bottom is a form people leave without saving. */
 .savebar{position:sticky;bottom:0;z-index:var(--z-strip);display:flex;gap:.75rem;

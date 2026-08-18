@@ -618,6 +618,31 @@ def _cases(check):
           and M.UI_HTML.count("offState(discard,!n);") == 3
           and "offState(discard,!pending.length);" in M.UI_HTML)
 
+    # --- WCAG 2.2 SC 1.4.11 Non-text Contrast: the exemption, by name -----------
+    # The five normative exceptions are NOT interchangeable and this register uses
+    # the same vocabulary as the 2.5.8 one below, deliberately: a reader who has
+    # learned one should not have to learn a second grammar for the other.
+    _NTC_EXCEPTIONS = ("inactive", "decoration", "invisible", "user-agent",
+                       "essential")
+    _ntc_name = "user-agent"
+    _ntc_note = ("non-text-contrast: input[type=checkbox] - exception=%s"
+                 % _ntc_name)
+    check("ntc1 the checkbox's 1.4.11 exemption is claimed by a NAME from the "
+          "five, and the name is spelled where the rule is",
+          _ntc_name in _NTC_EXCEPTIONS and _ntc_note in M.UI_HTML)
+    # The exception is "appearance determined by the user agent and NOT MODIFIED
+    # by the author". That is a claim about this stylesheet, so it is checked
+    # against this stylesheet rather than believed: a rule that sets the box's
+    # own geometry or swaps its appearance would forfeit it silently.
+    _ntc_sheet = re.search(r"<style>([\s\S]*?)</style>", M.UI_HTML).group(1)
+    _ntc_bad = [d for d in re.findall(r"[^{}]*checkbox[^{}]*\{([^{}]*)\}",
+                                      _ntc_sheet)
+                if re.search(r"(^|;)\s*(appearance|width|height)\s*:", d)]
+    check("ntc2 ...and the claim still holds: no rule naming a checkbox sets its "
+          "appearance, width or height, which is what the exception rests on: %r"
+          % (_ntc_bad,),
+          not _ntc_bad)
+
     # --- F16: unavailable must not mean unreachable (WCAG 2.2 SC 2.4.3) ---------
     # `disabled` takes the control OUT of the tab order and accepts .focus() in
     # silence, so after a successful Discard the caret stayed on <body> and the
