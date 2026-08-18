@@ -298,34 +298,99 @@ scaffold — the case schema is not public. Adopt as soon as it opens up:
 priority cases are `/audit:status` on a missing manifest, `run` guards on a
 done task, and the `#no-plan` bypass round-trip.
 
-### Folders under scripts/ declined (2026-08-10): stay flat
+### ~~Folders under scripts/ declined (2026-08-10): stay flat~~ — REVERSED (2026-08-18, v0.40.0)
 
-Helpers stay flat, namespaced by prefix rather than by directory. Reasons:
+`scripts/` is now eight domain directories — `config/`, `demo/`, `governance/`,
+`manifest/`, `panel/`, `report/`, `status/`, `usage/` — plus `ui/` and seven
+cross-cutting modules at the root. The original text is kept below, struck where
+it stopped being true, because a decision record that quietly rewrites itself
+teaches nothing.
+
+**The trigger never fired, and it still has not.** It said "`scripts/` exceeds 40
+`.py` files". There were 30 the day this was written, 32 at `v0.39.0`, and **38
+today** — the reversal happened at no point on that curve. So this is not a
+trigger firing; it is the second ADR in this file to discover that **its trigger
+was watching a proxy rather than the cost.**
+
+That makes it the same failure as the `commands/` vs `skills/` entry above, which
+spent three revisits asking "is `commands/` deprecated yet" while the real cost —
+discoverability — was being paid the whole time. Here the proxy was a **count**.
+A count cannot express the thing that actually hurt: from a flat listing you
+cannot tell which subsystem a file serves, and the layer lint that was offered as
+the substitute answers a *different question*. A layer says when a file may be
+imported. It says nothing about what the file is about. Thirty-eight files sorted
+by an accident of naming is not navigable at ten, let alone forty.
+
+The lesson is not "pick a better number". It is that a trigger phrased as a
+threshold on something incidental will sit green while the cost accrues — and
+both times, the NO-GO was defensible on the day and still wrong in aggregate.
+
+Of the three original reasons, one was already dead when this was written, one
+was false in a way nobody had checked, and one survived and was preserved:
 
 - ~~The CI selftest glob (`hooks/*.py scripts/*.py`) and `_output.py`'s own
   guard are both non-recursive by design — a file in a subdirectory silently
-  stops being tested.~~ **No longer true.** Every scanner is recursive now, and
-  the last three flat sweeps were converted in `cf50f9f`. This reason is dead
-  and is struck rather than deleted, so the record shows what the decision
-  actually rested on.
-- Every file stays directly runnable; a folder buys nothing a prefix does not
-  already say.
-- Hooks reach scripts by flat basename paths, and a folder would mean
-  updating every one of those paths for no behavior change.
+  stops being tested.~~ **Dead before the reversal.** Every scanner is recursive
+  and the last three flat sweeps were converted in `cf50f9f`. Worth stating
+  plainly: a flat glob does not *report* a nested file as untested, it **exits 0
+  over a partial tree** — a green build over work it never ran.
+- **Every file stays directly runnable** — this one held, and was the constraint
+  the migration was built around rather than a cost it paid. A `.py` at any depth
+  still runs: `python3 plugins/audit/scripts/demo/gen-demo-usage.py --selftest`
+  exits 0. What makes that true is `_output.py` as a fixed anchor plus a pinned
+  path preamble that walks up to find it, so no file computes a path from its own
+  depth (`depth_sensitive_paths()` fails one that tries).
+- ~~Hooks reach scripts by flat basename paths, and a folder would mean updating
+  every one of those paths for no behavior change.~~ **False, and by a wide
+  margin.** "Every one of those paths" is **two invocations** —
+  `_config.py:274` inside the wrapper every hook goes through, and
+  `meter-usage.py:86` — and both pass a **basename**, which is
+  depth-independent. Not one needed updating; the same holds for
+  `_loader.script_path()` and `tools/`'s two resolvers. The reason described a
+  cost that did not exist, in the plural, and nobody counted it because the
+  conclusion was already agreed. Counting it takes one `grep`.
 
-The structure this would have bought is enforced instead by `_deps.py`'s
-layer lint, which fails an unplaced or wrongly-layered file by name.
+**Directories are labels, not namespaces.** A `.py` basename must stay unique
+across the whole of `scripts/` — `import`, `_loader` and `_deps.LAYERS` all
+resolve by basename, so two files sharing one would be a single node in the layer
+graph wearing both files' edges. `layer_violations()` fails a collision by name.
+Nothing outside a domain has to know which domain a file sits in.
 
-**Revisit trigger:** `scripts/` exceeds 40 `.py` files.
+The layer lint did not go away; it now answers its own question instead of two.
+It still fails an unplaced or wrongly-layered file by name, and
+`KNOWN_LAYER_DEBT` still records the runtime edges that are not strictly
+downward.
 
-### usage_ledger.py split deferred (2026-08-10)
+**What stays at the root**, decided by rule rather than by habit: modules with
+**no domain**, never modules with a low layer. Measured by importer domain,
+`_output`, `_loader`, `_ui_theme`, `_fmt` and `_cli_fmt` are each reached from
+two or more domains; `_deps` and `_refs` have zero importers because they are
+build-time lints whose subject *is* every domain. `_output.py` is additionally
+pinned there by construction — the preamble walks up until it finds it.
 
-It is the largest file in the plugin (~1,939 lines), but it is well-sectioned
-and read by hooks by path — splitting it now is a path-update exercise with
-no behavior change to show for it.
+**Revisit trigger:** a domain directory whose files no importer outside it
+reaches — that domain has become a private implementation of one entry point and
+should be collapsed into it. Observable by running `_deps.py --render` and
+reading the cross-domain edges, which is a property of the graph rather than a
+count of anything.
 
-**Revisit trigger:** the next significant ledger work starts by extracting
-the analytics section (~520 lines) into its own file.
+### ~~usage_ledger.py split deferred (2026-08-10)~~ — DONE (`91af1ae`)
+
+This trigger **did** fire, was acted on, and the record was left stale for eight
+days — which is its own small lesson about who updates an ADR after the work.
+
+The file was ~1,939 lines and the largest in the plugin. It is now **681**, split
+into three that mean what they are named: `usage/usage_ledger.py`,
+`usage/_usage_core.py` and `usage/_usage_analytics.py`. The extraction the
+trigger named — the analytics section — is exactly what came out.
+
+"Read by hooks by path" was the deferral's stated cost, and it turned out not to
+be one: hooks resolve by **basename** through `find_script()`, so neither the
+split nor the later move into `usage/` touched a hook.
+
+The largest file in the plugin is now `panel/_panel_state.py` at 1,586 lines, and
+**26 files remain over 500**. That is the standing split list, tracked as work
+rather than as a decision — there is nothing left to decide here.
 
 ### typing/dataclasses/annotations stay banned (standing since P9.3's AST enforcement)
 

@@ -166,9 +166,15 @@ does not apply to them.
 ## Before proposing a change
 
 `CONTRIBUTING.md` ends with a **Decision record** — settled questions, each with an observable
-revisit trigger: `commands/` alongside thin skills, flat `scripts/`, the `typing` ban, in-product
-help as an endpoint plus an invoked agent rather than an auto-triggering skill. Read it before
-re-opening one of them, and if a trigger has genuinely fired, say which.
+revisit trigger: `commands/` alongside thin skills, **domain directories under `scripts/`**, the
+`typing` ban, in-product help as an endpoint plus an invoked agent rather than an auto-triggering
+skill. Read it before re-opening one of them, and if a trigger has genuinely fired, say which.
+
+**Two of those entries were reversed with their trigger still green**, and for the same reason
+both times: the trigger was a threshold on something incidental — a deprecation that might never
+come, a file count — while the cost being paid was discoverability and navigability. So a green
+trigger is not evidence that a decision is still right. When you propose one, phrase it as a
+property of the system that *is* the cost, not as a proxy you can count.
 
 Bugs found along the way go into the plan's Faults section when one is active, rather than being
 fixed inline in an unrelated change.
