@@ -466,8 +466,36 @@ shapes and they are not equivalent:
   `docs/index.html` drifted from the committed example report and went a month
   unnoticed — so it needs the same byte-equality check that fixed that.
 
-**The second is the structurally correct one**: it keeps source and artifact
-distinct, which is the property being traded away, and the staleness it introduces
+- **`// @ts-check` + JSDoc types over plain `.js`.** No `.ts`, no compiler output,
+  no dist target, nothing generated — `tsc --noEmit` reads the `.js` that already
+  ships and fails CI on a type error. **Measured, not assumed (2026-08-19):**
+  `npx -p typescript@5 tsc --noEmit --allowJs --checkJs --target es2022 --lib
+  es2022,dom plugins/audit/scripts/ui/report.js` runs against the tree as it is
+  today and immediately reports real things — `report.js:257` compares a `number`
+  with a `string | number` using `>=`, `window.AUDIT_USAGE` is undeclared, the
+  expando pattern this codebase relies on (`__tip`, `__detail`) is unmodelled, and
+  several `HTMLElement` reads want a cast. A run needs `skipLibCheck` and
+  node_modules excluded, or it picks up `@types/chai` from the dev tree and reports
+  its resolution failures as ours. `panel.js` additionally needs the Python-
+  substituted placeholders (`__AUDIT_TOKEN__`, `__SETTINGS__`,
+  `__COST_BAND_PARAMS__`) declared, since to a checker they are undefined names.
+  The cost is JSDoc annotations, one tsconfig and one CI step; the ceiling is lower
+  than real TypeScript (no generics worth the name, weaker inference across the
+  concatenation boundary).
+
+**This third option is the one to try first, and it was missing from this entry
+until the ecosystem was actually looked at.** Five installed marketplaces —
+Anthropic's official one included — ship **zero** `node_modules` between them, and
+their content is overwhelmingly markdown (61–226 files each) with code in the
+minority; the only file that looked like a bundle was hand-written source with one
+very long object literal. Shipping a build artifact would make this repo the first
+of those five to do it, which is not an argument against it but does mean the dist
+branch sets a convention here rather than following one. `--checkJs` buys most of
+the type safety while keeping the property every neighbouring plugin has: what is
+installed is what was written.
+
+**Between the two BUILD shapes the second is the structurally correct one**: it
+keeps source and artifact distinct, which is the property being traded away, and the staleness it introduces
 is mechanically checkable where "is this diff mine or the compiler's" is not. Decide
 it when step D is actually scheduled, not before — and note it must be decided
 BEFORE any `.ts` lands, because the answer determines what CI builds and what the
