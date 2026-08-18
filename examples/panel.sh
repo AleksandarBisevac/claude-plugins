@@ -29,7 +29,7 @@ case "$0" in
 esac
 root=$(cd "$here/.." && pwd)
 project=$root/examples/acme-store
-panel=$root/plugins/audit/scripts/panel-server.py
+panel=$root/plugins/audit/scripts/panel/panel-server.py
 
 # Same interpreter resolution as plugins/audit/hooks/py-launch.sh, for the same
 # reason: `python3` is not the only name a working Python 3 answers to.

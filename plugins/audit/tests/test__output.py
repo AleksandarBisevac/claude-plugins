@@ -472,12 +472,6 @@ def _cases(check):
                                   "scripts/_fmt.py",
                                   "scripts/_loader.py",
                                   "scripts/_output.py",
-                                  "scripts/_panel_discovery.py",
-                                  "scripts/_panel_page.py",
-                                  "scripts/_panel_settings.py",
-                                  "scripts/_panel_state.py",
-                                  "scripts/_panel_ui.py",
-                                  "scripts/_panel_write.py",
                                   "scripts/_refs.py",
                                   "scripts/_ui_theme.py",
                                   "scripts/audit-doctor.py",
@@ -494,7 +488,13 @@ def _cases(check):
                                   "scripts/manifest/audit-task.py",
                                   "scripts/manifest/migrate-manifest.py",
                                   "scripts/manifest/validate-manifest.py",
-                                  "scripts/panel-server.py",
+                                  "scripts/panel/_panel_discovery.py",
+                                  "scripts/panel/_panel_page.py",
+                                  "scripts/panel/_panel_settings.py",
+                                  "scripts/panel/_panel_state.py",
+                                  "scripts/panel/_panel_ui.py",
+                                  "scripts/panel/_panel_write.py",
+                                  "scripts/panel/panel-server.py",
                                   "scripts/report/_report_html.py",
                                   "scripts/report/_report_md.py",
                                   "scripts/report/_report_page.py",
@@ -528,12 +528,6 @@ def _cases(check):
                                      "plugins/audit/scripts/_fmt.py",
                                      "plugins/audit/scripts/_loader.py",
                                      "plugins/audit/scripts/_output.py",
-                                     "plugins/audit/scripts/_panel_discovery.py",
-                                     "plugins/audit/scripts/_panel_page.py",
-                                     "plugins/audit/scripts/_panel_settings.py",
-                                     "plugins/audit/scripts/_panel_state.py",
-                                     "plugins/audit/scripts/_panel_ui.py",
-                                     "plugins/audit/scripts/_panel_write.py",
                                      "plugins/audit/scripts/_refs.py",
                                      "plugins/audit/scripts/_ui_theme.py",
                                      "plugins/audit/scripts/audit-doctor.py",
@@ -550,7 +544,13 @@ def _cases(check):
                                      "plugins/audit/scripts/manifest/audit-task.py",
                                      "plugins/audit/scripts/manifest/migrate-manifest.py",
                                      "plugins/audit/scripts/manifest/validate-manifest.py",
-                                     "plugins/audit/scripts/panel-server.py",
+                                     "plugins/audit/scripts/panel/_panel_discovery.py",
+                                     "plugins/audit/scripts/panel/_panel_page.py",
+                                     "plugins/audit/scripts/panel/_panel_settings.py",
+                                     "plugins/audit/scripts/panel/_panel_state.py",
+                                     "plugins/audit/scripts/panel/_panel_ui.py",
+                                     "plugins/audit/scripts/panel/_panel_write.py",
+                                     "plugins/audit/scripts/panel/panel-server.py",
                                      "plugins/audit/scripts/report/_report_html.py",
                                      "plugins/audit/scripts/report/_report_md.py",
                                      "plugins/audit/scripts/report/_report_page.py",
@@ -692,16 +692,17 @@ def _cases(check):
               _installed[0] == M.SCRIPTS_DIR
               and all(d in sys.path for d in _installed))
         check("ip3 the day a script moved has arrived: the list is SCRIPTS_DIR plus "
-              "every domain under it - config/, governance/, manifest/, report/ (the "
-              "first ever created) and usage/, in the walk's own sorted order rather "
-              "than the order they were created. It said `exactly one directory` for "
-              "as long as the tree was flat, and editing it is what each move COSTS - "
-              "the mechanism is no longer a no-op and this is where that is stated: "
-              "%r" % (_installed,),
+              "every domain under it - config/, governance/, manifest/, panel/ (the "
+              "largest, seven files), report/ (the first ever created) and usage/, in "
+              "the walk's own sorted order rather than the order they were created. "
+              "It said `exactly one directory` for as long as the tree was flat, and "
+              "editing it is what each move COSTS - the mechanism is no longer a "
+              "no-op and this is where that is stated: %r" % (_installed,),
               _installed == [M.SCRIPTS_DIR,
                              os.path.join(M.SCRIPTS_DIR, "config"),
                              os.path.join(M.SCRIPTS_DIR, "governance"),
                              os.path.join(M.SCRIPTS_DIR, "manifest"),
+                             os.path.join(M.SCRIPTS_DIR, "panel"),
                              os.path.join(M.SCRIPTS_DIR, "report"),
                              os.path.join(M.SCRIPTS_DIR, "usage")])
         check("ip3b ...and it is DERIVED from the walk, not a constant: every entry "

@@ -33,11 +33,11 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/panel-server.py",
+        "plugins/audit/scripts/panel/panel-server.py",
         "plugins/audit/scripts/ui/panel.html",
         "plugins/audit/scripts/ui/panel.css",
         "plugins/audit/scripts/ui/panel.js",
-        "plugins/audit/scripts/_panel_ui.py"
+        "plugins/audit/scripts/panel/_panel_ui.py"
       ],
       "docs": [],
       "description": "Split the UI_HTML r-string at its natural seams: CSS (keeps /*__THEME_TOKENS__*/), JS (keeps every __*__ placeholder), HTML skeleton. _panel_ui.raw_template() reads the three assets utf-8 and returns the exact pre-substitution string; panel-server sets UI_HTML = _panel_ui.raw_template() and the .replace() substitution block is untouched. A logic-free move: all ~401 pins must pass unmodified in the same commit. A failing pin means the bytes moved \u2014 fix the move, never the pin.",
@@ -132,7 +132,7 @@
         "P11.2"
       ],
       "files": [
-        "plugins/audit/scripts/_panel_ui.py",
+        "plugins/audit/scripts/panel/_panel_ui.py",
         "PLUGIN-BUILD-GUIDE.md",
         "CONTRIBUTING.md"
       ],

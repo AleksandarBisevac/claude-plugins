@@ -33,8 +33,8 @@
       "blockedBy": [],
       "dependsOn": [],
       "files": [
-        "plugins/audit/scripts/_panel_settings.py",
-        "plugins/audit/scripts/panel-server.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/scripts/panel/panel-server.py",
         "plugins/audit/scripts/config/_help.py"
       ],
       "docs": [],
@@ -79,8 +79,8 @@
         "P12.1"
       ],
       "files": [
-        "plugins/audit/scripts/_panel_discovery.py",
-        "plugins/audit/scripts/panel-server.py"
+        "plugins/audit/scripts/panel/_panel_discovery.py",
+        "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
       "description": "Move lines 466-605 (_fm_of, _scan_skills, _scan_agents, _plugin_bases, discover, _local_plugin_bases, _mcp_names); front matter via _help.front_matter. Discovery selftest cases move along.",
@@ -123,8 +123,8 @@
         "P12.2"
       ],
       "files": [
-        "plugins/audit/scripts/_panel_state.py",
-        "plugins/audit/scripts/panel-server.py"
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
       "description": "Move path safety (_within/_config_path/_manifest_path/_declared_as_of), _viewer, read_config, bugs/composition/areas/journal/help/policy state, lock detection, usage_state, report_paths, render_report, build_state (lines 382-1450 minus the write functions). The largest single move; read-path selftest cases (sharded areas, policy verdicts, journal paging, usage empty-views) move along.",
@@ -167,8 +167,8 @@
         "P12.3"
       ],
       "files": [
-        "plugins/audit/scripts/_panel_write.py",
-        "plugins/audit/scripts/panel-server.py"
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
       "description": "Move write_policy/write_areas, the write-lock trio, diff+journal helpers, write_config, _reject_unknown, apply_composition_patch, _touched_phase_ids, _write_back, apply_composition (1035-1105 + 1451-1961). Write-path selftest cases (composition sharded write-back, lock refusal, change rows, journal call site) move along.",
@@ -212,7 +212,7 @@
         "P12.4"
       ],
       "files": [
-        "plugins/audit/scripts/panel-server.py"
+        "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
       "description": "Prune dead imports; keep _make_handler + _free_port (the source-slicing selftests split on def do_GET / def do_PUT / def _free_port and must keep matching), pidfile lifecycle, UI assembly + substitution, main, and the integration selftest: UI_HTML pins, route-coverage slicing, HTTP round-trips, pidfile lifecycle, one end-to-end save through _panel_write. Phase sign-off asserts total case count >= pre-phase and mutation-proves one moved case per new module.",

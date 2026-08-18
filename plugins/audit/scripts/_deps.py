@@ -1113,17 +1113,24 @@ KNOWN_LAYER_DEBT = (
     # -- upward inversions: a helper reaching an entry point (7) --
     ("config/_help.py",
      "runtime-loads audit-journal (layer 7) from layer 3 - not strictly downward"),
-    ("_panel_settings.py",
+    # SIX KEYS AND NOT ONE TARGET, WHICH IS THE RULE BELOW AT ITS LARGEST SCALE.
+    # Both importers moved into `scripts/panel/` and their keys are relnames, so
+    # both gained the directory. `render-report` and `validate-manifest` inside the
+    # messages are node names - basenames at any depth - and they are ALREADY spelled
+    # bare here although those two files sit in `scripts/report/` and
+    # `scripts/manifest/`. That asymmetry is not a spelling inconsistency to tidy: a
+    # key says WHERE A FILE IS and a target says WHICH NODE AN EDGE POINTS AT.
+    ("panel/_panel_settings.py",
      "runtime-loads validate-config (layer 7) from layer 2 - not strictly downward"),
-    ("_panel_state.py",
+    ("panel/_panel_state.py",
      "runtime-loads audit-lock (layer 7) from layer 5 - not strictly downward"),
-    ("_panel_state.py",
+    ("panel/_panel_state.py",
      "runtime-loads audit-status (layer 7) from layer 5 - not strictly downward"),
-    ("_panel_state.py",
+    ("panel/_panel_state.py",
      "runtime-loads render-report (layer 7) from layer 5 - not strictly downward"),
-    ("_panel_state.py",
+    ("panel/_panel_state.py",
      "runtime-loads validate-config (layer 7) from layer 5 - not strictly downward"),
-    ("_panel_state.py",
+    ("panel/_panel_state.py",
      "runtime-loads validate-manifest (layer 7) from layer 5 - not strictly downward"),
     # -- entry point reusing an entry point, all at L7 (13) --
     ("audit-doctor.py",
@@ -1170,14 +1177,15 @@ KNOWN_LAYER_DEBT = (
     # not. An entry naming the same file on both sides would otherwise look inconsistent.
     ("manifest/migrate-manifest.py",
      "runtime-loads validate-manifest (layer 7) from layer 7 - not strictly downward"),
-    # KEYED BY RELNAME, WHICH IS WHY THIS ONE MOVED AND THE `render-report` ENTRY
-    # UNDER `_panel_state.py` DID NOT. `layer_violations()` reports `named[importer]`
-    # - `_named_by()`'s relname, so an importer that moves into a subdirectory is
-    # spelled with it - while the IMPORTED module inside the message is a node name,
-    # which is the BASENAME at any depth. One entry changed when the six report files
-    # moved into `scripts/report/`, exactly one more when the usage and governance
-    # domains followed, and exactly one more when the manifest and config domains did;
-    # the target spellings above are untouched by all four.
+    # KEYED BY RELNAME, WHICH IS WHY THIS ONE MOVED AND THE `render-report` TARGET
+    # UNDER `panel/_panel_state.py` DID NOT. `layer_violations()` reports
+    # `named[importer]` - `_named_by()`'s relname, so an importer that moves into a
+    # subdirectory is spelled with it - while the IMPORTED module inside the message
+    # is a node name, which is the BASENAME at any depth. One entry changed when the
+    # six report files moved into `scripts/report/`, exactly one more when the usage
+    # and governance domains followed, one more when the manifest and config domains
+    # did, and SIX when the panel domain did; the target spellings above are
+    # untouched by all five rounds.
     ("report/render-report.py",
      "runtime-loads audit-status (layer 7) from layer 7 - not strictly downward"),
 )

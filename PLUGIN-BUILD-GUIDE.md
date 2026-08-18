@@ -119,13 +119,14 @@ claude-plugins/                           # this repo (personal, public)
           _report_usage.py                # the report's Usage section: ledger load + every chart over it
           _report_page.py                 # the report as a whole document: vocab, table, render_html
           _report_md.py                   # the report's Markdown twin (render_md), embedded in the page
-        panel-server.py                   # localhost control-panel web UI (config + composition)
-        _panel_ui.py                      # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
-        _panel_page.py                    # the assembled page: the substitution chain -> UI_HTML + UI_TEMPLATE
-        _panel_discovery.py               # discovers skills/agents/MCP servers this project can reach
-        _panel_settings.py                # the Settings form's schema + the write-path key allow-lists
-        _panel_state.py                   # the panel's READ side: everything GET /api/* answers with
-        _panel_write.py                   # the panel's WRITE side: everything PUT /api/* actually does
+        panel/                            # the panel domain: the server, the page it assembles, the read and write sides
+          panel-server.py                 # localhost control-panel web UI (config + composition)
+          _panel_ui.py                    # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
+          _panel_page.py                  # the assembled page: the substitution chain -> UI_HTML + UI_TEMPLATE
+          _panel_discovery.py             # discovers skills/agents/MCP servers this project can reach
+          _panel_settings.py              # the Settings form's schema + the write-path key allow-lists
+          _panel_state.py                 # the panel's READ side: everything GET /api/* answers with
+          _panel_write.py                 # the panel's WRITE side: everything PUT /api/* actually does
         gen-demo-manifest.py              # synthetic LARGE manifest fixture for demos/screenshots/CI
         gen-demo-usage.py                 # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
@@ -844,7 +845,7 @@ already-computed numbers. Two rules shape it: restraint on first paint (one domi
 three ranked lists, the rest behind disclosure), and every number states its basis (rate date,
 attribution coverage, sample size) or it does not render. Formatting delegates to `_fmt.py`.
 
-### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel-server.py` (v0.13.0–v0.14.0)
+### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel/panel-server.py` (v0.13.0–v0.14.0)
 `/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
 `panel.md` dispatches on its argument — bare = open (launched detached via `nohup … &`), `stop`,
 `status`, `--port <n>` — and `panel-server.py` is a single dependency-free Python-stdlib HTTP
@@ -865,7 +866,7 @@ tasks · per-task skills/model + per-phase review model, scaling to ~50×20, plu
 structural manifest CRUD, and never while a `/audit` run holds `<manifestPath>.lock` — validating
 before each atomic save. `--selftest` covers the front-matter parser, discovery, and the server.
 
-### `plugins/audit/scripts/_panel_ui.py`
+### `plugins/audit/scripts/panel/_panel_ui.py`
 The panel's markup/CSS/JS, off disk as real files under `scripts/ui/panel.{html,css,js}`.
 `panel-server.py` used to carry the whole page as one raw-string literal (~820 lines of CSS,
 ~28 of body markup, ~2,913 of JS, none of it Python — no editor highlighted it, no linter
@@ -874,7 +875,7 @@ insertion markers in the HTML, returning the exact string `panel-server.py`'s ow
 `.replace()` substitution chain (theme tokens, labels, settings, field help, config enums)
 still runs on — byte-for-byte, before per-request values like the audit token are filled in.
 
-### `plugins/audit/scripts/_panel_page.py`
+### `plugins/audit/scripts/panel/_panel_page.py`
 The panel's assembled page, moved out of `panel-server.py`: the eight-substitution chain that
 turns `_panel_ui.raw_template()` into what the browser gets, exporting the two names the server
 imports — `UI_HTML` (the finished page wearing the default theme, which every page selftest
@@ -889,7 +890,7 @@ for `COST_BAND_PARAMS`), `_help` (L3, selftest only), `_panel_ui`/`_panel_settin
 `_ui_theme`/`_loader` (L1), and never `_panel_state`, `_panel_write`, `_panel_discovery` or
 `panel-server` — a selftest case asserts that.
 
-### `plugins/audit/scripts/_panel_discovery.py`
+### `plugins/audit/scripts/panel/_panel_discovery.py`
 Read-only discovery of which skills, agents and MCP servers this project can actually reach —
 project-local, user-global, installed plugins and this repo's own plugins tree — walking the
 same places Claude Code itself looks, so the panel's composition pickers offer real building
@@ -898,7 +899,7 @@ blocks instead of free-typed names that may not exist. Front-matter parsing dele
 (`discover = _panel_discovery.discover`, etc.) so its `/api/registry` route and existing
 selftest fixtures keep working unchanged.
 
-### `plugins/audit/scripts/_panel_settings.py`
+### `plugins/audit/scripts/panel/_panel_settings.py`
 Settings-shape knowledge moved out of `panel-server.py`: `FIELD_HELP`/`COMPOSITION_HELP`/
 `SETTINGS_GROUPS` describe the whole Settings form once in Python rather than by hand (the
 reason it exists — the `usage.*` block and most `tddReminder.*` keys had drifted out of a form
@@ -908,7 +909,7 @@ meant to make the config legible); `_META_KEYS`/`_META_API_ONLY`/`_META_FORM_KEY
 rather than a hand-kept copy. Sits at the bottom of the panel's import graph — must never
 import `_help` or `panel-server`.
 
-### `plugins/audit/scripts/_panel_state.py`
+### `plugins/audit/scripts/panel/_panel_state.py`
 The panel's READ side, moved out of `panel-server.py`: given a project directory it reads the
 config, the manifest (either layout), the usage ledger, the audit locks, the journal and the
 capability policy, and returns the JSON payloads the UI renders (`build_state`, `areas_state`,
@@ -916,7 +917,7 @@ capability policy, and returns the JSON payloads the UI renders (`build_state`, 
 above `_loader`/`_manifest_io`/`_help`/`_areas`/`_policy`/`_panel_settings`/`_panel_discovery`
 and below `panel-server` — a selftest case asserts it never imports `panel-server` back.
 
-### `plugins/audit/scripts/_panel_write.py`
+### `plugins/audit/scripts/panel/_panel_write.py`
 The panel's WRITE side, moved out of `panel-server.py`: the whole path from a request body to
 bytes on disk and a journal row — the write lock (`_acquire_write_lock`/`_release_write_lock`),
 the change-preview machinery (`_flat_paths`, `_config_changes`, `_composition_changes`), and the

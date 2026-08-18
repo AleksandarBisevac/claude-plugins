@@ -35,7 +35,7 @@
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
         "plugins/audit/scripts/ui/panel.js",
-        "plugins/audit/scripts/panel-server.py"
+        "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
       "description": "usage_ledger.cost_bands() is hand-mirrored in the panel JS, kept honest only by a selftest that checks the COMMENT is still present. Replace with a shared boundary fixture (band edges as data) asserted from usage_ledger\u2019s selftest and from the panel selftest against the JS source \u2014 the logic must agree, not the prose.",

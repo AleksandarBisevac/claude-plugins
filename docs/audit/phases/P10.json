@@ -71,7 +71,7 @@
         "P10.1"
       ],
       "files": [
-        "plugins/audit/scripts/panel-server.py",
+        "plugins/audit/scripts/panel/panel-server.py",
         "plugins/audit/scripts/config/_help.py"
       ],
       "docs": [],
@@ -160,7 +160,7 @@
       ],
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
-        "plugins/audit/scripts/panel-server.py"
+        "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
       "description": "Public read_json/atomic_write_json in _manifest_io with the better semantics from panel-server:448 (unique mkstemp temp in target dir, finally-cleanup, makedirs, per-caller ensure_ascii). save_sharded and the panel delegate to it; the collision-prone path+\".tmp\" writer dies. Byte output unchanged per caller: CI\u2019s gen-demo-usage diff and the docs/index.html cmp guard this. New mutation-proven cases: temp cleaned on write failure, concurrent-suffix uniqueness, trailing newline.",
@@ -204,7 +204,7 @@
       ],
       "files": [
         "plugins/audit/scripts/config/_help.py",
-        "plugins/audit/scripts/panel-server.py"
+        "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
       "description": "Promote a public _help.front_matter(text) merging the two implementations (panel-server:467 line-walk vs _help:509 regex): CRLF, quoted/escaped scalars, indented continuation, missing closing fence, >4KB front matter. The divergent edge cases become selftest cases; panel discovery delegates.",

@@ -93,7 +93,7 @@ The scripts are thin — this is all they call, and the plain form still works:
 ```bash
 python3 plugins/audit/scripts/manifest/validate-manifest.py    examples/acme-store/audit-plan.json
 python3 plugins/audit/scripts/report/render-report.py examples/acme-store/audit-plan.json
-python3 plugins/audit/scripts/panel-server.py --project examples/acme-store
+python3 plugins/audit/scripts/panel/panel-server.py --project examples/acme-store
 ```
 
 > This manifest is checked in CI on every push, so the example never drifts out of validity.

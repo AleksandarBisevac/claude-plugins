@@ -8,7 +8,7 @@ allowed-tools: Read, Bash
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first (read-only preflight
 1–2; no lock — the panel itself takes the manifest lock only when it *writes* the manifest,
-and refuses if one is held). Let `PANEL="${CLAUDE_PLUGIN_ROOT}/scripts/panel-server.py"`.
+and refuses if one is held). Let `PANEL="${CLAUDE_PLUGIN_ROOT}/scripts/panel/panel-server.py"`.
 
 **Dispatch on `$ARGUMENTS`:**
 
