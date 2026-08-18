@@ -18,6 +18,14 @@
  * rebuilds it deterministically, so this script builds what it needs in a temp dir
  * and throws it away.
  *
+ * SO IS THE ENVIRONMENT. A panel reads the machine it runs on — `git config` for the
+ * identity it writes as, `~/.claude` for the skills, subagents and MCP servers it
+ * lists — and both of those have reached a committed PNG: a maintainer's personal
+ * address in four shots, and one developer's hundred-odd installed skills, by name,
+ * in `panel-blocks`. Every panel here is therefore handed a demo git identity AND a
+ * fixture HOME, and asserts it got exactly those before a shutter opens. Nothing
+ * about the product changes; see the fixture-homes section.
+ *
  * AND THE TEMP DIR IS PART OF THE PICTURE. The panel prints its project path in the
  * topbar, so the scratch tree sits at a FIXED path, claimed under a lockfile, and
  * two consecutive captures on one machine produce byte-identical PNGs. See
@@ -2704,9 +2712,12 @@ async function assertSkillTriState(page) {
     note('skills: the opt-out clears back to [] through the same save flow');
   }
   // --- the inventory hint (v0.37 B3): a name discovery does not know ----------
-  // Injected rather than relied on: the fixture pool's names are real public
-  // skills that may exist on the machine running this, and a hint that depends
-  // on what someone has installed is exactly the flake F4 forbids.
+  // The probe name is INJECTED, and the fixture home declares every name the
+  // manifest spells (assertManifestSkillsDiscovered), so this leg drives the one
+  // unknown name on the panel: a hint that appears is the hint tracking the
+  // probe, not a pre-existing gap between a demo pool and someone's installed
+  // set. Before the fixture home, "0-no-such-skill-probe" was the only part of
+  // this that was ever certain.
   const hint = await page.evaluate(() => {
     if (!REG.skills || !REG.skills.length) return 'no-inventory';
     const t = (STATE.composition.tasks || []).find((x) => Array.isArray(x.skills));
@@ -2720,8 +2731,16 @@ async function assertSkillTriState(page) {
     return { seen, gone };
   });
   if (hint === 'no-inventory') {
-    note('skills: discovery found no skills on this machine — the inventory-hint '
-       + 'leg is skipped (the hint is silent by design with nothing to compare)');
+    // Was a `note`, and that was the reading that let this leg evaporate: the
+    // hint is silent against an empty inventory BY DESIGN, so "skipped" was
+    // indistinguishable from "green" and on a CI runner — no ~/.claude at all —
+    // it was the only outcome this branch ever had. The panel is now handed a
+    // home whose every skill is declared in this file, so an empty registry has
+    // exactly one meaning left.
+    fail('skills: the panel discovered no skills, but this capture hands it a '
+       + 'fixture HOME declaring several — HOME did not take, so the '
+       + 'inventory-hint leg had nothing to compare and every other check that '
+       + 'reads the registry is equally blind');
   } else if (hint === 'no-task') {
     fail('skills: no task row to hang the inventory-hint probe on');
   } else if (!hint.seen || !hint.gone) {
@@ -2768,10 +2787,19 @@ async function noToast(page, label) {
 /* ---- v0.34 C1 (cs): combo search — the footer count and the keyboard rail --
  *
  * Every count is recomputed in-page from the same data the combo reads
- * (USAGE.facts), never from the menu's own rendering. Description search is
- * asserted only on the policy fixture's controlled registry (below), where
- * every skill and its description are written by this file — a real machine's
- * discovery is never asserted numerically.
+ * (USAGE.facts), never from the menu's own rendering. That oracle is the
+ * generated ledger and nothing else: `/api/usage` is byte-identical whether the
+ * panel is handed a fixture HOME or the capturing machine's — measured, both
+ * ways, on this fixture — so nothing in this function has ever depended on
+ * discovery, and giving the panel a home did not re-aim it.
+ *
+ * Description search is the half that reads the registry, and it stays where it
+ * is (assertComboDescriptionSearch, on the policy panel). Both panels now have a
+ * declared inventory, so that is no longer forced; it is kept because the policy
+ * fixture is the registry SHAPED for it — exactly one skill whose description
+ * matches "behaviour" and whose name does not — and moving the check to a
+ * registry that happens to satisfy that today would be the fixture choosing the
+ * answer.
  */
 async function assertComboSearchCount(page) {
   await page.click('.tab[data-t=usage]');
@@ -2895,6 +2923,15 @@ async function assertComboDescriptionSearch(page) {
  * before the probe goes in, and the race window is then driven ON PURPOSE —
  * a real stamp move plus a poll — so a lost freeze goes red every run rather
  * than once in N.
+ *
+ * The three sources are three readings of the fixture PROJECT — the manifest,
+ * the rate tables (shipped defaults merged with the project's config) and the
+ * generated ledger. None of them is discovery: `/api/state` and `/api/usage` are
+ * both byte-identical whether this panel is handed a fixture HOME or the
+ * capturing machine's, measured both ways, so the fixture home below neither
+ * aimed this check nor blinded it. Recorded because the question looks open from
+ * the outside — a combo, on the panel whose inventory was the leak — and it is
+ * cheaper to have answered it once.
  */
 async function assertModelCombo(page, project) {
   await page.click('.tab[data-t=comp]');
@@ -4154,19 +4191,211 @@ async function assertHelpDrawerWorks(page, declared) {
   await page.waitForTimeout(200);
 }
 
+/* ---- fixture homes: no panel here ever sees the capturing machine ------------
+ *
+ * EVERY panel this file photographs is handed a HOME of its own. The reason is what
+ * discovery is: `_panel_discovery.discover` walks `<project>/.claude`, `~/.claude`
+ * and `~/.claude/plugins` and returns every skill, subagent and MCP server the
+ * project can reach — which, run against a real machine, is a list of whatever the
+ * person capturing happens to have installed. That is two problems at once. The
+ * committed PNG would publish somebody's plugin inventory (the same class of leak
+ * as the identity that reached four shots before it was caught, and just as
+ * permanent); and the CHECKS would be asserting against a set that is different on
+ * every machine and empty on a CI runner, where ~/.claude does not exist.
+ *
+ * It began as the policy tab's problem, because that tab lists the inventory a row
+ * at a time. It never was only that tab's. Composition's "Available building blocks
+ * (discovered)" table is the same list under a different heading, and `panel-blocks`
+ * committed it: `skills (101)` in the file at 08d9879, `skills (110)` on the machine
+ * that found this — a hundred-odd rows of one developer's installed skills, names
+ * and descriptions, in a public repository. The composition table quotes discovery
+ * again in a smaller way, through `skillHints()`: a manifest-spelled skill that
+ * discovery does not know draws a note beside it, so which notes appear was a
+ * function of what the capturer had installed.
+ *
+ * So both panels get a home, both are asserted against their own declaration before
+ * a shutter opens (`assertFixtureDiscovery`), and the two declarations are written
+ * out below. `--check` gets the same guard, so a home that stops taking is caught on
+ * the runner rather than at the next capture.
+ */
+
+/**
+ * Write the `.claude` tree discovery walks under `base` — a fixture HOME, or a
+ * fixture PROJECT (`_scan_skills` reads `<base>/.claude/skills` for both, badging
+ * them `user` and `project` by which one it was handed).
+ *
+ * `plugin` entries land under `<base>/.claude/plugins/audit/`, which discovery
+ * badges `plugin`; that path is only ever walked for a HOME.
+ */
+function writeDiscoveryTree(base, { skills = [], agents = [], plugin = [] }) {
+  for (const [name, description] of skills) {
+    const dir = path.join(base, '.claude', 'skills', name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'SKILL.md'),
+                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
+  }
+  if (agents.length) mkdirSync(path.join(base, '.claude', 'agents'), { recursive: true });
+  for (const [name, description] of agents) {
+    writeFileSync(path.join(base, '.claude', 'agents', `${name}.md`),
+                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
+  }
+  for (const [kind, file, name, description] of plugin) {
+    const dir = kind === 'skills'
+      ? path.join(base, '.claude', 'plugins', 'audit', 'skills', file)
+      : path.join(base, '.claude', 'plugins', 'audit', 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, kind === 'skills' ? 'SKILL.md' : `${file}.md`),
+                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
+  }
+  return base;
+}
+
+/** `<project>/.mcp.json` naming exactly `names` — the MCP half of a fixture. */
+function writeFixtureMcp(project, names) {
+  writeFileSync(path.join(project, '.mcp.json'), JSON.stringify(
+    { mcpServers: Object.fromEntries(names.map((n) => [n, { command: 'x' }])) }, null, 2));
+  return names;
+}
+
+/**
+ * Did discovery reach exactly the fixture, and nothing of this machine's?
+ *
+ * The oracle is `/api/registry` — the endpoint the page itself renders from — against
+ * a want computed from the declarations below, so a fixture edit re-aims this check
+ * instead of blinding it. Asserted BEFORE anything is captured on that panel: the
+ * failure is silent, and it lands in a committed PNG that lists whatever the person
+ * capturing installed.
+ */
+async function assertFixtureDiscovery(page, want, label) {
+  const found = await page.evaluate(async () => {
+    const r = await api('GET', '/api/registry');
+    return { skills: r.skills.map((s) => s.name).sort(),
+             agents: r.agents.map((a) => a.name).sort(),
+             mcp: (r.mcp || []).slice().sort() };
+  });
+  const wanted = { skills: want.skills.slice().sort(),
+                   agents: want.agents.slice().sort(),
+                   mcp: want.mcp.slice().sort() };
+  if (JSON.stringify(found) !== JSON.stringify(wanted)) {
+    fail(`${label}: discovery reached beyond the fixture — HOME did not take, and `
+       + `these shots would publish it: ${JSON.stringify(found)}`);
+    return false;
+  }
+  note(`${label}: discovery is the fixture's own (${found.skills.length} skills, `
+     + `${found.agents.length} agents, ${found.mcp.length} MCP)`);
+  return true;
+}
+
+/* ---- the 50 x 20 panel's inventory ------------------------------------------
+ *
+ * Shaped by what the panel does with it, not by what makes a table look full.
+ *
+ *   * The five USER skills are the five `gen-demo-manifest.SKILL_POOL` spells into
+ *     every area default and every task that carries skills. They are here because
+ *     `skillHints()` draws "discovery knows no such skill" beside a manifest name
+ *     the scan does not know: declare all five and the composition shots are clean,
+ *     declare four and one note is documentation of a defect the fixture invented.
+ *     The set is not trusted to stay in step — `assertManifestSkillsDiscovered`
+ *     recomputes `skillHints`' own difference from the running panel and goes red if
+ *     the pool moves.
+ *   * That same completeness is what makes `assertSkillTriState`'s last leg mean
+ *     anything: its probe name is then the ONLY name discovery does not know, so a
+ *     hint appearing is the hint tracking the probe rather than a pre-existing gap.
+ *   * PROJECT and PLUGIN entries exist so the `source` column of the building-blocks
+ *     table carries more than one badge — the card's own subtitle promises three
+ *     origins, and a shot showing one word repeated documents the opposite.
+ *   * The MCP pair is what makes the third sub-tab's `mcp (2)` a number rather than
+ *     `mcp (0)`, and it comes from the project's own `.mcp.json` — the home's
+ *     `.claude.json` is deliberately left absent, so nothing outside this file can
+ *     add a name.
+ */
+const BIG_USER_SKILLS = [
+  ['clean-typescript', 'Writes TypeScript the way this codebase already reads.'],
+  ['pragmatic-testing', 'Chooses what to test, and at which level, before writing it.'],
+  ['web-security', 'Checks a change for the web vulnerabilities it could introduce.'],
+  ['safe-incremental-refactor', 'Restructures code in reviewable, behaviour-preserving steps.'],
+  ['structured-code-review', 'Reads a diff for correctness, reuse and coverage in turn.'],
+];
+const BIG_PROJECT_SKILLS = [
+  ['storefront-conventions', 'This repo\'s own component, routing and data-loading conventions.'],
+  ['mobile-release-checklist', 'The steps this repo runs before a mobile release goes out.'],
+];
+const BIG_AGENTS = [
+  ['api-contract-checker', 'Compares a handler against the published API contract.'],
+  ['bundle-size-watcher', 'Reports what a change adds to the shipped bundle.'],
+];
+// One of audit's own, under the name the Skill tool spells it with — the `plugin`
+// badge, and the row the policy tab marks required.
+const BIG_PLUGIN = [
+  ['skills', 'report', 'audit:report', 'Renders the audit report.'],
+  ['agents', 'audit-explorer', 'audit:audit-explorer', 'Read-only subsystem auditor.'],
+];
+const BIG_MCP = ['design-tokens', 'storefront-db'];
+
+/** Build the 50 x 20 panel's fixture home, and say what it declares. */
+function writeBigFixture(work, project) {
+  const home = path.join(work, 'bighome');
+  writeDiscoveryTree(home, { skills: BIG_USER_SKILLS, agents: BIG_AGENTS,
+                             plugin: BIG_PLUGIN });
+  writeDiscoveryTree(project, { skills: BIG_PROJECT_SKILLS });
+  writeFixtureMcp(project, BIG_MCP);
+  return {
+    home,
+    want: {
+      skills: [...BIG_USER_SKILLS.map(([n]) => n),
+               ...BIG_PROJECT_SKILLS.map(([n]) => n),
+               ...BIG_PLUGIN.filter((p) => p[0] === 'skills').map((p) => p[2])],
+      agents: [...BIG_AGENTS.map(([n]) => n),
+               ...BIG_PLUGIN.filter((p) => p[0] === 'agents').map((p) => p[2])],
+      mcp: BIG_MCP.slice(),
+    },
+  };
+}
+
+/**
+ * Every skill name the fixture MANIFEST spells is a name the fixture HOME declares.
+ *
+ * Not a restatement of the declaration above: the difference is recomputed in-page
+ * from the two inputs `skillHints()` itself reads (`STATE.composition.tasks[].skills`
+ * plus `areaSkills`, against `REG.skills`), so this is the product's own arithmetic
+ * asked one question — is the answer empty? It is red when the demo generator's
+ * skill pool moves and the declaration above does not follow, which is the moment
+ * the composition screenshots would start carrying "discovery knows no such skill"
+ * notes about a gap the fixture invented.
+ */
+async function assertManifestSkillsDiscovered(page) {
+  const gap = await page.evaluate(() => {
+    const comp = (STATE || {}).composition || {};
+    const spelled = new Set();
+    (comp.tasks || []).forEach((t) => {
+      (Array.isArray(t.skills) ? t.skills : []).forEach((s) => spelled.add(s));
+    });
+    (comp.areaSkills || []).forEach((s) => spelled.add(s));
+    return { unknown: [...spelled].sort()
+               .filter((n) => !REG.skills.some((s) => s.name === n)),
+             spelled: spelled.size };
+  });
+  if (!gap.spelled) {
+    fail('panel: the fixture manifest spells no skill at all, so neither the '
+       + 'inventory hint nor this check has anything to be about');
+  } else if (gap.unknown.length) {
+    fail(`panel: the fixture manifest spells ${JSON.stringify(gap.unknown)}, which `
+       + `the fixture home does not declare — every composition shot would carry a `
+       + `"discovery knows no such skill" note about a gap the fixture invented. `
+       + `Add them to BIG_USER_SKILLS.`);
+  } else {
+    note(`panel: all ${gap.spelled} skill name(s) the fixture manifest spells are `
+       + `declared by the fixture home`);
+  }
+}
+
 /* ---- the policy switchboard ------------------------------------------------
  *
- * This one gets its own project AND its own HOME, which none of the other panel
- * shots need. The reason is what the tab shows: every skill, subagent and MCP
- * server the project can reach — which, run against a real machine, is a list of
- * whatever the person capturing happens to have installed. That is two problems at
- * once. The committed PNG would publish somebody's plugin inventory (the same
- * class of leak as the identity that reached four shots before it was caught, and
- * just as permanent); and the CHECKS would be asserting against a set that is
- * different on every machine and empty on a CI runner, where ~/.claude does not
- * exist. So discovery is given a home of its own, with five skills, two agents and
- * two MCP servers in it, and the fixture asserts it got exactly those before the
- * shutter opens.
+ * Its own PROJECT as well as its own home, which the 50 x 20 fixture does not need:
+ * the tab renders one row per discovered capability with the server's verdict on it,
+ * so the inventory has to be shaped for the verdicts — a glob to match, a name to
+ * deny, and one of audit's own to be refused a denial. See the section above for why
+ * the home itself is not optional here or anywhere.
  */
 const POL_SKILLS = [
   ['code-review', 'Reviews a diff for correctness, reuse and test coverage.'],
@@ -4191,28 +4420,20 @@ function writePolicyFixture(work) {
   const project = path.join(work, 'pol');
   const home = path.join(work, 'polhome');
   py([resolveScript('gen-demo-manifest.py'), project, '--phases', '6', '--tasks', '3']);
-  for (const [name, description] of POL_SKILLS) {
-    const dir = path.join(home, '.claude', 'skills', name);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(dir, 'SKILL.md'),
-                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
-  }
-  mkdirSync(path.join(home, '.claude', 'agents'), { recursive: true });
-  for (const [name, description] of POL_AGENTS) {
-    writeFileSync(path.join(home, '.claude', 'agents', `${name}.md`),
-                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
-  }
-  for (const [kind, file, name, description] of POL_PLUGIN) {
-    const dir = kind === 'skills'
-      ? path.join(home, '.claude', 'plugins', 'audit', 'skills', file)
-      : path.join(home, '.claude', 'plugins', 'audit', 'agents');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(dir, kind === 'skills' ? 'SKILL.md' : `${file}.md`),
-                  `---\nname: ${name}\ndescription: ${description}\n---\n`);
-  }
-  writeFileSync(path.join(project, '.mcp.json'), JSON.stringify(
-    { mcpServers: Object.fromEntries(POL_MCP.map((n) => [n, { command: 'x' }])) }, null, 2));
-  return { project, home };
+  writeDiscoveryTree(home, { skills: POL_SKILLS, agents: POL_AGENTS,
+                             plugin: POL_PLUGIN });
+  writeFixtureMcp(project, POL_MCP);
+  return {
+    project,
+    home,
+    want: {
+      skills: [...POL_SKILLS.map(([n]) => n),
+               ...POL_PLUGIN.filter((p) => p[0] === 'skills').map((p) => p[2])],
+      agents: [...POL_AGENTS.map(([n]) => n),
+               ...POL_PLUGIN.filter((p) => p[0] === 'agents').map((p) => p[2])],
+      mcp: POL_MCP.slice(),
+    },
+  };
 }
 
 /** The `policy` block for the fixture, aimed at the area that is actually live. */
@@ -5235,7 +5456,13 @@ async function main() {
       // because this also runs on Windows.
       const gitcfg = path.join(work, 'demo.gitconfig');
       writeFileSync(gitcfg, `[user]\n\temail = ${DEMO_AUTHOR}\n\tname = Demo Dev\n`);
+      // ...and a HOME, for the same reason and by the same mechanism: discovery
+      // walks `~/.claude`, the building-blocks table paints what it finds, and
+      // `panel-blocks` committed one machine's hundred-odd installed skills.
+      // See the fixture-homes section for the whole argument.
+      const bigfx = writeBigFixture(work, big);
       panel = await startPanel(big, {
+        HOME: bigfx.home, USERPROFILE: bigfx.home,
         GIT_CONFIG_GLOBAL: gitcfg, GIT_CONFIG_NOSYSTEM: '1',
       });
       const ctx = await browser.newContext({
@@ -5277,6 +5504,12 @@ async function main() {
       } else {
         note(`panel: capturing as ${DEMO_AUTHOR}`);
       }
+
+      // The other half of the same rule, and asserted in the same place and for the
+      // same reason: an env override that stops taking fails silently, and here the
+      // silence lands in `panel-blocks` as somebody's plugin inventory.
+      await assertFixtureDiscovery(page, bigfx.want, 'panel');
+      await assertManifestSkillsDiscovered(page);
 
       // Settings is rendered by that script, from the field table panel-server.py
       // ships. Both halves are asserted: the cards exist, and every declared setting
@@ -6071,29 +6304,7 @@ async function main() {
         await ppage.waitForSelector('.tab', { timeout: 15000 });
         await ppage.waitForTimeout(400);
 
-        // Discovery reached exactly the fixture and nothing of this machine's.
-        // Asserted before anything is captured: the failure is silent, and lands
-        // in a committed PNG that lists whatever the person capturing installed.
-        const found = await ppage.evaluate(async () => {
-          const r = await api('GET', '/api/registry');
-          return { skills: r.skills.map((s) => s.name).sort(),
-                   agents: r.agents.map((a) => a.name).sort(),
-                   mcp: (r.mcp || []).slice().sort() };
-        });
-        const want = {
-          skills: [...POL_SKILLS.map(([n]) => n),
-                   ...POL_PLUGIN.filter((p) => p[0] === 'skills').map((p) => p[2])].sort(),
-          agents: [...POL_AGENTS.map(([n]) => n),
-                   ...POL_PLUGIN.filter((p) => p[0] === 'agents').map((p) => p[2])].sort(),
-          mcp: POL_MCP.slice().sort(),
-        };
-        if (JSON.stringify(found) !== JSON.stringify(want)) {
-          fail('policy: discovery reached beyond the fixture — HOME did not take, and '
-             + `this shot would publish it: ${JSON.stringify(found)}`);
-        } else {
-          note(`policy: discovery is the fixture's own (${found.skills.length} skills, `
-             + `${found.agents.length} agents, ${found.mcp.length} MCP)`);
-        }
+        await assertFixtureDiscovery(ppage, fx.want, 'policy');
 
         // The area rule is aimed at whichever area the generated plan actually has
         // work in progress in — asked of the server rather than worked out here,
