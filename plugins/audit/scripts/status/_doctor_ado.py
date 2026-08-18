@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""
+The ADO connector's OPERATIONAL half — what a shape-checker cannot see.
+
+Split out of `audit-doctor.py`. The SHAPE of `meta.ado` belongs to
+`_manifest_ado.check_ado_meta`, and it reaches the doctor's report through
+`check_manifest`; nothing here re-derives it. What is left is the four
+questions only a live machine can answer: is the transport installed, which
+switches are actually in effect, do the shipped state defaults aim at a process
+this project may not use, and what do the manifest's links prove.
+
+Offline on purpose - a doctor that phoned ADO would be a doctor that needs
+credentials - which is why the state-map row says "advisory" out loud: real
+states live in ADO.
+
+Layer 3: it runtime-loads `_manifest_io` (layer 1) for the task walk and reads
+`_doctor_report` (layer 2) for the collector, and reaches nothing else.
+
+This module carries no `--selftest` of its own; its cases live in
+`plugins/audit/tests/test__doctor_ado.py` - see
+`plugins/audit/tests/_harness.py`.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
+# `_output.path_preamble_violations()`. It walks UP to the directory holding
+# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
+# this file sits and keeps working if the file is moved into a subdirectory.
+# `install_path()` then adds that directory AND every subdirectory of it holding a
+# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
+# reached by a bare basename.
+_anchor_dir = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_dir)
+    if _anchor_up == _anchor_dir:
+        raise ImportError("audit plugin: walked to the filesystem root from %s "
+                          "without finding _output.py - the scripts/ anchor is "
+                          "gone and no sibling can be imported" % (__file__,))
+    _anchor_dir = _anchor_up
+if _anchor_dir not in sys.path:
+    sys.path.insert(0, _anchor_dir)
+
+import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+
+_output.install_path()
+
+import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
+
+# A thin module-level alias, not a copy: the body below was moved out of
+# `audit-doctor.py` unchanged, and an alias keeps it reading the same name
+# while there is still exactly one definition of it. A case pins the identity.
+_load = _base._load
+
+
+# --- checks: the ADO connector --------------------------------------------------
+def check_ado(rep, project, manifest):
+    """The ADO connector's OPERATIONAL half (connector v2).
+
+    The SHAPE of meta.ado is the validator's job (check_ado_meta) and reaches
+    this report through check_manifest; what a shape-checker cannot see is
+    covered here: whether the transport is present, which switches are in
+    effect, whether the shipped state defaults aim at a process that may not
+    define them, and what the manifest's links actually prove. Offline on
+    purpose - a doctor that phoned ADO would be a doctor that needs
+    credentials. Real states live in ADO, so the state-map row is exactly
+    what it says: advisory."""
+    meta = (manifest or {}).get("meta")
+    ado = meta.get("ado") if isinstance(meta, dict) else None
+    if ado is None:
+        rep.ok("ado", "connector not configured (meta.ado absent) - "
+               "/audit:sync and the orchestration echo are off")
+        return
+    if not isinstance(ado, dict):
+        return  # a shape defect; check_manifest already carries the finding
+
+    enabled = ado.get("enabled") is not False
+    echo = enabled and ado.get("echo") is not False
+    pbi = ado.get("phaseWorkItems") is not False
+    sprint = ado.get("sprint") if isinstance(ado.get("sprint"), dict) else None
+    if not enabled:
+        rep.warn("ado",
+                 "connector DISABLED (meta.ado.enabled: false) - push/pull "
+                 "and the echo do nothing; links are kept and /audit:sync "
+                 "status still reports them",
+                 "re-enable in the panel's ADO card, or delete the key")
+    else:
+        pbi_note = ""
+        if pbi and not (ado.get("types") or {}).get("pbi"):
+            pbi_note = " (types.pbi auto-detected at the first phase push)"
+        rep.ok("ado",
+               "connector on (org %s, project %s) - echo %s, PBI-per-phase "
+               "%s%s, sprint %s"
+               % (ado.get("organization") or "?", ado.get("project") or "?",
+                  "on" if echo else "off", "on" if pbi else "off", pbi_note,
+                  ("resolves team %r" % sprint.get("team")) if sprint
+                  else "static (iterationPath)"))
+
+    # Transport: what a headless / CLI run stands on. MCP may still carry an
+    # interactive session, which is why a missing az is a warning, never a
+    # finding.
+    if not shutil.which("az"):
+        rep.warn("ado transport",
+                 "az CLI is not on PATH - /audit:sync can still use the ADO "
+                 "MCP tools when the session has them, else it stops",
+                 "install azure-cli, then: az extension add --name azure-devops")
+    else:
+        try:
+            out = subprocess.run(["az", "extension", "list", "--output",
+                                  "json"], capture_output=True, text=True,
+                                 timeout=15)
+            names = [e.get("name") for e in json.loads(out.stdout or "[]")
+                     if isinstance(e, dict)]
+            if "azure-devops" in names:
+                rep.ok("ado transport", "az + azure-devops extension present")
+            else:
+                rep.warn("ado transport",
+                         "az is on PATH but the azure-devops extension is "
+                         "not installed",
+                         "az extension add --name azure-devops")
+        except Exception as exc:
+            rep.warn("ado transport",
+                     "az is on PATH but `az extension list` did not answer "
+                     "(%s) - transport unverified" % exc)
+
+    # Live-gate F3: both stock processes force-clear Remaining Work at their
+    # done state, so a configured write degrades to state-only there. Advisory
+    # - the goal ("0 left") is met by the process itself.
+    oc = ado.get("onComplete")
+    if isinstance(oc, dict) and oc.get("remainingWork", 0) is not None:
+        rep.warn("ado remaining work",
+                 "onComplete.remainingWork is configured, but stock processes "
+                 "(Scrum Done, Agile Closed) force-clear the field at done - "
+                 "the write degrades to state-only there, and the process "
+                 "empties the field by itself. The key matters only for "
+                 "custom processes without the clear rule. Advisory only")
+
+    # The Agile-only truth baked into the shipped defaults (D-7).
+    if ado.get("stateMap") is None:
+        rep.warn("ado state map",
+                 "no meta.ado.stateMap: the built-in defaults name "
+                 "Agile-process states (task done > Closed). Scrum tasks use "
+                 "To Do/In Progress/Done, so a Scrum project should set the "
+                 "map. Advisory only: real states live in ADO",
+                 "set meta.ado.stateMap in the panel's ADO card")
+
+    # What the links prove - int ids only, the validator's shape.
+    linked = {"task": 0, "bug": 0, "phase": 0}
+    newest = [None]
+
+    def _note(item, kind):
+        link = item.get("ado") if isinstance(item, dict) else None
+        if isinstance(link, dict) and isinstance(link.get("id"), int) \
+                and not isinstance(link.get("id"), bool):
+            linked[kind] += 1
+            ts = link.get("lastSyncedAt")
+            if isinstance(ts, str) and (newest[0] is None or ts > newest[0]):
+                newest[0] = ts
+
+    mio = _load("_manifest_io", "_manifest_io.py")
+    for ph in (manifest.get("phases") or []):
+        if isinstance(ph, dict):
+            _note(ph, "phase")
+    # Two passes rather than a nested loop, because only ONE of them is a task
+    # traversal: the phase pass must reach a phase that holds no tasks (its own
+    # `ado` link is what is being counted), and `iter_tasks` yields nothing for
+    # one. `_note` only ever increments a counter and takes a max, so the order
+    # the three kinds are visited in cannot change the answer.
+    for _, t in mio.iter_tasks(manifest):
+        _note(t, "task")
+    for b in (manifest.get("bugs") or []):
+        _note(b, "bug")
+    if not sum(linked.values()):
+        rep.ok("ado links",
+               "no item linked yet - configuration, not evidence; "
+               "/audit:sync push writes the first links")
+    else:
+        rep.ok("ado links",
+               "%d task(s), %d bug(s), %d phase(s) linked%s"
+               % (linked["task"], linked["bug"], linked["phase"],
+                  (" - newest sync %s" % newest[0]) if newest[0] else ""))
+
+
+# --- cli ------------------------------------------------------------------------
+if __name__ == "__main__":
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    safe_stdio()
+    if "--selftest" in sys.argv[1:]:
+        # Answers rather than exiting silently: `--selftest` is what every other
+        # file here accepts, so nothing would tell a reader whether this one ran
+        # nothing or has nothing. It deliberately does NOT print the
+        # `N/M cases passed` contract - that literal is how
+        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
+        print("_doctor_ado.py has no inline --selftest; its cases moved to "
+              "plugins/audit/tests/test__doctor_ado.py - run that file "
+              "instead.")
+        raise SystemExit(0)
+    print(__doc__.strip())

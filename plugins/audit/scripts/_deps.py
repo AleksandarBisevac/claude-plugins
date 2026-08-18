@@ -39,6 +39,14 @@ ONE loading mechanism scripts/ has (that is the whole point of its own docstring
 shapes are read here as edges of the same graph - see `_runtime_loaded_sibling_names` for the
 shapes covered and the one that is deliberately not.
 
+AND A WRAPPER AND ITS CALL SITES DO NOT HAVE TO SHARE A FILE. `_doctor_report._load` is
+imported by six modules; the `_loader` import is in the module that DEFINES it and the `.py`
+literal is in the module that CALLS it, so a scan reading one tree at a time sees neither half
+as an edge and twelve real dependencies report as none. `_wrapper_map` therefore runs over the
+WHOLE tree before any edge is judged, and `_borrowed_wrapper_names` reads the two spellings a
+borrower can use. Nothing in the tree borrowed one when this was written, which is exactly why
+it had to be written before the first module did rather than after.
+
 WHY LAYERS, NOT A STRICT TOPOLOGICAL SORT. The tightest possible layering (every node one
 above the highest of its own dependencies) is not what a human wants to read in a guide: it
 would put `audit-journal.py` (which imports only `_output`) two layers below `panel-server.py`
@@ -165,7 +173,15 @@ LAYERS = (
      # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
      # readiness, the submodule preflight and the gate. Same reasoning and the same
      # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
-     "_status_facts"),
+     "_status_facts",
+     # `_doctor_report` is the piece all six of `audit-doctor`'s check modules sit
+     # on: the `Report` collector, the `_load` wrapper and the two constants. It
+     # holds no check, which is exactly why it can sit here while its consumers
+     # reach as high as L5 - it imports `_loader` (L1) and nothing else. The
+     # wrapper being SHARED is what `_borrowed_wrapper_names` was written for:
+     # without it the twelve runtime loads spelled in those six files would be a
+     # dozen edges nothing could see.
+     "_doctor_report"),
     # The usage metering stack is a three-link chain, `_usage_core` -> `_usage_analytics`
     # -> `usage_ledger`, so it needs three layers under its lowest consumer. That consumer
     # is `_report_usage`, which sat here beside `_help` and now sits one layer up: moving
@@ -194,8 +210,15 @@ LAYERS = (
     # downward. The lint said so the first time this table was written, and the
     # answer was to put the reader above what it reads rather than to widen the
     # rule.
+    # The two doctor checks that reach no further than L2 land here, at the first
+    # layer that holds their edges strictly downward, rather than beside the other
+    # four: `_doctor_ado` runtime-loads `_manifest_io` (L1) for the task walk, and
+    # `_doctor_hygiene` imports `_locks` (L1) and loads nothing at all. Putting the
+    # seven doctor modules in one layer would have been a nicer picture and a false
+    # one - four of them genuinely sit higher, so the layer would have had to be L5
+    # and three modules would carry a position nothing about them requires.
     ("_help", "usage_ledger", "_panel_settings", "_manifest_rules",
-     "_usage_viz"),
+     "_usage_viz", "_doctor_ado", "_doctor_hygiene"),
     # `_panel_page` (the panel's assembled page: the substitution chain and the
     # ~1,450 lines of cases that read the result) lands here rather than beside
     # `_panel_state`, and that placement is the whole cost of the split. Its
@@ -218,8 +241,15 @@ LAYERS = (
     # `_usage_load` (the section's only I/O) is here for a different reason: it
     # runtime-loads `usage_ledger` at L3, so this is the first layer that holds
     # that edge strictly downward. It reaches none of the three renderers.
+    # Three of `audit-doctor`'s check modules land here, each at the first layer
+    # above what it actually reaches: `_doctor_setup` imports `_manifest_rules`
+    # (L3), and `_doctor_trail` / `_doctor_completions` each runtime-load
+    # `usage_ledger` (L3) - the same reason `_usage_load` is here and not beside
+    # the ledger it reads. None of the three reaches another, which is what lets
+    # `audit-doctor` fold all of them into one order.
     ("_panel_discovery", "_panel_page", "_usage_load",
-     "_usage_overview", "_usage_detail", "_usage_markdown"),
+     "_usage_overview", "_usage_detail", "_usage_markdown",
+     "_doctor_setup", "_doctor_trail", "_doctor_completions"),
     # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
     # document) are the report's answer to the same question `_panel_page`
     # answered above, and they land the same way: at the FIRST layer that holds
@@ -243,7 +273,16 @@ LAYERS = (
     # already carries that L7 -> L7 runtime edge, recorded below - supplies it.
     # Reaching the gate from `_report_page` would be a helper calling up, and the
     # runtime-load half of this lint would report it.
-    ("_panel_state", "_report_md", "_report_usage"),
+    #
+    # `_doctor_policy` is here and not at L4 because `check_policy` runtime-loads
+    # `_panel_discovery` (L4) for this machine's skills/agents/MCP inventory - the
+    # same walk the panel's rules view marks `dead` with, so the two surfaces
+    # cannot disagree about which pattern is inert. That single edge is the whole
+    # reason the doctor's checks occupy four layers instead of one, and it is the
+    # edge `_borrowed_wrapper_names` had to be able to see: it is spelled
+    # `_load("_panel_discovery", "_panel_discovery.py")` through a wrapper defined
+    # two modules away.
+    ("_panel_state", "_report_md", "_report_usage", "_doctor_policy"),
     ("_panel_write", "_report_page"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",
@@ -394,7 +433,7 @@ def _is_loader_call(call, module_names, function_names):
 def _loader_wrapper_names(tree, module_names, function_names):
     """Local function names that forward a CALLER-CHOSEN target to `_loader`.
 
-    Three files wrap the loader (`audit-doctor._load`, `audit-usage._load`,
+    Three files wrap the loader (`_doctor_report._load`, `audit-usage._load`,
     `_panel_state._load`) and in those the filename is spelled at the CALL SITE, not
     in the wrapper body, so the call site is where the edge is readable.
 
@@ -426,6 +465,84 @@ def _loader_wrapper_names(tree, module_names, function_names):
     return wrappers
 
 
+def _sibling_module_aliases(tree, sibling_names):
+    """Local name -> sibling module name, for every `import X` / `import X as Y`.
+
+    Only what a CALL can be spelled through: `from X import thing` binds the thing,
+    not the module, and is read by `_borrowed_wrapper_names` instead.
+    """
+    aliases = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Import):
+            continue
+        for alias in node.names:
+            base = alias.name.split(".")[0]
+            if base in sibling_names:
+                aliases[alias.asname or base] = base
+    return aliases
+
+
+def _borrowed_wrapper_names(tree, sibling_names, wrapper_map):
+    """Local names that ARE a sibling's loader wrapper, however they were bound.
+
+    A WRAPPER AND ITS CALL SITES DO NOT HAVE TO SHARE A FILE, and until this
+    existed the moment they stopped sharing one the edges vanished. `_loader`
+    is imported in the module that DEFINES the wrapper; the `.py` literal is
+    spelled in the module that CALLS it; and `_loader_wrapper_names` reads one
+    tree, so neither file alone carries anything the scan could see. Six
+    modules sharing `_doctor_report._load` would have contributed twelve real
+    runtime edges and reported none - the exact "configured, green and
+    structurally blind" state this module's docstring is about.
+
+    Two spellings, both of which the tree uses: `from X import _load`, and the
+    house alias `_load = X._load` sitting with the imports. `wrapper_map` is
+    module name -> that module's wrapper names, so a name only counts when the
+    thing it points at really is a wrapper.
+    """
+    aliases = _sibling_module_aliases(tree, sibling_names)
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and not node.level:
+            base = (node.module or "").split(".")[0]
+            for alias in node.names:
+                if alias.name in wrapper_map.get(base, ()):
+                    names.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+            if not isinstance(target, ast.Name) or not isinstance(value, ast.Attribute):
+                continue
+            if not isinstance(value.value, ast.Name):
+                continue
+            owner = aliases.get(value.value.id)
+            if owner and value.attr in wrapper_map.get(owner, ()):
+                names.add(target.id)
+    return names
+
+
+def _wrapper_map(trees):
+    """module name -> the loader-wrapper names it can be called through.
+
+    Grown to a FIXPOINT rather than in a fixed number of passes: a module that
+    borrows a wrapper is itself somewhere the next module can borrow it from
+    (`_load = _base._load` is a wrapper under this rule exactly as the original
+    `def` is), so a two-pass version would see one hop of a chain and stop.
+    """
+    sibling_names = set(trees)
+    wrapper_map = {}
+    for mod, tree in trees.items():
+        module_names, function_names = _loader_names(tree)
+        wrapper_map[mod] = _loader_wrapper_names(tree, module_names, function_names)
+    while True:
+        grew = False
+        for mod, tree in trees.items():
+            borrowed = _borrowed_wrapper_names(tree, sibling_names, wrapper_map)
+            if borrowed - wrapper_map[mod]:
+                wrapper_map[mod] = wrapper_map[mod] | borrowed
+                grew = True
+        if not grew:
+            return wrapper_map
+
+
 def _py_literal_basenames(node):
     """Module basenames of every `"....py"` string literal anywhere inside `node`.
 
@@ -445,14 +562,19 @@ def _py_literal_basenames(node):
     return found
 
 
-def _runtime_loaded_sibling_names(tree, sibling_names, self_name):
+def _runtime_loaded_sibling_names(tree, sibling_names, self_name, wrapper_map=None):
     """Base module names `tree` loads at RUNTIME through `_loader`.
 
-    An edge is counted when a `_loader` loading call - direct, under an alias, or
-    through one of the three local wrappers `_loader_wrapper_names` recognises -
-    contains a string literal ending in `.py` whose basename is one of
-    `sibling_names`. A `modname="usage_ledger"` argument is not one (no `.py`), and a
-    hooks/ filename is not one (no such sibling), so neither invents an edge.
+    An edge is counted when a `_loader` loading call - direct, under an alias,
+    through one of the local wrappers `_loader_wrapper_names` recognises, or
+    through a wrapper this module BORROWED from a sibling (`wrapper_map`; see
+    `_borrowed_wrapper_names`) - contains a string literal ending in `.py` whose
+    basename is one of `sibling_names`. A `modname="usage_ledger"` argument is not
+    one (no `.py`), and a hooks/ filename is not one (no such sibling), so neither
+    invents an edge.
+
+    `wrapper_map` is None for the `tests/` boundary scan, which asks a narrower
+    question (does the PRODUCT reach into tests/) and has no wrapper to follow.
 
     LIMITATION, deliberate and load-bearing: only a filename SPELLED AS A LITERAL
     INSIDE THE CALL counts. `_loader.load_script("render-report.py")` is read,
@@ -466,15 +588,27 @@ def _runtime_loaded_sibling_names(tree, sibling_names, self_name):
     (`_panel_state`'s journal loader), and that is a known gap, not a clean scan.
     """
     module_names, function_names = _loader_names(tree)
-    if not module_names and not function_names:
-        return []
     wrappers = _loader_wrapper_names(tree, module_names, function_names)
+    aliases = {}
+    if wrapper_map:
+        wrappers = wrappers | _borrowed_wrapper_names(tree, sibling_names,
+                                                      wrapper_map)
+        aliases = _sibling_module_aliases(tree, sibling_names)
+    if not module_names and not function_names and not wrappers and not aliases:
+        return []
 
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         wrapped = isinstance(node.func, ast.Name) and node.func.id in wrappers
+        if not wrapped and isinstance(node.func, ast.Attribute) \
+                and isinstance(node.func.value, ast.Name):
+            # `_base._load("x.py")` - the wrapper reached through the module it
+            # lives in, rather than through a local alias of it.
+            owner = aliases.get(node.func.value.id)
+            wrapped = bool(owner) and node.func.attr in (wrapper_map or
+                                                         {}).get(owner, ())
         if not (wrapped or _is_loader_call(node, module_names, function_names)):
             continue
         for base in _py_literal_basenames(node):
@@ -530,8 +664,11 @@ def _scan_edges(script_dir=None):
     modules, _collisions = _module_files(script_dir)
     sibling_names = set(modules)
 
-    static = set()
-    runtime = set()
+    # PARSED ONCE, READ TWICE. The wrapper map is a whole-tree fact - which
+    # module a borrowed `_load` came from is not answerable from the borrowing
+    # file alone - so every file has to be parsed before any edge is judged.
+    parsed = []
+    trees = {}
     broken = []
     for mod in sorted(modules):
         for rel, path in modules[mod]:
@@ -541,10 +678,18 @@ def _scan_edges(script_dir=None):
             except (OSError, SyntaxError):
                 broken.append(rel)
                 continue
-            for imported in _imported_sibling_names(tree, sibling_names, mod):
-                static.add((mod, imported))
-            for loaded in _runtime_loaded_sibling_names(tree, sibling_names, mod):
-                runtime.add((mod, loaded))
+            parsed.append((mod, tree))
+            trees.setdefault(mod, tree)
+    wrapper_map = _wrapper_map(trees)
+
+    static = set()
+    runtime = set()
+    for mod, tree in parsed:
+        for imported in _imported_sibling_names(tree, sibling_names, mod):
+            static.add((mod, imported))
+        for loaded in _runtime_loaded_sibling_names(tree, sibling_names, mod,
+                                                     wrapper_map):
+            runtime.add((mod, loaded))
     return static, runtime, sorted(broken)
 
 

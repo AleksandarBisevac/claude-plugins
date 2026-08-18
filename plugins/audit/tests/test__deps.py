@@ -283,7 +283,8 @@ def _cases(check):
 
         check("rt3 a local wrapper that forwards a caller-chosen filename is followed to "
               "its CALL SITE, where the filename is actually spelled - without this the "
-              "~20 `_load(...)` sites in audit-doctor alone are invisible: %r" % (rt_hits,),
+              "~12 `_load(...)` sites across the doctor's six check modules are "
+              "invisible: %r" % (rt_hits,),
               len([v for v in rt_by_file("wrapped.py")
                    if "runtime-loads high" in v[1]]) == 1)
 
@@ -337,6 +338,124 @@ def _cases(check):
               len([v for v in rt_again if "runtime-loads" in v[1]]) == 3)
     finally:
         shutil.rmtree(rt, ignore_errors=True)
+
+    # ---------------------------------------------- a wrapper shared across files
+    # `_doctor_report._load` is defined in one module and CALLED from six, so the
+    # `_loader` import and the `.py` literal live in different files. Reading one
+    # tree at a time sees neither half as an edge, which is the shape a lint can be
+    # "configured, green and structurally blind" in.
+    bw = tempfile.mkdtemp(prefix="deps-borrow-")
+    try:
+        bw_src = os.path.join(bw, "scripts")
+        bw_hooks = os.path.join(bw, "hooks")
+        os.makedirs(bw_src)
+        os.makedirs(bw_hooks)
+
+        def _bw_write(name, body):
+            with open(os.path.join(bw_src, name), "w", encoding="utf-8") as fh:
+                fh.write(body)
+
+        _bw_write("high.py", "pass\n")
+        _bw_write("bottom.py", "pass\n")
+        # The wrapper's own file names nothing: it has the `_loader` import and no
+        # `.py` literal at all, so it must contribute NO edge of its own.
+        _bw_write("basemod.py",
+                  "import _loader\n"
+                  "def _load(name, filename):\n"
+                  "    return _loader.load_script(filename, modname=name)\n")
+        # ...and three ways to reach it, all of which the real tree spells.
+        _bw_write("aliaser.py",
+                  "import basemod\n"
+                  "_load = basemod._load\n"
+                  "def go():\n"
+                  "    return _load('high', 'high.py')\n")
+        _bw_write("fromer.py",
+                  "from basemod import _load\n"
+                  "def go():\n"
+                  "    return _load('high', 'high.py')\n")
+        _bw_write("attrer.py",
+                  "import basemod as _b\n"
+                  "def go():\n"
+                  "    return _b._load('high', 'high.py')\n")
+        # The control: the same alias, calling it with a literal that names NO
+        # sibling. A rule that fired on the wrapper rather than on its argument
+        # would invent an edge here.
+        _bw_write("innocent.py",
+                  "import basemod\n"
+                  "_load = basemod._load\n"
+                  "def go():\n"
+                  "    return _load('cfg', '../hooks/_config.py')\n")
+        # THREE layers, not two: the wrapper's home has to sit BELOW its
+        # borrowers or the plain `import basemod` is itself a same-layer
+        # violation and the fixture reports noise beside the edge it is about.
+        bw_layers = (("basemod", "bottom"),
+                     ("aliaser", "attrer", "fromer", "innocent"), ("high",))
+        bw_hits = M.layer_violations(bw_src, hooks_dir=bw_hooks,
+                                     layers=bw_layers)
+        bw_by = lambda name: [v for v in bw_hits if v[0] == name]  # noqa: E731
+
+        for spelling, name in (("`_load = basemod._load`", "aliaser.py"),
+                               ("`from basemod import _load`", "fromer.py"),
+                               ("`basemod._load(...)`", "attrer.py")):
+            check("bw1-%s a wrapper borrowed as %s is followed to the call site in "
+                  "the BORROWING file, where the `.py` literal is: %r"
+                  % (name[0], spelling, bw_hits),
+                  len([v for v in bw_by(name)
+                       if "runtime-loads high (layer 2) from layer 1" in v[1]]) == 1)
+
+        check("bw2 the file that DEFINES the wrapper contributes no edge - it "
+              "names no target, and attributing its callers' loads to it would "
+              "put every one of them on the wrong module: %r" % (bw_hits,),
+              bw_by("basemod.py") == [])
+
+        check("bw3 a borrowed wrapper handed a hooks/ filename is NOT an edge. "
+              "The rule fires on what the literal NAMES, not on the wrapper: the "
+              "doctor really does load `../hooks/_config.py` through this "
+              "wrapper, and reading that as a scripts/ sibling would invent an "
+              "edge: %r" % (bw_hits,), bw_by("innocent.py") == [])
+
+        # ---- mutation proof: the pre-change scan must MISS all three ----
+        bw_modules, _bw_dupes = M._module_files(bw_src)
+        bw_names = set(bw_modules)
+        blind = []
+        for mod in sorted(bw_modules):
+            rel, path = bw_modules[mod][0]
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+            # `wrapper_map` omitted: exactly the call the scan made before this
+            # change, and nothing else varied.
+            blind.extend((mod, t) for t in
+                         M._runtime_loaded_sibling_names(tree, bw_names, mod))
+        check("bw4 mutation proof: with the wrapper map withheld - the scan as it "
+              "stood, one tree at a time - the same three fixtures are missed "
+              "ENTIRELY. Red here is what proves bw1 tests something real: %r"
+              % (blind,), blind == [])
+
+        seeing = []
+        bw_trees = {}
+        for mod in sorted(bw_modules):
+            rel, path = bw_modules[mod][0]
+            with open(path, "r", encoding="utf-8") as fh:
+                bw_trees[mod] = ast.parse(fh.read(), filename=rel)
+        bw_map = M._wrapper_map(bw_trees)
+        for mod in sorted(bw_trees):
+            seeing.extend((mod, t) for t in M._runtime_loaded_sibling_names(
+                bw_trees[mod], bw_names, mod, bw_map))
+        check("bw5 ...and the real, unweakened scan catches all THREE - counted, "
+              "so a version that follows one spelling and drops the other two "
+              "cannot pass; nothing was left mutated behind: %r" % (seeing,),
+              sorted(seeing) == [("aliaser", "high"), ("attrer", "high"),
+                                 ("fromer", "high")])
+
+        check("bw6 the map itself says which names each module can be called "
+              "through, and it grows to a FIXPOINT: `aliaser` borrowed `_load` "
+              "and therefore IS a place a fourth module could borrow it from, "
+              "which a two-pass version would not record: %r" % (bw_map,),
+              bw_map["basemod"] == set(["_load"])
+              and bw_map["aliaser"] == set(["_load"])
+              and bw_map["high"] == set())
+    finally:
+        shutil.rmtree(bw, ignore_errors=True)
 
     # ------------------------------------------------------- the guide's location
     # `_guide_path()` counted three `..` segments off this module's own directory,

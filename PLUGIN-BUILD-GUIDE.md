@@ -122,7 +122,14 @@ claude-plugins/                           # this repo (personal, public)
         status/                           # the status domain: the headless rollup and the setup diagnostics over it
           _status_facts.py                # what the manifest SAYS: rollup, readiness, submodules, the gate
           audit-status.py                 # the command over those facts: human render + --json/--gate
-          audit-doctor.py                 # /audit:doctor: read-only "is this working?" diagnostics
+          audit-doctor.py                 # /audit:doctor: the ORDER of the checks, the render and the CLI
+          _doctor_report.py               # what the six check modules share: the Report collector + _load
+          _doctor_setup.py                # interpreter, git root, config, manifest, shards, submodules
+          _doctor_policy.py               # meta.areas, the capability policy, the buildCommands runners
+          _doctor_ado.py                  # the ADO connector's operational half (transport, switches, links)
+          _doctor_trail.py                # has anything run here: hook state, usage ledger, journal chain
+          _doctor_completions.py          # the task.complete receipts against the plan, git and the ledger
+          _doctor_hygiene.py              # what is HELD (locks) and what is LEAKING (local artifacts in git)
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
@@ -213,6 +220,7 @@ L1:
 
 L2:
   _config_rules -> _output, _policy
+  _doctor_report -> _loader, _output
   _manifest_ado -> _manifest_vocab, _output
   _manifest_crossrefs -> _manifest_vocab, _output
   _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
@@ -224,6 +232,8 @@ L2:
   _usage_analytics -> _output, _usage_core
 
 L3:
+  _doctor_ado -> _doctor_report, _output
+  _doctor_hygiene -> _locks, _output
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _manifest_rules -> _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_settings -> _config_rules, _output
@@ -231,6 +241,9 @@ L3:
   usage_ledger -> _manifest_io, _output, _usage_analytics, _usage_core
 
 L4:
+  _doctor_completions -> _doctor_report, _journal_io, _output
+  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts
+  _doctor_trail -> _doctor_report, _journal_io, _output
   _panel_discovery -> _help, _manifest_io, _output
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _usage_detail -> _output, _ui_theme, _usage_viz
@@ -239,6 +252,7 @@ L4:
   _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
 
 L5:
+  _doctor_policy -> _doctor_report, _output
   _panel_state -> _areas, _config_rules, _help, _journal_io, _loader, _locks, _manifest_io, _manifest_rules, _output, _panel_discovery, _policy, _status_facts
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
@@ -248,7 +262,7 @@ L6:
   _report_page -> _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
-  audit-doctor -> _cli_fmt, _config_rules, _journal_io, _loader, _locks, _manifest_rules, _output, _status_facts
+  audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
   audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
@@ -863,12 +877,90 @@ inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. 
 
 ### `plugins/audit/scripts/status/audit-doctor.py`
 `/audit:doctor`'s "is this working?" diagnostics — every check reuses an existing
-implementation (`validate-config.validate_config`, `validate-manifest.validate`,
-`audit-status.submodule_conflicts`, `usage_ledger.find_ledger_dir`) rather than
+implementation (`_config_rules.validate_config`, `_manifest_rules.validate`,
+`_status_facts.submodule_conflicts`, `usage_ledger.find_ledger_dir`) rather than
 reimplementing it, so a rule never means one thing here and another at the gate. It is
 read-only by construction: it never writes, never takes a lock, and for `buildCommands`
 resolves whether the named executable exists rather than running it. Output classes match the
 rest of the plugin (OK/WARNING/FINDING); exit 0 healthy, 1 findings, 2 usage error.
+
+It was 1,456 lines and is 242, because fifteen checks shared one file for the single reason
+that `diagnose()` calls all fifteen. What is left here is the thing that could not go into a
+piece: the ORDER (`check_config` produces the `cfg`/`cfg_mod` pair, `check_git` the git root,
+`check_manifest` the manifest — ten of the checks after them take those as arguments), plus
+`render()` and `main()`, because a report's order and its rendering are one subject. Every
+name the six modules hold is re-exported here as a module-level alias, so the suite and the
+command both keep spelling one import.
+
+### `plugins/audit/scripts/status/_doctor_report.py`
+The piece all six check modules sit on, and the only one with no check in it: the `Report`
+collector (rows of level/check/detail/fix, plus `counts()` and `exit_code()`), the `_load`
+wrapper every check reaches a sibling or a hook through, and the two constants two modules
+each read (`LAUNCHER_INTERPRETERS`, `RECENT_DAYS`). Layer 2 — it imports `_loader` and
+nothing else — which is what lets consumers as high as layer 5 share it. `_load` fixes
+`cache=False` on purpose: `tests/test_audit_doctor.py` re-`diagnose()`s ONE fixture it mutates
+between calls, in one process, and a cached module would be indistinguishable from a
+regression. Sharing the wrapper across files is also why `_deps._borrowed_wrapper_names`
+exists: the wrapper is defined here and the `.py` literals are spelled in the six callers, so
+without it a dozen real runtime edges would be invisible to the layer lint.
+
+### `plugins/audit/scripts/status/_doctor_setup.py`
+The six checks everything else stands on: which interpreter `py-launch.sh` will resolve, the
+git root the orchestrator will run git against, whether the config parses and validates and
+which plan-gate tier it produces, whether the manifest assembles and validates, whether a
+sharded layout's shards are intact (the assertion that moved out of `ci.yml` so CI and this
+command call one implementation), and whether any `task.files` entry lives inside a submodule
+the parent repo cannot stage. Layer 4, set by `_manifest_rules` at layer 3.
+
+### `plugins/audit/scripts/status/_doctor_policy.py`
+The three checks that compare a declaration against the world it claims to describe:
+`meta.areas` roots against the tree and phase tags against the registry (v0.28), the
+capability policy against the plan it governs and against this machine's inventory (v0.30,
+dead patterns v0.38), and `meta.buildCommands` runners against PATH. Every row is a WARNING
+at most — a missing directory or an uninstalled runner is a gap in this checkout or this
+machine, never proof the repo is broken, which is the lesson CI's manifest job taught by
+failing over a correct observation. `_leading_executable` resolves what a command would
+actually run (`cd x &&`, `env`, `VAR=v` prefixes) and returns None rather than guessing at
+shell control flow. Layer 5, set by the `_panel_discovery` load `check_policy` makes.
+
+### `plugins/audit/scripts/status/_doctor_ado.py`
+The ADO connector's operational half (connector v2), offline by construction — a doctor that
+phoned ADO would be a doctor that needs credentials. The SHAPE of `meta.ado` is
+`_manifest_ado.check_ado_meta`'s job and arrives through `check_manifest`; what is here is
+what a shape-checker cannot see: whether `az` and its `azure-devops` extension are installed,
+which switches are in effect, that the shipped `stateMap` defaults name Agile states a Scrum
+project does not have, that `onComplete.remainingWork` degrades to state-only under both
+stock processes, and what the manifest's links actually prove. Layer 3.
+
+### `plugins/audit/scripts/status/_doctor_trail.py`
+Has anything run here, and does what it wrote still hold? Hook state files are the only local
+evidence a guard ever fired, ledger files the only local evidence metering ever wrote, and
+the journal chain the only local evidence a completion was recorded. Each says WHICH of
+"never started" and "stopped" it is looking at — a disabled journal with rows on disk is a
+warning, a disabled journal with none is an ok line. `check_journal` delegates to the
+journal's own `verify` rather than re-deriving the verdict, and grades a broken chain a
+FINDING while a torn tail or out-of-band drift stays a warning.
+`_journal_never_committed` rides `audit-journal`'s porcelain seam for the 7-day
+uncommitted-file warning, keyed by journal-relative path so a live and an archived month
+cannot read as one another. Layer 4, set by the `usage_ledger` load.
+
+### `plugins/audit/scripts/status/_doctor_completions.py`
+The one check that CORRELATES two records rather than inspecting one: the journal's
+hook-emitted `task.complete` rows against the manifest's done tasks, the commit SHAs those
+tasks name against what git has, and the usage ledger's coverage of the same ids. A done task
+inside the record era with no record is positive evidence the manifest was edited outside the
+pipeline — a FINDING, as is a SHA git has never heard of; everything the check merely could
+not look up is a WARNING. The era is the WATERMARK with no config knob: the first
+`task.complete` row's `ts`. `--deep` adds the journal-in-commit cross-check. Layer 4.
+
+### `plugins/audit/scripts/status/_doctor_hygiene.py`
+The two questions about the working copy itself: what is HELD, and what is LEAKING.
+`check_locks` delegates to `_locks` rather than re-deriving the verdict — this check once
+called anything older than 60 minutes stale, which told the human a healthy 90-minute phase
+run had crashed. `check_local_artifacts` (v0.35) catches what the self-ignoring writers
+cannot reach: the ledger, stateDir, logsDir or panel pidfile committed BEFORE the markers
+existed. The journal is deliberately not in that list — it is the opposite kind of artifact
+and must stay tracked, which is the reverse warning `_doctor_trail` carries. Layer 3.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called
