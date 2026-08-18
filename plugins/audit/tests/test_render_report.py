@@ -1179,13 +1179,61 @@ def _cases(check):
           "given back by name",
           "function muteNative" in uh and "function restoreNative" in uh
           and "node.setAttribute('title', node.__tip)" in uh)
-    check("u24f restore runs on BOTH paths that drop the current mark — the "
-          "hover transition and beforeprint. One of the two is how an element "
-          "would silently keep losing its description",
-          uh.count("restoreNative(current)") == 2)
+    # Was 2 — the hover transition and an inline copy in beforeprint. F17 added a
+    # focus transition and funnelled every CLOSE (Escape, focusout, beforeprint)
+    # through one `hide()`. So the count is 3 and its shape changed: two mark-to-
+    # mark transitions that legitimately swap `current`, plus one funnel. Raised
+    # deliberately, not to go green — the property being held is still "no path
+    # drops `current` without giving the title back", and there is now one fewer
+    # place to get it wrong.
+    check("u24f every path that drops the current mark restores its title — two "
+          "transitions that swap marks, and one hide() every close goes through",
+          uh.count("restoreNative(current)") == 3
+          and "window.addEventListener('beforeprint', hide);" in uh
+          and uh.count("function hide()") == 1)
     check("u24b hover is delegated, not one listener per mark",
           uh.count("addEventListener('mouseover'") == 1
           and "mouseenter" not in uh)
+
+    # --- F17: the tooltip is reachable without a pointer (WCAG 2.2 SC 1.4.13) ----
+    # u24d restored the CARRIER — `title` is back in the accessibility tree, so a
+    # screen-reader user and a JS-off reader are served. What that did not fix is
+    # the SIGHTED KEYBOARD reader: browsers do not surface a native `title` on
+    # focus, this layer listened only on mouseover/mousemove, and `.rank` rows
+    # carried no tabindex, so the clipped name (49-78% shown at 1153px) had no
+    # keyboard path at all. Focus is the second trigger, not a second tooltip.
+    check("f17a focus opens the same layer hover does — one box, two triggers",
+          uh.count("addEventListener('focusin'") == 1
+          and uh.count("addEventListener('focusout'") == 1
+          and uh.count("function fill(") == 1)
+    # place() read ev.clientX/clientY, which a focus event does not have. Placing
+    # from the ELEMENT's box is what makes the same box serve both triggers.
+    check("f17b a focused mark is placed from its own rect, not from pointer "
+          "coordinates a focus event never carries",
+          "function placeAt(node)" in uh
+          and "node.getBoundingClientRect()" in uh)
+    # 1.4.13 has three parts and Dismissible is the one a focus tooltip forgets:
+    # without Escape the box can cover content the reader cannot then get out of.
+    check("f17c Escape dismisses it without moving the caret — Dismissible, and "
+          "the focus stays where the reader put it",
+          "if (ev.key !== 'Escape')" in uh and "hide()" in uh)
+    # Persistent (SC 1.4.13): it must not vanish on a timer. SCOPED to the hover
+    # layer — `"setTimeout" not in uh` was the first thing written here and it
+    # asserted nothing at all, because `uh` is the whole rendered page and the
+    # report uses setTimeout elsewhere. A negative over the wrong region is the
+    # exact defect F21 records, so the region is cut out and named.
+    _tiplayer = uh[uh.index("// Hover layer for the Usage charts."):
+                   uh.index("// --- the date range over the usage views")]
+    check("f17d-scope the slice really is the hover layer and not the whole page "
+          "(%d chars, %d of the page)" % (len(_tiplayer), len(uh)),
+          0 < len(_tiplayer) < len(uh) // 4
+          and "addEventListener('focusin'" in _tiplayer)
+    check("f17d the box never closes on a timer — Persistent means it waits for "
+          "the reader, not for the clock",
+          "setTimeout" not in _tiplayer)
+    check("f17e the rank rows are actually focusable — the layer is unreachable "
+          "otherwise, which is the whole of F17",
+          'class="rank" tabindex="0"' in uh)
     check("u24c the floating tooltip is suppressed for print",
           "@media print{.rtip{display:none!important}" in uh)
     check("m1 md contains phase heading and escaped pipe",

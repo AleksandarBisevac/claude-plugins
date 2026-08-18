@@ -999,6 +999,24 @@
       box.style.left = Math.max(8, x) + 'px';
       box.style.top = Math.max(8, y) + 'px';
     }
+    // The focus half of the same box. `place` reads ev.clientX/clientY, which a
+    // focus event does not carry - so a keyboard reader would have got the
+    // tooltip pinned at 0,0 or wherever the mouse was last left. Placed under the
+    // mark's own rect instead, flipping above it when there is no room below, so
+    // it never covers the row it is describing.
+    function placeAt(node) {
+      var q = node.getBoundingClientRect();
+      var r = box.getBoundingClientRect();
+      var x = q.left, y = q.bottom + 6;
+      if (x + r.width > window.innerWidth - 8) x = window.innerWidth - r.width - 8;
+      if (y + r.height > window.innerHeight - 8) y = q.top - r.height - 6;
+      box.style.left = Math.max(8, x) + 'px';
+      box.style.top = Math.max(8, y) + 'px';
+    }
+    function hide() {
+      restoreNative(current);
+      box.hidden = true; current = null;
+    }
     // Delegated: three listeners instead of one per mark. A dense report carries
     // well over a thousand hoverable marks, and binding each of them is a cost
     // paid on every page load to serve one hover at a time.
@@ -1035,14 +1053,38 @@
     document.addEventListener('mousemove', function (ev) {
       if (current) place(ev);
     });
+    // F17 - THE KEYBOARD HALF. Restoring `title` (u24d) put the description back
+    // in the accessibility tree, which serves a screen-reader user and a JS-off
+    // reader. It does nothing for a SIGHTED KEYBOARD reader: no browser surfaces
+    // a native `title` on focus, and the two listeners above are pointer-only. So
+    // the same box gets a second trigger rather than a second implementation -
+    // one `fill`, one `hide`, one element on the page.
+    document.addEventListener('focusin', function (ev) {
+      var m = owner(ev.target);
+      if (m === current) return;
+      restoreNative(current);
+      current = m;
+      if (!m) { box.hidden = true; return; }
+      muteNative(m);
+      fill(m.__tip); box.hidden = false; placeAt(m);
+    });
+    document.addEventListener('focusout', function (ev) {
+      if (current && owner(ev.target) === current) hide();
+    });
+    // Dismissible (SC 1.4.13). Escape closes the box WITHOUT moving the caret -
+    // a reader who dismissed a tooltip has not asked to leave the row, and
+    // sending focus elsewhere would make Escape cost them their place. The mark
+    // keeps focus, so tabbing on still works from where they were.
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape') return;
+      if (!current) return;
+      hide();
+    });
     // Printing a floating tooltip would stamp it onto the page. Whatever was
     // hovered gets its `title` back here too - dropping `current` without
     // restoring is exactly how one element would keep losing its description,
     // and printing is the one path that clears `current` without a mouseover.
-    window.addEventListener('beforeprint', function () {
-      restoreNative(current);
-      box.hidden = true; current = null;
-    });
+    window.addEventListener('beforeprint', hide);
   })();
 
   // --- the date range over the usage views (C1) -----------------------------

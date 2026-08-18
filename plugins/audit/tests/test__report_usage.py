@@ -316,7 +316,12 @@ def _cases(check):
     check("u21b counts are singularised (1 phase, not '1 phases')",
           ("1 phase \u00b7"
            in M._usage_context({"counts": {"phases": 1, "people": 3}})))
-    _rank_tip = re.search(r'<div class="rank" title="([^"]*)"', uh)
+    # Not anchored to `title` sitting immediately after the class: F17 put
+    # `tabindex="0"` between them, and this pin is about what the tooltip SAYS,
+    # not about attribute order. The row may also carry a data- attribute, so the
+    # gap is matched lazily and bounded to the one tag.
+    _rank_tip = re.search(r'<div class="rank" tabindex="0"[^>]*? title="([^"]*)"',
+                          uh)
     check("u22 a ranked bar hovers to the exact count, its share of the whole, "
           "cost and messages - none of which the bar itself can show",
           bool(_rank_tip) and "1.00M" in _rank_tip.group(1)

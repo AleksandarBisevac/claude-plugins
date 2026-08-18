@@ -821,6 +821,14 @@ h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
    tint at that density reads as a selection the reader did not make. */
 .rank{cursor:help}
 .rank:hover .track i{filter:brightness(1.15)}
+/* The row is a tab stop now (F17) - the name is clipped and the whole of it lives
+   in a tooltip no browser opens on focus. A tab stop with no ring would trade one
+   AA failure for another (SC 2.4.7), so the ring is the same one every other
+   focusable in this report uses. `outline-offset` is negative: the row is full
+   width and a positive offset would draw the ring over its neighbours. */
+.rank:focus-visible{outline:2px solid var(--ring);outline-offset:-2px;
+  border-radius:var(--radius)}
+.rank:focus-visible .track i{filter:brightness(1.15)}
 .rank:hover .nm{color:var(--text)}
 /* One shared tooltip element, moved on hover. Its content is NOT a second copy of
    the numbers: it is the `title` already on the mark, re-rendered. With JS off the
