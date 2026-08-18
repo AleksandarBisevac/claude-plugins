@@ -1,6 +1,6 @@
 ---
 name: refactoring-the-assembled-ui
-description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into exactly one inline <style> and one inline <script> in a self-contained page opened over file://. Covers the assembly contract and the ~70 byte-level pins that guard it, why the split must be an order-preserving cut rather than a regrouping, the selftest counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching report.css, report.js, panel.css, panel.js or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
+description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the 723 byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching report.css, report.js, panel.css, panel.js or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
 ---
 
 # Refactoring the assembled UI
@@ -11,9 +11,19 @@ single self-contained HTML page. Almost every surprise in this area comes from f
 
 ## The assembly contract
 
-- **Exactly one inline `<style>` and one inline `<script>`.** The tags live in the Python
+- **One inline `<style>`, and one inline `<script>` *carrying code*.** The tags live in the Python
   modules, never in the assets — selftests pin both, and pin that the `.js` files carry no
   `<script>` tags of their own.
+
+  *Carrying code* is not hedging. The panel emits one of each; **the shipped report emits three
+  `<script>` tags** — `window.AUDIT_USAGE` (2.6 KB of data), `window.AUDIT_MD_B64` (the 6.9 KB
+  base64 Markdown twin), and the code (81 KB). Check the artifact, not this sentence:
+  `grep -c '<script' examples/acme-store/acme-store-audit.html` prints 3.
+
+  The pin that reads `SCRIPT.count("<script>") == 1` counts tags in a **Python string** — the code
+  block alone — not in the page. It has never contradicted the above, which is exactly why the
+  wrong version of this bullet survived: the pin that looked like it was guarding the claim was
+  guarding something else.
 - **No external resources, ever.** CI asserts the rendered report contains no `<script src`,
   `<img `, `<link `, `<iframe` or `url(http`. No CDN, no web font, no separate stylesheet.
 - **No ESM, no bundler, no transpiler.** `import`/`export` cannot work in one inline script on an
@@ -31,11 +41,19 @@ single self-contained HTML page. Almost every surprise in this area comes from f
 
 ## Splitting: cut, never regroup
 
-The current statement order is a **machine-checked contract**. `panel-server.py` carries 18
-index-slice assertions and `render-report.py` two more — for example, `pollRunStatus` must appear
-before the `// ---------- Overview` marker, which must appear before `refreshFromDisk`. Several
-slice *between a function and a section-marker comment*, which makes those comment lines
-load-bearing.
+The current statement order is a **machine-checked contract**, and the suites that hold it now
+live in `plugins/audit/tests/`, not in the scripts that build the page: **47 index-slice
+assertions in `test__panel_page.py` and 39 in `test_render_report.py`.**
+
+The shape is usually a *negative over a slice* rather than a simple "A before B" — for example
+`"renderSettings()" not in UI_HTML[index("async function pollRunStatus") : index("// ----------
+Overview")]`, which says the poller must not reach into Settings. That is stronger than an
+ordering claim and it fails differently: move either endpoint and the window silently changes
+size, so the assertion can keep passing while asserting something else entirely.
+
+Several slice *between a function and a section-marker comment*, which makes those comment lines
+load-bearing source. Seven do this today — they are the reason a marker cannot be reworded
+casually.
 
 All of them survive an order-preserving split. **All of them die under any "logical" regrouping.**
 So: cut at existing seams, keep the sequence, change nothing else in the same commit.
@@ -64,9 +82,29 @@ pass untouched. That makes the cut provably behaviour-free.
 
 ## The pins are the budget
 
-`render-report.py` and `panel-server.py` hold **~70 exact substring assertions** against the
-assembled stylesheet, plus negative ones. Two pin multi-line source text *including newlines and
-leading spaces*, so reflowing a rule turns them red.
+**723 exact substring assertions** guard the assembled artifacts, and they live in
+`plugins/audit/tests/`. Budget by what a change touches, because the split is very uneven:
+
+| target | pins | a change to… |
+|---|---:|---|
+| `UI_HTML` | 564 | anything in `panel.{css,js}` |
+| `_SCRIPT` | 100 | `report.js` |
+| `_CSS` | 48 | `report.css` |
+| `TOKEN_CSS` | 11 | `_ui_theme.py` |
+
+**Only 59 of the 723 are CSS-shaped.** This section previously said "~70 … against the assembled
+stylesheet", which was about right *for CSS* — and that scoped number then got copied elsewhere as
+if it covered everything. Attach the scope to the number or it will travel without it.
+
+Re-derive rather than trusting the table:
+
+```bash
+grep -rhoE '("[^"]*"|'"'"'[^'"'"']*'"'"') (not )?in M\.(UI_HTML|_SCRIPT|_CSS|TOKEN_CSS)' \
+  plugins/audit/tests | wc -l
+```
+
+Some pin multi-line source text *including newlines and leading spaces*, so reflowing a rule turns
+them red.
 
 Treat each red pin as a **review checkpoint, and update it on purpose**. A pin deleted rather than
 updated is the failure this whole area is guarded against.
@@ -77,10 +115,10 @@ Date()`), which constrains what a shared date helper may contain.
 
 ### Some pins currently enforce the duplication
 
-`panel-server.py` asserts `UI_HTML.count("'data-discard':'") == 4` and
+`plugins/audit/tests/test__panel_page.py:501` asserts `UI_HTML.count("'data-discard':'") == 4` and
 `count("discard.disabled=!n;") == 3`. The five copy-pasted save/discard footers are therefore
 *required to be five*. Factoring them into one helper turns the suite red — correctly, because the
-pin is doing its job. **Deduplication here is always a paired change with `panel-server.py`,
+pin is doing its job. **Deduplication here is always a paired change with `test__panel_page.py`,
 never a JS-only edit.** Same for the other count pins.
 
 ## Which features a shipped report may use

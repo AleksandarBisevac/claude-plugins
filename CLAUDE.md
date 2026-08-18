@@ -75,10 +75,40 @@ actually bitten here.
 ## The front end is not ordinary files
 
 `plugins/audit/scripts/ui/` holds **ordered parts of one artifact**, not standalone files: Python
-concatenates them into exactly one inline `<style>` and one inline `<script>` in a self-contained
-page opened over `file://`. No ESM, no bundler, no external resource of any kind, and ~70 exact
-substring assertions in `render-report.py` and `panel-server.py` guard the assembled output —
-some of which currently *require* duplication to stay as it is.
+concatenates them into **one inline `<style>` and one inline `<script>` carrying code**, in a
+self-contained page opened over `file://`. No ESM, no bundler, no external resource of any kind.
+
+*Carrying code* is the load-bearing half of that sentence. The panel really does emit one of
+each; **the report emits three `<script>` tags** — `window.AUDIT_USAGE`, the base64 Markdown twin,
+and the code. The pin that reads `SCRIPT.count("<script>") == 1` counts tags in a **Python
+string**, not in the page, so it does not contradict this and never did.
+
+**723 exact substring assertions guard the assembled output**, and they live in
+`plugins/audit/tests/` — not in the scripts that build it. Some *require* duplication to stay as
+it is. What a UI change has to budget for, by what it pins:
+
+| target | pins | built by |
+|---|---:|---|
+| `UI_HTML` | 564 | the panel page |
+| `_SCRIPT` | 100 | the report's code block |
+| `_CSS` | 48 | the report's stylesheet |
+| `TOKEN_CSS` | 11 | `_ui_theme.py` |
+
+Only **59 are CSS-shaped** (`_CSS` + `TOKEN_CSS`); the other 664 pin JavaScript. A further
+**113 assertions slice by `.index()` for statement *order*** — 47 in `test__panel_page.py`, 39 in
+`test_render_report.py`.
+
+This figure stood at "~70", which is roughly the **CSS** count (49 on the day it was written, 59
+now) presented as if it covered everything — the two files it named held 1,022 pins between them
+at that commit. A number is only as good as the scope attached to it, and this one lost its scope
+in transit. **Re-derive it rather than trusting the table**: a count in prose rots, and the first
+replacement written here was itself off by 73 because it matched only double quotes and missed
+`not in`.
+
+```bash
+grep -rhoE '("[^"]*"|'"'"'[^'"'"']*'"'"') (not )?in M\.(UI_HTML|_SCRIPT|_CSS|TOKEN_CSS)' \
+  plugins/audit/tests | wc -l
+```
 
 **Read the `refactoring-the-assembled-ui` skill before editing `report.{css,js}`,
 `panel.{css,js}` or `_ui_theme.py`.** Assets of 400+ lines also owe one section marker per 400
