@@ -1164,6 +1164,25 @@ def _cases(check):
           "copy of the numbers — so JS-off keeps the native tooltip",
           "__tip" in uh and "removeAttribute('title')" in uh
           and uh.count("split('\\t')") == 1)
+    # u24d-f: the attribute is BORROWED for the duration of a hover, not taken.
+    # It used to be stripped at claim time, which read as harmless because JS-off
+    # still had it — but `title` is the accessibility tree's description, so with
+    # JS live a screen reader got nothing and the text was reachable by pointer
+    # alone. Measured on the shipped report at 1153px: 0 of 15 `.rank` rows
+    # carried a title after load, all 11 `.rank .nm` clipped to 49-78%, no
+    # `tabindex`, and `mouseover`/`mousemove` the only listeners.
+    check("u24d claiming a mark does NOT strip its title — the old compound that "
+          "took it permanently is gone",
+          "s.removeAttribute('title')" not in uh
+          and "n.removeAttribute('title')" not in uh)
+    check("u24e ...it is suppressed only for the element under the pointer, and "
+          "given back by name",
+          "function muteNative" in uh and "function restoreNative" in uh
+          and "node.setAttribute('title', node.__tip)" in uh)
+    check("u24f restore runs on BOTH paths that drop the current mark — the "
+          "hover transition and beforeprint. One of the two is how an element "
+          "would silently keep losing its description",
+          uh.count("restoreNative(current)") == 2)
     check("u24b hover is delegated, not one listener per mark",
           uh.count("addEventListener('mouseover'") == 1
           and "mouseenter" not in uh)

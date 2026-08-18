@@ -951,11 +951,19 @@
     }
     for (var s = start.nextElementSibling; s && s.tagName !== 'H2';
          s = s.nextElementSibling) {
-      if (s.hasAttribute('title')) {
-        claim(s, s.getAttribute('title')); s.removeAttribute('title');
-      }
+      // The attribute STAYS. Stripping it permanently was a real loss and not
+      // the one it looked like: `title` is what the accessibility tree uses as
+      // an element's description, so removing it takes the text away from a
+      // screen reader entirely - and this layer only ever gives it back to a
+      // pointer. Measured on the shipped report at 1153px: all 11 `.rank .nm`
+      // are clipped (49-78% shown), `.rank` rows carry no `tabindex`, and the
+      // only listeners here are `mouseover`/`mousemove`. No mouse, no text.
+      // It is now suppressed per element only while that element is hovered,
+      // which is the whole reason it was removed - so the two tooltips still
+      // never fight, and everyone else keeps the description.
+      if (s.hasAttribute('title')) claim(s, s.getAttribute('title'));
       Array.prototype.forEach.call(s.querySelectorAll('[title]'), function (n) {
-        claim(n, n.getAttribute('title')); n.removeAttribute('title');
+        claim(n, n.getAttribute('title'));
       });
       // SVG <title> children — same text, different carrier.
       Array.prototype.forEach.call(s.querySelectorAll('title'), function (t) {
@@ -1000,19 +1008,39 @@
       }
       return null;
     }
+    // Suppress the native tooltip on the hovered element ONLY, and give it back
+    // the moment the pointer leaves. Restoring is not optional bookkeeping: skip
+    // it and the first hover strips the description permanently, which is the
+    // bug this replaced wearing a slower disguise.
+    function muteNative(node) {
+      if (node && node.hasAttribute && node.hasAttribute('title')) {
+        node.removeAttribute('title');
+      }
+    }
+    function restoreNative(node) {
+      if (node && node.__tip && node.setAttribute && !node.hasAttribute('title')) {
+        node.setAttribute('title', node.__tip);
+      }
+    }
     var current = null;
     document.addEventListener('mouseover', function (ev) {
       var m = owner(ev.target);
       if (m === current) return;
+      restoreNative(current);
       current = m;
       if (!m) { box.hidden = true; return; }
+      muteNative(m);
       fill(m.__tip); box.hidden = false; place(ev);
     });
     document.addEventListener('mousemove', function (ev) {
       if (current) place(ev);
     });
-    // Printing a floating tooltip would stamp it onto the page.
+    // Printing a floating tooltip would stamp it onto the page. Whatever was
+    // hovered gets its `title` back here too - dropping `current` without
+    // restoring is exactly how one element would keep losing its description,
+    // and printing is the one path that clears `current` without a mouseover.
     window.addEventListener('beforeprint', function () {
+      restoreNative(current);
       box.hidden = true; current = null;
     });
   })();
