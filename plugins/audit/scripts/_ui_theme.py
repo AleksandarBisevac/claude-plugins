@@ -78,21 +78,37 @@ TOKEN_CSS = """
   color-scheme:light dark;
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
   --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
-  --bg:#f5f7fb;--surface:#ffffff;--surface-2:#eef2f7;--text:#0f172a;--muted:#64748b;
+  /* Every ink below clears 4.5:1 against ALL THREE surfaces, not just --surface.
+     The old values were measured against white alone, which is why --muted read
+     4.76 on a card and 4.23 on --surface-2 -- the same token, two verdicts. */
+  --bg:#f5f7fb;--surface:#ffffff;--surface-2:#eef2f7;--text:#0f172a;--muted:#606f85;
   --border:#e2e8f0;--border-strong:#cbd5e1;
-  --accent:#0d9488;--accent-solid:#0d9488;--ring:rgba(13,148,136,.35);
-  --st-done:#15803d;--st-prog:#f59e0b;--st-blocked:#dc2626;--st-pending:#64748b;
-  /* ca: cancelled is finished, not achieved. Deliberately the quietest
-     ink on the sheet — dimmer than pending, and nowhere near done's
-     green: an archive full of green would read as a plan delivered. */
-  --st-cancelled:#94a3b8;
+  /* The boundary that IDENTIFIES a control, at 3:1 against every surface it sits
+     on (SC 1.4.11). Deliberately not the decorative border token, which draws
+     card edges, table rules and dividers -- none of which the criterion covers,
+     and dragging that one to 3:1 would turn every hairline into a hard line.
+     Two roles wearing one token is how the fields measured 1.23:1 while looking
+     perfectly fine. */
+  --field-border:#748eae;
+  --accent:#0b7c72;--accent-solid:#0c857a;--ring:rgba(13,148,136,.35);
+  --st-done:#157f3d;--st-prog:#f59e0b;--st-blocked:#d62323;--st-pending:#55637a;
+  /* ca: cancelled is finished, not achieved. Deliberately the quietest ink on
+     the sheet — dimmer than pending, and nowhere near done's green: an archive
+     full of green would read as a plan delivered.
+     It was #94a3b8, which measured 2.56:1 and was the worst text pair in the
+     product. "Quietest" is an ORDER, not a licence to be unreadable, so the
+     order is what is preserved: cancelled sits at the AA floor (4.51 on the
+     worst surface) and pending was moved DOWN with it to 5.9 so the step
+     between them stays visible. Reading them as one grey is the failure mode
+     of raising only the one that failed. */
+  --st-cancelled:#5c708b;
   /* Ink for a TINTED status badge. One solid-fill chip per status needed one ink
      and an exception (amber on white is unreadable, so in_progress alone got dark
      ink) — four statuses wearing three different grammars. A badge tinted from
      its own status colour carries readable ink of that same hue instead, and the
      exception disappears. Mirrors the --rk-*-fg pattern, which already worked. */
   --st-done-ink:#166534;--st-prog-ink:#854d0e;--st-blocked-ink:#b91c1c;
-  --st-pending-ink:#475569;--st-cancelled-ink:#64748b;
+  --st-pending-ink:#475569;--st-cancelled-ink:#606f85;
   --rk-low-bg:#dcfce7;--rk-low-fg:#166534;--rk-med-bg:#fef9c3;--rk-med-fg:#854d0e;
   --rk-high-bg:#fee2e2;--rk-high-fg:#b91c1c;
   /* Usage viz. Categorical slots carry MODEL identity (assigned by name, never by
@@ -161,10 +177,10 @@ TOKEN_CSS = """
 /* dark tokens: OS default (JS off) + explicit toggle. --theme=light pins light. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
-  --border:#1f2b40;--border-strong:#33425c;
+  --border:#1f2b40;--border-strong:#33425c;--field-border:#546c96;
   --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
-  --st-cancelled:#64748b;
+  --st-cancelled:#7a8aa0;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
   --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
@@ -186,10 +202,10 @@ TOKEN_CSS = """
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
-  --border:#1f2b40;--border-strong:#33425c;
+  --border:#1f2b40;--border-strong:#33425c;--field-border:#546c96;
   --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
-  --st-cancelled:#64748b;
+  --st-cancelled:#7a8aa0;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
   --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
@@ -309,7 +325,8 @@ def label(value, mapping=None):
 THEME_GROUPS = (
     ("brand", "Brand & surfaces",
      ("--bg", "--surface", "--surface-2", "--text", "--muted",
-      "--border", "--border-strong", "--accent", "--accent-solid", "--ring")),
+      "--border", "--border-strong", "--field-border",
+      "--accent", "--accent-solid", "--ring")),
     ("status", "Status & risk",
      ("--st-done", "--st-prog", "--st-blocked", "--st-pending", "--st-cancelled",
       "--st-done-ink", "--st-prog-ink", "--st-blocked-ink", "--st-pending-ink",

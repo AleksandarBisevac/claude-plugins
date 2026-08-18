@@ -230,7 +230,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 
 /* ---- buttons ------------------------------------------------------------- */
 .btn{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;display:inline-flex;align-items:center;
-  gap:.4em;padding:.5rem .75rem;border-radius:var(--pill);border:1px solid var(--border);
+  gap:.4em;padding:.5rem .75rem;border-radius:var(--pill);border:1px solid var(--field-border);
   background:var(--surface);color:var(--text);
   transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease),background var(--dur),border-color var(--dur)}
 .btn:hover{border-color:var(--border-strong);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
@@ -244,7 +244,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 
 /* ---- filter chips (toolbar phase-status + per-phase task-status) --------- */
 .fchip,.tf-chip{cursor:pointer;font:inherit;font-size:.79rem;line-height:1;padding:.25rem .75rem;
-  border-radius:var(--pill);border:1px solid var(--border);background:var(--surface);color:var(--text);
+  border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);color:var(--text);
   transition:background var(--dur),border-color var(--dur),color var(--dur),transform var(--dur) var(--ease)}
 .fchip:hover,.tf-chip:hover{border-color:var(--border-strong);transform:translateY(-1px)}
 .fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}

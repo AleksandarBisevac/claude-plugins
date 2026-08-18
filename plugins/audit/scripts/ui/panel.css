@@ -4,7 +4,14 @@
    name jobs the report has no equivalent of — a validated field, a warning on a
    config value, a refused write — so they live here rather than pushing
    panel-shaped vocabulary into the shared layer. */
-:root{--ok:#15803d;--warn:#b45309;--err:#dc2626}
+:root{--ok:#157f3d;--warn:#b35209;--err:#d62323}
+/* A THIRD palette, raw hex, outside the token layer -- which is why moving
+   --st-done/--st-blocked for AA did not reach `span.st`: the status pills read
+   these, not those. Values solved against the surface they actually sit on
+   (--surface-2, where they measured 4.30-4.47). They still duplicate the
+   status tokens and belong in _ui_theme.py; that merge is its own change,
+   because --warn has no token twin (--st-prog is a FILL and unreadable as
+   ink). Recorded rather than quietly left as three more magic numbers. */
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
  --ok:#34d399;--warn:#fbbf24;--err:#f87171}}
 :root[data-theme=dark]{--ok:#34d399;--warn:#fbbf24;--err:#f87171}
@@ -86,7 +93,12 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mu
  box-shadow:var(--shadow-sm);padding:1rem 1rem;margin:.75rem 0}
 .row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
 label.f{display:flex;flex-direction:column;gap:.25rem;flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
-input,textarea,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);
+/* The control-boundary token, not the decorative one. This edge is the only
+   thing that says "you may type here", so SC 1.4.11 wants it at 3:1; it measured
+   1.23 against the card surface and 1.10 against the page -- a field a sighted
+   reader finds by habit and a low-vision reader does not find at all. */
+input,textarea,select{font:inherit;color:var(--text);background:var(--bg);
+ border:1px solid var(--field-border);
  border-radius:var(--radius);padding:.5rem .75rem;font-size:.9rem}
 /* Every <summary> on this page is a disclosure a pointer has to hit, and its box
    is a bare line box: measured 20px in the help drawer and 20px on the policy
@@ -98,8 +110,10 @@ input,textarea,select{font:inherit;color:var(--text);background:var(--bg);border
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:vertical}
 .mono{font-family:var(--mono)}
+/* Same reasoning as the fields: a ghost button is a surface-coloured box on a
+   surface-coloured page, so its border is what identifies it as a control. */
 .btn{cursor:pointer;font:inherit;font-size:.85rem;padding:.5rem 1rem;border-radius:var(--pill);
- border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
+ border:1px solid var(--field-border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
 .btn:hover{border-color:var(--border-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* Unavailable, but still reachable — WCAG 2.2 SC 2.4.3. These controls carry
@@ -151,7 +165,10 @@ button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--mut
 .tag{display:inline-block;font-size:.66rem;padding:.25rem .45em;border-radius:var(--pill);
  border:1px solid var(--border);color:var(--muted);margin-left:.25rem}
 .listwrap{display:flex;flex-direction:column;gap:.25rem}
-.pill-in{display:flex;gap:.25rem;flex-wrap:wrap;align-items:center;border:1px solid var(--border);
+.pill-in{display:flex;gap:.25rem;flex-wrap:wrap;align-items:center;
+ /* This box IS the field -- the <input> inside it draws no border of its own
+    (see the rule below), so this edge is the whole affordance. SC 1.4.11. */
+ border:1px solid var(--field-border);
  border-radius:var(--radius);padding:.25rem .5rem;background:var(--bg)}
 .pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:.25rem .25rem}
 .mut{color:var(--muted);font-size:.82rem}
@@ -742,7 +759,7 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
    447px row (F8). `min-width:0` for the same reason it is on the row above. */
 .lbl{display:inline-flex;align-items:center;gap:.25rem;flex-wrap:wrap;min-width:0}
 .hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
- border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
+ border:1px solid var(--field-border);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}
 .hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
 /* The ⓘ's 24x24 hit area is declared with the other two glyph buttons, beside
@@ -800,7 +817,7 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
 /* discovered building-blocks: subtabs + one table */
 .subtabs{display:flex;gap:.25rem;margin:.5rem 0 .5rem;flex-wrap:wrap}
 .subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:.25rem .75rem;border-radius:var(--pill);
- border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
+ border:1px solid var(--field-border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
 .subtab:hover{border-color:var(--border-strong)}
 .subtab.on{background:var(--surface-2);color:var(--text);border-color:var(--border-strong)}
 .regtblwrap{max-height:22rem;overflow:auto;border:1px solid var(--border);border-radius:var(--radius)}
@@ -833,7 +850,7 @@ table.regtbl td.d{color:var(--muted)}
 .comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.25rem .75rem}
 .filtlbl{font-size:.72rem;color:var(--muted)}
 .filt{cursor:pointer;font:inherit;font-size:.75rem;padding:.25rem .75rem;border-radius:var(--pill);
- border:1px solid var(--border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
+ border:1px solid var(--field-border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
 .filt:hover{border-color:var(--border-strong)}
 .filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 /* State carried by more than hue, as in the report. */
@@ -924,7 +941,7 @@ td.thcell{display:table-cell;white-space:nowrap}
 /* 1.5rem, not 1.4rem: WCAG 2.2 SC 2.5.8 wants 24 CSS px and 1.4rem is 22.4. The
    swatch sits beside a 27.8px .thtext in the same cell, so the extra 1.6px is
    inside a row that is already taller — measured, no row moved. */
-.thpick{width:1.7rem;height:1.5rem;padding:0;border:1px solid var(--border);
+.thpick{width:1.7rem;height:1.5rem;padding:0;border:1px solid var(--field-border);
   border-radius:5px;background:none;vertical-align:middle;cursor:pointer}
 input.thtext{width:11rem;padding:.2rem .4rem;font-family:var(--mono);
   font-size:.76rem;vertical-align:middle;margin-left:.3rem}

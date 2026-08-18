@@ -44,6 +44,7 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as render-report imports it)
 import _report_html                                # noqa: E402
 import _report_ui                                  # noqa: E402
+import _ui_theme as _theme                         # noqa: E402  (the token defaults)
 
 M = _loader.load_script("render-report.py", modname="render_report")
 
@@ -128,13 +129,18 @@ def _cases(check):
         _thhtml = fh.read()
     check("th-r1 the report wears the project's theme, compiled in",
           "--accent:#b5179e" in _thhtml and "--accent:#f72585" in _thhtml
-          and "--accent:#0d9488" not in _thhtml)
+          # The default, read from the theme module. Spelled as a literal it went
+          # on passing after the AA work moved --accent off #0d9488 — by then the
+          # clause proved only that a hex nothing uses is absent.
+          and ("--accent:%s" % _theme.DEFAULT_THEME["--accent"]["$value"])
+          not in _thhtml)
     check("th-r2 ...and it is still the WHOLE stylesheet, not the token block "
           "alone - every rule report.css contributes must survive theming",
           "table.phases" in _thhtml and "prefers-reduced-motion" in _thhtml
           and 'id="audit-theme"' in _thhtml)
     check("th-r3 an untheme'd project renders exactly what it always did",
-          "--accent:#0d9488" in _report_ui.CSS
+          ("--accent:%s" % _theme.DEFAULT_THEME["--accent"]["$value"])
+          in _report_ui.CSS
           and _report_ui.css_with_tokens(None) == _report_ui.CSS)
     hp, dp = os.path.join(tmp, "audit-report.html"), os.path.join(tmp, "audit-report.md")
     check("c2 both artifacts exist and are non-empty",

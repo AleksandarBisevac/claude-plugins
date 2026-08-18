@@ -53,8 +53,13 @@ def _cases(check):
           "blocks - the OS-default one and the explicit toggle, or half the "
           "readers keep the old theme",
           "--accent:#7c3aed" in _c2 and _c2.count("--accent:#a78bfa") == 2
-          and "--accent:#0d9488" not in _c2)
-    check("th4 ...and nothing else moves", "--st-done:#15803d" in _c2
+          # The DEFAULT, read from the module rather than spelled here. It used to
+          # be the literal #0d9488; once the AA work moved --accent that literal
+          # existed nowhere and the clause passed without substituting anything —
+          # a pin that survives the value it was pinning is asserting nothing.
+          and ("--accent:%s" % M.DEFAULT_THEME["--accent"]["$value"]) not in _c2)
+    check("th4 ...and nothing else moves",
+          ("--st-done:%s" % M.DEFAULT_THEME["--st-done"]["$value"]) in _c2
           and _c2.count("color-scheme") == M.TOKEN_CSS.count("color-scheme"))
     check("th5 a themed stylesheet still passes the sheet's own lints - parity "
           "and color-scheme are properties of the OUTPUT, not of the default",
@@ -175,7 +180,11 @@ def _cases(check):
           "but the scaled tokens moved",
           not M.theme_asymmetric_vars(_cmp)
           and not M.themes_missing_color_scheme(_cmp)
-          and "--accent:#0d9488" in _cmp)
+          # Read from the default rather than spelled: density scales spacing and
+          # type, and the point here is that a COLOUR is untouched by it. Spelling
+          # the hex made this go red for the AA token move, which is not what it
+          # is watching for.
+          and ("--accent:%s" % M.DEFAULT_THEME["--accent"]["$value"]) in _cmp)
     check("th26 density multiplies the step a theme set BY HAND too - one "
           "meaning of 'compact', not one per theme",
           "--t-1:2.8rem" in M.compile_theme(
