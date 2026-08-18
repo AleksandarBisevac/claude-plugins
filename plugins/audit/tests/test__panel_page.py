@@ -482,10 +482,35 @@ def _cases(check):
           in M.UI_HTML)
     check("the caret is remembered as a node AND as a selector - the node is "
           "right whenever it survived, the selector is what a rebuilt view has",
-          "return {node:a,sel:s?((within?within+' ':'')+s):null};}" in M.UI_HTML
+          "return {node:a,sel:s?((within?within+' ':'')+s):null,at:at};}"
+          in M.UI_HTML
           and "let n=(ref.node&&ref.node.isConnected)?ref.node:null;" in M.UI_HTML
           and "if(!n&&ref.sel){const m=document.querySelectorAll(ref.sel);"
           in M.UI_HTML)
+    # ...and WHERE in the box, which is the half renderPolicy, renderOver and
+    # renderAppearance each grew their own id+selectionStart special case for.
+    # Carried in the shared layer now, which is why renderSettings and renderComp
+    # need none: measured with the caret at offset 1 of #compq, one
+    # refreshFromDisk, offset 1 afterwards (it was 0, and unfocused, before).
+    check("the caret's OFFSET is remembered too, and asked for inside the try - "
+          "selectionStart THROWS on number/date/colour inputs rather than "
+          "returning null, so reading it outside would kill the hand-back for "
+          "every view that holds one",
+          "try{at=a.selectionStart==null?null:[a.selectionStart,a.selectionEnd];}"
+          in M.UI_HTML
+          and "catch(e){at=null;}" in M.UI_HTML
+          and "if(ref.at&&n.setSelectionRange)try{n.setSelectionRange("
+              "ref.at[0],ref.at[1]);}catch(e){}" in M.UI_HTML)
+    # The silent pass this replaces: `n.focus();return true;`. A DISABLED control
+    # accepts .focus() without complaint and leaves the caret on <body>, which is
+    # exactly what the rebuilt Discard buttons do - they are disabled the moment
+    # the discard succeeds. Measured on all three savebars: the selector resolved
+    # to 1 match, focus() was called, activeElement was <body>, and the old code
+    # returned true. The claim now costs a question to the document.
+    check("a hand-back reports what the DOCUMENT says, not what .focus() was "
+          "asked to do - a disabled control takes the call in silence",
+          "return document.activeElement===n;}" in M.UI_HTML
+          and "n.focus();return true;}" not in M.UI_HTML)
     check("a hook that names several controls restores NOTHING rather than "
           "guessing - focus put somewhere the reader has never been looks "
           "deliberate, which is worse than the top of the document",
@@ -495,6 +520,17 @@ def _cases(check):
           "syntax error",
           "const selSafe=v=>v.length<=64&&!/[\"\\\\\\]]/.test(v);" in M.UI_HTML
           and "(selSafe(a.value)?'=\"'+a.value+'\"':'')" in M.UI_HTML)
+    # An id is not a selector until it is escaped, and this form's ids are DOTTED
+    # config paths. Measured: #set-manifestPath and #set-planGate handed the caret
+    # back, and every dotted id in the same form - which is most of it - restored
+    # NOTHING, because '#set-usage.bands.highUSD' asks for an element with id
+    # "set-usage" carrying two classes. focusBack refuses a selector that matches
+    # none, so it failed the way it is designed to and said nothing.
+    check("an id goes through CSS.escape before it becomes a selector - Settings "
+          "names its fields after dotted config paths, where a raw '#'+id reads "
+          "the dots as class combinators",
+          "if(n.id)return '#'+CSS.escape(n.id);" in M.UI_HTML
+          and "'#'+n.id;" not in M.UI_HTML)
     # The second-direction case (this fix is a conditional, so it has two wrong
     # implementations): never firing is the original bug, always firing is a
     # redraw of one view stealing the caret out of another. Scoping is what
@@ -503,12 +539,45 @@ def _cases(check):
           "one view's repaint cannot take it out of another",
           "if(!a||!a.closest||(within&&!a.closest(within)))return null;"
           in M.UI_HTML
-          and M.UI_HTML.count("focusKeep(") == 5      # one def, four views
-          and M.UI_HTML.count("focusBack(") == 6      # one def, dlgOpen, four views
+          and M.UI_HTML.count("focusKeep(") == 7      # one def, six views
+          and M.UI_HTML.count("focusBack(") == 8      # one def, dlgOpen, six views
           and "focusKeep('#policy')" in M.UI_HTML
           and "focusKeep('#usage')" in M.UI_HTML
           and "focusKeep('#over')" in M.UI_HTML
-          and "focusKeep('#look')" in M.UI_HTML)
+          and "focusKeep('#look')" in M.UI_HTML
+          # The two the first pass left out. Every view that a render* rebuilds
+          # wholesale is now in this list, and the count is what keeps a seventh
+          # from being added without one.
+          and "focusKeep('#guards')" in M.UI_HTML
+          and "focusKeep('#comp')" in M.UI_HTML)
+    # A savebar Save carried neither an id nor a data- hook, so focusSel could not
+    # name it and the caret a confirm dialog gave back had nowhere to go across the
+    # re-render that followed. Counted, not merely found: `in` would pass with one
+    # of the three wired up. #policy and the theme card already had data-psave and
+    # data-thsave, which is why they are not in this count.
+    check("every savebar Save can be NAMED after its view is rebuilt - the "
+          "measured hole was Save, not Discard: the caret came back to it at "
+          "676ms and renderComp took it away again at 682ms",
+          M.UI_HTML.count("'data-save':'") == 3
+          and "'data-save':'guards'" in M.UI_HTML
+          and "'data-save':'comp'" in M.UI_HTML
+          and "'data-save':'ado'" in M.UI_HTML
+          and "'data-psave':'1'" in M.UI_HTML
+          and "'data-thsave':'1'" in M.UI_HTML)
+    # #comp had no ids and no hooks at all, so the hand-back would have restored
+    # nothing for the whole view. data-status alone will not do for the filter
+    # buttons: inside #comp it also sits on every phase row, every task row and
+    # every status pill, so focusSel's selector names hundreds and focusBack
+    # correctly refuses to guess between them.
+    check("the Composition toolbar and its two editable columns carry hooks the "
+          "rebuilt view can be searched for, and the filter buttons carry one "
+          "that data-status could not be",
+          "id:'compq'" in M.UI_HTML
+          and "'data-compneeds':'1'" in M.UI_HTML
+          and "'data-compexpand':'1'" in M.UI_HTML
+          and "'data-status':s,'data-compfilt':s" in M.UI_HTML
+          and "'data-revmodel':ph.id||''" in M.UI_HTML
+          and "'data-tmodel':t.id||''" in M.UI_HTML)
     check("the dialog is the platform's here too — focus trap, backdrop, Esc",
           "el('dialog',{class:'confirm'})" in M.UI_HTML
           # ...opened through the shared opener, never showModal() direct. The
@@ -1727,6 +1796,215 @@ def _cases(check):
 
     # usage_state's own cases (facts, the roll-up cap, the declared rate basis)
     # moved to _panel_state.py (P12.3); everything above is the tab that reads it.
+
+    # --- WCAG 2.2 SC 2.5.8 Target Size (Minimum): a census, not a wish list ------
+    # 24 x 24 CSS px, or a named exception. The exceptions are five and they are
+    # NOT interchangeable: Spacing (nothing else inside the target's 24px circle),
+    # Equivalent (the same function reachable at full size elsewhere), Inline (a
+    # target in a sentence, sized by the line-height of the prose), User agent (the
+    # box is the browser's and the author did not touch it), Essential.
+    #
+    # The half that can fail on something nobody thought about is the CENSUS: every
+    # interactive shape is read out of the assembled page itself, so adding
+    # `el('button',{class:'zzz'})` grows a key this register does not have and ts1
+    # goes red before anyone has measured anything. A hand-kept list of the ones
+    # somebody remembered would pass forever.
+    #
+    # The NUMBERS are the browser's, never this file's - Playwright at 390px and
+    # 1200px, all six tabs, all four dialogs, keeping the smallest instance of each
+    # shape. A static file cannot compute a rendered box and does not pretend to.
+    # What it checks instead is that the MECHANISM each non-conforming shape leans
+    # on is still in the stylesheet, which is the part a later edit can quietly
+    # remove: delete the ::after overlay or the min-width and ts2 names the shape.
+    #
+    #   ok                 measured >= 24x24; the evidence is the measurement
+    #   hit                the glyph is under 24 and an ::after overlay carries the
+    #                      target; the overlay rule must declare 24px both ways
+    #   <prop>:<value>     reached through that declaration, which must still
+    #                      resolve to >= 24 CSS px
+    #   exception=<name>   one of the five, and the stylesheet must carry the
+    #                      reason beside the rule so the next reader does not
+    #                      re-open it
+    _TS_EXCEPTIONS = ("spacing", "equivalent", "inline", "user-agent", "essential")
+    _TARGET_SIZE = {
+        # the three hand-styled glyph buttons: 24x24 hit area, glyph untouched
+        "button": ("hit", ".chip button"),           # the x that drops a chip
+        "button.hint": ("hit", ".hint"),             # the i that opens the drawer
+        "button.notex": ("hit", ".savenote .notex"),  # the x on a save note
+        # one dimension short, and the pixels go into space that was already there
+        "button.bx": ("min-width:24px", ".bx"),
+        "button.btn.small.uhmarrow": ("min-width:24px", ".uhmarrow"),
+        "input.thpick": ("height:1.5rem", ".thpick"),
+        "select.prule": ("min-height:24px", "select.prule"),
+        "summary": ("min-height:24px", ":where(summary)"),
+        # exceptions, argued in the stylesheet beside the rule
+        "a.lnk": ("exception=inline", ".lnk"),
+        "button.lnk": ("exception=inline", ".lnk"),
+        "input[type=checkbox]": ("exception=user-agent", "input[type=checkbox]"),
+        # measured >= 24x24 already
+        "button.btn.primary": ("ok", "105.4x39.8"),
+        "button.btn.small": ("ok", "25.6x29.2"),
+        "button.btn.small.push": ("ok", "56.8x29.2"),
+        "button.chip.ghosted.optnone": ("ok", "86.7x29.4"),
+        "button.dtopic": ("ok", "343x78.6"),
+        "button.filt": ("ok", "47.6x29.2"),
+        "button.ovpill": ("ok", "60.5x29.9"),
+        "button.ovrow": ("ok", "301x147.2"),
+        "button.subtab": ("ok", "72.3x30"),
+        "button.tab": ("ok", "60.1x38.7"),
+        "button.tab.on": ("ok", "62.2x38.7"),
+        "button.uchip": ("ok", "157.5x28.4"),
+        "input": ("ok", "104x29.9"),
+        "input.thtext": ("ok", "176x27.8"),
+        "input.usearch": ("ok", "205x29.9"),
+        "input[type=date]": ("ok", "120.3x32"),
+        "input[type=number]": ("ok", "96x28.3"),
+        "input[type=search]": ("ok", "150.5x29.9"),
+        "select": ("ok", "69x27"),
+        "textarea": ("ok", "204x72"),
+    }
+    _TS_TAGS = ("button", "input", "select", "textarea", "summary", "a")
+
+    def _ts_shapes(js, html):
+        """Every interactive shape the page can paint, keyed tag.class.class."""
+        seen, unpainted = {}, {}
+        for _m in re.finditer(r"el\(([^,]{1,40}),\{", js):
+            _tags = [t for t in _TS_TAGS if ("'" + t + "'") in _m.group(1)]
+            if not _tags:
+                continue
+            _i, _depth, _j = _m.end() - 1, 0, _m.end() - 1
+            while _j < len(js):
+                if js[_j] == "{":
+                    _depth += 1
+                elif js[_j] == "}":
+                    _depth -= 1
+                    if _depth == 0:
+                        break
+                _j += 1
+            _body = js[_i:_j]
+            _cls = re.search(r"class:'([^']*)'", _body)
+            _typ = re.search(r"type:'([^']*)'", _body)
+            # Never laid out, so never a target: the theme file picker sits behind
+            # a real button at display:none, and the CSV/PDF anchors are created,
+            # clicked and dropped without ever being painted. Counted rather than
+            # dropped, so losing the exclusion is visible.
+            _where = unpainted if ("display:none" in _body
+                                   or "download:" in _body) else seen
+            for _t in _tags:
+                if _cls:
+                    _k = _t + "." + ".".join(_cls.group(1).split())
+                elif _typ:
+                    _k = _t + "[type=" + _typ.group(1) + "]"
+                else:
+                    _k = _t
+                _where[_k] = _where.get(_k, 0) + 1
+        for _m in re.finditer(r"<(button|input|select|textarea|summary|a)\b([^>]*)>",
+                              html):
+            _cls = re.search(r'class="?([A-Za-z0-9_ -]*)"?', _m.group(2))
+            _k = _m.group(1) + ("." + ".".join(_cls.group(1).split()) if _cls else "")
+            seen[_k] = seen.get(_k, 0) + 1
+        return seen, unpainted
+
+    _ts_script = re.search(r"<script>([\s\S]*?)</script>", M.UI_HTML)
+    _ts_markup = re.sub(r"<(style|script)>[\s\S]*?</\1>", "", M.UI_HTML)
+    _ts_seen, _ts_unpainted = _ts_shapes(
+        _ts_script.group(1) if _ts_script else "", _ts_markup)
+    # The vacuity guard, first: everything below narrows this set, and a set that
+    # narrowed to nothing would report a page with no undersized control on it.
+    check("ts0 the census reads the page rather than a list somebody kept up to "
+          "date - %d shapes found, %d never painted (%r)"
+          % (len(_ts_seen), len(_ts_unpainted), sorted(_ts_unpainted)),
+          _ts_script is not None and len(_ts_seen) >= 25
+          and sorted(_ts_unpainted) == ["a", "input[type=file]"])
+    _ts_missing = sorted([k for k in _ts_seen if k not in _TARGET_SIZE])
+    _ts_stale = sorted([k for k in _TARGET_SIZE if k not in _ts_seen])
+    check("ts1 every interactive shape the page can create carries a target-size "
+          "verdict, and every verdict still has a shape - unlisted %r, stale %r"
+          % (_ts_missing, _ts_stale),
+          not _ts_missing and not _ts_stale)
+
+    _ts_sheet = re.search(r"<style>([\s\S]*?)</style>", M.UI_HTML).group(1)
+    _ts_bodies = re.findall(r"([^{}]+)\{([^{}]*)\}",
+                            re.sub(r"/\*[\s\S]*?\*/", "", _ts_sheet))
+
+    def _ts_decls(sel):
+        """Every declaration block whose selector LIST names `sel` exactly."""
+        return [" ".join(b.split()) for raw, b in _ts_bodies
+                if sel in [p.strip() for p in " ".join(raw.split()).split(",")]]
+
+    def _ts_px(v):
+        """A length in CSS px, or None when it is not an absolute one."""
+        _m = re.match(r"^([0-9.]+)(px|rem)$", v.strip())
+        return None if not _m else float(_m.group(1)) * (16.0 if _m.group(2) == "rem"
+                                                         else 1.0)
+
+    _ts_bad = []
+    for _k in sorted(_TARGET_SIZE):
+        _verdict, _ev = _TARGET_SIZE[_k]
+        if _verdict == "ok":
+            _m = re.match(r"^([0-9.]+)x([0-9.]+)$", _ev)
+            if not _m or float(_m.group(1)) < 24 or float(_m.group(2)) < 24:
+                _ts_bad.append("%s: listed ok on a measurement of %r" % (_k, _ev))
+        elif _verdict == "hit":
+            if not [b for b in _ts_decls(_ev + "::after")
+                    if "width:24px" in b and "height:24px" in b]:
+                _ts_bad.append("%s: no %s::after rule declaring 24x24 - the glyph "
+                               "is under 24 and nothing carries the target"
+                               % (_k, _ev))
+        elif _verdict.startswith("exception="):
+            _name = _verdict.split("=", 1)[1]
+            _note = "target-size: %s — exception=%s" % (_ev, _name)
+            if _name not in _TS_EXCEPTIONS:
+                _ts_bad.append("%s: %r is not one of the five SC 2.5.8 exceptions"
+                               % (_k, _name))
+            elif _note not in _ts_sheet:
+                _ts_bad.append("%s: the stylesheet does not carry %r, so the next "
+                               "reader has to re-open the question" % (_k, _note))
+        else:
+            _prop, _, _val = _verdict.partition(":")
+            if (_ts_px(_val) or 0) < 24:
+                _ts_bad.append("%s: %s does not reach 24 CSS px" % (_k, _verdict))
+            elif not [b for b in _ts_decls(_ev)
+                      if re.search(r"(^|;)\s*%s\s*:\s*%s\s*(;|$)"
+                                   % (re.escape(_prop), re.escape(_val)), b)]:
+                _ts_bad.append("%s: the stylesheet has no %s{%s}"
+                               % (_k, _ev, _verdict))
+    check("ts2 each verdict is substantiated where it is claimed - an overlay by "
+          "an ::after that really declares 24px, a declaration by that "
+          "declaration still resolving to 24, an exception by its reason sitting "
+          "in the stylesheet: %r" % (_ts_bad,),
+          not _ts_bad)
+
+    # The other direction, and the one a register cannot see: a rule that PINS an
+    # interactive box under 24. `min-*:0` is skipped because it removes a flex
+    # floor rather than imposing a size, and the three `hit` selectors are skipped
+    # because being under 24 is the whole point of them - ts2 is what holds their
+    # overlay in place.
+    _ts_cls = set()
+    for _k in _TARGET_SIZE:
+        for _c in _k.split(".")[1:]:
+            _ts_cls.add(_c.split("[")[0])
+    _ts_hit = set([e for v, e in _TARGET_SIZE.values() if v == "hit"])
+    _ts_pinned = []
+    for _raw, _body in _ts_bodies:
+        for _part in [p.strip() for p in " ".join(_raw.split()).split(",")]:
+            if not _part or _part.startswith("@") or _part in _ts_hit:
+                continue
+            _last = re.split(r"[ >+~]", _part)[-1]
+            _tag = re.match(r"^[a-z]+", _last)
+            _names = set(re.findall(r"\.([A-Za-z0-9_-]+)", _last))
+            if not ((_tag and _tag.group(0) in _TS_TAGS) or (_names & _ts_cls)):
+                continue
+            for _d in re.finditer(r"(^|;)\s*(width|height|min-width|min-height)"
+                                  r"\s*:\s*([^;]+)", " ".join(_body.split())):
+                _px = _ts_px(_d.group(3))
+                if _px is None or _px >= 24 or _px == 0:
+                    continue
+                _ts_pinned.append("%s{%s:%s}" % (_part, _d.group(2),
+                                                 _d.group(3).strip()))
+    check("ts3 no rule pins an interactive box under 24 CSS px behind the "
+          "register's back - %r" % (sorted(set(_ts_pinned)),),
+          not _ts_pinned)
 
     # --- isolation: the moved boundary stays real -------------------------------
     # This file is BELOW panel-server and below the panel's read/write sides. It

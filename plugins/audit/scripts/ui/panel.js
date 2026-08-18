@@ -282,7 +282,14 @@ const DLGBACK=new WeakMap();
 const selSafe=v=>v.length<=64&&!/["\\\]]/.test(v);
 function focusSel(n){
  if(!n||!n.attributes)return null;
- if(n.id)return '#'+n.id;
+ // CSS.escape, because Settings names its fields after DOTTED config paths —
+ // #set-usage.bands.highUSD, #set-tddReminder.enabled — and '#'+id reads those
+ // dots as class combinators. MEASURED: the hand-back worked on
+ // #set-manifestPath and #set-planGate and silently restored NOTHING on every
+ // dotted id in the form, which is most of it, because the selector matched an
+ // element with id "set-usage" carrying class "bands" that does not exist.
+ // css-escape is Baseline widely available (since 2022-07-15).
+ if(n.id)return '#'+CSS.escape(n.id);
  const hooks=[...n.attributes].filter(a=>a.name.slice(0,5)==='data-')
    .map(a=>'['+a.name+(selSafe(a.value)?'="'+a.value+'"':'')+']').join('');
  return hooks||null;}
@@ -293,7 +300,16 @@ function focusKeep(within){
  const a=document.activeElement;
  if(!a||!a.closest||(within&&!a.closest(within)))return null;
  const s=focusSel(a);
- return {node:a,sel:s?((within?within+' ':'')+s):null};}
+ // WHERE in the box, not only which box. Focus alone puts a reader who was in the
+ // middle of a path back at offset 0, which is the same defect one level down —
+ // and it is why renderPolicy, renderOver and renderAppearance each grew their own
+ // id+selectionStart special case. Carried here once instead. Reading
+ // selectionStart THROWS on the input types that have no selection (number, date,
+ // colour) rather than returning null, so it is asked for inside the try.
+ let at=null;
+ try{at=a.selectionStart==null?null:[a.selectionStart,a.selectionEnd];}
+ catch(e){at=null;}
+ return {node:a,sel:s?((within?within+' ':'')+s):null,at:at};}
 function focusBack(ref){
  if(!ref)return false;
  let n=(ref.node&&ref.node.isConnected)?ref.node:null;
@@ -303,7 +319,16 @@ function focusBack(ref){
   // been — worse than the top of the document, because it looks deliberate.
   n=m.length===1?m[0]:null;}
  if(!n||!n.focus)return false;
- n.focus();return true;}
+ n.focus();
+ if(ref.at&&n.setSelectionRange)try{n.setSelectionRange(ref.at[0],ref.at[1]);}catch(e){}
+ // ASK THE DOCUMENT, do not assume .focus() took. A disabled control accepts the
+ // call in silence and keeps the caret on <body>, which is exactly what the three
+ // Discard buttons do to themselves: the rebuilt Discard is disabled (there is now
+ // nothing to discard), the selector still resolves to exactly one node, and the
+ // old `return true` reported a hand-back that had not happened. Measured on all
+ // three savebars — [data-discard="guards"], ="comp" and ="ado" — every one
+ // resolved to 1 match, focused it, and left document.activeElement on <body>.
+ return document.activeElement===n;}
 // showModal(), plus the close that hands the caret back. EVERY dialog on this
 // page opens through here — `.showModal()` is written exactly once in this file
 // and a selftest counts it, so a fifth dialog cannot be added that quietly skips
@@ -914,7 +939,17 @@ function gotoSetting(path){showTab('guards');
 function settingsLink(text,path){
  return el('button',{class:'lnk',type:'button',onclick:()=>gotoSetting(path)},text);}
 
-function renderSettings(){closeCombo();const c=$('#guards');c.textContent='';
+function renderSettings(){closeCombo();
+ // This form is rebuilt wholesale, same as #policy and #over, so it owes the same
+ // hand-back. MEASURED before it was written: with the caret resting in
+ // #set-manifestPath at offset 1 and nothing typed, one refreshFromDisk moved it
+ // to <body> — the form is CLEAN when nothing was typed, so the 5s poll re-renders
+ // it. And after a confirmed Save the caret came back to the Save button at 574ms
+ // and was taken off it again by the poll's re-render at 4144ms. No id special
+ // case here: focusKeep carries the selection offsets, so a path being edited
+ // comes back at the character it was left at.
+ const keepBack=focusKeep('#guards');
+ const c=$('#guards');c.textContent='';
  const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
  const findings=el('div',{class:'findings-slot'});
  // What this form would change, against the config the server last served. Read by
@@ -923,7 +958,12 @@ function renderSettings(){closeCombo();const c=$('#guards');c.textContent='';
  EDITS.guards=()=>configChanges(cfg);
  // One `cfg`, one Save: the four cards are one FILE, and saving a quarter of a
  // document is not a thing this API can do.
- const save=el('button',{class:'btn primary',onclick:async()=>{
+ // `data-save` is the hand-back's hook, the pair of `data-discard`: focusSel names
+ // an element by its id or by its data- attributes, and a savebar Save carried
+ // NEITHER — so the caret that a confirm dialog gave back to it had no way home
+ // across the re-render that followed. #policy and the theme card already had
+ // data-psave and data-thsave; these three are the ones that did not.
+ const save=el('button',{class:'btn primary','data-save':'guards',onclick:async()=>{
    const rows=configChanges(cfg);
    if(!rows.length){toast('nothing to save — no settings changed');return;}
    if(!await confirmChanges({title:'Save settings',rows,scope:'guards',
@@ -987,7 +1027,8 @@ function renderSettings(){closeCombo();const c=$('#guards');c.textContent='';
  // Sticky, because the form is now four cards long and a Save you have to go
  // looking for is a Save people forget to press.
  c.append(el('div',{class:'savebar'},save,discard,
-   el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));}
+   el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));
+ focusBack(keepBack);}
 
 function boolField(cfg,d,f,tip){
  const cur=getPath(cfg,f.path),def=getPath(d,f.path)!==false;
@@ -1336,7 +1377,15 @@ function skillChips(getArr,setArr){
 const COMPF={q:'',status:'',needs:false,open:{},apply:null};
 function openInComp(pid){COMPF.q=pid;COMPF.status='';COMPF.needs=false;COMPF.open[pid]=true;
  if(COMPF.apply)COMPF.apply();showTab('comp');}
-function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const comp=STATE.composition;
+function renderComp(){closeCombo();
+ // Rebuilt from FOUR places, which is one more than any other view: its own Save,
+ // its Discard, the ADO card's Save and Discard, and the 5s disk poll. MEASURED:
+ // after a confirmed Save the dialog handed the caret back to the Save button at
+ // 676ms and this function took it away again at 682ms — six milliseconds, and no
+ // poll involved, which is how this view differs from #policy. The caret in the
+ // filter box was lost the same way on a refreshFromDisk, offset and all.
+ const keepBack=focusKeep('#comp');
+ const c=$('#comp');c.textContent='';const comp=STATE.composition;
  MITEMS=null;   // STATE may have moved under us (save re-render, disk refresh)
  const patch={meta:{},phases:{},tasks:{}};
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,
@@ -1353,10 +1402,15 @@ function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const com
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
  const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills,
    {comp:'taskSkills',label:'Task skills'}));
- const q=el('input',{type:'search',placeholder:'filter phases & tasks…',value:COMPF.q});
+ // The toolbar and the two editable columns carry hand-back hooks, because this
+ // view has no ids of its own and focusSel can only name an element by an id or a
+ // data- attribute. `data-status` alone would not do for the filter buttons: inside
+ // #comp it also sits on every phase row, every task row and every status pill, so
+ // it names four hundred elements and focusBack correctly refuses to guess.
+ const q=el('input',{type:'search',id:'compq',placeholder:'filter phases & tasks…',value:COMPF.q});
  const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
- const needsBtn=el('button',{class:'filt',type:'button','aria-pressed':'false',title:'only tasks with no skills yet — an explicit "none applies" (null) is an answer, not a need'},'needs skills');
- const expandBtn=el('button',{class:'btn small',type:'button'},'expand all');
+ const needsBtn=el('button',{class:'filt',type:'button','data-compneeds':'1','aria-pressed':'false',title:'only tasks with no skills yet — an explicit "none applies" (null) is an answer, not a need'},'needs skills');
+ const expandBtn=el('button',{class:'btn small',type:'button','data-compexpand':'1'},'expand all');
  const count=el('span',{class:'count',style:'margin-left:auto'});
  tcard.append(el('div',{class:'comptools'},q,el('span',{class:'filtlbl'},'phase:'),statusBar,needsBtn,expandBtn,count));
  // mc: the three-source near-miss hint (see modelHints). A note, not a gate.
@@ -1382,7 +1436,7 @@ function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const com
  const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
  comp.phases.forEach(ph=>{
   const tasks=byPhase[ph.id]||[];
-  const rev=el('input',{value:ph.reviewModel??'',placeholder:'review model'});
+  const rev=el('input',{value:ph.reviewModel??'','data-revmodel':ph.id||'',placeholder:'review model'});
   const setRev=v=>{patch.phases[ph.id]={reviewModel:v||null};};
   rev.oninput=()=>setRev(rev.value.trim());
   const revCombo=comboWrap(rev,modelItems,(name,close)=>{
@@ -1410,7 +1464,7 @@ function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const com
   tbody.append(pr);
   const taskEls=[];
   tasks.forEach(t=>{
-   const tp={};const model=el('input',{value:t.model??'',placeholder:'—'});
+   const tp={};const model=el('input',{value:t.model??'','data-tmodel':t.id||'',placeholder:'—'});
    const setModel=v=>{tp.model=v||null;patch.tasks[t.id]=tp;};
    model.oninput=()=>setModel(model.value.trim());
    // mc: choosing from the menu writes the SAME patch the keystroke writes.
@@ -1430,7 +1484,7 @@ function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const com
   phaseEls.push({id:ph.id,title:ph.title||'',status:ph.status||'',area:(ph.area||[]).join(' '),tr:pr,tasks:taskEls});
  });
  [...new Set(comp.phases.map(p=>p.status).filter(Boolean))].sort().forEach(s=>{
-  const b=el('button',{class:'filt',type:'button','data-status':s,'aria-pressed':'false'},label(s));
+  const b=el('button',{class:'filt',type:'button','data-status':s,'data-compfilt':s,'aria-pressed':'false'},label(s));
   b.onclick=()=>{COMPF.status=COMPF.status===s?'':s;syncFilters();refresh();};
   statusBar.append(b);});
  // aria-pressed alongside the class: which filter is on was carried by the accent
@@ -1465,7 +1519,7 @@ function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const com
  syncFilters();q.addEventListener('input',refresh);refresh();
 
  EDITS.comp=()=>compChanges(patch);
- const save=el('button',{class:'btn primary',onclick:async()=>{
+ const save=el('button',{class:'btn primary','data-save':'comp',onclick:async()=>{
    // The textarea only writes into the patch when its contents PARSE, so an
    // unparseable box would confirm — and then save — the last value that did. A
    // dialog that shows something other than what the form holds is worse than no
@@ -1527,7 +1581,10 @@ function renderComp(){closeCombo();const c=$('#comp');c.textContent='';const com
  ['skills','agents','mcp'].forEach(k=>subtabs.append(el('button',{class:'subtab'+(k===cur?' on':''),
    onclick:e=>{cur=k;[...subtabs.children].forEach(x=>x.classList.toggle('on',x===e.currentTarget));drawTbl();}},
    k+' ('+(datasets[k]||[]).length+')')));
- drawTbl();bb.append(subtabs,host);c.append(bb);}
+ drawTbl();bb.append(subtabs,host);c.append(bb);
+ // Last, after renderAdoCard and the blocks table: a hand-back that runs before
+ // the view is finished aims at a node the rest of the build then replaces.
+ focusBack(keepBack);}
 
 // --- the ADO connector card (meta.ado; saves via PUT /api/ado) -------------------
 // A card inside the Composition tab, NOT a row of its form: `ado` is API-only meta
@@ -1727,7 +1784,7 @@ function renderAdoCard(c){
  // the comp view's shared updater from here would abort the composition
  // form's own listener.
  EDITS.ado=()=>adoRows(saved,ADRAFT);
- const save=el('button',{class:'btn primary',onclick:async()=>{
+ const save=el('button',{class:'btn primary','data-save':'ado',onclick:async()=>{
    const rows=adoRows(saved,ADRAFT);
    if(!rows.length){toast('nothing to save — no values changed');return;}
    if(!await confirmChanges({title:'Save ADO connector',rows,scope:'comp',

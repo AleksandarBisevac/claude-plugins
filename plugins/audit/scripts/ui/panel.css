@@ -88,6 +88,13 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mu
 label.f{display:flex;flex-direction:column;gap:.25rem;flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
 input,textarea,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);
  border-radius:var(--radius);padding:.5rem .75rem;font-size:.9rem}
+/* Every <summary> on this page is a disclosure a pointer has to hit, and its box
+   is a bare line box: measured 20px in the help drawer and 20px on the policy
+   honesty note, against the 24 WCAG 2.2 SC 2.5.8 asks for. One base rule rather
+   than three (.dagent, .fall, .polhonest each set their own colour and font-size,
+   and none of them wants its own copy of this), at specificity zero so a surface
+   rule still wins. */
+:where(summary){min-height:24px}
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:vertical}
 .mono{font-family:var(--mono)}
@@ -108,6 +115,23 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.25rem .5em;border-radius:var(--pill);
  background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
 .chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
+/* WCAG 2.2 SC 2.5.8 Target Size (Minimum) — the hit-area rule, written once for
+   the three hand-styled glyph buttons that need it.
+     .chip button    the × that drops a path or a skill   MEASURED 6.4 x 12
+     .hint           the ⓘ that opens the help drawer     MEASURED 16.3 x 16.3
+     .savenote .notex  the × that dismisses a save note   MEASURED 9.4 x 16
+   None of the five exceptions covers them. The size is the AUTHOR'S, not the user
+   agent's; they are affordances, not words in a sentence; each is the only route
+   to what it does; and the Spacing exception fails on the first two — a neighbour
+   sits inside their 24px circle at 390px AND at 1200px (the ⓘ beside a field
+   label; the .pill-in input after the last chip).
+   So the HIT AREA grows and the glyph does not. Settings draws 27 chips on one
+   card and Composition nine more: a real 24px button would add ~18px of width to
+   every chip and 8px to every label row, turning two dense lists into paragraphs.
+   That is the trade this pseudo-element exists to refuse. */
+.chip button,.savenote .notex{position:relative}
+.chip button::after,.hint::after,.savenote .notex::after{content:"";position:absolute;
+ left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%)}
 /* v0.37 B1 — the explicit skills opt-out. `.optout` is the STATE (skills:
    null): muted and italic so an answered "none" never reads like a value, but
    never like an empty unconsidered row either. `.optnone` is the AFFORDANCE, a
@@ -198,6 +222,13 @@ button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--mut
  stroke-linejoin:round;stroke-linecap:round}
 .uspark .sd{fill:var(--accent-solid)}
 .ucrumb{font-size:.74rem;margin:0 0 var(--sp-1)}
+/* target-size: .lnk — exception=inline (WCAG 2.2 SC 2.5.8). Measured 88.4x19.4
+   and 208.5x19.4: 4.6px under in height, and left alone. These are the "not
+   recorded" / "set usage.pricing" links that sit INSIDE a sentence of muted prose,
+   which is the Inline exception word for word — the box is the line-height of the
+   text around it, and giving one 24px would open a gap in the middle of a
+   paragraph. The Spacing exception holds too (76.6px of clearance at the tightest,
+   at 1200px), so this one is covered twice. */
 .lnk{background:none;border:0;color:var(--accent);font:inherit;font-size:.76rem;
  cursor:pointer;padding:0}
 .lnk:hover{text-decoration:underline}
@@ -255,6 +286,10 @@ button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--mut
  margin:var(--sp-1) 0}
 .uhmperiod{font-size:.78rem;color:var(--text);font-variant-numeric:tabular-nums;
  min-width:11rem;text-align:center}
+/* One glyph wide, so .btn.small's padding left it 23.3px across — 0.7px under the
+   24 WCAG 2.2 SC 2.5.8 asks for. min-width rather than padding, so the arrow stays
+   centred and the row it sits in (29.2px tall) does not move. */
+.uhmarrow{min-width:24px}
 .uhmarrow[disabled]{opacity:.35;cursor:default;pointer-events:none;
  transform:none;box-shadow:none}
 .uhmwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -343,8 +378,11 @@ dialog.browse>*{padding:0 var(--sp-3)}
 .bhead{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);
  padding-top:var(--sp-2)}
 .bhead h2,.bhead h3{margin:0;font-size:1rem;font-weight:640}
+/* min-width because the × is one narrow glyph: 17.3px across against 24px of
+   height, so only one dimension was short of WCAG 2.2 SC 2.5.8. It sits alone in
+   the dialog header, so the 6.7px goes into empty space. */
 .bx{border:none;background:none;color:var(--muted);cursor:pointer;font-size:1rem;
- line-height:1;padding:var(--sp-0)}
+ line-height:1;padding:var(--sp-0);min-width:24px}
 .bx:hover{color:var(--text)}
 .btblwrap{max-height:min(60vh,28rem);overflow:auto;border-top:1px solid var(--border);
  padding:0}
@@ -603,6 +641,14 @@ label.f.wide{flex:1 1 100%}
    beside neither. On a row that still fits — every row on a desktop — the two are
    the same picture. */
 label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;flex:0 1 auto;min-width:0}
+/* target-size: input[type=checkbox] — exception=user-agent (WCAG 2.2 SC 2.5.8).
+   Measured 13x13 CSS px, which is Chromium's own default box: nothing here sets a
+   width, a height or an appearance on a checkbox. The shared `input,textarea,select`
+   rule does declare padding and font-size, and an appearance:auto checkbox ignores
+   both — measured, not assumed, and the 13x13 is the proof. Restyling the box to
+   24px would forfeit the exception AND the native control; what this rule does is
+   the other half of the answer, wrapping the box in a <label> that clicks it, which
+   takes the real target to 124x21 and 268x21 on the Settings cards. */
 label.f.cbf input{margin:0}
 /* Reachable from any of the four cards. A form this long with the Save at the
    bottom is a form people leave without saving. */
@@ -690,6 +736,12 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
  border:1px solid var(--border-strong);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}
 .hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
+/* The ⓘ's 24x24 hit area is declared with the other two glyph buttons, beside
+   .chip button — one rule, one argument, three components. `position:relative` is
+   already on .hint above (the tip used to be a pseudo here) and is what that rule
+   needs. The Inline exception is the tempting one for this ⓘ, since it does sit in
+   a label's line box; it is not claimed, because a button that opens a drawer is
+   an affordance and not a word in a sentence. */
 /* THE tip is one element on <body>, not a pseudo inside whatever box carries the
    ⓘ. Third mechanism, and the shape of the two failures says why it is the last:
    absolute got buried under the comp table's stacking contexts and grew its
@@ -860,7 +912,10 @@ table.thtbl td{padding:.25rem .4rem;border-top:1px solid var(--border);
   vertical-align:middle}
 td.thname{white-space:nowrap;color:var(--muted);font-size:.78rem}
 td.thcell{display:table-cell;white-space:nowrap}
-.thpick{width:1.7rem;height:1.4rem;padding:0;border:1px solid var(--border);
+/* 1.5rem, not 1.4rem: WCAG 2.2 SC 2.5.8 wants 24 CSS px and 1.4rem is 22.4. The
+   swatch sits beside a 27.8px .thtext in the same cell, so the extra 1.6px is
+   inside a row that is already taller — measured, no row moved. */
+.thpick{width:1.7rem;height:1.5rem;padding:0;border:1px solid var(--border);
   border-radius:5px;background:none;vertical-align:middle;cursor:pointer}
 input.thtext{width:11rem;padding:.2rem .4rem;font-family:var(--mono);
   font-size:.76rem;vertical-align:middle;margin-left:.3rem}
@@ -949,7 +1004,12 @@ table.poltbl td.nm{font-family:var(--mono);font-size:.76rem;
    being drawn as "req" over "uired" beside audit's own row. */
 table.poltbl td.nm .badge{white-space:nowrap;overflow-wrap:normal}
 table.poltbl td.pend{background:color-mix(in srgb,var(--accent-solid) 10%,transparent)}
-select.prule{font:inherit;font-size:.74rem;padding:.15rem .3rem;
+/* WCAG 2.2 SC 2.5.8: the box was 60.6x21.8 and three of the 550 had a neighbour
+   inside their 24px circle at 1200px, so the Spacing exception did not cover all
+   of them. `min-height` costs NOTHING here — the row it sits in measures 54.4px,
+   so the select grows 2.2px inside a cell with 32px to spare and no table row
+   moves. Measured before and after. */
+select.prule{font:inherit;font-size:.74rem;padding:.15rem .3rem;min-height:24px;
  border:1px solid var(--border);border-radius:var(--radius);
  background:var(--surface);color:var(--text)}
 select.prule:disabled{opacity:.55;cursor:not-allowed}
@@ -990,6 +1050,8 @@ table.polrules td.lst[data-list=allow]{color:var(--ok)}
    open-able because a switchboard that never states them is selling enforcement
    it does not have. */
 .polhonest{margin:.6rem 0 0;font-size:.82rem}
+/* Its 24px target floor is the shared :where(summary) rule beside the base input
+   styles, not a copy here — this one only sets colour and size. */
 .polhonest summary{cursor:pointer;color:var(--muted);font-size:.78rem}
 .polhonest ol{margin:.5rem 0 0;padding-left:1.2rem;color:var(--muted);
  font-size:.78rem;line-height:1.55;max-width:76ch}
