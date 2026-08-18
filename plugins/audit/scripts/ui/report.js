@@ -218,19 +218,50 @@
   // compose itself (the range summary line, the re-rendered heatmap tips).
   // Same table, same shapes: magnitudes compact ("3.2M"), countables keep
   // their thousands separators, real-but-sub-cent spend never reads $0.00.
+
+  // toFixed breaks an exact tie AWAY from zero; Python's "%.*f" breaks it to
+  // EVEN. That shipped: 1250 tokens read "1.3K" here against _fmt.py's "1.2K",
+  // and $0.125 read "$0.13" against "$0.12". A different rounding MODE, not
+  // float noise — the inputs are exactly representable in binary.
+  //
+  // A double is an exact tie at `dp` places IFF x * 2^(dp+1) is an ODD integer.
+  // A tie is (2j+1)/(2*10^dp), and a double is only ever a dyadic rational, so
+  // 5^dp must divide (2j+1) — which leaves x = t/2^(dp+1) with t odd. Scaling
+  // by a power of two only shifts the exponent, so that test is exact. Scaling
+  // by 10^dp is NOT, and that is the trap: `n * 100 === Math.round(n * 100)`
+  // misclassifies the majority of values, which are not representable. A value
+  // that is not a tie (1.35, 3.05) fails this test and keeps toFixed's answer,
+  // which already agrees with Python.
+  //
+  // On a tie toFixed returns the away-from-zero neighbour, so its last digit is
+  // odd exactly when Python picks the other one — and stepping that digit down
+  // by one never borrows, because an odd digit is never 0.
+  //
+  // Written twice, once per dialect, because there is no build step that could
+  // share it with panel.js's `uFixedHalfEven`. That is the known cost, and
+  // tools/ui-tests/half-even.test.mjs holds the two copies equal against
+  // _fmt.py — a comment asserting they match is the thing that was already
+  // false in this family once.
+  function fixedHalfEven(x, dp) {
+    var s = x.toFixed(dp);
+    var scaled = x * Math.pow(2, dp + 1);
+    if (!isFinite(scaled) || Math.floor(scaled) !== scaled || scaled % 2 === 0) return s;
+    var last = s.charCodeAt(s.length - 1) - 48;
+    return last % 2 === 1 ? s.slice(0, -1) + String(last - 1) : s;
+  }
   function fmtTokens(n, dp) {
     n = Math.trunc(n || 0);
     var a = Math.abs(n);
     var t = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
     for (var i = 0; i < t.length; i++) {
-      if (a >= t[i][0]) return (n / t[i][0]).toFixed(dp) + t[i][1];
+      if (a >= t[i][0]) return fixedHalfEven(n / t[i][0], dp) + t[i][1];
     }
     return String(n);
   }
   function fmtCost(x) {
     x = x || 0;
     if (x && Math.abs(x) < 0.01) return '<$0.01';
-    return '$' + x.toFixed(2);
+    return '$' + fixedHalfEven(x, 2);
   }
   function fmtInt(n) {
     return String(Math.trunc(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');

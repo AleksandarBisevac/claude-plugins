@@ -850,9 +850,30 @@ def _cases(check):
           "(counts may be; magnitudes may not): %r"
           % (_badloc or "ok, %d countables" % len(_loc)),
           _badloc == [] and bool(_loc))
+    # The middle term used to read `(n/l).toFixed(dp)+s`. It moved on purpose,
+    # and the negative half is what stops it moving back: a bare toFixed breaks
+    # an exact tie AWAY from zero where Python's "%.*f" breaks it to EVEN, so
+    # 1250 tokens printed "1.3K" in this panel and "1.2K" in every Python
+    # surface of the same number.
     check("tokens are compact at one decimal, two on hover, matching the report",
-          "const uTok=(n,dp=1)=>" in M.UI_HTML and "(n/l).toFixed(dp)+s" in M.UI_HTML
+          "const uTok=(n,dp=1)=>" in M.UI_HTML
+          and "uFixedHalfEven(n/l,dp)+s" in M.UI_HTML
+          and "(n/l).toFixed(dp)" not in M.UI_HTML
           and "uTok(v[0],2)" in M.UI_HTML)
+    # Named rather than banned: the SVG coordinates, bar widths and the browse
+    # dialog's extra-precision share column pinned elsewhere in this file are
+    # DRAWING decisions and still call toFixed directly. Only the three
+    # formatters that claim to mirror _fmt.py owe Python's tie rule. What the
+    # helper actually computes is compared against `_fmt.py` itself, on both
+    # surfaces, in tools/ui-tests/half-even.test.mjs — a substring can only say
+    # that the call is spelled right.
+    check("the three _fmt.py mirrors round a tie the way Python does, and the "
+          "helper that does it truncates uTok's sub-1000 path like int(n)",
+          "function uFixedHalfEven(x,dp){" in M.UI_HTML
+          and "'$'+uFixedHalfEven(x,2)" in M.UI_HTML
+          and "uFixedHalfEven(x,0)+'%'" in M.UI_HTML
+          and "return String(Math.trunc(n));};" in M.UI_HTML
+          and "String(Math.round(n))" not in M.UI_HTML)
 
     # --- reversible tail + browse dialog -----------------------------------------
     # The collapse used to hang off `else if(limit>TOP)` — it only appeared once

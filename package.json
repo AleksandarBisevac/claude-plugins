@@ -1,0 +1,13 @@
+{
+  "name": "quality-gates-dev",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dev-only tooling for this marketplace. NOT the plugin: the plugin is plugins/audit/, it ships no JavaScript dependencies, and nothing here is installed by a consumer. This file lives at the repo root on purpose — under plugins/audit/ it would join the shipping payload, and under tools/ the reference lints would walk a node_modules tree.",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,279 @@
+// Load plugins/audit/scripts/ui/*.js in a node:vm sandbox and hand back the
+// functions inside them, WITHOUT editing either source file.
+//
+// Why this exists at all: those two files are ordered parts of one inline
+// <script>. There is no module system, nothing is exported, and the ~721 exact
+// substring pins on the Python side read TEXT, never behaviour. So a formatter
+// can disagree with the Python it claims to mirror and every gate stays green.
+// This is the missing layer: run the real bytes, call the real function.
+//
+// TWO DIFFERENT PROBLEMS, TWO DIFFERENT ANSWERS.
+//
+//   report.js is one file-spanning IIFE. Every name inside it is unreachable
+//   from outside by construction. The wrapper is stripped HERE, in memory, so
+//   the declarations land on the sandbox's global — the file on disk is never
+//   touched. The wrapper text is pinned below; if it moves, this throws by name
+//   instead of quietly testing a truncated file.
+//
+//   panel.js is already top-level, but it opens with placeholders the Python
+//   substitutes at serve time (__AUDIT_TOKEN__ and friends) and it touches the
+//   DOM while it loads. The placeholders are substituted here and the DOM is
+//   shimmed. Top-level `const` in a vm Script lands in the context's global
+//   LEXICAL environment, which persists across runInContext calls — that is
+//   what makes `uTok` reachable afterwards even though nothing exports it.
+//
+// WHAT THIS CANNOT REACH, said plainly rather than discovered later:
+//
+//   Anything declared inside a nested function. Both heatmap calendars
+//   (startOf / endOf / shift / seek / hasData / the weekday helper, written
+//   twice under the same names) live inside an inner scope and close over
+//   locals — report.js's inside a nested IIFE, panel.js's inside uHeatmap.
+//   Neither is reachable without changing the source, so neither is tested
+//   here. Reaching them is a source change, and a source change is a separate
+//   decision from adding a test.
+//
+//   Anything whose behaviour IS the DOM. The shim below is a stub, not a
+//   browser: it stores attributes and returns stub elements, and it says
+//   nothing true about layout, event order or rendering. Those belong to the
+//   browser gates (tools/capture-screenshots.mjs, tools/check-report-interactive.mjs)
+//   and this file does not compete with them. Only pure functions are asserted
+//   through here.
+
+import fs from 'node:fs';
+import path from 'node:path';
+import url from 'node:url';
+import vm from 'node:vm';
+
+const HERE = path.dirname(url.fileURLToPath(import.meta.url));
+
+export const REPO_ROOT = path.resolve(HERE, '..', '..');
+export const UI_DIR = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts', 'ui');
+
+// Read, never enumerated. A hand-kept list is a list that goes stale the day a
+// part is added, and a part nobody parses is the exact failure `node --check`
+// exists to catch. Callers assert the COUNT so an empty directory — or a walk
+// that silently found nothing — cannot read as "every part is fine".
+export function uiParts() {
+  return fs.readdirSync(UI_DIR).filter((n) => n.endsWith('.js')).sort();
+}
+
+export function readPart(name) {
+  return fs.readFileSync(path.join(UI_DIR, name), 'utf8');
+}
+
+// --- the shim -------------------------------------------------------------
+
+function stubElement(tag) {
+  const attrs = new Map();
+  const self = {
+    nodeType: 1,
+    tagName: String(tag || 'div').toUpperCase(),
+    id: '',
+    textContent: '',
+    innerHTML: '',
+    value: '',
+    href: '',
+    download: '',
+    hidden: false,
+    disabled: false,
+    checked: false,
+    className: '',
+    tabIndex: 0,
+    dataset: {},
+    cells: [],
+    rows: [],
+    children: [],
+    parentNode: null,
+    firstChild: null,
+    nextSibling: null,
+    style: { setProperty() {}, removeProperty() {}, getPropertyValue() { return ''; } },
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    // Attributes are really stored. isDark() reads data-theme off the root
+    // element, so a setAttribute that forgot its value would make every theme
+    // case agree with every other one for the wrong reason.
+    setAttribute(k, v) { attrs.set(String(k), String(v)); },
+    getAttribute(k) { return attrs.has(String(k)) ? attrs.get(String(k)) : null; },
+    removeAttribute(k) { attrs.delete(String(k)); },
+    hasAttribute(k) { return attrs.has(String(k)); },
+    addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; },
+    appendChild(c) { return c; }, append() {}, prepend() {}, remove() {},
+    insertBefore(c) { return c; }, replaceChildren() {},
+    click() {}, focus() {}, blur() {}, scrollIntoView() {}, closest() { return null; },
+    querySelector() { return stubElement('div'); },
+    querySelectorAll() { return []; },
+    getBoundingClientRect() {
+      return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 };
+    },
+  };
+  return self;
+}
+
+function stubDocument() {
+  const doc = {
+    documentElement: stubElement('html'),
+    body: stubElement('body'),
+    head: stubElement('head'),
+    activeElement: null,
+    readyState: 'complete',
+    title: '',
+    // getElementById returns null on purpose: report.js is written to survive a
+    // missing element (an embedded report has no theme button), and returning a
+    // stub for everything would run code paths a real page never reaches.
+    getElementById() { return null; },
+    querySelector() { return stubElement('div'); },
+    querySelectorAll() { return []; },
+    getElementsByClassName() { return []; },
+    createElement(t) { return stubElement(t); },
+    createTextNode(t) { return { nodeType: 3, textContent: String(t) }; },
+    createDocumentFragment() { return stubElement('#fragment'); },
+    addEventListener() {}, removeEventListener() {},
+  };
+  return doc;
+}
+
+function stubWindow(options) {
+  const doc = stubDocument();
+  const prefersDark = options.prefersDark === true;
+  const win = {
+    console,
+    document: doc,
+    location: {
+      hash: options.hash || '',
+      search: '',
+      href: 'file:///report.html',
+      pathname: '/report.html',
+      origin: 'null',
+    },
+    history: { replaceState() {}, pushState() {} },
+    navigator: { userAgent: 'node', platform: 'node', clipboard: { writeText: async () => {} } },
+    // Storage is best-effort in the product (file:// blocks it), so the stub is
+    // the blocked shape: reads return null, writes go nowhere.
+    localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+    sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+    matchMedia: (q) => ({
+      media: String(q || ''),
+      matches: /dark/.test(String(q || '')) ? prefersDark : false,
+      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+    }),
+    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+    requestAnimationFrame: () => 0, cancelAnimationFrame() {},
+    fetch: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+    URL: { createObjectURL: () => 'blob:stub', revokeObjectURL() {} },
+    Blob: function Blob() {},
+    FormData: function FormData() {},
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
+    addEventListener() {}, removeEventListener() {},
+    open() { return null; }, print() {}, alert() {}, scrollTo() {},
+    innerWidth: 1280, innerHeight: 900, devicePixelRatio: 1,
+    AUDIT_USAGE: options.usage === undefined ? null : options.usage,
+    AUDIT_MD_NAME: options.mdName === undefined ? 'audit-report.md' : options.mdName,
+  };
+  win.window = win;
+  win.self = win;
+  doc.defaultView = win;
+  return win;
+}
+
+// --- report.js ------------------------------------------------------------
+
+// Pinned as bytes. report.js is `\n(function () {\n` … `})();\n` and nothing
+// else may be assumed: a reformat that turns the head into `(function() {` must
+// stop this file, not silently shorten it. Both ends are checked, because
+// slicing a length off a string that does not start with it succeeds quietly.
+export const REPORT_IIFE_HEAD = '\n(function () {\n';
+export const REPORT_IIFE_TAIL = '})();\n';
+
+export function unwrapReportSource(src) {
+  if (!src.startsWith(REPORT_IIFE_HEAD)) {
+    throw new Error(
+      'report.js no longer opens with ' + JSON.stringify(REPORT_IIFE_HEAD)
+      + ' — the file-spanning IIFE moved, and stripping it by length would '
+      + 'have silently truncated the file. Update REPORT_IIFE_HEAD in '
+      + 'tools/ui-tests/sandbox.mjs on purpose.');
+  }
+  if (!src.endsWith(REPORT_IIFE_TAIL)) {
+    throw new Error(
+      'report.js no longer ends with ' + JSON.stringify(REPORT_IIFE_TAIL)
+      + ' — see REPORT_IIFE_HEAD above; the same reasoning applies to the tail.');
+  }
+  return src.slice(REPORT_IIFE_HEAD.length, src.length - REPORT_IIFE_TAIL.length);
+}
+
+// --- panel.js -------------------------------------------------------------
+
+// The two the panel server substitutes per REQUEST, and the only two that must
+// be strings — every other placeholder is a JSON object the page reads later.
+// Named here rather than imported from the Python: this harness must not carry
+// an opinion about where that module currently lives.
+export const PANEL_STRING_PLACEHOLDERS = ['__AUDIT_TOKEN__', '__AUDIT_PROJECT__'];
+
+const PLACEHOLDER_RE = /__[A-Z0-9_]+__/g;
+
+export function substitutePanelPlaceholders(src) {
+  const seen = new Set();
+  const out = src.replace(PLACEHOLDER_RE, (m) => {
+    seen.add(m);
+    return PANEL_STRING_PLACEHOLDERS.indexOf(m) >= 0
+      ? JSON.stringify(m === '__AUDIT_TOKEN__' ? 'ui-test-token' : '/tmp/ui-test-project')
+      : '{}';
+  });
+  if (!seen.size) {
+    throw new Error(
+      'panel.js carries no __PLACEHOLDER__ at all. Either the substitution '
+      + 'contract changed or this harness read the wrong file — both are '
+      + 'reasons to stop, not to load a file that may no longer be the panel.');
+  }
+  for (const name of PANEL_STRING_PLACEHOLDERS) {
+    if (!seen.has(name)) {
+      throw new Error(
+        'panel.js no longer carries ' + name + '. It is substituted as a STRING '
+        + 'literal here; a placeholder that has become something else needs a '
+        + 'deliberate update to PANEL_STRING_PLACEHOLDERS.');
+    }
+  }
+  return { source: out, placeholders: [...seen].sort() };
+}
+
+// --- loading --------------------------------------------------------------
+
+function loadInto(sourceText, filename, options) {
+  const sandbox = stubWindow(options || {});
+  const ctx = vm.createContext(sandbox);
+  vm.runInContext(sourceText, ctx, { filename });
+  return { sandbox, ctx };
+}
+
+// `mutate` is applied to the RAW file text, before unwrapping or substituting,
+// so a mutation can target the wrapper and the placeholders as well as the
+// body. It exists for tools/ui-tests/mutants.test.mjs — the file that proves
+// these cases can fail — and it never writes anything to disk.
+function mutated(src, options) {
+  return (options && options.mutate) ? options.mutate(src) : src;
+}
+
+// Names come back through an object literal evaluated INSIDE the context, which
+// is the only way to see a top-level `const`: it lives in the context's global
+// lexical environment, not on the global object. A name that is not there
+// throws a ReferenceError naming it — the loud failure this needs.
+export function reach(ctx, names) {
+  const list = names.join(', ');
+  try {
+    return vm.runInContext('({ ' + list + ' })', ctx);
+  } catch (cause) {
+    throw new Error('cannot reach [' + list + '] in the loaded source: ' + cause.message);
+  }
+}
+
+export function loadReport(options) {
+  const opts = options || {};
+  const body = unwrapReportSource(mutated(readPart('report.js'), opts));
+  return loadInto(body, 'report.js', opts);
+}
+
+export function loadPanel(options) {
+  const opts = options || {};
+  const prepared = substitutePanelPlaceholders(mutated(readPart('panel.js'), opts));
+  const loaded = loadInto(prepared.source, 'panel.js', opts);
+  loaded.placeholders = prepared.placeholders;
+  return loaded;
+}

@@ -499,6 +499,31 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
+      - name: ui/ JavaScript unit tests (cross-checked against _fmt.py)
+        shell: bash
+        run: |
+          set -e
+          # The ONLY layer that reads ui/*.js as BEHAVIOUR. Everything else is a
+          # substring pin (which reads text) or a browser drive (which needs the
+          # whole artifact), and neither can call a function with an argument.
+          # 6,375 lines of JavaScript had no unit test at all until this, which is
+          # how two live defects survived: uTok rounded where _fmt.py truncates,
+          # and every toFixed broke an exact tie away from zero where Python's
+          # "%.*f" breaks it to even. Both files carried a comment claiming to
+          # mirror the Python; one of them was false.
+          #
+          # The formatters are compared against plugins/audit/scripts/_fmt.py in
+          # the same run - that cross-language comparison is what would have
+          # caught uTok on the day it was written, and it is why this step needs
+          # Python and Node together rather than a Node-only job.
+          #
+          # `node --check` per part catches the other class: a syntax error kills
+          # the entire inline <script> while every substring pin stays green.
+          npm ci
+          npx vitest run
+          for f in plugins/audit/scripts/ui/*.js; do
+            node --check "$f" || { echo "FAIL: $f is not parseable"; exit 1; }
+          done
       - name: Demo GIF still shows what it claims (the gate still refuses)
         shell: bash
         run: |
@@ -527,7 +552,11 @@ jobs:
           # rasterisation differs between macOS and CI Linux, so a byte diff would
           # fail for reasons unrelated to the product. Refresh the images locally with
           #   node tools/capture-screenshots.mjs
-          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.0
+          # `--omit=dev` since a package.json arrived at the repo root: without it
+          # `npm install <pkg>` ALSO installs that file's devDependencies, so this
+          # step would quietly fetch vitest to run a browser check that never uses
+          # it. Measured in a scratch dir before adding the flag.
+          npm install --no-save --no-package-lock --no-audit --no-fund --omit=dev playwright@1.56.0
           npx playwright install --with-deps chromium
           node tools/capture-screenshots.mjs --check
 
