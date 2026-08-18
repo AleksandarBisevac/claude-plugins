@@ -6,11 +6,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
-**The panel's dropdown stops running away, and the report's table starts answering.**
-Five dogfooding findings, each reproduced in a real browser before the fix.
+**The panel's dropdown stops running away, the report's table starts answering — and
+`scripts/` stops being one flat pile.** Five dogfooding findings, each reproduced in a real
+browser before the fix; then a restructure that moved all 48 `--selftest` blocks out of the
+modules they test, grouped `scripts/` into domain directories, and gave JavaScript its first
+unit test — which immediately found two formatters printing different numbers from the CLI.
 
 ### Fixed
 
+- **The panel's Usage tab pushed the whole page sideways on a small phone** — 49px of it at
+  320px, and anything narrower than 369px was affected. Two independent causes, both now
+  repaired: the risk/model table is 332px intrinsic and sat in a card with **no scroll frame**,
+  unlike its monthly twin; and the date-range pair does not wrap, so it kept a 313px line inside
+  a 305px box. The dates now wrap below 34rem — a different layout, which beats a broken one —
+  and the table is framed, with the 34rem minimum that frame carries scoped to the monthly table
+  by a hook it already had, so the smaller table does not start scrolling at every width to fix
+  an overflow that only existed below 369px. The rule's own comment said *"Measured at 390px"*,
+  which is the whole bug: the 320px assertion that should have caught it only ever ran on one tab
+  of five.
 - **The composition dropdown flickered, moved the layout, and could not be clicked with a
   mouse** (F-P-1). Four causes, one report: `tr.phase:hover>td` carried a `filter`, which
   makes that cell the containing block of every `position:fixed` descendant — the phase
@@ -55,9 +68,120 @@ Five dogfooding findings, each reproduced in a real browser before the fix.
   as unmet — a ref naming no task can never be satisfied. Shown rather than dropped, because a
   quietly blank column would hide which entry is broken, which is worse than the crash it
   replaced.
+- **The browser's numbers disagreed with the CLI's and the Markdown's, in two ways.** 6,375
+  lines of JavaScript had no unit test: everything checking the front end was either a Python
+  substring pin (which reads TEXT) or a browser drive (which needs the whole artifact), and
+  neither can call a function with an argument — which is how both of these lived. The panel's
+  `uTok` **rounded** where `_fmt.fmt_tokens` and the report's `fmtTokens` **truncate**, so 2.6
+  read as `3` on the Usage tab and `2` on every other surface. And every `toFixed` in both
+  files broke an exact tie **away from zero** while Python's `"%.*f"` breaks it **to even**:
+  1,250 tokens at one decimal painted `1.3K` where the Markdown said `1.2K`, a cost of `0.125`
+  painted `$0.13` against `$0.12`, and a 25-of-1000 share painted `3%` against `2%`. Both files
+  now round through one helper whose tie test is exact rather than heuristic — a double is a
+  dyadic rational, so `x` is a tie at `dp` places exactly when `x·2^(dp+1)` is an odd integer,
+  while the obvious `n*10^dp === Math.round(n*10^dp)` misclassifies most values because that
+  scaling is not exact — checked against exact rational arithmetic over 141,930 (value, dp)
+  pairs and 199,910 random bit-pattern doubles with 0 mismatches. **No number in the shipped
+  example moved**: the demo's own 405 token values and 276 cost values replay through both
+  implementations with 0 differences, because that ledger holds no fractional token and no
+  exact tie. Other data will. One divergence was pinned as its own case rather than folded in,
+  where it would have read as the fix failing: JS `(-0).toFixed(1)` is `"0.0"`, Python's is
+  `"-0.0"`.
+- **A release gate's verdict depended on whether a mouse was plugged in.**
+  `capture-screenshots --check` failed on macOS with `combo(a): the menu sits at 632,1012 for
+  an input whose bottom/left is 628,1026` — and the menu was where it belongs. `place()`'s
+  clamp had deliberately pulled it 14px left so its right edge landed flush on the viewport
+  gutter, which is the clamp's entire purpose, while the assertion demanded unconditionally
+  that the menu sit under its input. It failed on one machine because `scrollbar-gutter:
+  stable` resolves from the host's scrollbar model — classic metrics put that input at 1011,
+  overlay metrics at 1026, and macOS flips between them with whether a mouse is attached — and
+  the passing state had been passing by one pixel. The fix is not a wider tolerance: a bound
+  loose enough to accept this would have to accept a 14px misplacement. The check re-derives
+  the clamp from measurement instead (legal if the menu is under its input, or flush against a
+  gutter it could not have avoided), and the scrollbar model is now pinned at launch, which
+  retires the class for all 5,600 lines of geometry assertions rather than this one instance.
+- **`.claude/settings.local.json` was ignored by one developer's global git config, not by this
+  repo.** Claude Code writes that file itself and it accumulates whatever paths a developer
+  happened to allow — in this checkout, paths into a private sibling repo. `git check-ignore
+  -v` named the reason as a personal `~/.config/git/ignore`, and `git show HEAD:.gitignore`
+  contained the pattern zero times: the file was invisible on exactly one machine and
+  untracked-but-offerable to `git add .` on every other. The repo carries the pattern now,
+  verified in both directions with `GIT_CONFIG_GLOBAL=/dev/null`.
+- **A share whose total was zero printed a number anyway, and a real slice under one percent
+  printed as `0%` or `1%`.** Five sites carried `tot["tokens"] or 1` as though it were a divide
+  guard: run verbatim, a part of 5 against a true total of 0 renders `500%`, and 0 of 0 renders
+  `0%`. That does not prevent a wrong answer, it manufactures a large one. `_fmt.share_pct`
+  returns None when the whole is zero and `fmt_share` renders a caller-named `?` instead — a
+  share that could not be computed is not a share of nothing — and the usage sparkline, which
+  drew a flat baseline under a y-axis labelled `1` when every value was zero, now draws
+  nothing. Two of those sites are reported as **latent** rather than claimed as fixed: their
+  whole is a max over the parts, so a zero peak forces every part to zero and the fabricated 1
+  and the honest guard render identically (`width:0.0%` either way) — restoring `or 1` there
+  turns nothing red, which is said plainly instead of dressed up. At the other end of the same
+  rule, shares now carry the `<1%` floor `fmt_cost` already gives money ("$0.00 reads as
+  free"), applied per site rather than everywhere: a share that stands alone as a claim floors,
+  a share printed beside the two numbers it was divided from does not, and a percent CHANGE is
+  not a share. The one visible instance in the shipped example is the other branch of that rule
+  — `share 1%` for a row at 655,243 of 93,126,797, i.e. **0.7036%**, rounded UP past one
+  percent — and the example and `docs/index.html` were re-rendered so the published demo stops
+  showing it. The floor recovers `[0.05%, 1%)` and not everything, because `_usage_analytics`
+  rounds every rate to one decimal before it arrives; that limit is in the docstring rather
+  than left to be discovered.
+- **A repeated `area` tag drew two chips in the HTML report and one on every other surface.**
+  `_report_html._areas_of` was the PRE-FIX copy of `_areas.areas_of` — no trim, no dedupe — and
+  still live, so `"area": ["api", "api"]` rendered twice and `[" api", "api"]` rendered twice
+  in two different spellings. The two branches of one expression disagreed with each other, at
+  that: `render-report._phase_rows` fed `data-area` from `/audit:status`' already-canonical
+  value on the main path and from this copy on the fallback. The duplicate is gone, and the old
+  case turns out to have pinned the WRONG behaviour — `["a", 1, "b", None]` is the one input on
+  which the two implementations agreed, so a green selftest had been protecting the defect.
+- **The panel's "my spend" filter compared against the identity it saw at startup.**
+  `_VIEWER_CACHE` was populated once and never expired, and the panel runs for hours: change
+  `git config user.email` mid-session and it kept answering with the name it first saw — a
+  silently wrong answer, not a failure. The cache token is now built by the resolve itself
+  rather than guessed beside it, from `git config --list --show-origin --name-only`, so the
+  `includeIf "gitdir:…"` file that actually decides the answer is watched (and `--name-only` is
+  load-bearing, since a plain `--list` prints every VALUE too). The environment is pinned by
+  value rather than by stat, because no stat can see `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` or a
+  moved `HOME`. Deliberately not a TTL: 16 watched paths revalidate in 0.05 ms against a 30 ms
+  resolve, so a window short enough to be honest buys nothing.
+- **Two hooks rewrote a shared file through a fixed temp name, and one Edit fans out to seven
+  hook processes.** `append_gate_event`'s self-trim and `guard-capabilities`' `_mark_seen` both
+  wrote `path + ".tmp"` and then `os.replace`d it, so concurrent hooks opened, truncated and
+  renamed the same name. Reproduced rather than reasoned about: 12 processes × 400 rounds gave
+  **1,773 corrupt reads out of 4,800** for the gate log — empty or torn — against 0 out of
+  4,800 after, and a controlled A/B on the capability marker gave 1,167 out of 4,800 against 0.
+  The damage was invisible from outside: a bare `except` swallowed the `FileNotFoundError` and
+  `/audit:doctor` read a truncated marker as "the matchers never reach this hook", while the
+  docstring directly above the gate-log bug claimed the rewrite was "atomic on POSIX and
+  Windows alike", so a reader had no reason to look. `atomic_write_text()` owns the shape now
+  (`mkstemp` in the TARGET's own directory, `os.replace`, `finally` cleanup) and it RAISES,
+  with the fail-open boundary kept separate rather than tangled into it. Its `tempfile` import
+  stays inside the function — a cold `import _config` goes 18.2 → 23.1 ms median over 40 runs
+  with it hoisted, times seven processes, on every tool call — and a subprocess case pins that,
+  so a future hoist to module scope goes red instead of quietly costing 34 ms per Edit. Beside
+  it, `remind-tdd` created `.claude/state/` with a bare `mkdir` instead of
+  `_config.ensure_local_dir()`, so it never dropped the `*` ignore marker and `/audit:doctor`
+  then reported the plugin's own directory as a hygiene finding.
 
 ### Added
 
+- **A responsive contract over 21 widths, on both surfaces.** The widths are derived from the
+  `@media` rules the two stylesheets actually declare and bracket each one — 544/545, 640/641,
+  832/833 (the largest single change either sheet makes), 1120/1121 and 1152/1153 for the nav and
+  shell breakpoints that already disagree by 32px — plus 320, 390 and 688 for A4 portrait inside
+  the print margin. At every rung: no horizontal document scroll, nothing outside its own frame,
+  no control buried under another (asked as a hit test at both ends of the document, since chrome
+  you can scroll away from covers nothing permanently), and nothing clipped past reading with no
+  `title` anywhere in its ancestry to reach the rest. **Every check carries a vacuity guard**,
+  because the assertion this replaces did not: the old 320px check ran on one tab of five and was
+  green for its whole life. The ladder is defined once and imported by both tools — two lists
+  drift, which is how the nav and shell breakpoints came to differ in the first place.
+- **A lint against published fetch instructions rotting.** `raw_url_pin_drift()` refuses a moving
+  ref in any runnable fence — `main` moves, a raw URL has no deprecation window, and a layout
+  change here becomes a silent 404 in somebody else's CI — and requires the plugin README's pin to
+  equal `plugin.json`'s version, which turns red at exactly the moment a release bumps one and not
+  the other. Scoped to executable fences on purpose, so schema identity URLs are never touched.
 - **`cancelled`** — a fifth lifecycle state for phases and tasks, and the second TERMINAL
   one. A phase can finish without being done: the feature was dropped, part of the work
   landed, the phase closes. It is the phase/task twin of a bug's `wontfix` (Linear's
@@ -129,9 +253,107 @@ Five dogfooding findings, each reproduced in a real browser before the fix.
   report), and two long-standing comments were wrong — `aggregate` runs six times per report,
   not eleven, and the ledger pass leads the HTML build by 2.4×, not the "roughly 6×" that had
   been repeated without ever being measured.
+- **A lint that every referenced script path must exist.** The commands, the reference prose,
+  `ci.yml`, both READMEs, the guide, the schema descriptions, `tools/`, the examples and the
+  dogfood manifest carry 158 references to `plugins/audit/{scripts,hooks}/*.py`, and not one of
+  them was verified: `validate-manifest` checks `fileIndex` against task `files` bidirectionally
+  and never stats the filesystem, and the guide's enumeration lint matches by BASENAME, so a
+  section heading keeps passing after its file moves. A trial `git mv` broke eleven references
+  with nothing red — one of them a path `hooks/require-plan.py` resolves at runtime, inside a
+  blocking gate. `_refs.missing_references()` now stats every one, and the case that matters
+  most is the anti-vacuity one: point the tree at an empty directory and all 147 checked
+  references must report missing, because a lint that returns `[]` from having looked at
+  nothing reads exactly like a clean tree. `tool_basename_drift()` covers the half no per-line
+  regex can see — `tools/` spells its paths as `path.join(SCRIPTS, 'panel-server.py')`, nine
+  sites that would have failed at RUN time rather than lint time — and its limit is stated
+  rather than implied: it catches a rename or a deletion, never a move, because a tool that
+  resolves by basename is genuinely unaffected by one.
+- **JavaScript has unit tests, and CI runs them.** `tools/ui-tests/` on vitest, wired into the
+  one job that has both Python and Node, because a suite that runs only when somebody types the
+  command is barely a gate. `node --check` per assembled part rides along and catches the class
+  that kills the whole inline script while every substring pin stays green. The first suite
+  found the two formatting defects above. The new rounding helper exists twice — `report.js` is
+  ES5, `panel.js` is not, and there is no build step to share it — so the copies are held equal
+  BY A TEST over 5,410 generated rows, 1,608 of them exact ties, with an anti-vacuity case
+  asserting the table really does contain rows where native `toFixed` disagrees; without that,
+  a helper that returned its input unchanged would pass everything else. A comment claiming the
+  two copies match is exactly what was false before.
 
 ### Changed
 
+- **BREAKING — `validate-manifest.py` now lives at
+  `plugins/audit/scripts/manifest/validate-manifest.py`.** The plugin README publishes a `curl`
+  of that file from `main`, so anyone who copied
+  `https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/main/plugins/audit/scripts/validate-manifest.py`
+  into their CI gets a 404 the moment this lands — `main` moves, and a raw URL has no
+  deprecation window. Tag-pinned consumers are unaffected until they bump, since a tag keeps
+  the layout it shipped with: `docs/examples/azure-pipelines.yml` fetches from `v0.5.0`. Two
+  more documented invocations moved with it — `${CLAUDE_PLUGIN_ROOT}/scripts/render-report.py`
+  → `scripts/report/render-report.py`, and `scripts/audit-journal.py` →
+  `scripts/governance/audit-journal.py` — which break only for someone who scripted them by
+  hand and then upgrades the plugin. The schema and template URLs are untouched.
+- **That published `curl` had not worked since v0.14.0 anyway — 26 releases.** Run the two
+  lines the README gives, verbatim, against `v0.39.0` and the answer is `ModuleNotFoundError:
+  No module named '_manifest_io'`. The validator gained sibling imports in `4f9a8a2`
+  (2026-07-24, first shipped in `v0.15.0`) and stopped being a standalone file that afternoon;
+  `v0.14.0`'s copy still runs alone, and none of the 26 releases since does. The move above is
+  not what broke it. Today the failure at least names itself — the anchor preamble raises
+  "walked to the filesystem root … without finding `_output.py`" — and the two forms that do
+  work are the in-session `"${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py"` and,
+  from a checkout, `python3 plugins/audit/scripts/manifest/validate-manifest.py <manifest>`.
+  Fetching one file out of a modular tree cannot be repaired by a better URL, so **the recipe is
+  removed rather than repointed** — and named in prose where it stood, because it was published
+  for 26 releases and anyone who copied it deserves the reason rather than a quiet disappearance.
+  What replaces it states its own cost: the JSON Schema route validates **shape**, and cannot
+  express reference integrity, so a `blockedBy` naming a task that does not exist passes the
+  schema and fails the validator.
+- **The three `curl`s that do work are pinned to `v0.39.0` instead of `main`** — the two starter
+  templates and the schema, all pure data. **The four `$id`/`$schema` URLs are deliberately left
+  on `main`**, and that exclusion is load-bearing rather than an oversight: an `$id` is the
+  schema's *name*, so a per-release `$id` would give every release a different schema identity
+  and break `$ref` resolution and cache keys for consumers. Identity is not a download.
+- **`plugins/audit/scripts/` is no longer one flat directory.** Files are grouped into
+  per-domain subdirectories — `report/`, `panel/`, `manifest/` and their siblings, a migration
+  still running — and the rule that makes it safe is that **the directories are labels, not
+  namespaces**: a `.py` basename must still be unique across the whole of `scripts/` —
+  `_deps.layer_violations()` fails the build on a duplicate — so nothing outside has to know
+  which domain a file sits in. `_loader.load_script()`, `hooks/_config.find_script()` and
+  `tools/` each resolve a script by basename at any depth, and each refuses rather than
+  guesses: a miss names the basename AND the number of files searched ("among 0" is a tree that
+  was never walked, which is a different problem from a typo), a collision names both paths,
+  and a value carrying a separator is refused rather than silently stripped. The moves were
+  also the one-shot proof that the new path lint works — the first domain turned 0 missing
+  references into 24 the instant the files moved, and `manifest/`, the widest reference surface
+  of them, into 42. CI's three copies of the selftest sweep were converted from `scripts/*.py`
+  to `find` before any of it, because a flat glob skips a nested file and exits 0: not a check
+  that shows up missing later, a GREEN BUILD over a partial tree. No move changed a shipped
+  byte — the assembled `UI_HTML`'s sha256 is unchanged and the committed example re-renders
+  clean at every step. Alongside the moves, the four longest functions in the tree came apart
+  (396 → 49, 354 → 42, 178 → 56, 147 → 23 lines) with behaviour held by differential run
+  rather than by suite: 65 manifests validating to the same `(findings, warnings)` pair
+  including order, and 13 report fixtures rendering 2,346,326 byte-identical bytes from both
+  trees.
+- **Every `--selftest` block moved out of the module it tests into `plugins/audit/tests/`, all
+  48 of them.** 45% of this tree — 22,363 of 49,393 lines — was test cases living inside their
+  own subjects, and all 48 files carried their own copy of `check()`. The old shape's failure
+  was measured rather than argued: inject one fault and the inline form printed 0 PASS lines, a
+  bare traceback and **exit 0** under `2>/dev/null`, while the same fault through the shared
+  `_harness.run` gives 8 PASS lines, then a NAMED failure, and exit 1 — and nine of those files
+  had been printing the identical last line whether the suite passed or failed. What a new
+  `.py` owes changed with it: its cases go in `plugins/audit/tests/test_<name>.py` (hyphens
+  become underscores) on the shared harness, never inline; a migrated module still answers
+  `--selftest` by printing where its cases went, so a stale sweep cannot read as green; and
+  `_output.selftest_coverage()` classifies every file as inline / covered / both / neither
+  rather than returning a boolean, because a rule with an OR in it is exactly the shape that
+  lets a file with NEITHER through. Three `KNOWN_LAYER_DEBT` entries retired on the way, 20 →
+  17, without a line of production code changing — those edges were a test loading a validator
+  to check its own output, never production coupling. And the migration caught four suites that
+  had been passing while the thing they test was gone: a `getattr(..., lambda *a: None)`
+  default answering in place of a deleted production function, a `.split(end_marker)[0]` slice
+  that silently widened from 4,011 to 16,507 characters and reported `ALL PASS 51/51` over the
+  rest of the file, a `globals()` rebind whose "allocates nothing" case is precisely the one a
+  broken counter cannot fail, and a security case still "finding" the `git config --name-only`
+  flag it had stopped looking at. `.split(a)[1]` fails loud; `.split(b)[0]` fails silent.
 - **CI now re-renders the shipped example instead of comparing two committed copies to each
   other.** The old check proved `docs/index.html` was a byte copy of the example report — not
   that either file still reflected the renderer. So when `render-report.py` changed and nobody
@@ -165,6 +387,18 @@ Five dogfooding findings, each reproduced in a real browser before the fix.
   a duplicate that *is* read stays silent (removing that one is a refactor, not a deletion),
   and the `hooks/`↔`scripts/` pair is exempt because the layer rule forbids merging it — a
   lint that demands an impossible fix is a lint people learn to skip.
+- **The panel's 5-second poll stopped walking `~/.claude`.** `discover()` did 1,381 `scandir`,
+  105 `listdir` and 337 front-matter reads — 154 ms cold — on every call, and it is reached
+  from `policy_state`, `/api/registry` and `audit-status --discovery`. `data_fingerprint`
+  includes the newest ledger mtime, which the Stop hook bumps on every turn, so during an
+  active phase the panel re-fetched state, usage and policy every five seconds purely because
+  someone spent tokens. Now 0 `scandir` and ~2 ms on a hit — 15× on the poll path, same answer
+  — and the invalidation stamps what was actually scanned rather than the roots, because a
+  plugin installed a level down moves that directory's mtime and not the root's. In the same
+  pass `usage_state` stopped reading one manifest five times: 5 calls and 101 file opens become
+  1 and 21 on a 19-shard fixture, payload byte-identical by `cmp` rather than by reasoning —
+  and reading once is also the more correct of the two, since five reads can straddle a
+  concurrent write and ship five mutually inconsistent views of one plan.
 
 ## [0.39.0] - 2026-08-15
 
