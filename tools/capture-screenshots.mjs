@@ -18,6 +18,12 @@
  * rebuilds it deterministically, so this script builds what it needs in a temp dir
  * and throws it away.
  *
+ * AND THE TEMP DIR IS PART OF THE PICTURE. The panel prints its project path in the
+ * topbar, so the scratch tree sits at a FIXED path, claimed under a lockfile, and
+ * two consecutive captures on one machine produce byte-identical PNGs. See
+ * claimScratch(). Without that, panel drift could not be detected by comparison at
+ * all, which is the only kind of detection a committed PNG supports.
+ *
  *     node tools/capture-screenshots.mjs [--out docs/screenshots] [--only report|panel]
  *     node tools/capture-screenshots.mjs --check
  *
@@ -30,7 +36,7 @@
  */
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, statSync,
+import { rmSync, mkdirSync, readFileSync, statSync,
          writeFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -4804,6 +4810,104 @@ async function shot(page, name, { full = false, dialog = false } = {}) {
   note(`wrote ${path.relative(REPO, file)} (${statSync(file).size} B)`);
 }
 
+/** The lockfile that says who owns the scratch tree. See claimScratch(). */
+const SCRATCH_LOCK = 'capture.lock';
+
+/**
+ * Does `pid` name a process that exists right now?
+ *
+ * The JavaScript half of `panel-server._pid_alive`, including its EPERM answer: a
+ * pid owned by another user cannot be signalled and IS running, and reading that
+ * refusal as "gone" is how one run deletes another's tree.
+ */
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+/**
+ * The scratch tree this run builds its fixtures in, at a path that is THE SAME ON
+ * EVERY RUN — because the path is in the picture.
+ *
+ * `mkdtempSync(join(tmpdir(), 'audit-shots-'))` was what stood here, and it made
+ * every panel screenshot unreproducible. The panel's topbar renders its own project
+ * path (`#proj`, middle-elided to 56 characters), so six random characters of a temp
+ * directory name were painted into the pixels. Measured on one macOS host, on the 16
+ * panel shots that existed then: 14 differed between two runs, and each differed in
+ * ONE box — 45x13px at (376,52), the same box every time, and nothing else on any
+ * page. The two that held still are the two where that text is not on screen:
+ * `panel-mobile`, where `.sub{max-width:min(56ch,100%)}` clips the line at 390px
+ * long before the random tail, and `panel-policy-expanded`, where a full-viewport
+ * dialog covers the header. The report shots were already byte-identical because
+ * they are served over http:// and name no filesystem path at all.
+ *
+ * That is not a cosmetic difference. While it stood, NO panel regression that
+ * reached a screenshot could be found by comparing PNGs, so 14 committed images
+ * were documentation and not evidence.
+ *
+ * FIXED IN THE ENVIRONMENT, NOT IN THE PAGE. Overwriting `#proj` from here after
+ * load would put a string in the picture that the product never produced, and it
+ * would fix only the surface someone remembered — the theme card names the file it
+ * read, the help drawer quotes paths, and each would drift on its own schedule.
+ * This is the choice the demo git identity already makes below: hand the fixture a
+ * demo environment and change nothing about the product.
+ *
+ * A FIXED PATH IS A SHARED PATH, so it is claimed rather than assumed. Two captures
+ * at once would otherwise share one fixture tree AND one panel: `panel-server.serve`
+ * enforces one panel per project, so the second run would attach to the first run's
+ * panel — a different fixture behind a different token — and whichever finished
+ * first would `--stop` it and delete the tree under the other. The claim is an
+ * exclusive-create lockfile carrying the owner's pid. A pid that is gone means a run
+ * that died before its `finally`, not a live one, so that tree is reclaimed with a
+ * note rather than blocking every capture until someone deletes it by hand.
+ */
+function claimScratch() {
+  // Per-uid where uids exist, because on Linux `tmpdir()` is one shared /tmp and two
+  // users capturing at once would meet on a directory neither may write into. macOS
+  // and Windows already hand out a per-user temp directory, so this is a no-op there.
+  const work = path.join(tmpdir(),
+    `audit-shots${process.getuid ? `-${process.getuid()}` : ''}`);
+  const lock = path.join(work, SCRATCH_LOCK);
+  const mine = String(process.pid);
+  mkdirSync(work, { recursive: true });
+  try {
+    writeFileSync(lock, mine, { flag: 'wx' });   // create-or-fail, in one syscall
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    const held = Number(String(readFileSync(lock, 'utf8')).trim());
+    if (pidAlive(held)) {
+      throw new Error(`another capture (pid ${held}) already holds ${work}. Both runs `
+        + 'would build fixtures in the same tree and talk to the same panel — '
+        + 'panel-server allows one panel per project — so this one would photograph '
+        + 'that one\'s state and then delete it. Wait for it to finish, or stop it.');
+    }
+    note(`scratch: ${work} was locked by pid ${held || '(unreadable)'}, which is gone `
+       + '— that run died before its cleanup, so reclaiming the tree');
+    rmSync(work, { recursive: true, force: true });
+    mkdirSync(work, { recursive: true });
+    try {
+      writeFileSync(lock, mine, { flag: 'wx' });
+    } catch (raced) {
+      throw new Error(`two captures reclaimed the stale ${work} in the same instant `
+        + `(${raced.code}) — neither can trust the tree it is holding; run again`);
+    }
+  }
+  // Anything else in here is debris from a run that died without its `finally`. A
+  // stale manifest or a stale panel pidfile would make this run's pictures a
+  // function of the last one's, which is the property being fixed.
+  for (const entry of readdirSync(work)) {
+    if (entry !== SCRATCH_LOCK) {
+      rmSync(path.join(work, entry), { recursive: true, force: true });
+    }
+  }
+  return work;
+}
+
 async function main() {
   let chromium;
   try {
@@ -4814,7 +4918,7 @@ async function main() {
     process.exit(2);
   }
 
-  const work = mkdtempSync(path.join(tmpdir(), 'audit-shots-'));
+  const work = claimScratch();
   const servers = [];
   let panel = null;
   let polPanel = null;          // the policy fixture's own panel — its own HOME
