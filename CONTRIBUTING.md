@@ -397,3 +397,91 @@ rather than as a decision — there is nothing left to decide here.
 The 3.8 floor and hooks that must start fast on every tool call rule out the
 import and parse cost of `typing`/`dataclasses`/annotations; enforcement is
 `_output.house_style_violations`, not a style guide someone can forget to read.
+
+### Browser JavaScript dialect (decided 2026-08-19): modern ES, and still no build step
+
+The two surfaces speak different languages. `report.js` is strictly ES5 — 293 `var`,
+118 `function ()`, and **zero** `const`, `let` or arrow functions in code (the 35
+backticks and the `class`/spread hits in it are all comment prose; measured, not
+assumed). `panel.js` is modern — 968 `const`, 594 arrows, an `el()` builder used at
+hundreds of sites. The consequence is that the same feature exists twice and cannot
+be shared: two `isDark()`, two tooltip placers, two CSV quoters, two blob
+downloaders — and the two token formatters **already disagree** while both claiming
+in comments to mirror the same Python function.
+
+**One dialect: modern ES.** In order of weight:
+
+1. **The `file://` gate constrains APIs, not syntax.** ES modules are impossible here
+   because of the opaque origin — a *module-loading* restriction. `const`, `let`,
+   arrows, template literals, destructuring and spread are syntax the engine parses;
+   the origin cannot reach them. The one row that made that gate exist (`js-modules`,
+   widely available since 2020-11-09 and still unusable here) does not generalise
+   from loading to syntax, and reading it as if it did is what kept ES5 in place.
+2. **Baseline, from the 2026-07-08 snapshot rather than memory.** `let-const` widely
+   since 2019-03-20; `destructuring`, `spread` and `template-literals` since
+   2022-07-15; `async-await` since 2019-10-05; `nullish-coalescing` since
+   2023-03-16. The newest is three years settled.
+3. **The direction of the rewrite is the argument, not the line count.** Choosing ES5
+   would mean rewriting 4,895 modern lines *backwards* to match 1,768 — and going
+   backwards forfeits block scoping, which is a **correctness** property in a script
+   that is concatenated into one scope where every identifier is global. This file
+   already records the near-miss: a second `findingsBox` would have hoisted over the
+   first and broken every config save. `var` is how that happens; `const` is how the
+   engine catches it.
+4. **ES5 was never chosen.** Nothing was ever recorded about why, so there is no
+   constraint being preserved here — only an accident that had been propagating.
+
+**Excluded regardless, because the `file://` gate still applies to a shared part:**
+ES modules and dynamic `import()`, `localStorage`/`sessionStorage`/cookies (the
+report treats storage as best-effort inside `try`/`catch` — keep that), `fetch` of a
+sibling file, `XMLHttpRequest`, service workers, `crypto.subtle`. And `report.js`
+still may contain no wall-clock call at all.
+
+**THIS DOES NOT INTRODUCE A BUILD STEP, AND THAT IS LOAD-BEARING.** Modern ES runs
+natively; Python still concatenates the assets and still ships what is in the tree.
+"What you read is what ships" survives this decision intact. A plugin install fetches
+the repository at a commit SHA and runs nothing — no `npm install`, no compile — so
+anything that needed building would have to be **committed as generated output**,
+and the tree would stop being the thing it appears to be. That is the cost **step D
+(TypeScript) would actually charge**, and it is a consequence to publish rather than
+a detail: it converts `plugins/audit/scripts/ui/` from source into build product, and
+it reverses this repo's *"there is no build step and there will not be one"* — which
+must be done by argument if it is done at all, never as a side effect of adopting a
+compiler.
+
+**That cost was put to the owner and ACCEPTED (2026-08-19): shipping a build to the
+marketplace is fine.** So step D is no longer gated on this objection, and what
+remains is only *where the built output lives*, which is a real choice with two
+shapes and they are not equivalent:
+
+- **Build committed to `main`.** Simplest to publish — the marketplace already
+  installs by fetching the repo at a commit SHA, so nothing about install changes.
+  The cost is that `scripts/ui/` in the branch people read and review is generated,
+  every UI diff shows compiler output, and the byte pins begin asserting the
+  compiler's formatting rather than anything a person wrote.
+- **Build published to a separate target** (a `dist` branch, or its own repository)
+  with the marketplace entry pointing there. `main` stays source-only and "what you
+  read is what ships" survives *for the repository people work in*. The cost is a
+  release step that can go stale, which this project has already had happen once —
+  `docs/index.html` drifted from the committed example report and went a month
+  unnoticed — so it needs the same byte-equality check that fixed that.
+
+**The second is the structurally correct one**: it keeps source and artifact
+distinct, which is the property being traded away, and the staleness it introduces
+is mechanically checkable where "is this diff mine or the compiler's" is not. Decide
+it when step D is actually scheduled, not before — and note it must be decided
+BEFORE any `.ts` lands, because the answer determines what CI builds and what the
+pins point at.
+
+**Sequencing, because this cannot be executed first.** The 100 `_SCRIPT` pins assert
+**text**, so rewriting 293 `var` and 118 `function ()` turns a large fraction of them
+red mechanically — and they would then be updated to match a rewrite instead of
+reviewed. The order is **U3.3 step C (pins → behaviour) → dialect unification → step
+D**. The decision is still worth making now: it takes effect immediately for **new**
+code, so nothing further is written in the dialect being retired.
+
+**Revisit trigger:** a helper is written twice because the two surfaces could not
+agree on syntax. That is the cost itself rather than a proxy for it — the previous
+two reversals in this record both happened because the trigger was a threshold on
+something incidental while the real cost was discoverability or navigability, and a
+green trigger is not evidence a decision is still right.
