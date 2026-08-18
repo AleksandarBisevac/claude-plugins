@@ -552,11 +552,17 @@ jobs:
           # rasterisation differs between macOS and CI Linux, so a byte diff would
           # fail for reasons unrelated to the product. Refresh the images locally with
           #   node tools/capture-screenshots.mjs
-          # `--omit=dev` since a package.json arrived at the repo root: without it
-          # `npm install <pkg>` ALSO installs that file's devDependencies, so this
-          # step would quietly fetch vitest to run a browser check that never uses
-          # it. Measured in a scratch dir before adding the flag.
-          npm install --no-save --no-package-lock --no-audit --no-fund --omit=dev playwright@1.56.0
+          # playwright is a devDependency and `npm ci` above already installed it
+          # from the lockfile. The ad-hoc `npm install --no-save --no-package-lock`
+          # that stood here predates package.json; once one existed, the two ways
+          # of populating node_modules started fighting. `--omit=dev` was added to
+          # stop the second install pulling vitest in, and that combination -
+          # a tree `npm ci` filled WITH dev deps, then an install asked to exclude
+          # them - crashed npm's arborist with `Cannot read properties of null
+          # (reading 'edgesOut')`. NON-DETERMINISTICALLY: identical inputs passed on
+          # 4763dd7 and failed on fdf60a2, which is the worst kind of red.
+          # One manifest, one install, one pin. Only the browser binaries are
+          # fetched here, because those do not live in node_modules.
           npx playwright install --with-deps chromium
           node tools/capture-screenshots.mjs --check
 
