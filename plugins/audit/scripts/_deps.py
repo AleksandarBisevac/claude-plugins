@@ -174,6 +174,14 @@ LAYERS = (
      # readiness, the submodule preflight and the gate. Same reasoning and the same
      # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
      "_status_facts",
+     # `_help` sat at L3 for its whole life and its edges never asked for it: it
+     # reaches `_areas`, `_policy`, `_loader` and `_journal_io`, all L1, and
+     # `load_hooks_config` is not a sibling load. It came down to L2 at U3.1
+     # because a module parked ABOVE its own edges is not free - it lifts
+     # `_panel_discovery` with it, and that was what put `discover` out of reach
+     # of the layer-4 module that needs it. `_panel_settings` deliberately does
+     # NOT import it, so nothing at L2 reaches it and the move cost nothing.
+     "_help",
      # `_doctor_report` is the piece all six of `audit-doctor`'s check modules sit
      # on: the `Report` collector, the `_load` wrapper and the two constants. It
      # holds no check, which is exactly why it can sit here while its consumers
@@ -217,8 +225,20 @@ LAYERS = (
     # seven doctor modules in one layer would have been a nicer picture and a false
     # one - four of them genuinely sit higher, so the layer would have had to be L5
     # and three modules would carry a position nothing about them requires.
-    ("_help", "usage_ledger", "_panel_settings", "_manifest_rules",
-     "_usage_viz", "_doctor_ado", "_doctor_hygiene"),
+    ("usage_ledger", "_panel_settings", "_manifest_rules",
+     "_usage_viz", "_doctor_ado", "_doctor_hygiene",
+     # `_panel_discovery` came down from L4 with `_help`, for the same reason and
+     # by the same measurement: `_help` (now L2) and `_manifest_io` (L1) are its
+     # only edges, so L3 is where the graph always put it. The move is what makes
+     # `discover` reachable from `_panel_policy` at L4 - at L4 itself it was a
+     # layer-mate, and a layer-mate is not strictly downward.
+     "_panel_discovery",
+     # `_panel_paths` is the floor the panel's read side stands on: the config and
+     # manifest paths, and the three modules the panel reads through. It lands here
+     # and not at L4 because of what it deliberately does NOT hold - see the note
+     # on `_panel_state`'s own layer below, which is where `_manifest_rules` had to
+     # stay for the split to fit under L5 at all.
+     "_panel_paths"),
     # `_panel_page` (the panel's assembled page: the substitution chain and the
     # ~1,450 lines of cases that read the result) lands here rather than beside
     # `_panel_state`, and that placement is the whole cost of the split. Its
@@ -247,9 +267,21 @@ LAYERS = (
     # `usage_ledger` (L3) - the same reason `_usage_load` is here and not beside
     # the ledger it reads. None of the three reaches another, which is what lets
     # `audit-doctor` fold all of them into one order.
-    ("_panel_discovery", "_panel_page", "_usage_load",
+    # The five pieces `_panel_state` was cut into at U3.1. Each reads
+    # `_panel_paths` at L3 and none reads another, which is what lets all five
+    # share a layer and lets `_panel_state` fold them into one order at L5 -
+    # exactly the shape the `_manifest_rules` split took at L2.
+    #   `_panel_viewer`       who is driving the panel, and its identity cache
+    #   `_panel_composition`  the plan as shown: phases, tasks, bugs, ADO, areas
+    #   `_panel_policy`       the capability policy and what it decides today
+    #                         (the one that also reaches `_panel_discovery`, L3)
+    #   `_panel_runstate`     locks, the on-disk change stamp, the Plan gate card
+    #   `_panel_usage`        the Usage tab's facts (runtime-loads usage_ledger, L3)
+    ("_panel_page", "_usage_load",
      "_usage_overview", "_usage_detail", "_usage_markdown",
-     "_doctor_setup", "_doctor_trail", "_doctor_completions"),
+     "_doctor_setup", "_doctor_trail", "_doctor_completions", "_doctor_policy",
+     "_panel_viewer", "_panel_composition", "_panel_policy", "_panel_runstate",
+     "_panel_usage"),
     # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
     # document) are the report's answer to the same question `_panel_page`
     # answered above, and they land the same way: at the FIRST layer that holds
@@ -274,15 +306,22 @@ LAYERS = (
     # Reaching the gate from `_report_page` would be a helper calling up, and the
     # runtime-load half of this lint would report it.
     #
-    # `_doctor_policy` is here and not at L4 because `check_policy` runtime-loads
-    # `_panel_discovery` (L4) for this machine's skills/agents/MCP inventory - the
-    # same walk the panel's rules view marks `dead` with, so the two surfaces
-    # cannot disagree about which pattern is inert. That single edge is the whole
-    # reason the doctor's checks occupy four layers instead of one, and it is the
-    # edge `_borrowed_wrapper_names` had to be able to see: it is spelled
-    # `_load("_panel_discovery", "_panel_discovery.py")` through a wrapper defined
-    # two modules away.
-    ("_panel_state", "_report_md", "_report_usage", "_doctor_policy"),
+    # `_doctor_policy` runtime-loads `_panel_discovery` for this machine's
+    # skills/agents/MCP inventory - the same walk the panel's rules view marks
+    # `dead` with, so the two surfaces cannot disagree about which pattern is
+    # inert. It is the edge `_borrowed_wrapper_names` had to be able to see: it is
+    # spelled `_load("_panel_discovery", "_panel_discovery.py")` through a wrapper
+    # defined two modules away.
+    #
+    # It sat HERE, at L5, while that reasoning ended "and this is the whole reason
+    # the doctor's checks occupy four layers instead of one". At U3.1
+    # `_panel_discovery` came down to L3, and the sentence stopped being true - the
+    # edge is now strictly downward from L4, so `_doctor_policy` joins the other
+    # three check modules there and the doctor's checks occupy three layers. The
+    # comment is rewritten rather than left standing over a table that no longer
+    # matches it: a stale ARGUMENT is worse than no argument, because the next
+    # reader spends their time working out why it is wrong.
+    ("_panel_state", "_report_md", "_report_usage"),
     ("_panel_write", "_report_page"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",

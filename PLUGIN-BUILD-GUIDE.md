@@ -148,6 +148,12 @@ claude-plugins/                           # this repo (personal, public)
           _panel_page.py                  # the assembled page: the substitution chain -> UI_HTML + UI_TEMPLATE
           _panel_discovery.py             # discovers skills/agents/MCP servers this project can reach
           _panel_settings.py              # the Settings form's schema + the write-path key allow-lists
+          _panel_paths.py                 # where a project's files are + the three modules the panel reads through
+          _panel_viewer.py                # who is driving the panel, and the identity cache behind it
+          _panel_composition.py           # the plan as shown: phase/task rows, bugs, the ADO banner, areas
+          _panel_policy.py                # the capability policy, and what it resolves to for what is installed
+          _panel_runstate.py              # locks + liveness, the on-disk change stamp, the Plan gate card
+          _panel_usage.py                 # the Usage tab's facts, and the one manifest read per request
           _panel_state.py                 # the panel's READ side: everything GET /api/* answers with
           _panel_write.py                 # the panel's WRITE side: everything PUT /api/* actually does
         demo/                             # the demo domain: the two synthetic fixtures the screenshots and CI are built from
@@ -221,6 +227,7 @@ L1:
 L2:
   _config_rules -> _output, _policy
   _doctor_report -> _loader, _output
+  _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _manifest_ado -> _manifest_vocab, _output
   _manifest_crossrefs -> _manifest_vocab, _output
   _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
@@ -234,26 +241,31 @@ L2:
 L3:
   _doctor_ado -> _doctor_report, _output
   _doctor_hygiene -> _locks, _output
-  _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _manifest_rules -> _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
+  _panel_discovery -> _help, _manifest_io, _output
+  _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
   _usage_viz -> _fmt, _output, _report_html
   usage_ledger -> _manifest_io, _output, _usage_analytics, _usage_core
 
 L4:
   _doctor_completions -> _doctor_report, _journal_io, _output
+  _doctor_policy -> _doctor_report, _output
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts
   _doctor_trail -> _doctor_report, _journal_io, _output
-  _panel_discovery -> _help, _manifest_io, _output
+  _panel_composition -> _areas, _manifest_io, _output, _panel_paths
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
+  _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
+  _panel_runstate -> _locks, _output, _panel_paths
+  _panel_usage -> _areas, _manifest_io, _output, _panel_paths
+  _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
   _usage_detail -> _output, _ui_theme, _usage_viz
   _usage_load -> _loader, _output, _report_html
   _usage_markdown -> _output, _ui_theme, _usage_viz
   _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
 
 L5:
-  _doctor_policy -> _doctor_report, _output
-  _panel_state -> _areas, _config_rules, _help, _journal_io, _loader, _locks, _manifest_io, _manifest_rules, _output, _panel_discovery, _policy, _status_facts
+  _panel_state -> _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
@@ -1209,13 +1221,64 @@ meant to make the config legible); `_META_KEYS`/`_META_API_ONLY`/`_META_FORM_KEY
 rather than a hand-kept copy. Sits at the bottom of the panel's import graph — must never
 import `_help` or `panel-server`.
 
+### `plugins/audit/scripts/panel/_panel_paths.py`
+The floor the panel's read side stands on: `CONFIG_REL`, `_within`/`_config_path`/
+`_manifest_path`/`_read_json`/`read_config`, `_declared_as_of`, the `_load` wrapper, and the
+three accessors `hooks_config()`/`config_rules()`/`status_facts()`. Those three replaced
+`_cores()`'s positional 4-tuple, and that is the whole reason the U3.1 split fits: the tuple
+also carried `_manifest_rules` (layer 3), so a base module holding it could only sit at layer 4
+— leaving nowhere for the five modules that read it, and forcing an eighth layer that would
+have recorded a grab-bag accessor rather than a dependency. `hooks_config()` is the only one
+that loads anything and the only one that memoizes; `_panel_state._cores()` still assembles the
+same tuple in the same order for `_panel_write` and `audit-task`, which read it positionally.
+
+### `plugins/audit/scripts/panel/_panel_viewer.py`
+Who is driving the panel — the identity `usage_ledger.resolve_author` resolves, and the cache
+that keeps a `git config` shell-out off every `/api/state`. Its token is a fresh stat of every
+file that can decide the answer (including ones that do not exist yet, so creating a
+`~/.gitconfig` invalidates) plus the environment BY VALUE, and a resolve whose files moved as it
+ran is returned but not cached. `test__panel_viewer.py` slices this file between its two
+git-config helpers and fails unless the origin listing runs with `--name-only` — a plain
+`--list` also hands back every value, and a git config routinely holds credential helpers and
+tokens.
+
+### `plugins/audit/scripts/panel/_panel_composition.py`
+The plan as the panel shows it: the phase and task rows the Composition tab edits and the
+Overview lists, the bug rows (with the effective bug↔task status the rollup counts by, computed
+once), the ADO card's manifest-evidence-only banner, and `areas_state` — the registry as stored
+plus every tag the phases actually use, since the two disagree in both directions and each
+disagreement is worth seeing.
+
+### `plugins/audit/scripts/panel/_panel_policy.py`
+The capability policy as the switchboard shows it: the block, the verdict for each discovered
+capability (through `_policy.resolve` — the same function the guard hook calls, so the preview
+cannot disagree with the guard), which rules are `dead`, which area tags are live, and whether
+the guard has ever actually run here. MCP rows are stand-ins (`mcp__<server>__*`) and say so.
+
+### `plugins/audit/scripts/panel/_panel_runstate.py`
+Who is running what: the shared git-dir locks with a liveness verdict and its basis (the badge
+used to claim "running" about a process it had not checked), `data_fingerprint` — the cheap
+per-request stat the 5-second poll watches so a file that moved on disk hands off to
+`refreshFromDisk` — and `_gate_block`, the Plan gate card computed with the hooks' own
+functions so it cannot disagree with the gate about what tier is in force.
+
+### `plugins/audit/scripts/panel/_panel_usage.py`
+The Usage tab's payload: the ledger folded into compact positional facts the browser
+re-aggregates on every filter change, rolled from hourly to daily past `_MAX_FACTS` (and saying
+so rather than truncating silently), plus the small slice of plan the analytics need — read
+ONCE per request for all five of its manifest-derived fields. Every branch returns
+`_usage_shape`, so the no-ledger path and the populated one cannot ship different key sets.
+
 ### `plugins/audit/scripts/panel/_panel_state.py`
-The panel's READ side, moved out of `panel-server.py`: given a project directory it reads the
-config, the manifest (either layout), the usage ledger, the audit locks, the journal and the
-capability policy, and returns the JSON payloads the UI renders (`build_state`, `areas_state`,
-`policy_state`, `journal_state`, `usage_state`, `help_state`). Nothing here writes. It sits
-above `_loader`/`_manifest_io`/`_help`/`_areas`/`_policy`/`_panel_settings`/`_panel_discovery`
-and below `panel-server` — a selftest case asserts it never imports `panel-server` back.
+The panel's READ side, moved out of `panel-server.py` and split six ways at U3.1. What is left
+is the journal, the help endpoints, the report export and `build_state`, which assembles one
+payload out of all of them; the six modules above are where the rest went. `render_report`
+stays here deliberately — it runtime-loads `render-report.py` at layer 7, the single entry in
+`_deps.KNOWN_LAYER_DEBT`, and moving it into a layer-4 module would have made that recorded
+edge span three layers instead of one. Nothing here writes. It re-exports all 35 names
+`panel-server` and `_panel_write` alias, so the split is invisible to both — and a selftest
+case asserts it never imports `panel-server` back, plus three more that no module the split
+produced imports back up.
 
 ### `plugins/audit/scripts/panel/_panel_write.py`
 The panel's WRITE side, moved out of `panel-server.py`: the whole path from a request body to

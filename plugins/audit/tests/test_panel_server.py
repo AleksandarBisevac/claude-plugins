@@ -24,11 +24,15 @@ FOUR EXPRESSIONS READ SOURCE, AND ALL FOUR HAD TO BE RE-POINTED.
     top-level def, and the comment beside it has said so for a while. Both are
     `_harness.between()` now, which raises on either marker; `run()` turns the
     escape into a named failing case rather than a crash.
-  * the `gt` case reads `_panel_state.py` and asserts `plan_gate_mode` appears
-    between `def _gate_block` and `def _run_status`. That adjacency is a design
-    constraint, not an accident, so the slice stays - re-pointed at the subject
-    through `_harness.module_source(_panel_state)` rather than at a path built off
-    this file's own directory, where `_panel_state.py` does not exist.
+  * the `gt` case asserts `plan_gate_mode` appears between the gate block and the
+    run-status block. That adjacency is a design constraint, not an accident, so
+    the slice stays - re-pointed at the subject through
+    `_harness.module_source(...)` rather than at a path built off this file's own
+    directory. At U3.1 both defs moved from `_panel_state` to `_panel_runstate`
+    and the slice moved with them: `_panel_state` re-exports both NAMES, so the
+    case would still have run, against a file containing neither marker, and
+    `between()` raising by name is the only reason that was noticed rather than
+    quietly widening.
 
 `_help` and `_manifest_io` are imported here the way `panel-server.py` imports them,
 because these cases compare against those modules' own objects (`_help.payload()`,
@@ -47,7 +51,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _help                                       # noqa: E402  (as panel-server imports it)
 import _manifest_io as _mio                        # noqa: E402  (as panel-server imports it)
-import _panel_state                                # noqa: E402  (the `gt` source slice only)
+import _panel_runstate                             # noqa: E402  (the `gt` source slice only)
 
 M = _loader.load_script("panel-server.py", modname="panel_server")
 
@@ -242,10 +246,13 @@ def _cases(check):
           isinstance((M._run_status(proj, M.read_config(proj), {})
                       .get("gate") or {}).get("mode"), str)
           and "plan_gate_mode" in
-          # The two defs are ADJACENT in _panel_state.py and must stay so: this
+          # The two defs are ADJACENT in _panel_runstate.py and must stay so: this
           # slice is the design constraint, not an accident of ordering, and
-          # `between()` raises rather than widening if either marker moves.
-          _harness.between(_harness.module_source(_panel_state),
+          # `between()` raises rather than widening if either marker moves. Both
+          # left `_panel_state` at U3.1 and the slice followed them; reaching it
+          # through `_panel_state`'s re-export would have taken the slice out of a
+          # file that no longer contains either marker.
+          _harness.between(_harness.module_source(_panel_runstate),
                            "def _gate_block", "def _run_status"))
     check("usage.bands is a legitimate key now, so the pair the README documents "
           "no longer warns from the plugin's own validator",
