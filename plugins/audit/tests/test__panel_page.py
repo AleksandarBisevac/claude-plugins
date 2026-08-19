@@ -362,7 +362,7 @@ def _cases(check):
           "flex:0 1 auto;min-width:0}" in M.UI_HTML)
     check("shell: and the label inside it wraps, which is the only reason "
           "shrinking has anywhere to go",
-          ".lbl{display:inline-flex;align-items:center;gap:.25rem;"
+          ".lbl{display:inline-flex;align-items:center;gap:var(--sp-0);"
           "flex-wrap:wrap;min-width:0}" in M.UI_HTML)
     check("UI building blocks are a tabbed table", "regtbl" in M.UI_HTML and "subtab" in M.UI_HTML)
     check("composition is a compact collapsible filterable table",

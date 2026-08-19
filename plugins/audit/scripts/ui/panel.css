@@ -34,7 +34,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
    long nav competing with content for width; with five items it would add a
    control and a persisted preference to save 230px on screens that have it to
    spare, and five hand-drawn icons that mean less than the words they replace. */
-.top{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
+.top{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:var(--sp-2) var(--sp-3);
  flex-wrap:nowrap;padding:.6rem 1.25rem;
  background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);
  border-bottom:1px solid var(--border)}
@@ -48,7 +48,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 @media(max-width:70rem){
  /* One information architecture, two presentations: the same five buttons become
     a horizontal strip. Never a second menu. */
- .shell{grid-template-columns:minmax(0,1fr);gap:.75rem;padding-top:.5rem}
+ .shell{grid-template-columns:minmax(0,1fr);gap:var(--sp-2);padding-top:var(--sp-1)}
  .tabs{position:sticky;top:var(--topbar-h);z-index:var(--z-strip);margin:0 -1.25rem;padding:.4rem 1.25rem;
   background:var(--bg);border-bottom:1px solid var(--border);
   overflow-x:auto;overflow-y:hidden}
@@ -63,7 +63,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 }
 h1{font-size:1.35rem;font-weight:680;letter-spacing:-.02em;margin:0}
 h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
- font-weight:700;margin:1.5rem 0 .5rem}
+ font-weight:700;margin:var(--sp-4) 0 var(--sp-1)}
 /* The JSON key beside a human heading. `text-transform:none` is the whole point:
    it sits inside an uppercased h2, and a config key is case-sensitive — uppercased
    it would be a string you cannot paste back into the file. */
@@ -74,14 +74,14 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mu
    a long project path across two lines and pushed the header controls down — and it
    broke at an arbitrary character, so neither the root nor the project name stayed
    readable. A path's two ends are the informative parts; the middle is what to drop. */
-.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:.25rem 0 0;
+.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:var(--sp-0) 0 0;
  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(56ch,100%)}
 .tabs{display:flex;flex-direction:column;gap:.15rem;margin:0}
 .tab{cursor:pointer;font:inherit;font-size:.87rem;text-align:left;padding:.42rem .65rem;
  border-radius:var(--radius);border:1px solid transparent;border-left:2px solid transparent;
  background:transparent;color:var(--muted);transition:all var(--dur) var(--ease)}
 @media(max-width:70rem){
- .tabs{flex-direction:row;gap:.25rem;white-space:nowrap}
+ .tabs{flex-direction:row;gap:var(--sp-0);white-space:nowrap}
  .tab{border-left:none;border-bottom:2px solid transparent;
   border-radius:var(--radius) var(--radius) 0 0}
 }
@@ -90,16 +90,16 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mu
  border-left-color:var(--accent)}
 @media(max-width:70rem){.tab.on{border-left-color:transparent;border-bottom-color:var(--accent)}}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
- box-shadow:var(--shadow-sm);padding:1rem 1rem;margin:.75rem 0}
-.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
-label.f{display:flex;flex-direction:column;gap:.25rem;flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
+ box-shadow:var(--shadow-sm);padding:var(--sp-3) var(--sp-3);margin:var(--sp-2) 0}
+.row{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;margin:var(--sp-1) 0}
+label.f{display:flex;flex-direction:column;gap:var(--sp-0);flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
 /* The control-boundary token, not the decorative one. This edge is the only
    thing that says "you may type here", so SC 1.4.11 wants it at 3:1; it measured
    1.23 against the card surface and 1.10 against the page -- a field a sighted
    reader finds by habit and a low-vision reader does not find at all. */
 input,textarea,select{font:inherit;color:var(--text);background:var(--bg);
  border:1px solid var(--field-border);
- border-radius:var(--radius);padding:.5rem .75rem;font-size:.9rem}
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);font-size:.9rem}
 /* Every <summary> on this page is a disclosure a pointer has to hit, and its box
    is a bare line box: measured 20px in the help drawer and 20px on the policy
    honesty note, against the 24 WCAG 2.2 SC 2.5.8 asks for. One base rule rather
@@ -112,7 +112,7 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .mono{font-family:var(--mono)}
 /* Same reasoning as the fields: a ghost button is a surface-coloured box on a
    surface-coloured page, so its border is what identifies it as a control. */
-.btn{cursor:pointer;font:inherit;font-size:.85rem;padding:.5rem 1rem;border-radius:var(--pill);
+.btn{cursor:pointer;font:inherit;font-size:.85rem;padding:var(--sp-1) var(--sp-3);border-radius:var(--pill);
  border:1px solid var(--field-border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
 .btn:hover{border-color:var(--border-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
@@ -126,8 +126,8 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .btn[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
 .btn[aria-disabled="true"]:hover{border-color:var(--border);transform:none;box-shadow:none}
 .btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
-.btn.small{font-size:.75rem;padding:.25rem .5rem}
-.badge{font-size:.68rem;font-weight:700;padding:.25rem .5em;border-radius:var(--pill);
+.btn.small{font-size:.75rem;padding:var(--sp-0) var(--sp-1)}
+.badge{font-size:.68rem;font-weight:700;padding:var(--sp-0) .5em;border-radius:var(--pill);
  background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
 .badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
 /* A lock whose holder is gone is not green: nothing is running, and nothing is
@@ -135,7 +135,7 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .badge.held{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
 .badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
 .badge.area{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent;text-transform:uppercase;letter-spacing:.03em}
-.chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:.25rem .5em;border-radius:var(--pill);
+.chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:var(--sp-0) .5em;border-radius:var(--pill);
  background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
 .chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
 /* WCAG 2.2 SC 2.5.8 Target Size (Minimum) — the hit-area rule, written once for
@@ -162,19 +162,19 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
    because it proposes a value the file does not hold yet. */
 .chip.optout{color:var(--muted);background:transparent;font-style:italic}
 button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--muted)}
-.tag{display:inline-block;font-size:.66rem;padding:.25rem .45em;border-radius:var(--pill);
- border:1px solid var(--border);color:var(--muted);margin-left:.25rem}
-.listwrap{display:flex;flex-direction:column;gap:.25rem}
-.pill-in{display:flex;gap:.25rem;flex-wrap:wrap;align-items:center;
+.tag{display:inline-block;font-size:.66rem;padding:var(--sp-0) .45em;border-radius:var(--pill);
+ border:1px solid var(--border);color:var(--muted);margin-left:var(--sp-0)}
+.listwrap{display:flex;flex-direction:column;gap:var(--sp-0)}
+.pill-in{display:flex;gap:var(--sp-0);flex-wrap:wrap;align-items:center;
  /* This box IS the field -- the <input> inside it draws no border of its own
     (see the rule below), so this edge is the whole affordance. SC 1.4.11. */
  border:1px solid var(--field-border);
- border-radius:var(--radius);padding:.25rem .5rem;background:var(--bg)}
-.pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:.25rem .25rem}
+ border-radius:var(--radius);padding:var(--sp-0) var(--sp-1);background:var(--bg)}
+.pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:var(--sp-0) var(--sp-0)}
 .mut{color:var(--muted);font-size:.82rem}
 .bar{height:.5rem;border-radius:var(--pill);background:var(--surface-2);overflow:hidden;flex:1 1 8rem;min-width:6rem}
 .bar>i{display:block;height:100%;background:var(--accent)}
-.grid{display:grid;grid-template-columns:1fr;gap:.5rem}
+.grid{display:grid;grid-template-columns:1fr;gap:var(--sp-1)}
 /* usage tab */
 .uctx{font-size:.74rem;color:var(--muted);margin:0 0 var(--sp-2)}
 .ufil{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;gap:var(--sp-1);
@@ -568,13 +568,13 @@ dialog.drawer::backdrop{background:rgb(0 0 0 / .45)}
 table.dtbl{border-collapse:collapse;width:100%;font-size:.76rem}
 table.dtbl th{text-align:left;background:var(--surface-2);color:var(--muted);
  font-size:var(--t-label);text-transform:uppercase;letter-spacing:.05em;
- padding:.3rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
-table.dtbl td{padding:.3rem .5rem;border-bottom:1px solid var(--border);
+ padding:.3rem var(--sp-1);border-bottom:1px solid var(--border);white-space:nowrap}
+table.dtbl td{padding:.3rem var(--sp-1);border-bottom:1px solid var(--border);
  vertical-align:top}
 table.dtbl tbody tr:last-child td{border-bottom:none}
 .dcap{color:var(--muted);font-size:.74rem;margin:.35rem 0 0}
 .dsrc{font-family:var(--mono);font-size:.74rem;color:var(--muted);
- display:flex;flex-wrap:wrap;gap:.25rem .75rem}
+ display:flex;flex-wrap:wrap;gap:var(--sp-0) var(--sp-2)}
 /* The paid half of the help, and the drawer never spends it for you. */
 .dagent{border-top:1px solid var(--border);padding:var(--sp-2) var(--sp-3);
  background:var(--surface-2);flex:0 0 auto;font-size:.78rem;color:var(--muted);
@@ -584,7 +584,7 @@ table.dtbl tbody tr:last-child td{border-bottom:none}
 .dagent b{color:var(--text)}
 .dagent code{font-family:var(--mono);background:var(--bg);border-radius:4px;
  padding:0 .2rem}
-.dagent .dtools{display:flex;gap:.25rem;flex-wrap:wrap;margin:.35rem 0 0}
+.dagent .dtools{display:flex;gap:var(--sp-0);flex-wrap:wrap;margin:.35rem 0 0}
 .dmiss{font-style:italic}
 /* The ⓘ opens this. It is a real button when it does — a focusable span with a
    click handler is a control screen readers announce as text. */
@@ -647,7 +647,7 @@ button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);curso
    flat bag of keys, it is four decisions (where things are, what may be refused,
    how loud the nudge is, what a token costs), and a reader looking for one of
    them should not have to read the other three. */
-.blurb{color:var(--muted);font-size:.8rem;margin:.15rem 0 .75rem;max-width:62ch}
+.blurb{color:var(--muted);font-size:.8rem;margin:.15rem 0 var(--sp-2);max-width:62ch}
 /* Bottoms, not centres. A label that wraps to two lines is centred against
    single-line siblings and drags its input half a line down, so one long field name
    knocks a whole row out of alignment. */
@@ -689,8 +689,8 @@ label.f.cbf input{margin:0}
    behaviour, which serves low-vision readers worse than the ratio helps. */
 /* Reachable from any of the four cards. A form this long with the Save at the
    bottom is a form people leave without saving. */
-.savebar{position:sticky;bottom:0;z-index:var(--z-strip);display:flex;gap:.75rem;
- align-items:center;flex-wrap:wrap;margin:.75rem 0 0;padding:.75rem 1rem;
+.savebar{position:sticky;bottom:0;z-index:var(--z-strip);display:flex;gap:var(--sp-2);
+ align-items:center;flex-wrap:wrap;margin:var(--sp-2) 0 0;padding:var(--sp-2) var(--sp-3);
  background:color-mix(in srgb,var(--surface) 92%,transparent);
  backdrop-filter:blur(10px);border:1px solid var(--border);
  border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
@@ -711,10 +711,10 @@ input.bad{border-color:var(--err)}
 table.ptbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
 table.ptbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
  color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
- letter-spacing:.05em;padding:.4rem .5rem;white-space:nowrap;
+ letter-spacing:.05em;padding:.4rem var(--sp-1);white-space:nowrap;
  border-bottom:1px solid var(--border)}
 table.ptbl th.n,table.ptbl td.n{text-align:right}
-table.ptbl td{padding:.25rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.ptbl td{padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border);white-space:nowrap}
 table.ptbl td input{width:6rem;padding:.2rem .4rem;font-size:.78rem;text-align:right;
  font-variant-numeric:tabular-nums}
 table.ptbl tbody tr:last-child td{border-bottom:none}
@@ -723,14 +723,14 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
 .flash{outline:2px solid var(--accent);outline-offset:3px;border-radius:var(--radius)}
 @media (prefers-reduced-motion:no-preference){
  .flash{transition:outline-color var(--dur) var(--ease)}}
-.tsk{border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .75rem;background:var(--bg)}
-.tsk .h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
+.tsk{border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);background:var(--bg)}
+.tsk .h{display:flex;gap:var(--sp-1);align-items:baseline;flex-wrap:wrap}
 .dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block;background:var(--muted)}
-.rule{display:grid;grid-template-columns:1fr 1fr 1.3fr auto;gap:.5rem;margin:.25rem 0}
+.rule{display:grid;grid-template-columns:1fr 1fr 1.3fr auto;gap:var(--sp-1);margin:var(--sp-0) 0}
 @media(max-width:40rem){.rule{grid-template-columns:1fr}}
 #toast{position:fixed;left:50%;bottom:1.3rem;transform:translateX(-50%);z-index:50;
  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);
- border-radius:var(--pill);padding:.5rem 1rem;font-size:.85rem;opacity:0;transition:opacity var(--dur);pointer-events:none}
+ border-radius:var(--pill);padding:var(--sp-1) var(--sp-3);font-size:.85rem;opacity:0;transition:opacity var(--dur);pointer-events:none}
 #toast.show{opacity:1}#toast.err{border-color:var(--err);color:var(--err)}#toast.ok{border-color:var(--ok)}
 #toast.warn{border-color:var(--warn);color:var(--warn)}
 /* Save-result lifecycle (sv). Success dissolves through an opacity TRANSITION
@@ -740,12 +740,12 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
    screen. */
 .savenote .findings.ok{transition:opacity .45s var(--ease)}
 .savenote .findings.ok.fadeout{opacity:0}
-.savenote .nthead{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem}
+.savenote .nthead{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-1)}
 .savenote .notex{border:none;background:none;color:inherit;cursor:pointer;
  font-size:1rem;line-height:1;padding:0 .2rem;flex:0 0 auto}
 .savenote .fbody{margin-top:.2rem}
 @media(max-width:34rem){.savenote .fbody{max-height:8rem;overflow-y:auto}}
-.findings{margin:.5rem 0 0;padding:.5rem .75rem;border-radius:var(--radius);font-size:.82rem}
+.findings{margin:var(--sp-1) 0 0;padding:var(--sp-1) var(--sp-2);border-radius:var(--radius);font-size:.82rem}
 .findings.err{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
 .findings.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
 .findings.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
@@ -768,7 +768,7 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
    inline-flex that cannot wrap has no narrow layout at all — it is exactly as wide
    as its content wherever it is put, which is how a 390px screen ended up with a
    447px row (F8). `min-width:0` for the same reason it is on the row above. */
-.lbl{display:inline-flex;align-items:center;gap:.25rem;flex-wrap:wrap;min-width:0}
+.lbl{display:inline-flex;align-items:center;gap:var(--sp-0);flex-wrap:wrap;min-width:0}
 .hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
  border:1px solid var(--field-border);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}
@@ -793,7 +793,7 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
    a tip with no words must draw nothing, not an empty box. */
 #hinttip{position:fixed;z-index:200;display:none;box-sizing:border-box;
  background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
- box-shadow:var(--shadow-md);padding:.5rem .5rem;font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
+ box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-1);font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
  white-space:normal;pointer-events:none}
 /* The clamp itself — TIPW/TIPGUT, viewport edges, the flip above a bottom-edge
    icon — lives in showTip() with the rest of the geometry. There is deliberately
@@ -810,32 +810,32 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
 .combo>input{width:100%}
 .combo-menu{position:fixed;z-index:40;background:var(--surface);
  border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;
- overflow-y:auto;overflow-x:hidden;padding:.25rem}
+ overflow-y:auto;overflow-x:hidden;padding:var(--sp-0)}
 /* The overflow footer: a count, not a choice — keyboard nav never reaches it. */
-.combo-more{padding:.35rem .5rem;color:var(--muted);font-size:.72rem;
+.combo-more{padding:.35rem var(--sp-1);color:var(--muted);font-size:.72rem;
  font-style:italic;cursor:default;border-top:1px solid var(--border)}
 /* A menu never scrolls sideways (live feedback: a dropdown with both scrollbars).
    The name is mono and unbreakable by default — a long model id used to push the
    row wider than the menu, and overflow:auto drew the horizontal bar. Names may
    break anywhere, descriptions wrap to their own lines, and the row wraps its
    parts; the menu clips X outright so nothing regresses this quietly. */
-.combo-it{display:flex;align-items:center;flex-wrap:wrap;gap:.25rem .5rem;padding:.5rem .5rem;border-radius:6px;cursor:pointer}
+.combo-it{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-0) var(--sp-1);padding:var(--sp-1) var(--sp-1);border-radius:6px;cursor:pointer}
 .combo-it:hover,.combo-it.active{background:var(--surface-2)}
 .combo-n{font-size:.82rem;flex:0 0 auto;overflow-wrap:anywhere;min-width:0;max-width:100%}
 .combo-d{color:var(--muted);font-size:.72rem;white-space:normal;overflow-wrap:anywhere;flex:1 1 8rem;min-width:0}
-.chipwrap{display:flex;flex-direction:column;gap:.5rem;flex:1 1 auto}
-.chips{display:flex;gap:.25rem;flex-wrap:wrap}
+.chipwrap{display:flex;flex-direction:column;gap:var(--sp-1);flex:1 1 auto}
+.chips{display:flex;gap:var(--sp-0);flex-wrap:wrap}
 /* discovered building-blocks: subtabs + one table */
-.subtabs{display:flex;gap:.25rem;margin:.5rem 0 .5rem;flex-wrap:wrap}
-.subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:.25rem .75rem;border-radius:var(--pill);
+.subtabs{display:flex;gap:var(--sp-0);margin:var(--sp-1) 0 var(--sp-1);flex-wrap:wrap}
+.subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:var(--sp-0) var(--sp-2);border-radius:var(--pill);
  border:1px solid var(--field-border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
 .subtab:hover{border-color:var(--border-strong)}
 .subtab.on{background:var(--surface-2);color:var(--text);border-color:var(--border-strong)}
 .regtblwrap{max-height:22rem;overflow:auto;border:1px solid var(--border);border-radius:var(--radius)}
 table.regtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
 table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);text-align:left;
- font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:.5rem .75rem;border-bottom:1px solid var(--border)}
-table.regtbl td{padding:.5rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
+ font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border)}
+table.regtbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);vertical-align:top}
 table.regtbl tbody tr:hover td{background:var(--surface-2)}
 /* ADO card: the stateMap mini-tables must never widen the document — the
    390px no-sideways-scroll rule. Fixed layout + collapsible inputs keep the
@@ -853,14 +853,14 @@ table.regtbl td.d{color:var(--muted)}
 [data-status="pending"]{--st:var(--muted)}
 /* ca: settled, not achieved — quieter than pending, never the ok green. */
 [data-status="cancelled"],[data-status="wontfix"]{--st:var(--st-cancelled)}
-.st{display:inline-block;font-size:.66rem;font-weight:600;padding:.25rem .5em;border-radius:var(--pill);
+.st{display:inline-block;font-size:.66rem;font-weight:600;padding:var(--sp-0) .5em;border-radius:var(--pill);
  background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
  border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}
 /* composition: filter toolbar + one compact collapsible table */
-.comptools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.25rem 0 .5rem}
-.comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.25rem .75rem}
+.comptools{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;margin:var(--sp-0) 0 var(--sp-1)}
+.comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:var(--sp-0) var(--sp-2)}
 .filtlbl{font-size:.72rem;color:var(--muted)}
-.filt{cursor:pointer;font:inherit;font-size:.75rem;padding:.25rem .75rem;border-radius:var(--pill);
+.filt{cursor:pointer;font:inherit;font-size:.75rem;padding:var(--sp-0) var(--sp-2);border-radius:var(--pill);
  border:1px solid var(--field-border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
 .filt:hover{border-color:var(--border-strong)}
 .filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
@@ -878,33 +878,33 @@ table.regtbl td.d{color:var(--muted)}
 .comptblwrap{border:1px solid var(--border);border-radius:var(--radius);
  overflow-x:auto;-webkit-overflow-scrolling:touch}
 table.comp{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
-table.comp th,table.comp td{padding:.5rem .5rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+table.comp th,table.comp td{padding:var(--sp-1) var(--sp-1);border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
 table.comp thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);
  font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}
 table.comp tbody tr:last-child td{border-bottom:none}
 tr.phase{cursor:pointer}
 tr.phase>td{background:var(--surface-2);border-top:1px solid var(--border-strong);
  border-left:3px solid var(--st,var(--muted))}
-.phtd{display:flex;align-items:center;gap:.5rem}
+.phtd{display:flex;align-items:center;gap:var(--sp-1)}
 tr.phase:hover>td{filter:brightness(1.05)}
 .tri{display:inline-block;width:.9em;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .tri::before{content:"\25B6";font-size:.68em}
 tr.phase.open .tri{transform:rotate(90deg)}
 tr.task>td{background:var(--surface)}
 tr.task:hover>td{background:var(--surface-2)}
-tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding-left:1.5rem;
+tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding-left:var(--sp-4);
  border-left:3px solid var(--st,var(--border))}
 td.ttitle{max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-td.tmodel input{width:6.5rem;padding:.25rem .5rem;font-size:.8rem}
+td.tmodel input{width:6.5rem;padding:var(--sp-0) var(--sp-1);font-size:.8rem}
 td.tskills{min-width:15rem}
-.comp-review{display:flex;align-items:center;gap:.25rem;margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
-.comp-review input{width:8rem;padding:.25rem .5rem;font-size:.78rem}
+.comp-review{display:flex;align-items:center;gap:var(--sp-0);margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
+.comp-review input{width:8rem;padding:var(--sp-0) var(--sp-1);font-size:.78rem}
 /* The model combos (mc) size to their hosts, not to the .combo default of
    18rem — a phase header row and a 6.5rem table cell both hold one. */
 .comp-review .combo{flex:0 1 auto;min-width:0}
 td.tmodel .combo{min-width:6.5rem}
-.comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:.25rem}
-.comp .chips{gap:.25rem}
+.comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:var(--sp-0)}
+.comp .chips{gap:var(--sp-0)}
 .topbtns{display:flex;gap:var(--sp-1);align-items:center;flex-shrink:0}
 .comp .combo{flex:1 1 8rem;min-width:7rem}
 /* overview: summary strips, phase rows, ready-now
@@ -930,12 +930,12 @@ td.tmodel .combo{min-width:6.5rem}
 .ovpill b{font-variant-numeric:tabular-nums;font-weight:640}
 /* a severity cut, not a status — it carries no data-status, so it sets --st itself */
 .ovpill.hi{--st:var(--err)}
-.ovtools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.6rem 0 .4rem}
-.ovtools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:.25rem .75rem}
-.ovtools select{font-size:.8rem;padding:.25rem .5rem}
+.ovtools{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;margin:.6rem 0 .4rem}
+.ovtools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:var(--sp-0) var(--sp-2)}
+.ovtools select{font-size:.8rem;padding:var(--sp-0) var(--sp-1)}
 .ovtools label.inl{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--muted)}
-.ovgrp{display:flex;align-items:baseline;gap:.5rem;margin:.9rem 0 .1rem;
- padding-bottom:.25rem;border-bottom:1px solid var(--border)}
+.ovgrp{display:flex;align-items:baseline;gap:var(--sp-1);margin:.9rem 0 .1rem;
+ padding-bottom:var(--sp-0);border-bottom:1px solid var(--border)}
 /* th (F-P-6): Appearance. A token table — name, light, dark — where the two
    values sit SIDE BY SIDE: a reader who edits one theme and flips to check the
    other is how the pair drifts, and the parity lint downstream refuses a colour
@@ -945,7 +945,7 @@ td.tmodel .combo{min-width:6.5rem}
 table.thtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
 table.thtbl th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
   letter-spacing:.05em;color:var(--muted);padding:.3rem .4rem;font-weight:700}
-table.thtbl td{padding:.25rem .4rem;border-top:1px solid var(--border);
+table.thtbl td{padding:var(--sp-0) .4rem;border-top:1px solid var(--border);
   vertical-align:middle}
 td.thname{white-space:nowrap;color:var(--muted);font-size:.78rem}
 td.thcell{display:table-cell;white-space:nowrap}
@@ -956,7 +956,7 @@ td.thcell{display:table-cell;white-space:nowrap}
   border-radius:5px;background:none;vertical-align:middle;cursor:pointer}
 input.thtext{width:11rem;padding:.2rem .4rem;font-family:var(--mono);
   font-size:.76rem;vertical-align:middle;margin-left:.3rem}
-.thdiff{gap:.5rem;font-size:.82rem;padding:.15rem 0}
+.thdiff{gap:var(--sp-1);font-size:.82rem;padding:.15rem 0}
 .thdiff .mono{min-width:12rem}
 
 /* ov (F-P-5): Overview follows the report's table — a compact row that opens
@@ -967,12 +967,12 @@ input.thtext{width:11rem;padding:.2rem .4rem;font-family:var(--mono);
   transition:transform var(--dur) var(--ease)}
 .ovtri::before{content:"\25B8";font-size:.8em}
 .ovrow.open .ovtri{transform:rotate(90deg)}
-.ovdetail{margin:0 0 .5rem 1.6rem;padding:.5rem .6rem;background:var(--surface-2);
+.ovdetail{margin:0 0 var(--sp-1) 1.6rem;padding:var(--sp-1) .6rem;background:var(--surface-2);
   border:1px solid var(--border);border-radius:var(--radius)}
 table.ovtasks{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
 table.ovtasks th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
   letter-spacing:.05em;color:var(--muted);padding:.2rem .4rem;font-weight:700}
-table.ovtasks td{padding:.25rem .4rem;border-top:1px solid var(--border);
+table.ovtasks td{padding:var(--sp-0) .4rem;border-top:1px solid var(--border);
   vertical-align:top}
 table.ovtasks td.ovt{max-width:22rem;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
@@ -988,10 +988,10 @@ table.ovtasks td.ovt{max-width:22rem;overflow:hidden;text-overflow:ellipsis;
 /* A row is one control: it opens this phase in Composition. A <button> rather than
    a div with a click handler, so it is reachable by keyboard and announced as
    something you can press without a hand-written role/tabindex/keydown trio. */
-.ovrow{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;width:100%;text-align:left;
+.ovrow{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;width:100%;text-align:left;
  font:inherit;color:var(--text);cursor:pointer;background:none;border:1px solid transparent;
  border-left:3px solid var(--st,var(--border));border-radius:var(--radius);
- padding:.4rem .5rem;margin:.15rem 0;transition:background var(--dur) var(--ease)}
+ padding:.4rem var(--sp-1);margin:.15rem 0;transition:background var(--dur) var(--ease)}
 .ovrow:hover{background:var(--surface-2)}
 .ovrow:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
 .ovrow .pid{font-family:var(--mono);font-size:.8rem;color:var(--muted);flex:0 0 3rem}
@@ -1025,13 +1025,13 @@ table.ovtasks td.ovt{max-width:22rem;overflow:hidden;text-overflow:ellipsis;
 table.poltbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
 table.poltbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
  text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;
- color:var(--muted);font-weight:700;padding:.35rem .5rem;
+ color:var(--muted);font-weight:700;padding:.35rem var(--sp-1);
  border-bottom:1px solid var(--border);white-space:nowrap}
 table.poltbl th.ar{color:var(--accent)}
 table.poltbl th.ar .mut{display:block;font-size:.62rem;letter-spacing:.02em;
  text-transform:none;font-weight:600}
 table.poltbl th.ar.dormant{color:var(--muted)}
-table.poltbl td{padding:.3rem .5rem;border-bottom:1px solid var(--border);
+table.poltbl td{padding:.3rem var(--sp-1);border-bottom:1px solid var(--border);
  vertical-align:top}
 table.poltbl tbody tr:last-child td{border-bottom:none}
 table.poltbl td.nm{font-family:var(--mono);font-size:.76rem;
@@ -1071,18 +1071,18 @@ select.prule[data-set=allow]{border-color:var(--ok);color:var(--ok)}
  color:var(--accent);border-color:transparent}
 table.polrules{width:100%;border-collapse:separate;border-spacing:0;font-size:.78rem}
 table.polrules th{text-align:left;font-size:.66rem;text-transform:uppercase;
- letter-spacing:.06em;color:var(--muted);font-weight:700;padding:.3rem .5rem;
+ letter-spacing:.06em;color:var(--muted);font-weight:700;padding:.3rem var(--sp-1);
  border-bottom:1px solid var(--border)}
-table.polrules td{padding:.28rem .5rem;border-bottom:1px solid var(--border)}
+table.polrules td{padding:.28rem var(--sp-1);border-bottom:1px solid var(--border)}
 table.polrules tbody tr:last-child td{border-bottom:none}
 table.polrules td.pat{font-family:var(--mono);font-size:.76rem}
 table.polrules td.lst{font-weight:700;font-size:.7rem;text-transform:uppercase;
  letter-spacing:.04em}
 table.polrules td.lst[data-list=deny]{color:var(--err)}
 table.polrules td.lst[data-list=allow]{color:var(--ok)}
-.poladd{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0 0}
-.poladd input{flex:1 1 14rem;min-width:8rem;padding:.25rem .5rem}
-.poladd select{font-size:.8rem;padding:.25rem .5rem}
+.poladd{display:flex;gap:var(--sp-1);flex-wrap:wrap;align-items:center;margin:var(--sp-1) 0 0}
+.poladd input{flex:1 1 14rem;min-width:8rem;padding:var(--sp-0) var(--sp-1)}
+.poladd select{font-size:.8rem;padding:var(--sp-0) var(--sp-1)}
 /* The four limits. Shut by default because they are read once and remembered,
    open-able because a switchboard that never states them is selling enforcement
    it does not have. */
@@ -1090,7 +1090,7 @@ table.polrules td.lst[data-list=allow]{color:var(--ok)}
 /* Its 24px target floor is the shared :where(summary) rule beside the base input
    styles, not a copy here — this one only sets colour and size. */
 .polhonest summary{cursor:pointer;color:var(--muted);font-size:.78rem}
-.polhonest ol{margin:.5rem 0 0;padding-left:1.2rem;color:var(--muted);
+.polhonest ol{margin:var(--sp-1) 0 0;padding-left:1.2rem;color:var(--muted);
  font-size:.78rem;line-height:1.55;max-width:76ch}
 .polhonest b{color:var(--text)}
 @media(max-width:48rem){
