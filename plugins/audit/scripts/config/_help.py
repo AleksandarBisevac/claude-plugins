@@ -59,6 +59,7 @@ ONE PATH RESOLVER, AND IT IS THIS ONE. A drawer holds a path into a DOCUMENT
 the browser never grows a second implementation of that normalisation — the same
 reason the policy switchboard is handed verdicts rather than patterns to match.
 """
+import ast
 import json
 import os
 import re
@@ -982,6 +983,215 @@ def schema_subset_drift(root=None):
     """
     anchors = _manifest_vocab.SUBSET_ANCHORS
     return subset_drift(schema_level_keys(root, anchors), vocab_subsets(), anchors)
+
+
+# --- the vocabularies that are literals at their call site ------------------------
+def _called_name(node):
+    """The bare function name of a call — `f()` and `mod.f()` alike, else None."""
+    fn = node.func
+    if isinstance(fn, ast.Name):
+        return fn.id
+    if isinstance(fn, ast.Attribute):
+        return fn.attr
+    return None
+
+
+def _literal_str(node):
+    """The value of a string literal node, or None if it is not one."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _literal_str_set(node):
+    """The strings in a `{"a", "b"}` literal, or None if it is not one.
+
+    None for `set(vocab)`, for a set holding a NAME rather than a constant, and for a
+    comprehension. Declined rather than guessed at: the whole point is to read what a
+    call actually passes, and anything needing a value the parser does not have would
+    be a second implementation of the module being checked.
+    """
+    if not isinstance(node, ast.Set):
+        return None
+    out = set()
+    for elt in node.elts:
+        val = _literal_str(elt)
+        if val is None:
+            return None
+        out.add(val)
+    return out
+
+
+def inline_vocabularies(sources):
+    """The `_unknown_keys()` calls whose vocabulary is written into the call itself.
+
+    `sources` is `{relative path: source text}`; the answer is
+    `{"found": {dotted path: {"keys": …, "sites": [(where, sorted keys), …]}},
+    "problems": [(relative path, why), …]}`, where `keys` is the union across sites.
+
+    READ THE ARGUMENT, NOT A COPY OF IT. `meta.ado.onComplete` and its three
+    neighbours have no named set anywhere — the vocabulary IS the literal in the
+    call, so a check pointed at anything else would be checking a second spelling
+    and reporting on the first. Sites that disagree with each other are reported
+    rather than quietly merged, which is the only way a union can be safe.
+
+    A call whose set or whose path is not a literal is SKIPPED IN SILENCE, because a
+    named set is `schema_vocab_drift()`'s job and a computed one cannot be resolved
+    without running the module. That is an under-count, and it is written out on
+    `schema_inline_drift()` with the rest of what this cannot see.
+    """
+    found, problems = {}, []
+    for rel in sorted(sources):
+        try:
+            tree = ast.parse(sources[rel])
+        except SyntaxError as exc:
+            # Named rather than skipped: a file the parser cannot read is not a file
+            # with no inline vocabulary in it, and silence here would shrink the
+            # scan's scope without shrinking the claim made about it.
+            problems.append((rel, "does not parse, so any inline vocabulary in it "
+                                  "is invisible to this check: %s" % (exc,)))
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or len(node.args) < 3:
+                continue
+            if _called_name(node) != "_unknown_keys":
+                continue
+            keys = _literal_str_set(node.args[1])
+            path = _literal_str(node.args[2])
+            if keys is None or path is None:
+                continue
+            entry = found.setdefault(path, {"keys": set(), "sites": []})
+            entry["keys"] |= keys
+            entry["sites"].append(("%s:%d" % (rel, node.lineno),
+                                   tuple(sorted(keys))))
+    return {"found": found, "problems": problems}
+
+
+def inline_drift(levels, found, anchors):
+    """The comparison itself, on three plain arguments.
+
+    `levels` is `{dotted path: the properties the schema declares there}`, `found` is
+    `inline_vocabularies()`' `found` table, and `anchors` the dotted paths
+    `INLINE_ANCHORS` declares. Separate from `schema_inline_drift()` for the reason
+    `vocab_drift()` is separate from `schema_vocab_drift()`: a lint you can only run
+    against the real tree is a lint whose own failure modes are untested.
+
+    COVERAGE, BOTH DIRECTIONS, and the consumer is why. Each literal is the `known`
+    argument of `_unknown_keys()`, so a schema property it omits becomes a warning
+    about a real key, and a key it holds that the schema does not declare is a typo
+    that took the warning for the real key with it. Neither is the RECOMMENDED-subset
+    shape `subset_drift()` exists for, and asking coverage of one of those would fail
+    a set that is behaving perfectly — which is why the two tables are separate.
+
+    Everything it can say:
+
+      * a declared path with no call site at all — the check has stopped covering
+        that level rather than found it clean, and this is the direction that would
+        otherwise pass in silence, since a comparison over nothing found reports
+        nothing wrong;
+      * a literal found at a path nothing declares, so a nested vocabulary added
+        later cannot opt out of the check by being forgotten;
+      * an anchor that resolves to NO schema properties, which is what a renamed or
+        restructured level looks like from here;
+      * two call sites passing different vocabularies for one level — one of them is
+        already wrong, and a union alone would hide exactly that;
+      * a property the schema declares and no call site names, and a key a call site
+        passes that the schema does not declare.
+    """
+    declared = tuple(anchors)
+    out = []
+
+    for path in sorted(set(found) - set(declared)):
+        out.append((path, "an inline vocabulary at %s that INLINE_ANCHORS does not "
+                          "declare - a level nothing compares is where this whole "
+                          "class of drift starts"
+                    % (", ".join(site for site, _keys in found[path]["sites"]),)))
+
+    for path in declared:
+        entry = found.get(path)
+        if not entry:
+            out.append((path, "declared here, but no `_unknown_keys()` call under "
+                              "scripts/ passes a literal set at this path - the "
+                              "check has stopped covering the level, which is not "
+                              "the same as finding it clean"))
+            continue
+        schema = set(levels.get(path) or ())
+        keys = set(entry["keys"])
+        if not schema:
+            out.append((path, "the anchor declares no properties in "
+                              "audit-plan.schema.json - a comparison against "
+                              "nothing passes for any set"))
+            continue
+        spellings = sorted(set(k for _site, k in entry["sites"]))
+        if len(spellings) > 1:
+            out.append((path, "call sites pass different vocabularies for this "
+                              "level, so one of them is already wrong: %s"
+                        % (", ".join("%s %s" % (site, list(k))
+                                     for site, k in sorted(entry["sites"])),)))
+        for key in sorted(schema - keys):
+            out.append((path, "%s.%s is in the schema and no call site names it - "
+                              "add it, or the typo-catcher warns about a real key"
+                        % (path, key)))
+        for key in sorted(keys - schema):
+            out.append((path, "%r is passed here and the schema does not declare it "
+                              "at %s - add it to the schema, or the key it was meant "
+                              "to be is the one going unwarned" % (key, path)))
+    return out
+
+
+def schema_inline_drift(root=None):
+    """[(where, problem), …] — every nested level whose vocabulary is a set literal
+    at its `_unknown_keys()` call and has stopped agreeing with
+    `schema/audit-plan.schema.json`.
+
+    Here rather than beside the anchors for the reason `schema_vocab_drift()` is: the
+    vocabulary is at layer 1 and `fields()` is at layer 2. `_manifest_vocab` keeps the
+    claim it owns — `INLINE_ANCHORS`, which levels are checked this way — and this is
+    the comparison.
+
+    `scripts/` ONLY, and the exclusions are load-bearing rather than incidental.
+    `tests/` passes literal sets at a literal path to exercise `_unknown_keys` itself
+    (`test__manifest_vocab.py`'s first few cases), and those are fixtures, not
+    vocabulary: scanning them would fail a correct tree, which is how a lint gets
+    routed around. `hooks/` cannot reach `_manifest_vocab` at all — hooks may not
+    import `scripts/`.
+
+    WHAT IT CANNOT SEE, stated rather than implied, and every one of them
+    UNDER-warns, which is the quiet direction:
+
+      * a vocabulary that is not a literal. `meta.ado.stateMap` is checked against
+        `set(vocab)` and each block under it against `set(statuses)`, so neither is
+        compared here — and the second one is not merely unchecked but genuinely
+        divergent today: `_manifest_vocab.STATUS` carries `cancelled`, which the
+        schema does not declare under `stateMap.task` or `stateMap.phase`. Closing
+        that needs an exemption with a reason, not a wider scan.
+      * a `_unknown_keys` reimplemented under another name, or reached through an
+        alias the parser cannot resolve to that name.
+      * whether the literal is the RIGHT vocabulary for its rule, as opposed to one
+        the schema also declares.
+      * whether the call is ever REACHED. The same limit `schema_subset_drift()`
+        names: delete the branch around one of these calls and this stays green over
+        a level nothing validates, which is why `test__manifest_vocab.py` drives the
+        warnings through `_manifest_ado.check_ado_meta()` for real.
+    """
+    anchors = _manifest_vocab.INLINE_ANCHORS
+    # `schema_level_keys()` keys its answer by SET NAME. These levels have no set
+    # name — the path is the only name they have — so each is paired with itself,
+    # which walks the same `fields()` output the other two tables do rather than
+    # growing a third walk over the schema.
+    pairs = tuple((path, path) for path in anchors)
+    sources, problems = {}, []
+    for rel, path in _output.py_files(_output.SCRIPTS_DIR):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                sources[rel] = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            # Named rather than skipped, for the reason `prose_number_claims()` names
+            # its unreadable files: a file that cannot be read is not a clean one.
+            problems.append((rel, "unreadable: %s" % (exc,)))
+    scan = inline_vocabularies(sources)
+    return (problems + scan["problems"]
+            + inline_drift(schema_level_keys(root, pairs), scan["found"], anchors))
 
 
 # --- the payload -----------------------------------------------------------------

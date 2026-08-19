@@ -29,6 +29,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (SCRIPTS_DIR + py_files, for the inline scan)
 from _output import safe_stdio                     # noqa: E402
 import _manifest_vocab as M                        # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
@@ -294,6 +295,100 @@ def _cases(check):
           "`_manifest_phases._check_claim`, and a complete claim draws none. This "
           "is the consequence mv23 protects, and mv23 cannot see it: %r"
           % (_unnamed,), _unnamed == [] and (_f0, _w0) == ([], []))
+
+    # --- the nested levels, whose vocabulary is a literal at its call site --------
+    # The `meta.ado` sub-objects have no named set for mv18 or mv23 to find: each is
+    # checked against a set literal written straight into the `_unknown_keys()` call
+    # in `_manifest_ado`, which is why both of the tables above are blind to them.
+    # `_help.schema_inline_drift()` reads that literal WHERE THE VALIDATOR READS IT
+    # and holds it to the same schema. The cases in test__help.py prove the
+    # comparison from fixtures; these prove it is pointed at this tree.
+    _ipairs = tuple((p, p) for p in M.INLINE_ANCHORS)
+    _ilv = _help.schema_level_keys(None, _ipairs)
+    _isrc = {}
+    for _rel, _path in _output.py_files(_output.SCRIPTS_DIR):
+        with open(_path, "r", encoding="utf-8") as _fh:
+            _isrc[_rel] = _fh.read()
+    _ifound = _help.inline_vocabularies(_isrc)["found"]
+    _idrift = _help.schema_inline_drift()
+    check("mv29 every nested level whose vocabulary is a literal still agrees with "
+          "audit-plan.schema.json - these have no named set, so mv18 and mv23 are "
+          "both blind to them and a property added to one would arrive as a warning "
+          "on a real key instead of BY NAME here: %r" % (_idrift,), _idrift == [])
+    _icompared = sum(len(v) for v in _ilv.values())
+    _ipassed = sum(len(e["keys"]) for e in _ifound.values())
+    _imissing = [p for p in M.INLINE_ANCHORS if p not in _ifound]
+    check("mv30 ...over the %d properties the schema declares at %d anchors and the "
+          "%d keys the call sites really pass, none of them zero and every declared "
+          "anchor found in `scripts/` - the counts are the SCOPE that makes mv29's "
+          "silence worth anything, and the found-nothing half is the one that would "
+          "otherwise read exactly like agreement: %r"
+          % (_icompared, len(_ilv), _ipassed, _imissing),
+          _icompared > 0 and _ipassed > 0 and _imissing == []
+          and len(_ilv) == len(M.INLINE_ANCHORS)
+          and not [p for p, keys in _ilv.items() if not keys],
+          repr(sorted((p, len(k)) for p, k in _ilv.items())))
+    # Red-first against the REAL schema levels, on COPIES of the scan: the shipped
+    # literals and the shipped schema are untouched, so the tree is never one
+    # exception away from carrying the mutation.
+    _cut = dict(_ifound)
+    _cut["meta.ado.pull"] = {"keys": {"areaPath"},
+                             "sites": [("x.py:1", ("areaPath",))]}
+    _cut_drift = _help.inline_drift(_ilv, _cut, M.INLINE_ANCHORS)
+    _mis = dict(_ifound)
+    _mis["meta.ado.sprint"] = {"keys": {"teem", "mode"},
+                               "sites": [("x.py:1", ("mode", "teem"))]}
+    _mis_drift = _help.inline_drift(_ilv, _mis, M.INLINE_ANCHORS)
+    check("mv31 ...and both mutations land, whole problem lists rather than 'at "
+          "least one': dropping `tags` from a copy of the `meta.ado.pull` literal "
+          "names it, and misspelling `team` names the property now unnamed AND the "
+          "key the schema does not declare - so these levels are checked against "
+          "this document rather than against themselves",
+          [p for _w, p in _cut_drift] ==
+          ["meta.ado.pull.tags is in the schema and no call site names it - add it, "
+           "or the typo-catcher warns about a real key"]
+          and [p for _w, p in _mis_drift] ==
+          ["meta.ado.sprint.team is in the schema and no call site names it - add "
+           "it, or the typo-catcher warns about a real key",
+           "'teem' is passed here and the schema does not declare it at "
+           "meta.ado.sprint - add it to the schema, or the key it was meant to be "
+           "is the one going unwarned"]
+          and {"areaPath", "tags"} <= set(_ifound["meta.ado.pull"]["keys"])
+          and "team" in _ifound["meta.ado.sprint"]["keys"],
+          repr((_cut_drift, _mis_drift)))
+    _gone = dict((p, e) for p, e in _ifound.items() if p != "meta.ado.comments")
+    _gone_drift = _help.inline_drift(_ilv, _gone, M.INLINE_ANCHORS)
+    check("mv32 ...and a level whose call site has gone is REPORTED rather than "
+          "dropped from the comparison. `meta.ado.comments` is the one the report "
+          "that opened this did not list, which is why the scan and the table each "
+          "have to be able to fail the other",
+          [p for _w, p in _gone_drift] ==
+          ["declared here, but no `_unknown_keys()` call under scripts/ passes a "
+           "literal set at this path - the check has stopped covering the level, "
+           "which is not the same as finding it clean"]
+          and "meta.ado.comments" in _ifound, repr(_gone_drift))
+    # The scan cannot see whether a call is ever REACHED: delete the branch around
+    # one and mv29 stays green over a level nothing validates. So drive the real
+    # front door, one level at a time.
+    _ado_ok = {"onComplete": {"remainingWork": 0},
+               "comments": {"onBlocked": True, "onComplete": False},
+               "sprint": {"team": "Core", "mode": "current"},
+               "pull": {"areaPath": "A", "tags": ["t"]}}
+    _unreached = []
+    for _lvl in M.INLINE_ANCHORS:
+        _cfg = dict((k, dict(v)) for k, v in _ado_ok.items())
+        _cfg[_lvl.rsplit(".", 1)[1]]["zzzProbe"] = 1
+        _af, _aw = _ado.check_ado_meta(_cfg)
+        if _af or len(_aw) != 1 or "zzzProbe" not in _aw[0] or _lvl not in _aw[0]:
+            _unreached.append((_lvl, _af, _aw))
+    _a0, _w1 = _ado.check_ado_meta(dict((k, dict(v))
+                                        for k, v in _ado_ok.items()))
+    check("mv33 ...and every one of those literals is really consulted: an unknown "
+          "key at each level draws exactly one warning naming it through "
+          "`_manifest_ado.check_ado_meta`, and a clean config draws none. This is "
+          "the consequence mv29 protects and cannot see, the same blind spot mv28 "
+          "covers for CLAIM_KEYS: %r" % (_unreached,),
+          _unreached == [] and (_a0, _w1) == ([], []))
 
 
 def _selftest():

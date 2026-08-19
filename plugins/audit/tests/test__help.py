@@ -436,6 +436,100 @@ def _cases(check):
           M.vocab_subsets(_vocab) == {"CLAIM_KEYS": _vocab.CLAIM_KEYS},
           repr(sorted(M.vocab_subsets(_vocab))))
 
+    # --- the vocabularies that are LITERALS AT THEIR CALL SITE --------------------
+    # A third shape, and the one neither table above can reach: the `meta.ado`
+    # sub-objects have no named set anywhere, so `vocab_sets()` and `vocab_subsets()`
+    # are blind to both of them and the vocabulary is the ARGUMENT a call passes.
+    # Fixtures again, and for the reason v3-v18 use them: proving a lint by mutating
+    # what it guards leaves the tree one exception away from carrying the mutation.
+    _src = ('def check_it(ado, w):\n'
+            '    _unknown_keys(ado, {"team", "mode"}, "meta.ado.sprint", w)\n'
+            '    _unknown_keys(ado, set(vocab), "meta.ado.stateMap", w)\n'
+            '    _unknown_keys(ado, KNOWN_ADO, "meta.ado", w)\n'
+            '    _unknown_keys(ado, {"x"}, "%s" % kind, w)\n')
+    _scan = M.inline_vocabularies({"a.py": _src})
+    check("v19 a literal vocabulary is read off the CALL, with the file and line it "
+          "is written on - and the three shapes beside it are declined, because a "
+          "computed set needs a value the parser does not have and a NAMED one is "
+          "`schema_vocab_drift()`'s question rather than this one",
+          _scan == {"found": {"meta.ado.sprint":
+                              {"keys": {"team", "mode"},
+                               "sites": [("a.py:2", ("mode", "team"))]}},
+                    "problems": []}, repr(_scan))
+    _bad = M.inline_vocabularies({"a.py": "def (:\n"})
+    check("v20 ...and a file the parser cannot read is NAMED rather than skipped: "
+          "silence there would shrink what the scan looked at without shrinking the "
+          "claim made about it",
+          _bad["found"] == {} and len(_bad["problems"]) == 1
+          and _bad["problems"][0][0] == "a.py"
+          and "does not parse" in _bad["problems"][0][1], repr(_bad))
+    _two = M.inline_vocabularies(
+        {"a.py": '_unknown_keys(o, {"team"}, "meta.ado.sprint", w)\n',
+         "b.py": '_unknown_keys(o, {"team", "mode"}, "meta.ado.sprint", w)\n'})
+    check("v21 two call sites for one level are unioned AND their disagreement is "
+          "named - a union on its own would hide the fork it was built out of, "
+          "which is the failure a second copy of a vocabulary always is",
+          _two["found"]["meta.ado.sprint"]["keys"] == {"team", "mode"}
+          and [p for _w, p in M.inline_drift({"meta.ado.sprint": {"team", "mode"}},
+                                             _two["found"], ("meta.ado.sprint",))]
+          == ["call sites pass different vocabularies for this level, so one of "
+              "them is already wrong: a.py:1 ['team'], b.py:1 ['mode', 'team']"],
+          repr(_two))
+
+    _ianch = ("meta.ado.sprint",)
+
+    def _iprobe(levels, found):
+        """Just the problems, against one anchor — the path is `meta.ado.sprint` in
+        every fixture, so carrying it into each expected list is noise."""
+        return [p for _w, p in M.inline_drift(levels, found, _ianch)]
+
+    def _site(*keys):
+        """One call site passing `keys`, shaped as `inline_vocabularies()` returns."""
+        return {"keys": set(keys), "sites": [("a.py:1", tuple(sorted(keys)))]}
+
+    check("v22 a property the schema declares and no call site names is reported "
+          "with its path - the literal is the `known` argument of `_unknown_keys`, "
+          "so a key missing from it makes the validator warn about a real key",
+          _iprobe({"meta.ado.sprint": {"team", "mode"}},
+                  {"meta.ado.sprint": _site("team")}) ==
+          ["meta.ado.sprint.mode is in the schema and no call site names it - add "
+           "it, or the typo-catcher warns about a real key"])
+    check("v23 ...and ONE typo lands as BOTH problems, which is what a typo here "
+          "actually costs: the real key stops being recognised and the misspelling "
+          "starts being accepted",
+          _iprobe({"meta.ado.sprint": {"team", "mode"}},
+                  {"meta.ado.sprint": _site("team", "moed")}) ==
+          ["meta.ado.sprint.mode is in the schema and no call site names it - add "
+           "it, or the typo-catcher warns about a real key",
+           "'moed' is passed here and the schema does not declare it at "
+           "meta.ado.sprint - add it to the schema, or the key it was meant to be "
+           "is the one going unwarned"])
+    check("v24 a declared level with NO call site is the direction that would "
+          "otherwise pass in silence: a comparison over nothing found reports "
+          "nothing wrong, so deleting the call reads exactly like agreement",
+          _iprobe({"meta.ado.sprint": {"team"}}, {}) ==
+          ["declared here, but no `_unknown_keys()` call under scripts/ passes a "
+           "literal set at this path - the check has stopped covering the level, "
+           "which is not the same as finding it clean"])
+    check("v25 ...and an anchor that declares no properties is named AS ITSELF, so "
+          "a renamed level reads as one move in the schema rather than as a "
+          "vocabulary full of typos",
+          _iprobe({"meta.ado.sprint": set()}, {"meta.ado.sprint": _site("team")}) ==
+          ["the anchor declares no properties in audit-plan.schema.json - a "
+           "comparison against nothing passes for any set"])
+    check("v26 a literal found at a path INLINE_ANCHORS does not declare is named "
+          "with its site, so a nested vocabulary added later cannot opt out of the "
+          "check by being forgotten - the half a hand-written table cannot do",
+          _iprobe({"meta.ado.sprint": {"team"}},
+                  {"meta.ado.sprint": _site("team"),
+                   "meta.ado.pull": _site("tags")}) ==
+          ["an inline vocabulary at a.py:1 that INLINE_ANCHORS does not declare - a "
+           "level nothing compares is where this whole class of drift starts"])
+    check("v27 ...and a level that agrees says nothing at all - the case that fails "
+          "if any of v22-v26 has started firing on everything",
+          M.inline_drift({"meta.ado.sprint": {"team", "mode"}},
+                         {"meta.ado.sprint": _site("team", "mode")}, _ianch) == [])
+
     # --- the guide agent ----------------------------------------------------------
     cards = {c["name"]: c for c in M.agent_cards()}
     check("g1 every shipped agent is read off its own file",

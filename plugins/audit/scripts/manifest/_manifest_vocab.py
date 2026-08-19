@@ -30,7 +30,10 @@ disagrees. IF YOU ADD A KEY HERE, the schema is where it has to exist first; if
 it must not, it belongs in `OFF_SCHEMA` with the reason written down. The
 comparison lives in `_help` rather than here because the tree's one schema walk
 does - see the SCHEMA_ANCHORS comment for why that is a layer fact and not a
-preference.
+preference. `SUBSET_ANCHORS` and `INLINE_ANCHORS` say the same thing about the
+other two shapes a vocabulary takes here: a RECOMMENDED subset, checked for
+containment, and a nested level whose vocabulary is a set literal at its
+`_unknown_keys()` call rather than a set on this module at all.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_vocab.py` - see
@@ -306,10 +309,11 @@ OFF_SCHEMA = {
 # for `meta.ado`, `_manifest_phases` for the phase and the task, `_manifest_crossrefs`
 # for the bug and the proposal). A claim's would sit in `_check_claim`, beside the
 # loop above. Every other NESTED object in the tree keeps its vocabulary inline at
-# that call rather than here — `meta.ado.onComplete` is `{"remainingWork"}`,
-# `.sprint` is `{"team", "mode"}`, `.pull` is `{"areaPath", "tags"}` — because this
-# module exists for the vocabularies MULTIPLE modules share, which is this file's
-# own stated criterion, and a claim has one reader.
+# that call rather than here, and `INLINE_ANCHORS` below is the list of which levels
+# those are — the only list, because the one this comment used to carry spelled three
+# of those literals out and was already missing a fourth on the day it was written.
+# This module exists for the vocabularies MULTIPLE modules share, which is this
+# file's own stated criterion, and a claim has one reader.
 #
 # So the missing warning is a missing CALL, not a missing set, and adding the set on
 # its own would be worse than leaving it out: `_help.vocab_sets()` reads every
@@ -325,6 +329,65 @@ OFF_SCHEMA = {
 # anchor. A case asserting `KNOWN_CLAIM` does not exist would forbid its own fix.
 SUBSET_ANCHORS = (
     ("CLAIM_KEYS", "phases[].claim"),
+)
+
+# --- the nested vocabularies, which are LITERALS AT THEIR CALL SITE ---------------
+# The two tables above both assume a NAMED set on this module: `_help.vocab_sets()`
+# and `vocab_subsets()` read them off it by attribute name, so a vocabulary that is
+# not an attribute anywhere is invisible to both. The `meta.ado` sub-objects are
+# exactly that shape. Each is checked against a set literal written straight into the
+# `_unknown_keys()` call in `_manifest_ado.py`, each restates properties
+# `schema/audit-plan.schema.json` declares, and until this table existed nothing
+# compared any of them — the same class `SCHEMA_ANCHORS` closed for the seven
+# top-level sets, one nesting level down and therefore untouched by it.
+#
+# COVERAGE, NOT CONTAINMENT, AND THE CONSUMER SETTLES IT PER LEVEL. Every literal
+# here is the `known` argument of `_unknown_keys(obj, known, where, warnings)`, which
+# warns about any key NOT in it — the same consumer the seven `KNOWN_*` sets have,
+# and the reason they are coverage-shaped. A property the schema declares and the
+# literal omits makes the validator warn about a real key; a key in the literal the
+# schema does not declare is a typo that both widens the vocabulary and silently
+# takes the warning for the key it was meant to be. Both directions cost something,
+# so both are checked. `CLAIM_KEYS` is containment-shaped because its consumer asks a
+# different question (`missing = [k for k in CLAIM_KEYS if not claim.get(k)]`, a
+# subset by design), and no literal here has any consumer other than the one call it
+# is written into — an argument cannot acquire a second reader.
+#
+# WHY THE LITERALS DID NOT SIMPLY MOVE UP HERE, which is the obvious alternative.
+# `SCHEMA_ANCHORS` would not have needed a single change to take them:
+# `_help._direct_children()` is path-agnostic, so `("KNOWN_ADO_SPRINT",
+# "meta.ado.sprint")` resolves against the existing walk today. The cost is not
+# machinery, it is what the vocabulary would then be:
+#
+#   * A named set here does not REPLACE a literal, it joins it. `_manifest_ado` would
+#     have to be edited to read the name, and until that lands the tree carries two
+#     spellings of each vocabulary with nothing reconciling them — while
+#     `_help.vocab_sets()` anchors and green-lights the copy on this module and the
+#     literal the validator actually passes drifts freely. Coverage in appearance
+#     only is the failure `OFF_SCHEMA`'s written reasons exist to prevent.
+#   * This module's criterion is the vocabularies MULTIPLE modules share; it is why
+#     `TERMINAL` is not here. Each of these has one reader.
+#   * A hand-written set is only as complete as somebody's memory. The report that
+#     opened this named `onComplete`, `sprint` and `pull`; the scan that reads the
+#     calls found `comments` as well.
+#
+# So the DATA is the list of levels whose vocabulary is a literal, and the COMPARISON
+# reads that literal where the validator reads it — `_help.schema_inline_drift()`
+# parses `scripts/`, takes every `_unknown_keys(obj, {…}, "dotted.path", w)` whose
+# set and whose path are both literals, and holds each to the schema at that path.
+#
+# THIS TABLE IS NOT REDUNDANT WITH THE SCAN, and that is its whole job: a scan alone
+# cannot tell "clean" from "there is nothing left to look at". A path declared here
+# with no call site found is a NAMED failure, and a literal found at a path not
+# declared here is the other one, so neither the check nor the code it guards can
+# shrink in silence. There is no exemption table because no level needs one today,
+# and none can be needed quietly: dropping an entry to escape the check reports the
+# call site as undeclared instead.
+INLINE_ANCHORS = (
+    "meta.ado.onComplete",
+    "meta.ado.comments",
+    "meta.ado.sprint",
+    "meta.ado.pull",
 )
 
 
