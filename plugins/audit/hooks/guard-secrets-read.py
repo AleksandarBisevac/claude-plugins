@@ -39,9 +39,17 @@ Trade-off (accepted): the matchers are text-based and may over-block an innocent
 one-liner that merely mentions `.env` (e.g. `cp .env.example .env`). We accept
 over-blocking on the read side — a harmless retry vs. an irreversible leak.
 Listing NAMES is never blocked. FULL Bash-write coverage is undecidable by
-static text inspection (heredocs into interpreters, obfuscated redirects —
-upstream anthropics/claude-code#29709); the complete control would be a
-PostToolUse diff/worktree check (out of scope, documented in SECURITY.md).
+static text inspection (obfuscated redirects — upstream
+anthropics/claude-code#29709); the complete control would be a PostToolUse
+diff/worktree check (out of scope, documented in SECURITY.md).
+
+`heredocs into interpreters` used to be listed on that undecidable line and is
+not any more (F31). `python3 - <<PY` is the same capability as `python3 -c`
+spelled differently, and it walked through because the pattern knew the spelling
+rather than the capability. A heredoc body is now graded when — and only when —
+it feeds an interpreter; a body fed to anything else is DATA and leaves the
+scanned text, which is what stopped this guard refusing a commit whose message
+merely described a write.
 
 Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 "permissionDecisionReason": ...}} on stdout and exits 0 — the canonical
@@ -276,6 +284,67 @@ def _hits_extra(text, extras):
     return any(rx.search(text) for rx in extras)
 
 
+_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+# The head of a heredoc line, when what it invokes reads its program from stdin.
+# `python3 - <<PY`, `python3 <<PY`, `node <<JS`, `bash -s <<EOF` are all the same
+# capability as `python -c`, spelled differently; `git commit -F - <<MSG` and
+# `cat <<EOF` are not, because the body is data those commands never execute.
+_STDIN_INTERP = re.compile(
+    r"\b(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
+    r"(?:\s+-[A-Za-z-]+)*\s*-?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _split_heredocs(cmd: str):
+    """(text without heredoc bodies, bodies that are CODE).
+
+    F31, found while committing a fix to this file: the guard refused its own
+    commit, because the message DESCRIBED the write forms it had just learned and
+    every branch here scans the whole command text. Probing that turned up the
+    mirror defect -- `python3 - <<'PY'` performs exactly what `python3 -c` does
+    and walked straight through, because the pattern knows the `-c` SPELLING
+    rather than the capability. One root, two directions.
+
+    So the body is separated from the text and handed back only when it feeds an
+    interpreter. Prose in a commit message stops being read as code; a heredoc
+    fed to python or node starts being read as the code it is.
+
+    Fail-safe about its own limits, like `_clauses`: a heredoc whose terminator
+    never arrives is left in the text, so an unparseable command is judged
+    exactly as strictly as before this existed.
+    """
+    if "<<" not in cmd:
+        return cmd, []
+    lines = cmd.split("\n")
+    kept, code, i = [], [], 0
+    while i < len(lines):
+        line = lines[i]
+        m = _HEREDOC_START.search(line)
+        if not m:
+            kept.append(line)
+            i += 1
+            continue
+        delim = m.group(2)
+        # Look for the terminator before consuming anything: without one there is
+        # no body to separate, only a line that happens to contain `<<`.
+        end = None
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip() == delim:
+                end = j
+                break
+        if end is None:
+            kept.append(line)
+            i += 1
+            continue
+        kept.append(line[:m.start()])
+        body = "\n".join(lines[i + 1:end])
+        if _STDIN_INTERP.search(line[:m.start()].strip()):
+            code.append(body)
+        i = end + 1
+    return "\n".join(kept), code
+
+
 def _clauses(cmd: str):
     """Split a shell command into clauses on `;`, `|`, `&` OUTSIDE quotes (F-B-1).
 
@@ -467,19 +536,28 @@ def _decide_core(data: dict, root, cfg):
         # command, a redirect in clause one plus an eval in clause two used to
         # combine into a deny neither clause earns. A single-clause command is
         # judged exactly as before (see _clauses).
-        clauses = _clauses(cmd)
-        for cl in clauses:
-            if _INLINE_EVAL.search(cl) and (SECRET_TOKEN_RE.search(cl)
-                                            or _hits_extra(cl, extras)):
+        # F31: a heredoc body is graded when, and only when, it feeds an
+        # interpreter. Data bodies leave the text entirely (prose that documents
+        # a write is not a write); code bodies come back as clauses of their own,
+        # so `python3 - <<PY` is judged exactly as `python3 -c` is.
+        _text, _code_bodies = _split_heredocs(cmd)
+        # (clause, is it already known to be code). A heredoc body carries no
+        # `-c` spelling of its own -- being fed to an interpreter IS its
+        # spelling -- so it arrives pre-judged rather than re-matched.
+        graded = [(cl, bool(_INLINE_EVAL.search(cl))) for cl in _clauses(_text)]
+        graded += [(b, True) for b in _code_bodies]
+        for cl, is_eval in graded:
+            if is_eval and (SECRET_TOKEN_RE.search(cl)
+                            or _hits_extra(cl, extras)):
                 return ("block",
                         "Reading a secret file via an inline-eval one-liner "
                         "(python -c / node -e / ruby/perl -e …) is blocked (Rule #1). "
                         "Listing names is fine; reading contents is not. Ask the user to "
                         "paste any value you actually need.")
-        for cl in clauses:
+        for cl, is_eval in graded:
             # F-P-7: judged on the paths the write calls NAME, not on a write
             # shape and a path that merely share a clause.
-            targets = _eval_write_targets(cl) if _INLINE_EVAL.search(cl) else []
+            targets = _eval_write_targets(cl) if is_eval else []
             if any(_NON_EXEMPT_WRITE_TARGET.search("'%s'" % t)
                    and not _exempt_eval_write("'%s'" % t) for t in targets):
                 return ("block",

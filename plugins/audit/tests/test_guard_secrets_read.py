@@ -420,6 +420,37 @@ def _cases(check):
           bash('python3 -c "s=open(\'/tmp/in.json\').read(); '
                'open(\'src/out.ts\',\'w\').write(s)"'))
 
+    # (s44+) F31, found while committing the fix above: the guard refused its
+    # own commit, because the message DESCRIBED the write forms it had just
+    # learned and the guard scans the whole command text, heredoc body included.
+    # Probing that turned up the mirror defect, and the two share one root -- the
+    # guard reasons about SPELLING, and a heredoc changes the spelling without
+    # changing the capability.
+    #
+    # So a heredoc body is graded when, and only when, it FEEDS AN INTERPRETER.
+    _expect("s44 a heredoc fed to an interpreter is code, and a source write in "
+          "it is a source write - `-c` was never the only spelling", "block",
+          bash("python3 - <<'PY'\nopen('src/app.ts','w').write(x)\nPY"))
+    _expect("s45 ...including an unquoted delimiter, which is the same thing "
+          "with expansion on", "block",
+          bash("python3 <<PY\nopen('src/app.ts','w').write(x)\nPY"))
+    _expect("s46 ...and node, and bash -s", "block",
+          bash("node <<'JS'\nrequire('fs').writeFileSync('src/a.ts',x)\nJS"))
+    # The other direction, and it is the one that blocked a commit: a heredoc fed
+    # to something that is NOT an interpreter is DATA. Prose that documents a
+    # write is not a write, and refusing it is the F20 class again - the reader
+    # learns to route around, and routing around is the blind spot.
+    _expect("s47 prose in a commit message that quotes a write is not a write",
+          "allow",
+          bash("git commit -F - <<'MSG'\nfix: python3 -c \"open('src/a.ts','w')\" "
+               "is now caught\nMSG"))
+    _expect("s48 ...and a data heredoc piped into a file is graded by the "
+          "REDIRECT, which is the other backstop's business, not by its body",
+          "allow",
+          bash("cat <<'EOF'\nopen('src/a.ts','w').write(x)\nEOF"))
+    _expect("s49 the ordinary `-c` form is untouched by any of this", "block",
+          bash('python3 -c "open(\'src/app.ts\',\'w\').write(x)"'))
+
     # The ask payload's SHAPE is the pinned contract (the dialog cannot be
     # driven by a selftest) - mirror of require-plan's g9 and of j1 below.
     _ap = json.loads(json.dumps(M._ask_payload("why")))
