@@ -54,7 +54,7 @@ import _journal_io  # noqa: E402  (the trail this command is a front end for)
 
 # The trail, under the names this command has always called it by. NOT copies:
 # `_journal_io` (layer 1) owns every one of them, and `tests/test_audit_journal.py`
-# asks for them by hand across 112 cases about the trail AS THIS COMMAND SEES IT.
+# asks for them by hand, case by case, about the trail AS THIS COMMAND SEES IT.
 # `tests/test__journal_io.py` pins each name to be that module's own object, so a
 # second implementation here fails a case rather than drifting.
 ROW_VERSION = _journal_io.ROW_VERSION

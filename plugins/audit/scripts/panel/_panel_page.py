@@ -12,7 +12,7 @@ keeps the handler, the lifecycle and the cases that test THOSE; it imports the t
 names below and its `do_GET` is unchanged.
 
 WHAT THIS FILE OWNS: the substitution chain that turns `_panel_ui.raw_template()`
-into the page the browser gets, and the 285 cases in `tests/` that read the
+into the page the browser gets, and the cases in `tests/` that read the
 result.
 
 THE BUILD ORDER IS LOAD-BEARING, AND IT IS THE REASON THIS IS ONE BLOCK AND NOT A

@@ -1170,7 +1170,7 @@ The report's CSS/JS live as real files under `scripts/ui/report.{css,js}`; `_rep
 reads them at import with explicit utf-8 and assembles the same `_CSS`/`_SCRIPT` constants
 byte-identically — the rendered report page stays a single self-contained file regardless.
 What is left in this file after the split is `main()` — argument parsing, the manifest
-read, the theme resolve, the files it writes — plus `_verdict`, and the ~230 cases that
+read, the theme resolve, the files it writes — plus `_verdict`, and the cases that
 read a report `main()` actually wrote into a temp directory. Those cases pin the emitted
 DOCUMENT (its markup, its emission order, the stylesheet, the embedded script), so they can
 live nowhere else: a fragment module cannot render one. `--selftest` (includes XSS cases).
@@ -1323,7 +1323,7 @@ reads) and `UI_TEMPLATE` (the same page with the `/*__THEME_TOKENS__*/` marker i
 `do_GET` can dress it in the requesting project's theme per request). The order is load-bearing
 and stated where it happens: the snapshot `UI_TEMPLATE = UI_HTML` sits *after* the last
 substitution and *before* the theme one, and case `pg1` is what goes red if it moves. It also
-holds the ~283 selftest cases that assert about the CSS and JavaScript in
+holds the selftest cases that assert about the CSS and JavaScript in
 `scripts/ui/panel.{css,js}` — three quarters of `panel-server.py` before the split, and claims
 about the front end rather than about an HTTP server. Layer 4: it reaches `usage_ledger` (L3,
 for `COST_BAND_PARAMS`), `_help` (L3, selftest only), `_panel_ui`/`_panel_settings` (L2) and

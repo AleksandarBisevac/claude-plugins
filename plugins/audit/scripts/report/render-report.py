@@ -29,7 +29,7 @@ resolve, the files it writes — and `_verdict`, which cannot move: the gate is
 into the page rather than reached for from a module below (see the
 `# --- the gate verdict ---` section).
 
-It also keeps the ~230 cases, and that is the honest shape rather than a
+It also keeps the cases, and that is the honest shape rather than a
 leftover. They render a report through `main()` into a temp directory and then
 assert about the emitted DOCUMENT — its markup, the ORDER things are emitted in,
 the stylesheet, the embedded script. A fragment module cannot produce one, so
@@ -152,7 +152,7 @@ load_usage = _report_usage.load_usage
 
 # The document itself lives in _report_page.py (P13.3) and its Markdown twin in
 # _report_md.py — this file kept `main()`, the theme resolve and the suite that
-# reads what `main()` writes. Aliased so the ~230 cases below, which are about
+# reads what `main()` writes. Aliased so the cases below, which are about
 # the RENDERED DOCUMENT and can therefore live nowhere else, keep asking for
 # these names unchanged.
 _plural = _report_page._plural

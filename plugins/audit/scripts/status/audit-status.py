@@ -84,7 +84,7 @@ import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
 # because the ~600 lines of rendering below spell them unqualified, and because
-# `tests/test_audit_status.py` asks for them by hand across 182 cases. They moved
+# `tests/test_audit_status.py` asks for them by hand, case by case. They moved
 # out because THREE modules wanted the facts and none wanted the rendering:
 # `_panel_state` (L5) needs `rollup`, `audit-doctor` needs `submodule_conflicts`,
 # `render-report` needs `evaluate_gate` — three of the seventeen edges

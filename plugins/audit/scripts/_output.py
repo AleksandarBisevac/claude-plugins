@@ -1012,6 +1012,23 @@ def _names_code(line):
     return False
 
 
+# Past-tense markers. The broadest family below ("N cases", with no "its" and no
+# "live in" in front of it) is the only one wide enough to catch ordinary
+# recollection, and recollection is exactly what a decision record is made of.
+# Anything on this list means the line is talking about THEN, so the number is
+# not a claim about now and must stay writable.
+_PAST = ("was", "were", "had", "used", "stood", "down", "up", "once",
+         "previously", "then", "before", "originally", "until", "old")
+
+
+def _looks_historical(w):
+    """True if this line is recollection rather than a present-tense claim."""
+    for tok in w:
+        if tok in _PAST:
+            return True
+    return False
+
+
 def _cardinality_claim(w):
     """"its N cases" / "N cases live in" / "--selftest (N cases)" / "all N of them"."""
     for i, tok in enumerate(w):
@@ -1029,6 +1046,26 @@ def _cardinality_claim(w):
         # "all N of them", the shape selftest_coverage's own docstring used
         if prv == "all" and w[i + 1:i + 3] == ["of", "them"]:
             return "all %s of them" % tok
+        # The BARE shape: a number sitting in front of "cases", however it is
+        # introduced -- "the N cases in tests/", "across N cases", "the ~N cases
+        # below". Every example here spells N on purpose: written with real
+        # digits, this comment is itself a finding, and the first draft of it
+        # was. Fix the example, never exempt the file.
+        #
+        # Adopted on the measurement, not on taste: eight sites, of which SEVEN
+        # were already wrong -- two claiming a suite that has since grown by
+        # forty-four, one short by ten, three short by twenty-one, one short by
+        # forty-six. The eighth was correct that day, which is the whole
+        # argument: it is one added case away from joining the other seven.
+        #
+        # This family is wide enough to catch ordinary recollection, so it is the
+        # one that has to ask whether the line is talking about THEN. Skipping
+        # that check turns "it stood at 70 cases that day" into a violation and
+        # makes the decision record unwritable.
+        if nxt in _CASE_WORDS or (nxt == "selftest" and w[i + 2:i + 3] and
+                                  w[i + 2] in _CASE_WORDS):
+            if not _looks_historical(w):
+                return "%s cases" % tok
     return None
 
 

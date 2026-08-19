@@ -1084,6 +1084,39 @@ def _cases(check):
               is None)
 
 
+    check("pn10 the BARE count is caught however it is introduced - the three "
+          "narrow shapes above all needed an introducer ('its', 'live in', "
+          "'--selftest'), and eight sites said it plainly instead: 'the N cases "
+          "in tests/', 'across N cases', 'the ~N cases below'. SEVEN of the "
+          "eight were already wrong, and the eighth was one added case from "
+          "joining them",
+          M._prose_number_claim("and the 285 cases in `tests/` that read the page")
+              == "285 cases"
+          and M._prose_number_claim("asks for them by hand across 112 cases")
+              == "112 cases"
+          and M._prose_number_claim("It also keeps the ~230 cases, and that is")
+              == "230 cases"
+          and M._prose_number_claim("holds the ~283 selftest cases that assert")
+              == "283 cases")
+    check("pn11 ...and this is the family wide enough to swallow RECOLLECTION, "
+          "so it is the one that has to ask whether the line means THEN - "
+          "without that, a decision record cannot say what a number used to be",
+          M._prose_number_claim("it stood at 70 cases that day, and was wrong")
+              is None
+          and M._prose_number_claim("the suite was 285 cases before the split")
+              is None
+          and M._prose_number_claim("down from 48 cases once the migration ran")
+              is None)
+    check("pn12 the REPAIR of the bare shape reads clean, or the lint forbids "
+          "its own remedy and everyone deletes the pointer too",
+          M._prose_number_claim("and the cases in `tests/` that read the page")
+              is None
+          and M._prose_number_claim("asks for them by hand, case by case")
+              is None
+          and M._prose_number_claim("holds the selftest cases that assert")
+              is None)
+
+
 
 def _selftest():
     return _harness.run(_cases)
