@@ -734,6 +734,65 @@ def _cases(check):
         check("n4 mutation proof: the real, unweakened navigability_violations() "
               "still catches it - nothing was left mutated behind",
               any(f == "long_file.py" for f, _ in real_nav_hits_again))
+
+        # ---- a docstring QUOTING the house style is not a section header ----
+        # The two files differ in exactly one thing: where the marker lines sit. Same
+        # characters, same column, same count - one inside a string, one in real
+        # comments - so a check that passes both is reading text and a check that
+        # separates them is reading tokens.
+        _marker_lines = "# --- reading ---\n# --- writing ---\n"
+        _prose_only = ('"""\nWhy this file exists.\n\nHouse style for a long module '
+                       'is two top-level markers, spelled\n%s\nso a reader scanning '
+                       'the left margin has landmarks.\n"""\n'
+                       % _marker_lines) + "pass\n" * M._NAV_MIN_LINES
+        _real_markers = _marker_lines + "pass\n" * M._NAV_MIN_LINES
+        with open(os.path.join(nav_tmp, "prose_only.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(_prose_only)
+        with open(os.path.join(nav_tmp, "real_markers.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(_real_markers)
+        nav_prose = M.navigability_violations(nav_tmp, hooks_dir=nav_hooks)
+        check("n5 a long file whose only `# --- name ---` lines sit INSIDE its module "
+              "docstring carries zero section headers and is named - a docstring "
+              "showing the house style is a mention, not a landmark: %r" % (nav_prose,),
+              [w for f, w in nav_prose if f == "prose_only.py"]
+              == ["%d lines but only 0 non-selftest section header(s) "
+                  "(# --- name ---); needs >= 2 to be navigable"
+                  % (_prose_only.count("\n"),)])
+        check("n6 ...while the file carrying the SAME two marker lines as real "
+              "comments is not reported, which is what tells n5 apart from a rule "
+              "that stopped counting headers altogether",
+              not any(f == "real_markers.py" for f, _ in nav_prose))
+
+        # ---- mutation proof: the line scan this replaced cannot separate them ----
+        def _line_scanned_navigability(text):
+            return len([1 for line in text.splitlines(True)
+                        if M._NAV_HEADER_RE.match(line)
+                        and M._NAV_HEADER_RE.match(line).group(1).strip()
+                        != "selftest"])
+
+        check("n7 mutation proof: the line-matching form this replaced counts the "
+              "docstring's two markers as two headers and reads the prose_only "
+              "fixture as navigable - red proves n5 tests the tokens, not the text",
+              _line_scanned_navigability(_prose_only) == 2
+              and _line_scanned_navigability(_real_markers) == 2)
+        check("n8 mutation proof: the real, token-reading form separates the two - "
+              "nothing was left mutated behind: %r"
+              % (M._section_header_names(_prose_only),),
+              M._section_header_names(_prose_only) == []
+              and M._section_header_names(_real_markers) == ["reading", "writing"])
+
+        # ---- a file that will not tokenize is named, never skipped ----
+        with open(os.path.join(nav_tmp, "broken.py"), "w", encoding="utf-8") as fh:
+            fh.write("def (\n" + "pass\n" * M._NAV_MIN_LINES)
+        nav_broken = M.navigability_violations(nav_tmp, hooks_dir=nav_hooks)
+        check("n9 a long file that will not tokenize is reported as such rather than "
+              "skipped - a scan that passes over a file it could not read is claiming "
+              "a clean answer about it: %r" % (nav_broken,),
+              any(f == "broken.py" and "does not tokenize" in w
+                  for f, w in nav_broken)
+              and M._section_header_names("def (\n") is None)
     finally:
         shutil.rmtree(nav_tmp, ignore_errors=True)
 

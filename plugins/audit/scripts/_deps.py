@@ -79,7 +79,7 @@ which is the only form of it a reader can trust — an allow-list that survives 
 second place the rule lives, and the next violation would be argued against the list rather than
 against the rule.
 
-This module carries no `--selftest` of its own any more; its 73 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__deps.py`, byte-identical labels and all — see
 `plugins/audit/tests/_harness.py`. The move retired NO edge, and that was measured per
 call site rather than assumed: this file makes no `_loader` call at all, and its only
@@ -89,9 +89,11 @@ which is what a fence pinned in `PLUGIN-BUILD-GUIDE.md` requires.
 """
 
 import ast
+import io
 import os
 import re
 import sys
+import tokenize
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -1291,6 +1293,43 @@ _NAV_MIN_LINES = 400
 _NAV_HEADER_RE = re.compile(r"^# --- (.+?) -+\s*$")
 
 
+def _section_header_names(text):
+    """The names of every top-level section header in `text`, or None if it
+    will not tokenize.
+
+    READ AS TOKENS, NOT AS LINES, AND NOT AS AN AST. A section header IS a
+    comment, and `ast.parse` throws comments away entirely - the parser this
+    module reaches for everywhere else cannot see one at all, which is why the
+    tool here is the tokenizer rather than the AST. What the line regex could
+    not see is the difference between a header and a DOCSTRING QUOTING ONE:
+    identical characters at the identical column, and only the tokenizer knows
+    the second is inside a STRING. A 509-line file whose docstring explained the
+    house style by showing two markers passed this lint carrying zero real ones,
+    which is the quiet direction of that failure - a prose mention that makes a
+    check pass.
+
+    Column 0 only, the same rule the line form had: a header indented inside a
+    function is not a landmark a reader scanning the LEFT MARGIN can find.
+
+    None rather than an empty list for a file that will not tokenize: an empty
+    list is a real answer ("this file has no headers") and would make a file
+    nothing could read indistinguishable from one that was read and found
+    wanting. The caller reports the two differently.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return None
+    names = []
+    for token in tokens:
+        if token.type != tokenize.COMMENT or token.start[1] != 0:
+            continue
+        match = _NAV_HEADER_RE.match(token.line)
+        if match:
+            names.append(match.group(1).strip())
+    return names
+
+
 def navigability_violations(script_dir=None, hooks_dir=None):
     """(filename, problem) for every long .py file that is not carrying enough
     real section headers to be navigable.
@@ -1303,6 +1342,11 @@ def navigability_violations(script_dir=None, hooks_dir=None):
     it is not a landmark a reader scanning the LEFT MARGIN can find. Only
     `# --- selftest ---` itself is exempt from the count - a file's own test
     block does not make its PRODUCTION code any easier to navigate.
+
+    A file that will not tokenize is a violation rather than a skip - the same
+    rule `tests_import_violations()` follows for a file that will not parse, and
+    for the same reason: a scan that silently passes over a file it could not
+    read is claiming a clean answer about it.
     """
     script_dir = script_dir or _output.SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
@@ -1315,11 +1359,13 @@ def navigability_violations(script_dir=None, hooks_dir=None):
             continue
         if len(lines) < _NAV_MIN_LINES:
             continue
-        headers = 0
-        for line in lines:
-            m = _NAV_HEADER_RE.match(line)
-            if m and m.group(1).strip() != "selftest":
-                headers += 1
+        names = _section_header_names("".join(lines))
+        if names is None:
+            violations.append((rel,
+                                "%d lines and does not tokenize; its section headers "
+                                "cannot be counted" % (len(lines),)))
+            continue
+        headers = len([name for name in names if name != "selftest"])
         if headers < 2:
             violations.append((rel,
                                 "%d lines but only %d non-selftest section header(s) "

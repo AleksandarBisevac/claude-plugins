@@ -54,7 +54,7 @@ scripts/" "_deps.py --render..."` and this module does not see it. Joining the f
 would not help: the break is inside the token either way. A path written on one line is
 the shape everything else in the tree uses.
 
-This module carries no `--selftest` of its own any more; its 34 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__refs.py`, byte-identical labels and all — see
 `plugins/audit/tests/_harness.py`. The fixture CONSTANTS went with them, and that is
 the one thing about this move worth knowing: a lint that scans the tree lives in the
@@ -534,14 +534,123 @@ SWEEP_DOCS = (
 )
 
 
+# THE REGION EACH SWEEP DOCUMENT IS ACTUALLY CHECKED OVER. Both halves of the rule
+# below are about a COMMAND — what a reader or CI is told to RUN — and a whole-file
+# substring cannot tell a command from a sentence about one. Both directions were
+# reproduced before this existed, and the quiet one is the dangerous one:
+#
+#   * a document whose prose says "the sweep must be `find ...`" while the block a
+#     reader would actually run is a flat glob of some other shape SATISFIED the
+#     requirement — green over exactly the partial tree `SWEEP_FIND` exists to prevent;
+#   * a document warning "never write `for f in .../*.py ...`" was reported as still
+#     carrying the flat sweep, i.e. red for describing the check. That is the same
+#     failure `_panel_viewer.py`'s docstring hit from the other side, and rewording the
+#     document is the weaker repair: nothing stops the next author writing it again.
+#
+# There is no AST to reach for here — these documents are Markdown, YAML and JSON, not
+# Python — so the structural move is the one `_executable_raw_refs` already makes for
+# published fetch instructions: read the runnable region, not the prose around it. One
+# rule per format, and a format with no rule is a LOUD violation rather than a silent
+# fallback to the whole file, which would put the hole straight back.
+_MD_EXT = (".md",)
+_YAML_EXT = (".yml", ".yaml")
+_JSON_EXT = (".json",)
+
+# Markdown's runnable region, shared with `_executable_raw_refs` below rather than
+# spelled twice: "what a reader is told to run" is one idea, and two fence patterns
+# would be two answers to it the day somebody adds a language tag to one of them.
+_FENCE_RE = re.compile(r"```(?:bash|sh|shell|console)\n(.*?)```", re.S)
+
+# `run:` in a workflow, inline (`run: make x`) or as a block scalar (`run: |`). The
+# indent captured is the key's own, so a block ends at the first non-blank line that is
+# not indented deeper than it — which is what YAML itself means by the block.
+_YAML_RUN_RE = re.compile(r"^(\s*)(?:-\s+)?run:[ \t]*(.*)$")
+
+# The manifest is data, not prose with fences, so its runnable region is named rather
+# than pattern-matched: `meta.buildCommands` is the map of commands the orchestrator
+# RUNS. A task description that quotes a sweep is prose in this file exactly as it is
+# in a Markdown paragraph, and it is out of scope for the same reason.
+_BUILD_COMMANDS_PATH = ("meta", "buildCommands")
+
+
+def _yaml_run_scripts(text):
+    """Every `run:` script in a workflow, joined by newlines."""
+    out = []
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        match = _YAML_RUN_RE.match(lines[i])
+        i += 1
+        if not match:
+            continue
+        indent = len(match.group(1))
+        inline = match.group(2).strip()
+        if inline and inline[0] not in "|>":
+            out.append(inline)
+            continue
+        while i < len(lines):
+            line = lines[i]
+            if line.strip() and len(line) - len(line.lstrip()) <= indent:
+                break
+            out.append(line)
+            i += 1
+    return "\n".join(out)
+
+
+def _json_build_commands(text):
+    """The manifest's `meta.buildCommands` values joined, or None if it will not parse.
+
+    An absent `buildCommands` yields the empty string, not None: the document parsed
+    and simply runs nothing, which the caller must report as "does not carry the
+    recursive sweep" rather than as a broken file.
+    """
+    try:
+        node = json.loads(text)
+    except ValueError:
+        return None
+    for key in _BUILD_COMMANDS_PATH:
+        if not isinstance(node, dict):
+            return ""
+        node = node.get(key)
+        if node is None:
+            return ""
+    if not isinstance(node, dict):
+        return ""
+    return "\n".join("%s" % (value,) for _key, value in sorted(node.items()))
+
+
+def _runnable_text(rel, text):
+    """`(runnable, problem)` — the part of `rel` a reader is told to RUN, or why not.
+
+    Exactly one of the two is None. `problem` covers the two ways this can fail to
+    produce an answer, and both are violations rather than skips: a format nobody has
+    written a rule for, and a document of a known format that will not parse.
+    """
+    if rel.endswith(_MD_EXT):
+        return "\n".join(f.group(1) for f in _FENCE_RE.finditer(text)), None
+    if rel.endswith(_YAML_EXT):
+        return _yaml_run_scripts(text), None
+    if rel.endswith(_JSON_EXT):
+        runnable = _json_build_commands(text)
+        if runnable is None:
+            return None, "will not parse as JSON; its commands cannot be read"
+        return runnable, None
+    return None, ("no runnable-region rule for this format, so the sweep cannot be "
+                  "checked without falling back to the whole file")
+
+
 def sweep_glob_drift(repo_root=None):
     """[(doc, problem), ...] — every sweep document that has drifted back to the glob.
 
-    Scoped to the EXECUTABLE shape, `SWEEP_FLAT`, not to the substring `scripts/*.py`.
-    The guide says "the real static import graph of `scripts/*.py`" and "`LAYERS` groups
+    Scoped to the RUNNABLE REGION of each document (`_runnable_text`), and to the
+    EXECUTABLE SHAPE within it — `SWEEP_FLAT`, never the substring `scripts/*.py`. The
+    guide says "the real static import graph of `scripts/*.py`" and "`LAYERS` groups
     every `scripts/*.py` basename", both correct prose about a set of files; a check
     aimed at the substring would fail the guide for describing itself, and a check
-    everyone has to argue with is a check that gets removed.
+    everyone has to argue with is a check that gets removed. The region scope is that
+    same argument carried to its end: a document may now quote EITHER sweep in prose,
+    including the retired one it is warning against, and only what it tells someone to
+    run is judged.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     out = []
@@ -553,9 +662,13 @@ def sweep_glob_drift(repo_root=None):
         except (OSError, UnicodeDecodeError) as exc:
             out.append((rel, "unreadable: %s" % exc))
             continue
-        if SWEEP_FIND not in text:
+        runnable, problem = _runnable_text(rel, text)
+        if problem is not None:
+            out.append((rel, problem))
+            continue
+        if SWEEP_FIND not in runnable:
             out.append((rel, "does not carry the recursive sweep %r" % SWEEP_FIND))
-        if SWEEP_FLAT in text:
+        if SWEEP_FLAT in runnable:
             out.append((rel, "still carries the flat sweep %r" % SWEEP_FLAT))
     return out
 
@@ -574,7 +687,8 @@ def sweep_glob_drift(repo_root=None):
 _MOVING_REFS = ("main", "master", "HEAD")
 _RAW_HOST = "raw.githubusercontent.com"
 _RAW_RE = re.compile(r"%s/[^/\s]+/[^/\s]+/([^/\s]+)/" % re.escape(_RAW_HOST))
-_FENCE_RE = re.compile(r"```(?:bash|sh|shell|console)\n(.*?)```", re.S)
+# `_FENCE_RE` lives with the sweep's runnable-region rules above: both sections ask
+# the same question of a Markdown file and one pattern is the answer to it.
 
 # The canonical install document, and the only one required to name the CURRENT
 # release: a reader copies from here expecting today's plugin. Other documents may

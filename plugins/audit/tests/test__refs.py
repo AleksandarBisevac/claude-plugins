@@ -97,6 +97,26 @@ def _write(root, rel, text):
         fh.write(text)
 
 
+def _sweep_doc(rel, command, prose=""):
+    """`command` written into `rel`'s RUNNABLE region, with `prose` outside it.
+
+    The sweep fixtures have to be format-valid now that `M._runnable_text()` reads a
+    region rather than the whole file: a bash fence in Markdown, a `run:` block in the
+    workflow, `meta.buildCommands` in the manifest. A fixture that ignored that would
+    fail every case below for the wrong reason - which is exactly what the first run
+    after the region scope landed did, and why this helper exists rather than six
+    literals. `prose` goes where each format puts a sentence: a paragraph, a comment,
+    an unrelated key.
+    """
+    if rel.endswith(".md"):
+        return "%s\n```bash\n%s\n```\n" % (prose, command)
+    if rel.endswith((".yml", ".yaml")):
+        return ("# %s\njobs:\n  t:\n    steps:\n      - run: |\n          %s\n"
+                % (prose.replace("\n", " "), command))
+    return json.dumps({"prose": prose,
+                       "meta": {"buildCommands": {"sweep": command}}}, indent=2) + "\n"
+
+
 def _fixture_tree(tmp, command_line, hook_line=None):
     """A minimal repo: one real script, one commands/ document, one hooks/ file."""
     _write(tmp, _FX_SCRIPTS + "real.py", "# a real file\n")
@@ -603,41 +623,111 @@ def _cases(check):
           "%r" % (drift,), drift == [])
 
     tmp = tempfile.mkdtemp()
+    # One document per format, named rather than indexed, because the three cases that
+    # matter now are each about a DIFFERENT runnable region and `SWEEP_DOCS[0]` says
+    # nothing about which.
+    _yml = [r for r in M.SWEEP_DOCS if r.endswith((".yml", ".yaml"))][0]
+    _md = [r for r in M.SWEEP_DOCS if r.endswith(".md")][0]
+    _jsn = [r for r in M.SWEEP_DOCS if r.endswith(".json")][0]
     try:
         for rel in M.SWEEP_DOCS:
-            _write(tmp, rel, "Run:\n\n    %s\n" % M.SWEEP_FIND)
+            _write(tmp, rel, _sweep_doc(rel, M.SWEEP_FIND))
         check("s2 ...and that fixture is green, so the cases below fail for the reason "
               "they name and not because the fixture was broken",
               M.sweep_glob_drift(tmp) == [], repr(M.sweep_glob_drift(tmp)))
-        _write(tmp, M.SWEEP_DOCS[0], "Run:\n\n    %s\n" % M.SWEEP_FLAT)
+        _write(tmp, _yml, _sweep_doc(_yml, M.SWEEP_FLAT))
         _d = M.sweep_glob_drift(tmp)
         check("s3 a document that has drifted back to the flat glob is reported twice "
               "over - it lost the find form AND regained the glob",
-              len([x for x in _d if x[0] == M.SWEEP_DOCS[0]]) == 2
+              len([x for x in _d if x[0] == _yml]) == 2
               and any("flat sweep" in x[1] for x in _d)
               and any("recursive sweep" in x[1] for x in _d), repr(_d))
-        _write(tmp, M.SWEEP_DOCS[0], "Run the suites somehow.\n")
+        _write(tmp, _yml, _sweep_doc(_yml, "make test"))
         _d = M.sweep_glob_drift(tmp)
         check("s4 a document that simply stops carrying the sweep is reported once, "
               "and the two failures stay distinguishable",
-              [x for x in _d if x[0] == M.SWEEP_DOCS[0]]
-              == [(M.SWEEP_DOCS[0],
-                   "does not carry the recursive sweep %r" % M.SWEEP_FIND)],
+              [x for x in _d if x[0] == _yml]
+              == [(_yml, "does not carry the recursive sweep %r" % M.SWEEP_FIND)],
               repr(_d))
-        # Scoped to the executable shape. A version aimed at the substring `scripts/*.py`
-        # would fail this fixture, and would fail the real guide - which is what c6's
-        # placeholders show it legitimately writes twice.
-        _write(tmp, M.SWEEP_DOCS[0],
-               "The map is the import graph of `scripts/*.py`.\n\n    %s\n"
-               % M.SWEEP_FIND)
-        check("s5 prose that merely mentions the glob, beside a correct sweep, is NOT "
-              "flagged - the rule is the runnable line, not the substring",
+        # Scoped to the executable shape AND to the executable REGION. A version aimed
+        # at the substring `scripts/*.py` would fail the first half of this fixture, and
+        # would fail the real guide - which is what c6's placeholders show it
+        # legitimately writes twice. A version aimed at the whole FILE would fail the
+        # second half, which is F21's shape exactly: a document warning against the
+        # retired sweep, reported as carrying it.
+        _write(tmp, _yml, _sweep_doc(
+            _yml, M.SWEEP_FIND,
+            "The map is the import graph of `scripts/*.py`. "
+            "Never write `%s ...` - the glob is flat." % M.SWEEP_FLAT))
+        check("s5 prose beside a correct sweep is NOT flagged, and that now covers the "
+              "retired sweep QUOTED IN A WARNING AGAINST IT: the rule is the runnable "
+              "region, not the substring and not the file",
               M.sweep_glob_drift(tmp) == [], repr(M.sweep_glob_drift(tmp)))
-        os.remove(os.path.join(tmp, M.SWEEP_DOCS[0].replace("/", os.sep)))
+        os.remove(os.path.join(tmp, _yml.replace("/", os.sep)))
         _d = M.sweep_glob_drift(tmp)
         check("s6 a sweep document that has gone missing is unreadable, never absent",
-              len(_d) == 1 and _d[0][0] == M.SWEEP_DOCS[0]
+              len(_d) == 1 and _d[0][0] == _yml
               and "unreadable" in _d[0][1], repr(_d))
+
+        # ---- the quiet direction: prose that makes the check PASS ----------------
+        _write(tmp, _yml, _sweep_doc(_yml, M.SWEEP_FIND))
+        # The flat listing is BUILT, never spelled: this file is one of the ANCHORED
+        # surfaces `_refs` scans, and an anchor written in front of a glob here would
+        # be a real reference the placeholder counts have to account for. Same rule as
+        # every other fixture path in this suite.
+        _write(tmp, _md, _sweep_doc(
+            _md, "for f in $(ls %s/scripts/*.py); do python3 \"$f\"; done"
+                 % M.PLUGIN_REL,
+            "The sweep must be recursive - it is `%s`, never a flat glob."
+            % M.SWEEP_FIND))
+        _d = M.sweep_glob_drift(tmp)
+        check("s8 a document whose PROSE quotes the recursive sweep while the block a "
+              "reader would run is a flat listing does NOT satisfy the rule - the "
+              "direction that hurts is the mention that makes a check pass, and the "
+              "whole-file substring could not tell the two apart",
+              [x for x in _d if x[0] == _md]
+              == [(_md, "does not carry the recursive sweep %r" % M.SWEEP_FIND)],
+              repr(_d))
+
+        # ---- mutation proof: the whole-file scan this replaced misses s8 ----------
+        def _whole_file_sweep_drift(root):
+            out = []
+            for rel in M.SWEEP_DOCS:
+                with open(os.path.join(root, rel.replace("/", os.sep)),
+                          "r", encoding="utf-8") as fh:
+                    text = fh.read()
+                if M.SWEEP_FIND not in text:
+                    out.append((rel, "does not carry the recursive sweep %r"
+                                % M.SWEEP_FIND))
+                if M.SWEEP_FLAT in text:
+                    out.append((rel, "still carries the flat sweep %r" % M.SWEEP_FLAT))
+            return out
+
+        check("s9 mutation proof: the whole-file form this replaced reads that same "
+              "fixture as clean, because the prose mention satisfied it - red proves "
+              "s8 tests the region and not the wording",
+              [x for x in _whole_file_sweep_drift(tmp) if x[0] == _md] == [],
+              repr(_whole_file_sweep_drift(tmp)))
+        check("s10 mutation proof: the real, region-scoped sweep_glob_drift() still "
+              "catches it - nothing was left mutated behind",
+              any(x[0] == _md for x in M.sweep_glob_drift(tmp)))
+
+        # ---- a region that cannot be read is loud, never a fallback --------------
+        _write(tmp, _md, _sweep_doc(_md, M.SWEEP_FIND))
+        _write(tmp, _jsn, "{ this is not json at all\n%s\n" % M.SWEEP_FIND)
+        _d = M.sweep_glob_drift(tmp)
+        check("s11 a manifest that will not parse is reported as unreadable commands, "
+              "not read as text - a fallback to the whole file would let the very "
+              "string it is looking for pass from a broken document",
+              [x for x in _d if x[0] == _jsn]
+              == [(_jsn, "will not parse as JSON; its commands cannot be read")],
+              repr(_d))
+        check("s12 ...and a format with no runnable-region rule is a violation too, "
+              "for the same reason: %r"
+              % (M._runnable_text("NOTES.rst", M.SWEEP_FIND),),
+              M._runnable_text("NOTES.rst", M.SWEEP_FIND)[0] is None
+              and "no runnable-region rule"
+              in M._runnable_text("NOTES.rst", M.SWEEP_FIND)[1])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
