@@ -1103,7 +1103,7 @@ path that rewrites (and therefore locks) rather than only appending.
 
 ### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
-`load_manifest` reads BOTH the legacy single file and the v3 index+shards form into the same assembled
+`load_manifest` reads BOTH the single-file form and the v3 index+shards form into the same assembled
 dict (so every script + hook stays format-agnostic — it's wired into all five scripts' `main()` and
 `hooks/_config.in_progress_task_map`); `split_manifest`/`save_sharded` write the sharded form (index of
 `{id,title,shard}` stubs + `phases/<id>.json` bodies) atomically. The index stub carries NO runtime

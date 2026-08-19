@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-Migrate an audit manifest from the legacy single-file layout to the SHARDED layout
+Migrate an audit manifest from the single-file layout to the SHARDED layout
 (index + per-phase shards) — dependency-free (stdlib only).
 
 The sharded layout keeps the shared, rarely-churned data (meta, bugs, fileIndex) in the
 index and each phase's body in `phases/<phaseId>.json`, so a phase command loads only its
 own phase (fewer tokens) and two parallel phase branches edit different files (no manifest
 merge conflict). Reading is transparent — every script + hook already loads both layouts
-via _manifest_io — so migration is opt-in and reversible (a backup is written).
+via _manifest_io — so migration is opt-in and the single-file layout stays supported.
+
+It is NOT reversible. Nothing here writes an assembled single file back out — `split_manifest`
+has no counterpart — so the only way back is restoring the `.bak-<UTC>` copy, which discards
+every manifest write made after the migration. Say that wherever the backup is mentioned: a
+backup is a restore point, not an undo.
 
 Usage:
   migrate-manifest.py <manifest> [--dry-run] [--force] [--renumber]
