@@ -94,15 +94,17 @@ export function reportParts() {
 }
 
 // The wrapper the page gets, read from the same place, for the same reason.
-export function reportWrapper() {
+// The tags the page receives, read from the same place. There is no code
+// wrapper any more: the script is a module, and a module's own scope is what
+// keeps the parts' top-level names out of the page's globals.
+export function reportTags() {
   const py = readReportUiPy();
-  const open = py.match(/_SCRIPT_OPEN = "((?:[^"\\]|\\.)*)"/);
-  const close = py.match(/_SCRIPT_CLOSE = "((?:[^"\\]|\\.)*)"/);
+  const open = py.match(/_SCRIPT_TAG_OPEN = '([^']*)'/);
+  const close = py.match(/_SCRIPT_TAG_CLOSE = "([^"]*)"/);
   if (!open || !close) {
-    throw new Error('_SCRIPT_OPEN/_SCRIPT_CLOSE are not in ' + REPORT_UI_PY);
+    throw new Error('_SCRIPT_TAG_OPEN/_SCRIPT_TAG_CLOSE are not in ' + REPORT_UI_PY);
   }
-  const unescape = (t) => t.replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-  return { open: unescape(open[1]), close: unescape(close[1]) };
+  return { open: open[1], close: close[1] };
 }
 
 // The report's body exactly as the page receives it, minus the wrapper: the
@@ -321,13 +323,7 @@ export function reach(ctx, names) {
 
 export function loadReport(options) {
   const opts = options || {};
-  const wrap = reportWrapper();
-  // Mutations are applied to the ASSEMBLED script, wrapper included, so a case
-  // can still test what happens when the wrapper itself is damaged. The unwrap
-  // then has to find it, which is the loud failure that stops a fixed-length
-  // slice from quietly deleting real code.
-  const script = mutated(wrap.open + assembleReportBody() + wrap.close, opts);
-  return loadInto(unwrapReportSource(script), 'report parts', opts);
+  return loadInto(mutated(assembleReportBody(), opts), 'report parts', opts);
 }
 
 export function loadPanel(options) {

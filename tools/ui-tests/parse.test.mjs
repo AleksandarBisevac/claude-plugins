@@ -11,11 +11,9 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   PANEL_STRING_PLACEHOLDERS,
-  REPORT_IIFE_HEAD,
   reportParts,
-  reportWrapper,
+  reportTags,
   assembleReportBody,
-  REPORT_IIFE_TAIL,
   UI_DIR,
   loadPanel,
   loadReport,
@@ -23,7 +21,6 @@ import {
   readPart,
   substitutePanelPlaceholders,
   uiParts,
-  unwrapReportSource,
 } from './sandbox.mjs';
 
 describe('every ui/ part parses', () => {
@@ -53,31 +50,25 @@ describe('every ui/ part parses', () => {
 });
 
 describe('the sandbox reads what it thinks it reads', () => {
-  it('no part carries the wrapper, and the assembled script is one IIFE', () => {
-    // The wrapper lives in the Python that joins the parts, so each part is
-    // brace-balanced on its own and can be parsed one at a time. What must
-    // still hold is that the ASSEMBLED script is one wrapper spanning the whole
-    // body — that is what keeps roughly a hundred and thirty bindings out of
-    // the page's global scope.
-    const wrap = reportWrapper();
-    // Only the OPENING boundary can be checked by text: a part may legitimately
-    // end with an inner IIFE's `})();`, and it does. That the LAST `})();` in
-    // the assembled script is the outer wrapper's own is proved below by
-    // compiling in both directions, which is stronger than any text match.
+  it('the parts assemble into one module script with no wrapper of their own', () => {
+    // A module has its own scope, so the parts need no IIFE: nothing they
+    // declare at top level reaches the page's globals. What must hold is that
+    // no part smuggles a wrapper back in, and that the joined body is a
+    // complete program rather than a fragment that only parses in context.
+    const tags = reportTags();
+    expect(tags.open).toContain('type="module"');
     for (const name of reportParts()) {
-      expect(readPart(name).startsWith(wrap.open)).toBe(false);
+      const part = readPart(name);
+      expect(part.startsWith('(function () {')).toBe(false);
+      expect(part).not.toContain('<script');
     }
-    const src = wrap.open + assembleReportBody() + wrap.close;
-    expect(src.startsWith(REPORT_IIFE_HEAD)).toBe(true);
-    expect(src.endsWith(REPORT_IIFE_TAIL)).toBe(true);
-    // The claim is not "the head and tail are present" — report.js contains
-    // three more inner IIFEs that also close with `})();`. The claim is that
-    // the FIRST head and the LAST tail are each other's match, i.e. the wrapper
-    // spans the whole file. Compiling proves it in both directions: the body
-    // alone is balanced, and the body with the tail still attached is not.
-    expect(() => new vm.Script(unwrapReportSource(src))).not.toThrow();
-    expect(() => new vm.Script(src.slice(REPORT_IIFE_HEAD.length)))
-      .toThrow(/Unexpected token|Unexpected end/);
+    const body = assembleReportBody();
+    expect(() => new vm.Script(body)).not.toThrow();
+    // A module is always strict, so the body has to parse that way too. A
+    // sloppy-mode parse accepts octal literals, duplicate parameter names and
+    // assignments to undeclared names, all of which the page would reject at
+    // load — this is the parse that matches what the browser actually does.
+    expect(() => new vm.Script("'use strict';\n" + body)).not.toThrow();
   });
 
   it('panel.js still carries the request-time placeholders', () => {

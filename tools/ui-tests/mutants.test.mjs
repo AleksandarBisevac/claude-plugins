@@ -220,11 +220,12 @@ describe('the sandbox pins would catch a source that moved', () => {
       .toThrow(/no longer carries __AUDIT_TOKEN__/);
   });
 
-  it('refuses to strip a wrapper the assembled script no longer has', () => {
-    // The harness's own loud-failure path: without it, slicing a fixed length
-    // off a file whose head has changed silently deletes real code and every
-    // formatter case then runs against a truncated file.
-    expect(() => loadReport({ mutate: (src) => src.replace('\n(function () {\n', '\n') }))
-      .toThrow(/no longer opens with/);
+  it('refuses a mutation whose target is not in the source', () => {
+    // The harness's loud-failure path. A mutation that silently matches nothing
+    // leaves every case below running against unmodified source and passing for
+    // the wrong reason - the proof stops proving anything without saying so.
+    expect(() => loadReport({
+      mutate: mutateOnce('a string no part of the report contains', 'x'),
+    })).toThrow(/occurs 0 times/);
   });
 });

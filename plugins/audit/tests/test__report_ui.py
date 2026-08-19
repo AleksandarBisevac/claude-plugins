@@ -41,21 +41,26 @@ def _cases(check):
           M.CSS == _theme.TOKEN_CSS + css_file)
 
     # --- exactly one <script> open/close in SCRIPT -------------------------------
-    check("exactly one <script> open tag in SCRIPT", M.SCRIPT.count("<script>") == 1)
+    check("exactly one <script> open tag in SCRIPT",
+          M.SCRIPT.count("<script") == 1)
     check("exactly one </script> close tag in SCRIPT",
           M.SCRIPT.count("</script>") == 1)
-    check("SCRIPT opens with <script> and closes with </script>, tags added by "
-          "this module rather than carried in report.js",
-          M.SCRIPT.startswith("<script>") and M.SCRIPT.endswith("</script>"))
-    inner = M.SCRIPT[len("<script>"):-len("</script>")]
+    check("SCRIPT is ONE module script - a module has its own scope, so the "
+          "parts need no wrapper and no top-level name reaches the page's "
+          "globals; the tags are added by this module, never carried in a part",
+          M.SCRIPT.startswith(M._SCRIPT_TAG_OPEN)
+          and M.SCRIPT.endswith(M._SCRIPT_TAG_CLOSE)
+          and 'type="module"' in M._SCRIPT_TAG_OPEN)
+    inner = M.SCRIPT[len(M._SCRIPT_TAG_OPEN):-len(M._SCRIPT_TAG_CLOSE)]
     # The wrapper moved into this module when the script became ordered parts:
     # its body is one IIFE, so the opening and closing braces cannot live in the
     # first and last part without leaving both individually unparseable. What the
     # page receives is therefore the parts joined INSIDE that wrapper, and the
     # parts themselves hold no wrapper of their own.
-    check("the JS between the tags is the ordered parts joined inside the IIFE "
-          "this module adds, and nothing else",
-          inner == M._SCRIPT_OPEN + js_file + M._SCRIPT_CLOSE)
+    check("the JS between the tags is the ordered parts joined, and nothing "
+          "else - the module boundary is the scope, so there is no wrapper left "
+          "to hide a difference in",
+          inner == "\n" + js_file)
     # Inner IIFEs are ordinary code and appear in several parts; what must not
     # appear is the OUTER wrapper's own boundary, which would make the first and
     # last part unbalanced and defeat parsing them one at a time.
@@ -85,7 +90,8 @@ def _cases(check):
           "<script>" not in js_file and "</script>" not in js_file)
 
     # --- mutation proof: a doubled open tag is caught by the same check ----------
-    doubled = M.SCRIPT.replace("<script>", "<script><script>", 1)
+    doubled = M.SCRIPT.replace(M._SCRIPT_TAG_OPEN,
+                               M._SCRIPT_TAG_OPEN * 2, 1)
     check("mutation proof: a doubled <script> open tag is caught by the same "
           "check that just passed (doubled count is %d, not 1)"
           % doubled.count("<script>"), doubled.count("<script>") != 1)

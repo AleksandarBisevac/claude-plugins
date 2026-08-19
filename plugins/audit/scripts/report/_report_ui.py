@@ -112,8 +112,18 @@ _SCRIPT_PARTS = (
     "report/heatmap.js",
     "report/exports.js",
 )
-_SCRIPT_OPEN = "\n(function () {\n"
-_SCRIPT_CLOSE = "})();\n"
+# The page receives ONE module script. A module has its own scope, so the parts
+# need no wrapper of their own: every top-level binding stays out of the page's
+# globals, which already carry `window.AUDIT_USAGE`. A module is also strict by
+# default and runs after parsing, both of which this code is verified against in
+# a browser rather than assumed.
+#
+# `import` is not available and never will be here: a module script is fetched
+# with CORS semantics, and a page opened from disk has an opaque origin, so a
+# cross-file import fails outright. The parts are therefore joined by this
+# module, not by the browser.
+_SCRIPT_TAG_OPEN = '<script type="module">'
+_SCRIPT_TAG_CLOSE = "</script>"
 
 
 def _script(cache=True):
@@ -124,7 +134,7 @@ def _script(cache=True):
     if cache and _script_cache is not None:
         return _script_cache
     body = "".join(_theme.read_asset(n) for n in _SCRIPT_PARTS)
-    out = "<script>" + _SCRIPT_OPEN + body + _SCRIPT_CLOSE + "</script>"
+    out = _SCRIPT_TAG_OPEN + "\n" + body + _SCRIPT_TAG_CLOSE
     if cache:
         _script_cache = out
     return out
