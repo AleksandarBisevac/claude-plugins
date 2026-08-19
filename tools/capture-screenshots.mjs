@@ -6145,8 +6145,9 @@ function pidAlive(pid) {
  *     for that cannot honestly be made.
  *
  * IS THIS THE SOURCE_DATE_EPOCH TRICK AGAIN? It was asked, and the answer is no.
- * `_report_html.stamp_time()` honours SOURCE_DATE_EPOCH and `tools/check-rendered-
- * artifacts.py` uses it to pin the report's ONE machine-dependent input to a
+ * `_report_html.stamp_time()` honours SOURCE_DATE_EPOCH, and the artifact
+ * freshness check under `tools/` uses it to pin the report's ONE
+ * machine-dependent input to a
  * constant, which makes a byte comparison exact. It does not transfer twice over.
  * A clock can be pinned to any integer; a scratch directory has to EXIST and be
  * writable, so there is no constant to pin it to. And the path is not even the
