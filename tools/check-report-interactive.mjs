@@ -37,8 +37,14 @@ import { resolve } from 'node:path';
 // other surface is never asked about. Importing that file is inert: everything
 // at its top level is a const, and its `main()` runs only when it is the
 // process entry point.
+// ...and the liveness rule, from the same file for the same reason: it is one
+// rule about whether a driven page is still the page that was set up, and a
+// second copy of it is how F23 comes back on the surface that did not get the
+// fix. The panel gate arms it on a `.tab`; this file arms it on the control it
+// drives most.
 import { RESPONSIVE_LADDER, walkResponsiveLadder, assertLadderMeasuredSomething,
-         newLadderTally } from './capture-screenshots.mjs';
+         newLadderTally, assertStillLive, newLivenessTally,
+         assertLivenessWasChecked } from './capture-screenshots.mjs';
 
 const file = process.argv[2];
 if (!file) {
@@ -230,6 +236,21 @@ if (gone.length) {
   process.exit(2);
 }
 
+// Liveness, armed now that the sweep above has proved the anchor is in the
+// document. `#audit-expand` is the control this file drives most and its handler
+// is bound once, at load, with addEventListener — so it is exactly the node whose
+// listeners an innerHTML restore would silently take away. What this asks is NOT
+// "did anything change" (see the rule in capture-screenshots.mjs): it asks whether
+// the nodes the report bound to are still the nodes on screen. Distinct from every
+// other check in this file, which asks whether an interaction did the right thing —
+// a question that has no meaning at all once the answer to this one is no.
+const LIVE_ANCHOR = '#audit-expand';
+const liveness = newLivenessTally();
+const stillLive = (where) =>
+  assertStillLive(page, LIVE_ANCHOR, `report: ${where}`,
+    { report: (m) => failures.push(`FAIL ${m}`), tally: liveness });
+await stillLive('at the start, before anything has been driven');
+
 const load = await state();
 if (load.total < 2) {
   console.error(`cannot check interactivity: only ${load.total} phase row(s); use a report with several`);
@@ -359,6 +380,11 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   expect('after a reload the report comes back in the view it was left in',
     back.view, 'archived');
   expect('...showing that view\'s rows and no others', back.archivedOnly, true);
+  // A reload is the one mutation that legitimately throws the armed nodes away,
+  // so this re-arms rather than reporting. It is here so that everything below
+  // is measured against a baseline taken AFTER the navigation, instead of being
+  // compared with nodes that stopped existing three assertions ago.
+  await stillLive('after the reload, re-arming against the fresh document');
   await page.selectOption('#audit-view', 'all');
   await page.waitForTimeout(250);
 }
@@ -1495,6 +1521,12 @@ if (!portrait || !landscape) {
     landscape.w > landscape.h, true);
 }
 
+// Between the print block and the polish checks, because the print block is the
+// most invasive thing this file does to the page: two full PDF renders, four
+// media-emulation swaps and two viewport changes. None of those SHOULD replace a
+// node — and "should" is the word every version of F23 was written under.
+await stillLive('after the print and PDF block, before the polish checks');
+
 // 8. Back to a clean document for the polish checks below — the print block above
 //    deliberately leaves it filtered down to nothing.
 const clearAll = async () => {
@@ -1689,6 +1721,16 @@ expect('...nor the panel inside it', onPaper.panel, true);
   await page.setViewportSize({ width: 1512, height: 945 });
   await page.waitForTimeout(200);
 }
+
+// The last liveness reading, and the one that covers the whole run: the ladder
+// above resized the viewport at every rung and scrolled the document to both ends
+// at each. If any of that had rebuilt the document, everything from the reload
+// onwards was measured against nodes nobody was listening to.
+await stillLive('at the end, over everything driven since the reload');
+assertLivenessWasChecked('report', liveness, {
+  report: (m) => failures.push(`FAIL ${m}`),
+  ok: (m) => notes.push(`ok   ${m}`),
+});
 
 if (pageErrors.length) failures.push(`FAIL the page raised ${pageErrors.length} error(s): ${pageErrors.slice(0, 3).join(' | ')}`);
 else notes.push('ok   no page errors');

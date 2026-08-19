@@ -28,26 +28,40 @@
  *
  * AND THE TEMP DIR IS PART OF THE PICTURE. The panel prints its project path in the
  * topbar, so the scratch tree sits at a FIXED path, claimed under a lockfile, and
- * two consecutive captures on one machine produce byte-identical PNGs. See
+ * two consecutive captures ON ONE MACHINE produce byte-identical PNGs. See
  * claimScratch(). Without that, panel drift could not be detected by comparison at
  * all, which is the only kind of detection a committed PNG supports.
  *
+ * "ON ONE MACHINE" IS THE WHOLE OF THE CLAIM, and it is load-bearing rather than
+ * cautious (F18). That fixed path is fixed per HOST — a Linux runner writes
+ * /tmp/audit-shots-<uid> where a Mac writes /var/folders/…/T/audit-shots-<uid> — and
+ * the host's font rasterisation moves the pixels again on top of that. So the
+ * committed PNGs are byte-comparable against a fresh capture from the machine that
+ * made them and against nothing else. That limit is not papered over: it is printed,
+ * with the machine, by --repro. The three repairs that would each fake a wider claim
+ * are named and declined in claimScratch(), including why SOURCE_DATE_EPOCH — which
+ * solved exactly this class for the HTML report — does not transfer.
+ *
  *     node tools/capture-screenshots.mjs [--out docs/screenshots] [--only report|panel]
  *     node tools/capture-screenshots.mjs --check
+ *     node tools/capture-screenshots.mjs --repro [--only report|panel]
  *
  * --check writes nothing. It asserts the DOM facts that the captures depend on —
  * chiefly that progress-bar fills have a real painted width. That assertion is
- * portable, which pixel comparison is not: browser font rasterisation differs
- * between macOS and CI Linux, so byte-comparing a committed PNG against a fresh CI
- * capture would fail for reasons that have nothing to do with the product. Run
- * --check in CI; run the capture locally when a UI change lands.
+ * portable, which pixel comparison is not, for the reasons above. Run --check in CI;
+ * run the capture locally when a UI change lands.
+ *
+ * --repro writes nothing into the repo either. It captures twice into throwaway
+ * directories on the machine it is running on, byte-compares the two, and prints the
+ * result next to that machine. It is the re-derivable form of the reproducibility
+ * claim above, which had been measured once, by hand, and written down.
  */
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { rmSync, mkdirSync, readFileSync, statSync,
          writeFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, release } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -61,6 +75,7 @@ const arg = (name, dflt) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : dflt;
 };
 const CHECK = argv.includes('--check');
+const REPRO = argv.includes('--repro');
 const OUT = path.resolve(REPO, arg('--out', 'docs/screenshots'));
 
 /**
@@ -334,6 +349,305 @@ async function settle(page) {
       null, { timeout: 5000 });
   } catch { /* an infinite ambient animation would time out; carry on */ }
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r())));
+}
+
+/* ---- liveness: is the page I am measuring still the page I set up? ---------
+ *
+ * NOT THE SAME THING AS VACUITY, and the two are kept apart on purpose because
+ * they fail in opposite directions:
+ *
+ *   VACUITY  asks "did this step measure ANYTHING?" — assertLadderMeasuredSomething,
+ *            the legsRun guard, the --sp-3 read in the density loop, the 200-focus-
+ *            stop floor. It catches a check with no input.
+ *   LIVENESS asks "is the thing I measured still the thing I set up?" It catches a
+ *            check with the WRONG input, which looks nothing like an empty one.
+ *
+ * A run can be entirely non-vacuous and entirely wrong. F23: a probe validated its
+ * own direction by writing `document.body.innerHTML = '<p>x</p>'` and then restored
+ * the saved HTML **string**. That puts the markup back and drops every listener the
+ * page had bound, so the `.tab` clicks after it were inert and all six tabs were
+ * measured as whichever one happened to be open. It passed everything it had — 11 of
+ * 11 mutations still went red, no JS error, a full and plausible per-tab result set —
+ * and the only tell was that the six numbers were IDENTICAL, found by comparing
+ * against an earlier run. Comparing against an earlier run is not a check.
+ *
+ * The guard is deliberately NOT "did something change". Clicking the tab that is
+ * already open legitimately changes nothing, and a guard that fires on a healthy run
+ * is a guard everyone learns to route around. It is two facts instead, and each one
+ * points at a different culprit:
+ *
+ *   CONTINUITY — the nodes the product bound its handlers to are still the nodes on
+ *   screen. A mark is written on the anchor ELEMENT and a token on `window`. A page
+ *   load drops both; an innerHTML rewrite under a surviving script context drops only
+ *   the element mark. That asymmetry is the whole reason there are two halves: it is
+ *   what tells a HARNESS mutation apart from a navigation, so the message can say
+ *   which without guessing.
+ *
+ *   RESPONSE — after the click, the view the click asked for is the view on screen.
+ *   Checked only once continuity holds, so a failure here cannot be the harness
+ *   having thrown the listeners away: it is the page not following its own control.
+ *
+ * WHAT IT CANNOT SEE, AND THE DIRECTION. A rewrite that happens between a navigation
+ * and the first liveness call is ADOPTED as the baseline — there is nothing yet to
+ * compare against. That is an UNDER-report, the quiet direction, so a clean liveness
+ * verdict means "nothing rebuilt the DOM since I last looked here", never "nothing
+ * ever rebuilt it". It also says nothing about listeners bound with addEventListener
+ * on a node that survived: those are unobservable from script, and a product that
+ * removed one would be caught by RESPONSE rather than by CONTINUITY.
+ */
+
+/** Written on the anchor element. Dies with an innerHTML rewrite AND with a load. */
+const LIVE_MARK = '__auditLiveMark';
+/** Written on `window`. Survives an innerHTML rewrite; dies with a load. */
+const LIVE_TOKENS = '__auditLiveTokens';
+
+/**
+ * The liveness verdict at `anchorSel`, arming a baseline when there is none.
+ *
+ * Keyed BY SELECTOR on both sides, which is not decoration: two anchors on one page
+ * (`.tab` here, `#audit-expand` in the report gate) would otherwise read each other's
+ * token, and the second one asked would report `rebuilt` on a perfectly healthy page.
+ * A liveness check that fires on a healthy run is the failure mode this file is most
+ * careful about, so the shared state is per-anchor and never global.
+ *
+ * Verdicts: `live` (same nodes as when armed), `armed` (fresh document — baseline
+ * taken, nothing claimed), `rebuilt` (the F23 shape), `no-anchor` (the selector
+ * matches nothing, which is a fact about the document), `confused` (a mark with no
+ * token, which neither a load nor a rewrite produces — reported, never swallowed).
+ */
+export async function livenessAt(page, anchorSel) {
+  return page.evaluate((a) => {
+    const el = document.querySelector(a.sel);
+    if (!el) return { verdict: 'no-anchor', sel: a.sel };
+    const store = window[a.tokKey] || (window[a.tokKey] = {});
+    const marks = el[a.markKey] || (el[a.markKey] = {});
+    const token = store[a.sel];
+    const mark = marks[a.sel];
+    if (token === undefined && mark === undefined) {
+      const fresh = String(Date.now()) + ':' + Math.random().toString(16).slice(2);
+      store[a.sel] = fresh;
+      marks[a.sel] = fresh;
+      return { verdict: 'armed', sel: a.sel };
+    }
+    if (token !== undefined && mark === token) return { verdict: 'live', sel: a.sel };
+    if (token !== undefined) {
+      return { verdict: 'rebuilt', sel: a.sel,
+               mark: mark === undefined ? null : mark };
+    }
+    return { verdict: 'confused', sel: a.sel, mark };
+  }, { sel: anchorSel, markKey: LIVE_MARK, tokKey: LIVE_TOKENS });
+}
+
+/**
+ * Assert CONTINUITY at `anchorSel`, and count the verdict.
+ *
+ * `report` is `fail`-shaped so the one rule serves this file and
+ * check-report-interactive.mjs, which keep their failures in different places —
+ * the same injection walkResponsiveLadder already uses. There is no `ok`: a green
+ * line per call would be 40-odd lines of noise, and the green statement belongs to
+ * assertLivenessWasChecked, which reports the tally once.
+ *
+ * Returns the verdict so a caller can decline to measure a page it has just been
+ * told is inert. Measuring one anyway produces a second, louder failure that names
+ * the product for the harness's fault, which is worse than a flake: the next person
+ * to meet it on a real regression remembers it as noise.
+ */
+export async function assertStillLive(page, anchorSel, where, { report, tally = null }) {
+  const s = await livenessAt(page, anchorSel);
+  if (tally) {
+    tally.checks += 1;
+    if (s.verdict === 'live') tally.live += 1;
+    if (s.verdict === 'armed') tally.armed += 1;
+  }
+  if (s.verdict === 'live' || s.verdict === 'armed') return s.verdict;
+  if (s.verdict === 'no-anchor') {
+    report(`${where}: nothing matches "${anchorSel}", so this run cannot say whether `
+      + 'the page is still the one it set up. That is a fact about the DOCUMENT — it '
+      + 'never rendered, or the anchor moved — and not a verdict about the product.');
+    return s.verdict;
+  }
+  if (s.verdict === 'rebuilt') {
+    report(`${where}: the "${anchorSel}" node is NOT the node this run armed, while `
+      + 'the script context that armed it IS still the same one. Only one thing '
+      + 'produces that pair: something in THIS HARNESS rewrote the DOM — restoring a '
+      + 'saved innerHTML string is the shape that did it in F23 — and every listener '
+      + 'the page had bound went with the nodes it replaced. Read this as a harness '
+      + 'fault, not a product defect; every measurement taken after it is a '
+      + 'measurement of an inert page.');
+    return s.verdict;
+  }
+  report(`${where}: liveness at "${anchorSel}" is unreadable (${JSON.stringify(s)}). `
+    + 'The element carries a mark the window has no token for, which neither a page '
+    + 'load nor a DOM rewrite produces — so this is a bug in the check, not in the '
+    + 'page, and it is said out loud rather than passed over.');
+  return s.verdict;
+}
+
+/** A fresh liveness tally, so the guard below can name what never happened. */
+export const newLivenessTally = () => ({ checks: 0, armed: 0, live: 0 });
+
+/**
+ * The vacuity guard OVER the liveness guard — because the liveness guard is itself a
+ * check that could quietly measure nothing.
+ *
+ * `armed` alone can never fail: it is the verdict for a fresh document, taken as a
+ * baseline. A run whose every liveness call armed has therefore never compared
+ * anything, and would report a clean page while asserting exactly nothing about it.
+ * That is the same sentence assertLadderMeasuredSomething exists for, one layer in.
+ */
+export function assertLivenessWasChecked(label, tally, { report, ok }) {
+  if (!tally.checks) {
+    report(`${label}: liveness was never checked at all, so nothing here can say the `
+      + 'page being measured is still the page that was set up — which is the one '
+      + 'failure a full, plausible result set does not reveal (F23)');
+    return;
+  }
+  if (!tally.live) {
+    // Both non-confirming outcomes are counted and named, because they mean
+    // different things and a summary that folded them together would describe
+    // one of the two runs wrongly: arming is a baseline being taken, an
+    // unreadable anchor is nothing being taken at all. Measured — the first
+    // spelling of this line said "all N ARMED" and printed it over a run in
+    // which nothing had armed.
+    const unreadable = tally.checks - tally.armed - tally.live;
+    report(`${label}: ${tally.checks} liveness check(s) ran and not one confirmed `
+      + `continuity against an earlier baseline — ${tally.armed} armed a fresh one, `
+      + `${unreadable} could not be read at all. Arming cannot fail and an anchor `
+      + 'that cannot be read asserts nothing, so this is the check reporting on '
+      + 'itself: the page is reloading between every step, or the anchor is not the '
+      + 'same node twice, or it is not in the document.');
+    return;
+  }
+  ok(`${label}: liveness — ${tally.live} of ${tally.checks} check(s) confirmed the DOM `
+    + `is still the one armed; ${tally.armed} armed a fresh baseline after a load`);
+}
+
+/** The anchor for every panel liveness check: a `.tab` is server-rendered in
+ *  panel.html, is never re-created by panel.js, and is exactly where the product
+ *  binds the handler F23 threw away (`t.onclick = () => showTab(...)`). */
+const PANEL_LIVE_ANCHOR = '.tab';
+const panelLiveness = newLivenessTally();
+
+/**
+ * How long tabTo waits before it is willing to say anything is wrong.
+ *
+ * Generous on purpose, and generous for a stated reason rather than by feel: every
+ * panel page here is opened with `waitUntil: 'load'`, and the inline script runs
+ * during parsing, so the handler is bound before that promise resolves. The wait is
+ * therefore not a guess at how long binding takes — it is headroom over a wait that
+ * has already finished, so a slow CI runner cannot turn this into a flake. The cost
+ * is paid only by a run that is already failing.
+ *
+ * The switch itself is a class toggle over panes that are already rendered, so it is
+ * held to a much shorter wait: a switch that needs seconds is a defect in its own
+ * right, and giving it the wiring wait's headroom would hide that.
+ */
+const TAB_WIRED_MS = 10000;
+const TAB_SWITCH_MS = 3000;
+
+/**
+ * Switch the panel to tab `t` — and prove the page still answers being driven.
+ *
+ * Every bare `page.click('.tab[data-t=…]')` in this file went through here for one
+ * reason: that click is the exact operation F23 measured six times against a page
+ * that had stopped listening. A second copy of this rule is how the bug comes back.
+ *
+ * The landing is WAITED FOR, not asserted on the next tick. A view that renders
+ * slowly must never be reported as an inert one; only a wait that runs OUT is
+ * evidence of anything. The predicate is derived from the DOM's own tab strip rather
+ * than from a list of view ids kept here — a second copy of the panel's TABS would
+ * go stale the first time a view was added, and would then assert nothing about it.
+ *
+ * Returns whether the view landed, so a caller can skip a measurement that would
+ * otherwise be taken against the wrong tab.
+ */
+async function tabTo(page, t) {
+  const sel = `.tab[data-t="${t}"]`;
+  const live = await assertStillLive(page, PANEL_LIVE_ANCHOR,
+    `panel: about to switch to the ${t} tab`,
+    { report: fail, tally: panelLiveness });
+  if (live !== 'live' && live !== 'armed') return false;
+  // Named rather than clicked. Clicking a selector that is not there buys a
+  // 30-second Playwright timeout and a stack, which reads as the panel being dead
+  // when it is this file that could not find its footing.
+  if (!(await page.$(sel))) {
+    fail(`panel: no tab control matches ${sel}, so the ${t} view cannot be reached — `
+       + 'a fact about the document, not about the view');
+    return false;
+  }
+  // WAITED FOR, and this is a race removed rather than a check added. The tab
+  // strip is server-rendered in panel.html, so `waitForSelector('.tab')` is
+  // satisfied BEFORE panel.js has run and bound anything: a click landing in that
+  // window does nothing, through nobody's fault. Waiting for the handler means the
+  // refusal below is about a page that had its chance, and it is the difference
+  // between a diagnosis and a flake that teaches people to re-run the gate.
+  try {
+    await page.waitForFunction((s) => {
+      const b = document.querySelector(s);
+      return !!b && typeof b.onclick === 'function';
+    }, sel, { timeout: TAB_WIRED_MS });
+  } catch {
+    fail(`panel: ${TAB_WIRED_MS}ms after it appeared, the ${t} tab still carries no `
+       + 'click handler, so a click on it can do nothing. panel.js binds '
+       + '`t.onclick` at script evaluation, and these ARE the nodes this run '
+       + 'armed — so this harness has not replaced them since. That '
+       + 'leaves the page script: it never finished running (a syntax error kills '
+       + 'the whole inline script while every markup pin still passes), or the '
+       + 'binding itself is gone. The JS errors this run collected tell the two '
+       + 'apart; this line does not guess between them.');
+    return false;
+  }
+  await page.click(sel);
+  let landed = true;
+  try {
+    await page.waitForFunction((want) => {
+      const btn = document.querySelector(`.tab[data-t="${want}"]`);
+      const pane = document.getElementById(want);
+      if (!btn || !pane) return false;
+      const others = [...document.querySelectorAll('.tab')]
+        .map((x) => x.dataset.t)
+        .filter((id) => id !== want)
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
+      return !pane.classList.contains('hidden')
+        && btn.classList.contains('on')
+        && btn.getAttribute('aria-current') === 'true'
+        && others.every((p) => p.classList.contains('hidden'));
+    }, t, { timeout: TAB_SWITCH_MS });
+  } catch {
+    landed = false;
+  }
+  if (landed) return true;
+  // Only now — continuity established, the handler present and waited for — is it
+  // fair to say anything about the product.
+  const st = await page.evaluate((want) => {
+    const btn = document.querySelector(`.tab[data-t="${want}"]`);
+    const ids = [...document.querySelectorAll('.tab')].map((x) => x.dataset.t);
+    return {
+      shown: ids.filter((id) => {
+        const p = document.getElementById(id);
+        return p && !p.classList.contains('hidden');
+      }),
+      missing: ids.filter((id) => !document.getElementById(id)),
+      on: !!btn && btn.classList.contains('on'),
+      current: !!btn && btn.getAttribute('aria-current') === 'true',
+      wired: !!btn && typeof btn.onclick === 'function',
+    };
+  }, t);
+  if (st.missing.length) {
+    fail(`panel: the tab strip names view(s) ${st.missing.join(', ')} that no element `
+       + `in the document carries — clicking ${t} cannot show a pane that is not there`);
+  } else if (!st.wired) {
+    fail(`panel: the ${t} tab lost its click handler between being waited for and `
+       + 'being clicked, which is a rebinding this file cannot account for');
+  } else {
+    fail(`panel: the ${t} tab is still wired and the view did not follow it — after `
+       + `the click the visible pane(s) are [${st.shown.join(', ') || 'none'}], the `
+       + `control reads on=${st.on} aria-current=${st.current}. The handler ran and `
+       + 'left the wrong view on screen, which is the panel\'s tab routing and not '
+       + 'this harness.');
+  }
+  return false;
 }
 
 /** The defect this whole script exists to prevent. */
@@ -1144,7 +1458,7 @@ async function assertOverviewWorks(page) {
          + `(${landed.rows}/${landed.total} rows)`);
     }
     await page.fill('#comp input[type=search]', '');
-    await page.click('.tab[data-t=over]');
+    await tabTo(page, 'over');
     await page.waitForTimeout(200);
     await page.evaluate((pid) => { OVF.open[pid] = false; renderOver(); }, firstId);
     await page.waitForTimeout(150);
@@ -2105,7 +2419,7 @@ async function assertTargetSizeAcrossDensities(page) {
 
   const seen = {}, counts = {};
   for (const density of ['comfortable', 'compact', 'spacious']) {
-    await page.click('.tab[data-t="look"]');
+    await tabTo(page, 'look');
     await page.waitForTimeout(250);
     const btn = await page.$(`#look [data-thdensity=${density}]`);
     if (!btn) { fail(`2.5.8/density: no control for density=${density}`); return; }
@@ -2126,7 +2440,7 @@ async function assertTargetSizeAcrossDensities(page) {
     const merged = {};
     let controls = 0;
     for (const t of TABS) {
-      await page.click(`.tab[data-t="${t}"]`);
+      await tabTo(page, t);
       await page.waitForTimeout(250);
       const got = await read();
       controls += got.n;
@@ -2137,7 +2451,7 @@ async function assertTargetSizeAcrossDensities(page) {
     seen[density] = merged;
     counts[density] = controls;
   }
-  await page.click('.tab[data-t="look"]');
+  await tabTo(page, 'look');
   await page.waitForTimeout(200);
   const back = await page.$('#look [data-thdensity=comfortable]');
   if (back) { await back.click(); await page.waitForTimeout(300); }
@@ -2559,7 +2873,7 @@ async function assertFocusNotObscured(page) {
   const bad = [];
   for (const t of TABS) {
     for (const key of ['Tab', 'Shift+Tab']) {
-      await page.click(`.tab[data-t="${t}"]`);
+      await tabTo(page, t);
       await page.waitForTimeout(250);
       await page.evaluate(() => { window.scrollTo(0, 0);
         if (document.activeElement) document.activeElement.blur(); });
@@ -2796,7 +3110,7 @@ function assertNoHandAssignedPolledState() {
 async function assertConfirmFlowWorks(page) {
   assertNoHandAssignedPolledState();
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.waitForTimeout(300);
 
@@ -3133,7 +3447,7 @@ async function assertConfirmFlowWorks(page) {
   }
 
   // --- Settings writes through the same flow ---------------------------------
-  await page.click('.tab[data-t=guards]');
+  await tabTo(page, 'guards');
   await page.waitForSelector('#guards .savebar', { timeout: 10000 });
   const box = page.locator('#guards input[type=checkbox]').first();
   if (!(await box.count())) { fail('settings: no boolean field to drive'); return; }
@@ -3226,7 +3540,7 @@ async function assertConfirmFlowWorks(page) {
  * states apart on purpose (_panel_state._skills_of).
  */
 async function assertSkillTriState(page) {
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.waitForTimeout(300);
   // Drain any in-flight poll hand-off before editing (the model-combo rule).
@@ -3446,7 +3760,7 @@ async function noToast(page, label) {
  * answer.
  */
 async function assertComboSearchCount(page) {
-  await page.click('.tab[data-t=usage]');
+  await tabTo(page, 'usage');
   await page.waitForTimeout(400);
   const want = await page.evaluate(() => {
     const tasks = [...new Set(USAGE.facts.map((f) => f[F.task]).filter(Boolean))];
@@ -3519,7 +3833,7 @@ async function assertComboDescriptionSearch(page) {
   // and in no skill name — the oracle is recomputed from REG in-page, so a
   // fixture edit re-aims this check instead of silently blinding it.
   const term = 'behaviour';
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.waitForTimeout(200);
   const want = await page.evaluate((t) =>
@@ -3610,7 +3924,7 @@ async function assertComboDescriptionSearch(page) {
  * cheaper to have answered it once.
  */
 async function assertModelCombo(page, project) {
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.waitForTimeout(200);
   // Freeze the poll's endpoint for the whole step (the F4 rule, the same
@@ -3802,7 +4116,7 @@ async function assertModelCombo(page, project) {
  * be earned by ALL tasks being done, and must leave when one is not.
  */
 async function assertPhaseWhyNote(page) {
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   // Freeze the poll for the step — an untimely refetch would swap STATE under
   // the injection (the F-C-1 class), and the injected phase with it.
@@ -3860,7 +4174,7 @@ async function assertPhaseWhyNote(page) {
  * '(' fails Python's re, which is the one the hook uses.
  */
 async function assertSaveNoteLifecycle(page) {
-  await page.click('.tab[data-t=guards]');
+  await tabTo(page, 'guards');
   await page.waitForSelector('#guards .savebar', { timeout: 10000 });
   const rex = page.locator('#set-secretPatterns\\.extra input');
   if (!(await rex.count())) { fail('settings: no secretPatterns.extra editor'); return; }
@@ -3947,7 +4261,7 @@ async function assertSaveNoteLifecycle(page) {
  * the URL and nowhere else.
  */
 async function assertFilterPersistence(page, browser, panelUrl) {
-  await page.click('.tab[data-t=usage]');
+  await tabTo(page, 'usage');
   await page.waitForTimeout(300);
   await page.evaluate(() => clearAll());
   await page.waitForTimeout(200);
@@ -3966,7 +4280,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
        + `'#/usage!au=…' grammar`);
   }
   // Tab routing works WITH the fragment: away and back, filter intact.
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForTimeout(250);
   const onComp = await page.evaluate(() => ({
     hash: location.hash, compShown: !document.getElementById('comp')
@@ -3975,7 +4289,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
     fail(`usage: switching tabs under a filter fragment gave hash `
        + `"${onComp.hash}" with comp shown=${onComp.compShown}`);
   }
-  await page.click('.tab[data-t=usage]');
+  await tabTo(page, 'usage');
   await page.waitForTimeout(250);
   // The reload: chip, person header and hash all survive.
   await page.reload({ waitUntil: 'load' });
@@ -4064,7 +4378,7 @@ async function assertLiveData(page, project) {
     return Object.keys(t).filter((a) => a && a !== 'unknown')
       .sort((a, b) => t[b] - t[a])[0] || null;
   });
-  await page.click('.tab[data-t=usage]');
+  await tabTo(page, 'usage');
   await page.waitForTimeout(200);
   await page.evaluate((a) => setF('author', a), who);
   await page.evaluate((p) => openInComp(p), pid);
@@ -4162,7 +4476,7 @@ async function assertLiveData(page, project) {
  * the silent half).
  */
 async function assertUncategorizedNamed(page) {
-  await page.click('.tab[data-t=usage]');
+  await tabTo(page, 'usage');
   await page.waitForTimeout(400);
   const seen = await page.evaluate(() => {
     const probe = document.createElement('span');
@@ -4438,7 +4752,7 @@ async function assertComboOverlay(page, project) {
  * trip, each within one poll plus margin.
  */
 async function assertGateCard(page, project) {
-  await page.click('.tab[data-t=over]');
+  await tabTo(page, 'over');
   await page.waitForTimeout(250);
   const card = await page.evaluate(() => {
     const c = document.getElementById('gatecard');
@@ -4501,7 +4815,7 @@ async function assertGateCard(page, project) {
  * dialogs WITHOUT writing: Save is cancelled, Discard restores the saved draft.
  */
 async function assertAdoCardWorks(page) {
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForTimeout(250);
   const st = await page.evaluate(() => {
     const b = document.querySelector('#adocard [data-adostate]');
@@ -4653,7 +4967,7 @@ async function assertHelpDrawerWorks(page, declared) {
   // rather than assumed: `#guards` is merely hidden on the other four, and a
   // click on a hidden button is a 30-second Playwright timeout whose stack reads
   // exactly like a dead panel (F7's lesson, in this harness).
-  await page.click('.tab[data-t=guards]');
+  await tabTo(page, 'guards');
   await page.waitForTimeout(200);
   // trivialLineThreshold as the worked example since v0.34 B1: `enforce` lost
   // its dedicated control (the planGate select owns the gate's tier now), and
@@ -4868,7 +5182,7 @@ async function assertHelpDrawerWorks(page, declared) {
   await page.waitForTimeout(150);
 
   // --- a composition lever is documented by the MANIFEST schema ---------------
-  await page.click('.tab[data-t=comp]');
+  await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.click('#comp [data-hint="taskModel"]');
   await page.waitForSelector('dialog.drawer[open] [data-hpath]', { timeout: 10000 });
@@ -4887,7 +5201,7 @@ async function assertHelpDrawerWorks(page, declared) {
   }
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
-  await page.click('.tab[data-t=guards]');
+  await tabTo(page, 'guards');
   await page.waitForTimeout(200);
 }
 
@@ -5162,7 +5476,7 @@ function policyFixtureBlock(liveArea) {
  * it is checking proves only that a string was copied.
  */
 async function assertPolicyWorks(page, statePath) {
-  await page.click('.tab[data-t=policy]');
+  await tabTo(page, 'policy');
   await page.waitForSelector('#policy .card', { timeout: 15000 });
   await page.waitForTimeout(250);
 
@@ -5383,7 +5697,7 @@ async function assertDeadPatternNote(page, cfgPath) {
   };
   writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
   await page.reload({ waitUntil: 'load' });
-  await page.click('.tab[data-t=policy]');
+  await tabTo(page, 'policy');
   await page.waitForSelector('#policy .card', { timeout: 15000 });
   await page.waitForTimeout(250);
   const got = await page.evaluate(() => ({
@@ -5443,7 +5757,7 @@ async function assertDeadPatternNote(page, cfgPath) {
  * a value) are pinned in _panel_write's selftest where they can be exhaustive.
  */
 async function assertAppearanceWorks(page) {
-  await page.click('.tab[data-t=look]');
+  await tabTo(page, 'look');
   await page.waitForTimeout(350);
   const shape = await page.evaluate(() => ({
     groups: [...document.querySelectorAll('#look [data-thgroup]')]
@@ -5585,7 +5899,7 @@ async function assertAppearanceWorks(page) {
   } else {
     await page.click('#look [data-thcard="' + first + '"] button:not([disabled])');
     await page.waitForTimeout(300);
-    await page.click('.tab[data-t=over]');
+    await tabTo(page, 'over');
     await page.waitForTimeout(400);
     const order = await page.evaluate(() =>
       [...document.querySelectorAll('#over [data-card]')]
@@ -5596,7 +5910,7 @@ async function assertAppearanceWorks(page) {
     } else {
       note(`appearance: reordering moves the card in Overview (${order.join(', ')})`);
     }
-    await page.click('.tab[data-t=look]');
+    await tabTo(page, 'look');
     await page.waitForTimeout(300);
     // Put it back, so the shot below and every later check see the drawn order
     // — and moving a card down and back up must leave NO change behind, or the
@@ -5634,7 +5948,7 @@ async function assertAppearanceWorks(page) {
  * it — a dialog that strands the caret is worse than no dialog.
  */
 async function assertPolicyExpand(page) {
-  await page.click('.tab[data-t=policy]');
+  await tabTo(page, 'policy');
   await page.waitForTimeout(300);
   const btn = page.locator('#policy [data-polexpand]');
   if (!(await btn.count())) {
@@ -5739,6 +6053,23 @@ async function shot(page, name, { full = false, dialog = false } = {}) {
 const SCRATCH_LOCK = 'capture.lock';
 
 /**
+ * Where the fixture tree goes — the one place that decides it.
+ *
+ * Named rather than inlined because the panel PAINTS this path (see claimScratch),
+ * so it is a value the reproducibility report has to be able to quote. Two spellings
+ * of it would let the report name a directory the capture did not use, which is the
+ * one thing a provenance line must never do.
+ *
+ * Per-uid where uids exist, because on Linux `tmpdir()` is one shared /tmp and two
+ * users capturing at once would meet on a directory neither may write into. macOS
+ * and Windows already hand out a per-user temp directory, so this is a no-op there.
+ */
+function scratchPath() {
+  return path.join(tmpdir(),
+    `audit-shots${process.getuid ? `-${process.getuid()}` : ''}`);
+}
+
+/**
  * Does `pid` name a process that exists right now?
  *
  * The JavaScript half of `panel-server._pid_alive`, including its EPERM answer: a
@@ -5790,13 +6121,46 @@ function pidAlive(pid) {
  * exclusive-create lockfile carrying the owner's pid. A pid that is gone means a run
  * that died before its `finally`, not a live one, so that tree is reclaimed with a
  * note rather than blocking every capture until someone deletes it by hand.
+ *
+ * AND HERE IS WHAT IT DOES NOT BUY, which is F18 and is stated here because this is
+ * where somebody reads about reproducibility and decides what it is worth. The fixed
+ * path is fixed PER MACHINE and cannot be anything else: a Linux runner writes
+ * `/tmp/audit-shots-<uid>` where a Mac writes `/var/folders/…/T/audit-shots-<uid>`,
+ * so the panel images carry different bytes on different hosts — `--repro` prints
+ * how many of them and on which host. Every candidate repair for that trades
+ * something real, and the reasons they were declined are kept, because the next
+ * person to look will have the same three ideas:
+ *
+ *   * A CONSTANT PATH. Dropping the uid suffix loses the thing it is there for —
+ *     two users on one Linux box colliding in a shared /tmp — and there is no
+ *     constant that holds anyway: Windows has no `/tmp`, and macOS's `tmpdir()` is
+ *     not it either, so "pin it" means "pick one platform".
+ *   * OVERWRITING `#proj` FROM HERE. Argued against three paragraphs up, and the
+ *     argument is unchanged: it puts a string in the picture the product never
+ *     produced, on whichever surface someone remembered.
+ *   * MASKING THE TOPBAR BOX in a comparison. That region is 45x13px of a bar that
+ *     also carries the tab strip, the render control and the report link — the
+ *     chrome a reader looks at first — so a mask there is a promise never to see
+ *     drift in the most-looked-at part of the page. The argument that would be owed
+ *     for that cannot honestly be made.
+ *
+ * IS THIS THE SOURCE_DATE_EPOCH TRICK AGAIN? It was asked, and the answer is no.
+ * `_report_html.stamp_time()` honours SOURCE_DATE_EPOCH and `tools/check-rendered-
+ * artifacts.py` uses it to pin the report's ONE machine-dependent input to a
+ * constant, which makes a byte comparison exact. It does not transfer twice over.
+ * A clock can be pinned to any integer; a scratch directory has to EXIST and be
+ * writable, so there is no constant to pin it to. And the path is not even the
+ * binding constraint here — font rasterisation differs between macOS and CI Linux,
+ * which is why CI already refuses to compare these pixels, and no environment
+ * variable pins that at all. The report had one such input and the panel has at
+ * least two, one of them unpinnable; that is the difference between the two cases.
+ *
+ * SO THE LIMIT IS STATED RATHER THAN FAKED, and it is stated as something that runs:
+ * `--repro` measures within-machine reproducibility on the host it is running on and
+ * prints that host alongside the number. See reproduce().
  */
 function claimScratch() {
-  // Per-uid where uids exist, because on Linux `tmpdir()` is one shared /tmp and two
-  // users capturing at once would meet on a directory neither may write into. macOS
-  // and Windows already hand out a per-user temp directory, so this is a no-op there.
-  const work = path.join(tmpdir(),
-    `audit-shots${process.getuid ? `-${process.getuid()}` : ''}`);
+  const work = scratchPath();
   const lock = path.join(work, SCRATCH_LOCK);
   const mine = String(process.pid);
   mkdirSync(work, { recursive: true });
@@ -5831,6 +6195,153 @@ function claimScratch() {
     }
   }
   return work;
+}
+
+/**
+ * The host, in the terms that decide what a panel PNG's bytes come out as.
+ *
+ * Not decoration and not a log line: it is the SCOPE attached to the number
+ * `--repro` prints, and a number without its scope is the defect this repo keeps
+ * meeting. The browser build is read by launching one rather than by reading a
+ * package version — the version that matters is the binary that rasterised the
+ * text, and a lockfile entry is a claim about which binary was fetched.
+ */
+async function machineFingerprint() {
+  let browser = '(chromium could not be launched, so the build that would '
+              + 'rasterise these pixels is unknown)';
+  try {
+    const { chromium } = await import('playwright');
+    const b = await chromium.launch();
+    browser = `chromium ${b.version()}`;
+    await b.close();
+  } catch (e) {
+    browser = `(chromium could not be launched: ${String(e.message).split('\n')[0]})`;
+  }
+  return {
+    host: `${process.platform}/${process.arch}`,
+    kernel: release(),
+    node: process.version,
+    browser,
+    scratch: scratchPath(),
+  };
+}
+
+/**
+ * `--repro`: are two consecutive captures ON THIS MACHINE byte-identical?
+ *
+ * F18. The panel PNGs became reproducible within one machine and nothing could
+ * re-derive that: it was a sentence in a docstring, measured once, by hand. A
+ * property nobody can print is a property that rots, and this repo has the scars to
+ * prove it. So the claim is a mode of the tool, and its output carries the machine
+ * it was measured on — because that machine IS the scope of the claim.
+ *
+ * IT DELIBERATELY DOES NOT COMPARE AGAINST docs/screenshots/. That comparison is the
+ * one that would quietly pass on the maintainer's Mac and fail on a Linux runner with
+ * nobody able to tell whether the difference was drift or the host, which is exactly
+ * the outcome F18 rules out. Two fresh captures on one host hold everything except
+ * the product constant, so a difference between them is the product or it is a bug in
+ * this file — and nothing else.
+ *
+ * Both captures go to throwaway directories, so this never touches the committed
+ * images and cannot be mistaken for a refresh of them.
+ *
+ * Exit 0 every PNG identical, 1 any difference (including the two runs disagreeing
+ * about WHICH files exist, which is a nastier drift than differing bytes), 2 when
+ * there was nothing to compare — a capture that failed, or one that wrote no image.
+ * "0 of 0 identical" must never print as a pass.
+ */
+async function reproduce() {
+  if (CHECK) {
+    console.error('--repro and --check cannot be combined: --check writes no PNGs, so '
+      + 'the comparison would run over two empty directories and report that nothing '
+      + 'differed. Run --repro on its own.');
+    process.exit(2);
+  }
+  // Refused rather than ignored. A caller who passed --out expects images where they
+  // asked for them, and silently putting them somewhere else is the shape of bug
+  // this file's own docstring opens with.
+  if (argv.includes('--out')) {
+    console.error('--repro cannot honour --out: it captures TWICE and the two runs must '
+      + 'not land in the same directory, so it uses throwaway ones. Run --repro on its '
+      + 'own, or run a plain capture if what you want is images at a path.');
+    process.exit(2);
+  }
+  const self = fileURLToPath(import.meta.url);
+  const dirs = [];
+  const passthrough = ONLY === 'all' ? [] : ['--only', ONLY];
+  try {
+    for (let i = 0; i < 2; i += 1) {
+      const dir = path.join(tmpdir(), `audit-repro-${process.pid}-${i}`);
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      dirs.push(dir);
+      console.log(`\n=== repro capture ${i + 1} of 2 -> ${dir}\n`);
+      const r = spawnSync(process.execPath, [self, '--out', dir, ...passthrough],
+                          { stdio: 'inherit' });
+      if (r.status !== 0) {
+        console.error(`\ncapture ${i + 1} of 2 exited ${r.status === null ? 'on a signal'
+          : r.status}. There is nothing to compare, and comparing what it did manage to `
+          + 'write would report "identical" about a run that fell over — exit 2.');
+        process.exit(2);
+      }
+    }
+    const pngs = (d) => readdirSync(d).filter((f) => f.endsWith('.png')).sort();
+    const [a, b] = dirs.map(pngs);
+    const fp = await machineFingerprint();
+    const scope = [
+      '',
+      'THIS IS A WITHIN-MACHINE CLAIM AND NOTHING MORE (F18).',
+      '  * Nothing here was compared against docs/screenshots/.',
+      '  * It does not hold on another machine, and that is not a gap waiting to be',
+      '    closed: the panel paints its own project path into the topbar, so the',
+      '    scratch tree above is in the pixels and no constant path exists across',
+      '    macOS, Linux and Windows. The committed PNGs are additionally rasterised',
+      '    by the host fonts, which no environment variable pins — so even a fixed',
+      '    path would not make a cross-machine byte comparison mean anything. That',
+      '    is why CI runs --check and never diffs these images.',
+      '  * What it therefore CANNOT see: any drift that both captures reproduce,',
+      '    which is every drift the product introduces deliberately. This says the',
+      '    capture is deterministic, never that the pictures are right.',
+      '',
+      `machine: ${fp.host}, kernel ${fp.kernel}, node ${fp.node}, ${fp.browser}`,
+      `scratch tree this capture used, which the panel paints: ${fp.scratch}`,
+    ].join('\n');
+
+    if (!a.length && !b.length) {
+      console.error(`\nboth captures exited 0 and neither wrote a PNG, so 0 files were `
+        + 'compared. A comparison with nothing in it is not a pass — exit 2.');
+      console.error(scope);
+      process.exit(2);
+    }
+    const onlyA = a.filter((f) => !b.includes(f));
+    const onlyB = b.filter((f) => !a.includes(f));
+    const shared = a.filter((f) => b.includes(f));
+    const differ = shared.filter((f) =>
+      !readFileSync(path.join(dirs[0], f)).equals(readFileSync(path.join(dirs[1], f))));
+    const bad = [];
+    if (onlyA.length || onlyB.length) {
+      bad.push(`the two runs disagree about which files exist — only in run 1: `
+        + `${onlyA.join(', ') || 'none'}; only in run 2: ${onlyB.join(', ') || 'none'}`);
+    }
+    if (differ.length) {
+      bad.push(`${differ.length} of ${shared.length} PNG(s) differ between two `
+        + `consecutive captures on this machine: ${differ.join(', ')}`);
+    }
+    if (bad.length) {
+      console.log('');
+      for (const m of bad) console.log(`FAIL ${m}`);
+      console.log(scope);
+      console.log(`\nFAILED (exit 1): the capture is not reproducible even on one host, `
+        + 'so comparing its output against anything cannot tell drift from noise');
+      console.error(`capture-screenshots --repro FAILED: ${bad.length} problem(s)`);
+      process.exit(1);
+    }
+    console.log(`\nOK (exit 0): ${shared.length} of ${shared.length} PNG(s) are `
+      + 'byte-identical across two consecutive captures');
+    console.log(scope);
+  } finally {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  }
 }
 
 async function main() {
@@ -6281,7 +6792,7 @@ async function main() {
       await page.waitForTimeout(200);
 
       // Composition — the tab that carries the "usable at 50 x 20" claim.
-      await page.click('.tab[data-t=comp]');
+      await tabTo(page, 'comp');
       await page.waitForSelector('#comp table', { timeout: 15000 });
       await page.waitForTimeout(300);
 
@@ -6332,7 +6843,7 @@ async function main() {
 
       // Overview renders from STATE.rollup, fetched async — wait for real content
       // rather than a fixed sleep, or the shot is of an empty div.
-      await page.click('.tab[data-t=over]');
+      await tabTo(page, 'over');
       await page.waitForFunction(
         () => { const o = document.querySelector('#over');
                 return o && o.querySelectorAll('.card').length > 0; },
@@ -6401,7 +6912,7 @@ async function main() {
         await page.waitForTimeout(200);
       }
 
-      await page.click('.tab[data-t=usage]');
+      await tabTo(page, 'usage');
       await page.waitForTimeout(600);
       await shot(page, 'panel-usage');
 
@@ -6587,7 +7098,7 @@ async function main() {
       mob.on('console', (m) => { if (m.type() === 'error') jsErrors.push('mobile: ' + m.text()); });
       await mob.goto(panel.url, { waitUntil: 'load' });
       await mob.waitForSelector('.tab', { timeout: 15000 });
-      await mob.click('.tab[data-t=over]');
+      await tabTo(mob, 'over');
       await mob.waitForFunction(
         () => { const o = document.querySelector('#over');
                 return o && o.querySelectorAll('.card').length > 0; },
@@ -6620,7 +7131,7 @@ async function main() {
       // with an empty list of causes, which is exactly how F9 stayed open.
       const overflowAt = async (tab) => {
         await mob.mouse.move(0, 0);
-        await mob.click(`.tab[data-t=${tab}]`);
+        await tabTo(mob, tab);
         await mob.mouse.move(0, 0);
         await mob.waitForFunction(
           (t) => { const v = document.getElementById(t);
@@ -6674,7 +7185,7 @@ async function main() {
       // used to be. Measured rather than argued — the wrapper is asked how far it
       // can go, and the check says so if the answer is nothing, because a table
       // that stopped overflowing would make this step silently vacuous.
-      await mob.click('.tab[data-t=comp]');
+      await tabTo(mob, 'comp');
       await mob.waitForSelector('#comp table', { timeout: 15000 });
       await mob.mouse.move(0, 0);
       await mob.waitForTimeout(250);
@@ -6723,7 +7234,7 @@ async function main() {
       // runs, and an unshown tip has no box to break the page with. What can
       // still go wrong is an OPEN tip outliving its anchor, and both ways that
       // happens are driven for real here.
-      await mob.click('.tab[data-t=guards]');
+      await tabTo(mob, 'guards');
       await mob.waitForTimeout(250);
       // (a) the 5s poll re-renders the form under an open tip: the icon node
       // is replaced, and an orphaned fixed box would float over a node that no
@@ -6793,7 +7304,7 @@ async function main() {
       }
 
       // Back where the sweep started, so the shot below is still Overview.
-      await mob.click('.tab[data-t=over]');
+      await tabTo(mob, 'over');
       await mob.waitForTimeout(250);
       // Five views do not fit a 390px strip, and the fifth is the one off the
       // edge. A scrolling row with no edge treatment reads as a row with four
@@ -6828,7 +7339,7 @@ async function main() {
       // the DRAWER adds. An absolute here would be red for whatever else is on the
       // page, which proves nothing about the drawer — and there is still one such
       // thing, F9.
-      await mob.click('.tab[data-t=guards]');
+      await tabTo(mob, 'guards');
       await mob.waitForSelector('#guards [data-hint="trivialLineThreshold"]', { timeout: 15000 });
       const before390 = await mob.evaluate(() =>
         document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -6868,7 +7379,7 @@ async function main() {
       // top of four fixed ones — and it is drawn against this machine's real
       // discovery here, which is the biggest table anyone will get. A wide table
       // may scroll inside its own frame; the document may not.
-      await mob.click('.tab[data-t=policy]');
+      await tabTo(mob, 'policy');
       await mob.waitForSelector('#policy .card', { timeout: 15000 });
       await mob.waitForTimeout(200);
       const polOverflow = await mob.evaluate(() => {
@@ -6887,7 +7398,7 @@ async function main() {
       // cs at 390px: the fixed-position combo menu must open INSIDE the phone
       // viewport — the width the old anchored-in-the-wrap menu had no answer
       // for (any host frame clipped it; the screen edge now clamps it).
-      await mob.click('.tab[data-t=usage]');
+      await tabTo(mob, 'usage');
       await mob.waitForTimeout(400);
       const mobInp = mob.locator('#usage input[aria-label="filter by task"]');
       if (!(await mobInp.count())) {
@@ -6932,7 +7443,7 @@ async function main() {
       for (const t of ['guards', 'comp', 'over', 'usage', 'policy']) {
         await mob.setViewportSize({ width: 390, height: 844 });
         await mob.mouse.move(0, 0);
-        await mob.click(`.tab[data-t=${t}]`);
+        await tabTo(mob, t);
         await mob.waitForFunction(
           (v) => { const n = document.getElementById(v);
                    return n && !n.classList.contains('hidden')
@@ -7038,7 +7549,7 @@ async function main() {
         writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
         await ppage.reload({ waitUntil: 'load' });
         await ppage.waitForSelector('#policy, .tab', { timeout: 15000 });
-        await ppage.click('.tab[data-t=policy]');
+        await tabTo(ppage, 'policy');
         await ppage.waitForSelector('#policy .card', { timeout: 15000 });
 
         // Enforced, or only written down? The marker guard-capabilities leaves is
@@ -7066,7 +7577,7 @@ async function main() {
         mkdirSync(seen.dir, { recursive: true });
         writeFileSync(path.join(seen.dir, seen.file), JSON.stringify({ lastRun: 'now' }));
         await ppage.reload({ waitUntil: 'load' });
-        await ppage.click('.tab[data-t=policy]');
+        await tabTo(ppage, 'policy');
         await ppage.waitForSelector('#policy .card', { timeout: 15000 });
         const withMarker = await ppage.evaluate(() =>
           (document.querySelector('#policy [data-pstate]') || {}).dataset?.pstate);
@@ -7127,6 +7638,16 @@ async function main() {
     rmSync(work, { recursive: true, force: true });
   }
 
+  // The liveness verdict for the panel leg. Reported here rather than inside the
+  // leg because it is a statement ABOUT the leg — every tabTo along the way fed
+  // the tally, and this is the one line that says whether any of them compared
+  // anything. Asked only when the leg ran: a --only report run has no tabs, and a
+  // guard that fails for not having been given work to do is a guard people learn
+  // to pass a flag around.
+  if (legsRun.includes('panel')) {
+    assertLivenessWasChecked('panel', panelLiveness, { report: fail, ok: note });
+  }
+
   // The vacuity guard for the run itself: a capture that ran no leg has measured
   // nothing, and "nothing to report" must never be printed as "nothing wrong".
   if (!legsRun.length) {
@@ -7165,5 +7686,6 @@ async function main() {
 // every probe a screenshot run.
 if (process.argv[1]
     && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((err) => { console.error(err); process.exit(1); });
+  (REPRO ? reproduce() : main())
+    .catch((err) => { console.error(err); process.exit(1); });
 }
