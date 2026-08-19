@@ -112,15 +112,45 @@ failed echo.
    into `meta.ado.types.pbi` (tracker-sync.md → "Process templates"); the write-back
    happens inside this confirm-gated, index-locked run. Every in-scope phase lacking
    `phase.ado` gets a CREATE in the plan.
+
+   **Where that branch hangs.** With `meta.ado.parentWorkItem` set, every created
+   phase item gets it as its parent (and with `phaseWorkItems` false, tasks do), so
+   audit work lands INSIDE the team's existing Feature/Epic rather than beside it.
+   Absent/null keeps today's behaviour — the connector builds a free-standing branch,
+   which is correct and which nobody planning from that board will see. Say which
+   happened in the plan: `parent: #<id>` or `parent: none (free-standing branch)`.
 2. Build the plan: for each in-scope item —
    - `item.ado` **null/absent** → CREATE (`az boards work-item create --type <type>
      --title ... --fields ... --output json`);
    - `item.ado.id` set → fetch current (`az boards work-item show --id <id> --output json`),
      **diff the mapped fields**, and only when something differs → UPDATE
      (`az boards work-item update`). No-op items are skipped.
+2b. **Conformance gate — every CREATE, before the confirm.** `meta.ado.conventions`
+   says what an item must look like to BELONG on this board (skeleton, mandatory
+   markers, tag vocabulary, parent). For each CREATE, write the payload you are about
+   to send and run:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/check-ado-item.py" \
+     <manifest> --item <payload.json>
+   ```
+
+   Exit 0 = create it. **Exit 1 = do NOT create it**; carry its findings into the plan
+   printed below so the operator sees the refusal before deciding anything, not after
+   the item is on the board. Exit 2 is unreadable input — stop, do not treat it as a
+   pass. A board with no `conventions` block exits 0 and says nothing was checked;
+   that is an answer ("this board has no standard"), not a silent success.
+
+   **Do not reimplement the rule here.** It is Python with cases precisely because
+   prose cannot be tested — a second copy in this file is a second answer, and the
+   first time they disagree the board is what tells you.
+
 3. Print the plan (`N creates [of which K PBIs], M updates, J in sync`, plus the
-   `types.pbi` auto-detect pick when it happened) and **confirm via AskUserQuestion
-   before the first write** — ADO writes are outward-facing and visible to the whole team.
+   `types.pbi` auto-detect pick when it happened, plus `R refused by
+   meta.ado.conventions` with each item's findings when the gate refused any) and
+   **confirm via AskUserQuestion before the first write** — ADO writes are
+   outward-facing and visible to the whole team. A refused item is never offered for
+   creation; fix the manifest (or the conventions) and re-run.
 4. **Assignment proposal** (only when `meta.ado.identityMap` has entries): for each
    CREATE in the plan, resolve the item's phase — a task's own phase; a bug reaches a
    phase only through its materialized `taskId` (an unmaterialized bug has no phase and
@@ -245,7 +275,19 @@ Read-only, no ADO writes, no manifest writes.
    resolves. Close with one summary line: `identityMap: N owner(s) mapped, M unmapped`
    (distinct owners across the areas in play). Display only — `status` stays read-only
    and proposes nothing here; an unmapped owner is push's business.
-5. Suggest the next action (`push` / `pull`) based on what drifted.
+5. **Conformance of what is already there** (only when `meta.ado.conventions` is set).
+   For each linked item you fetched in step 3, run the same gate over the ADO side's
+   own fields and append `conforms` / `N violation(s)` to its row, closing with
+   `conventions: N of M linked item(s) conform`.
+
+   This is the half that makes the push gate honest. The gate above lives in prose,
+   and prose is the one surface here nothing can test — so *did the orchestrator
+   actually run it* is unprovable at the point of writing. It is provable afterwards:
+   a non-conforming item sitting on the board is evidence the check was skipped, and
+   this line is where that shows up. Read-only as the rest of `status` is — it reports,
+   it never fixes.
+
+6. Suggest the next action (`push` / `pull`) based on what drifted.
 
 ## Non-goals (say no when asked)
 

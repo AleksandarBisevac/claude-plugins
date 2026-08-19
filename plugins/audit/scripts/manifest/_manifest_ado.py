@@ -50,6 +50,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
+import _ado_conventions as _conv  # noqa: E402  (what an item must look like to belong)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -275,6 +276,29 @@ def check_ado_meta(ado):
                         f.append("meta.ado.pull.tags: every tag must be a "
                                  "non-empty string (%d bad: %r)"
                                  % (len(bad), bad[:3]))
+
+    # `parentWorkItem`: the EXISTING item audit work hangs under. Without it the
+    # connector always builds its own branch, which on a board that already has a
+    # Feature/Story backlog puts audit work BESIDE their planning instead of
+    # inside it - correct, and invisible to everyone who plans from that board.
+    # An id, so an int: a config carrying "103205" as a string is a typo worth
+    # naming rather than something to coerce, because the coercion would hide it.
+    if "parentWorkItem" in ado:
+        pwi = ado.get("parentWorkItem")
+        if pwi is not None and (isinstance(pwi, bool) or not isinstance(pwi, int)):
+            f.append("meta.ado.parentWorkItem must be a work item id (integer) "
+                     "or null, got %s" % type(pwi).__name__)
+        elif isinstance(pwi, int) and not isinstance(pwi, bool) and pwi <= 0:
+            f.append("meta.ado.parentWorkItem must be a positive work item id, "
+                     "got %r" % (pwi,))
+
+    # `conventions` is graded by `_ado_conventions`, not here. Same reason this
+    # module reads `_manifest_vocab`'s words rather than its own: the panel's
+    # PUT /api/ado comes through this same front door, and two implementations
+    # of "is this block valid" are two answers the first time one learns a key.
+    cf, cw = _conv.check_conventions_config(ado.get("conventions"))
+    f.extend(cf)
+    w.extend(cw)
     return f, w
 
 # --- cli ------------------------------------------------------------------------

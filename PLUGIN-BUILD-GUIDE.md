@@ -87,6 +87,8 @@ claude-plugins/                           # this repo (personal, public)
       scripts/
         manifest/                         # the manifest domain: the layout, the registry, the validator, the writers
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
+          _ado_conventions.py             # meta.ado.conventions: what an item must look like to belong
+          check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
           _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
@@ -213,6 +215,7 @@ L0:
   _output
 
 L1:
+  _ado_conventions -> _output
   _areas -> _output
   _cli_fmt -> _output
   _demo_cast -> _output
@@ -232,7 +235,7 @@ L2:
   _config_rules -> _output, _policy
   _doctor_report -> _loader, _output
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
-  _manifest_ado -> _manifest_vocab, _output
+  _manifest_ado -> _ado_conventions, _manifest_vocab, _output
   _manifest_crossrefs -> _manifest_vocab, _output
   _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
   _manifest_typos -> _areas, _manifest_vocab, _output
@@ -288,6 +291,7 @@ L7:
   audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
   audit-task -> _locks, _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
+  check-ado-item -> _ado_conventions, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
   migrate-manifest -> _manifest_io, _manifest_rules, _output
@@ -864,6 +868,47 @@ and would let two of them disagree about which objects were skipped as malformed
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
 over tasks that are not **finished** (done *or* cancelled).
+
+### `plugins/audit/scripts/manifest/check-ado-item.py`
+The gate `/audit:sync push` runs an item through **before** it creates it (layer 7).
+`_ado_conventions` holds the rule; this is the door the orchestrator knocks on, and it is a
+real command rather than a `python3 -c` one-liner for a reason that is not style: a one-liner
+naming a source path is the shape `guard-secrets-read` refuses (F20/F22), so the check would
+be blocked on exactly the machines that need it.
+
+**A guard, not an advisory.** `SECURITY.md` splits the two — advisory paths fail open, guards
+fail loud — and a work item that lands on someone's board looking foreign cannot be
+un-landed. A violation is exit 1 and the caller stops. Exit 2 covers unreadable input, so a
+manifest that cannot be parsed never falls through to "conforms".
+
+**Two zeroes that must not read alike.** A board with no `meta.ado.conventions` exits 0
+because there is no standard to meet, and it *says* so ("nothing was checked") rather than
+printing the clean message; `--json` carries the same distinction as `hasStandard`, so a
+script can tell them apart too. A caller that cannot would read an unconfigured board as a
+conforming one, which is the quiet failure the whole feature exists to prevent.
+
+### `plugins/audit/scripts/manifest/_ado_conventions.py`
+`meta.ado.conventions` — what a work item must look like to **belong** on a board (layer 1).
+The connector could always write a *correct* work item and could not write a *conforming*
+one, and the difference only shows on a board that has a standard: measured 2026-08-19
+against a real one, whose own script enforces a description skeleton, a mandatory "Done
+when", acceptance criteria on stories, tags from a closed vocabulary, and a parent. Items
+without those are mechanically right and visibly foreign.
+
+**Why this is Python and not prose in `commands/sync.md`.** The connector's writing side is
+orchestrator prose driving MCP calls, which no selftest reaches — precisely how the gap
+survived a live ADO gate against two empty throwaway projects. A rule in prose is a rule
+held in memory; here it is a function with cases, so `conformance_violations` can be proven
+red. The only thing left unproven is whether the prose *calls* it, which `/audit:doctor` can
+see after the fact, because a non-conforming item on the board is evidence a check was
+skipped.
+
+Both halves live here on purpose: `check_conventions_config` grades the block someone wrote
+(wrong **types** are findings, unknown **keys** are did-you-mean warnings, the line
+`_manifest_ado` draws), and `conformance_violations` grades an item against it. Splitting
+them would put the shape and its use in two places that could disagree. An absent block
+means the board has no standard and every item conforms — not "could not check", but "there
+is nothing to check".
 
 ### `plugins/audit/scripts/manifest/_manifest_ado.py`
 `meta.ado` — the Azure DevOps connector's config, checked offline (layer 2). **ONE front

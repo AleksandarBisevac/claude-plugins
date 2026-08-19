@@ -106,7 +106,14 @@ KNOWN_ADO = {"organization", "project", "areaPath", "iterationPath", "types",
              "comments", "sprint", "pull",
              # ENH-1: personalizable provenance tag (default "audit-plugin";
              # null = no tag):
-             "tag"}
+             "tag",
+             # U4: what a work item must look like to BELONG on this board -
+             # required fields, description skeleton, tag vocabulary, parent.
+             # A property of the board, so absent means "no standard to meet".
+             "conventions",
+             # U4: the EXISTING work item audit phases hang under, so the work
+             # lands inside a team's backlog rather than beside it.
+             "parentWorkItem"}
 KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "description", "desiredOutcome", "testGate", "baseRef", "branch",
                "mergedAt", "review", "reviewFindings", "summary", "tasks",

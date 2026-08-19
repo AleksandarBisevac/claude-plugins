@@ -298,6 +298,28 @@ scaffold — the case schema is not public. Adopt as soon as it opens up:
 priority cases are `/audit:status` on a missing manifest, `run` guards on a
 done task, and the `#no-plan` bypass round-trip.
 
+**Re-checked 2026-08-19: still early access, still deferred.** `--help` is now
+complete — it documents `case.yaml`, `prompt.md + graders/*.md`, `--ablation`,
+`--threshold`, an HTML report — which reads exactly like a shipped feature.
+Running it does not: both `claude plugin eval .` and `claude plugin eval init
+--bare <name>` answer `` `plugin eval` is currently in early access `` and write
+nothing. There is no flag, env var or setting that opens it.
+
+Recorded because the help output nearly closed this entry on its own: **a
+complete `--help` is not evidence that a command runs**, and that is the same
+mistake as a green check that asserted nothing. Verify by invoking, not by
+reading.
+
+**What the gap cost in the meantime, and what was done instead.** The untested
+half is real and it produced a defect: `/audit:sync` wrote work items that were
+mechanically correct and did not conform to a client board's standard (**U4** in
+the plan). The answer was not to wait for evals but to **move the rule out of the
+prose**: `scripts/manifest/_ado_conventions.py` grades an item against the board's
+conventions in Python, with cases, and the prose's only job is to call it. That
+narrows the untestable surface to one question — *did the prose call it* — which
+`/audit:doctor` can answer after the fact. Prefer that shape wherever it fits: a
+rule a selftest can reach beats a rule an eval would have to observe.
+
 ### ~~Folders under scripts/ declined (2026-08-10): stay flat~~ — REVERSED (2026-08-18, v0.40.0)
 
 `scripts/` is now eight domain directories — `config/`, `demo/`, `governance/`,

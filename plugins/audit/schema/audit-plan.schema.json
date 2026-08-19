@@ -253,6 +253,52 @@
               ],
               "description": "The provenance tag stamped on every pushed/echoed work item. Absent = 'audit-plugin'; a custom value (e.g. a per-repo tag) pairs naturally with pull.tags so a shared sprint's push and pull are symmetric per repo; explicit null = no tag at all. Tag writes always READ-MERGE-WRITE the item's tag list (System.Tags updates are wholesale — writing blind would erase the team's own tags). The `blocked` marker is separate and fixed: a state signal, not branding."
             },
+            "parentWorkItem": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "description": "The EXISTING Azure DevOps work item that audit work hangs under \u2014 typically a Feature or Epic already on the team's backlog. Absent/null = the connector builds its own branch (phaseWorkItems creates a phase item with nothing above it), which is correct and puts audit work BESIDE the team's planning instead of inside it: nobody planning from that board sees it. Set it and created phase items become children of that id (and, with phaseWorkItems false, tasks do). An id and therefore an integer \u2014 a config carrying \"103205\" as a string is a typo worth naming rather than coercing, because coercing hides it."
+            },
+            "conventions": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "description": "What a work item must look like to BELONG on this board. A property of the BOARD, not of the plugin: absent/null means the board has no standard and every item conforms trivially \u2014 not 'could not check', but 'there is nothing to check'. Graded by scripts/manifest/_ado_conventions.py, which is also what the writing side runs an item through before creating it, so the rule is executed rather than remembered. Without this, the connector writes work items that are mechanically correct and visibly foreign on a governed board: no description skeleton, no mandatory 'Done when', tags outside the agreed vocabulary, and a hierarchy the connector built for itself beside the team's backlog instead of inside it.",
+              "properties": {
+                "requiredFields": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "description": "{work item type: [ADO field reference name, ...]} \u2014 fields that must be present and non-empty. Scoped BY TYPE because a story and a task do not owe the same fields; a checker that demanded acceptance criteria on a task would be switched off."
+                },
+                "descriptionMustContain": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "description": "{work item type: [literal marker, ...]} \u2014 how a description skeleton is enforced. Matching is case-insensitive, so 'DONE WHEN:' is the same skeleton as 'Done when:'."
+                },
+                "tagVocabulary": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "description": "{tag prefix: [allowed value, ...]} for tags shaped `prefix:value`. The key \"*\" is the explicit opt-in for bare, unprefixed tags \u2014 spelled rather than implied, so a board that forbids free-form tags gets a finding on the first one instead of silently accepting anything without a colon. An EMPTY object forbids every tag and is warned about, since that is almost never meant."
+                },
+                "requireParent": {
+                  "type": "boolean",
+                  "description": "true = every pushed item must hang under a parent work item. For a team that already has a Feature/Story backlog this is what puts audit work INSIDE their planning rather than beside it."
+                }
+              }
+            },
             "echo": {
               "type": "boolean",
               "description": "Orchestration echo switch. Absent = ON: when a linked task goes done or blocked (or a done task is reopened via /audit:run) and at phase sign-off, the orchestrator best-effort UPDATES the already-linked work item — state per stateMap, Remaining Work per onComplete, comments per comments. The echo never creates work items and never asks questions; creation happens only in /audit:sync push behind its confirm gate, and a failed echo is one report line healed by the next /audit:sync push. false = manual-only sync."

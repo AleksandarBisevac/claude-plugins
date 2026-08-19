@@ -150,7 +150,14 @@ LAYERS = (
      # four files is four vocabularies that disagree the first time one learns a
      # word. `TERMINAL` is deliberately NOT here - it is `_manifest_io`'s, and
      # holding it would put this module at L2 and its consumers at L3.
-     "_manifest_vocab"),
+     "_manifest_vocab",
+     # `_ado_conventions` is what a work item must look like to BELONG on a
+     # board - required fields, description skeleton, tag vocabulary, parent. It
+     # reaches nothing but `_output`, and it is at the floor for the same reason
+     # `_manifest_vocab` is: `_manifest_ado` at L2 grades the config through it,
+     # and the writing side will grade the ITEM through it, so a copy in either
+     # place would be a second answer to "does this belong here".
+     "_ado_conventions"),
     ("_panel_ui", "_report_html", "_report_ui",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` at L1, and none reads
@@ -350,6 +357,13 @@ LAYERS = (
     ("_panel_write", "_report_page"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",
+     # `check-ado-item` is the gate `/audit:sync push` runs an item through
+     # before creating it. A command rather than a helper because the caller is
+     # ORCHESTRATOR PROSE, which reaches Python only through Bash - and a
+     # `python3 -c` one-liner naming a source path is the shape
+     # `guard-secrets-read` refuses (F20/F22), so the check would be blocked
+     # exactly where it matters. It reads `_ado_conventions` at L1 and nothing else.
+     "check-ado-item",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task"),
 )
 
