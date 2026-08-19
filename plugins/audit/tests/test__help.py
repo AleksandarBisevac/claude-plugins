@@ -374,6 +374,68 @@ def _cases(check):
                                         "KNOWN_PROPOSAL")),
           repr(sorted(M.vocab_sets(_vocab))))
 
+    # --- the RECOMMENDED subsets, which are checked the other way round -----------
+    # `vocab_drift()` asks for coverage; `subset_drift()` asks only for containment,
+    # because a set whose job is to name SOME of a level's keys would fail a coverage
+    # check while behaving perfectly. Same fixture discipline: the shipped tuple is
+    # never mutated, so the tree is never one exception away from shipping a mutation.
+    _sub = (("CLAIM_X", "phases[].claim"),)
+
+    def _sprobe(levels, sets):
+        """Just the problems, against one anchor — the set is `CLAIM_X` in every
+        fixture, so carrying its name into each expected list is noise."""
+        return [p for _, p in M.subset_drift(levels, sets, _sub)]
+
+    check("v13 a key the set recommends and the schema does not declare is named "
+          "with its anchor - the typo that would otherwise stop the key being "
+          "asked for at all, in silence",
+          _sprobe({"CLAIM_X": {"sessionId", "host"}},
+                  {"CLAIM_X": ("sessionID", "host")}) ==
+          ["phases[].claim.sessionID is recommended by this set and not declared "
+           "by the schema - a typo here does not warn, it stops the key being "
+           "asked for at all"])
+    # THE CASE THE WHOLE SPLIT EXISTS FOR. If this ever goes red the check has
+    # started failing the correct state, which is how a guard gets routed around.
+    _lv = {"CLAIM_X": {"sessionId", "host", "branch", "at"}}
+    _st = {"CLAIM_X": ("sessionId", "host", "branch")}
+    check("v14 a PROPER subset says nothing - the schema declaring `at` and the "
+          "set not recommending it is the rule working; the coverage check on the "
+          "same fixture DOES name it, which is the difference between the two",
+          M.subset_drift(_lv, _st, _sub) == []
+          and [p for _, p in M.vocab_drift(_lv, _st, _sub, {})
+               if "phases[].claim.at is in the schema" in p],
+          repr((M.subset_drift(_lv, _st, _sub),
+                M.vocab_drift(_lv, _st, _sub, {}))))
+    check("v15 an anchor that declares NOTHING is named AS ITSELF - it would fail "
+          "either way, since every key is then undeclared, so what this buys is the "
+          "diagnosis: a renamed $def reads as one move in the schema instead of "
+          "three typos in the vocabulary",
+          _sprobe({"CLAIM_X": set()}, {"CLAIM_X": ("sessionId",)}) ==
+          ["the anchor 'phases[].claim' declares no properties in "
+           "audit-plan.schema.json - a containment check against nothing passes "
+           "for any set"])
+    check("v16 ...and an EMPTY SET is the direction that would otherwise PASS - "
+          "containment over no keys holds vacuously while the rule reading it asks "
+          "for nothing, so emptying the tuple silently disables the warning it "
+          "feeds. This is the asymmetric half of v15",
+          _sprobe({"CLAIM_X": {"sessionId"}}, {"CLAIM_X": ()}) ==
+          ["the set is empty, so the rule reading it asks for nothing and reports "
+           "no key missing - indistinguishable from every key being present"])
+    check("v17 a *_KEYS subset with no anchor is named, and an anchor naming a "
+          "subset the vocabulary does not have - the two halves of the table "
+          "disagreeing in either direction",
+          _sprobe({"CLAIM_X": {"a"}}, {"CLAIM_X": ("a",), "OTHER_KEYS": ("b",)}) ==
+          ["no SUBSET_ANCHORS entry: nothing says which schema level this "
+           "recommended subset is drawn from"]
+          and _sprobe({"CLAIM_X": {"a"}}, {}) ==
+          ["SUBSET_ANCHORS anchors it at 'phases[].claim', but the vocabulary has "
+           "no such set"])
+    check("v18 `vocab_subsets()` reads them OFF the module by the `*_KEYS` suffix, "
+          "so v17 has something to catch - and the VALUE enumerations beside them "
+          "(STATUS, RISK, the *_RE patterns) are not swept in as key sets",
+          M.vocab_subsets(_vocab) == {"CLAIM_KEYS": _vocab.CLAIM_KEYS},
+          repr(sorted(M.vocab_subsets(_vocab))))
+
     # --- the guide agent ----------------------------------------------------------
     cards = {c["name"]: c for c in M.agent_cards()}
     check("g1 every shipped agent is read off its own file",

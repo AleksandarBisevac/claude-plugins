@@ -210,6 +210,91 @@ def _cases(check):
           [p for _, p in _cut_drift if "meta.ado.stateMap is in the schema" in p]
           and "stateMap" in M.KNOWN_ADO, repr(_cut_drift))
 
+    # --- the recommended subsets, checked the other way round ---
+    # `CLAIM_KEYS` restates schema vocabulary too, but it is a RECOMMENDED subset:
+    # narrower than the schema by design, so mv18's coverage rule would fail it for
+    # doing its job. `_help.schema_subset_drift()` asks only for containment - every
+    # key in the tuple is a property the schema declares at `phases[].claim` - and
+    # says nothing about the ones it omits.
+    _slv = _help.schema_level_keys(None, M.SUBSET_ANCHORS)
+    _sdrift = _help.schema_subset_drift()
+    check("mv23 every recommended subset is still drawn from the schema - a key "
+          "misspelled in one is asked of nothing and reported by nothing, so it "
+          "arrives BY NAME instead: %r" % (_sdrift,), _sdrift == [])
+    # The table itself is asserted non-empty BY NAME, not just self-consistent:
+    # `len(_slv) == len(SUBSET_ANCHORS)` is 0 == 0 over an emptied table, and mv23
+    # over no subsets at all is the same silence as mv23 over agreeing ones.
+    check("mv24 ...over the %d properties audit-plan.schema.json declares at "
+          "`phases[].claim` and the %d keys CLAIM_KEYS recommends, neither of them "
+          "zero and the anchor table itself not empty - the counts are the SCOPE "
+          "that makes mv23's silence worth anything, and the tuple's is the half "
+          "that would otherwise PASS: an empty set contains nothing and asks for "
+          "nothing" % (len(_slv.get("CLAIM_KEYS") or ()), len(M.CLAIM_KEYS)),
+          "CLAIM_KEYS" in dict(M.SUBSET_ANCHORS)
+          and len(_slv) == len(M.SUBSET_ANCHORS)
+          and not [n for n, keys in _slv.items() if not keys]
+          and not [n for n, _a in M.SUBSET_ANCHORS if not getattr(M, n, ())],
+          repr(sorted((n, len(k)) for n, k in _slv.items())))
+    # THE SECOND-DIRECTION CASE, and it is the one that looks vacuous and gets cut.
+    # A guard that never fires is the original bug; a guard that ALWAYS fires is the
+    # other wrong implementation, and only this fails on it. Narrowing a COPY of the
+    # tuple further has to stay silent against the REAL schema, not just a fixture.
+    # `.get`, not `[...]`: emptying SUBSET_ANCHORS is a mutation these cases must
+    # FAIL on, and a KeyError here would take mv25-mv28 out of the run instead -
+    # "did not run" is not "went red".
+    _claim_lv = set(_slv.get("CLAIM_KEYS") or ())
+    _omitted = sorted(_claim_lv - set(M.CLAIM_KEYS))
+    _narrow = _help.subset_drift(_slv, {"CLAIM_KEYS": ("sessionId",)},
+                                 M.SUBSET_ANCHORS)
+    check("mv25 ...and omitting a property the schema declares is NOT drift: %r is "
+          "written BY a claim rather than asked OF one, and a copy narrowed to a "
+          "single key stays silent too - if this goes red the check has started "
+          "demanding coverage, and a lint that fails the correct state gets routed "
+          "around" % (_omitted,),
+          _omitted == ["at"] and _narrow == [], repr(_narrow))
+    check("mv26 every *_KEYS subset on this module is anchored, so one added later "
+          "cannot opt out of mv23 by being forgotten",
+          set(_help.vocab_subsets(M)) == {n for n, _ in M.SUBSET_ANCHORS},
+          repr(sorted(set(_help.vocab_subsets(M)) ^
+                      {n for n, _ in M.SUBSET_ANCHORS})))
+    # Red-first against the REAL anchor, both directions, on COPIES - the shipped
+    # tuple and the shipped schema are untouched, so the tree is never one exception
+    # away from carrying the mutation.
+    _typo = _help.subset_drift(_slv, {"CLAIM_KEYS": ("sessionID", "host", "branch")},
+                               M.SUBSET_ANCHORS)
+    _lost = dict(_slv)
+    _lost["CLAIM_KEYS"] = _claim_lv - {"branch"}
+    _gone = _help.subset_drift(_lost, _help.vocab_subsets(M), M.SUBSET_ANCHORS)
+    _said = ("%s is recommended by this set and not declared by the schema - a typo "
+             "here does not warn, it stops the key being asked for at all")
+    check("mv27 ...and both mutations land, ONE problem each rather than at least "
+          "one: misspelling `sessionId` in a copy of the tuple names "
+          "`phases[].claim.sessionID`, and a schema that stops declaring `branch` "
+          "names that - so the subset is checked against this document, not itself",
+          [p for _, p in _typo] == [_said % ("phases[].claim.sessionID",)]
+          and [p for _, p in _gone] == [_said % ("phases[].claim.branch",)]
+          and "sessionId" in M.CLAIM_KEYS and "branch" in _claim_lv,
+          repr((_typo, _gone)))
+    # The subset check cannot see whether anything still READS the tuple; deleting
+    # the loop in `_check_claim` would leave mv23 green over a set nobody consults.
+    # So drive the warning for real, one key at a time.
+    _full = {"sessionId": "s-1", "host": "h-1", "branch": "b-1", "at": "2026-01-01"}
+    _unnamed = []
+    for _k in M.CLAIM_KEYS:
+        _claim = dict((k, v) for k, v in _full.items() if k != _k)
+        _f, _w = [], []
+        _phases._check_claim({"status": "in_progress", "claim": _claim}, "P1", _f, _w)
+        if _f or len(_w) != 1 or _k not in _w[0]:
+            _unnamed.append((_k, _f, _w))
+    _f0, _w0 = [], []
+    _phases._check_claim({"status": "in_progress", "claim": dict(_full)}, "P1",
+                         _f0, _w0)
+    check("mv28 ...and every key CLAIM_KEYS names is really asked of a claim: "
+          "dropping each one in turn draws exactly one warning naming it at "
+          "`_manifest_phases._check_claim`, and a complete claim draws none. This "
+          "is the consequence mv23 protects, and mv23 cannot see it: %r"
+          % (_unnamed,), _unnamed == [] and (_f0, _w0) == ([], []))
+
 
 def _selftest():
     return _harness.run(_cases)

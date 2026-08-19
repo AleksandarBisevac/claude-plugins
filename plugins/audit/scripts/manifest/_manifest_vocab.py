@@ -144,7 +144,10 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "shard", "claim",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
-# Recommended keys on a parallel-run claim (soft — missing ones are warnings).
+# Recommended keys on a parallel-run claim — soft: a claim that omits one draws a
+# warning from `_manifest_phases._check_claim`, never a finding. NARROWER than the
+# schema's `claim` properties on purpose (`at` is written BY a claim, not asked OF
+# one), so it answers to `SUBSET_ANCHORS` below — containment, not coverage.
 CLAIM_KEYS = ("sessionId", "host", "branch")
 KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               "dependsOn", "files", "docs", "description", "tests", "outcome",
@@ -205,14 +208,12 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 # document root. A property the schema gains at one of these anchors, and this module
 # does not have, is a NAMED failure out of `_help.schema_vocab_drift()`.
 #
-# `CLAIM_KEYS` IS DELIBERATELY ABSENT, AND IT IS THEREFORE STILL UNGUARDED - said
-# plainly rather than left to be discovered. It is not a known-key set: it is the
-# RECOMMENDED subset `_manifest_phases` warns about when a claim omits one, so it is
-# a proper subset of the schema's four `claim` properties by design (`at` is written
-# by a claim and not required of it). Holding it to "covers the anchor" would fail a
-# rule that is doing its job, and folding a second rule into one lint is how a lint
-# stops being readable - so a typo in those three strings is still silent today. The
-# shape that would close it is a separate subset check, not a flag on this one.
+# `CLAIM_KEYS` IS NOT ANCHORED HERE, AND THAT IS NOT AN EXEMPTION. It is not a
+# known-key set at all: it is the RECOMMENDED subset `_manifest_phases._check_claim`
+# warns about when a claim omits one, so being NARROWER than the schema is the rule
+# working rather than drift. Holding it to "covers the anchor" would fail a correct
+# set, and a lint that fails its own remedy is a lint people route around. It answers
+# to `SUBSET_ANCHORS` below instead, which asks the other question.
 SCHEMA_ANCHORS = (
     ("KNOWN_ROOT", ""),
     ("KNOWN_META", "meta"),
@@ -273,6 +274,58 @@ OFF_SCHEMA = {
                  "the proposal a /audit:init park writes, not what drop adds",
     },
 }
+
+# --- the recommended subsets, which answer a DIFFERENT question -------------------
+# `SCHEMA_ANCHORS` asks for COVERAGE: the set holds every property the schema
+# declares at the anchor, and every key it holds beyond them is in `OFF_SCHEMA` with
+# a reason. `SUBSET_ANCHORS` asks only for CONTAINMENT, in one direction: every key
+# in the set is a property the schema declares at the anchor, and the schema is free
+# to declare more. That is not a weaker version of the same lint, it is the only
+# shape a RECOMMENDED subset can be checked with — a set whose whole job is to name
+# some of a level's keys would fail a coverage check while behaving perfectly.
+#
+# The one member today is `CLAIM_KEYS`, and the thing it protects is at
+# `_manifest_phases._check_claim`: `missing = [k for k in CLAIM_KEYS if not
+# claim.get(k)]`. A key misspelled in this tuple is asked of no claim and reported
+# by nothing — the warning does not become wrong, it stops existing for that key —
+# which is exactly the failure a set of literals restating schema vocabulary invites.
+# `_help.schema_subset_drift()` is the comparison; it lives with the schema walk for
+# the reason `SCHEMA_ANCHORS` gives above, and reports a key the schema does not
+# declare, an anchor that declares nothing, an empty set, and a subset nothing
+# anchors. What it CANNOT see is written on that function.
+#
+# THERE IS NO `KNOWN_CLAIM`, AND THE REASON IS NOT THAT `claim` IS SPECIAL — it is
+# not. It is an object with four declared properties and `additionalProperties:
+# true`, exactly like `meta.ado`, so an unrecognised key inside a claim really does
+# go unwarned today while every anchored level catches its typos. That gap is real;
+# it is stated here rather than left to be rediscovered.
+#
+# What differs is WHERE closing it lands. A `KNOWN_*` set here has exactly one kind
+# of consumer — an `_unknown_keys()` call — and all seven have one
+# (`_manifest_rules._check_meta` for the root and `meta`, `_manifest_ado.check_ado_meta`
+# for `meta.ado`, `_manifest_phases` for the phase and the task, `_manifest_crossrefs`
+# for the bug and the proposal). A claim's would sit in `_check_claim`, beside the
+# loop above. Every other NESTED object in the tree keeps its vocabulary inline at
+# that call rather than here — `meta.ado.onComplete` is `{"remainingWork"}`,
+# `.sprint` is `{"team", "mode"}`, `.pull` is `{"areaPath", "tags"}` — because this
+# module exists for the vocabularies MULTIPLE modules share, which is this file's
+# own stated criterion, and a claim has one reader.
+#
+# So the missing warning is a missing CALL, not a missing set, and adding the set on
+# its own would be worse than leaving it out: `_help.vocab_sets()` reads every
+# `KNOWN_*` attribute off this module, so a `KNOWN_CLAIM` would be anchored,
+# drift-checked and green from the moment it appeared while an unknown key in a claim
+# stayed exactly as silent. Coverage in appearance only is the failure `OFF_SCHEMA`'s
+# written reasons exist to prevent.
+#
+# NOTHING PINS ITS ABSENCE, deliberately. Adding `KNOWN_CLAIM`, anchoring it at
+# `phases[].claim` in `SCHEMA_ANCHORS`, and giving `_check_claim` the
+# `_unknown_keys()` call to read it is the remedy — and the machinery already forces
+# it to be done whole, because `mv20` fails a `KNOWN_*` set `SCHEMA_ANCHORS` does not
+# anchor. A case asserting `KNOWN_CLAIM` does not exist would forbid its own fix.
+SUBSET_ANCHORS = (
+    ("CLAIM_KEYS", "phases[].claim"),
+)
 
 
 # --- the shape checks every level shares -----------------------------------------

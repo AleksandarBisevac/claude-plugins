@@ -768,18 +768,22 @@ def _direct_children(table, anchor):
     return out
 
 
-def schema_level_keys(root=None):
-    """`{KNOWN_* name: set of properties the plan schema declares there}`.
+def schema_level_keys(root=None, anchors=None):
+    """`{set name: set of properties the plan schema declares there}`.
 
     Split out of `schema_vocab_drift()` so the SIZE of the comparison is askable.
     A set-difference against an empty set reports no problems, which reads exactly
     like agreement — so `tests/test__manifest_vocab.py` holds a floor under this
     total (mv19), and `schema_vocab_drift()` reports an anchor that resolves to
     nothing as drift rather than letting it pass quietly.
+
+    `anchors` defaults to `SCHEMA_ANCHORS`, the seven levels checked for coverage;
+    `SUBSET_ANCHORS` is passed in for the containment check, which walks the same
+    table and only asks a different question of it.
     """
     table = manifest_fields(root)
-    return dict((name, _direct_children(table, anchor))
-                for name, anchor in _manifest_vocab.SCHEMA_ANCHORS)
+    pairs = _manifest_vocab.SCHEMA_ANCHORS if anchors is None else anchors
+    return dict((name, _direct_children(table, anchor)) for name, anchor in pairs)
 
 
 def vocab_sets(mod=None):
@@ -880,6 +884,104 @@ def schema_vocab_drift(root=None):
     """
     return vocab_drift(schema_level_keys(root), vocab_sets(),
                        _manifest_vocab.SCHEMA_ANCHORS, _manifest_vocab.OFF_SCHEMA)
+
+
+def vocab_subsets(mod=None):
+    """`{name: value}` for every `*_KEYS` attribute on the vocabulary module.
+
+    Read off the module by its naming convention for the same reason `vocab_sets()`
+    is: a subset added later must be compared whether or not anybody remembered this
+    function existed. The other upper-case names there (`STATUS`, `BUG_STATUS`,
+    `RISK`, `TESTS_MODE`, the two `*_RE` patterns) enumerate VALUES rather than keys,
+    which is why the suffix and not "everything upper-case" is the filter.
+    """
+    mod = _manifest_vocab if mod is None else mod
+    return dict((n, getattr(mod, n)) for n in dir(mod) if n.endswith("_KEYS"))
+
+
+def subset_drift(levels, sets, anchors):
+    """The containment comparison, on three plain arguments.
+
+    ONE DIRECTION, AND THAT IS THE WHOLE POINT. Every key in the set must be a
+    property the schema declares at the anchor; a property the schema declares and
+    the set omits is CORRECT and is not reported. A recommended subset is a proper
+    subset by design, so the coverage rule `vocab_drift()` applies would fail a set
+    that is behaving perfectly — and a lint that fails the state it is asking for is
+    one people learn to route around.
+
+    Separate from `schema_subset_drift()` for the reason `vocab_drift()` is separate
+    from `schema_vocab_drift()`: a lint that can only be run against the real tree is
+    a lint whose own failure modes are untested. Every case proving this goes RED
+    hands it a fixture here rather than mutating the shipped vocabulary.
+
+    `levels` is `{set name: the properties the schema declares at its anchor}`,
+    `sets` is `{set name: the keys the subset recommends}`, `anchors` the
+    `(name, dotted path)` pairs.
+    """
+    anchored = dict(anchors)
+    out = []
+
+    for name in sorted(set(sets) - set(anchored)):
+        out.append((name, "no SUBSET_ANCHORS entry: nothing says which schema "
+                          "level this recommended subset is drawn from"))
+
+    for name, anchor in anchors:
+        where = anchor or "<root>"
+        if name not in sets:
+            out.append((name, "SUBSET_ANCHORS anchors it at %r, but the vocabulary "
+                              "has no such set" % (where,)))
+            continue
+        recommended = list(sets[name])
+        schema = set(levels.get(name) or ())
+        # THE TWO EMPTY CASES ARE NOT SYMMETRIC, and saying so is the difference
+        # between a guard and a ritual. An empty SET passes containment in silence
+        # while the rule reading it asks for nothing — that one is pass-to-fail. An
+        # empty LEVEL already fails, because every key in the set is then undeclared;
+        # what this buys is the DIAGNOSIS, since without it a renamed `$def` reads as
+        # three typos in the vocabulary rather than one move in the schema.
+        if not schema:
+            out.append((name, "the anchor %r declares no properties in "
+                              "audit-plan.schema.json - a containment check against "
+                              "nothing passes for any set" % (where,)))
+            continue
+        if not recommended:
+            out.append((name, "the set is empty, so the rule reading it asks for "
+                              "nothing and reports no key missing - indistinguishable "
+                              "from every key being present"))
+        for key in sorted(set(recommended) - schema):
+            out.append((name, "%s.%s is recommended by this set and not declared by "
+                              "the schema - a typo here does not warn, it stops the "
+                              "key being asked for at all" % (where, key)))
+    return out
+
+
+def schema_subset_drift(root=None):
+    """[(set-name, problem), …] — every `_manifest_vocab` recommended subset that
+    has stopped being a subset of the schema level it is drawn from.
+
+    Here rather than beside the sets for the reason `schema_vocab_drift()` is: the
+    vocabulary is at layer 1 and `fields()` is at layer 2. `_manifest_vocab` keeps
+    the claim it owns — `SUBSET_ANCHORS`, which level each subset is drawn from —
+    and this is the comparison.
+
+    WHAT IT CANNOT SEE, stated rather than implied, and every one of them
+    UNDER-warns, which is the quiet direction:
+
+      * whether the subset is the RIGHT subset. Containment is silent about
+        omissions BY DESIGN — `CLAIM_KEYS` omitting `at` is the rule working — so a
+        key that ought to be recommended and was dropped reads identically to one
+        deliberately left out. Nothing here can tell those apart, and a check that
+        tried would be the coverage check this one exists not to be.
+      * a key that is a real property at the anchor but the wrong one for the rule
+        (recommending `at`, which a claim writes rather than owes). Containment
+        accepts it; the cost lands at runtime as a warning on correct manifests.
+      * whether anything still READS the set. Delete the `CLAIM_KEYS` loop from
+        `_manifest_phases._check_claim` and this stays green over a subset nobody
+        consults — which is why `tests/test__manifest_vocab.py` drives that warning
+        for real (mv27) instead of trusting the vocabulary to be consulted.
+    """
+    anchors = _manifest_vocab.SUBSET_ANCHORS
+    return subset_drift(schema_level_keys(root, anchors), vocab_subsets(), anchors)
 
 
 # --- the payload -----------------------------------------------------------------
