@@ -33,6 +33,20 @@
      Two roles wearing one token is how the fields measured 1.23:1 while looking
      perfectly fine. */
   --field-border:#748eae;
+  /* ...and the same boundary once the pointer is on it. It has to be a SEPARATE
+     token, because the hover rules reached for --border-strong and that token is
+     structure -- dialog edges, the segment rule above a phase row, a dashed
+     marker -- which measures 1.32:1. So hovering a button made its edge FAINTER
+     than at rest: the state that says "this does something" was removing the
+     thing that identified it. Read as a bug, it is the same two-roles-one-token
+     defect --field-border was split out to end, one state along. */
+  --field-border-hover:#5a708f;
+  /* --accent-solid is a FILL under white text, so it answers to both criteria at
+     once and they pull in opposite directions: lighten it and the boundary
+     against the card clears 1.4.11, darken it and the white label clears 1.4.3.
+     The dark value sat between the two -- the primary button and the on-chip
+     measured 2.91:1 against --surface-2 -- and was moved the smallest step that
+     clears 3:1 while the white label keeps well over 4.5:1. */
   --accent:#0b7c72;--accent-solid:#0c857a;--ring:rgba(13,148,136,.35);
   --st-done:#157f3d;--st-prog:#f59e0b;--st-blocked:#d62323;--st-pending:#55637a;
   /* ca: cancelled is finished, not achieved. Deliberately the quietest ink on
@@ -121,7 +135,8 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
   --border:#1f2b40;--border-strong:#33425c;--field-border:#546c96;
-  --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
+  --field-border-hover:#7288b4;
+  --accent:#2dd4bf;--accent-solid:#0f7c73;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
   --st-cancelled:#7a8aa0;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
@@ -168,7 +183,8 @@
   color-scheme:dark;
   --bg:#0a1120;--surface:#111a2b;--surface-2:#172236;--text:#e6edf6;--muted:#93a4bd;
   --border:#1f2b40;--border-strong:#33425c;--field-border:#546c96;
-  --accent:#2dd4bf;--accent-solid:#0f766e;--ring:rgba(45,212,191,.4);
+  --field-border-hover:#7288b4;
+  --accent:#2dd4bf;--accent-solid:#0f7c73;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
   --st-cancelled:#7a8aa0;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
@@ -241,7 +257,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .nojs{padding:.7rem 1.5rem;background:color-mix(in srgb,var(--st-prog) 14%,var(--surface));
   color:var(--text);border-bottom:1px solid color-mix(in srgb,var(--st-prog) 45%,transparent);
   font-size:.86rem;line-height:1.5}
-.nojs strong{color:var(--st-prog)}
+.nojs strong{color:var(--st-prog-ink)}
 .topbar{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
   flex-wrap:wrap;padding:.6rem 1.5rem;background:color-mix(in srgb,var(--surface) 88%,transparent);
   backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -266,7 +282,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .gfilters .gf{display:inline-flex;align-items:center;gap:.3rem}
 .gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
   padding:.28rem .4rem;color:var(--text);background:var(--bg);
-  border:1px solid var(--border);border-radius:var(--radius);max-width:11rem}
+  border:1px solid var(--field-border);border-radius:var(--radius);max-width:11rem}
 .gfilters select:focus,.gfilters input[type=date]:focus{outline:none;
   border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 .gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
@@ -420,7 +436,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
   gap:.4em;padding:.5rem .75rem;border-radius:var(--pill);border:1px solid var(--field-border);
   background:var(--surface);color:var(--text);
   transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease),background var(--dur),border-color var(--dur)}
-.btn:hover{border-color:var(--border-strong);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:hover{border-color:var(--field-border-hover);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn:active{transform:translateY(0);box-shadow:none}
 .btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .btn-primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
@@ -433,7 +449,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .fchip,.tf-chip{cursor:pointer;font:inherit;font-size:.79rem;line-height:1;padding:.25rem .75rem;
   border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);color:var(--text);
   transition:background var(--dur),border-color var(--dur),color var(--dur),transform var(--dur) var(--ease)}
-.fchip:hover,.tf-chip:hover{border-color:var(--border-strong);transform:translateY(-1px)}
+.fchip:hover,.tf-chip:hover{border-color:var(--field-border-hover);transform:translateY(-1px)}
 .fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .fchip.on,.tf-chip.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 /* State carried by more than hue: a filter that is on says so in forced-colours,
@@ -462,12 +478,12 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .fdetails{position:relative}
 .fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
   display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
-  border-radius:var(--pill);border:1px solid var(--border);background:var(--surface);
+  border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);
   color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
 .fdetails>summary::-webkit-details-marker{display:none}
 .fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
 .fdetails[open]>summary::after{content:"\25B4"}
-.fdetails>summary:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.fdetails>summary:hover{border-color:var(--field-border-hover);background:var(--surface-2)}
 .fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* The count of what is narrowing the table, on the closed control. A panel that
    hides an active filter behind a fold is how a reader concludes the report is
@@ -489,7 +505,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
   border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
 .frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
 .frow input[type=date]{font:inherit;font-size:.78rem;padding:.3rem .45rem;color:var(--text);
-  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)}
+  background:var(--bg);border:1px solid var(--field-border);border-radius:var(--radius)}
 .frow input[type=date]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 #audit-model,#audit-presets{display:inline-flex;gap:.25rem;flex-wrap:wrap}
 .fnote{margin:0;font-size:.7rem;line-height:1.45;color:var(--muted)}
@@ -566,7 +582,7 @@ td.when,td.mono{font-variant-numeric:tabular-nums}
    how a reader ends up reading "View:" over an unrelated line. */
 .viewpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
 .viewpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
-  border:1px solid var(--border);border-radius:var(--radius);
+  border:1px solid var(--field-border);border-radius:var(--radius);
   background:var(--surface);color:var(--text)}
 /* bl (F-P-4): "something in here is stuck" and "some of this was dropped" —
    counts, in the row's own words, wearing the status ink of what they count.
@@ -609,7 +625,7 @@ td.tid{white-space:nowrap}
    Copy button on every row of a fifty-phase table is fifty buttons shouting;
    keyboard users get it on :focus-visible, so quiet never means unreachable. */
 .shacell{display:inline-flex;align-items:center;gap:.4em}
-.shacopy{font-size:.66rem;padding:.1rem .4em;border:1px solid var(--border);
+.shacopy{font-size:.66rem;padding:.1rem .4em;border:1px solid var(--field-border);
   border-radius:var(--radius);background:var(--surface);color:var(--muted);
   cursor:pointer;opacity:0;transition:opacity var(--dur) var(--ease)}
 tr:hover .shacopy,.shacopy:focus-visible{opacity:1}
@@ -972,7 +988,7 @@ tr.outside .btn{margin-left:.5rem}
   font-size:.72rem;font-weight:600;white-space:nowrap}
 .b-typical{color:var(--st-done);
   background:color-mix(in srgb,var(--st-done) 13%,transparent)}
-.b-high{color:var(--st-prog);
+.b-high{color:var(--st-prog-ink);
   background:color-mix(in srgb,var(--st-prog) 16%,transparent)}
 .b-outlier{color:var(--st-blocked);
   background:color-mix(in srgb,var(--st-blocked) 14%,transparent)}
@@ -1224,7 +1240,7 @@ details.more>summary:hover{color:var(--text)}
 }
 </style>
 <div id="audit-nojs" class="nojs" role="status"><strong>This report is interactive, and its scripts are not running here.</strong> Filtering, search, sorting and expanding a phase all need them. An IDE preview pane usually blocks inline scripts — open this file in a real browser and it will work.</div>
-<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-19 20:20 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.40.0</span></p></div>
+<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-19 22:49 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.40.0</span></p></div>
 <div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — the whole plan, every phase expanded. Paper size and orientation are yours to pick in the print dialog.">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div><div class="gfilters" role="group" aria-label="Global filters"><label class="gf"><span class="tbl">Author</span><select id="audit-au-select" aria-label="Scope the Usage section&#39;s per-author views to one author"><option value="">All authors</option><option value="milos@acme.example">milos@acme.example</option><option value="alex@acme.example">alex@acme.example</option><option value="sara@acme.example">sara@acme.example</option></select></label><label class="gf"><span class="tbl">Area</span><select id="audit-area-select" aria-label="Show only phases tagged with this area"><option value="">All areas</option><option value="auth">auth</option><option value="storefront">storefront</option><option value="checkout">checkout</option></select></label><label class="gf"><span class="tbl">From</span><input type="date" id="audit-gfrom" aria-label="From - start of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><label class="gf"><span class="tbl">to</span><input type="date" id="audit-gto" aria-label="to - end of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><button type="button" class="btn" id="audit-gclear" hidden title="Clear the date range - back to all time">All time</button></div></header>
 <div class="shell"><nav class="snav" aria-label="Report sections"><p class="snav-title">Contents</p><ol><li class="item"><a href="#gate">Gate</a></li><li class="item"><a href="#phases">Phases<span class="n">4</span></a></li><li class="item"><a href="#usage">Usage</a></li><li class="sub-item"><a href="#usage-trend">Tokens per day</a></li><li class="sub-item"><a href="#usage-budget">Budget</a></li><li class="item"><a href="#bugs">Bugs<span class="n">3</span></a></li><li class="item"><a href="#ready">Ready now<span class="n">1</span></a></li></ol></nav><main class="content">
 <div class="topgrid">
@@ -1411,7 +1427,7 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
 <div class="tablewrap"><table class="data bugs"><thead><tr><th>id</th><th>title</th><th>status</th><th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th></tr></thead><tbody><tr data-status="open"><td class=mono>BUG-1</td><td>Product images 404 intermittently on Safari</td><td><span class="chip" data-status="open">Open</span></td><td>med</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="triaged"><td class=mono>BUG-2</td><td>Checkout is slow on 3G mobile</td><td><span class="chip" data-status="triaged">Triaged</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="in_progress"><td class=mono>BUG-3</td><td>Cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>med</td><td class=mono>BF1.1</td><td class=mono>—</td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1508">#1508</a></td></tr><tr data-status="fixed"><td class=mono>BUG-4</td><td>Logout does not clear the session cookie</td><td><span class="chip" data-status="fixed">Fixed</span></td><td>high</td><td class=mono>BF1.2</td><td class=mono>a1b2c3d</td><td><span class="muted">—</span></td></tr><tr data-status="wontfix"><td class=mono>BUG-5</td><td>Dark-mode label contrast below AA</td><td><span class="chip" data-status="wontfix">Won’t fix</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr></tbody></table></div>
 <h2 id="ready">Ready now</h2><dl class="ready"><dt><code class="mono">P2.4</code> <strong>Add zod schemas for cart mutations</strong> <span class="area-tag">storefront</span> <span class="area-tag">checkout</span></dt><dd>In <span class="mono">P2</span> — Input validation. Cleared: depends on P2.1 (done)</dd></dl>
 </main></div>
-<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTE5IDIwOjIwIFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgVW5jYXRlZ29yaXplZCB8IDQuNk0gfCAkNi43NCB8IDE5NCB8CgojIyMgQnkgbW9kZWwKCnwgbW9kZWwgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgY2xhdWRlLW9wdXMtNSB8IDUyLjRNIHwgJDYwLjgwIHwgMzU2IHwKfCBjbGF1ZGUtc29ubmV0LTUgfCAzOC4xTSB8ICQzOS4xMiB8IDQyMSB8CnwgY2xhdWRlLWhhaWt1LTQtNSB8IDIuME0gfCAkMC43NSB8IDg1IHwKfCBjbGF1ZGUtZmFibGUtNSB8IDY1NS4ySyB8ICQyLjk4IHwgMzcgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgNDcuOE0gfCAkNDguMDYgfCAyNDYgfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjUuM00gfCAkMzEuNzQgfCA0NzkgfAp8IHNhcmFAYWNtZS5leGFtcGxlIHwgMjAuME0gfCAkMjMuODUgfCAxNzQgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNiB8IDM4LjFNIHwgJDQ3LjQ3IHwgNjQwIHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDU1LjBNIHwgJDU2LjE4IHwgMjU5IHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTQlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMTglIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk1JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4OCUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxNS43NyBhY3Jvc3MgNCB0YXNrKHMpLgotICoqUHJvamVjdGlvbjoqKiBzdXBwcmVzc2VkIOKAlCBuZWVkcyA1IGNvbXBsZXRlZCB0YXNrcywgaGFzIDQuCi0gKipSZXRyaWVkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykgKDYlIG9mIHNwZW5kKS4gTm90IHRoZSBzYW1lIGFzIHdhc3RlZCBzcGVuZCDigJQgdGhlIGxlZGdlciBidWNrZXRzIGJ5IGhvdXIsIG5vdCBieSBhdHRlbXB0LgotICoqQmxvY2tlZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpIOKAlCBzcGVuZCB3aXRoIG5vIG91dGNvbWUuCgojIyMgTW9kZWwgY29zdCB3aXRoaW4gZWFjaCByaXNrIGJhbmQKCkNvbXBhcmVkIGluc2lkZSBhIGJhbmQgb24gcHVycG9zZTogaGFyZCB3b3JrIGlzIHJvdXRlZCB0byB0aGUgc3Ryb25nZXIgbW9kZWwgZGVsaWJlcmF0ZWx5LCBzbyBhIHJhdyBzcGVuZC1wZXItdGFzayBjb21wYXJpc29uIGFjcm9zcyBiYW5kcyB3b3VsZCBmbGFnIHRoYXQgd29ya2luZyBzeXN0ZW0gYXMgYSBmYXVsdC4KCnwgcmlzayB8IG1vZGVsIHwgdGFza3MgfCBjb3N0L3Rhc2sgfCBtZWFuIGF0dGVtcHRzIHwKfC0tLXwtLS18LS0tOnwtLS06fC0tLTp8CnwgaGlnaCB8IGNsYXVkZS1vcHVzLTUgfCAzIHwgJDE2LjY5IHwgMS4wIHwKfCBtZWQgfCBjbGF1ZGUtc29ubmV0LTUgfCA0IHwgJDkuNTAgfCAxLjUgfAo=";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
+<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTE5IDIyOjQ5IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgVW5jYXRlZ29yaXplZCB8IDQuNk0gfCAkNi43NCB8IDE5NCB8CgojIyMgQnkgbW9kZWwKCnwgbW9kZWwgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgY2xhdWRlLW9wdXMtNSB8IDUyLjRNIHwgJDYwLjgwIHwgMzU2IHwKfCBjbGF1ZGUtc29ubmV0LTUgfCAzOC4xTSB8ICQzOS4xMiB8IDQyMSB8CnwgY2xhdWRlLWhhaWt1LTQtNSB8IDIuME0gfCAkMC43NSB8IDg1IHwKfCBjbGF1ZGUtZmFibGUtNSB8IDY1NS4ySyB8ICQyLjk4IHwgMzcgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgNDcuOE0gfCAkNDguMDYgfCAyNDYgfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjUuM00gfCAkMzEuNzQgfCA0NzkgfAp8IHNhcmFAYWNtZS5leGFtcGxlIHwgMjAuME0gfCAkMjMuODUgfCAxNzQgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNiB8IDM4LjFNIHwgJDQ3LjQ3IHwgNjQwIHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDU1LjBNIHwgJDU2LjE4IHwgMjU5IHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTQlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMTglIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk1JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4OCUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxNS43NyBhY3Jvc3MgNCB0YXNrKHMpLgotICoqUHJvamVjdGlvbjoqKiBzdXBwcmVzc2VkIOKAlCBuZWVkcyA1IGNvbXBsZXRlZCB0YXNrcywgaGFzIDQuCi0gKipSZXRyaWVkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykgKDYlIG9mIHNwZW5kKS4gTm90IHRoZSBzYW1lIGFzIHdhc3RlZCBzcGVuZCDigJQgdGhlIGxlZGdlciBidWNrZXRzIGJ5IGhvdXIsIG5vdCBieSBhdHRlbXB0LgotICoqQmxvY2tlZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpIOKAlCBzcGVuZCB3aXRoIG5vIG91dGNvbWUuCgojIyMgTW9kZWwgY29zdCB3aXRoaW4gZWFjaCByaXNrIGJhbmQKCkNvbXBhcmVkIGluc2lkZSBhIGJhbmQgb24gcHVycG9zZTogaGFyZCB3b3JrIGlzIHJvdXRlZCB0byB0aGUgc3Ryb25nZXIgbW9kZWwgZGVsaWJlcmF0ZWx5LCBzbyBhIHJhdyBzcGVuZC1wZXItdGFzayBjb21wYXJpc29uIGFjcm9zcyBiYW5kcyB3b3VsZCBmbGFnIHRoYXQgd29ya2luZyBzeXN0ZW0gYXMgYSBmYXVsdC4KCnwgcmlzayB8IG1vZGVsIHwgdGFza3MgfCBjb3N0L3Rhc2sgfCBtZWFuIGF0dGVtcHRzIHwKfC0tLXwtLS18LS0tOnwtLS06fC0tLTp8CnwgaGlnaCB8IGNsYXVkZS1vcHVzLTUgfCAzIHwgJDE2LjY5IHwgMS4wIHwKfCBtZWQgfCBjbGF1ZGUtc29ubmV0LTUgfCA0IHwgJDkuNTAgfCAxLjUgfAo=";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
 <script>
 (function () {
   var q = document.getElementById('audit-q');
