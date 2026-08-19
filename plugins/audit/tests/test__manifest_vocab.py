@@ -106,9 +106,20 @@ def _cases(check):
     # change a case on purpose rather than discover one.
     f = []
     M._check_ado({"ado": {"id": True}}, "task T", f)
-    check("mv12 ...and a boolean id passes TODAY, because bool is an int "
-          "subclass and this check does not exclude it the way meta.version "
-          "does - pinned as it stands, not as it should be", f == [], f)
+    check("mv12 a boolean id is a finding: `bool` is an `int` subclass, so a "
+          "check that only asks isinstance(x, int) accepts `true` as a work-item "
+          "id - which `meta.version` already excluded by name, so the tree "
+          "disagreed with itself about one question (F15)",
+          any("integer work-item id" in x for x in f), f)
+    # Both directions, because excluding bool is one line and over-excluding is
+    # the same line: a real id must still pass, and `False` must fail like `True`.
+    f_ok, f_false = [], []
+    M._check_ado({"ado": {"id": 103205}}, "task T", f_ok)
+    M._check_ado({"ado": {"id": False}}, "task T", f_false)
+    check("mv12b ...while an actual integer id still passes, and `false` fails "
+          "for the same reason `true` does",
+          f_ok == [] and any("integer work-item id" in x for x in f_false),
+          (f_ok, f_false))
 
     # --- the vocabulary, and the agreement about it ---
     check("mv13 STATUS carries both terminal words: `cancelled` is an answer, "

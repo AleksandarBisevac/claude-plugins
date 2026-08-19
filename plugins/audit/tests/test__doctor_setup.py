@@ -276,6 +276,41 @@ def _cases(check):
               % (_detail(rep, "manifest"),),
               "2 parked proposal(s)" in _detail(rep, "manifest"))
 
+        # F14 said this next branch could never execute, on the reading that the
+        # validator makes every out-of-vocabulary proposal status a finding — and
+        # a finding takes the OTHER arm, so the count could not print. Measured:
+        # false. `_check_proposals` skips an entry whose `payload` is not a dict
+        # (`continue  # legacy free-form entry — tolerated as-is`) BEFORE it looks
+        # at status, and those entries are exactly what reaches `n_legacy`. The
+        # branch is live; nothing covered it, which is why it was the single miss
+        # in 42 planted mutations. An undetectable mutation was the question, and
+        # "the code is dead" was the wrong answer to it.
+        legacy = _manifest()
+        legacy["proposals"] = [
+            {"id": "PROP-1", "status": "parked-old"},   # status outside the vocabulary
+            {"id": "PROP-2"},                           # no status at all
+            {"id": "PROP-3", "status": "proposed",
+             "payload": {"phase": {"id": "P9", "title": "s", "status": "pending",
+                                   "tasks": []}}},
+        ]
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(legacy, fh)
+        rep = base.Report()
+        rel, manifest = M.check_manifest(rep, tmp, cfg)
+        check("ds20b legacy free-form proposals are counted and NAMED - two of "
+              "the three carry no vocabulary status and the payload-bearing one "
+              "does, so the line has to say 1 parked and 2 legacy: %r"
+              % (_detail(rep, "manifest"),),
+              "1 parked proposal(s)" in _detail(rep, "manifest")
+              and "2 legacy proposal(s)" in _detail(rep, "manifest"))
+        _mrows = [r for r in rep.rows if r["check"] == "manifest"]
+        check("ds20c ...and it prints from the VALID arm, which is the half F14 "
+              "believed impossible - a legacy entry is tolerated rather than a "
+              "finding, so the manifest is valid and the count is reachable: %r"
+              % ([r["level"] for r in _mrows],),
+              any(r["level"] == "OK" and "valid" in r["detail"]
+                  for r in _mrows))
+
         broken = _manifest()
         broken["meta"].pop("version")
         with open(mpath, "w", encoding="utf-8") as fh:

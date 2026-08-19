@@ -188,7 +188,11 @@ def _check_ado(obj, where, findings):
         findings.append("%s: ado must be an object or null, got %s"
                         % (where, type(ado).__name__))
         return
-    if "id" in ado and not isinstance(ado.get("id"), int):
+    # `isinstance(x, bool)` first, because `bool` subclasses `int` and `true`
+    # would otherwise be accepted as a work-item id (F15). `meta.version` already
+    # excluded it by name, so the tree disagreed with itself about one question.
+    if "id" in ado and (isinstance(ado.get("id"), bool)
+                        or not isinstance(ado.get("id"), int)):
         findings.append("%s: ado.id must be an integer work-item id, got %r"
                         % (where, ado.get("id")))
 

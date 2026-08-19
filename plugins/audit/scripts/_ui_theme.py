@@ -198,6 +198,28 @@ TOKEN_CSS = """
 /* An explicit LIGHT choice needs no colour overrides — the base :root already is
    light — but it does need this one line, or an OS-dark reader who presses the
    toggle reads a white page through dark checkboxes and a dark date picker. */
+/* The reduced-motion opt-out, in the token layer because it is a USER PREFERENCE
+   like `prefers-color-scheme` beside it, and because it belongs to both surfaces.
+   It lived in report.css alone (F25): the panel gated two decorations behind
+   `no-preference` and left everything else running, so the `.btn` transition
+   measured 0.22s inside a context launched with `reducedMotion:'reduce'` --
+   200 elements still moving. Measured after: zero.
+
+   No braces in this comment, deliberately. The block scanner counts them, and a
+   comment that carried one would corrupt a theme silently -- which is why the
+   rule it names cannot be quoted here in full.
+
+   That is not merely an inconsistency. A CSS transition sits ABOVE important
+   author declarations in the cascade, so a probe that mutates style and reads
+   synchronously gets the transition's START value -- three measurements in this
+   repo were reported "did not fire" on that basis and all three were sound.
+   Any browser gate that mutates and measures inherits the trap; this removes it.
+
+   Declares no custom property, so the theme compiler substitutes nothing here
+   and `compile_theme(DEFAULT_THEME) == TOKEN_CSS` is unaffected. */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-delay:0!important;transition-duration:.001ms!important}
+}
 :root[data-theme="light"]{color-scheme:light}
 :root[data-theme="dark"]{
   color-scheme:dark;

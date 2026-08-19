@@ -701,8 +701,28 @@ export const measureResponsiveFrame = (opts) => {
   // is the case this must not swallow. And it is COUNTED, so losing it, or
   // widening it until it eats a real one, shows up in the summary rather than
   // as a check that quietly got easier.
+  // F19: ask what a READER can reach, not which attribute is present. This
+  // codebase deliberately moves tooltip text into a JS property -- `report.js`
+  // sets `node.__tip` and its hover layer walks ancestors looking for it (the
+  // same walk mirrored here), promoting it to a real `title` only on demand. So
+  // an oracle that only reads attributes declared every tooltip-managed element
+  // in the Usage section unreachable: measured on the shipped report at 1153px,
+  // all 11 `.rank .nm` clipped to 49-78%, a `__tip` ancestor on every one of
+  // them holding the full string, and zero `title` ancestors.
+  //
+  // It OVER-reported, so it was noise rather than a hole -- and it still cost a
+  // real finding: the first record of what became F17 read "a truncated name
+  // with nothing carrying the whole of it", which was false. The string was
+  // carried; the actual fault was elsewhere and worse. A check that cries wolf
+  // gets skimmed, and the thing it was really pointing at gets written down
+  // wrong.
+  const tipCarrier = (n) => {
+    for (let p = n; p; p = p.parentElement) if (p.__tip) return p;
+    return null;
+  };
   const clipped = [];
   let unpainted = 0;
+  let jsCarried = 0;
   for (const n of all) {
     if (n.children.length || !(n.textContent || '').trim()) continue;
     if (!opaque(n)) continue;
@@ -713,11 +733,16 @@ export const measureResponsiveFrame = (opts) => {
     }
     if (!/hidden|clip/.test(ncs.overflowX)) continue;
     if (n.scrollWidth - n.clientWidth <= 1) continue;
+    // Counted, so widening the oracle shows up in the summary instead of as a
+    // check that quietly got easier -- the rule the unpainted exclusion follows.
+    const byJs = tipCarrier(n);
+    if (byJs) jsCarried += 1;
     clipped.push({
       name: nameOf(n), cw: n.clientWidth, sw: n.scrollWidth,
       shown: n.clientWidth / n.scrollWidth,
       reachable: !!(n.title || n.getAttribute('aria-label')
-        || n.getAttribute('data-tip') || n.closest('[title],[data-tip],[aria-label]')),
+        || n.getAttribute('data-tip') || n.closest('[title],[data-tip],[aria-label]')
+        || byJs),
     });
   }
   const stranded = clipped.filter((c) => !c.reachable && c.shown < 0.25);
@@ -728,7 +753,7 @@ export const measureResponsiveFrame = (opts) => {
     vw, vh,
     doc: de.scrollWidth - vw, body: document.body.scrollWidth - vw,
     elements: all.length, controls: controls.length, hitTested,
-    clipExamined: clipped.length, clipUnpainted: unpainted,
+    clipExamined: clipped.length, clipUnpainted: unpainted, clipJsCarried: jsCarried,
     outside: outside.slice(0, 3), outsideN: outside.length,
     buried: buried.slice(0, 3), buriedN: buried.length,
     collapsed: collapsed.slice(0, 3), collapsedN: collapsed.length,
@@ -766,7 +791,7 @@ export async function walkResponsiveLadder(page, label, tally,
   // "no unreachable clipping" about a document that clips a model name down to
   // 42% one rung earlier. A number nobody can see drift is a threshold nobody
   // notices being approached.
-  let tightest = null, smallest = null, dirty = 0, unpainted = 0;
+  let tightest = null, smallest = null, dirty = 0, unpainted = 0, jsCarried = 0;
   for (const width of RESPONSIVE_LADDER) {
     await page.setViewportSize({ width, height: 900 });
     // A resize is answered on the next frame; reading the layout mid-reflow
@@ -788,6 +813,7 @@ export async function walkResponsiveLadder(page, label, tally,
     tally.hitTested += top.hitTested + end.hitTested;
     tally.clipExamined += top.clipExamined;
     unpainted += top.clipUnpainted;
+    jsCarried += top.clipJsCarried;
     seen.push(top.hitTested + end.hitTested);
 
     const at = `${label} at ${width}px`;
@@ -847,7 +873,12 @@ export async function walkResponsiveLadder(page, label, tally,
     // arguable. A view that suddenly hides forty labels this way is visible
     // here before anyone has to go looking for why the ladder went quiet.
     + (unpainted ? `; ${unpainted} visually-hidden node(s) excluded as never `
-      + `painted` : ''));
+      + `painted` : '')
+    // F19: reported for the same reason `unpainted` is. This oracle used to read
+    // only attributes and called every JS-carried tooltip unreachable; the count
+    // is what makes widening it arguable instead of invisible.
+    + (jsCarried ? `; ${jsCarried} clipped label(s) reachable through a JS tip `
+      + `carrier rather than an attribute` : ''));
 }
 
 /**

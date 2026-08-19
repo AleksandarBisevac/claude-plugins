@@ -620,9 +620,12 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   @starting-style{tr.task{opacity:0}}
 }
 
-/* ---- reduced motion ------------------------------------------------------ */
+/* ---- reduced motion ------------------------------------------------------
+   The global opt-out moved into the token layer (F25), so BOTH surfaces get it
+   from one definition instead of the panel getting none. What stays here is the
+   part that is the report's own: `.fill` needs its final width pinned, which a
+   duration of .001ms does not give it. */
 @media (prefers-reduced-motion:reduce){
-  *{animation-duration:.001ms!important;animation-delay:0!important;transition-duration:.001ms!important}
   .fill{animation:none;width:var(--w,0)}
 }
 
