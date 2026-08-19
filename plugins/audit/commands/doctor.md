@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: diagnose the setup before it bites — interpreter the hooks will use, git root, config, manifest + shard integrity, which plan-gate tier is active, submodule conflicts, build runners, whether hooks have ever fired, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never enforced. Read-only, no locks, no mutations.'
-argument-hint: '[--json] [--color auto|always|never]'
+argument-hint: '[--deep] [--json] [--color auto|always|never]'
 allowed-tools: Bash
 ---
 
@@ -19,6 +19,21 @@ makes the output scannable.
 
 Pass `$ARGUMENTS` through unchanged (`--json` for a machine-readable form). Nothing here
 needs interpreting on your side.
+
+## `--deep` — hold the task commits against the journal
+
+Off by default, and off is right for a routine run. `--deep` adds one arm to the
+**completions** check: for each done task in the completion-record era that names both a
+commit SHA and a journal row, it asks git whether that commit's tree actually contains the
+journal file recording the task. That is one `git ls-tree` per such task, so the cost
+scales with how much completed history the plan has — which is why it is opt-in rather
+than always on. It writes nothing and takes no lock, exactly like the default run.
+
+Its only verdict is a **WARNING** — `--deep: the task commit does not carry the journal
+file that records it` — so it cannot turn a passing run into a failing one; a run that
+exits 0 today still exits 0 with `--deep`. Reach for it when the question is about the
+**audit trail** rather than the setup: the journal's git anchor only pins the journal files
+the task commits actually carry, and the default run never looks at that.
 
 ## What to do with the result
 
@@ -39,6 +54,11 @@ differently:
   the tier **and what put it there** — `planGate`, legacy `enforce`, or the graded ladder —
   and pinning `planGate: "observe"` while a phase is running is the one setting that warns,
   because it holds the gate below what the evidence would enforce.
+
+The **layout** line is the other one worth reading rather than skimming: it names which of
+the two manifest layouts is in use. Single-file is a supported shape, not a pending
+upgrade — `/audit:migrate` is how someone *changes* the layout, not how they fix it — so an
+OK line naming it is a statement of fact and not a to-do to relay as one.
 
 If the run reports **no hook state**, the most likely cause is not a broken hook but a
 plugin that is installed yet not enabled for this project — check `/plugin` → Installed.
