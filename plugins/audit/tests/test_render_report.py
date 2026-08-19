@@ -625,7 +625,7 @@ def _cases(check):
 
     check("c5: filtering no longer forces its matches open - it offers a reason "
           "to open a row instead",
-          "var open = showP && !!expanded[pid];" in M._SCRIPT
+          "const open = showP && !!expanded[pid];" in M._SCRIPT
           and "(term !== '' || tf !== '')" not in M._SCRIPT)
     check("c5: and that reason is rendered - the match badge is in the row, "
           "hidden until there is something to say",
