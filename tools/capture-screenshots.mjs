@@ -2319,6 +2319,46 @@ async function linCensus(page, rootSel, pfx) {
   return rows;
 }
 
+/**
+ * Every `assert*` stage this file declares must be WIRED to a call site.
+ *
+ * The run-level guard below catches a capture where no leg ran. It cannot catch
+ * a stage that was written, reviewed and then never invoked — that one reports
+ * nothing, fails nothing, and reads exactly like a stage that passed. Measured
+ * when this was added: 30 declared, 30 called, so this is a guard against the
+ * next one rather than a repair of a current defect.
+ *
+ * Static on purpose: a runtime tally would need 30 call-site edits and would
+ * still only prove what THIS invocation reached, while the defect is a stage
+ * nothing anywhere calls. What it therefore cannot see is a stage wired inside a
+ * branch that never runs — that is the leg guard's job, and the direction here
+ * is under-reporting, which is the quiet one.
+ */
+function unwiredStages(source) {
+  const lines = source.split('\n');
+  const declared = new Map();
+  lines.forEach((line, i) => {
+    const m = line.match(/^(?:async )?function (assert\w+)/);
+    if (m) declared.set(m[1], i + 1);
+  });
+  const called = new Set();
+  lines.forEach((line) => {
+    const t = line.trim();
+    // Prose naming a stage is not a call. This lesson was paid for one file
+    // over, where a coverage check counted its own comments and reported five
+    // phantom findings on a clean run.
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+    if (/^(?:async )?function assert/.test(t)) return;
+    for (const name of declared.keys()) {
+      if (new RegExp('(?<![A-Za-z_.])' + name + '\\s*\\(').test(line)) called.add(name);
+    }
+  });
+  return [...declared.entries()]
+    .filter(([name]) => !called.has(name))
+    .map(([name, line]) => `${name} (declared at line ${line})`)
+    .sort();
+}
+
 async function assertLabelInName(page, areas, surface) {
   const all = [];
   for (const a of areas) {
@@ -6933,6 +6973,14 @@ async function main() {
   if (!legsRun.length) {
     fail(`no leg of this capture ran (--only ${JSON.stringify(ONLY)}), so nothing `
        + `was measured — a run with nothing to look at has to fail, not print OK`);
+  }
+
+  // A stage nobody calls reports nothing and fails nothing, which reads exactly
+  // like a stage that passed.
+  const unwired = unwiredStages(readFileSync(fileURLToPath(import.meta.url), 'utf8'));
+  if (unwired.length) {
+    fail(`${unwired.length} assert stage(s) are declared and never called, so `
+       + `whatever they check went ungraded: ${unwired.join(', ')}`);
   }
 
   if (problems.length) {

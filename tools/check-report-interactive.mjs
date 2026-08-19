@@ -79,7 +79,51 @@ function csvFields(line) {
   return out;
 }
 
+// --- coverage of this harness's own checks ------------------------------------
+//
+// `153 checks passed` had NO FLOOR. Every `expect()` result lands in `notes` or
+// `failures`, so a section that never executes -- an early guard that skips, an
+// element that moved, a leg wrapped in a condition nobody re-read -- simply
+// contributes nothing, and the run still ends "report is interactive". A harness
+// that reports success for work it did not do is the failure mode this project
+// keeps meeting (F23: a restore that killed every listener, after which six tabs
+// measured as one and produced a complete, plausible, wrong result set).
+//
+// The floor is DERIVED FROM THIS FILE'S OWN SOURCE -- the set of `expect(` call
+// sites it declares -- and never written down as a number. A constant here would
+// rot on the first added check, which is the defect class the count-claim lint
+// exists to stop; hard-coding 153 would have been that same bug in a new file.
+//
+// Measured when this was written, against `examples/acme-store`: 134 declared
+// call sites, 130 reached, 153 results (the difference is sites inside loops).
+const EXPECT_SITES = new Set();
+
+// The three sites legitimately not reached on every report. Keyed by LABEL TEXT,
+// never by line number: a line-number exemption rots the instant anything above
+// it moves, and this file is edited from the top. Each names the sibling that
+// must have run INSTEAD, so the exemption is self-checking -- if both halves of
+// a pair go silent, that is a skipped leg and it fails.
+const CONDITIONAL_EXPECTS = [
+  { label: 'a plan with nothing active opens on all phases',
+    why: 'the else-half of the default-view branch: it runs only on a plan whose '
+       + 'default view is not "active"',
+    instead: 'on load the archived phases are off screen' },
+  { label: '...carrying the outcome the table had to cut short, in full',
+    why: 'runs only when a cell actually had to truncate with an ellipsis, which '
+       + 'depends on the outcome text in the fixture',
+    instead: 'opening one shows the row under its task' },
+  { label: 'every phase in this plan shares one status, so its chip hides nothing',
+    why: 'the else-half of the chip branch: it runs only on a plan with ONE status, '
+       + 'where a chip that hides nothing is the correct behaviour',
+    instead: 'a status chip filters the phase list' },
+];
+
 function expect(label, actual, wanted) {
+  // The call site, so coverage can be graded against the sites this file
+  // DECLARES rather than against a number somebody wrote down.
+  const frame = (new Error().stack || '').split('\n')[2] || '';
+  const at = frame.match(/check-report-interactive\.mjs:(\d+):/);
+  if (at) EXPECT_SITES.add(Number(at[1]));
   const ok = actual === wanted;
   (ok ? notes : failures).push(`${ok ? 'ok  ' : 'FAIL'} ${label}: got ${actual}, want ${wanted}`);
 }
@@ -1644,6 +1688,62 @@ expect('...nor the panel inside it', onPaper.panel, true);
 
 if (pageErrors.length) failures.push(`FAIL the page raised ${pageErrors.length} error(s): ${pageErrors.slice(0, 3).join(' | ')}`);
 else notes.push('ok   no page errors');
+
+// The coverage verdict. Runs last, and deliberately AFTER the page-error check,
+// so a run that both crashed and skipped reports both rather than the first.
+{
+  const src = readFileSync(new URL(import.meta.url), 'utf8').split('\n');
+  const declared = [];
+  src.forEach((line, i) => {
+    const t = line.trim();
+    // Prose about expect() is not a call site. The first version of this counted
+    // its own comments and the machinery below, and reported five phantom
+    // "never ran" sites on a clean report -- a coverage check that fails on
+    // itself teaches everyone to ignore it.
+    if (t.startsWith('//') || t.startsWith('*')) return;
+    if (/function expect/.test(line)) return;
+    // A real call always opens with a LITERAL label, which is also what makes
+    // the site identifiable. A call whose label were a variable would be missed
+    // -- under-counting, the quiet direction; there is none today, and this
+    // comment is the record if one appears.
+    const m = line.match(/(?<![A-Za-z_.])expect\(\s*(['"`])([^'"`$]*)/);
+    if (!m) return;
+    declared.push({ line: i + 1, label: m[2].trim() });
+  });
+  const missed = declared.filter((d) => !EXPECT_SITES.has(d.line));
+  const said = notes.concat(failures).join('\n');
+
+  // The exemption table must describe THIS file, or it is a list of excuses for
+  // checks that no longer exist.
+  for (const c of CONDITIONAL_EXPECTS) {
+    if (!declared.some((d) => d.label && c.label.startsWith(d.label))) {
+      failures.push(`FAIL the conditional-expect table names "${c.label}", which no `
+        + `expect() call site declares any more — the exemption outlived its check`);
+    }
+  }
+  const unexplained = missed.filter((d) => !d.label
+    || !CONDITIONAL_EXPECTS.some((c) => c.label.startsWith(d.label)));
+  if (unexplained.length) {
+    failures.push(`FAIL ${unexplained.length} of ${declared.length} expect() call site(s) `
+      + `never ran, so this report was graded on work that did not happen: `
+      + unexplained.map((d) => `line ${d.line} ${JSON.stringify(d.label.slice(0, 48))}`)
+        .join(' · '));
+  }
+  // A pair whose BOTH halves went silent is a skipped leg wearing an exemption.
+  for (const c of CONDITIONAL_EXPECTS) {
+    const skipped = missed.some((d) => d.label && c.label.startsWith(d.label));
+    if (skipped && said.indexOf(c.instead) < 0) {
+      failures.push(`FAIL "${c.label}" was skipped and so was its counterpart `
+        + `"${c.instead}" — the exemption says one of the two always runs, and `
+        + `neither did, which is a skipped leg rather than a branch not taken`);
+    }
+  }
+  if (!unexplained.length) {
+    notes.push(`ok   coverage: ${EXPECT_SITES.size} of ${declared.length} expect() call `
+      + `sites ran; ${missed.length} conditional branch(es) not taken, each with its `
+      + `counterpart confirmed`);
+  }
+}
 
 await browser.close();
 
