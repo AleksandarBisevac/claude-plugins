@@ -60,10 +60,12 @@ describe('the sandbox reads what it thinks it reads', () => {
     // body — that is what keeps roughly a hundred and thirty bindings out of
     // the page's global scope.
     const wrap = reportWrapper();
+    // Only the OPENING boundary can be checked by text: a part may legitimately
+    // end with an inner IIFE's `})();`, and it does. That the LAST `})();` in
+    // the assembled script is the outer wrapper's own is proved below by
+    // compiling in both directions, which is stronger than any text match.
     for (const name of reportParts()) {
-      const part = readPart(name);
-      expect(part.startsWith(wrap.open)).toBe(false);
-      expect(part.endsWith(wrap.close)).toBe(false);
+      expect(readPart(name).startsWith(wrap.open)).toBe(false);
     }
     const src = wrap.open + assembleReportBody() + wrap.close;
     expect(src.startsWith(REPORT_IIFE_HEAD)).toBe(true);
@@ -101,7 +103,9 @@ describe('the sandbox reads what it thinks it reads', () => {
     }
     // Assigned by a statement, not hoisted: '' is what an empty stub table
     // leaves behind, and `undefined` is what an aborted load leaves behind.
-    expect(ctx.DMAX).toBe('');
+    // Read through `reach`, not off the context object: a top-level `let` lives
+    // in the global LEXICAL environment and never appears as a property.
+    expect(reach(ctx, ['DMAX']).DMAX).toBe('');
   });
 
   it('panel.js runs to the end and its formatters are reachable', () => {

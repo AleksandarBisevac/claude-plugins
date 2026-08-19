@@ -1240,7 +1240,7 @@ details.more>summary:hover{color:var(--text)}
 }
 </style>
 <div id="audit-nojs" class="nojs" role="status"><strong>This report is interactive, and its scripts are not running here.</strong> Filtering, search, sorting and expanding a phase all need them. An IDE preview pane usually blocks inline scripts — open this file in a real browser and it will work.</div>
-<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-19 22:49 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.40.0</span></p></div>
+<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-19 23:09 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 0.40.0</span></p></div>
 <div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — the whole plan, every phase expanded. Paper size and orientation are yours to pick in the print dialog.">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div><div class="gfilters" role="group" aria-label="Global filters"><label class="gf"><span class="tbl">Author</span><select id="audit-au-select" aria-label="Scope the Usage section&#39;s per-author views to one author"><option value="">All authors</option><option value="milos@acme.example">milos@acme.example</option><option value="alex@acme.example">alex@acme.example</option><option value="sara@acme.example">sara@acme.example</option></select></label><label class="gf"><span class="tbl">Area</span><select id="audit-area-select" aria-label="Show only phases tagged with this area"><option value="">All areas</option><option value="auth">auth</option><option value="storefront">storefront</option><option value="checkout">checkout</option></select></label><label class="gf"><span class="tbl">From</span><input type="date" id="audit-gfrom" aria-label="From - start of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><label class="gf"><span class="tbl">to</span><input type="date" id="audit-gto" aria-label="to - end of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><button type="button" class="btn" id="audit-gclear" hidden title="Clear the date range - back to all time">All time</button></div></header>
 <div class="shell"><nav class="snav" aria-label="Report sections"><p class="snav-title">Contents</p><ol><li class="item"><a href="#gate">Gate</a></li><li class="item"><a href="#phases">Phases<span class="n">4</span></a></li><li class="item"><a href="#usage">Usage</a></li><li class="sub-item"><a href="#usage-trend">Tokens per day</a></li><li class="sub-item"><a href="#usage-budget">Budget</a></li><li class="item"><a href="#bugs">Bugs<span class="n">3</span></a></li><li class="item"><a href="#ready">Ready now<span class="n">1</span></a></li></ol></nav><main class="content">
 <div class="topgrid">
@@ -1427,414 +1427,626 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
 <div class="tablewrap"><table class="data bugs"><thead><tr><th>id</th><th>title</th><th>status</th><th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th></tr></thead><tbody><tr data-status="open"><td class=mono>BUG-1</td><td>Product images 404 intermittently on Safari</td><td><span class="chip" data-status="open">Open</span></td><td>med</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="triaged"><td class=mono>BUG-2</td><td>Checkout is slow on 3G mobile</td><td><span class="chip" data-status="triaged">Triaged</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="in_progress"><td class=mono>BUG-3</td><td>Cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>med</td><td class=mono>BF1.1</td><td class=mono>—</td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1508">#1508</a></td></tr><tr data-status="fixed"><td class=mono>BUG-4</td><td>Logout does not clear the session cookie</td><td><span class="chip" data-status="fixed">Fixed</span></td><td>high</td><td class=mono>BF1.2</td><td class=mono>a1b2c3d</td><td><span class="muted">—</span></td></tr><tr data-status="wontfix"><td class=mono>BUG-5</td><td>Dark-mode label contrast below AA</td><td><span class="chip" data-status="wontfix">Won’t fix</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr></tbody></table></div>
 <h2 id="ready">Ready now</h2><dl class="ready"><dt><code class="mono">P2.4</code> <strong>Add zod schemas for cart mutations</strong> <span class="area-tag">storefront</span> <span class="area-tag">checkout</span></dt><dd>In <span class="mono">P2</span> — Input validation. Cleared: depends on P2.1 (done)</dd></dl>
 </main></div>
-<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTE5IDIyOjQ5IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgVW5jYXRlZ29yaXplZCB8IDQuNk0gfCAkNi43NCB8IDE5NCB8CgojIyMgQnkgbW9kZWwKCnwgbW9kZWwgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgY2xhdWRlLW9wdXMtNSB8IDUyLjRNIHwgJDYwLjgwIHwgMzU2IHwKfCBjbGF1ZGUtc29ubmV0LTUgfCAzOC4xTSB8ICQzOS4xMiB8IDQyMSB8CnwgY2xhdWRlLWhhaWt1LTQtNSB8IDIuME0gfCAkMC43NSB8IDg1IHwKfCBjbGF1ZGUtZmFibGUtNSB8IDY1NS4ySyB8ICQyLjk4IHwgMzcgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgNDcuOE0gfCAkNDguMDYgfCAyNDYgfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjUuM00gfCAkMzEuNzQgfCA0NzkgfAp8IHNhcmFAYWNtZS5leGFtcGxlIHwgMjAuME0gfCAkMjMuODUgfCAxNzQgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNiB8IDM4LjFNIHwgJDQ3LjQ3IHwgNjQwIHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDU1LjBNIHwgJDU2LjE4IHwgMjU5IHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTQlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMTglIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk1JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4OCUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxNS43NyBhY3Jvc3MgNCB0YXNrKHMpLgotICoqUHJvamVjdGlvbjoqKiBzdXBwcmVzc2VkIOKAlCBuZWVkcyA1IGNvbXBsZXRlZCB0YXNrcywgaGFzIDQuCi0gKipSZXRyaWVkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykgKDYlIG9mIHNwZW5kKS4gTm90IHRoZSBzYW1lIGFzIHdhc3RlZCBzcGVuZCDigJQgdGhlIGxlZGdlciBidWNrZXRzIGJ5IGhvdXIsIG5vdCBieSBhdHRlbXB0LgotICoqQmxvY2tlZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpIOKAlCBzcGVuZCB3aXRoIG5vIG91dGNvbWUuCgojIyMgTW9kZWwgY29zdCB3aXRoaW4gZWFjaCByaXNrIGJhbmQKCkNvbXBhcmVkIGluc2lkZSBhIGJhbmQgb24gcHVycG9zZTogaGFyZCB3b3JrIGlzIHJvdXRlZCB0byB0aGUgc3Ryb25nZXIgbW9kZWwgZGVsaWJlcmF0ZWx5LCBzbyBhIHJhdyBzcGVuZC1wZXItdGFzayBjb21wYXJpc29uIGFjcm9zcyBiYW5kcyB3b3VsZCBmbGFnIHRoYXQgd29ya2luZyBzeXN0ZW0gYXMgYSBmYXVsdC4KCnwgcmlzayB8IG1vZGVsIHwgdGFza3MgfCBjb3N0L3Rhc2sgfCBtZWFuIGF0dGVtcHRzIHwKfC0tLXwtLS18LS0tOnwtLS06fC0tLTp8CnwgaGlnaCB8IGNsYXVkZS1vcHVzLTUgfCAzIHwgJDE2LjY5IHwgMS4wIHwKfCBtZWQgfCBjbGF1ZGUtc29ubmV0LTUgfCA0IHwgJDkuNTAgfCAxLjUgfAo=";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
+<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTE5IDIzOjA5IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgVW5jYXRlZ29yaXplZCB8IDQuNk0gfCAkNi43NCB8IDE5NCB8CgojIyMgQnkgbW9kZWwKCnwgbW9kZWwgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgY2xhdWRlLW9wdXMtNSB8IDUyLjRNIHwgJDYwLjgwIHwgMzU2IHwKfCBjbGF1ZGUtc29ubmV0LTUgfCAzOC4xTSB8ICQzOS4xMiB8IDQyMSB8CnwgY2xhdWRlLWhhaWt1LTQtNSB8IDIuME0gfCAkMC43NSB8IDg1IHwKfCBjbGF1ZGUtZmFibGUtNSB8IDY1NS4ySyB8ICQyLjk4IHwgMzcgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgNDcuOE0gfCAkNDguMDYgfCAyNDYgfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjUuM00gfCAkMzEuNzQgfCA0NzkgfAp8IHNhcmFAYWNtZS5leGFtcGxlIHwgMjAuME0gfCAkMjMuODUgfCAxNzQgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNiB8IDM4LjFNIHwgJDQ3LjQ3IHwgNjQwIHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDU1LjBNIHwgJDU2LjE4IHwgMjU5IHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTQlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMTglIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk1JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4OCUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxNS43NyBhY3Jvc3MgNCB0YXNrKHMpLgotICoqUHJvamVjdGlvbjoqKiBzdXBwcmVzc2VkIOKAlCBuZWVkcyA1IGNvbXBsZXRlZCB0YXNrcywgaGFzIDQuCi0gKipSZXRyaWVkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykgKDYlIG9mIHNwZW5kKS4gTm90IHRoZSBzYW1lIGFzIHdhc3RlZCBzcGVuZCDigJQgdGhlIGxlZGdlciBidWNrZXRzIGJ5IGhvdXIsIG5vdCBieSBhdHRlbXB0LgotICoqQmxvY2tlZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpIOKAlCBzcGVuZCB3aXRoIG5vIG91dGNvbWUuCgojIyMgTW9kZWwgY29zdCB3aXRoaW4gZWFjaCByaXNrIGJhbmQKCkNvbXBhcmVkIGluc2lkZSBhIGJhbmQgb24gcHVycG9zZTogaGFyZCB3b3JrIGlzIHJvdXRlZCB0byB0aGUgc3Ryb25nZXIgbW9kZWwgZGVsaWJlcmF0ZWx5LCBzbyBhIHJhdyBzcGVuZC1wZXItdGFzayBjb21wYXJpc29uIGFjcm9zcyBiYW5kcyB3b3VsZCBmbGFnIHRoYXQgd29ya2luZyBzeXN0ZW0gYXMgYSBmYXVsdC4KCnwgcmlzayB8IG1vZGVsIHwgdGFza3MgfCBjb3N0L3Rhc2sgfCBtZWFuIGF0dGVtcHRzIHwKfC0tLXwtLS18LS0tOnwtLS06fC0tLTp8CnwgaGlnaCB8IGNsYXVkZS1vcHVzLTUgfCAzIHwgJDE2LjY5IHwgMS4wIHwKfCBtZWQgfCBjbGF1ZGUtc29ubmV0LTUgfCA0IHwgJDkuNTAgfCAxLjUgfAo=";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
 <script>
 (function () {
-  var q = document.getElementById('audit-q');
-  // First, before anything below can throw: the page is running scripts, so drop
-  // the banner that says it is not. Deliberately ahead of every other statement —
-  // if a later line fails, the banner staying up is then TRUE and useful, because
-  // the interactive layer really is dead.
-  var _nojs = document.getElementById('audit-nojs');
+  // --- elements, and the filter state carried in the link ---------------------
+
+  // The free-text search box. Like every lookup below it may be null: a report
+  // renders only the controls its plan has something to put in.
+  const q = document.getElementById('audit-q');
+
+  // The page is running scripts, so the banner saying the interactive layer is
+  // off is wrong and goes now — ahead of every statement that can throw. If
+  // something below does throw, the banner stays up and is then TRUE, because
+  // filtering, search and expanding really are dead.
+  const _nojs = document.getElementById('audit-nojs');
   if (_nojs && _nojs.parentNode) _nojs.parentNode.removeChild(_nojs);
 
-  // A filtered view of this report is a LINK. Read here, written by syncHash()
-  // below. The `#!` prefix is not decoration: the side nav's links are plain
-  // fragments over the same slot, and without a marker separating the two,
-  // restoring filter state and following a heading link would each undo the other.
-  var HASH = {};
-  (function () {
-    var h = location.hash || '';
-    if (h.indexOf('#!') !== 0) return;
-    h.slice(2).split('&').forEach(function (pair) {
-      if (!pair) return;
-      var i = pair.indexOf('=');
-      var k = i < 0 ? pair : pair.slice(0, i);
-      var v = i < 0 ? '' : pair.slice(i + 1);
-      try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { HASH[k] = ''; }
-    });
+  /**
+   * The filter state a shared link carries, decoded once at load. A filtered
+   * view of this report is a LINK: this is the read side, and the filter part
+   * writes it back through syncHash().
+   *
+   * The `#!` prefix is not decoration. The side nav's links are plain fragments
+   * over the same slot, so without a marker separating the two, restoring filter
+   * state and following a heading link would each undo the other.
+   *
+   * @type {Object<string, string>} decoded key/value pairs; empty for a plain
+   *   fragment, or for no fragment at all
+   */
+  const HASH = (() => {
+    const h = location.hash || '';
+    if (h.indexOf('#!') !== 0) return {};
+    return h.slice(2).split('&').filter(Boolean).reduce((acc, pair) => {
+      const i = pair.indexOf('=');
+      const k = i < 0 ? pair : pair.slice(0, i);
+      const v = i < 0 ? '' : pair.slice(i + 1);
+      // A malformed percent-escape costs one value, never the whole hash: the
+      // key stays present so the control it drives is still restored.
+      try { acc[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { acc[k] = ''; }
+      return acc;
+    }, {});
   })();
 
-  var count = document.getElementById('audit-count');
-  var phaseStatusBar = document.getElementById('audit-phase-status');
-  var expandBtn = document.getElementById('audit-expand');
-  var grouped = document.querySelector('table.phases');
-  var bugsTable = document.querySelector('table.bugs');
+  const count = document.getElementById('audit-count');
+  const phaseStatusBar = document.getElementById('audit-phase-status');
+  const expandBtn = document.getElementById('audit-expand');
+  const grouped = document.querySelector('table.phases');
+  const bugsTable = document.querySelector('table.bugs');
 
-  // Theme: follow the OS by default; the toolbar toggle overrides + persists.
-  var root = document.documentElement;
-  var themeBtn = document.getElementById('audit-theme');
-  var THEME_KEY = 'audit-report-theme';
-  function prefersDark() { return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches; }
-  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : prefersDark(); }
-  function paintTheme() { if (themeBtn) themeBtn.textContent = isDark() ? '☀' : '☾'; }
-  // Restore only when this report owns the toggle. Embedded (no button), the host
-  // sets data-theme and must win; restoring a value saved on some earlier visit
-  // would silently override the theme the viewer is actually looking at. A page
-  // that does not offer the control has no business reinstating its state.
+  // --- theme ------------------------------------------------------------------
+
+  // Follow the OS by default; the toolbar toggle overrides it and persists.
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('audit-theme');
+  const THEME_KEY = 'audit-report-theme';
+
+  /**
+   * Whether the reader's OS asks for a dark UI.
+   * @returns {boolean} false when the browser cannot answer the question
+   */
+  const prefersDark = () =>
+    Boolean(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+
+  /**
+   * The theme actually in force: an explicit data-theme wins, else the OS.
+   * @returns {boolean} true when the page renders dark
+   */
+  const isDark = () => {
+    const t = root.getAttribute('data-theme');
+    return t ? t === 'dark' : prefersDark();
+  };
+
+  /**
+   * Put the glyph for the theme the toggle would switch TO on the button.
+   * @returns {void}
+   */
+  const paintTheme = () => {
+    if (themeBtn) themeBtn.textContent = isDark() ? '☀' : '☾';
+  };
+
+  // Restore a saved theme only where this report owns the toggle. Embedded in a
+  // host page there is no button, the host stamps data-theme itself, and it must
+  // win: reinstating a value saved on some earlier visit would silently override
+  // the theme the viewer is actually looking at. A page that does not offer the
+  // control has no business reinstating its state.
   if (themeBtn) {
-    try { var savedTheme = localStorage.getItem(THEME_KEY); if (savedTheme) root.setAttribute('data-theme', savedTheme); } catch (e) {}
+    // Storage is best-effort: a document opened over file:// may refuse it.
+    try {
+      const savedTheme = localStorage.getItem(THEME_KEY);
+      if (savedTheme) root.setAttribute('data-theme', savedTheme);
+    } catch (e) {}
     // A theme carried in the link beats one saved on an earlier visit: whoever
     // sent this URL chose how it should be read, and they chose more recently.
     if (HASH.th === 'dark' || HASH.th === 'light') root.setAttribute('data-theme', HASH.th);
   }
   paintTheme();
-  if (themeBtn) themeBtn.addEventListener('click', function () {
-    var next = isDark() ? 'light' : 'dark';
-    root.setAttribute('data-theme', next);
-    try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
-    paintTheme();
-    syncHash();
-  });
+  // syncHash() belongs to the filter part, which is concatenated after this one.
+  // Reachable here because a click can only happen once every part has run.
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const next = isDark() ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      paintTheme();
+      syncHash();
+    });
+  }
 
-  // The sticky stack, measured rather than assumed. --topbar-h decides where the
-  // nav strip, the filter bar, the column headers and every anchor land, and it
-  // depends on things a stylesheet cannot know: how far the title wraps, how tall
-  // the strip is at this width, what text size the reader chose. The CSS values
-  // are the no-JS fallback; these are the truth.
-  var toolbar = document.querySelector('.topbar');
-  var snav = document.querySelector('.snav');
-  // Only the horizontal strip stacks UNDER the bar. Above 72rem the same nav is a
-  // column beside the content and adds nothing to what follows it, so the query
-  // that switches the presentation is the one that decides whether it counts.
-  var stripQ = window.matchMedia ? matchMedia('(max-width:72rem)') : null;
-  function px(el) { return el ? Math.round(el.getBoundingClientRect().height) : 0; }
-  function measureStack() {
+  // --- the sticky stack, measured rather than assumed --------------------------
+
+  // The --topbar-h token decides where the nav strip, the filter bar, the column
+  // headers and every anchor land, and it depends on things a stylesheet cannot know:
+  // how far the title wraps, how tall the strip is at this width, what text size
+  // the reader chose. The CSS values are the no-JS fallback; these are the truth.
+  const toolbar = document.querySelector('.topbar');
+  const snav = document.querySelector('.snav');
+  // Only the horizontal strip stacks UNDER the bar. Above 72rem the same nav is
+  // a column beside the content and adds nothing to what follows it, so the
+  // query that switches the presentation is the one that decides whether it
+  // counts toward the offset.
+  const stripQ = window.matchMedia ? matchMedia('(max-width:72rem)') : null;
+
+  /**
+   * @param {Element|null} el
+   * @returns {number} the element's rendered height in whole pixels; 0 when it
+   *   is not on the page
+   */
+  const px = (el) => (el ? Math.round(el.getBoundingClientRect().height) : 0);
+
+  /**
+   * Publish the measured height of each sticky layer as a custom property.
+   * @returns {void}
+   */
+  const measureStack = () => {
     if (toolbar) root.style.setProperty('--topbar-h', px(toolbar) + 'px');
     root.style.setProperty('--strip-h',
       (snav && stripQ && stripQ.matches ? px(snav) : 0) + 'px');
-    var st = document.querySelector('.sectools');
+    // Queried here rather than through the sectools binding further down: the
+    // first measuring pass runs before that binding exists.
+    const st = document.querySelector('.sectools');
     if (st) root.style.setProperty('--sectools-h', px(st) + 'px');
-  }
+  };
   measureStack();
   if (window.ResizeObserver) {
-    var ro = new ResizeObserver(measureStack);
-    [toolbar, snav, document.querySelector('.sectools')].forEach(function (el) { if (el) ro.observe(el); });
+    const ro = new ResizeObserver(measureStack);
+    for (const el of [toolbar, snav, document.querySelector('.sectools')]) {
+      if (el) ro.observe(el);
+    }
   }
   window.addEventListener('resize', measureStack, { passive: true });
 
+  // --- scroll position ---------------------------------------------------------
+
   // Scroll-spy. The links work without any of this — they are plain anchors
-  // rendered server-side — so this only adds the half a nav cannot do statically:
-  // saying where you ARE. Without it the sidebar is a menu; with it, a position.
+  // rendered server-side — so this only adds the half a nav cannot do
+  // statically: saying where you ARE. Without it the sidebar is a menu; with it,
+  // a position.
   //
-  // This was an IntersectionObserver watching each target inside a 15%-30% band of
-  // the viewport. Most of those targets are <h2> elements a line and a half tall,
-  // so at any given scroll position usually NONE of them was inside the band and
-  // the nav marked nothing at all — the state existed and was almost never shown.
-  // Position is not a question about visibility, it is a question about order:
-  // whichever heading most recently passed under the bar is the one being read.
-  var navLinks = [].slice.call(document.querySelectorAll('.snav a'));
-  var spyTargets = navLinks.map(function (a) {
+  // Position is a question about ORDER, not about visibility: whichever heading
+  // most recently passed under the bar is the one being read. Deciding it from
+  // whether a target sits inside a band of the viewport marks nothing most of
+  // the time, because most targets are <h2> elements a line and a half tall and
+  // no band holds one at a typical scroll offset.
+  const navLinks = Array.from(document.querySelectorAll('.snav a'));
+
+  /**
+   * The section each nav link points at, in link order; an entry is null when
+   * the href names no element on the page.
+   *
+   * Array types are spelled with a trailing `[]` throughout this file, never
+   * with angle brackets: the artifact format ships this script inside a host
+   * page and asserts the fragment opens no second document, and an angle
+   * bracket in front of a DOM interface name reads as a document tag to that
+   * check.
+   * @type {(HTMLElement|null)[]}
+   */
+  const spyTargets = navLinks.map((a) => {
     try { return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))); }
     catch (e) { return null; }
   });
-  function markSpy() {
+
+  /**
+   * Mark exactly one nav link as the section being read.
+   * @returns {void}
+   */
+  const markSpy = () => {
     if (!navLinks.length) return;
-    var fold = px(toolbar) + (snav && stripQ && stripQ.matches ? px(snav) : 0) + 4;
-    var best = -1;
-    spyTargets.forEach(function (el, i) {
+    const fold = px(toolbar) + (snav && stripQ && stripQ.matches ? px(snav) : 0) + 4;
+    let best = -1;
+    spyTargets.forEach((el, i) => {
       if (el && el.getBoundingClientRect().top <= fold) best = i;
     });
     if (best < 0) best = 0;   // above the first heading, the first link still answers
     // At the end of the document nothing further can cross the fold, so a short
     // final section would otherwise be unreachable by the marker.
     if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
-      for (var j = spyTargets.length - 1; j >= 0; j--) { if (spyTargets[j]) { best = j; break; } }
+      const lastResolved = spyTargets.findLastIndex((el) => Boolean(el));
+      if (lastResolved >= 0) best = lastResolved;
     }
-    navLinks.forEach(function (a, i) {
+    navLinks.forEach((a, i) => {
       if (i === best) a.setAttribute('aria-current', 'true');
       else a.removeAttribute('aria-current');
     });
-  }
+  };
 
-  // One scroll listener drives the marker and BOTH bars' elevation, coalesced to a
-  // frame: scroll fires far faster than the screen repaints.
-  var ticking = false;
-  var sectools = document.querySelector('.sectools');
-  function onScroll() {
+  // One scroll listener drives the marker and BOTH bars' elevation, coalesced to
+  // a frame: scroll fires far faster than the screen repaints.
+  let ticking = false;
+  const sectools = document.querySelector('.sectools');
+
+  /**
+   * Repaint everything whose answer depends on the scroll offset.
+   * @returns {void}
+   */
+  const onScroll = () => {
     if (toolbar) toolbar.classList.toggle('scrolled', (window.scrollY || 0) > 8);
-    // The filter bar is stuck when its own top has reached the offset it is stuck
-    // AT, which the stylesheet computed from --sticky-2 and the browser has already
-    // resolved to pixels. Asking for it rather than recomputing the stack here
-    // keeps one definition of where this bar sits: the CSS. `scrollY > n` would be
-    // wrong the moment anything above the table changes height, which is most of
-    // what the top of this report does.
-    // Three conditions, and the two beyond the obvious one are both states this
-    // bar really reaches. It stops being sticky at all on a narrow screen with the
-    // filter panel open (see the 52rem block), where `top` is `auto` and there is
-    // nothing to be stuck against. And sticky only holds while its section is in
-    // view: scroll past the phases table and the bar goes with it, leaving a top
-    // far ABOVE the stick line — which the first version read as "stuck" and
-    // elevated an element nobody could see.
+    // The filter bar is stuck when its own top has reached the offset it is
+    // stuck AT, which the stylesheet computed from --sticky-2 and the browser
+    // has already resolved to pixels. Asking for that rather than recomputing
+    // the stack here keeps one definition of where this bar sits: the CSS. A
+    // `scrollY > n` test goes wrong the moment anything above the table changes
+    // height, which is most of what the top of this report does.
+    //
+    // Three conditions, because two of the states this bar reaches are not
+    // "stuck". On a narrow screen with the filter panel open it is not sticky at
+    // all (the 52rem block gives it `top: auto`), so there is nothing to be
+    // stuck against. And sticky only holds while its section is in view: scroll
+    // past the phases table and the bar goes with it, leaving a top far ABOVE
+    // the stick line with nothing on screen to elevate.
     if (sectools) {
-      var cs = getComputedStyle(sectools);
-      var stickAt = parseFloat(cs.top);
-      var sr = sectools.getBoundingClientRect();
+      const cs = getComputedStyle(sectools);
+      const stickAt = parseFloat(cs.top);
+      const sr = sectools.getBoundingClientRect();
       sectools.classList.toggle('stuck',
         cs.position === 'sticky' && sr.top <= stickAt + 1 && sr.bottom > stickAt);
     }
     markSpy();
-  }
-  window.addEventListener('scroll', function () {
+  };
+  window.addEventListener('scroll', () => {
     if (ticking) return;
     ticking = true;
-    requestAnimationFrame(function () { ticking = false; onScroll(); });
+    requestAnimationFrame(() => { ticking = false; onScroll(); });
   }, { passive: true });
   window.addEventListener('hashchange', markSpy);
   onScroll();
 
-  // No early return here. The print button, the markdown download, the copy
-  // buttons and the whole chart tooltip layer have nothing to do with the phases
-  // table, and a single `if (!grouped) return` above them took all of them down
-  // together whenever that one element was absent. Everything below degrades to a
+  // --- the rows, and what persists about them ----------------------------------
+
+  // No early return on a missing phases table. The print button, the markdown
+  // download, the copy buttons and the whole chart tooltip layer have nothing to
+  // do with that table, and a single `if (!grouped) return` above them takes all
+  // of them down together whenever it is absent. Everything below degrades to a
   // no-op instead: an empty phaseRows makes every loop over it vacuous.
-  var phaseRows = grouped ? [].slice.call(grouped.querySelectorAll('tbody tr.phase')) : [];
-  var bugRows = bugsTable ? [].slice.call(bugsTable.querySelectorAll('tbody tr')) : [];
+  const phaseRows = grouped ? Array.from(grouped.querySelectorAll('tbody tr.phase')) : [];
+  const bugRows = bugsTable ? Array.from(bugsTable.querySelectorAll('tbody tr')) : [];
 
-  // Expand state persists across filtering AND page reload (best-effort;
-  // localStorage may be unavailable on file:// in some browsers).
-  var STORE = 'audit-report-expanded:' + (document.title || 'report');
-  var expanded = {};
+  // Which phases are expanded survives filtering AND a page reload. Best-effort:
+  // localStorage may be unavailable on a document opened over file://.
+  const STORE = 'audit-report-expanded:' + (document.title || 'report');
+  let expanded = {};
   try { expanded = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) {}
-  function persist() { try { localStorage.setItem(STORE, JSON.stringify(expanded)); } catch (e) {} }
 
-  var phaseStatus = '';   // toolbar: filter which PHASES show, by phase status
-  var taskStatus = {};    // per phase: filter that phase's TASKS, by task status
-  var modelFilter = '';   // panel: only tasks run by this model
-  var dFrom = '', dTo = '';  // panel: ISO dates, compared as plain strings
-  var preset = '';        // which relative-span chip is lit, if any
-  // Area chips (D1): a PHASE-level gate like phaseStatus, not a task narrower —
+  /**
+   * Write the expand state back to storage, ignoring a refusal.
+   * @returns {void}
+   */
+  const persist = () => {
+    try { localStorage.setItem(STORE, JSON.stringify(expanded)); } catch (e) {}
+  };
+
+  // --- filter state, and the controls that write it ----------------------------
+
+  let phaseStatus = '';   // toolbar: filter which PHASES show, by phase status
+  let taskStatus = {};    // per phase: filter that phase's TASKS, by task status
+  let modelFilter = '';   // panel: only tasks run by this model
+  let dFrom = '';         // panel: ISO dates, compared as plain strings
+  let dTo = '';
+  let preset = '';        // which relative-span chip is lit, if any
+
+  // Areas are a PHASE-level gate like phaseStatus, not a task narrower —
   // `data-area` lives on the phase row and tasks carry none. Multi-select,
   // unlike every filter above, because areas are how one plan holds several
   // subsystems and "the backend AND the web work" is a view someone actually
   // wants; a phase shows when ANY of its tags is selected. While a selection is
-  // active a phase with no tags has no answer to the question being asked and
+  // active, a phase with no tags has no answer to the question being asked and
   // is hidden — the same reasoning dateOk applies to a task without dates.
-  var areaFilter = [];    // panel: selected area tags, in click order
+  let areaFilter = [];    // selected area tags, in click order
 
-  var modelBar = document.getElementById('audit-model');
-  var areaBar = document.getElementById('audit-areas');
-  var fromInput = document.getElementById('audit-from');
-  var toInput = document.getElementById('audit-to');
-  var presetBar = document.getElementById('audit-presets');
-  var fcount = document.getElementById('audit-fcount');
-  var clearBtns = [].slice.call(document.querySelectorAll('[data-clear]'));
-  var norow = grouped ? grouped.querySelector('tr.norows') : null;
-  var outsideRow = grouped ? grouped.querySelector('[data-outside]') : null;
-  var outsideN = outsideRow ? outsideRow.querySelector('[data-outside-n]') : null;
-  // The author chips (C3) live in the Usage section and scope ONLY it: tasks
-  // record no author, so these never enter refresh() or touch the task table.
-  var authorBar = document.getElementById('audit-authors');
-  var auNote = document.getElementById('audit-au-note');
-  var auFilter = '';
-  var smCells = [].slice.call(document.querySelectorAll('.smcell'));
-  var auRows = [].slice.call(document.querySelectorAll('.rank[data-author]'));
+  const modelBar = document.getElementById('audit-model');
+  const areaBar = document.getElementById('audit-areas');
+  const fromInput = document.getElementById('audit-from');
+  const toInput = document.getElementById('audit-to');
+  const presetBar = document.getElementById('audit-presets');
+  const fcount = document.getElementById('audit-fcount');
+  const clearBtns = Array.from(document.querySelectorAll('[data-clear]'));
+  const norow = grouped ? grouped.querySelector('tr.norows') : null;
+  const outsideRow = grouped ? grouped.querySelector('[data-outside]') : null;
+  const outsideN = outsideRow ? outsideRow.querySelector('[data-outside-n]') : null;
 
-  // The global filter row (C1/C2) — a second line of the sticky top bar. Each
-  // control is a compact twin of a filter that already exists (author chips,
-  // area chips, the panel's date pair) over the SAME state variables, so the
-  // two presentations can never disagree about what is filtered.
-  var gFrom = document.getElementById('audit-gfrom');
-  var gTo = document.getElementById('audit-gto');
-  var gClear = document.getElementById('audit-gclear');
-  var auSelect = document.getElementById('audit-au-select');
-  var areaSelect = document.getElementById('audit-area-select');
-  // The per-day data layer both C1 (range scoping) and C3 (heatmap calendar
-  // navigation) read: {min, max, showCost, days: {date: [tokens, cost, msgs,
-  // [24 hour counts]]}}. Absent on a report without a ledger.
-  var U = window.AUDIT_USAGE || null;
+  // The author chips live in the Usage section and scope ONLY it: tasks record
+  // no author, so these never enter refresh() or touch the task table.
+  const authorBar = document.getElementById('audit-authors');
+  const auNote = document.getElementById('audit-au-note');
+  let auFilter = '';
+  const smCells = Array.from(document.querySelectorAll('.smcell'));
+  const auRows = Array.from(document.querySelectorAll('.rank[data-author]'));
+
+  // The global filter row is a second line of the sticky top bar. Each control
+  // is a compact twin of a filter that already exists (author chips, area chips,
+  // the panel's date pair) over the SAME state variables, so the two
+  // presentations can never disagree about what is filtered.
+  const gFrom = document.getElementById('audit-gfrom');
+  const gTo = document.getElementById('audit-gto');
+  const gClear = document.getElementById('audit-gclear');
+  const auSelect = document.getElementById('audit-au-select');
+  const areaSelect = document.getElementById('audit-area-select');
+
+  /**
+   * The per-day usage layer that both the range controls and the heatmap
+   * calendar read. Absent on a report rendered without a ledger.
+   * @type {{min: string, max: string, showCost: boolean,
+   *         days: Object<string, [number, number, number, number[]]>}|null}
+   */
+  const U = window.AUDIT_USAGE || null;
+
+  // --- number formatting -------------------------------------------------------
 
   // Client-side mirrors of _fmt.py's formatters, for text this script has to
-  // compose itself (the range summary line, the re-rendered heatmap tips).
-  // Same table, same shapes: magnitudes compact ("3.2M"), countables keep
-  // their thousands separators, real-but-sub-cent spend never reads $0.00.
+  // compose itself (the range summary line, the re-rendered heatmap tips). Same
+  // table, same shapes: magnitudes compact ("3.2M"), countables keep their
+  // thousands separators, real-but-sub-cent spend never reads $0.00.
 
-  // toFixed breaks an exact tie AWAY from zero; Python's "%.*f" breaks it to
-  // EVEN. That shipped: 1250 tokens read "1.3K" here against _fmt.py's "1.2K",
-  // and $0.125 read "$0.13" against "$0.12". A different rounding MODE, not
-  // float noise — the inputs are exactly representable in binary.
-  //
-  // A double is an exact tie at `dp` places IFF x * 2^(dp+1) is an ODD integer.
-  // A tie is (2j+1)/(2*10^dp), and a double is only ever a dyadic rational, so
-  // 5^dp must divide (2j+1) — which leaves x = t/2^(dp+1) with t odd. Scaling
-  // by a power of two only shifts the exponent, so that test is exact. Scaling
-  // by 10^dp is NOT, and that is the trap: `n * 100 === Math.round(n * 100)`
-  // misclassifies the majority of values, which are not representable. A value
-  // that is not a tie (1.35, 3.05) fails this test and keeps toFixed's answer,
-  // which already agrees with Python.
-  //
-  // On a tie toFixed returns the away-from-zero neighbour, so its last digit is
-  // odd exactly when Python picks the other one — and stepping that digit down
-  // by one never borrows, because an odd digit is never 0.
-  //
-  // Written twice, once per dialect, because there is no build step that could
-  // share it with panel.js's `uFixedHalfEven`. That is the known cost, and
-  // tools/ui-tests/half-even.test.mjs holds the two copies equal against
-  // _fmt.py — a comment asserting they match is the thing that was already
-  // false in this family once.
-  function fixedHalfEven(x, dp) {
-    var s = x.toFixed(dp);
-    var scaled = x * Math.pow(2, dp + 1);
+  /**
+   * `x.toFixed(dp)` with Python's rounding rule: an exact tie breaks to EVEN,
+   * where toFixed breaks it AWAY from zero. Without this, 1250 tokens read
+   * "1.3K" here against _fmt.py's "1.2K", and $0.125 reads "$0.13" against
+   * "$0.12" — a different rounding MODE, not float noise, since both inputs are
+   * exactly representable in binary.
+   *
+   * A double is an exact tie at `dp` places IFF x * 2^(dp+1) is an ODD integer.
+   * A tie is (2j+1)/(2*10^dp), and a double is only ever a dyadic rational, so
+   * 5^dp must divide (2j+1) — which leaves x = t/2^(dp+1) with t odd. Scaling by
+   * a power of two only shifts the exponent, so that test is exact. Scaling by
+   * 10^dp is NOT, and that is the trap: `n * 100 === Math.round(n * 100)`
+   * misclassifies the majority of values, which are not representable. A value
+   * that is not a tie (1.35, 3.05) fails this test and keeps toFixed's answer,
+   * which already agrees with Python.
+   *
+   * On a tie toFixed returns the away-from-zero neighbour, so its last digit is
+   * odd exactly when Python picks the other one — and stepping that digit down
+   * by one never borrows, because an odd digit is never 0.
+   *
+   * The panel's `uFixedHalfEven` is this same function in the other dialect;
+   * there is no build step that could share one copy, so
+   * tools/ui-tests/half-even.test.mjs holds the two equal against _fmt.py.
+   *
+   * @param {number} x
+   * @param {number} dp decimal places
+   * @returns {string} the fixed-point rendering
+   */
+  const fixedHalfEven = (x, dp) => {
+    const s = x.toFixed(dp);
+    const scaled = x * Math.pow(2, dp + 1);
     if (!isFinite(scaled) || Math.floor(scaled) !== scaled || scaled % 2 === 0) return s;
-    var last = s.charCodeAt(s.length - 1) - 48;
+    const last = s.charCodeAt(s.length - 1) - 48;
     return last % 2 === 1 ? s.slice(0, -1) + String(last - 1) : s;
-  }
-  function fmtTokens(n, dp) {
-    n = Math.trunc(n || 0);
-    var a = Math.abs(n);
-    var t = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
-    for (var i = 0; i < t.length; i++) {
-      if (a >= t[i][0]) return fixedHalfEven(n / t[i][0], dp) + t[i][1];
-    }
-    return String(n);
-  }
-  function fmtCost(x) {
-    x = x || 0;
-    if (x && Math.abs(x) < 0.01) return '<$0.01';
-    return '$' + fixedHalfEven(x, 2);
-  }
-  function fmtInt(n) {
-    return String(Math.trunc(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  }
+  };
 
-  // Indexed ONCE, not per call. These were `querySelectorAll` per phase, and
-  // refresh() calls them inside a loop over phases — so one keystroke in the filter
-  // ran 200 selector queries across a 4200-row tbody, roughly 840,000 node visits,
-  // and it ran again on the next keystroke. That is the whole superlinear cliff
-  // between 100 phases (41ms) and 200 (145ms, and 200ms for the first press).
-  // Sorting reorders these rows but never replaces them, so an index of element
-  // references stays correct across a sort.
-  // The newest day this plan has any record of. The relative presets measure back
-  // from HERE and never from the wall clock: "the last 30 days" read off the
-  // system clock answers a different question every morning, and it would make the
-  // committed example a file that cannot stay byte-equal to itself between two CI
-  // runs — which is exactly what ci.yml compares docs/index.html against.
-  var DMAX = '';
-  var TASKS = {}, TFROW = {};
+  /**
+   * A token count as a compact magnitude, mirroring `_fmt.fmt_tokens`.
+   * @param {number} n
+   * @param {number} dp decimal places kept on the compacted value
+   * @returns {string} e.g. "3.2M"; the plain integer below a thousand
+   */
+  const fmtTokens = (n, dp) => {
+    const whole = Math.trunc(n || 0);
+    const a = Math.abs(whole);
+    const scale = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']]
+      .find(([magnitude]) => a >= magnitude);
+    if (!scale) return String(whole);
+    const [magnitude, suffix] = scale;
+    return fixedHalfEven(whole / magnitude, dp) + suffix;
+  };
+
+  /**
+   * A dollar amount, mirroring `_fmt.fmt_cost`. Spend that is real but below a
+   * cent says so rather than rendering as $0.00, which reads as free.
+   * @param {number} x
+   * @returns {string}
+   */
+  const fmtCost = (x) => {
+    const v = x || 0;
+    if (v && Math.abs(v) < 0.01) return '<$0.01';
+    return '$' + fixedHalfEven(v, 2);
+  };
+
+  /**
+   * A countable with thousands separators, mirroring `_fmt.fmt_int`.
+   * @param {number} n
+   * @returns {string}
+   */
+  const fmtInt = (n) => String(Math.trunc(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+  // --- the row index every later part reads ------------------------------------
+
+  // Indexed ONCE, not per call. refresh() loops over phases, so a
+  // querySelectorAll per phase costs O(phases x rows) on every keystroke — a
+  // 200-phase report is several times slower per keypress than a 100-phase one
+  // for that reason alone. Sorting reorders these rows but never replaces them,
+  // so an index of element references stays correct across a sort.
+
+  /**
+   * The newest day this plan has any record of. The relative presets measure
+   * back from HERE and never from the wall clock: "the last 30 days" read off
+   * the system clock answers a different question every morning, and it would
+   * stop the rendered report being byte-identical between two renders of one
+   * unchanged plan.
+   * @type {string} an ISO date, or '' when no task carries one
+   */
+  let DMAX = '';
+  /** @type {Object<string, HTMLTableRowElement[]>} phase id -> its task rows */
+  const TASKS = {};
+  /** @type {Object<string, HTMLTableRowElement>} phase id -> its task-filter row */
+  const TFROW = {};
   if (grouped) {
-    [].forEach.call(grouped.querySelectorAll('tbody tr.task'), function (t) {
-      var k = t.getAttribute('data-phase');
+    for (const t of grouped.querySelectorAll('tbody tr.task')) {
+      const k = t.getAttribute('data-phase');
       (TASKS[k] || (TASKS[k] = [])).push(t);
-      var d = t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
+      const d = t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
       if (d > DMAX) DMAX = d;
-    });
-    // ex (F-P-4): each task's detail row, resolved once and hung on the task
-    // row itself — refresh() shows and hides these in the same pass, and a
-    // querySelector per task per keystroke is the cliff this index exists for.
-    [].forEach.call(grouped.querySelectorAll('tbody tr.taskdetail'), function (d) {
-      var id = d.getAttribute('data-detail');
-      var host = grouped.querySelector('tr.task .dtoggle[data-dfor="' + id + '"]');
-      var row = host ? host.closest('tr.task') : null;
+    }
+    // Each task's detail row, resolved once and hung on the task row itself:
+    // refresh() shows and hides the pair in the same pass, and a querySelector
+    // per task per keystroke is the cliff this index exists to avoid.
+    for (const d of grouped.querySelectorAll('tbody tr.taskdetail')) {
+      const id = d.getAttribute('data-detail');
+      const host = grouped.querySelector('tr.task .dtoggle[data-dfor="' + id + '"]');
+      const row = host ? host.closest('tr.task') : null;
       if (row) { row.__detail = d; d.__task = row; }
-    });
-    [].forEach.call(grouped.querySelectorAll('tbody tr.taskfilter'), function (t) {
+    }
+    for (const t of grouped.querySelectorAll('tbody tr.taskfilter')) {
       TFROW[t.getAttribute('data-phase')] = t;
-    });
+    }
   }
   // Resolved once, with everything else that refresh() would otherwise have to
   // look up per phase per keystroke.
-  phaseRows.forEach(function (pr) { pr.__pmatch = pr.querySelector('.pmatch'); });
-  // Segments (D1), indexed once like everything else refresh() reads. The
-  // archive starts collapsed exactly when the renderer emitted the toggle:
-  // the server decides (done phases exist AND something else does too), this
-  // script only obeys — a second copy of that decision here would be the two
-  // drifting apart.
-  var segRows = grouped
-    ? [].slice.call(grouped.querySelectorAll('tbody tr.seghead')) : [];
-  segRows.forEach(function (sh) { sh.__seg = sh.getAttribute('data-seg'); });
-  var archN = 0;
-  phaseRows.forEach(function (pr) {
-    pr.__seg = pr.getAttribute('data-seg') || '';
-    if (pr.__seg === 'archived') archN++;
-  });
-  // vw (F-P-4): which phases are on screen is a NAMED view, not a toggle
-  // somebody has to find. `active` covers both segments of unfinished work;
-  // `archived` is done AND cancelled; `all` is the escape hatch. The starting
-  // value is the renderer's (it stamps `all` on a plan with nothing active),
-  // then whatever the reader last chose, then whatever the link says.
-  var viewSel = document.getElementById('audit-view');
-  var VIEWS = { active: ['active', 'pending'], archived: ['archived'],
-                all: ['active', 'pending', 'archived'] };
-  var defaultView = (grouped && grouped.getAttribute('data-defaultview')) || 'active';
-  var viewMode = defaultView;
-  function inView(seg) {
-    return (VIEWS[viewMode] || VIEWS.all).indexOf(seg) >= 0;
-  }
-  function tasksOf(pid) { return TASKS[pid] || []; }
-  function tfOf(pid) { return TFROW[pid] || null; }
-  // Lowercased once per row and kept. The text of a rendered report never changes,
-  // so re-lowercasing 4200 rows on every keystroke was work with a constant answer.
-  function hay(r) {
-    var v = r.__auditText;
-    if (v === undefined) { v = r.textContent.toLowerCase(); r.__auditText = v; }
-    return v;
-  }
-  function textHit(r, term) { return !term || hay(r).indexOf(term) !== -1; }
-  function setOpen(pr, open) { pr.classList.toggle('open', !!open); pr.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  phaseRows.forEach((pr) => { pr.__pmatch = pr.querySelector('.pmatch'); });
 
-  // The date this task SHOWS in the table: completed if it is, else started.
-  // Filtering on a date other than the one printed in the row reads as a bug the
-  // first time a reader checks one against the other.
-  function taskDate(t) {
-    return t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
-  }
-  function dateOk(t) {
+  // Segment rows, indexed once like everything else refresh() reads. Whether the
+  // archive starts collapsed is the renderer's decision — it emits the toggle
+  // only when done phases exist AND something else does too — and this script
+  // only obeys it; a second copy of that rule here would be the two drifting
+  // apart.
+  const segRows = grouped
+    ? Array.from(grouped.querySelectorAll('tbody tr.seghead')) : [];
+  segRows.forEach((sh) => { sh.__seg = sh.getAttribute('data-seg'); });
+  phaseRows.forEach((pr) => { pr.__seg = pr.getAttribute('data-seg') || ''; });
+  const archN = phaseRows.filter((pr) => pr.__seg === 'archived').length;
+
+  // Which phases are on screen is a NAMED view, not a toggle somebody has to
+  // find. `active` covers both segments of unfinished work; `archived` is done
+  // AND cancelled; `all` is the escape hatch. The starting value is the
+  // renderer's (it stamps `all` on a plan with nothing active), then whatever
+  // the reader last chose, then whatever the link says.
+  const viewSel = document.getElementById('audit-view');
+  const VIEWS = { active: ['active', 'pending'], archived: ['archived'],
+                  all: ['active', 'pending', 'archived'] };
+  const defaultView = (grouped && grouped.getAttribute('data-defaultview')) || 'active';
+  let viewMode = defaultView;
+
+  /**
+   * @param {string} seg a phase row's segment
+   * @returns {boolean} whether the current view shows that segment
+   */
+  const inView = (seg) => (VIEWS[viewMode] || VIEWS.all).includes(seg);
+
+  /**
+   * @param {string} pid a phase id
+   * @returns {HTMLTableRowElement[]} that phase's task rows; empty when unknown
+   */
+  const tasksOf = (pid) => TASKS[pid] || [];
+
+  /**
+   * @param {string} pid a phase id
+   * @returns {HTMLTableRowElement|null} that phase's task-filter row
+   */
+  const tfOf = (pid) => TFROW[pid] || null;
+
+  /**
+   * A row's text, lowercased once and kept on the row. The text of a rendered
+   * report never changes, so re-lowercasing thousands of rows on every keystroke
+   * is work with a constant answer.
+   * @param {HTMLTableRowElement} r
+   * @returns {string} the row's text content, lowercased
+   */
+  const hay = (r) => {
+    if (r.__auditText === undefined) r.__auditText = r.textContent.toLowerCase();
+    return r.__auditText;
+  };
+
+  /**
+   * @param {HTMLTableRowElement} r
+   * @param {string} term already lowercased; an empty term matches every row
+   * @returns {boolean}
+   */
+  const textHit = (r, term) => !term || hay(r).includes(term);
+
+  /**
+   * Expand or collapse a phase row, keeping the ARIA state with the class so a
+   * screen reader and the stylesheet never disagree.
+   * @param {HTMLTableRowElement} pr
+   * @param {boolean} open
+   * @returns {void}
+   */
+  const setOpen = (pr, open) => {
+    pr.classList.toggle('open', Boolean(open));
+    pr.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+
+  /**
+   * The date a task SHOWS in the table: completed if it is, else started.
+   * Filtering on a date other than the one printed in the row reads as a bug the
+   * first time a reader checks one against the other.
+   * @param {HTMLTableRowElement} t
+   * @returns {string} an ISO date, or '' when the task carries neither
+   */
+  const taskDate = (t) =>
+    t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
+
+  /**
+   * @param {HTMLTableRowElement} t
+   * @returns {boolean} whether the task falls inside the active date window
+   */
+  const dateOk = (t) => {
     if (!dFrom && !dTo) return true;
-    var d = taskDate(t);
-    // A task with no dates at all is not "inside every range"; it is unknown, and
-    // a date filter is a question it has no answer to.
+    const d = taskDate(t);
+    // A task with no dates at all is not "inside every range"; it is unknown,
+    // and a date filter is a question it has no answer to.
     if (!d) return false;
-    // Plain string comparison. Fixed-width ISO dates order lexicographically, and
-    // <input type=date> hands back exactly that shape — so a range test over four
-    // thousand rows costs no Date parsing at all.
+    // Plain string comparison. Fixed-width ISO dates order lexicographically,
+    // and <input type=date> hands back exactly that shape — so a range test over
+    // four thousand rows costs no Date parsing at all.
     return (!dFrom || d >= dFrom) && (!dTo || d <= dTo);
-  }
-  // The renderer joins a phase's tags with single spaces into `data-area`
-  // (render-report's phase-row emitter), so splitting on whitespace and
-  // dropping the empties reads an untagged phase as no tags rather than [''].
-  function areaOk(pr) {
-    if (!areaFilter.length) return true;
-    var tags = (pr.getAttribute('data-area') || '').split(/\s+/);
-    for (var i = 0; i < tags.length; i++) {
-      if (tags[i] && areaFilter.indexOf(tags[i]) !== -1) return true;
-    }
-    return false;
-  }
+  };
 
+  /**
+   * @param {HTMLTableRowElement} pr a phase row
+   * @returns {boolean} whether any selected area tag admits this phase; true
+   *   whenever nothing is selected
+   */
+  const areaOk = (pr) => {
+    if (!areaFilter.length) return true;
+    // The renderer joins a phase's tags with single spaces into `data-area`, so
+    // splitting on whitespace and dropping the empties reads an untagged phase
+    // as no tags rather than one empty tag.
+    const tags = (pr.getAttribute('data-area') || '').split(/\s+/);
+    return tags.some((tag) => tag && areaFilter.includes(tag));
+  };
   // --- filter state, and the pass that applies it ----------------------------
 
-  // The filtered view, written back into the URL so it can be sent to someone.
-  // `history.replaceState` and not an assignment to location.hash: assigning
-  // pushes a history entry per keystroke and scrolls the document to whatever it
-  // reads the fragment as. Wrapped, because History is refused on a file://
-  // document in some browsers — which is where this report is most often opened,
-  // and a filter that throws on every pass is a filter that does not run.
-  //
-  // Deliberately NOT encoded: the per-phase task-status chips. They are keyed by
-  // phase id, so carrying them would put a list as long as the plan into the URL
-  // to describe a drill-down inside one row. A link names the view, not the state
-  // of every control on the page.
-  // vw: the same state, written twice on purpose. The fragment is the SHAREABLE
-  // copy; localStorage is the copy that survives a reload when History is
-  // refused — which is the ordinary case for this file, because a report is
-  // most often opened straight off disk over file://, and that is exactly where
-  // filters used to vanish on every refresh.
-  var STORE_KEY = 'audit-view-' + (document.title || 'report');
+  // The storage key for the encoded view, scoped by document title so two
+  // reports opened from the same disk do not overwrite each other's filters.
+  const STORE_KEY = 'audit-view-' + (document.title || 'report');
+
+  /**
+   * Write the encoded filter state to local storage, or clear it when nothing
+   * is filtering.
+   *
+   * This is the copy of the view that survives a reload when History is
+   * refused, which is the ordinary case here: a report is most often opened
+   * straight off disk over `file://`, and that is exactly where filters used to
+   * vanish on every refresh. Storage is best-effort on an opaque origin, so the
+   * call is wrapped — a filter that throws on every pass is a filter that does
+   * not run.
+   *
+   * @param {string[]} parts Encoded `key=value` pairs, already URL-escaped. An
+   *   empty list removes the stored entry rather than storing an empty string.
+   * @returns {void}
+   */
   function saveState(parts) {
     try {
       if (parts.length) localStorage.setItem(STORE_KEY, parts.join('&'));
       else localStorage.removeItem(STORE_KEY);
     } catch (e) {}
   }
+
+  /**
+   * Encode the current filter state into the URL fragment and into storage, so
+   * the filtered view can be sent to someone and survives a reload.
+   *
+   * `history.replaceState` and not an assignment to `location.hash`: assigning
+   * pushes a history entry per keystroke and scrolls the document to whatever
+   * it reads the fragment as. The call is wrapped because History is refused on
+   * a `file://` document in some browsers, which is where this report is most
+   * often opened.
+   *
+   * The per-phase task-status chips are deliberately not encoded. They are
+   * keyed by phase id, so carrying them would put a list as long as the plan
+   * into the URL to describe a drill-down inside one row. A link names the
+   * view, not the state of every control on the page.
+   *
+   * @returns {void}
+   */
   function syncHash() {
-    var parts = [];
+    const parts = [];
+    /**
+     * Append one encoded `key=value` pair, skipping empty values.
+     *
+     * @param {string} k Fragment key.
+     * @param {string} v Raw value; a falsy value is omitted entirely, which is
+     *   what keeps a default-valued control out of the link.
+     * @returns {void}
+     */
     function put(k, v) { if (v) parts.push(k + '=' + encodeURIComponent(v)); }
     put('v', viewMode === defaultView ? '' : viewMode);
     put('q', q ? q.value.trim() : '');
     put('ps', phaseStatus);
     // Space-joined, mirroring the data-area attribute — one separator rule for
     // both carriers of a tag list. `a` and `au` are distinct keys: the codec
-    // above splits on '&' and the FIRST '=', so a key is always matched whole.
+    // that reads the fragment splits on '&' and the FIRST '=', so a key is
+    // always matched whole.
     put('a', areaFilter.join(' '));
     put('m', modelFilter);
     put('from', dFrom);
@@ -1857,26 +2069,38 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     } catch (e) {}
   }
 
+  /**
+   * Apply every filter to the whole table in one pass, then repaint the counts,
+   * the empty state, the toolbar and the usage views.
+   *
+   * This is the single refresh every other feature triggers — a keystroke, a
+   * chip, a date, a sort — so it runs over every phase and every task in the
+   * plan on each call. It therefore reads only state that was resolved once up
+   * front and marks its verdicts on the rows themselves; gathering matches into
+   * per-phase arrays would be garbage this pass has no need to make.
+   *
+   * @returns {void}
+   */
   function refresh() {
-    var term = (q ? q.value : '').trim().toLowerCase();
+    const term = (q ? q.value : '').trim().toLowerCase();
     // Filters that narrow the TASKS inside a phase, rather than the phase list.
     // A phase none of whose tasks survive is not a phase that matches: keeping it
     // is the difference between "these four phases used opus" and "here are all
     // twelve, four of them usefully".
-    var narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
-    var anyFilter = narrows || term !== '' || phaseStatus !== ''
+    const narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
+    const anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
-    var visP = 0, visT = 0, totT = 0, hiddenByView = 0;
-    var segVis = {};   // visible phases per segment, for the seghead painter
-    phaseRows.forEach(function (pr) {
-      var pid = pr.getAttribute('data-phase');
-      var tasks = tasksOf(pid);
-      var tf = taskStatus[pid] || '';
-      var pText = textHit(pr, term);
-      var anyTaskText = false, nMatch = 0;
+    let visP = 0, visT = 0, totT = 0, hiddenByView = 0;
+    const segVis = {};   // visible phases per segment, for the seghead painter
+    phaseRows.forEach((pr) => {
+      const pid = pr.getAttribute('data-phase');
+      const tasks = tasksOf(pid);
+      const tf = taskStatus[pid] || '';
+      const pText = textHit(pr, term);
+      let anyTaskText = false, nMatch = 0;
       totT += tasks.length;
-      tasks.forEach(function (t) {
-        var tText = textHit(t, term);
+      tasks.forEach((t) => {
+        const tText = textHit(t, term);
         if (tText) anyTaskText = true;
         // Marked on the row rather than gathered into an array: this runs on
         // every keystroke over every task in the plan, and one array per phase
@@ -1888,66 +2112,63 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
         if (t.__hit) nMatch++;
       });
       // phase-level: status + area gates + text (phase title OR any task matches)
-      var matchAll = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
+      const matchAll = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
                   && areaOk(pr)
                   && (term === '' || pText || anyTaskText)
                   && (!narrows || nMatch > 0);
-      var showP = matchAll
-                  // vw: the view gates, and it gates ALWAYS. The old rule
-                  // lifted the archive whenever a filter was on, which made
-                  // the control a lie mid-search; matches the view hides are
-                  // counted instead and announced under the table, with the
-                  // way to see them.
+      const showP = matchAll
+                  // The view gates ALWAYS, filter or no filter. Lifting it
+                  // whenever something was typed made the control a lie
+                  // mid-search; matches the view hides are counted instead and
+                  // announced under the table, with the way to see them.
                   && inView(pr.__seg);
-      // vw: would this phase have shown in ALL? Counted before the view is
-      // applied, so the note below can say what the reader is not seeing.
+      // Would this phase have shown in ALL? Counted before the view is applied,
+      // so the note below can say what the reader is not seeing.
       if (matchAll && !showP) hiddenByView++;
       pr.style.display = showP ? '' : 'none';
       if (showP) {
         visP++; visT += nMatch;
         segVis[pr.__seg] = (segVis[pr.__seg] || 0) + 1;
       }
-      // Manual state, and ONLY manual state. This used to OR the search term and
-      // the per-phase task filter into the condition, so one character typed
-      // into the filter threw every matching phase open at once: the page grew by
-      // several screens, the row being read left the viewport, and clearing the
-      // filter afterwards shut the phases that had been opened by hand. What a
-      // filter owes the reader instead is a REASON to open a row, which is the
-      // job the match badge below does.
-      var open = showP && !!expanded[pid];
+      // Manual state, and ONLY manual state. Or-ing the search term and the
+      // per-phase task filter into this condition threw every matching phase
+      // open on the first character typed: the page grew by several screens,
+      // the row being read left the viewport, and clearing the filter afterwards
+      // shut the phases that had been opened by hand. What a filter owes the
+      // reader instead is a REASON to open a row, which is the job the match
+      // badge below does.
+      const open = showP && !!expanded[pid];
       setOpen(pr, open);
-      var tfRow = tfOf(pid);
+      const tfRow = tfOf(pid);
       // 'table-row', NOT '': clearing the inline style hands the row back to the
       // stylesheet, where `tr.taskfilter{display:none}` wins — so the per-phase
       // status filter was emitted into every report, populated by JS, and could
       // never be seen. `tr.task` survives the same pattern only because it has no
       // default display rule to fall back to.
       if (tfRow) tfRow.style.display = open ? 'table-row' : 'none';
-      tasks.forEach(function (t) {
-        var vis = open && t.__hit;
+      tasks.forEach((t) => {
+        const vis = open && t.__hit;
         t.style.display = vis ? '' : 'none';
-        // ex: a detail row is visible only when its task is AND it was opened.
-        // Kept open across a filter on purpose — a reader who opened a task and
-        // then narrowed the table has not changed their mind about that task.
+        // A detail row is visible only when its task is AND it was opened. Kept
+        // open across a filter on purpose — a reader who opened a task and then
+        // narrowed the table has not changed their mind about that task.
         if (t.__detail) t.__detail.hidden = !(vis && t.__open);
       });
       // "3 of 12 match" on a row that is closed and hiding its own evidence. Not
       // shown at rest, and not shown when everything matched — "12 of 12" is a
       // sentence that tells a reader nothing they did not already have.
-      var badge = pr.__pmatch;
+      const badge = pr.__pmatch;
       if (badge) {
-        var wanted = showP && !open && anyFilter && nMatch !== tasks.length;
+        const wanted = showP && !open && anyFilter && nMatch !== tasks.length;
         if (wanted) badge.textContent = nMatch + ' of ' + tasks.length + ' match';
         badge.hidden = !wanted;
       }
     });
     // A segment header follows its rows: a header over nothing says nothing.
-    // (The archive's old exception — a header that stayed to announce what it
-    // was hiding — belonged to the toggle, and the view select says it now.)
-    segRows.forEach(function (sh) {
+    segRows.forEach((sh) => {
       sh.style.display = (segVis[sh.__seg] || 0) > 0 ? '' : 'none';
     });
-    bugRows.forEach(function (b) { b.style.display = textHit(b, term) ? '' : 'none'; });
+    bugRows.forEach((b) => { b.style.display = textHit(b, term) ? '' : 'none'; });
 
     if (count) {
       // Tasks as well as phases, now that a filter can narrow a phase from the
@@ -1960,10 +2181,10 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     // Filtered down to nothing, the table was an empty frame with no explanation
     // and no way back except undoing each control by hand.
     if (norow) norow.style.display = (anyFilter && visP === 0) ? 'table-row' : 'none';
-    // vw: what the view is keeping off screen, said plainly, with the way to
-    // see it. Silent when the view is already `all` — there is nothing outside it.
+    // What the view is keeping off screen, said plainly, with the way to see it.
+    // Silent when the view is already `all` — there is nothing outside it.
     if (outsideRow) {
-      var show = hiddenByView > 0 && viewMode !== 'all';
+      const show = hiddenByView > 0 && viewMode !== 'all';
       outsideRow.hidden = !show;
       outsideRow.style.display = show ? 'table-row' : 'none';
       if (show && outsideN) {
@@ -1974,16 +2195,16 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     }
     // The toolbar copy appears the moment anything is filtering, so there is a way
     // back that does not depend on the table having rows left to draw it in.
-    clearBtns.forEach(function (b) { b.hidden = !anyFilter; });
+    clearBtns.forEach((b) => { b.hidden = !anyFilter; });
     // A filter folded away inside a closed <details> is how a reader concludes
     // rows are missing. The count on the summary says something is on.
     if (fcount) {
-      var nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0)
+      const nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0)
                     + (areaFilter.length ? 1 : 0);
       fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {
-      var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
+      const anyClosed = phaseRows.some((pr) => !expanded[pr.getAttribute('data-phase')]);
       expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
     }
     // The usage views follow the same range the table just filtered by. Cheap
@@ -1991,24 +2212,56 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     applyUsageRange();
     syncHash();
   }
-
+  /**
+   * Compare two cell strings in natural order, so `P2` sorts before `P10`.
+   *
+   * Each side is cut into alternating runs of digits and non-digits. A digit run
+   * compares by value; a text run carries Infinity in the numeric slot, which is
+   * what puts every number ahead of every word at the same position. The runs are
+   * consumed in lockstep and the first difference decides; when one side runs out
+   * first, the shorter string sorts first.
+   *
+   * @param {string} a - text of the cell on the left of the comparison
+   * @param {string} b - text of the cell on the right of the comparison
+   * @returns {number} below 0 when `a` sorts first, above 0 when `b` does, 0 when
+   *   the two are indistinguishable
+   */
   function natCmp(a, b) {
-    var ax = [], bx = [];
-    a.replace(/(\d+)|(\D+)/g, function (_, n, s) { ax.push([n === undefined ? Infinity : +n, s || '']); });
-    b.replace(/(\d+)|(\D+)/g, function (_, n, s) { bx.push([n === undefined ? Infinity : +n, s || '']); });
+    const ax = [], bx = [];
+    a.replace(/(\d+)|(\D+)/g, (_, n, s) => { ax.push([n === undefined ? Infinity : +n, s || '']); });
+    b.replace(/(\d+)|(\D+)/g, (_, n, s) => { bx.push([n === undefined ? Infinity : +n, s || '']); });
     while (ax.length && bx.length) {
-      var an = ax.shift(), bn = bx.shift();
-      var c = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
+      const an = ax.shift(), bn = bx.shift();
+      const c = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
       if (c) return c;
     }
     return ax.length - bx.length;
   }
+
+  /**
+   * Read one cell of a row as trimmed text.
+   *
+   * @param {HTMLTableRowElement} r - the row to read
+   * @param {number} idx - zero-based column index
+   * @returns {string} the cell's trimmed text, or '' when the row is that short
+   */
   function cell(r, idx) { return r.cells[idx] ? r.cells[idx].textContent.trim() : ''; }
 
+  /**
+   * Make every header of a table a sort control over its own column.
+   *
+   * @param {HTMLTableElement|null} table - the table to wire; a missing one is a
+   *   no-op, because a report can be rendered without this table at all
+   * @param {boolean} withinPhase - true to reorder each phase's own task rows and
+   *   leave the phases where they are, false to reorder the tbody as one list
+   * @param {boolean} initial - true when the rows already arrive in the first
+   *   column's ascending order, so that column is marked without being re-sorted
+   * @returns {void}
+   */
   function wireSort(table, withinPhase, initial) {
     if (!table) return;
-    var ths = table.querySelectorAll('thead th');
-    [].forEach.call(ths, function (th, idx) {
+    const ths = [...table.querySelectorAll('thead th')];
+    ths.forEach((th, idx) => {
       // A column header that sorts on click is a control, so it has to be one:
       // reachable by Tab, operable by Enter/Space, and announcing its own state.
       // Without aria-sort the current order is conveyed by a CSS ::after arrow
@@ -2016,9 +2269,14 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       th.setAttribute('role', 'button');
       th.setAttribute('tabindex', '0');
       th.setAttribute('aria-sort', 'none');
-      var doSort = function () {
-        var asc = th.getAttribute('data-sort') !== 'asc';
-        [].forEach.call(ths, function (h) {
+      /**
+       * Order the rows by this column, flipping direction when it already owns
+       * the sort, and leave every other header reading as unsorted.
+       * @returns {void}
+       */
+      const doSort = () => {
+        const asc = th.getAttribute('data-sort') !== 'asc';
+        ths.forEach((h) => {
           h.removeAttribute('data-sort');
           h.classList.remove('sorted');
           h.setAttribute('aria-sort', 'none');
@@ -2026,33 +2284,32 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
         th.setAttribute('data-sort', asc ? 'asc' : 'desc');
         th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
         th.classList.add('sorted');
-        var cmp = function (r1, r2) { return asc ? natCmp(cell(r1, idx), cell(r2, idx)) : natCmp(cell(r2, idx), cell(r1, idx)); };
+        /** @type {(r1: HTMLTableRowElement, r2: HTMLTableRowElement) => number} */
+        const cmp = (r1, r2) => (asc ? natCmp(cell(r1, idx), cell(r2, idx)) : natCmp(cell(r2, idx), cell(r1, idx)));
         if (withinPhase) {
-          phaseRows.forEach(function (pr) {
-            var pid = pr.getAttribute('data-phase');
-            var anchor = tfOf(pid) || pr;   // keep tasks after the phase + its task-filter row
+          phaseRows.forEach((pr) => {
+            const pid = pr.getAttribute('data-phase');
+            const anchor = tfOf(pid) || pr;   // keep tasks after the phase + its task-filter row
             tasksOf(pid).slice().sort(cmp).reverse()
-              .forEach(function (r) { anchor.parentNode.insertBefore(r, anchor.nextSibling); });
+              .forEach((r) => { anchor.parentNode.insertBefore(r, anchor.nextSibling); });
           });
         } else {
-          var body = table.tBodies[0];
-          [].slice.call(body.querySelectorAll('tr')).sort(cmp).forEach(function (r) { body.appendChild(r); });
+          const body = table.tBodies[0];
+          [...body.querySelectorAll('tr')].sort(cmp).forEach((r) => { body.appendChild(r); });
         }
         refresh();
       };
       th.addEventListener('click', doSort);
-      th.addEventListener('keydown', function (ev) {
+      th.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
           ev.preventDefault();   // Space would otherwise scroll the page
           doSort();
         }
       });
-      // so (F-P-4): the table ARRIVES sorted — plan order, by id — and until
-      // now nothing said so. The marker appeared on the first click, which
-      // taught every reader that the column they were looking at was unsorted.
-      // Marked, not re-sorted: the rows are already in this order, and running
-      // the comparator at load would reorder a table that is correct (and
-      // would tear the phase/task grouping apart to do it).
+      // The table ARRIVES sorted — plan order, by id — so the first column says
+      // so from the start. Marked, not re-sorted: the rows are already in that
+      // order, and running the comparator at load would reorder a table that is
+      // correct, and tear the phase/task grouping apart to do it.
       if (initial && idx === 0) {
         th.setAttribute('data-sort', 'asc');
         th.setAttribute('aria-sort', 'ascending');
@@ -2063,22 +2320,54 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
 
   // --- wiring the controls the document already carries -----------------------
 
-  // Attach behaviour to chips that are already in the document. They used to be
-  // created here, which meant the filter UI simply did not exist for anything
-  // that does not run scripts — and "the filters are gone" and "the filters are
-  // broken" look identical from the outside.
+  /**
+   * Attach toggle behaviour to chips that are already in the document.
+   *
+   * The chips are never created here. A filter bar that exists only once a script
+   * has run is simply absent for a reader without scripts, and "the filters are
+   * gone" and "the filters are broken" look identical from the outside.
+   *
+   * One delegated listener on the host serves every chip inside it, however many
+   * the renderer emitted.
+   *
+   * This signature is a contract: four other features — the area chips, the author
+   * chips, the range presets and the heatmap granularity — call it with their own
+   * attribute and their own handler, so the shape `(host, dataAttr, onToggle)`
+   * cannot change without changing them. `onToggle` is handed the host and the
+   * attribute back so a caller can share one painter without building a closure.
+   *
+   * @param {HTMLElement|null} host - the element the chips sit in; a missing one
+   *   is a no-op, since a report may render a bar with nothing to filter by
+   * @param {string} dataAttr - the attribute carrying a chip's value, e.g. 'data-ps'
+   * @param {(value: string, host: HTMLElement, dataAttr: string) => void} onToggle -
+   *   called with the clicked chip's value; it owns the state change and the repaint
+   * @returns {void}
+   */
   function wireChips(host, dataAttr, onToggle) {
     if (!host) return;
-    host.addEventListener('click', function (e) {
-      var btn = e.target && e.target.closest ? e.target.closest('[' + dataAttr + ']') : null;
-      var val = btn && btn.getAttribute(dataAttr);
+    host.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('[' + dataAttr + ']') : null;
+      const val = btn && btn.getAttribute(dataAttr);
       if (!val) return;
       onToggle(val, host, dataAttr);
     });
   }
+
+  /**
+   * Paint one chip of a bar as pressed and every other as released.
+   *
+   * A chip reports its state through aria-pressed, so the `on` class alone is not
+   * the source of truth: the colour is for the eye and the attribute is what a
+   * screen reader reads, and they have to be set together or they disagree.
+   *
+   * @param {HTMLElement} host - the element whose children are the chip buttons
+   * @param {string} dataAttr - the attribute carrying a chip's value, e.g. 'data-ps'
+   * @param {string} active - the value to press; '' presses none of them
+   * @returns {void}
+   */
   function highlight(host, dataAttr, active) {
-    [].forEach.call(host.children, function (x) {
-      var on = x.getAttribute(dataAttr) === active;
+    [...host.children].forEach((x) => {
+      const on = x.getAttribute(dataAttr) === active;
       // classList, not a className rebuilt from its first word: that rebuild
       // silently dropped every class after the first, so any second utility class
       // a chip carries disappeared the moment the chip was toggled.
@@ -2088,9 +2377,18 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   }
 
   // phase expand/collapse (click or Enter/Space); state persists
-  phaseRows.forEach(function (pr) {
-    function toggle() { var pid = pr.getAttribute('data-phase'); expanded[pid] = !expanded[pid]; persist(); refresh(); }
-    pr.addEventListener('click', function (e) {
+  phaseRows.forEach((pr) => {
+    /**
+     * Flip this phase between expanded and collapsed, and remember the choice.
+     * @returns {void}
+     */
+    function toggle() {
+      const pid = pr.getAttribute('data-phase');
+      expanded[pid] = !expanded[pid];
+      persist();
+      refresh();
+    }
+    pr.addEventListener('click', (e) => {
       // A phase row contains its own controls — the "held by" link that jumps to
       // the phase holding this one shut, and anything a later section adds. Those
       // have their own meaning; swallowing them into the row's toggle meant
@@ -2098,32 +2396,34 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       if (e.target && e.target.closest && e.target.closest('a,button,input,select,summary,label')) return;
       toggle();
     });
-    pr.addEventListener('keydown', function (e) {
+    pr.addEventListener('keydown', (e) => {
       if (e.target !== pr) return;   // Enter on a focused link inside the row is the link's
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
     });
   });
-  if (expandBtn) expandBtn.addEventListener('click', function () {
-    var anyClosed = phaseRows.some(function (pr) { return !expanded[pr.getAttribute('data-phase')]; });
-    phaseRows.forEach(function (pr) { expanded[pr.getAttribute('data-phase')] = anyClosed; });
+  if (expandBtn) expandBtn.addEventListener('click', () => {
+    const anyClosed = phaseRows.some((pr) => !expanded[pr.getAttribute('data-phase')]);
+    phaseRows.forEach((pr) => { expanded[pr.getAttribute('data-phase')] = anyClosed; });
     persist(); refresh();
   });
 
   // toolbar phase-status chips (distinct PHASE statuses, rendered server-side)
-  wireChips(phaseStatusBar, 'data-ps', function (val, host, attr) {
+  wireChips(phaseStatusBar, 'data-ps', (val, host, attr) => {
     phaseStatus = (phaseStatus === val) ? '' : val;
     highlight(host, attr, phaseStatus);
     refresh();
   });
 
-  // per-phase task-status chips (contextual — only that phase's task statuses)
-  var tfHosts = [];
-  phaseRows.forEach(function (pr) {
-    var pid = pr.getAttribute('data-phase');
-    var tfRow = tfOf(pid); if (!tfRow) return;
-    var host = tfRow.querySelector('.tf-chips'); if (!host) return;
+  // per-phase task-status chips (contextual — only that phase's task statuses).
+  // Each phase keeps its own slot in taskStatus, so filtering one phase's tasks
+  // leaves the others showing everything they have.
+  const tfHosts = [];
+  phaseRows.forEach((pr) => {
+    const pid = pr.getAttribute('data-phase');
+    const tfRow = tfOf(pid); if (!tfRow) return;
+    const host = tfRow.querySelector('.tf-chips'); if (!host) return;
     tfHosts.push(host);
-    wireChips(host, 'data-ts', function (val) {
+    wireChips(host, 'data-ts', (val) => {
       taskStatus[pid] = (taskStatus[pid] === val) ? '' : val;
       highlight(host, 'data-ts', taskStatus[pid]);
       refresh();
@@ -2131,7 +2431,7 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   });
 
   // model chips (inside the More filters panel)
-  wireChips(modelBar, 'data-m', function (val, host, attr) {
+  wireChips(modelBar, 'data-m', (val, host, attr) => {
     modelFilter = (modelFilter === val) ? '' : val;
     highlight(host, attr, modelFilter);
     refresh();
@@ -2140,10 +2440,16 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // area chips (inside the More filters panel) — the phase-level gate.
   // highlight() paints exactly one active value; these chips hold a set, so
   // their painter reads membership instead.
+
+  /**
+   * Repaint both controls that show the area selection: the chips, which hold a
+   * set, and the global select, which can only name one thing.
+   * @returns {void}
+   */
   function paintAreas() {
     if (areaBar) {
-      [].forEach.call(areaBar.children, function (x) {
-        var on = areaFilter.indexOf(x.getAttribute('data-a')) !== -1;
+      [...areaBar.children].forEach((x) => {
+        const on = areaFilter.indexOf(x.getAttribute('data-a')) !== -1;
         x.classList.toggle('on', on);
         x.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
@@ -2153,7 +2459,7 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     // synthetic "N areas" option rather than the select naming one tag and
     // silently misdescribing the rest.
     if (areaSelect) {
-      var multi = areaSelect.querySelector('option[data-multi]');
+      let multi = areaSelect.querySelector('option[data-multi]');
       if (areaFilter.length > 1) {
         if (!multi) {
           multi = document.createElement('option');
@@ -2171,47 +2477,51 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   }
   // The global area select: one tag or all. Multi-select stays where it always
   // was (the chips in More filters); picking here replaces the selection.
-  if (areaSelect) areaSelect.addEventListener('change', function () {
+  if (areaSelect) areaSelect.addEventListener('change', () => {
     if (areaSelect.value === '~multi') return;   // the synthetic summary option
     areaFilter = areaSelect.value ? [areaSelect.value] : [];
     paintAreas();
     refresh();
   });
-  wireChips(areaBar, 'data-a', function (val) {
-    var i = areaFilter.indexOf(val);
+  wireChips(areaBar, 'data-a', (val) => {
+    const i = areaFilter.indexOf(val);
     if (i === -1) areaFilter.push(val); else areaFilter.splice(i, 1);
     paintAreas();
     refresh();
   });
 
-  // Author chips (C3, inside the Usage section). They toggle `hidden` on the
-  // section's per-author views and nothing else — the tiles and trend above
-  // stay project-wide, and the task table has no author to filter by. The
-  // default view is restored by re-applying hidden from the data-top marker
-  // the renderer stamped on the top-8 cells, so a release is exact rather
-  // than a re-render's guess.
+  // Author chips, inside the Usage section. They toggle `hidden` on the section's
+  // per-author views and nothing else — the tiles and trend above stay
+  // project-wide, and the task table has no author to filter by. The default view
+  // is restored by re-applying hidden from the data-top marker the renderer
+  // stamped on the top cells, so a release is exact rather than a re-render's
+  // guess.
+
+  /**
+   * Narrow the Usage section to the selected author, or restore the default view
+   * when no author is selected, and say in the note what the selection covers.
+   * @returns {void}
+   */
   function applyAuthor() {
     if (auSelect) auSelect.value = auFilter;   // the global twin says the same
-    smCells.forEach(function (c) {
+    smCells.forEach((c) => {
       c.hidden = auFilter ? c.getAttribute('data-author') !== auFilter
                           : !c.hasAttribute('data-top');
     });
-    auRows.forEach(function (r) {
+    auRows.forEach((r) => {
       r.hidden = !!auFilter && r.getAttribute('data-author') !== auFilter;
     });
     if (auNote) {
-      var chip = null;
-      if (authorBar && auFilter) {
-        [].forEach.call(authorBar.children, function (x) {
-          if (x.getAttribute && x.getAttribute('data-au') === auFilter) chip = x;
-        });
-      }
+      /** @type {HTMLButtonElement|undefined} */
+      const chip = authorBar && auFilter
+        ? [...authorBar.children].find((x) => x.getAttribute('data-au') === auFilter)
+        : undefined;
       if (chip) {
         // Assembled from the chip's own data attributes — the renderer already
         // did this arithmetic once, and a second implementation here is how a
         // summary ends up disagreeing with the chips it summarises.
-        var cost = chip.getAttribute('data-cost');
-        var sep = ' \u00b7 ';   // a middot, as an escape so the source stays ASCII
+        const cost = chip.getAttribute('data-cost');
+        const sep = ' \u00b7 ';   // a middot, as an escape so the source stays ASCII
         auNote.textContent = auFilter + ': ' + chip.getAttribute('data-tokens')
           + ' tokens' + (cost ? sep + cost : '')
           + sep + chip.getAttribute('data-msgs') + ' msgs'
@@ -2224,13 +2534,14 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     }
     syncHash();
   }
-  wireChips(authorBar, 'data-au', function (val, host, attr) {
+  wireChips(authorBar, 'data-au', (val, host, attr) => {
     auFilter = (auFilter === val) ? '' : val;
     highlight(host, attr, auFilter);
     applyAuthor();
   });
-  // The authors dropdown (C2) drives the same state the chips do; both paint.
-  if (auSelect) auSelect.addEventListener('change', function () {
+  // The authors dropdown drives the same state the chips do, and both are
+  // painted from it, so touching either one leaves the other agreeing.
+  if (auSelect) auSelect.addEventListener('change', () => {
     auFilter = auSelect.value;
     if (authorBar) highlight(authorBar, 'data-au', auFilter);
     applyAuthor();
@@ -2248,36 +2559,66 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // behaviour rather than being closed twice. Clicks inside the panel — a chip, a
   // date field — are `contains` too, so changing a filter never dismisses the
   // thing you are changing it in.
+  /**
+   * The More-filters popover, if one is open.
+   *
+   * @returns {?HTMLDetailsElement} The open panel, or null when none is open.
+   */
   function openPanel() { return document.querySelector('details.fdetails[open]'); }
-  document.addEventListener('click', function (ev) {
-    var d = openPanel();
+  // A <details> closes only through its own summary, and this one is absolutely
+  // positioned — left open it covers rows it has nothing to do with. So it
+  // answers to the two things every popover answers to: an outside click, and
+  // Escape.
+  document.addEventListener('click', (ev) => {
+    const d = openPanel();
     if (d && !d.contains(ev.target)) d.open = false;
   });
-  document.addEventListener('keydown', function (ev) {
+  document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
     // Escape in the search box already means "clear the search"; leave it alone
     // rather than have one key do two things at once.
     if (q && ev.target === q) return;
-    var d = openPanel();
+    const d = openPanel();
     if (!d) return;
     d.open = false;
-    var sum = d.querySelector('summary');
+    const sum = d.querySelector('summary');
     if (sum) sum.focus();          // put focus back on the control that opened it
   });
 
+  /**
+   * Repaint every control that shows the current date window.
+   *
+   * Both date pairs — the two inputs inside the filter panel and the two in the
+   * global bar — mirror one piece of state, so editing either repaints both:
+   * two controls, one range, never two answers.
+   *
+   * @returns {void}
+   */
   function paintDates() {
     if (fromInput) fromInput.value = dFrom;
     if (toInput) toInput.value = dTo;
-    // The global pair mirrors the same state, so editing either pair repaints
-    // both — two controls, one range, never two answers.
     if (gFrom) gFrom.value = dFrom;
     if (gTo) gTo.value = dTo;
     if (gClear) gClear.hidden = !(dFrom || dTo);
     if (presetBar) highlight(presetBar, 'data-days', preset);
   }
-  // One entry point for every control that sets the range: panel inputs,
-  // global inputs, the All-time reset. A hand-picked range is no longer a
-  // preset, so the chip row unlights.
+
+  /**
+   * Set the date window and re-filter, from whichever control asked.
+   *
+   * One entry point for every control that sets the range: the panel inputs,
+   * the global inputs, and the all-time reset. A hand-picked range is no longer
+   * a preset, so the chip row unlights.
+   *
+   * Both bounds stay plain `YYYY-MM-DD` strings for their whole life. Every
+   * comparison against them is a string comparison, which is timezone-free and
+   * needs no parsing; turning either into a Date would reintroduce the local
+   * offset the ISO form exists to avoid.
+   *
+   * @param {string} f Inclusive lower bound as `YYYY-MM-DD`, or '' for no bound.
+   * @param {string} t Inclusive upper bound as `YYYY-MM-DD`, or '' for no bound.
+   * @returns {void}
+   */
   function setRange(f, t) {
     dFrom = f || '';
     dTo = t || '';
@@ -2285,43 +2626,74 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     paintDates();
     refresh();
   }
+
+  /**
+   * Adopt the range the filter panel's two inputs currently show.
+   *
+   * @returns {void}
+   */
   function onDateInput() {
     setRange(fromInput ? fromInput.value : '', toInput ? toInput.value : '');
   }
   if (fromInput) fromInput.addEventListener('change', onDateInput);
   if (toInput) toInput.addEventListener('change', onDateInput);
+
+  /**
+   * Adopt the range the global filter bar's two inputs currently show.
+   *
+   * @returns {void}
+   */
   function onGDateInput() {
     setRange(gFrom ? gFrom.value : '', gTo ? gTo.value : '');
   }
   if (gFrom) gFrom.addEventListener('change', onGDateInput);
   if (gTo) gTo.addEventListener('change', onGDateInput);
-  // Clearing returns to all-time (C1): one press, both pairs blank, every
-  // scoped view back to the whole record.
-  if (gClear) gClear.addEventListener('click', function () { setRange('', ''); });
+  // Clearing returns to all time: one press, both pairs blank, every scoped
+  // view back to the whole record.
+  if (gClear) gClear.addEventListener('click', () => { setRange('', ''); });
 
-  // Relative spans, measured back from the plan's last recorded day (DMAX) rather
-  // than from today — see DMAX above for why the wall clock is not an option here.
+  /**
+   * Apply a relative span, measured back from the plan's last recorded day.
+   *
+   * The anchor is DMAX — the newest date in the data — and never the wall
+   * clock. A span measured against today answers a different question every
+   * morning, which would stop a committed report from staying byte-equal to a
+   * fresh render of the same plan. With no DMAX there is nothing to measure
+   * from, so the span is dropped rather than guessed at and the chip unlights.
+   *
+   * @param {string} days Either 'all', or a day count as a decimal string, read
+   *   off the chip's `data-days` attribute.
+   * @returns {void}
+   */
   function applyPreset(days) {
     preset = days;
-    var ms = DMAX ? Date.parse(DMAX + 'T00:00:00Z') : NaN;
+    const ms = DMAX ? Date.parse(DMAX + 'T00:00:00Z') : NaN;
     if (days === 'all' || isNaN(ms)) {
       dFrom = ''; dTo = '';
       if (days !== 'all') preset = '';   // nothing to measure from; claim nothing
     } else {
       // Inclusive of the last day, so "7 days" spans seven of them and not eight.
+      // The arithmetic is UTC-anchored and lands back on a `YYYY-MM-DD` string,
+      // so the value handed to setRange is the same shape every other bound has.
       dFrom = new Date(ms - (Number(days) - 1) * 86400000).toISOString().slice(0, 10);
       dTo = DMAX;
     }
     paintDates();
     refresh();
   }
-  wireChips(presetBar, 'data-days', function (val) {
+  wireChips(presetBar, 'data-days', (val) => {
     applyPreset(preset === val ? 'all' : val);
   });
 
-  // One control that undoes all of them. It lives in the empty state because that
-  // is the one view from which no other control is reachable — every chip that
-  // could clear itself has been filtered off the screen along with the rows.
+  /**
+   * Lift every filter at once: search, statuses, model, dates, areas, author.
+   *
+   * The button that calls this lives in the empty state because that is the one
+   * view from which no other control is reachable — every chip that could clear
+   * itself has been filtered off the screen along with the rows.
+   *
+   * @returns {void}
+   */
   function clearAll() {
     if (q) q.value = '';
     phaseStatus = ''; modelFilter = ''; dFrom = ''; dTo = ''; preset = '';
@@ -2334,33 +2706,33 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     if (authorBar) highlight(authorBar, 'data-au', '');
     // Clearing the state without unlighting these would leave rows claiming a
     // filter that no longer applies to them.
-    tfHosts.forEach(function (h) { highlight(h, 'data-ts', ''); });
+    tfHosts.forEach((h) => { highlight(h, 'data-ts', ''); });
     applyAuthor();
     paintDates();
     refresh();
   }
-  clearBtns.forEach(function (b) { b.addEventListener('click', clearAll); });
+  clearBtns.forEach((b) => { b.addEventListener('click', clearAll); });
 
   // Save as PDF — the print stylesheet lays the whole plan out with every phase
   // expanded and leaves the sheet itself to the dialog, which is also where
   // "Save as PDF" lives (no bundled PDF library, so the file stays small and
   // self-contained).
-  var printBtn = document.getElementById('audit-print');
-  if (printBtn) printBtn.addEventListener('click', function () { window.print(); });
+  const printBtn = document.getElementById('audit-print');
+  if (printBtn) printBtn.addEventListener('click', () => { window.print(); });
 
   // A CLOSED <details> still collapses in print media even when its children are
   // forced visible by CSS — the element clips them, so the print stylesheet alone
   // silently drops the Usage detail from the PDF. Open them for the duration of
   // the print and restore afterwards, so what you see is what you get.
-  var reopen = [];
-  window.addEventListener('beforeprint', function () {
+  let reopen = [];
+  window.addEventListener('beforeprint', () => {
     reopen = [];
-    Array.prototype.forEach.call(document.querySelectorAll('details'), function (d) {
+    Array.prototype.forEach.call(document.querySelectorAll('details'), (d) => {
       if (!d.open) { reopen.push(d); d.open = true; }
     });
   });
-  window.addEventListener('afterprint', function () {
-    reopen.forEach(function (d) { d.open = false; });
+  window.addEventListener('afterprint', () => {
+    reopen.forEach((d) => { d.open = false; });
     reopen = [];
   });
 
@@ -2369,110 +2741,172 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // mark, so with JS disabled the browser shows the same text natively and the
   // report still explains itself from a file:// URL. Titles are stashed and
   // removed while JS is live only so the native tooltip does not fight this one.
-  (function () {
+  (() => {
     // Scoped to the Usage section — the siblings between its <h2> and the next
     // one. Everything else in the report keeps its plain native tooltips.
-    var start = document.getElementById('usage');
+    const start = document.getElementById('usage');
     if (!start) return;
-    var found = 0;
+    let found = 0;
+    /**
+     * Remember a mark's tooltip text on the mark itself.
+     *
+     * @param {?Element} node The mark the pointer or focus will land on.
+     * @param {string} text The text to show; an empty one claims nothing.
+     * @returns {void}
+     */
     function claim(node, text) {
       if (!node || !text) return;
       node.__tip = text; found++;
     }
-    for (var s = start.nextElementSibling; s && s.tagName !== 'H2';
+    for (let s = start.nextElementSibling; s && s.tagName !== 'H2';
          s = s.nextElementSibling) {
-      // The attribute STAYS. Stripping it permanently was a real loss and not
-      // the one it looked like: `title` is what the accessibility tree uses as
-      // an element's description, so removing it takes the text away from a
-      // screen reader entirely - and this layer only ever gives it back to a
-      // pointer. Measured on the shipped report at 1153px: all 11 `.rank .nm`
-      // are clipped (49-78% shown), `.rank` rows carry no `tabindex`, and the
-      // only listeners here are `mouseover`/`mousemove`. No mouse, no text.
-      // It is now suppressed per element only while that element is hovered,
-      // which is the whole reason it was removed - so the two tooltips still
-      // never fight, and everyone else keeps the description.
+      // The attribute STAYS. `title` is what the accessibility tree uses as an
+      // element's description, so stripping it permanently takes the text away
+      // from a screen reader entirely — and this layer only ever gives it back
+      // to a pointer or to focus. It is suppressed per element only while that
+      // element is the current one, which is the whole reason it was ever
+      // removed, so the two tooltips still never fight and everyone else keeps
+      // the description.
       if (s.hasAttribute('title')) claim(s, s.getAttribute('title'));
-      Array.prototype.forEach.call(s.querySelectorAll('[title]'), function (n) {
+      Array.prototype.forEach.call(s.querySelectorAll('[title]'), (n) => {
         claim(n, n.getAttribute('title'));
       });
       // SVG <title> children — same text, different carrier.
-      Array.prototype.forEach.call(s.querySelectorAll('title'), function (t) {
+      Array.prototype.forEach.call(s.querySelectorAll('title'), (t) => {
         claim(t.parentNode, t.textContent);
         if (t.parentNode) t.parentNode.removeChild(t);
       });
     }
     if (!found) return;
 
-    var box = document.createElement('div');
+    const box = document.createElement('div');
     box.className = 'rtip'; box.hidden = true;
     document.body.appendChild(box);
 
+    /**
+     * Rebuild the box's contents from one mark's stashed text.
+     *
+     * The first line is the heading; every line after it is a tab-separated
+     * key/value pair. Built as element nodes rather than markup, because the
+     * text comes from the manifest and must never be parsed as HTML.
+     *
+     * @param {string} text Newline-separated lines, tabs splitting key from value.
+     * @returns {void}
+     */
     function fill(text) {
       box.textContent = '';
-      text.split('\n').forEach(function (line, i) {
+      text.split('\n').forEach((line, i) => {
         if (i === 0) {
-          var b = document.createElement('b'); b.textContent = line;
+          const b = document.createElement('b'); b.textContent = line;
           box.appendChild(b); return;
         }
-        var parts = line.split('\t');
-        var row = document.createElement('span');
-        var k = document.createElement('em'); k.textContent = parts[0];
-        var v = document.createElement('i'); v.textContent = parts[1] || '';
+        const parts = line.split('\t');
+        const row = document.createElement('span');
+        const k = document.createElement('em'); k.textContent = parts[0];
+        const v = document.createElement('i'); v.textContent = parts[1] || '';
         row.appendChild(k); row.appendChild(v); box.appendChild(row);
       });
     }
+
+    /**
+     * Place the box beside the pointer, flipping it inside the viewport.
+     *
+     * @param {MouseEvent} ev The pointer event carrying the coordinates.
+     * @returns {void}
+     */
     function place(ev) {
-      var r = box.getBoundingClientRect();
-      var x = ev.clientX + 14, y = ev.clientY + 16;
-      if (x + r.width > window.innerWidth - 8) x = ev.clientX - r.width - 14;
-      if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - 16;
+      const boxRect = box.getBoundingClientRect();
+      let x = ev.clientX + 14, y = ev.clientY + 16;
+      if (x + boxRect.width > window.innerWidth - 8) x = ev.clientX - boxRect.width - 14;
+      if (y + boxRect.height > window.innerHeight - 8) y = ev.clientY - boxRect.height - 16;
       box.style.left = Math.max(8, x) + 'px';
       box.style.top = Math.max(8, y) + 'px';
     }
-    // The focus half of the same box. `place` reads ev.clientX/clientY, which a
-    // focus event does not carry - so a keyboard reader would have got the
-    // tooltip pinned at 0,0 or wherever the mouse was last left. Placed under the
-    // mark's own rect instead, flipping above it when there is no room below, so
-    // it never covers the row it is describing.
+
+    /**
+     * Place the box under a mark's own rect, flipping above it when there is no
+     * room below, so it never covers the row it is describing.
+     *
+     * The focus half of the same box needs this because `place` reads
+     * `ev.clientX`/`ev.clientY`, which a focus event does not carry — a keyboard
+     * reader would otherwise get the tooltip pinned at 0,0 or wherever the mouse
+     * was last left. (`markRect` rather than `q`: `q` is the search input at the
+     * top of this one shared scope.)
+     *
+     * @param {Element} node The mark that just took focus.
+     * @returns {void}
+     */
     function placeAt(node) {
-      var q = node.getBoundingClientRect();
-      var r = box.getBoundingClientRect();
-      var x = q.left, y = q.bottom + 6;
-      if (x + r.width > window.innerWidth - 8) x = window.innerWidth - r.width - 8;
-      if (y + r.height > window.innerHeight - 8) y = q.top - r.height - 6;
+      const markRect = node.getBoundingClientRect();
+      const boxRect = box.getBoundingClientRect();
+      let x = markRect.left, y = markRect.bottom + 6;
+      if (x + boxRect.width > window.innerWidth - 8) x = window.innerWidth - boxRect.width - 8;
+      if (y + boxRect.height > window.innerHeight - 8) y = markRect.top - boxRect.height - 6;
       box.style.left = Math.max(8, x) + 'px';
       box.style.top = Math.max(8, y) + 'px';
     }
+
+    /**
+     * Close the box and give the current mark its native title back.
+     *
+     * Every close goes through here — Escape, focusout, and printing — so there
+     * is one place that can forget to restore rather than three.
+     *
+     * @returns {void}
+     */
     function hide() {
       restoreNative(current);
       box.hidden = true; current = null;
     }
-    // Delegated: three listeners instead of one per mark. A dense report carries
-    // well over a thousand hoverable marks, and binding each of them is a cost
-    // paid on every page load to serve one hover at a time.
+
+    /**
+     * The nearest ancestor-or-self carrying stashed tooltip text.
+     *
+     * Delegated lookup: three listeners instead of one per mark. A dense report
+     * carries well over a thousand hoverable marks, and binding each of them is
+     * a cost paid on every page load to serve one hover at a time.
+     *
+     * @param {?Node} node The event target to walk up from.
+     * @returns {?Element} The owning mark, or null when the target owns none.
+     */
     function owner(node) {
-      for (var n = node; n && n !== document; n = n.parentNode) {
+      for (let n = node; n && n !== document; n = n.parentNode) {
         if (n.__tip) return n;
       }
       return null;
     }
-    // Suppress the native tooltip on the hovered element ONLY, and give it back
-    // the moment the pointer leaves. Restoring is not optional bookkeeping: skip
-    // it and the first hover strips the description permanently, which is the
-    // bug this replaced wearing a slower disguise.
+
+    /**
+     * Suppress the native tooltip on one mark while this layer describes it.
+     *
+     * @param {?Element} node The mark now under the pointer or holding focus.
+     * @returns {void}
+     */
     function muteNative(node) {
       if (node && node.hasAttribute && node.hasAttribute('title')) {
         node.removeAttribute('title');
       }
     }
+
+    /**
+     * Give a mark its native tooltip back, from the text stashed on it.
+     *
+     * Restoring is not optional bookkeeping: skip it on any path and the first
+     * hover strips the description from the accessibility tree permanently.
+     *
+     * @param {?Element} node The mark this layer is done describing.
+     * @returns {void}
+     */
     function restoreNative(node) {
       if (node && node.__tip && node.setAttribute && !node.hasAttribute('title')) {
         node.setAttribute('title', node.__tip);
       }
     }
-    var current = null;
-    document.addEventListener('mouseover', function (ev) {
-      var m = owner(ev.target);
+
+    // The mark this layer is currently describing, or null.
+    let current = null;
+    document.addEventListener('mouseover', (ev) => {
+      const m = owner(ev.target);
       if (m === current) return;
       restoreNative(current);
       current = m;
@@ -2480,17 +2914,17 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       muteNative(m);
       fill(m.__tip); box.hidden = false; place(ev);
     });
-    document.addEventListener('mousemove', function (ev) {
+    document.addEventListener('mousemove', (ev) => {
       if (current) place(ev);
     });
-    // F17 - THE KEYBOARD HALF. Restoring `title` (u24d) put the description back
-    // in the accessibility tree, which serves a screen-reader user and a JS-off
-    // reader. It does nothing for a SIGHTED KEYBOARD reader: no browser surfaces
-    // a native `title` on focus, and the two listeners above are pointer-only. So
-    // the same box gets a second trigger rather than a second implementation -
+    // The keyboard half. Restoring `title` puts the description back in the
+    // accessibility tree, which serves a screen-reader user and a JS-off reader.
+    // It does nothing for a SIGHTED KEYBOARD reader: no browser surfaces a
+    // native `title` on focus, and the two listeners above are pointer-only. So
+    // the same box gets a second trigger rather than a second implementation —
     // one `fill`, one `hide`, one element on the page.
-    document.addEventListener('focusin', function (ev) {
-      var m = owner(ev.target);
+    document.addEventListener('focusin', (ev) => {
+      const m = owner(ev.target);
       if (m === current) return;
       restoreNative(current);
       current = m;
@@ -2498,26 +2932,24 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       muteNative(m);
       fill(m.__tip); box.hidden = false; placeAt(m);
     });
-    document.addEventListener('focusout', function (ev) {
+    document.addEventListener('focusout', (ev) => {
       if (current && owner(ev.target) === current) hide();
     });
-    // Dismissible (SC 1.4.13). Escape closes the box WITHOUT moving the caret -
-    // a reader who dismissed a tooltip has not asked to leave the row, and
-    // sending focus elsewhere would make Escape cost them their place. The mark
-    // keeps focus, so tabbing on still works from where they were.
-    document.addEventListener('keydown', function (ev) {
+    // Dismissible (WCAG SC 1.4.13). Escape closes the box WITHOUT moving the
+    // caret — a reader who dismissed a tooltip has not asked to leave the row,
+    // and sending focus elsewhere would make Escape cost them their place. The
+    // mark keeps focus, so tabbing on still works from where they were.
+    document.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Escape') return;
       if (!current) return;
       hide();
     });
     // Printing a floating tooltip would stamp it onto the page. Whatever was
-    // hovered gets its `title` back here too - dropping `current` without
-    // restoring is exactly how one element would keep losing its description,
-    // and printing is the one path that clears `current` without a mouseover.
+    // hovered gets its `title` back here too: printing is the one path that
+    // would otherwise clear the current mark without a mouseover to restore it.
     window.addEventListener('beforeprint', hide);
   })();
-
-  // --- the date range over the usage views (C1) -----------------------------
+  // --- the date range over the usage views ----------------------------------
   // The tables filter their own rows; the usage section is drawings, so the
   // range treats it differently: trend columns outside the range RECEDE (the
   // geometry never moves — hiding bars would silently re-scale a chart whose
@@ -2526,40 +2958,59 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
   // span with that span's own totals. That line is also what reaches paper:
   // the sticky bar carrying the pickers never prints, and a scoped chart on a
   // sheet with no visible scope would be a chart that lies.
-  var hmApply = null;          // set by the heatmap module below, when present
-  var hmView = null;           // ...and its current view as data, for the PNG
-  var lastRange = '|';         // sentinel: "no range applied yet"
+  let hmApply = null;          // set by the heatmap module below, when present
+  let hmView = null;           // ...and its current view as data, for the PNG
+  let lastRange = '|';         // sentinel: "no range applied yet"
+
+  /**
+   * Scope the usage charts, the monthly table and the heatmap to the current
+   * date window, and write the line that names the span.
+   *
+   * Called from every refresh, so it opens with a cheap guard: the range is
+   * keyed as one string and the whole pass is skipped unless that key moved.
+   *
+   * Bounds and per-day keys are compared as plain `YYYY-MM-DD` strings, and
+   * month keys as their `YYYY-MM` prefixes. Nothing here is parsed into a Date:
+   * lexical order on an ISO string is chronological order, with no timezone to
+   * get wrong and no wall-clock call to make the rendered report differ between
+   * runs.
+   *
+   * @returns {void}
+   */
   function applyUsageRange() {
-    var key = dFrom + '|' + dTo;
+    const key = dFrom + '|' + dTo;
     if (key === lastRange) return;
     lastRange = key;
-    var active = !!(dFrom || dTo);
+    const active = !!(dFrom || dTo);
     [].forEach.call(document.querySelectorAll('.cols [data-d], .xts [data-d]'),
-      function (el) {
-        var d = el.getAttribute('data-d');
-        var out = active && ((dFrom && d < dFrom) || (dTo && d > dTo));
+      (el) => {
+        const d = el.getAttribute('data-d');
+        const out = active && ((dFrom && d < dFrom) || (dTo && d > dTo));
         // SVG 1.1 elements have no classList in some engines; setAttribute is
         // universal and the stylesheet only needs the class present/absent.
-        var cls = (el.getAttribute('class') || '').replace(/\s*\bdimout\b/, '');
+        const cls = (el.getAttribute('class') || '').replace(/\s*\bdimout\b/, '');
         el.setAttribute('class', out ? cls + ' dimout' : cls);
       });
-    [].forEach.call(document.querySelectorAll('tr[data-um]'), function (r) {
-      var m = r.getAttribute('data-um');
-      var out = active && ((dFrom && m < dFrom.slice(0, 7))
+    [].forEach.call(document.querySelectorAll('tr[data-um]'), (r) => {
+      const m = r.getAttribute('data-um');
+      const out = active && ((dFrom && m < dFrom.slice(0, 7))
                            || (dTo && m > dTo.slice(0, 7)));
       r.style.display = out ? 'none' : '';
     });
-    var note = document.getElementById('audit-urange');
+    const note = document.getElementById('audit-urange');
     if (note) {
       if (active && U) {
-        var f = dFrom || U.min, t = dTo || U.max;
-        var tok = 0, cost = 0, msgs = 0;
-        for (var d2 in U.days) {
+        const f = dFrom || U.min, t = dTo || U.max;
+        // One pass over the per-day payload accumulating three totals. A
+        // filter-then-reduce chain would allocate a key array and a filtered
+        // copy of it to produce the same three numbers.
+        let tok = 0, cost = 0, msgs = 0;
+        for (const d2 in U.days) {
           if (d2 >= f && d2 <= t) {
             tok += U.days[d2][0]; cost += U.days[d2][1]; msgs += U.days[d2][2];
           }
         }
-        var sep = ' · ';
+        const sep = ' · ';
         note.textContent = 'Date range ' + f + ' to ' + t + ': '
           + fmtTokens(tok, 1) + ' tokens'
           + (U.showCost !== false ? sep + fmtCost(cost) : '')
@@ -2573,52 +3024,120 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
     }
     if (hmApply) hmApply();
   }
-
-  // --- heatmap calendar navigation (C3) --------------------------------------
+  // --- heatmap calendar navigation -------------------------------------------
   // The server renders the all-data 7x24 grid; this re-renders the tbody from
-  // the embedded per-day payload for one day / week / month / year at a time,
-  // prev/next strictly bounded by the data (an arrow at the edge is disabled
-  // and muted, never a dead click), and the period on display NAMED in the
-  // label. The custom range IS C1's range control: while a range is active the
-  // heatmap's whole universe is that range — granularity navigation clamps to
-  // it, and "All" reads "Custom range" with the span. One range, one meaning.
-  (function () {
-    var body = document.getElementById('audit-hm-body');
-    var granBar = document.getElementById('audit-hm-gran');
-    var prevBtn = document.getElementById('audit-hm-prev');
-    var nextBtn = document.getElementById('audit-hm-next');
-    var periodEl = document.getElementById('audit-hm-period');
-    var peakEl = document.getElementById('audit-hm-peak');
+  // the embedded per-day payload for one day / week / month / year at a time.
+  // prev/next are bounded strictly by the data, so an arrow at the edge is
+  // disabled and muted rather than a dead click, and the period on display is
+  // NAMED in the label. While a global date range is active the heatmap's whole
+  // universe is that range: granularity navigation clamps to it, and "All" reads
+  // "Custom range" with the span. One range, one meaning.
+  //
+  // Every date below is derived from the keys of window.AUDIT_USAGE.days, and
+  // every Date is constructed from an explicit instant. The clock is never read:
+  // a wall-clock call would make two renders of the same manifest differ, and
+  // nothing could then compare a committed report against a fresh one.
+  (() => {
+    const body = document.getElementById('audit-hm-body');
+    const granBar = document.getElementById('audit-hm-gran');
+    const prevBtn = document.getElementById('audit-hm-prev');
+    const nextBtn = document.getElementById('audit-hm-next');
+    const periodEl = document.getElementById('audit-hm-period');
+    const peakEl = document.getElementById('audit-hm-peak');
     if (!U || !body || !granBar || !prevBtn || !nextBtn || !periodEl) return;
-    var DAY = 86400000;
-    var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    var MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
-               'August', 'September', 'October', 'November', 'December'];
-    var gran = 'all';
-    var anchor = '';             // period start (ISO day) when gran !== 'all'
+
+    const DAY = 86400000;
+    const HOURS = 24;
+    const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                 'August', 'September', 'October', 'November', 'December'];
+
+    /**
+     * One row of the grid.
+     * @typedef {Object} HeatRow
+     * @property {string} label Row label printed in the leftmost column.
+     * @property {number[]|null} cells The 24 hourly token totals, or null for a
+     *   date the active range excludes.
+     * @property {string} head Row name used in every cell's tooltip.
+     */
+
+    /** @type {string} Granularity: 'all', 'day', 'week', 'month' or 'year'. */
+    let gran = 'all';
+    /** @type {string} Period start as an ISO day; '' while `gran` is 'all'. */
+    let anchor = '';
+
+    /**
+     * Parse an ISO day as midnight UTC.
+     * @param {string} d ISO day, `YYYY-MM-DD`.
+     * @returns {number} Milliseconds since the epoch.
+     */
     function dParse(d) { return Date.parse(d + 'T00:00:00Z'); }
+
+    /**
+     * Format an explicit instant back as an ISO day in UTC.
+     * @param {number} ms Milliseconds since the epoch.
+     * @returns {string} `YYYY-MM-DD`.
+     */
     function dIso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+    /**
+     * Weekday index of an ISO day, Monday first, to match the grid's rows.
+     * @param {string} d ISO day.
+     * @returns {number} 0 for Monday through 6 for Sunday.
+     */
     function wdayOf(d) { return (new Date(dParse(d)).getUTCDay() + 6) % 7; }
+
+    /**
+     * The window the heatmap may show: the ledger's own span, narrowed by the
+     * global date range whenever one is active.
+     * @returns {{lo: string, hi: string}|null} null when the range and the
+     *   recorded days do not overlap at all.
+     */
     function bounds() {
-      var lo = U.min, hi = U.max;
+      let lo = U.min;
+      let hi = U.max;
       if (dFrom && dFrom > lo) lo = dFrom;
       if (dTo && dTo < hi) hi = dTo;
       return lo > hi ? null : { lo: lo, hi: hi };
     }
+
+    /**
+     * First ISO day of the period `day` falls in.
+     * @param {string} g Granularity.
+     * @param {string} day ISO day.
+     * @returns {string} ISO day the period starts on.
+     */
     function startOf(g, day) {
       if (g === 'week') return dIso(dParse(day) - wdayOf(day) * DAY);
       if (g === 'month') return day.slice(0, 7) + '-01';
       if (g === 'year') return day.slice(0, 4) + '-01-01';
       return day;
     }
+
+    /**
+     * Last ISO day of the period starting at `s`.
+     * @param {string} g Granularity.
+     * @param {string} s ISO day the period starts on.
+     * @returns {string} ISO day the period ends on.
+     */
     function endOf(g, s) {
       if (g === 'week') return dIso(dParse(s) + 6 * DAY);
       if (g === 'month') {
+        // Day zero of the FOLLOWING month is the last day of this one, which is
+        // the only spelling that gets February right without a leap-year rule.
         return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7), 0));
       }
       if (g === 'year') return s.slice(0, 4) + '-12-31';
       return s;
     }
+
+    /**
+     * The period one step away, whether or not it holds any data.
+     * @param {string} g Granularity.
+     * @param {string} s ISO day the current period starts on.
+     * @param {number} dir -1 for earlier, 1 for later.
+     * @returns {string} ISO day the neighbouring period starts on.
+     */
     function shift(g, s, dir) {
       if (g === 'day') return dIso(dParse(s) + dir * DAY);
       if (g === 'week') return dIso(dParse(s) + dir * 7 * DAY);
@@ -2628,24 +3147,53 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       if (g === 'year') return (+s.slice(0, 4) + dir) + '-01-01';
       return s;
     }
+
+    /**
+     * Whether any recorded day falls inside a closed ISO-day range.
+     * @param {string} from First ISO day.
+     * @param {string} to Last ISO day.
+     * @returns {boolean}
+     */
     function hasData(from, to) {
-      for (var d in U.days) { if (d >= from && d <= to) return true; }
-      return false;
+      return Object.keys(U.days).some((d) => d >= from && d <= to);
     }
-    // The next period in `dir` that is inside the bounds AND records anything
-    // — "never navigate into empty periods" is a rule about data, not about
-    // the calendar, so gap days between two worked weeks are stepped OVER.
+
+    /**
+     * The next period in `dir` that lies inside the bounds AND records
+     * something. "Never navigate into an empty period" is a rule about data
+     * rather than about the calendar, so gap days between two worked weeks are
+     * stepped over instead of shown.
+     * @param {string} g Granularity.
+     * @param {string} s ISO day the current period starts on.
+     * @param {number} dir -1 for earlier, 1 for later.
+     * @param {{lo: string, hi: string}} b Active bounds.
+     * @returns {string|null} Start of the next populated period, or null when
+     *   the walk leaves the bounds first.
+     */
     function seek(g, s, dir, b) {
-      for (var i = 0; i < 4000; i++) {
-        s = shift(g, s, dir);
-        var en = endOf(g, s);
-        if (en < b.lo || s > b.hi) return null;
-        var lo = s < b.lo ? b.lo : s;
-        var hi = en > b.hi ? b.hi : en;
-        if (hasData(lo, hi)) return s;
+      let cur = s;
+      // Bounded rather than `while (true)`: leaving the bounds is what normally
+      // stops this walk, and a granularity whose shift failed to advance would
+      // otherwise spin forever with the tab frozen.
+      for (let i = 0; i < 4000; i++) {
+        cur = shift(g, cur, dir);
+        const en = endOf(g, cur);
+        if (en < b.lo || cur > b.hi) return null;
+        const lo = cur < b.lo ? b.lo : cur;
+        const hi = en > b.hi ? b.hi : en;
+        if (hasData(lo, hi)) return cur;
       }
       return null;
     }
+
+    /**
+     * The name of the period on display, so the grid never shows an unlabelled
+     * slice of time.
+     * @param {string} g Granularity.
+     * @param {string} s ISO day the period starts on.
+     * @param {{lo: string, hi: string}} b Active bounds, named when `g` is 'all'.
+     * @returns {string} Human-readable period name.
+     */
     function labelOf(g, s, b) {
       if (g === 'day') return WD[wdayOf(s)] + ' ' + s;
       if (g === 'week') return 'Week of ' + s + ' to ' + endOf('week', s);
@@ -2654,521 +3202,795 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
       return ((dFrom || dTo) ? 'Custom range' : 'All data')
         + ' · ' + b.lo + ' to ' + b.hi;
     }
+
+    /**
+     * The 24 hourly totals recorded for one ISO day.
+     * @param {string} d ISO day.
+     * @returns {number[]} Hourly totals, or [] for a day with nothing recorded.
+     */
     function hoursOf(d) { return (U.days[d] || [0, 0, 0, []])[3] || []; }
-    // The current view as DATA — rows, peak, label — split from the DOM paint
-    // so the PNG export (D2) can redraw exactly what is on screen without
-    // touching it. The anchor clamp lives here because the view is what the
-    // clamp is FOR: render() paints whatever this returns.
+
+    /**
+     * Rows for a single day: one row carrying that day's 24 hours.
+     * @param {string} day ISO day inside the active range.
+     * @returns {HeatRow[]}
+     */
+    function dayRows(day) {
+      return [{ label: WD[wdayOf(day)] + ' ' + day.slice(5),
+                cells: hoursOf(day).slice(),
+                head: WD[wdayOf(day)] + ' ' + day }];
+    }
+
+    /**
+     * Rows for one week: one row per calendar date, so the week keeps its shape
+     * even where the active range clips it.
+     * @param {string} s ISO day the week starts on.
+     * @param {string} en ISO day the week ends on.
+     * @param {string} lo First ISO day inside the active range.
+     * @param {string} hi Last ISO day inside the active range.
+     * @returns {HeatRow[]}
+     */
+    function weekRows(s, en, lo, hi) {
+      const rows = [];
+      for (let ms = dParse(s); ms <= dParse(en); ms += DAY) {
+        const d = dIso(ms);
+        const inRange = d >= lo && d <= hi;
+        rows.push({ label: WD[wdayOf(d)] + ' ' + d.slice(5),
+                    cells: inRange ? hoursOf(d).slice() : null,
+                    head: WD[wdayOf(d)] + ' ' + d });
+      }
+      return rows;
+    }
+
+    /**
+     * Rows for a month, a year or the whole range: seven weekday rows, each the
+     * hour-by-hour sum over every matching date, the way the server's all-data
+     * view aggregates.
+     * @param {string} lo First ISO day to include.
+     * @param {string} hi Last ISO day to include.
+     * @returns {HeatRow[]}
+     */
+    function weekdayRows(lo, hi) {
+      const agg = Array.from({ length: 7 }, () => []);
+      for (const d of Object.keys(U.days)) {
+        if (d < lo || d > hi) continue;
+        const vec = hoursOf(d);
+        const tgt = agg[wdayOf(d)];
+        for (let h = 0; h < HOURS; h++) tgt[h] = (tgt[h] || 0) + (vec[h] || 0);
+      }
+      return agg.map((cells, wd) => ({ label: WD[wd], cells: cells, head: WD[wd] }));
+    }
+
+    /**
+     * The current view as DATA — rows, peak, period start, bounds and label —
+     * split from the DOM paint so the PNG export can redraw exactly what is on
+     * screen without reading it back out of the page. The anchor clamp lives
+     * here because the view is what the clamp is for: render() paints whatever
+     * this returns.
+     * @returns {{rows: HeatRow[], peak: number, s: string,
+     *   b: {lo: string, hi: string}, label: string}|null} null when the active
+     *   range holds no recorded day at all.
+     */
     function view() {
-      var b = bounds();
+      const b = bounds();
       if (!b) return null;
       if (gran !== 'all') {
         if (!anchor) anchor = startOf(gran, b.hi);
-        var aEnd = endOf(gran, anchor);
-        if (aEnd < b.lo || anchor > b.hi) anchor = startOf(gran, b.hi);
+        const anchorEnd = endOf(gran, anchor);
+        if (anchorEnd < b.lo || anchor > b.hi) anchor = startOf(gran, b.hi);
       }
-      var s = gran === 'all' ? b.lo : anchor;
-      var en = gran === 'all' ? b.hi : endOf(gran, s);
-      var lo = s < b.lo ? b.lo : s;
-      var hi = en > b.hi ? b.hi : en;
-      // rows: [{label, days:[iso|null x cells]}] — day/week keep the calendar
-      // (one row per date), coarser grains aggregate by weekday like the
-      // server's all-data view.
-      var rows = [];
-      if (gran === 'day') {
-        rows.push({ label: WD[wdayOf(lo)] + ' ' + lo.slice(5), cells: hoursOf(lo).slice(),
-                    head: WD[wdayOf(lo)] + ' ' + lo });
-      } else if (gran === 'week') {
-        for (var ms = dParse(s); ms <= dParse(en); ms += DAY) {
-          var d = dIso(ms);
-          var inR = d >= lo && d <= hi;
-          rows.push({ label: WD[wdayOf(d)] + ' ' + d.slice(5),
-                      cells: inR ? hoursOf(d).slice() : null,
-                      head: WD[wdayOf(d)] + ' ' + d });
-        }
-      } else {
-        var agg = [];
-        for (var w = 0; w < 7; w++) agg.push([]);
-        for (var dd in U.days) {
-          if (dd < lo || dd > hi) continue;
-          var vec = hoursOf(dd);
-          var tgt = agg[wdayOf(dd)];
-          for (var h = 0; h < 24; h++) tgt[h] = (tgt[h] || 0) + (vec[h] || 0);
-        }
-        for (var w2 = 0; w2 < 7; w2++) {
-          rows.push({ label: WD[w2], cells: agg[w2], head: WD[w2] });
-        }
-      }
-      var peak = 0;
-      rows.forEach(function (r) {
-        (r.cells || []).forEach(function (v) { if (v > peak) peak = v; });
-      });
-      return { rows: rows, peak: peak, s: s, b: b,
-               label: labelOf(gran, s, b) };
+      const s = gran === 'all' ? b.lo : anchor;
+      const en = gran === 'all' ? b.hi : endOf(gran, s);
+      const lo = s < b.lo ? b.lo : s;
+      const hi = en > b.hi ? b.hi : en;
+      const rows = gran === 'day' ? dayRows(lo)
+        : gran === 'week' ? weekRows(s, en, lo, hi)
+        : weekdayRows(lo, hi);
+      const peak = rows.reduce((outer, r) =>
+        (r.cells || []).reduce((m, v) => (v > m ? v : m), outer), 0);
+      return { rows: rows, peak: peak, s: s, b: b, label: labelOf(gran, s, b) };
     }
+
+    // --- painting the grid -----------------------------------------------------
+
+    /**
+     * Intensity band for one cell.
+     * @param {number} val Tokens recorded in that hour.
+     * @param {number} peak Highest value anywhere in the current view.
+     * @returns {number} 0 where nothing was recorded, 1-6 for the shaded bands.
+     */
+    function level(val, peak) {
+      return (!val || !peak) ? 0 : Math.min(6, 1 + Math.floor(5 * val / peak));
+    }
+
+    /**
+     * One cell's tooltip, in the same one-line shape the server's own titles
+     * use. A date the active range excludes says so rather than claiming a zero
+     * it cannot know.
+     * @param {HeatRow} r Row the cell belongs to.
+     * @param {number} h Hour of day, 0-23.
+     * @param {number} val Tokens recorded in that hour.
+     * @returns {string}
+     */
+    function tipFor(r, h, val) {
+      if (!r.cells) return r.head + ' - outside the selected range';
+      return r.head + ' ' + (h < 10 ? '0' : '') + h + ':00 - '
+        + fmtTokens(val, 2) + ' tokens';
+    }
+
+    /**
+     * Enable or disable one navigation arrow. A step that would leave the data
+     * is disabled rather than dead, so the control says there is nothing there.
+     * @param {HTMLButtonElement} btn The prev or next arrow.
+     * @param {boolean} ok Whether a step that way lands on recorded data.
+     * @returns {void}
+     */
+    function setArrow(btn, ok) {
+      if (ok) btn.removeAttribute('disabled');
+      else btn.setAttribute('disabled', '');
+    }
+
+    /**
+     * Paint the current view into the tbody and update the label, the peak
+     * readout and both arrows.
+     * @returns {void}
+     */
     function render() {
-      var v = view();
-      var setArrow = function (btn, ok) {
-        if (ok) btn.removeAttribute('disabled');
-        else btn.setAttribute('disabled', '');
-      };
+      const v = view();
       if (!v) {
         body.innerHTML = '';
         periodEl.textContent = 'No recorded usage in this range';
         if (peakEl) peakEl.textContent = '0';
-        setArrow(prevBtn, false); setArrow(nextBtn, false);
+        setArrow(prevBtn, false);
+        setArrow(nextBtn, false);
         return;
       }
-      var htmlRows = [], tips = [];
-      v.rows.forEach(function (r) {
-        var tds = [];
-        for (var h2 = 0; h2 < 24; h2++) {
-          var val = r.cells ? (r.cells[h2] || 0) : 0;
-          var lv = (!val || !v.peak) ? 0
-            : Math.min(6, 1 + Math.floor(5 * val / v.peak));
-          tds.push('<td><i data-l="' + lv + '"></i></td>');
-          // Same one-line shape the server's titles use; a day the range
-          // excludes says so instead of claiming a zero it cannot know.
-          tips.push(r.cells
-            ? r.head + ' ' + (h2 < 10 ? '0' : '') + h2 + ':00 - '
-              + fmtTokens(val, 2) + ' tokens'
-            : r.head + ' - outside the selected range');
-        }
+      const htmlRows = [];
+      const tips = [];
+      // Markup is assembled as text because the whole grid is rebuilt on every
+      // navigation. That is safe here and only here: every byte written below is
+      // a number this module computed or a label built from WD and an ISO day,
+      // so nothing derived from the manifest can reach this string.
+      for (const r of v.rows) {
+        const cells = Array.from({ length: HOURS },
+          (unused, h) => (r.cells ? (r.cells[h] || 0) : 0));
         htmlRows.push('<tr><th>' + r.label + '</th>'
-          + tds.join('') + '</tr>');
-      });
+          + cells.map((val) => '<td><i data-l="' + level(val, v.peak)
+            + '"></i></td>').join('')
+          + '</tr>');
+        cells.forEach((val, h) => tips.push(tipFor(r, h, val)));
+      }
       body.innerHTML = htmlRows.join('');
-      [].forEach.call(body.querySelectorAll('i'), function (cell, i) {
-        cell.__tip = tips[i];
+      // The tooltip text rides on the element rather than in a title attribute:
+      // the hover layer reads `__tip` to set `title` for the duration of a
+      // hover, so the text has to survive the repaint on the mark itself.
+      Array.from(body.querySelectorAll('i')).forEach((mark, i) => {
+        mark.__tip = tips[i];
       });
       if (peakEl) peakEl.textContent = fmtTokens(v.peak, 1);
       periodEl.textContent = v.label;
-      var canStep = gran !== 'all';
+      const canStep = gran !== 'all';
       setArrow(prevBtn, canStep && seek(gran, v.s, -1, v.b) !== null);
       setArrow(nextBtn, canStep && seek(gran, v.s, 1, v.b) !== null);
     }
+
+    /**
+     * Move the anchor one populated period in `dir` and repaint. A step that
+     * would land outside the data does nothing at all.
+     * @param {number} dir -1 for earlier, 1 for later.
+     * @returns {void}
+     */
     function step(dir) {
-      var b = bounds();
+      const b = bounds();
       if (!b || gran === 'all') return;
-      var s2 = seek(gran, anchor, dir, b);
-      if (!s2) return;
-      anchor = s2;
+      const next = seek(gran, anchor, dir, b);
+      if (!next) return;
+      anchor = next;
       render();
     }
-    prevBtn.addEventListener('click', function () { step(-1); });
-    nextBtn.addEventListener('click', function () { step(1); });
-    wireChips(granBar, 'data-g', function (val) {
+
+    /**
+     * Switch granularity and re-anchor on the latest period that holds data.
+     * @param {string} val New granularity, from the chip's `data-g`.
+     * @returns {void}
+     */
+    function setGranularity(val) {
       if (val === gran) return;
       gran = val;
-      var b = bounds();
+      const b = bounds();
       anchor = (val === 'all' || !b) ? '' : startOf(val, b.hi);
       highlight(granBar, 'data-g', gran);
       render();
-    });
+    }
+
+    prevBtn.addEventListener('click', () => step(-1));
+    nextBtn.addEventListener('click', () => step(1));
+    wireChips(granBar, 'data-g', setGranularity);
     highlight(granBar, 'data-g', gran);   // 'all' is lit from the start
-    // Called when the global range moves: clamp the current period into the
-    // new bounds and redraw. The initial no-range state deliberately keeps the
-    // server-rendered tbody untouched.
+
+    // Handed to the global range control, which calls render() when the window
+    // moves and reads view() for the PNG export. The initial no-range state
+    // deliberately leaves the server-rendered tbody untouched.
     hmApply = render;
     hmView = view;
   })();
 
-  // Download the Markdown twin (embedded as base64, decoded to a Blob).
-  // Copy the run command. clipboard.writeText is unavailable on file:// in some
-  // browsers, which is exactly where this report is most often opened, so the
-  // fallback selects the text and lets the reader use their own copy key rather
-  // than failing silently and leaving a button that does nothing.
-  [].slice.call(document.querySelectorAll('.btn-copy')).forEach(function (b) {
-    b.addEventListener('click', function () {
-      var text = b.getAttribute('data-copy') || '';
-      var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1600); };
-      try {
-        navigator.clipboard.writeText(text).then(done, function () { selectRun(b); });
-      } catch (e) { selectRun(b); }
-    });
-  });
+  // --- run commands and the Markdown twin ------------------------------------
+
+  /**
+   * Select the run command beside a copy button so the reader can copy it with
+   * their own key.
+   * @param {HTMLButtonElement} btn The copy button.
+   * @returns {void}
+   */
   function selectRun(btn) {
-    var code = btn.parentNode.querySelector('.vd-run');
+    const code = btn.parentNode.querySelector('.vd-run');
     if (!code) return;
-    var r = document.createRange(); r.selectNodeContents(code);
-    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    const r = document.createRange();
+    r.selectNodeContents(code);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
     btn.textContent = 'Press to copy';
-    setTimeout(function () { btn.textContent = 'Copy'; }, 2400);
+    setTimeout(() => { btn.textContent = 'Copy'; }, 2400);
   }
 
-  var dlBtn = document.getElementById('audit-dl-md');
-  if (dlBtn) dlBtn.addEventListener('click', function () {
+  /**
+   * Confirm a copy on the button itself, then put its label back.
+   * @param {HTMLButtonElement} btn The copy button.
+   * @returns {void}
+   */
+  function markCopied(btn) {
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+  }
+
+  /**
+   * Copy a button's `data-copy` payload to the clipboard.
+   *
+   * clipboard.writeText is unavailable on file:// in some browsers, which is
+   * exactly where this report is most often opened, so both the throw and the
+   * rejection fall back to selecting the text. A button that silently does
+   * nothing is worse than one that asks for a keystroke.
+   * @param {HTMLButtonElement} btn The copy button.
+   * @returns {void}
+   */
+  function copyRun(btn) {
+    const text = btn.getAttribute('data-copy') || '';
     try {
-      var bin = atob(window.AUDIT_MD_B64 || '');
-      var bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      var url = URL.createObjectURL(new Blob([bytes], { type: 'text/markdown;charset=utf-8' }));
-      var a = document.createElement('a');
-      a.href = url; a.download = (window.AUDIT_MD_NAME || 'audit-report.md');
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      navigator.clipboard.writeText(text)
+        .then(() => markCopied(btn), () => selectRun(btn));
+    } catch (e) { selectRun(btn); }
+  }
+
+  Array.from(document.querySelectorAll('.btn-copy')).forEach((b) => {
+    b.addEventListener('click', () => copyRun(b));
+  });
+
+  /**
+   * Download the Markdown twin, which ships inside the page as base64.
+   * @returns {void}
+   */
+  function downloadMarkdownTwin() {
+    try {
+      // atob yields a binary string in which one character is exactly one byte,
+      // so a per-character charCodeAt is the whole decode.
+      const bin = atob(window.AUDIT_MD_B64 || '');
+      const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+      const url = URL.createObjectURL(
+        new Blob([bytes], { type: 'text/markdown;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (window.AUDIT_MD_NAME || 'audit-report.md');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoked once the click is dispatched; without this the page holds the
+      // decoded document for the rest of its lifetime.
       URL.revokeObjectURL(url);
     } catch (e) {}
+  }
+
+  const dlBtn = document.getElementById('audit-dl-md');
+  if (dlBtn) dlBtn.addEventListener('click', downloadMarkdownTwin);
+
+  // --- task detail rows and the view select ----------------------------------
+
+  /**
+   * Open or close one task's detail row. The compact row answers "where is
+   * this"; the detail row answers "what happened and who do I ask" — the full
+   * outcome above all, which the table can only show 70 characters of.
+   * @param {HTMLButtonElement} btn The row's disclosure button.
+   * @param {MouseEvent} ev Click on that button.
+   * @returns {void}
+   */
+  function toggleTaskDetail(btn, ev) {
+    ev.stopPropagation();          // the row itself is not a control
+    const row = btn.closest('tr.task');
+    if (!row || !row.__detail) return;
+    row.__open = !row.__open;
+    row.__detail.hidden = !row.__open;
+    btn.setAttribute('aria-expanded', row.__open ? 'true' : 'false');
+    btn.setAttribute('aria-label', (row.__open ? 'Hide' : 'Show')
+      + ' details for ' + (btn.getAttribute('data-dfor') || 'this task'));
+  }
+
+  Array.from(document.querySelectorAll('.dtoggle')).forEach((b) => {
+    b.addEventListener('click', (ev) => toggleTaskDetail(b, ev));
   });
 
-  // ex (F-P-4): the per-task detail toggle. The compact row answers "where is
-  // this"; this opens the row that answers "what happened and who do I ask" —
-  // the full outcome above all, which the table can only show 70 characters of.
-  [].slice.call(document.querySelectorAll('.dtoggle')).forEach(function (b) {
-    b.addEventListener('click', function (ev) {
-      ev.stopPropagation();          // the row itself is not a control
-      var row = b.closest('tr.task');
-      if (!row || !row.__detail) return;
-      row.__open = !row.__open;
-      row.__detail.hidden = !row.__open;
-      b.setAttribute('aria-expanded', row.__open ? 'true' : 'false');
-      b.setAttribute('aria-label', (row.__open ? 'Hide' : 'Show')
-        + ' details for ' + (b.getAttribute('data-dfor') || 'this task'));
-    });
-  });
+  // The view select rides the shareable fragment and the local fallback along
+  // with the filters: it IS part of the view someone would send as a link and
+  // expect back after a reload.
 
-  // vw: the view select. Unlike the toggle it replaces, this IS part of the
-  // view someone would send as a link (and expect back after a reload), so it
-  // rides the fragment and the local fallback with the filters.
+  /**
+   * Switch the phases table between active, archived and all.
+   * @param {string} v View name; an unknown name is ignored.
+   * @returns {void}
+   */
   function setView(v) {
     if (!VIEWS[v]) return;
     viewMode = v;
     if (viewSel && viewSel.value !== v) viewSel.value = v;
     refresh();
   }
+
   if (viewSel) {
     viewSel.value = viewMode;
-    viewSel.addEventListener('change', function () { setView(viewSel.value); });
+    viewSel.addEventListener('change', () => setView(viewSel.value));
   }
-  [].slice.call(document.querySelectorAll('[data-viewall]')).forEach(function (b) {
-    b.addEventListener('click', function () { setView('all'); });
+  Array.from(document.querySelectorAll('[data-viewall]')).forEach((b) => {
+    b.addEventListener('click', () => setView('all'));
   });
+  // --- exports: CSV of the tables --------------------------------------------
+  // Every export reads the DATA behind a table, never the filtered view on
+  // screen: a file named "phases-active" that held whatever the search box
+  // happened to leave visible would be a different file on every download.
+  // Every button is server-rendered, so this only attaches behaviour.
 
-  // --- per-segment and per-section exports (D2) ------------------------------
-  // CSV of the DATA — never the filtered view: a file named "phases-active"
-  // that silently held whatever the search box happened to leave visible
-  // would be a different file every download. PNG of the charts, REDRAWN from
-  // window.AUDIT_USAGE onto a canvas: the marks are bars on a grid, and
-  // DOM-to-canvas serialisation is exactly the dependency this
-  // zero-external-fetch file cannot take. And a print mode that isolates one
-  // segment. Every button is server-rendered (the chips rule); this only
-  // attaches behaviour.
-  var BASE = String(window.AUDIT_MD_NAME || 'audit-report.md').replace(/\.md$/, '');
+  /** @type {string} Download basename: the Markdown twin's name without `.md`. */
+  const BASE = String(window.AUDIT_MD_NAME || 'audit-report.md').replace(/\.md$/, '');
+
+  /**
+   * Quote one CSV field per RFC 4180.
+   * @param {string|number|null|undefined} v Raw field value.
+   * @returns {string} `v` wrapped in quotes with inner quotes doubled when it
+   *   carries a comma, a quote or a newline; otherwise `v` as a plain string.
+   */
   function csvQuote(v) {
-    // RFC 4180, the same rule the panel's export uses: quote anything that
-    // carries a comma, a quote or a newline, and double the quotes inside.
-    var s = v == null ? '' : String(v);
+    const s = v == null ? '' : String(v);
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
+
+  /**
+   * Hand a blob to the browser as a file download.
+   * @param {string} name Filename offered to the reader.
+   * @param {Blob} blob Payload to save.
+   * @returns {void}
+   */
   function download(name, blob) {
-    // The .md button's own mechanism: a temporary object URL on an anchor,
-    // revoked LATE — some engines have not started reading the blob when
-    // click() returns, and a revoked URL there is a download that fails with
-    // no error anywhere.
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    // The object URL must be revoked or the page holds the blob for its whole
+    // lifetime, and it must be revoked LATE: some engines have not started
+    // reading when click() returns, and a URL revoked at that point is a
+    // download that fails with no error anywhere.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
+
+  /**
+   * Serialise rows to CSV text and download them.
+   * @param {string} name Filename offered to the reader.
+   * @param {Array<Array<string|number>>} rows Header row first, then data rows.
+   * @returns {void}
+   */
   function csvDownload(name, rows) {
-    var text = rows.map(function (r) { return r.map(csvQuote).join(','); })
-      .join('\r\n') + '\r\n';
+    const text = rows.map((r) => r.map(csvQuote).join(',')).join('\r\n') + '\r\n';
     // U+FEFF: without the BOM Excel reads a UTF-8 CSV in the local 8-bit
-    // codepage. As an escape, never the character — an invisible literal in
-    // the source is unreviewable (the panel export's own rule).
+    // codepage. Written as an escape and never as the character itself, because
+    // an invisible literal in the source is unreviewable.
     download(name, new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' }));
   }
-  // Column names read once off the table's own header — the export must not
-  // restate _present_columns, or the two would disagree the first time a
-  // column appears.
-  // The MACHINE name of each optional column, from the header's own attribute
-  // rather than its words: the done header carries a "UTC" note beside the
-  // word, and a CSV keyed on rendered text would stop recognising the column
-  // the moment a header gained a second word (it did).
-  var COLNAMES = grouped
-    ? [].slice.call(grouped.querySelectorAll('thead th')).map(function (h) {
-        return h.getAttribute('data-col') || h.textContent.trim();
-      }).slice(3)
+
+  /**
+   * Machine names of the task table's optional columns, read once off the
+   * table's own header so the export cannot disagree with what was rendered.
+   *
+   * The name comes from `data-col` rather than the header's words: the done
+   * header carries a UTC note beside the word, and a CSV keyed on rendered text
+   * stops recognising a column the moment that header gains a second word. The
+   * leading three columns are the fixed id/title/status trio, written by hand
+   * into every row, so they are dropped here.
+   * @type {string[]}
+   */
+  const COLNAMES = grouped
+    ? Array.from(grouped.querySelectorAll('thead th'))
+        .map((h) => h.getAttribute('data-col') || h.textContent.trim())
+        .slice(3)
     : [];
-  // csv (F-P-4): the file carries the DATA, not what the cell happens to show.
-  // Three columns are lossy on screen and were being exported lossy: the commit
-  // cell shows nine characters (and, since the copy control landed, the word
-  // "Copy" inside its own text), the done cell shows minutes, and the outcome
-  // cell is cut at 70 characters. A spreadsheet is where someone re-derives
-  // things, so each of those exports its full value — read from the same place
-  // the reader can see it, the detail row.
+
+  /**
+   * Read one labelled value out of a task's expandable detail row.
+   * @param {HTMLTableRowElement} t Task row; its detail row hangs off `__detail`.
+   * @param {string} key Label text to match, e.g. 'completed'.
+   * @returns {string} The value beside that label, or '' when there is none.
+   */
   function detailValue(t, key) {
-    var d = t.__detail;
-    if (!d) return '';
-    var ks = [].slice.call(d.querySelectorAll('.dt-k'));
-    for (var i = 0; i < ks.length; i++) {
-      if (ks[i].textContent.trim() === key) {
-        var v = ks[i].nextElementSibling;
-        return v ? v.textContent.trim() : '';
-      }
-    }
-    return '';
+    const detail = t.__detail;
+    if (!detail) return '';
+    const label = Array.from(detail.querySelectorAll('.dt-k'))
+      .find((k) => k.textContent.trim() === key);
+    const value = label && label.nextElementSibling;
+    return value ? value.textContent.trim() : '';
   }
-  // An em dash is what a table prints where there is nothing; a data file says
-  // nothing by saying nothing. Every column goes through this.
+
+  /**
+   * Blank the em dash a table prints where there is nothing — a data file says
+   * nothing by saying nothing, and an em dash in a spreadsheet is a value.
+   * @param {string} v Rendered cell text.
+   * @returns {string} '' for an em dash or a bare hyphen, otherwise `v`.
+   */
   function csvPlain(v) { return (v === '\u2014' || v === '-') ? '' : v; }
+
+  /**
+   * One task's value for an optional column, at full precision.
+   *
+   * Three columns are lossy on screen and must not be exported lossy: the commit
+   * cell shows nine characters plus the copy control's own text, the done cell
+   * is cut to the minute, and the outcome cell is cut at 70 characters. A
+   * spreadsheet is where someone re-derives a figure, so each of those is read
+   * from the detail row the reader can open for themselves.
+   * @param {HTMLTableRowElement} t Task row.
+   * @param {string} name Machine column name, one of COLNAMES.
+   * @param {number} ci Index of that column within COLNAMES.
+   * @returns {string} The value to export for this cell.
+   */
   function csvCell(t, name, ci) {
     if (name === 'commit') {
-      var b = t.querySelector('.shacopy');
-      return b ? b.getAttribute('data-copy') : '';
+      const copyBtn = t.querySelector('.shacopy');
+      return copyBtn ? copyBtn.getAttribute('data-copy') : '';
     }
     if (name === 'done') {
-      // The DETAIL row carries the whole stamp; the data-attribute is cut to
-      // the date on purpose (the range filter compares those as strings), and
-      // the cell is cut to the minute. A spreadsheet gets the seconds.
+      // The data attribute is cut to the date on purpose — the range filter
+      // compares those as plain strings — and the cell is cut to the minute.
+      // The detail row carries the whole stamp, seconds included.
       return detailValue(t, 'completed') || detailValue(t, 'started')
         || t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
     }
     if (name === 'outcome') return detailValue(t, 'outcome') || csvPlain(cell(t, 3 + ci));
     return csvPlain(cell(t, 3 + ci));
   }
+
+  /**
+   * Build and download the CSV for one segment of the phases table.
+   * @param {string} seg Segment name, as carried by `data-segcsv`.
+   * @returns {void}
+   */
   function segCsv(seg) {
-    var rows = [['phase', 'phase title', 'phase status',
-                 'task', 'task title', 'task status'].concat(COLNAMES)
-      // ...plus everything the compact row moved into the detail. A CSV is the
-      // complete view by definition: a column that left the table must not
-      // leave the file with it.
-      .concat(['started', 'model', 'outcome', 'technical outcome', 'work item',
-               'owner', 'waits on'])];
-    phaseRows.forEach(function (pr) {
+    // The columns the compact row moved into the detail. A CSV is the complete
+    // view by definition: a column that left the table must not leave the file
+    // with it.
+    const detailCols = ['started', 'model', 'outcome', 'technical outcome',
+                        'work item', 'owner', 'waits on'];
+    const rows = [['phase', 'phase title', 'phase status',
+                   'task', 'task title', 'task status']
+      .concat(COLNAMES).concat(detailCols)];
+    phaseRows.forEach((pr) => {
       if (pr.__seg !== seg) return;
-      var pid = pr.getAttribute('data-phase');
-      var strongEl = pr.querySelector('strong');
-      var head = [pid, strongEl ? strongEl.textContent : '',
-                  pr.getAttribute('data-status') || ''];
-      var tasks = tasksOf(pid);
-      if (!tasks.length) {   // a phase with no tasks is still a data row
+      const pid = pr.getAttribute('data-phase');
+      const titleEl = pr.querySelector('strong');
+      const head = [pid, titleEl ? titleEl.textContent : '',
+                    pr.getAttribute('data-status') || ''];
+      const tasks = tasksOf(pid);
+      if (!tasks.length) {
+        // A phase with no tasks is still a data row.
         rows.push(head.concat(['', '', ''])
-          .concat(COLNAMES.map(function () { return ''; }))
-          .concat(['', '', '', '', '', '', '']));
+          .concat(COLNAMES.map(() => ''))
+          .concat(detailCols.map(() => '')));
         return;
       }
-      tasks.forEach(function (t) {
-        // Machine statuses from the data attributes; prose from the cells.
-        var line = head.concat([cell(t, 0), cell(t, 1),
-                                t.getAttribute('data-status') || '']);
-        for (var ci = 0; ci < COLNAMES.length; ci++) {
-          line.push(csvCell(t, COLNAMES[ci], ci));
-        }
-        // The four the table has no column for and the detail row does. A
-        // reader who opened the row to find them should not have to open
-        // fifty rows to tabulate them.
-        line.push(detailValue(t, 'started') || t.getAttribute('data-started') || '',
-                  detailValue(t, 'model') || t.getAttribute('data-model') || '',
-                  detailValue(t, 'outcome'),
-                  detailValue(t, 'technical'),
-                  detailValue(t, 'work item'),
-                  detailValue(t, 'owner'),
-                  detailValue(t, 'waits on'));
-        rows.push(line);
+      tasks.forEach((t) => {
+        // Machine statuses from the data attributes; prose from the cells; and
+        // the fields the table has no column for, so a reader who opened one row
+        // to find them does not have to open fifty to tabulate them.
+        rows.push(head
+          .concat([cell(t, 0), cell(t, 1), t.getAttribute('data-status') || ''])
+          .concat(COLNAMES.map((name, ci) => csvCell(t, name, ci)))
+          .concat([detailValue(t, 'started') || t.getAttribute('data-started') || '',
+                   detailValue(t, 'model') || t.getAttribute('data-model') || '',
+                   detailValue(t, 'outcome'),
+                   detailValue(t, 'technical'),
+                   detailValue(t, 'work item'),
+                   detailValue(t, 'owner'),
+                   detailValue(t, 'waits on')]));
       });
     });
     csvDownload(BASE + '-phases-' + seg + '.csv', rows);
   }
+
+  /**
+   * Build and download the CSV of the bugs table.
+   * @returns {void}
+   */
   function bugsCsv() {
-    var rows = [['id', 'title', 'status', 'severity', 'task', 'fixedIn', 'ADO']];
-    bugRows.forEach(function (b) {
-      rows.push([cell(b, 0), cell(b, 1),
-                 b.getAttribute('data-status') || cell(b, 2),
-                 cell(b, 3), cell(b, 4), cell(b, 5), cell(b, 6)]);
-    });
-    csvDownload(BASE + '-bugs.csv', rows);
+    const header = ['id', 'title', 'status', 'severity', 'task', 'fixedIn', 'ADO'];
+    const rows = bugRows.map((b) => [
+      cell(b, 0), cell(b, 1),
+      b.getAttribute('data-status') || cell(b, 2),
+      cell(b, 3), cell(b, 4), cell(b, 5), cell(b, 6)]);
+    csvDownload(BASE + '-bugs.csv', [header].concat(rows));
   }
+
+  /**
+   * Build and download the daily usage CSV, one row per recorded day.
+   * @returns {void}
+   */
   function usageCsv() {
     if (!U) return;
-    var showCost = U.showCost !== false;
-    var rows = [['date', 'tokens'].concat(showCost ? ['costUSD'] : [])
-      .concat(['msgs'])];
-    var days = [];
-    for (var ud in U.days) days.push(ud);
-    days.sort();
-    days.forEach(function (d) {
-      var v = U.days[d];
-      // Raw numbers on purpose: '3,230,000' lands in a spreadsheet as text
-      // and every sum over the column is then wrong, silently.
-      var line = [d, v[0]];
-      if (showCost) line.push(v[1]);
-      line.push(v[2]);
-      rows.push(line);
+    const showCost = U.showCost !== false;
+    const header = ['date', 'tokens'].concat(showCost ? ['costUSD'] : []).concat(['msgs']);
+    // Raw numbers on purpose: '3,230,000' lands in a spreadsheet as text, and
+    // every sum over the column is then wrong without saying so.
+    const rows = Object.keys(U.days).sort().map((d) => {
+      const v = U.days[d];
+      return showCost ? [d, v[0], v[1], v[2]] : [d, v[0], v[2]];
     });
-    csvDownload(BASE + '-usage-daily.csv', rows);
+    csvDownload(BASE + '-usage-daily.csv', [header].concat(rows));
   }
-  [].slice.call(document.querySelectorAll('[data-segcsv]')).forEach(function (b) {
-    b.addEventListener('click', function () {
-      segCsv(b.getAttribute('data-segcsv'));
-    });
+
+  Array.from(document.querySelectorAll('[data-segcsv]')).forEach((b) => {
+    b.addEventListener('click', () => segCsv(b.getAttribute('data-segcsv')));
   });
-  [].slice.call(document.querySelectorAll('[data-csv]')).forEach(function (b) {
+  Array.from(document.querySelectorAll('[data-csv]')).forEach((b) => {
     b.addEventListener('click',
       b.getAttribute('data-csv') === 'bugs' ? bugsCsv : usageCsv);
   });
 
+  // --- exports: PNG of the charts --------------------------------------------
+  // The marks are bars on a grid, so each chart is REDRAWN from
+  // window.AUDIT_USAGE onto a canvas. Serialising the DOM into a canvas would
+  // need a resource this page may not fetch, and the page has no network at all.
+
+  /**
+   * Resolve a CSS custom property to the colour the browser actually computed.
+   * @param {string} token Custom-property name, e.g. '--text'.
+   * @param {string} fallback Literal colour used when the token resolves to
+   *   nothing.
+   * @returns {string} A computed CSS colour string.
+   */
   function cssColor(token, fallback) {
     // Resolved through a live element rather than read raw off the root:
-    // several tokens are color-mix() expressions, and what a canvas needs is
-    // the colour the browser actually computed.
-    var probe = document.createElement('i');
+    // several tokens are color-mix() expressions, and what a canvas needs is the
+    // colour the browser settled on, not the expression.
+    const probe = document.createElement('i');
     probe.style.color = 'var(' + token + ',' + fallback + ')';
     document.body.appendChild(probe);
-    var c = getComputedStyle(probe).color;
+    const c = getComputedStyle(probe).color;
     document.body.removeChild(probe);
     return c || fallback;
   }
+
+  /**
+   * A detached canvas backed at 2x, with its context pre-scaled so callers draw
+   * in CSS pixels. The doubling is what lets the file survive being pasted into
+   * a document at print density.
+   * @param {number} w Width in CSS pixels.
+   * @param {number} h Height in CSS pixels.
+   * @returns {{el: HTMLCanvasElement, ctx: CanvasRenderingContext2D}} The canvas
+   *   and its scaled 2d context.
+   */
   function pngCanvas(w, h) {
-    var c = document.createElement('canvas');
-    // 2x, so the file survives being pasted into a document at print density.
-    c.width = w * 2; c.height = h * 2;
-    var ctx = c.getContext('2d');
+    const c = document.createElement('canvas');
+    c.width = w * 2;
+    c.height = h * 2;
+    const ctx = c.getContext('2d');
     ctx.scale(2, 2);
     return { el: c, ctx: ctx };
   }
+
+  /**
+   * Hand a canvas to the browser as a PNG download.
+   * @param {string} name Filename offered to the reader.
+   * @param {HTMLCanvasElement} canvas Canvas to encode.
+   * @returns {void}
+   */
   function pngDownload(name, canvas) {
-    // toDataURL rather than a blob: synchronous, and the payload is small.
-    var a = document.createElement('a');
+    // toDataURL rather than a blob: synchronous, and these payloads are small,
+    // so there is no object URL whose lifetime has to be managed.
+    const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
     a.download = name;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
+
+  /**
+   * Redraw the tokens-per-day trend onto a canvas and download it as a PNG.
+   * @returns {void}
+   */
   function trendPng() {
     if (!U) return;
-    var days = [];
-    for (var td in U.days) days.push(td);
-    days.sort();
+    const days = Object.keys(U.days).sort();
     if (!days.length) return;
-    var peak = 0;
-    days.forEach(function (d) { if (U.days[d][0] > peak) peak = U.days[d][0]; });
-    // Bar width follows the span so a three-year ledger still fits one image.
-    var barW = Math.max(1, Math.min(10, Math.floor(1100 / days.length)));
-    var left = 58, top = 44, bottom = 34;
-    var W = left + days.length * (barW + 1) + 14, H = 280;
-    var g = pngCanvas(W, H), ctx = g.ctx;
-    var ink = cssColor('--text', '#111827');
-    var mut = cssColor('--muted', '#6b7280');
+    const peak = days.reduce((hi, d) => (U.days[d][0] > hi ? U.days[d][0] : hi), 0);
+    // Bar width follows the span, so a three-year ledger still fits one image.
+    const barW = Math.max(1, Math.min(10, Math.floor(1100 / days.length)));
+    const left = 58, top = 44, bottom = 34;
+    const W = left + days.length * (barW + 1) + 14, H = 280;
+    const g = pngCanvas(W, H), ctx = g.ctx;
+    const ink = cssColor('--text', '#111827');
+    const mut = cssColor('--muted', '#6b7280');
     ctx.fillStyle = cssColor('--surface', '#ffffff');
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = ink;
     ctx.font = '600 13px sans-serif';
     ctx.fillText('Tokens per day · ' + days[0] + ' to '
       + days[days.length - 1], 10, 20);
-    var plot = H - top - bottom;
+    const plot = H - top - bottom;
     ctx.strokeStyle = cssColor('--border', '#d1d5db');
     ctx.fillStyle = mut;
     ctx.font = '11px sans-serif';
-    [0, 0.5, 1].forEach(function (f) {
-      var y = top + plot * f;
-      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(W - 6, y); ctx.stroke();
+    for (const f of [0, 0.5, 1]) {
+      const y = top + plot * f;
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(W - 6, y);
+      ctx.stroke();
       ctx.fillText(fmtTokens(peak * (1 - f), 1), 8, y + 4);
-    });
+    }
     ctx.fillStyle = cssColor('--accent-solid', '#4f46e5');
-    days.forEach(function (d, i) {
-      var v = U.days[d][0];
-      var bh = peak ? Math.max(1, plot * v / peak) : 1;
+    for (const [i, d] of days.entries()) {
+      const bh = peak ? Math.max(1, plot * U.days[d][0] / peak) : 1;
       ctx.fillRect(left + i * (barW + 1), top + plot - bh, barW, bh);
-    });
+    }
     ctx.fillStyle = mut;
     ctx.fillText(days[0], left, H - 12);
-    var lastD = days[days.length - 1];
+    const lastD = days[days.length - 1];
     ctx.fillText(lastD, W - 8 - ctx.measureText(lastD).width, H - 12);
     pngDownload(BASE + '-trend.png', g.el);
   }
+
+  /**
+   * Redraw the activity heatmap's CURRENT view onto a canvas and download it.
+   *
+   * `hmView()` is the heatmap's own view as data — granularity, period, range —
+   * so the file shows what the screen shows rather than a second
+   * implementation's idea of it.
+   * @returns {void}
+   */
   function heatmapPng() {
-    // hmView is set by the heatmap module below; it answers with the CURRENT
-    // view — granularity, period, range — so the file shows what the screen
-    // shows, not a second implementation's idea of it.
-    var v = hmView ? hmView() : null;
+    const v = hmView ? hmView() : null;
     if (!v) return;
-    var cellW = 26, cellH = 18, gap = 2, labelW = 96, top = 44;
-    var W = labelW + 24 * (cellW + gap) + 12;
-    var H = top + v.rows.length * (cellH + gap) + 30;
-    var g = pngCanvas(W, H), ctx = g.ctx;
+    const cellW = 26, cellH = 18, gap = 2, labelW = 96, top = 44;
+    const W = labelW + 24 * (cellW + gap) + 12;
+    const H = top + v.rows.length * (cellH + gap) + 30;
+    const g = pngCanvas(W, H), ctx = g.ctx;
     ctx.fillStyle = cssColor('--surface', '#ffffff');
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = cssColor('--text', '#111827');
     ctx.font = '600 13px sans-serif';
     ctx.fillText('Tokens by hour (UTC) · ' + v.label, 10, 20);
-    var ramp = [];
-    for (var lv0 = 0; lv0 <= 6; lv0++) ramp.push(cssColor('--hm-' + lv0, '#eeeeee'));
+    // Seven ramp steps, resolved once: index 0 is "nothing recorded", 1-6 are
+    // the intensity bands the on-screen grid uses.
+    const ramp = Array.from({ length: 7 },
+      (unused, lv) => cssColor('--hm-' + lv, '#eeeeee'));
+    const mut = cssColor('--muted', '#6b7280');
     ctx.font = '11px sans-serif';
-    v.rows.forEach(function (r, ri) {
-      var y = top + ri * (cellH + gap);
-      ctx.fillStyle = cssColor('--muted', '#6b7280');
+    for (const [ri, r] of v.rows.entries()) {
+      const y = top + ri * (cellH + gap);
+      ctx.fillStyle = mut;
       ctx.fillText(r.label, 8, y + cellH - 5);
-      for (var h2 = 0; h2 < 24; h2++) {
-        var val = r.cells ? (r.cells[h2] || 0) : 0;
-        var lv = (!val || !v.peak) ? 0
+      for (let h = 0; h < 24; h++) {
+        const val = r.cells ? (r.cells[h] || 0) : 0;
+        const lv = (!val || !v.peak) ? 0
           : Math.min(6, 1 + Math.floor(5 * val / v.peak));
         ctx.fillStyle = ramp[lv];
-        ctx.fillRect(labelW + h2 * (cellW + gap), y, cellW, cellH);
+        ctx.fillRect(labelW + h * (cellW + gap), y, cellW, cellH);
       }
-    });
-    ctx.fillStyle = cssColor('--muted', '#6b7280');
-    for (var tk = 0; tk < 24; tk += 6) {
+    }
+    ctx.fillStyle = mut;
+    for (let tk = 0; tk < 24; tk += 6) {
       ctx.fillText((tk < 10 ? '0' : '') + tk, labelW + tk * (cellW + gap), H - 10);
     }
     pngDownload(BASE + '-heatmap.png', g.el);
   }
-  [].slice.call(document.querySelectorAll('[data-png]')).forEach(function (b) {
+
+  Array.from(document.querySelectorAll('[data-png]')).forEach((b) => {
     b.addEventListener('click',
       b.getAttribute('data-png') === 'trend' ? trendPng : heatmapPng);
   });
 
-  // Print one segment (D2): stamp the attribute the print CSS keys on, open
-  // the dialog, and let afterprint take it back off — the same event the
-  // details-reopening handler above already rides, so a cancelled dialog
-  // restores exactly like a completed one.
-  [].slice.call(document.querySelectorAll('[data-segprint]')).forEach(function (b) {
-    b.addEventListener('click', function () {
-      document.body.setAttribute('data-printseg', b.getAttribute('data-segprint'));
-      window.print();
-    });
+  // --- exports: printing one segment -----------------------------------------
+
+  /**
+   * Isolate one segment for print. The print stylesheet keys on
+   * `body[data-printseg]`, and `afterprint` takes the attribute back off, so a
+   * cancelled dialog restores the page exactly like a completed one.
+   * @param {string} seg Segment name, as carried by `data-segprint`.
+   * @returns {void}
+   */
+  function printSegment(seg) {
+    document.body.setAttribute('data-printseg', seg);
+    window.print();
+  }
+
+  Array.from(document.querySelectorAll('[data-segprint]')).forEach((b) => {
+    b.addEventListener('click', () => printSegment(b.getAttribute('data-segprint')));
   });
-  window.addEventListener('afterprint', function () {
+  window.addEventListener('afterprint', () => {
     document.body.removeAttribute('data-printseg');
   });
 
+  // --- boot: sorting, the search box, and the view the link asked for --------
+
   wireSort(grouped, true, true);
   wireSort(bugsTable, false, true);
-  // Typing is a burst, not a series of questions. Five characters used to mean five
-  // full passes over every row — half a second of blocked main thread on a
-  // 200-phase plan — to show four intermediate results nobody reads. One pass once
-  // you stop. 90ms is below the threshold where a filter feels delayed and above
-  // the fastest realistic repeat rate, and the timer is cleared on every keystroke
-  // so a long word still costs exactly one pass.
+
   if (q) {
-    var qTimer = null;
-    q.addEventListener('input', function () {
+    /** @type {number|null} Pending debounce timer id, or null when idle. */
+    let qTimer = null;
+    /**
+     * Schedule the single filter pass that follows a burst of typing.
+     *
+     * Typing is a burst, not a series of questions. One pass per keystroke means
+     * five full passes over every row for a five-character word — half a second
+     * of blocked main thread on a 200-phase plan — to show four intermediate
+     * results nobody reads. 90ms is below the delay a reader notices and above
+     * the fastest realistic repeat rate, and the timer is cleared on every
+     * keystroke so a long word still costs exactly one pass.
+     * @returns {void}
+     */
+    const queueRefresh = () => {
       if (qTimer) clearTimeout(qTimer);
-      qTimer = setTimeout(function () { qTimer = null; refresh(); }, 90);
-    });
-    // Enter and Escape are decisions, not typing: act at once.
-    q.addEventListener('keydown', function (ev) {
+      qTimer = setTimeout(() => { qTimer = null; refresh(); }, 90);
+    };
+    /**
+     * Filter immediately for the keys that are decisions rather than typing.
+     * Escape also empties the box, which is what makes it a way out.
+     * @param {KeyboardEvent} ev Keydown on the search box.
+     * @returns {void}
+     */
+    const filterOnDecisionKey = (ev) => {
       if (ev.key !== 'Enter' && ev.key !== 'Escape') return;
       if (ev.key === 'Escape') q.value = '';
       if (qTimer) { clearTimeout(qTimer); qTimer = null; }
       refresh();
-    });
+    };
+    q.addEventListener('input', queueRefresh);
+    q.addEventListener('keydown', filterOnDecisionKey);
   }
-  // Restore what the link asked for BEFORE the first pass, so a shared URL renders
-  // the view it names instead of rendering everything and then rearranging itself.
-  // A link WINS over the local copy: somebody sent it on purpose. With no link,
-  // the local copy is what this reader last had on screen.
+
+  /**
+   * Fold one `key=value` pair of the stored filter string into HASH.
+   * @param {string} pair One `&`-separated pair; an empty pair is ignored.
+   * @returns {void}
+   */
+  function restoreStoredPair(pair) {
+    if (!pair) return;
+    const eq = pair.indexOf('=');
+    const k = eq < 0 ? pair : pair.slice(0, eq);
+    const v = eq < 0 ? '' : pair.slice(eq + 1);
+    // A malformed percent-escape throws, and one unreadable pair must not cost
+    // the reader the rest of the restored view.
+    try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) {}
+  }
+
+  // Restore what the link asked for BEFORE the first pass, so a shared URL
+  // renders the view it names instead of rendering everything and then
+  // rearranging itself. A link WINS over the local copy: somebody sent it on
+  // purpose. With no link, the local copy is what this reader last had on screen.
   if (!Object.keys(HASH).length) {
+    // Storage is unavailable or refused on a file:// document in some engines,
+    // and the report has to stay readable there.
     try {
-      var stored = localStorage.getItem(STORE_KEY);
-      if (stored) {
-        stored.split('&').forEach(function (pair) {
-          if (!pair) return;
-          var i = pair.indexOf('=');
-          var k = i < 0 ? pair : pair.slice(0, i);
-          var v = i < 0 ? '' : pair.slice(i + 1);
-          try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) {}
-        });
-      }
+      const stored = localStorage.getItem(STORE_KEY);
+      if (stored) stored.split('&').forEach(restoreStoredPair);
     } catch (e) {}
   }
   if (HASH.v && VIEWS[HASH.v]) {

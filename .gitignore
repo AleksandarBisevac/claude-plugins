@@ -51,3 +51,6 @@ docs/PLAN.md
 docs/plans/
 docs/strategy/
 TODO.local.md
+
+# Agent worktrees: working copies, never content of this repo.
+.claude/worktrees/

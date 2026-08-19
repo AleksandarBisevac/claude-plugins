@@ -34,7 +34,8 @@ describe('the token cases would catch a truncation change', () => {
 
   it('report.js fmtTokens goes wrong when Math.trunc becomes Math.round', () => {
     const { ctx } = loadReport({
-      mutate: mutateOnce('n = Math.trunc(n || 0);', 'n = Math.round(n || 0);'),
+      mutate: mutateOnce('const whole = Math.trunc(n || 0);',
+        'const whole = Math.round(n || 0);'),
     });
     const { fmtTokens } = reach(ctx, ['fmtTokens']);
     const got = [2.6, 2.4, -2.6, 999.9].map((n) => fmtTokens(n, 1));
@@ -126,8 +127,8 @@ describe('the tie cases would catch either failure of the half-even rule', () =>
 describe('the money and share cases would catch either failure of the sub-unit rule', () => {
   it('fmtCost prints $0.00 for real spend when the guard never fires', () => {
     const { ctx } = loadReport({
-      mutate: mutateOnce("if (x && Math.abs(x) < 0.01) return '<$0.01';",
-        "if (false && Math.abs(x) < 0.01) return '<$0.01';"),
+      mutate: mutateOnce("if (v && Math.abs(v) < 0.01) return '<$0.01';",
+        "if (false && Math.abs(v) < 0.01) return '<$0.01';"),
     });
     const { fmtCost } = reach(ctx, ['fmtCost']);
     expect(fmtCost(0.004)).toBe('$0.00');
@@ -136,8 +137,8 @@ describe('the money and share cases would catch either failure of the sub-unit r
 
   it('fmtCost prints <$0.01 for a true zero when the guard always fires', () => {
     const { ctx } = loadReport({
-      mutate: mutateOnce("if (x && Math.abs(x) < 0.01) return '<$0.01';",
-        "if (Math.abs(x) < 0.01) return '<$0.01';"),
+      mutate: mutateOnce("if (v && Math.abs(v) < 0.01) return '<$0.01';",
+        "if (Math.abs(v) < 0.01) return '<$0.01';"),
     });
     const { fmtCost } = reach(ctx, ['fmtCost']);
     expect(fmtCost(0)).toBe('<$0.01');
@@ -183,8 +184,8 @@ describe('the sort cases would catch a comparator that stopped comparing numbers
   it('natCmp reverts to a string sort without the numeric term', () => {
     const { ctx } = loadReport({
       mutate: mutateOnce(
-        'var c = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);',
-        'var c = an[1].localeCompare(bn[1]);'),
+        'const c = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);',
+        'const c = an[1].localeCompare(bn[1]);'),
     });
     const { natCmp } = reach(ctx, ['natCmp']);
     const ids = ['P1.10', 'P1.2', 'P1.9'];
