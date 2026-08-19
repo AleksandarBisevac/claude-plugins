@@ -14,14 +14,14 @@ now honours SOURCE_DATE_EPOCH, and this tool sets it to the stamp it reads out o
 the committed file -- so a byte-identical result proves the ONLY thing that
 differed was the clock, and any other difference is real drift.
 
-WHAT IT DOES NOT COVER, and the direction. `docs/demo-large.html` is the other
-committed rendered artifact and is NOT in the table: it is rendered from a
-GENERATED fixture, so checking it means running `gen-demo-manifest.py` first and
-trusting that generator's determinism as well as the renderer's. That is a real
-check and it belongs here, but half-doing it -- comparing against a fixture this
-tool did not regenerate -- would report drift that is not drift. Its absence is
-an UNDER-count, the quiet direction, so a clean run here means "the artifacts in
-the table are current", not "every committed artifact is current".
+`docs/demo-large.html` is covered too, and it costs one extra step: it renders
+from a GENERATED fixture, so the check regenerates that fixture first and relies
+on the generator being deterministic as well as the renderer. Comparing against a
+fixture this tool did not build would report drift that is not drift.
+
+WHAT IT STILL DOES NOT COVER, and the direction: an artifact nobody listed in
+`ARTIFACTS`. That is an UNDER-count -- the quiet direction -- so a clean run means
+"the artifacts in the table are current", not "every committed artifact is".
 
 Run it:   python3 tools/check-rendered-artifacts.py
           python3 tools/check-rendered-artifacts.py --selftest
@@ -51,6 +51,12 @@ ARTIFACTS = [
      "examples/acme-store/audit-plan.json", "examples/acme-store"),
 ]
 
+# Rendered from a fixture this tool generates rather than from a committed
+# manifest, so it carries its own entry: (artifact, rendered basename).
+GENERATED_ARTIFACTS = [
+    ("docs/demo-large.html", "demo-large.html"),
+]
+
 
 def stamp_epoch(text):
     """The artifact's own generation stamp as epoch seconds, or None.
@@ -65,6 +71,29 @@ def stamp_epoch(text):
     parts = [int(x) for x in m.groups()]
     return calendar.timegm((parts[0], parts[1], parts[2],
                             parts[3], parts[4], 0, 0, 0, 0))
+
+
+def _build_demo_fixture(work):
+    """Generate the scale demo's fixture, deterministically, and return its dir.
+
+    The fixture is seeded, so two runs produce identical bytes; that is what lets
+    the artifact rendered from it be compared at all. Returns None when a step
+    exits non-zero, which the caller reports rather than treating as "no drift".
+    """
+    project = os.path.join(work, "demo")
+    os.makedirs(project)
+    scripts = os.path.join(REPO, "plugins", "audit", "scripts")
+    steps = [
+        [sys.executable, os.path.join(scripts, "demo", "gen-demo-manifest.py"),
+         project, "--phases", "40", "--tasks", "5"],
+        [sys.executable, os.path.join(scripts, "demo", "gen-demo-usage.py"),
+         os.path.join(project, "audit-plan.json")],
+    ]
+    for step in steps:
+        if subprocess.call(step, cwd=REPO, stdout=open(os.devnull, "w"),
+                           stderr=subprocess.STDOUT) != 0:
+            return None
+    return project
 
 
 def _render(manifest, project, out_dir, epoch):
@@ -117,6 +146,42 @@ def drifted(artifacts=None):
                 out.append((rel, "%d committed bytes vs %d rendered; the clock is "
                                  "pinned, so this is real drift"
                             % (len(committed), len(fresh))))
+        for rel, basename in GENERATED_ARTIFACTS:
+            path = os.path.join(REPO, rel)
+            try:
+                with io.open(path, "r", encoding="utf-8") as fh:
+                    committed = fh.read()
+            except (OSError, UnicodeDecodeError):
+                out.append((rel, "cannot be read, so nothing here can compare it"))
+                continue
+            epoch = stamp_epoch(committed)
+            if epoch is None:
+                out.append((rel, "carries no generation stamp"))
+                continue
+            project = _build_demo_fixture(os.path.join(work, "gen"))
+            if project is None:
+                out.append((rel, "the fixture generator exited non-zero, so this "
+                                 "artifact could not be compared at all"))
+                continue
+            sub = os.path.join(work, "genout")
+            os.makedirs(sub)
+            if _render(os.path.relpath(os.path.join(project, "audit-plan.json"),
+                                       REPO),
+                       os.path.relpath(project, REPO), sub, epoch) != 0:
+                out.append((rel, "the renderer exited non-zero on the generated "
+                                 "fixture"))
+                continue
+            fresh_path = os.path.join(sub, basename)
+            if not os.path.exists(fresh_path):
+                out.append((rel, "a fresh render produced no such file"))
+                continue
+            with io.open(fresh_path, "r", encoding="utf-8") as fh:
+                fresh = fh.read()
+            if fresh != committed:
+                out.append((rel, "%d committed bytes vs %d rendered from a "
+                                 "regenerated fixture; the clock is pinned, so "
+                                 "this is real drift"
+                            % (len(committed), len(fresh))))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return out
@@ -148,7 +213,9 @@ def _selftest():
     check("ra4 the table names artifacts that exist, or this tool is checking "
           "files that are not there",
           all(os.path.exists(os.path.join(REPO, rel))
-              for rel, _m, _p in ARTIFACTS))
+              for rel, _m, _p in ARTIFACTS)
+          and all(os.path.exists(os.path.join(REPO, rel))
+                  for rel, _b in GENERATED_ARTIFACTS))
     # The live one. It is the point of the tool, and it is deliberately last so
     # the cheap cases have already reported when a render is slow.
     _live = drifted()
@@ -172,7 +239,7 @@ def main():
                          "Re-render and commit them.\n" % len(bad))
         return 1
     sys.stdout.write("OK: %d committed artifact(s) match a fresh render\n"
-                     % len(ARTIFACTS))
+                     % (len(ARTIFACTS) + len(GENERATED_ARTIFACTS)))
     return 0
 
 

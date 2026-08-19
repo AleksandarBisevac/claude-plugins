@@ -112,6 +112,10 @@ const CONDITIONAL_EXPECTS = [
     why: 'runs only when a cell actually had to truncate with an ellipsis, which '
        + 'depends on the outcome text in the fixture',
     instead: 'opening one shows the row under its task' },
+  { label: '...and hides all',
+    why: 'runs only on a plan that HAS untagged phases; where every phase carries '
+       + 'a tag there is no untagged half to hide',
+    instead: 'every phase in this plan is tagged' },
   { label: 'every phase in this plan shares one status, so its chip hides nothing',
     why: 'the else-half of the chip branch: it runs only on a plan with ONE status, '
        + 'where a chip that hides nothing is the correct behaviour',

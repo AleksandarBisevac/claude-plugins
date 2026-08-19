@@ -430,6 +430,29 @@ The 3.8 floor and hooks that must start fast on every tool call rule out the
 import and parse cost of `typing`/`dataclasses`/annotations; enforcement is
 `_output.house_style_violations`, not a style guide someone can forget to read.
 
+### The report's script is a module (decided 2026-08-20)
+
+`<script type="module">`, and no IIFE. The wrapper existed to keep about a hundred and thirty
+top-level bindings out of a page that already carries `window.AUDIT_USAGE`; a module scope does
+that natively, so the wrapper was doing a job the platform does better.
+
+**Measured before deciding, because this is a scheme restriction and not a preference.** An inline
+module script DOES run from a page opened over `file://`. A cross-file `import` from the same page
+does NOT — it fails with `net::ERR_FAILED`, because module scripts are fetched with CORS semantics
+and a page opened from disk has an opaque origin. So the parts are still joined by Python, and no
+part contains `import` or `export`.
+
+**What it costs, stated rather than discovered later.** A module is strict, and it is deferred.
+Both are verified rather than assumed: 154/154 interactive checks against the rendered artifact,
+and the assembled body is parsed a second time under `'use strict'` in the Node suite, where a
+sloppy parse would accept octal literals, duplicate parameter names and assignments to undeclared
+names. The remaining exposure is an embedder that permits `<script>` and not
+`<script type="module">` — the same class as the IDE preview pane that strips inline scripts
+entirely, and the `audit-nojs` banner is what tells a reader either has happened.
+
+**Revisit if** an embedder is found that runs classic inline scripts and refuses module ones, or if
+the report ever needs to be readable with scripting disabled beyond what the banner covers.
+
 ### Browser JavaScript dialect (decided 2026-08-19): modern ES, and still no build step
 
 The two surfaces speak different languages. `report.js` is strictly ES5 — 293 `var`,

@@ -42,7 +42,7 @@
   /**
    * Serialise rows to CSV text and download them.
    * @param {string} name Filename offered to the reader.
-   * @param {Array<Array<string|number>>} rows Header row first, then data rows.
+   * @param {(string|number|null)[][]} rows Header row first, then data rows.
    * @returns {void}
    */
   function csvDownload(name, rows) {
@@ -109,7 +109,9 @@
   function csvCell(t, name, ci) {
     if (name === 'commit') {
       const copyBtn = t.querySelector('.shacopy');
-      return copyBtn ? copyBtn.getAttribute('data-copy') : '';
+      // `getAttribute` is string-or-null; the declared return type is string, so
+      // the coalesce is what makes that true rather than nearly true.
+      return (copyBtn && copyBtn.getAttribute('data-copy')) || '';
     }
     if (name === 'done') {
       // The data attribute is cut to the date on purpose — the range filter
@@ -245,6 +247,11 @@
     c.width = w * 2;
     c.height = h * 2;
     const ctx = c.getContext('2d');
+    // A 2d context is null when the browser cannot back the surface — a large
+    // canvas under memory pressure is the realistic case. Throwing here names
+    // the cause; letting it through produces `cannot read scale of null` from
+    // whichever draw call happens to run first.
+    if (!ctx) throw new Error('canvas 2d context unavailable at ' + w + 'x' + h);
     ctx.scale(2, 2);
     return { el: c, ctx: ctx };
   }

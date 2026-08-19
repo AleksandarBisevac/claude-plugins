@@ -26,7 +26,9 @@ single self-contained HTML page. Almost every surprise in this area comes from f
   guarding something else.
 - **No external resources, ever.** CI asserts the rendered report contains no `<script src`,
   `<img `, `<link `, `<iframe` or `url(http`. No CDN, no web font, no separate stylesheet.
-- **No ESM, no bundler, no transpiler.** `import`/`export` cannot work in one inline script on an
+- **A module script, but no cross-file `import`.** The report's code block is
+  `<script type="module">`: that is where its scope and its strict mode come from, and it is why
+  no IIFE wraps it. What a module does NOT buy here is loading — `import`/`export` cannot work on an
   opaque `file://` origin. There is no build step and there will not be one.
 - **Order is load-bearing.** `TOKEN_CSS` must come first — both stylesheets are *individually
   invalid* without it (undeclared custom properties, and `panel.css` alone fails the

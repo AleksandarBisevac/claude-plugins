@@ -451,7 +451,6 @@
     ? Array.from(grouped.querySelectorAll('tbody tr.seghead')) : [];
   segRows.forEach((sh) => { sh.__seg = sh.getAttribute('data-seg'); });
   phaseRows.forEach((pr) => { pr.__seg = pr.getAttribute('data-seg') || ''; });
-  const archN = phaseRows.filter((pr) => pr.__seg === 'archived').length;
 
   // Which phases are on screen is a NAMED view, not a toggle somebody has to
   // find. `active` covers both segments of unfinished work; `archived` is done

@@ -35,7 +35,9 @@ inconsistent from disk (which is why every storage call in the tree is already w
 `try`/`catch`). A feature must pass both.
 
 **ES modules are not available.** "Module" here means an ordered part plus a name prefix, not
-`import`/`export`. Do not write `import`, `export`, `type="module"` or dynamic `import()`.
+`import`/`export`. The report's block IS `type="module"` — a module scope is the point — but do
+not write `import`, `export` or dynamic `import()`: those need loading, and loading is what an
+opaque origin refuses.
 
 ## Functional idiom
 

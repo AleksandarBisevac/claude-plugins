@@ -52,11 +52,9 @@ def _cases(check):
           and M.SCRIPT.endswith(M._SCRIPT_TAG_CLOSE)
           and 'type="module"' in M._SCRIPT_TAG_OPEN)
     inner = M.SCRIPT[len(M._SCRIPT_TAG_OPEN):-len(M._SCRIPT_TAG_CLOSE)]
-    # The wrapper moved into this module when the script became ordered parts:
-    # its body is one IIFE, so the opening and closing braces cannot live in the
-    # first and last part without leaving both individually unparseable. What the
-    # page receives is therefore the parts joined INSIDE that wrapper, and the
-    # parts themselves hold no wrapper of their own.
+    # What the page receives is the parts joined inside one module script. The
+    # module boundary IS the scope, so there is no code wrapper for a difference
+    # to hide in, and each part stays parseable on its own.
     check("the JS between the tags is the ordered parts joined, and nothing "
           "else - the module boundary is the scope, so there is no wrapper left "
           "to hide a difference in",
@@ -87,14 +85,22 @@ def _cases(check):
           and M._SCRIPT_PARTS[-1] == "report/exports.js"
           and list(M._SCRIPT_PARTS) != sorted(M._SCRIPT_PARTS))
     check("the parts carry no <script> tags — those live in this module",
-          "<script>" not in js_file and "</script>" not in js_file)
+          "<script" not in js_file and "</script>" not in js_file)
 
     # --- mutation proof: a doubled open tag is caught by the same check ----------
+    # It must count the SAME literal the check above counts. Counting "<script>"
+    # here while the check counts "<script" made this pass over any input at
+    # all: the open tag carries an attribute, so the closed-angle spelling
+    # occurs zero times and `0 != 1` is true of the un-mutated string too.
     doubled = M.SCRIPT.replace(M._SCRIPT_TAG_OPEN,
                                M._SCRIPT_TAG_OPEN * 2, 1)
     check("mutation proof: a doubled <script> open tag is caught by the same "
           "check that just passed (doubled count is %d, not 1)"
-          % doubled.count("<script>"), doubled.count("<script>") != 1)
+          % doubled.count("<script"), doubled.count("<script") != 1)
+    check("...and the un-mutated string is what the same expression calls "
+          "correct, so the proof above distinguishes them rather than being "
+          "true of everything",
+          M.SCRIPT.count("<script") == 1)
 
     # --- CSS lints, via _ui_theme's existing helpers (same ones panel/_panel_ui use)
     check("report.css braces balance", css_file.count("{") == css_file.count("}"))

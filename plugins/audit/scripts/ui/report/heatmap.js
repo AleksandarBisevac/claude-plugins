@@ -129,7 +129,15 @@
      * @returns {boolean}
      */
     function hasData(from, to) {
-      return Object.keys(U.days).some((d) => d >= from && d <= to);
+      // A plain loop, not `Object.keys(...).some(...)`: this runs inside seek()'s
+      // bounded walk, which steps up to four thousand periods looking for the
+      // next one that records anything. Materialising the whole key array on
+      // every step turns a first-hit scan into a full allocation per step, and a
+      // year-wide gap at day granularity is hundreds of steps.
+      for (const day in U.days) {
+        if (day >= from && day <= to) return true;
+      }
+      return false;
     }
 
     /**

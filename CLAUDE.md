@@ -86,7 +86,10 @@ actually bitten here.
 
 `plugins/audit/scripts/ui/` holds **ordered parts of one artifact**, not standalone files: Python
 concatenates them into **one inline `<style>` and one inline `<script>` carrying code**, in a
-self-contained page opened over `file://`. No ESM, no bundler, no external resource of any kind.
+self-contained page opened over `file://`. The report's code block is a **module script**
+(`<script type="module">`), which is where its scope comes from — but `import` between files
+is impossible on an opaque origin, so Python still does the joining. No bundler, no external
+resource of any kind.
 
 *Carrying code* is the load-bearing half of that sentence. The panel really does emit one of
 each; **the report emits three `<script>` tags** — `window.AUDIT_USAGE`, the base64 Markdown twin,

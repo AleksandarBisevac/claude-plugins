@@ -528,7 +528,10 @@ jobs:
           # Python and Node together rather than a Node-only job.
           #
           # `node --check` per part catches the other class: a syntax error kills
-          # the entire inline <script> while every substring pin stays green.
+          # the entire inline <script> while every substring pin stays green. Parsing a
+          # part alone is a sloppy-script parse, so it is the assembled-body
+          # parse in the Node suite that matches the shipped module dialect;
+          # this loop catches the per-file half.
           npm ci
           npx vitest run
           # find, not a glob: the report's script lives in a feature directory,

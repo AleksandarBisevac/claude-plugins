@@ -237,24 +237,6 @@ function stubWindow(options) {
 // else may be assumed: a reformat that turns the head into `(function() {` must
 // stop this file, not silently shorten it. Both ends are checked, because
 // slicing a length off a string that does not start with it succeeds quietly.
-export const REPORT_IIFE_HEAD = '\n(function () {\n';
-export const REPORT_IIFE_TAIL = '})();\n';
-
-export function unwrapReportSource(src) {
-  if (!src.startsWith(REPORT_IIFE_HEAD)) {
-    throw new Error(
-      'report.js no longer opens with ' + JSON.stringify(REPORT_IIFE_HEAD)
-      + ' — the file-spanning IIFE moved, and stripping it by length would '
-      + 'have silently truncated the file. Update REPORT_IIFE_HEAD in '
-      + 'tools/ui-tests/sandbox.mjs on purpose.');
-  }
-  if (!src.endsWith(REPORT_IIFE_TAIL)) {
-    throw new Error(
-      'report.js no longer ends with ' + JSON.stringify(REPORT_IIFE_TAIL)
-      + ' — see REPORT_IIFE_HEAD above; the same reasoning applies to the tail.');
-  }
-  return src.slice(REPORT_IIFE_HEAD.length, src.length - REPORT_IIFE_TAIL.length);
-}
 
 // --- panel.js -------------------------------------------------------------
 
