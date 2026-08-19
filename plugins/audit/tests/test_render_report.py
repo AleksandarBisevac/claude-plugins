@@ -394,7 +394,7 @@ def _cases(check):
     check("guards: no early return above the print/download/copy/tooltip wiring - "
           "they have nothing to do with the phases table",
           "if (!grouped) return;" not in M._SCRIPT
-          and "grouped ? [].slice.call(grouped" in M._SCRIPT)
+          and "grouped ? Array.from(grouped" in M._SCRIPT)
     check("guards: a link inside a phase row is followed, not swallowed by the "
           "row's own expand/collapse",
           "closest('a,button,input,select,summary,label')" in M._SCRIPT)
@@ -493,7 +493,7 @@ def _cases(check):
     # byte-equal to itself, which is precisely what ci.yml compares.
     check("c5: the presets measure back from the plan's own last recorded day, "
           "never from today",
-          "var DMAX" in M._SCRIPT
+          "let DMAX" in M._SCRIPT
           and "Date.now()" not in M._SCRIPT
           and "new Date()" not in M._SCRIPT
           and "DMAX + 'T00:00:00Z'" in M._SCRIPT)
@@ -548,11 +548,11 @@ def _cases(check):
     check("d1: report.js reads data-area off the phase row, splitting the "
           "space-joined tags the emitter writes",
           "getAttribute('data-area')" in M._SCRIPT
-          and "function areaOk" in M._SCRIPT
+          and "const areaOk = " in M._SCRIPT
           and "areaOk(pr)" in M._SCRIPT)
     check("d1: the gate is multi-select and any selected tag admits a phase; "
           "with none selected it admits everything",
-          "areaFilter.indexOf(tags[i])" in M._SCRIPT
+          "areaFilter.includes(tag)" in M._SCRIPT
           and "if (!areaFilter.length) return true;" in M._SCRIPT)
     check("d1: the area selection is a link (a=) and restores from one - "
           "spelled apart from the author's au=, which stays wired",
@@ -835,7 +835,7 @@ def _cases(check):
           "<noscript>" in html_out)
     # Removal is the script's FIRST act, ahead of anything that can throw. If a
     # later line fails, the banner staying up is then true and useful.
-    _first = M._SCRIPT[:M._SCRIPT.index("var count = document.getElementById")]
+    _first = M._SCRIPT[:M._SCRIPT.index("const count = document.getElementById")]
     check("nojs: the script removes it before any statement that could throw",
           "audit-nojs" in _first and "removeChild" in _first)
     check("nojs: removal is guarded, so a report rendered without it cannot throw",
@@ -1086,7 +1086,7 @@ def _cases(check):
           "rows) and it ran on every keystroke",
           "querySelectorAll" not in _body and "querySelector(" not in _body)
     check("scale: the phase->tasks index is built once, up front",
-          "var TASKS = {}, TFROW = {};" in M._SCRIPT)
+          "const TASKS = {};" in M._SCRIPT and "const TFROW = {};" in M._SCRIPT)
     check("scale: row text is lowercased once and kept, not re-derived per keystroke",
           "r.__auditText" in M._SCRIPT)
     check("scale: sorting copies the index before ordering it, so the index is "
