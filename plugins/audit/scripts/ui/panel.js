@@ -929,13 +929,19 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
 // and what several selftests pin. An internal id is an address, not a description —
 // renaming it would break every link anyone already has for the sake of a word only
 // this file ever sees.
-function listEditor(getArr,setArr,ph,validate){const wrap=el('div',{class:'pill-in'});
+// `name` is the add-box's accessible name, and it is a PARAMETER rather than
+// something derived from `ph`. Three of the five call sites hand this editor to a
+// caller that already wraps it in a <label class="f"> — an aria-label there would
+// REPLACE "Paths the guards skip" with "add…", which is a worse name, not a
+// missing one. So it is passed only by the two that stand on their own, and `el()`
+// drops a null attribute, which is what makes leaving it off safe.
+function listEditor(getArr,setArr,ph,validate,ariaName){const wrap=el('div',{class:'pill-in'});
  const draw=()=>{wrap.textContent='';(getArr()||[]).forEach((v,i)=>{
    const bad=validate?validate(v):null;
    wrap.append(el('span',{class:'chip'+(bad?' bad':''),title:bad||null},v,
      el('button',{'aria-label':'remove '+v,
        onclick:()=>{const a=getArr().slice();a.splice(i,1);setArr(a);draw();}},'×')));});
-   const inp=el('input',{placeholder:ph||'add…'});inp.addEventListener('keydown',e=>{
+   const inp=el('input',{placeholder:ph||'add…','aria-label':ariaName||null});inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&inp.value.trim()){const a=(getArr()||[]).slice();a.push(inp.value.trim());setArr(a);draw();}});
    wrap.append(inp);};draw();return wrap;}
 // Does the browser's engine accept this pattern? A first pass only — the config is
@@ -1085,8 +1091,13 @@ function scalarField(cfg,d,f,tip){
  else if(f.kind==='list'){
   // The id lands on the editor, not the label: it is what gotoSetting() scrolls to
   // and focuses, and a label is neither focusable nor the thing you came to edit.
+  // Named here because listEditor's box cannot be named from inside it, and the
+  // wrapping label is not an answer: MEASURED, a single chip's own "remove"
+  // <button> becomes the label's first labelable descendant and the box's
+  // `labels` drops 1 -> 0. A field that is labelled only while it is empty is not
+  // labelled. The visible words are carried, so SC 2.5.3 holds with it.
   const ed=listEditor(()=>getPath(cfg,f.path)??def??[],a=>setPath(cfg,f.path,a),
-    f.placeholder||'add…');
+    f.placeholder||'add…',null,f.label+': add');
   ed.id=fieldId(f.path);ed.tabIndex=-1;
   // No forId: the id is on the editor, which is a <div> and not labelable, so a
   // `for` pointing at it would associate nothing while looking as if it did. The
@@ -1114,7 +1125,12 @@ function scalarField(cfg,d,f,tip){
 // BOTH writes at save time, honestly. Tier choices come from the validator's
 // own tuple (ENUMS.planGate — see _cfg_enums), like every other enum here.
 function planGateField(cfg){
- const sel=el('select',{id:fieldId('planGate')},
+ // Named from the <h3> the generic loop prints above it ("How hard the gate
+ // pushes"). A heading is not a label and cannot become one without demoting it,
+ // and aria-labelledby AT that heading would fold in the JSON key and the ⓘ
+ // button's own name ("What is How hard the gate pushes?") — so the words are
+ // repeated here instead. Same reasoning for every other control under a heading.
+ const sel=el('select',{id:fieldId('planGate'),'aria-label':'How hard the gate pushes'},
    el('option',{value:''},'graded on evidence (default)'),
    (ENUMS.planGate||[]).map(v=>el('option',{value:v},v)));
  sel.value=cfg.planGate??(cfg.enforce===true?'deny':'');
@@ -1158,10 +1174,15 @@ function tokenVarsField(cfg,d){
       redraw(merged);}},'put them back')));};
  let redraw=()=>{};
  const list=listEditor(cur,a=>{if(a.length)setPath(cfg,'guardEdits.tokenVars',a);
-   else delPath(cfg,'guardEdits.tokenVars');draw();},'identifier…');
+   else delPath(cfg,'guardEdits.tokenVars');draw();},'identifier…',null,
+   'Secrets never written to logs: add an identifier');
+ // The name has to be on the REPLACEMENT too. `redraw` swaps a whole new editor in
+ // when the defaults notice changes, and an aria-label dropped there would be
+ // invisible — the box looks the same and has stopped having a name.
  redraw=()=>{const fresh=listEditor(cur,a=>{
    if(a.length)setPath(cfg,'guardEdits.tokenVars',a);
-   else delPath(cfg,'guardEdits.tokenVars');draw();},'identifier…');
+   else delPath(cfg,'guardEdits.tokenVars');draw();},'identifier…',null,
+   'Secrets never written to logs: add an identifier');
   list.replaceWith(fresh);draw();};
  box.append(list,note);draw();return box;}
 
@@ -1169,7 +1190,8 @@ function secretPatternsField(cfg){
  const box=el('div',{id:fieldId('secretPatterns.extra'),tabindex:'-1'});
  const cur=()=>{const v=getPath(cfg,'secretPatterns.extra');return Array.isArray(v)?v:[];};
  box.append(listEditor(cur,a=>{if(a.length)setPath(cfg,'secretPatterns.extra',a);
-   else delPath(cfg,'secretPatterns.extra');},'regex…  e.g.  \\.env$',reErr));
+   else delPath(cfg,'secretPatterns.extra');},'regex…  e.g.  \\.env$',reErr,
+   'Extra files treated as secrets: add a pattern'));
  box.append(el('p',{class:'blurb'},'Regexes, matched case-insensitively anywhere in '
   +'the path — so ".env" also matches secrets.envelope. Anchor it (\\.env$) when you '
   +'mean the file. A pattern your browser rejects is marked here; the save is '
@@ -1199,14 +1221,21 @@ function customRulesField(cfg){
    // `pathPrefix` is the key on disk and stays that, because configs in the field
    // already use it. The LABEL tells the truth about what it does: the hook tests
    // `prefix in path` against the path the tool reported, usually absolute.
-   const pp=el('input',{value:r.pathPrefix||'',placeholder:'realtime/'});
+   // Named by the column it sits under plus the row number. The `rulehead` row
+   // above carries those three words visibly, but it is a header, not a label, and
+   // it names three columns rather than one box — so the accessible name repeats
+   // the column and adds the only thing that tells one row from the next.
+   const pp=el('input',{value:r.pathPrefix||'',placeholder:'realtime/',
+     'aria-label':'rule '+(i+1)+' path contains'});
    pp.oninput=()=>r.pathPrefix=pp.value;
-   const bp=el('input',{value:r.bannedPattern||'',placeholder:'\\.removeAllListeners\\('});
+   const bp=el('input',{value:r.bannedPattern||'',placeholder:'\\.removeAllListeners\\(',
+     'aria-label':'rule '+(i+1)+' banned pattern (regex)'});
    const err=el('div',{class:'ferr'});
    const lint=()=>{const e=reErr(bp.value);bp.classList.toggle('bad',!!e);
      err.textContent=e?'your browser rejects this pattern: '+e:'';};
    bp.oninput=()=>{r.bannedPattern=bp.value;lint();};lint();
-   const ms=el('input',{value:r.message||'',placeholder:'why this is banned here'});
+   const ms=el('input',{value:r.message||'',placeholder:'why this is banned here',
+     'aria-label':'rule '+(i+1)+' message shown when it fires'});
    ms.oninput=()=>r.message=ms.value;
    wrap.append(el('div',{class:'rule'},pp,bp,ms,
      el('button',{class:'btn small','aria-label':'remove rule '+(i+1),
@@ -1277,7 +1306,8 @@ function pricingField(cfg,d){
         if(Object.keys(o).length)setPath(cfg,'usage.pricing',o);
         else delPath(cfg,'usage.pricing');draw();}},'reset'):null)));});
   tbl.append(tb);wrap.append(el('div',{class:'ptblwrap'},tbl));
-  const add=el('input',{placeholder:'add a model id…'});
+  const add=el('input',{placeholder:'add a model id…',
+    'aria-label':'Rates per million tokens: add a model id'});
   const addModel=v=>{const o=cur();o[v]=o[v]||{};
    setPath(cfg,'usage.pricing',o);add.value='';draw();};
   add.addEventListener('keydown',e=>{if(e.key!=='Enter'||!add.value.trim())return;
@@ -1379,8 +1409,9 @@ function skillHints(){
  (comp.tasks||[]).forEach(t=>{(Array.isArray(t.skills)?t.skills:[]).forEach(s=>spelled.add(s));});
  (comp.areaSkills||[]).forEach(s=>spelled.add(s));
  return [...spelled].sort().filter(n=>!known.has(n));}
-function skillPicker(current,onChange){
- const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)'});
+function skillPicker(current,onChange,ariaName){
+ const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)',
+   'aria-label':ariaName||'search a skill'});
  inp.addEventListener('input',()=>onChange(inp.value.trim()||null));
  return comboWrap(inp,()=>REG.skills,(name,close)=>{inp.value=name;onChange(name);close();});}
 // Three states in one control (v0.37 B1): a list of chips, an EMPTY row (with
@@ -1388,9 +1419,10 @@ function skillPicker(current,onChange){
 // opted-out state itself — a muted chip saying so, never an empty row that
 // looks unconsidered. Adding a skill from the opted-out state replaces the
 // null (changed my mind); the × on the opt-out chip clears it back to [].
-function skillChips(getArr,setArr){
+function skillChips(getArr,setArr,ariaName){
  const box=el('div',{class:'chipwrap'}),chips=el('div',{class:'chips'});
- const inp=el('input',{placeholder:'search a skill to add…'});
+ const inp=el('input',{placeholder:'search a skill to add…',
+   'aria-label':ariaName||'add a skill'});
  const draw=()=>{chips.textContent='';const cur=getArr();
    if(cur===null){chips.append(el('span',{class:'chip optout'},'none — opted out',
      el('button',{title:'clear the opt-out (back to unconsidered)',
@@ -1429,10 +1461,14 @@ function renderComp(){closeCombo();
  const patch={meta:{},phases:{},tasks:{}};
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,
    {comp:'reviewSkill',label:'Phase sign-off review skill'}));
- meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,v=>patch.meta.reviewSkill=v)));
+ meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,
+   v=>patch.meta.reviewSkill=v,'Phase sign-off review skill')));
  meta.append(h2h('meta.buildCommands (JSON)',MDESC.buildCommands,
    {comp:'buildCommands',label:'Build commands'}));
- const bc=el('textarea',{});bc.value=comp.meta.buildCommands?JSON.stringify(comp.meta.buildCommands,null,2):'';
+ // It had no accessible name at all — not even a placeholder to fall back on —
+ // which is SC 4.1.2 as well as SC 3.3.2. Named from its own <h2>.
+ const bc=el('textarea',{'aria-label':'meta.buildCommands (JSON)'});
+ bc.value=comp.meta.buildCommands?JSON.stringify(comp.meta.buildCommands,null,2):'';
  let bcBad=false;
  bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;
    bcBad=false;bc.style.borderColor='';}
@@ -1446,7 +1482,8 @@ function renderComp(){closeCombo();
  // data- attribute. `data-status` alone would not do for the filter buttons: inside
  // #comp it also sits on every phase row, every task row and every status pill, so
  // it names four hundred elements and focusBack correctly refuses to guess.
- const q=el('input',{type:'search',id:'compq',placeholder:'filter phases & tasks…',value:COMPF.q});
+ const q=el('input',{type:'search',id:'compq',placeholder:'filter phases & tasks…',
+   'aria-label':'filter phases & tasks',value:COMPF.q});
  const statusBar=el('span',{class:'filtset',style:'display:inline-flex;gap:.3rem;flex-wrap:wrap'});
  const needsBtn=el('button',{class:'filt',type:'button','data-compneeds':'1','aria-pressed':'false',title:'only tasks with no skills yet — an explicit "none applies" (null) is an answer, not a need'},'needs skills');
  const expandBtn=el('button',{class:'btn small',type:'button','data-compexpand':'1'},'expand all');
@@ -1475,7 +1512,12 @@ function renderComp(){closeCombo();
  const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
  comp.phases.forEach(ph=>{
   const tasks=byPhase[ph.id]||[];
-  const rev=el('input',{value:ph.reviewModel??'','data-revmodel':ph.id||'',placeholder:'review model'});
+  // The visible word beside this box is "review", and it is the same word beside
+  // all fifty of them — a <label> here would name fifty controls identically,
+  // which conforms and helps nobody. The name folds in the phase id and still
+  // contains the visible word, so SC 2.5.3 Label in Name holds as well.
+  const rev=el('input',{value:ph.reviewModel??'','data-revmodel':ph.id||'',placeholder:'review model',
+    'aria-label':'review model for phase '+(ph.id||'')});
   const setRev=v=>{patch.phases[ph.id]={reviewModel:v||null};};
   rev.oninput=()=>setRev(rev.value.trim());
   const revCombo=comboWrap(rev,modelItems,(name,close)=>{
@@ -1503,7 +1545,11 @@ function renderComp(){closeCombo();
   tbody.append(pr);
   const taskEls=[];
   tasks.forEach(t=>{
-   const tp={};const model=el('input',{value:t.model??'','data-tmodel':t.id||'',placeholder:'—'});
+   // Same again one level down, and worse: these two are named by a COLUMN
+   // HEADER ("model", "skills"), which a screen reader does not re-announce per
+   // row, and the model box's placeholder is an em dash. Both fold in the task id.
+   const tp={};const model=el('input',{value:t.model??'','data-tmodel':t.id||'',placeholder:'—',
+     'aria-label':'model for task '+(t.id||'')});
    const setModel=v=>{tp.model=v||null;patch.tasks[t.id]=tp;};
    model.oninput=()=>setModel(model.value.trim());
    // mc: choosing from the menu writes the SAME patch the keystroke writes.
@@ -1512,7 +1558,8 @@ function renderComp(){closeCombo();
    // Three-state read: an explicit null (opt-out) must SURVIVE this accessor —
    // `||[]` would flatten the one deliberate answer into "unconsidered".
    const getSkills=()=>tp.skills!==undefined?tp.skills:(t.skills===null?null:(t.skills||[]));
-   const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(COMPF.needs)refresh();});
+   const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(COMPF.needs)refresh();},
+     'add a skill to task '+(t.id||''));
    const tr=el('tr',{class:'task','data-status':t.status||''});
    tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle',title:t.title||''},t.title||''),
      el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
@@ -1729,8 +1776,12 @@ function renderAdoCard(c){
   const tb=el('tbody');
   Object.keys(SMDEF[kind]).forEach(stt=>{
    const cur=getPath(ADRAFT||{},'stateMap.'+kind+'.'+stt);
+   // The row's visible text is the status alone ("blocked"), and it repeats across
+   // the phase, task and bug tables — these have no <thead>, so nothing announces
+   // which table a row is in. The name carries the kind as well as the status.
    const i=el('input',{value:typeof cur==='string'?cur:'',
-     placeholder:SMDEF[kind][stt]});
+     placeholder:SMDEF[kind][stt],
+     'aria-label':kind+' '+stt+' maps to ADO state'});
    const nv=el('input',{type:'checkbox',
      title:'never move state on this transition'});
    nv.checked=cur===null;i.disabled=cur===null;
@@ -1792,9 +1843,13 @@ function renderAdoCard(c){
  team.oninput=()=>{const v=team.value.trim();
   if(v)setPath(A(),'sprint.team',v);
   else if(ADRAFT)delPath(ADRAFT,'sprint');pruneTop();};
+ // Same reason, and this one is the case that proved it: this editor IS inside a
+ // <label>, and it binds that label only while it holds no tags. Add one and the
+ // chip's remove button takes the association.
  const tags=listEditor(()=>getPath(ADRAFT||{},'pull.tags')||[],
    a=>{if(a.length)setPath(A(),'pull.tags',a);
-    else if(ADRAFT)delPath(ADRAFT,'pull.tags');pruneTop();},'tag…');
+    else if(ADRAFT)delPath(ADRAFT,'pull.tags');pruneTop();},'tag…',null,
+   'Pull tags: add a tag');
  card.append(el('div',{class:'row'},
    el('label',{class:'f'},flabel('Sprint team (current iteration)',
      MDESC.adoSprint),team),
@@ -1820,8 +1875,12 @@ function renderAdoCard(c){
   if(dup)imWrap.append(el('div',{class:'mut small','data-imdup':'1'},
    'two ledger identities share one ADO identity ('+dup.join(', ')
    +') — pull maps it back to the FIRST in map order'));
-  const ki=el('input',{placeholder:'ledger identity (git email/name)'}),
-    vi=el('input',{placeholder:'ADO identity (email/UPN)'});
+  // No visible text of any kind beside these two, so the placeholder's words are
+  // the right name — they just have to survive the first keystroke.
+  const ki=el('input',{placeholder:'ledger identity (git email/name)',
+      'aria-label':'ledger identity (git email/name)'}),
+    vi=el('input',{placeholder:'ADO identity (email/UPN)',
+      'aria-label':'ADO identity (email/UPN)'});
   imWrap.append(el('div',{class:'row'},ki,vi,
     el('button',{class:'btn small',type:'button','data-imadd':'1',
       onclick:()=>{const k=ki.value.trim(),v=vi.value.trim();
@@ -4514,7 +4573,11 @@ function openBrowse(dim,title,facts){
       +'there are '+bi.sample+'. ',
       settingsLink('Set absolute thresholds instead','usage.bands'),
       ' to band by a budget rather than by this project’s own history.']);
- const search=el('input',{type:'search',placeholder:'search '+dim+'…'});
+ // Not on the two tabs that were measured — this dialog is closed, so the probe
+ // never saw it — but the same defect, and the same fix. The rest of the Usage
+ // tab's boxes already carry a name; this one was the exception.
+ const search=el('input',{type:'search',placeholder:'search '+dim+'…',
+   'aria-label':'search '+dim+'s'});
  // An <input type=search> eats the FIRST Escape to clear itself, so the dialog
  // only closed on the second press - which reads as the key being broken. One
  // Escape, one effect: close.

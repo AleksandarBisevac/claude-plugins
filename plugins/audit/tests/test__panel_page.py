@@ -2244,6 +2244,204 @@ def _cases(check):
           "words and the key apart on screen AND in the accessible name",
           ".lbl>label{display:inline-flex;align-items:center;gap:var(--sp-0);"
           "flex-wrap:wrap;min-width:0}" in M.UI_HTML)
+    # --- WCAG 2.2 SC 3.3.2 Labels or Instructions: a placeholder is not a name ---
+    # MEASURED in Chromium before this section existed: 68 of 100 form fields on
+    # the Composition tab and 4 of 90 on Guards had NO programmatic label at all -
+    # `aria-label`, `aria-labelledby`, a `label[for]`, or a wrapping `<label>`. Every
+    # one of them was "labelled" by a `placeholder`, which is the one accname source
+    # of last resort: it is gone the moment a character is typed, so the field a
+    # reader is IN is the field with no name. One - the buildCommands `<textarea>` -
+    # had not even that, which is SC 4.1.2 as well.
+    #
+    # The half that can fail on something nobody thought about is the CENSUS: every
+    # placeholder-bearing field is read out of the assembled page, so a new
+    # `el('input',{placeholder:'…'})` is an offender the moment it is written. A
+    # hand-kept list of the ones somebody remembered would pass forever.
+    #
+    # WHY aria-label AND NOT A <label> AT THESE SITES, since a real association is
+    # the better tool where visible text exists. Nothing here has visible text that
+    # NAMES ONE FIELD:
+    #   - the 50 per-phase review boxes share one visible word ("review"), and the
+    #     per-task model/skills boxes are named by a COLUMN HEADER - a `<label>`
+    #     would give fifty controls the same name, which conforms and helps nobody.
+    #     The aria-label carries the row's own id and still contains the visible
+    #     word, so SC 2.5.3 Label in Name holds too;
+    #   - reviewSkill, buildCommands, planGate, tokenVars and secretPatterns are
+    #     each named by an `<h2>`/`<h3>` that also carries the JSON key and the i
+    #     button. A heading is not a label, and `aria-labelledby` at it would fold
+    #     "What is Build commands?" (the hint's own name) into the field's;
+    #   - the identity-map pair and the ADO state boxes have no adjacent visible
+    #     text at all.
+    # Where a wrapping `<label>` IS the association, the field carries no aria-label
+    # and _FL_LABELLED below records which `<label>` names it instead.
+    _FL_TAGS = ("input", "select", "textarea")
+
+    def _fl_fields(js):
+        """Every el('input'|'select'|'textarea', {...}) attribute object, flattened."""
+        _out = []
+        for _m in re.finditer(r"el\('(%s)'," % "|".join(_FL_TAGS), js):
+            _i = js.find("{", _m.end())
+            if _i < 0:
+                continue
+            _depth, _j = 0, _i
+            while _j < len(js):
+                if js[_j] == "{":
+                    _depth += 1
+                elif js[_j] == "}":
+                    _depth -= 1
+                    if _depth == 0:
+                        break
+                _j += 1
+            _out.append((_m.group(1), " ".join(js[_i:_j + 1].split())))
+        return _out
+
+    # The fields whose name comes from a <label> WRAPPING them, which is why they
+    # carry no aria-label - adding one would replace a real association with a
+    # weaker one. Each value is the construction that does the wrapping, and it has
+    # to still be in the script: delete the <label> and the entry stops being true.
+    # Confirmed by the same browser probe, which tests `closest('label')` and did
+    # not report one of these six.
+    # HOW AN EXEMPTION IS GROUNDED, and this is the half that was wrong. Each value
+    # used to be the construction that WRAPS the field, on the reading that a
+    # wrapping <label> means the field is named. It does not. A <label> names its
+    # first LABELABLE descendant, and klabel()'s i is a <button> -- so twenty fields
+    # sat exempted here while the browser bound them nothing at all and announced
+    # their own value. A source string cannot see that, which means this table
+    # would have stayed green through the whole defect. It is not enough for an
+    # exemption to be true; it has to be able to STOP being true.
+    #
+    # So the two klabel entries name the EXPLICIT association -- the control's own
+    # id, handed to the <label> that names it -- because tree position is precisely
+    # what failed. The four flabel entries stay positional and may: flabel with two
+    # arguments builds a <span>, which is not labelable, so nothing can get between
+    # those labels and their field. kl1 above is what keeps that true.
+    _FL_LABELLED = {
+        "placeholder:def==null?(f.placeholder||''):String(def)":
+            "klabel(f.label,f.path,tip,fieldId(f.path)),inp);",
+        "placeholder:'not set'":
+            "klabel(lbl,p,null,fieldId(p)),inp);",
+        "placeholder:ph||''":
+            "return el('label',{class:'f'},flabel(lbl,help),i);",
+        "placeholder:'audit-plugin'":
+            "el('label',{class:'f'},flabel('Provenance tag',MDESC.adoTag),",
+        "placeholder:'not written'":
+            "el('label',{class:'f'},flabel('Remaining Work on done',",
+        "placeholder:'empty = static iteration path'":
+            "el('label',{class:'f'},flabel('Sprint team (current iteration)',",
+    }
+
+    _fl_all = _fl_fields(_ts_script.group(1) if _ts_script else "")
+    _fl_ph = [(t, b) for t, b in _fl_all if "placeholder:" in b]
+    # The vacuity guard, first. Everything below narrows this set, and a scanner
+    # that matched nothing would report a page on which no field is mislabelled.
+    # The four landmarks are one per shape the scanner has to reach: renderComp's
+    # per-row boxes, a nested helper (skillChips), the Guards form, and the one
+    # field built through `Object.assign(` rather than a bare object literal. A
+    # regex that silently stopped reaching one of them is caught here rather than
+    # passing quietly. They are all `el()` ATTRIBUTES on purpose - `'identifier…'`
+    # reads like a fifth landmark and is not one: it is an ARGUMENT to listEditor,
+    # so a census keyed on attributes must not claim to see it.
+    _fl_marks = [m for m in ("placeholder:'review model'",
+                             "placeholder:'search a skill to add…'",
+                             "placeholder:'add a model id…'",
+                             "placeholder:def==null?(f.placeholder||''):String(def)")
+                 if not any(m in b for _, b in _fl_ph)]
+    check("fl0 the census reads the assembled page rather than a list somebody "
+          "kept up to date - %d form fields, %d of them placeholder-bearing, "
+          "landmarks missing %r" % (len(_fl_all), len(_fl_ph), _fl_marks),
+          _ts_script is not None and len(_fl_all) >= 40 and len(_fl_ph) >= 20
+          and not _fl_marks)
+
+    _fl_bad = [t + " " + b[:78] for t, b in _fl_ph
+               if "'aria-label'" not in b and "'aria-labelledby'" not in b
+               and not [k for k in _FL_LABELLED if k in b]]
+    check("fl1 every field that shows a placeholder also carries a programmatic "
+          "name - a placeholder vanishes on input, so a field labelled by one is "
+          "nameless exactly while it is being used: %r" % (_fl_bad,),
+          not _fl_bad)
+
+    _fl_stale = sorted([k for k, v in _FL_LABELLED.items()
+                        if not [b for _, b in _fl_ph if k in b]
+                        or v not in M.UI_HTML])
+    check("fl2 every exemption still describes the page: the field is still "
+          "built, and the <label> named as its association is still the thing "
+          "wrapping it - %r" % (_fl_stale,),
+          not _fl_stale)
+
+    # The two controls that had no placeholder to fall back on either. The
+    # textarea's accessible name was the empty string, which is SC 4.1.2 (Name,
+    # Role, Value) as much as SC 3.3.2.
+    check("fl3 the two controls with no placeholder AND no wrapping label - the "
+          "buildCommands textarea and the plan-gate select - are named from "
+          "their visible headings",
+          "el('textarea',{'aria-label':'meta.buildCommands (JSON)'})" in M.UI_HTML
+          and "el('select',{id:fieldId('planGate'),"
+              "'aria-label':'How hard the gate pushes'}" in M.UI_HTML)
+
+    # A name is only useful if it tells one row from the next. Fifty boxes called
+    # "review model" is a conforming page and an unusable one, so each carries the
+    # id of the phase or task it edits - and still contains the visible word
+    # ("review", "model", "skills"), which is what SC 2.5.3 Label in Name asks.
+    # The skill box is the odd one of the four and the pin says so rather than
+    # pretending otherwise: its input is built inside skillChips, so renderComp
+    # cannot set the attribute and passes the NAME instead - the third argument,
+    # landing on `'aria-label':name||'add a skill'` one function away. Written
+    # first as `'aria-label':'add a skill to task '+(t.id||'')` and proven wrong by
+    # this case going red on the finished fix, which is the only reason it is
+    # right now.
+    check("fl4 a per-row field is named by its row, not by its column: the phase "
+          "review box and the task model box fold the id into the attribute, the "
+          "task skill box folds it into the argument skillChips names it from, "
+          "and the ADO state boxes fold in the kind and the status",
+          "'aria-label':'review model for phase '+(ph.id||'')" in M.UI_HTML
+          and "'aria-label':'model for task '+(t.id||'')" in M.UI_HTML
+          and "'add a skill to task '+(t.id||'')" in M.UI_HTML
+          and "'aria-label':ariaName||'add a skill'" in M.UI_HTML
+          and "'aria-label':kind+' '+stt+' maps to ADO state'" in M.UI_HTML)
+
+    # listEditor is shared by five call sites and only three of them need a name:
+    # the other two hand it to a caller that already wraps it in a <label>, and an
+    # aria-label there would REPLACE "Paths the guards skip" with "add…". So the
+    # name is a parameter, passed where it is needed and left off where it is not -
+    # `el()` drops a null attribute, which is what makes that safe.
+    # The parameter is `ariaName`, not `name`, and the pin carries that on purpose:
+    # in all three of these functions `name` ALREADY means a skill id or a model id
+    # in the comboWrap callback a line below, and one identifier meaning two things
+    # in one function is how a reader loses the thread. `label` was unavailable for
+    # the same class of reason - it is a global function in this file.
+    # THE HOLE fl1 LEAVES, and it let three fields through. listEditor's box is
+    # built once and shared by five callers, so its attribute object reads
+    # `'aria-label':ariaName||null` -- which fl1's source-text census counts as a
+    # name whether or not a caller passed one. Nothing above can tell a name from a
+    # null name, so the CALL SITES are counted instead.
+    #
+    # And the wrapping label is not the answer for any of them. MEASURED: an editor
+    # holding one chip binds `labels` 0, because the chip's own "remove" <button>
+    # becomes the label's first labelable descendant; empty, the same editor binds
+    # 1. A field labelled only while it is empty is not labelled, and that is a
+    # state no census taken on a loaded page would necessarily catch.
+    _fl_le = [M.UI_HTML[m:m + 460] for m in _re_starts(M.UI_HTML, "listEditor(")
+              if not M.UI_HTML[m - 9:m].endswith("function ")]
+    _fl_unnamed = [c[:52] for c in _fl_le
+                   if not re.search(r",\s*(null|reErr|[A-Za-z_$][\w$]*)\s*,\s*"
+                                    r"(?:'[^']+'|[A-Za-z_$][\w$.]*\s*\+)", c)]
+    check("fl6 every listEditor call site passes a name, because the box cannot be "
+          "named from inside the helper and cannot be named by the <label> around "
+          "it either - one chip and the chip's remove button takes that label: "
+          "%d call site(s), %d passing nothing" % (len(_fl_le), len(_fl_unnamed)),
+          len(_fl_le) == 5 and not _fl_unnamed)
+
+    check("fl5 listEditor takes the name rather than inventing one, and the two "
+          "Guards editors that are not inside a <label> pass it - the tokenVars "
+          "one twice, because it is rebuilt in place when the defaults notice "
+          "changes and a redraw that dropped the name would be invisible",
+          "function listEditor(getArr,setArr,ph,validate,ariaName)" in M.UI_HTML
+          and "el('input',{placeholder:ph||'add…','aria-label':ariaName||null})"
+              in M.UI_HTML
+          and M.UI_HTML.count(
+              "'Secrets never written to logs: add an identifier'") == 2
+          and M.UI_HTML.count(
+              "'Extra files treated as secrets: add a pattern'") == 1)
 
     # --- isolation: the moved boundary stays real -------------------------------
     # This file is BELOW panel-server and below the panel's read/write sides. It
