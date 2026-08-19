@@ -2058,6 +2058,116 @@ def _cases(check):
           "register's back - %r" % (sorted(set(_ts_pinned)),),
           not _ts_pinned)
 
+    # --- WCAG 2.2 SC 1.3.1 Info and Relationships: the Composition tab's tables --
+    # MEASURED IN CHROMIUM, never read off the source: the Composition tab paints
+    # FIVE <table> elements and three of them carried no <th> at all - the ADO
+    # connector's phase / task / bug stateMap grids, which are one builder (smTbl)
+    # called three times. Every cell was a <td>, so the accessibility tree got a
+    # 3x4 grid of loose text and neither column nor row could be announced: the
+    # checkbox in row three was "never", with nothing saying never WHAT.
+    #
+    # The header row is real markup hidden from the eye, not a visible redesign.
+    # The column legend a sighted reader gets is `adoStateMap`'s help text
+    # ("Manifest status -> ADO state per transition. Empty cell = the built-in
+    # default; 'never move' = ...") sitting in the label's i above each grid; a
+    # visible header row would repeat those three words on all three grids of an
+    # already tall card. So the <th> exists and is clipped, and the row header -
+    # the manifest status - stays visible exactly where its <td> was.
+    #
+    # THE CENSUS IS OVER A SLICE, not a list somebody kept up to date: every
+    # el('table') between renderComp and the end of renderAdoCard. A sixth table
+    # added to either function has to declare a header row or ir1 names it.
+    _ir_script = re.search(r"<script>([\s\S]*?)</script>", M.UI_HTML)
+    _ir_js = _ir_script.group(1) if _ir_script else ""
+    _ir_a = _ir_js.find("function renderComp(){")
+    _ir_b = _ir_js.find("function findingKind(s){")
+    _ir_slice = _ir_js[_ir_a:_ir_b] if (0 <= _ir_a < _ir_b) else ""
+
+    def _ir_call(js, i):
+        """One el(...) call's source, from its '(' to the matching ')'.
+
+        Quote-aware, unlike the brace walk above it: a ')' inside a string
+        literal ('(/audit:review)' is one of them, three lines from a table)
+        would otherwise close the call early and hide everything after it.
+        """
+        _depth, _j, _quote = 0, i, ""
+        while _j < len(js):
+            _ch = js[_j]
+            if _quote:
+                if _ch == "\\":
+                    _j += 2
+                    continue
+                if _ch == _quote:
+                    _quote = ""
+            elif _ch in "'\"":
+                _quote = _ch
+            elif _ch == "(":
+                _depth += 1
+            elif _ch == ")":
+                _depth -= 1
+                if _depth == 0:
+                    return js[i:_j + 1]
+            _j += 1
+        return ""
+
+    _ir_tables = []
+    for _m in re.finditer(r"el\('table',\{([^}]*)\}", _ir_slice):
+        _src = _ir_call(_ir_slice, _ir_slice.index("(", _m.start()))
+        _cm = re.search(r"class:'([^']*)'", _m.group(1))
+        _ir_tables.append((_cm.group(1) if _cm else "", "el('th'" in _src))
+    _ir_classes = [c for c, _ in _ir_tables]
+    # The vacuity guard, first and for the same reason ts0 exists: ir1 narrows
+    # this set, and a slice that found nothing would report a tab with no
+    # headerless table on it. Counted, not merely found - "regtbl adosm" alone
+    # would pass an `in` while the other two had drifted out of the slice.
+    check("ir0 the census reads the Composition tab out of the assembled page - "
+          "%d table builder(s) between renderComp and renderAdoCard: %r"
+          % (len(_ir_tables), _ir_classes),
+          _ir_script is not None and _ir_slice != ""
+          and _ir_classes == ["comp", "regtbl", "regtbl adosm"])
+    _ir_bare = sorted([c for c, has in _ir_tables if not has])
+    check("ir1 SC 1.3.1: every table the Composition tab builds emits header "
+          "cells - the three stateMap grids it paints were 12 and 15 <td> with "
+          "no <th> anywhere: %r" % (_ir_bare,),
+          not _ir_bare)
+    # Both directions. A <thead> bolted on while the status stayed a <td> passes
+    # ir1 and still loses the row axis, which is the axis that carries meaning
+    # here - the column says what kind of value, the row says which transition.
+    check("ir2 SC 1.3.1: the stateMap grid names both axes - three "
+          "<th scope=col> from the one builder, and a <th scope=row> where the "
+          "manifest status used to be a <td>, so the never box in row three is "
+          "announced as never/in_progress rather than as a loose checkbox",
+          "el('th',{scope:'row',class:'mono'},stt)" in M.UI_HTML
+          and "el('td',{class:'mono'},stt)" not in M.UI_HTML
+          and M.UI_HTML.count("scope:'col'") == 3
+          and "smTbl('phase'),smTbl('task'),smTbl('bug')" in M.UI_HTML)
+    # The half a substring pin cannot see, so the numbers are the browser's:
+    # `table-layout:fixed` takes its column widths from the table's FIRST ROW,
+    # and that row is now the <th> row. Chromium at 1200px, the rule naming
+    # :is(th,td), measures the three columns at 90 / 682 / 67 CSS px; mutated
+    # back to `td` alone it measures 280 / 280 / 280 - a silent relayout of the
+    # whole card that every `... in UI_HTML` case above shrugged at while it was
+    # tried. The NEGATIVE pin is what holds it: the old rule must be GONE, not
+    # merely joined by a new one, because both can be true at once and only the
+    # browser can tell you which won.
+    check("ir3 the header row is markup, hidden from the eye only - the clip "
+          "and the fixed-layout widths both name th, and the row header is "
+          "dressed back down to the cell it replaced",
+          "table.adosm :is(th,td):first-child{width:5.6rem" in M.UI_HTML
+          and "table.adosm :is(th,td):last-child{width:4.2rem}" in M.UI_HTML
+          and "table.adosm td:first-child{" not in M.UI_HTML
+          and "table.adosm td:last-child{" not in M.UI_HTML
+          and ".vh{position:absolute" in M.UI_HTML
+          and "clip-path:inset(50%)" in M.UI_HTML
+          and "table.adosm thead th{" in M.UI_HTML
+          and "table.adosm tbody th{" in M.UI_HTML
+          # MEASURED over CDP Accessibility.getFullAXTree: Chromium folds
+          # text-transform into the computed accessible NAME, so regtbl's
+          # uppercase reached a row that paints nothing and these announced as
+          # "MANIFEST STATUS". The header row is the deliverable here, so the
+          # reset is pinned rather than left to the next reflow of that rule.
+          and "text-transform:none;letter-spacing:normal}" in M.UI_HTML)
+
     # --- isolation: the moved boundary stays real -------------------------------
     # This file is BELOW panel-server and below the panel's read/write sides. It
     # holds page claims only, which is what lets it sit at layer 4; an import of

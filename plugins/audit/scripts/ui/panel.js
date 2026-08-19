@@ -1721,10 +1721,22 @@ function renderAdoCard(c){
      else if(ADRAFT)delPath(ADRAFT,'stateMap.'+kind+'.'+stt);}
     pruneTop();};
    i.oninput=apply;nv.onchange=apply;
-   tb.append(el('tr',{},el('td',{class:'mono'},stt),el('td',{},i),
+   // SC 1.3.1: the manifest status IS this row's header, and it was a plain
+   // <td> — so the checkbox in row three announced as "never" with nothing
+   // saying never WHAT. The row axis is the one that carries the transition.
+   tb.append(el('tr',{},el('th',{scope:'row',class:'mono'},stt),el('td',{},i),
      el('td',{},el('label',{class:'inl'},nv,'never'))));});
+  // ...and the column axis, announced (.vh) rather than painted. The legend a
+  // sighted reader gets is adoStateMap's help on the label right above this
+  // table; a visible header row would print those three words three times on
+  // one card. display:none would take the header out of the accessibility
+  // tree, which is the one thing it must not do.
   return el('div',{class:'f'},flabel(kind+' states',MDESC.adoStateMap),
-    el('table',{class:'regtbl adosm'},tb));};
+    el('table',{class:'regtbl adosm'},
+      el('thead',{},el('tr',{},
+        el('th',{scope:'col'},el('span',{class:'vh'},'manifest status')),
+        el('th',{scope:'col'},el('span',{class:'vh'},'ADO state')),
+        el('th',{scope:'col'},el('span',{class:'vh'},'never move')))),tb));};
  card.append(el('div',{class:'row'},smTbl('phase'),smTbl('task'),smTbl('bug')));
  // --- the done move: Remaining Work + generated comments
  const rwCur=getPath(ADRAFT||{},'onComplete.remainingWork');

@@ -687,11 +687,31 @@ export const measureResponsiveFrame = (opts) => {
   // is nowhere: no title, no aria-label, no data-tip, on the element or on
   // anything containing it. The panel clips a great deal and hangs the full
   // value off a tooltip every time; the report's ranked-list names carry none.
+  //
+  // TEXT THAT IS NEVER PAINTED IS NOT A READING FAILURE. `checkVisibility`
+  // answers display/visibility/content-visibility and knows nothing about
+  // clip-path, so the visually-hidden recipe — a ~1px box with the rest clipped
+  // away, which is how a <th> can be announced without being drawn — arrived
+  // here as "shows 1px of 84px" and failed the panel at all 21 widths. Nothing
+  // survives, so "less than a quarter survives" is not a claim about it.
+  //
+  // The exclusion is deliberately NOT "has class .vh": it asks for the recipe
+  // itself — a box too small to hold a glyph AND an explicit clip. A label the
+  // layout crushed to a line still carries no clip-path and still fails, which
+  // is the case this must not swallow. And it is COUNTED, so losing it, or
+  // widening it until it eats a real one, shows up in the summary rather than
+  // as a check that quietly got easier.
   const clipped = [];
+  let unpainted = 0;
   for (const n of all) {
     if (n.children.length || !(n.textContent || '').trim()) continue;
     if (!opaque(n)) continue;
-    if (!/hidden|clip/.test(getComputedStyle(n).overflowX)) continue;
+    const ncs = getComputedStyle(n);
+    if (ncs.clipPath !== 'none' && n.clientWidth <= 2 && n.clientHeight <= 2) {
+      unpainted += 1;
+      continue;
+    }
+    if (!/hidden|clip/.test(ncs.overflowX)) continue;
     if (n.scrollWidth - n.clientWidth <= 1) continue;
     clipped.push({
       name: nameOf(n), cw: n.clientWidth, sw: n.scrollWidth,
@@ -708,7 +728,7 @@ export const measureResponsiveFrame = (opts) => {
     vw, vh,
     doc: de.scrollWidth - vw, body: document.body.scrollWidth - vw,
     elements: all.length, controls: controls.length, hitTested,
-    clipExamined: clipped.length,
+    clipExamined: clipped.length, clipUnpainted: unpainted,
     outside: outside.slice(0, 3), outsideN: outside.length,
     buried: buried.slice(0, 3), buriedN: buried.length,
     collapsed: collapsed.slice(0, 3), collapsedN: collapsed.length,
@@ -746,7 +766,7 @@ export async function walkResponsiveLadder(page, label, tally,
   // "no unreachable clipping" about a document that clips a model name down to
   // 42% one rung earlier. A number nobody can see drift is a threshold nobody
   // notices being approached.
-  let tightest = null, smallest = null, dirty = 0;
+  let tightest = null, smallest = null, dirty = 0, unpainted = 0;
   for (const width of RESPONSIVE_LADDER) {
     await page.setViewportSize({ width, height: 900 });
     // A resize is answered on the next frame; reading the layout mid-reflow
@@ -767,6 +787,7 @@ export async function walkResponsiveLadder(page, label, tally,
     tally.controls += top.controls;
     tally.hitTested += top.hitTested + end.hitTested;
     tally.clipExamined += top.clipExamined;
+    unpainted += top.clipUnpainted;
     seen.push(top.hitTested + end.hitTested);
 
     const at = `${label} at ${width}px`;
@@ -821,7 +842,12 @@ export async function walkResponsiveLadder(page, label, tally,
     + (tightest ? `; tightest label with nothing carrying the whole of it, `
       + `${tightest.name} showing ${Math.round(tightest.shown * 100)}% `
       + `(${tightest.cw} of ${tightest.sw}px) at ${tightest.width}px`
-      : '; every clipped label reachable'));
+      : '; every clipped label reachable')
+    // Reported rather than dropped: the count is what makes the exclusion
+    // arguable. A view that suddenly hides forty labels this way is visible
+    // here before anyone has to go looking for why the ladder went quiet.
+    + (unpainted ? `; ${unpainted} visually-hidden node(s) excluded as never `
+      + `painted` : ''));
 }
 
 /**

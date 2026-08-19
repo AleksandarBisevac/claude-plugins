@@ -110,6 +110,13 @@ input,textarea,select{font:inherit;color:var(--text);background:var(--bg);
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:vertical}
 .mono{font-family:var(--mono)}
+/* Announced, not painted. Real markup the accessibility tree keeps and the eye
+   never sees — the ADO stateMap's column headers (SC 1.3.1) are its only user so
+   far, because their legend already sits in the label above them. `display:none`
+   and `visibility:hidden` both take a node OUT of that tree, which is the one
+   thing this must not do, so the text is clipped instead. */
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;
+ overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 /* Same reasoning as the fields: a ghost button is a surface-coloured box on a
    surface-coloured page, so its border is what identifies it as a control. */
 .btn{cursor:pointer;font:inherit;font-size:.85rem;padding:var(--sp-1) var(--sp-3);border-radius:var(--pill);
@@ -836,15 +843,38 @@ table.regtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82r
 table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);text-align:left;
  font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border)}
 table.regtbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);vertical-align:top}
-table.regtbl tbody tr:hover td{background:var(--surface-2)}
+/* :is(th,td), because one regtbl row now opens with a <th scope=row> and a hover
+   that skipped it would leave the first column unlit at every pointer move. */
+table.regtbl tbody tr:hover :is(th,td){background:var(--surface-2)}
 /* ADO card: the stateMap mini-tables must never widen the document — the
    390px no-sideways-scroll rule. Fixed layout + collapsible inputs keep the
    table at its container's width instead of its inputs' intrinsic one. */
 #adocard .f{min-width:0;max-width:100%}
 table.adosm{table-layout:fixed}
-table.adosm td:first-child{width:5.6rem;overflow-wrap:anywhere}
-table.adosm td:last-child{width:4.2rem}
+/* :is(th,td) and NOT td: `table-layout:fixed` reads its column widths off the
+   table's FIRST ROW, and since SC 1.3.1 that row is the <th> header row. Left
+   naming td alone these two rules stop applying to it and the card relays out —
+   measured in Chromium at 1200px, 90 / 682 / 67 CSS px becomes an even
+   280 / 280 / 280. A browser-only failure no substring pin can see. */
+table.adosm :is(th,td):first-child{width:5.6rem;overflow-wrap:anywhere}
+table.adosm :is(th,td):last-child{width:4.2rem}
 table.adosm td input[type=text],table.adosm td input:not([type]){width:100%;min-width:0;box-sizing:border-box}
+/* The header row is announced, never painted: it collapses to nothing and the
+   .vh span carries the text out of view. `position:relative` both undoes
+   regtbl's sticky column dressing and gives that absolute span an anchor.
+   `text-transform:none` is not cosmetic here — MEASURED over CDP
+   Accessibility.getFullAXTree, Chromium folds text-transform into the computed
+   accessible NAME, so regtbl's uppercase (meant for painted text) had these
+   three announcing as "MANIFEST STATUS". Nothing is painted, so it bought
+   shouting and nothing else. */
+table.adosm thead th{position:relative;padding:0;border:0;background:none;
+ text-transform:none;letter-spacing:normal}
+/* ...and the row header goes back to looking like the <td> it replaced. The
+   shared `table.regtbl th` recipe — sticky, uppercase, .66rem, muted, on
+   surface-2 — dresses a COLUMN header; this one is a row header in the body. */
+table.adosm tbody th{position:static;background:none;color:inherit;
+ font-size:inherit;font-weight:400;text-transform:none;letter-spacing:normal;
+ padding:var(--sp-1) var(--sp-2);vertical-align:top}
 table.regtbl td.d{color:var(--muted)}
 /* status -> --st (reuses the theme-aware ok/warn/err/muted tokens) */
 [data-status="done"],[data-status="fixed"]{--st:var(--ok)}
