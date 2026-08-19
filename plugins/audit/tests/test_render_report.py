@@ -1093,7 +1093,7 @@ def _cases(check):
           "never left permuted behind the table",
           "tasksOf(pid).slice().sort(cmp)" in M._SCRIPT)
     check("scale: typing is debounced - five characters is one pass, not five",
-          "setTimeout(function () { qTimer = null; refresh(); }, 90)" in M._SCRIPT)
+          "setTimeout(() => { qTimer = null; refresh(); }, 90)" in M._SCRIPT)
     check("scale: Enter and Escape bypass the debounce, because they are decisions "
           "rather than typing",
           "ev.key !== 'Enter' && ev.key !== 'Escape'" in M._SCRIPT)

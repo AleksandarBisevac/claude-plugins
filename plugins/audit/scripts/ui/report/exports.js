@@ -1,329 +1,452 @@
-  // --- per-segment and per-section exports (D2) ------------------------------
-  // CSV of the DATA — never the filtered view: a file named "phases-active"
-  // that silently held whatever the search box happened to leave visible
-  // would be a different file every download. PNG of the charts, REDRAWN from
-  // window.AUDIT_USAGE onto a canvas: the marks are bars on a grid, and
-  // DOM-to-canvas serialisation is exactly the dependency this
-  // zero-external-fetch file cannot take. And a print mode that isolates one
-  // segment. Every button is server-rendered (the chips rule); this only
-  // attaches behaviour.
-  var BASE = String(window.AUDIT_MD_NAME || 'audit-report.md').replace(/\.md$/, '');
+  // --- exports: CSV of the tables --------------------------------------------
+  // Every export reads the DATA behind a table, never the filtered view on
+  // screen: a file named "phases-active" that held whatever the search box
+  // happened to leave visible would be a different file on every download.
+  // Every button is server-rendered, so this only attaches behaviour.
+
+  /** @type {string} Download basename: the Markdown twin's name without `.md`. */
+  const BASE = String(window.AUDIT_MD_NAME || 'audit-report.md').replace(/\.md$/, '');
+
+  /**
+   * Quote one CSV field per RFC 4180.
+   * @param {string|number|null|undefined} v Raw field value.
+   * @returns {string} `v` wrapped in quotes with inner quotes doubled when it
+   *   carries a comma, a quote or a newline; otherwise `v` as a plain string.
+   */
   function csvQuote(v) {
-    // RFC 4180, the same rule the panel's export uses: quote anything that
-    // carries a comma, a quote or a newline, and double the quotes inside.
-    var s = v == null ? '' : String(v);
+    const s = v == null ? '' : String(v);
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
+
+  /**
+   * Hand a blob to the browser as a file download.
+   * @param {string} name Filename offered to the reader.
+   * @param {Blob} blob Payload to save.
+   * @returns {void}
+   */
   function download(name, blob) {
-    // The .md button's own mechanism: a temporary object URL on an anchor,
-    // revoked LATE — some engines have not started reading the blob when
-    // click() returns, and a revoked URL there is a download that fails with
-    // no error anywhere.
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    // The object URL must be revoked or the page holds the blob for its whole
+    // lifetime, and it must be revoked LATE: some engines have not started
+    // reading when click() returns, and a URL revoked at that point is a
+    // download that fails with no error anywhere.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
+
+  /**
+   * Serialise rows to CSV text and download them.
+   * @param {string} name Filename offered to the reader.
+   * @param {Array<Array<string|number>>} rows Header row first, then data rows.
+   * @returns {void}
+   */
   function csvDownload(name, rows) {
-    var text = rows.map(function (r) { return r.map(csvQuote).join(','); })
-      .join('\r\n') + '\r\n';
+    const text = rows.map((r) => r.map(csvQuote).join(',')).join('\r\n') + '\r\n';
     // U+FEFF: without the BOM Excel reads a UTF-8 CSV in the local 8-bit
-    // codepage. As an escape, never the character — an invisible literal in
-    // the source is unreviewable (the panel export's own rule).
+    // codepage. Written as an escape and never as the character itself, because
+    // an invisible literal in the source is unreviewable.
     download(name, new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' }));
   }
-  // Column names read once off the table's own header — the export must not
-  // restate _present_columns, or the two would disagree the first time a
-  // column appears.
-  // The MACHINE name of each optional column, from the header's own attribute
-  // rather than its words: the done header carries a "UTC" note beside the
-  // word, and a CSV keyed on rendered text would stop recognising the column
-  // the moment a header gained a second word (it did).
-  var COLNAMES = grouped
-    ? [].slice.call(grouped.querySelectorAll('thead th')).map(function (h) {
-        return h.getAttribute('data-col') || h.textContent.trim();
-      }).slice(3)
+
+  /**
+   * Machine names of the task table's optional columns, read once off the
+   * table's own header so the export cannot disagree with what was rendered.
+   *
+   * The name comes from `data-col` rather than the header's words: the done
+   * header carries a UTC note beside the word, and a CSV keyed on rendered text
+   * stops recognising a column the moment that header gains a second word. The
+   * leading three columns are the fixed id/title/status trio, written by hand
+   * into every row, so they are dropped here.
+   * @type {string[]}
+   */
+  const COLNAMES = grouped
+    ? Array.from(grouped.querySelectorAll('thead th'))
+        .map((h) => h.getAttribute('data-col') || h.textContent.trim())
+        .slice(3)
     : [];
-  // csv (F-P-4): the file carries the DATA, not what the cell happens to show.
-  // Three columns are lossy on screen and were being exported lossy: the commit
-  // cell shows nine characters (and, since the copy control landed, the word
-  // "Copy" inside its own text), the done cell shows minutes, and the outcome
-  // cell is cut at 70 characters. A spreadsheet is where someone re-derives
-  // things, so each of those exports its full value — read from the same place
-  // the reader can see it, the detail row.
+
+  /**
+   * Read one labelled value out of a task's expandable detail row.
+   * @param {HTMLTableRowElement} t Task row; its detail row hangs off `__detail`.
+   * @param {string} key Label text to match, e.g. 'completed'.
+   * @returns {string} The value beside that label, or '' when there is none.
+   */
   function detailValue(t, key) {
-    var d = t.__detail;
-    if (!d) return '';
-    var ks = [].slice.call(d.querySelectorAll('.dt-k'));
-    for (var i = 0; i < ks.length; i++) {
-      if (ks[i].textContent.trim() === key) {
-        var v = ks[i].nextElementSibling;
-        return v ? v.textContent.trim() : '';
-      }
-    }
-    return '';
+    const detail = t.__detail;
+    if (!detail) return '';
+    const label = Array.from(detail.querySelectorAll('.dt-k'))
+      .find((k) => k.textContent.trim() === key);
+    const value = label && label.nextElementSibling;
+    return value ? value.textContent.trim() : '';
   }
-  // An em dash is what a table prints where there is nothing; a data file says
-  // nothing by saying nothing. Every column goes through this.
+
+  /**
+   * Blank the em dash a table prints where there is nothing — a data file says
+   * nothing by saying nothing, and an em dash in a spreadsheet is a value.
+   * @param {string} v Rendered cell text.
+   * @returns {string} '' for an em dash or a bare hyphen, otherwise `v`.
+   */
   function csvPlain(v) { return (v === '\u2014' || v === '-') ? '' : v; }
+
+  /**
+   * One task's value for an optional column, at full precision.
+   *
+   * Three columns are lossy on screen and must not be exported lossy: the commit
+   * cell shows nine characters plus the copy control's own text, the done cell
+   * is cut to the minute, and the outcome cell is cut at 70 characters. A
+   * spreadsheet is where someone re-derives a figure, so each of those is read
+   * from the detail row the reader can open for themselves.
+   * @param {HTMLTableRowElement} t Task row.
+   * @param {string} name Machine column name, one of COLNAMES.
+   * @param {number} ci Index of that column within COLNAMES.
+   * @returns {string} The value to export for this cell.
+   */
   function csvCell(t, name, ci) {
     if (name === 'commit') {
-      var b = t.querySelector('.shacopy');
-      return b ? b.getAttribute('data-copy') : '';
+      const copyBtn = t.querySelector('.shacopy');
+      return copyBtn ? copyBtn.getAttribute('data-copy') : '';
     }
     if (name === 'done') {
-      // The DETAIL row carries the whole stamp; the data-attribute is cut to
-      // the date on purpose (the range filter compares those as strings), and
-      // the cell is cut to the minute. A spreadsheet gets the seconds.
+      // The data attribute is cut to the date on purpose — the range filter
+      // compares those as plain strings — and the cell is cut to the minute.
+      // The detail row carries the whole stamp, seconds included.
       return detailValue(t, 'completed') || detailValue(t, 'started')
         || t.getAttribute('data-completed') || t.getAttribute('data-started') || '';
     }
     if (name === 'outcome') return detailValue(t, 'outcome') || csvPlain(cell(t, 3 + ci));
     return csvPlain(cell(t, 3 + ci));
   }
+
+  /**
+   * Build and download the CSV for one segment of the phases table.
+   * @param {string} seg Segment name, as carried by `data-segcsv`.
+   * @returns {void}
+   */
   function segCsv(seg) {
-    var rows = [['phase', 'phase title', 'phase status',
-                 'task', 'task title', 'task status'].concat(COLNAMES)
-      // ...plus everything the compact row moved into the detail. A CSV is the
-      // complete view by definition: a column that left the table must not
-      // leave the file with it.
-      .concat(['started', 'model', 'outcome', 'technical outcome', 'work item',
-               'owner', 'waits on'])];
-    phaseRows.forEach(function (pr) {
+    // The columns the compact row moved into the detail. A CSV is the complete
+    // view by definition: a column that left the table must not leave the file
+    // with it.
+    const detailCols = ['started', 'model', 'outcome', 'technical outcome',
+                        'work item', 'owner', 'waits on'];
+    const rows = [['phase', 'phase title', 'phase status',
+                   'task', 'task title', 'task status']
+      .concat(COLNAMES).concat(detailCols)];
+    phaseRows.forEach((pr) => {
       if (pr.__seg !== seg) return;
-      var pid = pr.getAttribute('data-phase');
-      var strongEl = pr.querySelector('strong');
-      var head = [pid, strongEl ? strongEl.textContent : '',
-                  pr.getAttribute('data-status') || ''];
-      var tasks = tasksOf(pid);
-      if (!tasks.length) {   // a phase with no tasks is still a data row
+      const pid = pr.getAttribute('data-phase');
+      const titleEl = pr.querySelector('strong');
+      const head = [pid, titleEl ? titleEl.textContent : '',
+                    pr.getAttribute('data-status') || ''];
+      const tasks = tasksOf(pid);
+      if (!tasks.length) {
+        // A phase with no tasks is still a data row.
         rows.push(head.concat(['', '', ''])
-          .concat(COLNAMES.map(function () { return ''; }))
-          .concat(['', '', '', '', '', '', '']));
+          .concat(COLNAMES.map(() => ''))
+          .concat(detailCols.map(() => '')));
         return;
       }
-      tasks.forEach(function (t) {
-        // Machine statuses from the data attributes; prose from the cells.
-        var line = head.concat([cell(t, 0), cell(t, 1),
-                                t.getAttribute('data-status') || '']);
-        for (var ci = 0; ci < COLNAMES.length; ci++) {
-          line.push(csvCell(t, COLNAMES[ci], ci));
-        }
-        // The four the table has no column for and the detail row does. A
-        // reader who opened the row to find them should not have to open
-        // fifty rows to tabulate them.
-        line.push(detailValue(t, 'started') || t.getAttribute('data-started') || '',
-                  detailValue(t, 'model') || t.getAttribute('data-model') || '',
-                  detailValue(t, 'outcome'),
-                  detailValue(t, 'technical'),
-                  detailValue(t, 'work item'),
-                  detailValue(t, 'owner'),
-                  detailValue(t, 'waits on'));
-        rows.push(line);
+      tasks.forEach((t) => {
+        // Machine statuses from the data attributes; prose from the cells; and
+        // the fields the table has no column for, so a reader who opened one row
+        // to find them does not have to open fifty to tabulate them.
+        rows.push(head
+          .concat([cell(t, 0), cell(t, 1), t.getAttribute('data-status') || ''])
+          .concat(COLNAMES.map((name, ci) => csvCell(t, name, ci)))
+          .concat([detailValue(t, 'started') || t.getAttribute('data-started') || '',
+                   detailValue(t, 'model') || t.getAttribute('data-model') || '',
+                   detailValue(t, 'outcome'),
+                   detailValue(t, 'technical'),
+                   detailValue(t, 'work item'),
+                   detailValue(t, 'owner'),
+                   detailValue(t, 'waits on')]));
       });
     });
     csvDownload(BASE + '-phases-' + seg + '.csv', rows);
   }
+
+  /**
+   * Build and download the CSV of the bugs table.
+   * @returns {void}
+   */
   function bugsCsv() {
-    var rows = [['id', 'title', 'status', 'severity', 'task', 'fixedIn', 'ADO']];
-    bugRows.forEach(function (b) {
-      rows.push([cell(b, 0), cell(b, 1),
-                 b.getAttribute('data-status') || cell(b, 2),
-                 cell(b, 3), cell(b, 4), cell(b, 5), cell(b, 6)]);
-    });
-    csvDownload(BASE + '-bugs.csv', rows);
+    const header = ['id', 'title', 'status', 'severity', 'task', 'fixedIn', 'ADO'];
+    const rows = bugRows.map((b) => [
+      cell(b, 0), cell(b, 1),
+      b.getAttribute('data-status') || cell(b, 2),
+      cell(b, 3), cell(b, 4), cell(b, 5), cell(b, 6)]);
+    csvDownload(BASE + '-bugs.csv', [header].concat(rows));
   }
+
+  /**
+   * Build and download the daily usage CSV, one row per recorded day.
+   * @returns {void}
+   */
   function usageCsv() {
     if (!U) return;
-    var showCost = U.showCost !== false;
-    var rows = [['date', 'tokens'].concat(showCost ? ['costUSD'] : [])
-      .concat(['msgs'])];
-    var days = [];
-    for (var ud in U.days) days.push(ud);
-    days.sort();
-    days.forEach(function (d) {
-      var v = U.days[d];
-      // Raw numbers on purpose: '3,230,000' lands in a spreadsheet as text
-      // and every sum over the column is then wrong, silently.
-      var line = [d, v[0]];
-      if (showCost) line.push(v[1]);
-      line.push(v[2]);
-      rows.push(line);
+    const showCost = U.showCost !== false;
+    const header = ['date', 'tokens'].concat(showCost ? ['costUSD'] : []).concat(['msgs']);
+    // Raw numbers on purpose: '3,230,000' lands in a spreadsheet as text, and
+    // every sum over the column is then wrong without saying so.
+    const rows = Object.keys(U.days).sort().map((d) => {
+      const v = U.days[d];
+      return showCost ? [d, v[0], v[1], v[2]] : [d, v[0], v[2]];
     });
-    csvDownload(BASE + '-usage-daily.csv', rows);
+    csvDownload(BASE + '-usage-daily.csv', [header].concat(rows));
   }
-  [].slice.call(document.querySelectorAll('[data-segcsv]')).forEach(function (b) {
-    b.addEventListener('click', function () {
-      segCsv(b.getAttribute('data-segcsv'));
-    });
+
+  Array.from(document.querySelectorAll('[data-segcsv]')).forEach((b) => {
+    b.addEventListener('click', () => segCsv(b.getAttribute('data-segcsv')));
   });
-  [].slice.call(document.querySelectorAll('[data-csv]')).forEach(function (b) {
+  Array.from(document.querySelectorAll('[data-csv]')).forEach((b) => {
     b.addEventListener('click',
       b.getAttribute('data-csv') === 'bugs' ? bugsCsv : usageCsv);
   });
 
+  // --- exports: PNG of the charts --------------------------------------------
+  // The marks are bars on a grid, so each chart is REDRAWN from
+  // window.AUDIT_USAGE onto a canvas. Serialising the DOM into a canvas would
+  // need a resource this page may not fetch, and the page has no network at all.
+
+  /**
+   * Resolve a CSS custom property to the colour the browser actually computed.
+   * @param {string} token Custom-property name, e.g. '--text'.
+   * @param {string} fallback Literal colour used when the token resolves to
+   *   nothing.
+   * @returns {string} A computed CSS colour string.
+   */
   function cssColor(token, fallback) {
     // Resolved through a live element rather than read raw off the root:
-    // several tokens are color-mix() expressions, and what a canvas needs is
-    // the colour the browser actually computed.
-    var probe = document.createElement('i');
+    // several tokens are color-mix() expressions, and what a canvas needs is the
+    // colour the browser settled on, not the expression.
+    const probe = document.createElement('i');
     probe.style.color = 'var(' + token + ',' + fallback + ')';
     document.body.appendChild(probe);
-    var c = getComputedStyle(probe).color;
+    const c = getComputedStyle(probe).color;
     document.body.removeChild(probe);
     return c || fallback;
   }
+
+  /**
+   * A detached canvas backed at 2x, with its context pre-scaled so callers draw
+   * in CSS pixels. The doubling is what lets the file survive being pasted into
+   * a document at print density.
+   * @param {number} w Width in CSS pixels.
+   * @param {number} h Height in CSS pixels.
+   * @returns {{el: HTMLCanvasElement, ctx: CanvasRenderingContext2D}} The canvas
+   *   and its scaled 2d context.
+   */
   function pngCanvas(w, h) {
-    var c = document.createElement('canvas');
-    // 2x, so the file survives being pasted into a document at print density.
-    c.width = w * 2; c.height = h * 2;
-    var ctx = c.getContext('2d');
+    const c = document.createElement('canvas');
+    c.width = w * 2;
+    c.height = h * 2;
+    const ctx = c.getContext('2d');
     ctx.scale(2, 2);
     return { el: c, ctx: ctx };
   }
+
+  /**
+   * Hand a canvas to the browser as a PNG download.
+   * @param {string} name Filename offered to the reader.
+   * @param {HTMLCanvasElement} canvas Canvas to encode.
+   * @returns {void}
+   */
   function pngDownload(name, canvas) {
-    // toDataURL rather than a blob: synchronous, and the payload is small.
-    var a = document.createElement('a');
+    // toDataURL rather than a blob: synchronous, and these payloads are small,
+    // so there is no object URL whose lifetime has to be managed.
+    const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
     a.download = name;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
+
+  /**
+   * Redraw the tokens-per-day trend onto a canvas and download it as a PNG.
+   * @returns {void}
+   */
   function trendPng() {
     if (!U) return;
-    var days = [];
-    for (var td in U.days) days.push(td);
-    days.sort();
+    const days = Object.keys(U.days).sort();
     if (!days.length) return;
-    var peak = 0;
-    days.forEach(function (d) { if (U.days[d][0] > peak) peak = U.days[d][0]; });
-    // Bar width follows the span so a three-year ledger still fits one image.
-    var barW = Math.max(1, Math.min(10, Math.floor(1100 / days.length)));
-    var left = 58, top = 44, bottom = 34;
-    var W = left + days.length * (barW + 1) + 14, H = 280;
-    var g = pngCanvas(W, H), ctx = g.ctx;
-    var ink = cssColor('--text', '#111827');
-    var mut = cssColor('--muted', '#6b7280');
+    const peak = days.reduce((hi, d) => (U.days[d][0] > hi ? U.days[d][0] : hi), 0);
+    // Bar width follows the span, so a three-year ledger still fits one image.
+    const barW = Math.max(1, Math.min(10, Math.floor(1100 / days.length)));
+    const left = 58, top = 44, bottom = 34;
+    const W = left + days.length * (barW + 1) + 14, H = 280;
+    const g = pngCanvas(W, H), ctx = g.ctx;
+    const ink = cssColor('--text', '#111827');
+    const mut = cssColor('--muted', '#6b7280');
     ctx.fillStyle = cssColor('--surface', '#ffffff');
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = ink;
     ctx.font = '600 13px sans-serif';
     ctx.fillText('Tokens per day · ' + days[0] + ' to '
       + days[days.length - 1], 10, 20);
-    var plot = H - top - bottom;
+    const plot = H - top - bottom;
     ctx.strokeStyle = cssColor('--border', '#d1d5db');
     ctx.fillStyle = mut;
     ctx.font = '11px sans-serif';
-    [0, 0.5, 1].forEach(function (f) {
-      var y = top + plot * f;
-      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(W - 6, y); ctx.stroke();
+    for (const f of [0, 0.5, 1]) {
+      const y = top + plot * f;
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(W - 6, y);
+      ctx.stroke();
       ctx.fillText(fmtTokens(peak * (1 - f), 1), 8, y + 4);
-    });
+    }
     ctx.fillStyle = cssColor('--accent-solid', '#4f46e5');
-    days.forEach(function (d, i) {
-      var v = U.days[d][0];
-      var bh = peak ? Math.max(1, plot * v / peak) : 1;
+    for (const [i, d] of days.entries()) {
+      const bh = peak ? Math.max(1, plot * U.days[d][0] / peak) : 1;
       ctx.fillRect(left + i * (barW + 1), top + plot - bh, barW, bh);
-    });
+    }
     ctx.fillStyle = mut;
     ctx.fillText(days[0], left, H - 12);
-    var lastD = days[days.length - 1];
+    const lastD = days[days.length - 1];
     ctx.fillText(lastD, W - 8 - ctx.measureText(lastD).width, H - 12);
     pngDownload(BASE + '-trend.png', g.el);
   }
+
+  /**
+   * Redraw the activity heatmap's CURRENT view onto a canvas and download it.
+   *
+   * `hmView()` is the heatmap's own view as data — granularity, period, range —
+   * so the file shows what the screen shows rather than a second
+   * implementation's idea of it.
+   * @returns {void}
+   */
   function heatmapPng() {
-    // hmView is set by the heatmap module below; it answers with the CURRENT
-    // view — granularity, period, range — so the file shows what the screen
-    // shows, not a second implementation's idea of it.
-    var v = hmView ? hmView() : null;
+    const v = hmView ? hmView() : null;
     if (!v) return;
-    var cellW = 26, cellH = 18, gap = 2, labelW = 96, top = 44;
-    var W = labelW + 24 * (cellW + gap) + 12;
-    var H = top + v.rows.length * (cellH + gap) + 30;
-    var g = pngCanvas(W, H), ctx = g.ctx;
+    const cellW = 26, cellH = 18, gap = 2, labelW = 96, top = 44;
+    const W = labelW + 24 * (cellW + gap) + 12;
+    const H = top + v.rows.length * (cellH + gap) + 30;
+    const g = pngCanvas(W, H), ctx = g.ctx;
     ctx.fillStyle = cssColor('--surface', '#ffffff');
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = cssColor('--text', '#111827');
     ctx.font = '600 13px sans-serif';
     ctx.fillText('Tokens by hour (UTC) · ' + v.label, 10, 20);
-    var ramp = [];
-    for (var lv0 = 0; lv0 <= 6; lv0++) ramp.push(cssColor('--hm-' + lv0, '#eeeeee'));
+    // Seven ramp steps, resolved once: index 0 is "nothing recorded", 1-6 are
+    // the intensity bands the on-screen grid uses.
+    const ramp = Array.from({ length: 7 },
+      (unused, lv) => cssColor('--hm-' + lv, '#eeeeee'));
+    const mut = cssColor('--muted', '#6b7280');
     ctx.font = '11px sans-serif';
-    v.rows.forEach(function (r, ri) {
-      var y = top + ri * (cellH + gap);
-      ctx.fillStyle = cssColor('--muted', '#6b7280');
+    for (const [ri, r] of v.rows.entries()) {
+      const y = top + ri * (cellH + gap);
+      ctx.fillStyle = mut;
       ctx.fillText(r.label, 8, y + cellH - 5);
-      for (var h2 = 0; h2 < 24; h2++) {
-        var val = r.cells ? (r.cells[h2] || 0) : 0;
-        var lv = (!val || !v.peak) ? 0
+      for (let h = 0; h < 24; h++) {
+        const val = r.cells ? (r.cells[h] || 0) : 0;
+        const lv = (!val || !v.peak) ? 0
           : Math.min(6, 1 + Math.floor(5 * val / v.peak));
         ctx.fillStyle = ramp[lv];
-        ctx.fillRect(labelW + h2 * (cellW + gap), y, cellW, cellH);
+        ctx.fillRect(labelW + h * (cellW + gap), y, cellW, cellH);
       }
-    });
-    ctx.fillStyle = cssColor('--muted', '#6b7280');
-    for (var tk = 0; tk < 24; tk += 6) {
+    }
+    ctx.fillStyle = mut;
+    for (let tk = 0; tk < 24; tk += 6) {
       ctx.fillText((tk < 10 ? '0' : '') + tk, labelW + tk * (cellW + gap), H - 10);
     }
     pngDownload(BASE + '-heatmap.png', g.el);
   }
-  [].slice.call(document.querySelectorAll('[data-png]')).forEach(function (b) {
+
+  Array.from(document.querySelectorAll('[data-png]')).forEach((b) => {
     b.addEventListener('click',
       b.getAttribute('data-png') === 'trend' ? trendPng : heatmapPng);
   });
 
-  // Print one segment (D2): stamp the attribute the print CSS keys on, open
-  // the dialog, and let afterprint take it back off — the same event the
-  // details-reopening handler above already rides, so a cancelled dialog
-  // restores exactly like a completed one.
-  [].slice.call(document.querySelectorAll('[data-segprint]')).forEach(function (b) {
-    b.addEventListener('click', function () {
-      document.body.setAttribute('data-printseg', b.getAttribute('data-segprint'));
-      window.print();
-    });
+  // --- exports: printing one segment -----------------------------------------
+
+  /**
+   * Isolate one segment for print. The print stylesheet keys on
+   * `body[data-printseg]`, and `afterprint` takes the attribute back off, so a
+   * cancelled dialog restores the page exactly like a completed one.
+   * @param {string} seg Segment name, as carried by `data-segprint`.
+   * @returns {void}
+   */
+  function printSegment(seg) {
+    document.body.setAttribute('data-printseg', seg);
+    window.print();
+  }
+
+  Array.from(document.querySelectorAll('[data-segprint]')).forEach((b) => {
+    b.addEventListener('click', () => printSegment(b.getAttribute('data-segprint')));
   });
-  window.addEventListener('afterprint', function () {
+  window.addEventListener('afterprint', () => {
     document.body.removeAttribute('data-printseg');
   });
 
+  // --- boot: sorting, the search box, and the view the link asked for --------
+
   wireSort(grouped, true, true);
   wireSort(bugsTable, false, true);
-  // Typing is a burst, not a series of questions. Five characters used to mean five
-  // full passes over every row — half a second of blocked main thread on a
-  // 200-phase plan — to show four intermediate results nobody reads. One pass once
-  // you stop. 90ms is below the threshold where a filter feels delayed and above
-  // the fastest realistic repeat rate, and the timer is cleared on every keystroke
-  // so a long word still costs exactly one pass.
+
   if (q) {
-    var qTimer = null;
-    q.addEventListener('input', function () {
+    /** @type {number|null} Pending debounce timer id, or null when idle. */
+    let qTimer = null;
+    /**
+     * Schedule the single filter pass that follows a burst of typing.
+     *
+     * Typing is a burst, not a series of questions. One pass per keystroke means
+     * five full passes over every row for a five-character word — half a second
+     * of blocked main thread on a 200-phase plan — to show four intermediate
+     * results nobody reads. 90ms is below the delay a reader notices and above
+     * the fastest realistic repeat rate, and the timer is cleared on every
+     * keystroke so a long word still costs exactly one pass.
+     * @returns {void}
+     */
+    const queueRefresh = () => {
       if (qTimer) clearTimeout(qTimer);
-      qTimer = setTimeout(function () { qTimer = null; refresh(); }, 90);
-    });
-    // Enter and Escape are decisions, not typing: act at once.
-    q.addEventListener('keydown', function (ev) {
+      qTimer = setTimeout(() => { qTimer = null; refresh(); }, 90);
+    };
+    /**
+     * Filter immediately for the keys that are decisions rather than typing.
+     * Escape also empties the box, which is what makes it a way out.
+     * @param {KeyboardEvent} ev Keydown on the search box.
+     * @returns {void}
+     */
+    const filterOnDecisionKey = (ev) => {
       if (ev.key !== 'Enter' && ev.key !== 'Escape') return;
       if (ev.key === 'Escape') q.value = '';
       if (qTimer) { clearTimeout(qTimer); qTimer = null; }
       refresh();
-    });
+    };
+    q.addEventListener('input', queueRefresh);
+    q.addEventListener('keydown', filterOnDecisionKey);
   }
-  // Restore what the link asked for BEFORE the first pass, so a shared URL renders
-  // the view it names instead of rendering everything and then rearranging itself.
-  // A link WINS over the local copy: somebody sent it on purpose. With no link,
-  // the local copy is what this reader last had on screen.
+
+  /**
+   * Fold one `key=value` pair of the stored filter string into HASH.
+   * @param {string} pair One `&`-separated pair; an empty pair is ignored.
+   * @returns {void}
+   */
+  function restoreStoredPair(pair) {
+    if (!pair) return;
+    const eq = pair.indexOf('=');
+    const k = eq < 0 ? pair : pair.slice(0, eq);
+    const v = eq < 0 ? '' : pair.slice(eq + 1);
+    // A malformed percent-escape throws, and one unreadable pair must not cost
+    // the reader the rest of the restored view.
+    try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) {}
+  }
+
+  // Restore what the link asked for BEFORE the first pass, so a shared URL
+  // renders the view it names instead of rendering everything and then
+  // rearranging itself. A link WINS over the local copy: somebody sent it on
+  // purpose. With no link, the local copy is what this reader last had on screen.
   if (!Object.keys(HASH).length) {
+    // Storage is unavailable or refused on a file:// document in some engines,
+    // and the report has to stay readable there.
     try {
-      var stored = localStorage.getItem(STORE_KEY);
-      if (stored) {
-        stored.split('&').forEach(function (pair) {
-          if (!pair) return;
-          var i = pair.indexOf('=');
-          var k = i < 0 ? pair : pair.slice(0, i);
-          var v = i < 0 ? '' : pair.slice(i + 1);
-          try { HASH[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) {}
-        });
-      }
+      const stored = localStorage.getItem(STORE_KEY);
+      if (stored) stored.split('&').forEach(restoreStoredPair);
     } catch (e) {}
   }
   if (HASH.v && VIEWS[HASH.v]) {
