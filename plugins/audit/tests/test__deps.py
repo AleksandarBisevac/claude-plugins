@@ -855,8 +855,58 @@ def _cases(check):
         check("u7 an extension with no marker syntax on record (.html) is skipped "
               "rather than guessed at",
               not any(f == "panel.html" for f, _ in M.ui_navigability_violations(ui_tmp)))
+
+        # ---- the hole this rule keeps, pinned as a decision (F37) ----
+        # A marker is a matched LINE, so a marker-shaped line inside a template
+        # literal counts as a section marker. `tokenize` is what closed the same
+        # hole in the .py rule (F21) and there is no stdlib tokenizer for CSS or
+        # JavaScript; the argument, and the cheap tightening that was measured
+        # and rejected, are above `_UI_MARKER_RES`.
+        #
+        # The two fixtures differ by NOTHING except those two lines inside the
+        # backticks, which is what stops this from asserting "a file passes":
+        # the same body without them IS reported, so the pass is caused by the
+        # fake markers and by nothing else.
+        #
+        # IF THIS CASE GOES RED, THE HOLE WAS CLOSED. Delete the case on purpose
+        # - do not weaken it back into green.
+        _stringy_body = "x();\n" * (M._NAV_MIN_LINES + 10)
+        _write("stringy.js", "const doc = `\n" + _JS_MARK + _JS_MARK + "`;\n"
+               + _stringy_body)
+        _write("nostring.js", _stringy_body)
+        hole_hits = M.ui_navigability_violations(ui_tmp)
+        check("u8 KNOWN BLINDNESS, pinned rather than fixed: two marker-shaped "
+              "lines inside a template literal are counted as section markers, so "
+              "stringy.js passes while nostring.js - the identical body without "
+              "them - is named. A regex cannot tell a comment from a string and "
+              "neither language has a stdlib tokenizer (F37): %r" % (hole_hits,),
+              not any(f == "stringy.js" for f, _ in hole_hits)
+              and any(f == "nostring.js" for f, _ in hole_hits))
     finally:
         shutil.rmtree(ui_tmp, ignore_errors=True)
+
+    # ---- why the column-0 tightening was rejected, measured on the real asset ----
+    # The alternative to living with u8's hole was "a marker must sit at column 0
+    # and be alone on its line". This case is the measurement that killed the first
+    # half of it: report.js indents every marker two spaces inside its IIFE, so a
+    # column-0 rule counts NONE of them and the lint would fail the file whose
+    # markers are the most consistent in the directory. Derived from the shipped
+    # regex and the shipped asset, never from a literal - if report.js is ever
+    # unwrapped and its markers reach column 0, this goes red and the tightening
+    # becomes available, which is the observable trigger for revisiting F37.
+    _js_marker_re = dict(M._UI_MARKER_RES)[".js"]
+    _report_js = os.path.join(M._UI_DIR, "report.js")
+    with open(_report_js, "r", encoding="utf-8") as fh:
+        _report_lines = fh.readlines()
+    _marked = [ln for ln in _report_lines if _js_marker_re.match(ln)]
+    _at_col0 = [ln for ln in _marked if not ln.startswith(" ")]
+    check("u9 the rejected tightening, measured rather than argued: report.js is "
+          "%d lines and the shipped rule finds %d markers in it, of which %d begin "
+          "at column 0 - so 'column 0 only' would count %d in a file that needs %d, "
+          "and fail it. The 0-2 space allowance stays (F37)."
+          % (len(_report_lines), len(_marked), len(_at_col0), len(_at_col0),
+             max(2, -(-len(_report_lines) // M._NAV_MIN_LINES))),
+          len(_marked) >= 2 and not _at_col0)
 
     # ------------------------------------------- the scanners reach a subdirectory
     # A recursive walk that is never handed a subdirectory proves nothing, so this

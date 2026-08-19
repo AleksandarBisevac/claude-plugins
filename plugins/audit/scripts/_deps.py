@@ -1392,6 +1392,46 @@ def navigability_violations(script_dir=None, hooks_dir=None):
 # IIFE and column 0 is therefore unavailable to it. A marker indented deeper
 # than that sits inside a function and is not a landmark the left margin gives
 # you - the same reason the .py rule insists on column 0.
+#
+# WHAT THIS CANNOT SEE, NAMED RATHER THAN FIXED (F37). These are LINES matched by a
+# regex, and a regex cannot tell a comment from the same characters inside a
+# string. A `// ---- x ----` alone on its line inside a template literal or inside
+# a `/* ... */` block counts as a section marker here, and so would a CSS
+# declaration whose string value is continued across a line break with a
+# backslash. The .py rule two functions up does NOT have this hole, because
+# `tokenize` tells a COMMENT token from a STRING token (F21) - and there is no
+# stdlib tokenizer for CSS or JavaScript. Hand-rolling one is not the missing
+# work: it would be a second, unverified parser for two languages, maintained
+# forever to serve one line-counting lint.
+#
+# THE CHEAP TIGHTENING WAS MEASURED AND IS WRONG, WHICH IS WHY THE HOLE STAYS.
+# "A marker must sit at column 0 and be alone on its line" was the alternative,
+# and both halves of it fail against the assets in this directory:
+#
+#   * COLUMN 0 counts ZERO markers in report.js, where every marker the shipped
+#     rule finds is indented two spaces inside the IIFE - the allowance the
+#     paragraph above already explains. A file that long carrying no marker is a
+#     violation, so the tightening's first act would be to fail the file whose
+#     markers are the most consistent in the directory. Case `u9` measures it and
+#     prints both counts rather than asserting them from here.
+#   * ALONE ON ITS LINE removes nothing and closes nothing. Both regexes are
+#     already anchored, so a marker already has to BEGIN its line; and a fake
+#     marker inside a template literal is alone on its line too.
+#
+# AND A PARTIAL LEXER MOVES THE HOLE RATHER THAN NARROWING IT, which was measured
+# too. A scan that tracked backtick parity - the cheapest way to guess whether a
+# line sits inside a template literal - reported one false marker in panel.js. The
+# line it named is a real section marker; the scan had been flipped into "inside a
+# string" by the backtick inside the single-quoted string in `hcode()` further up.
+# The half-measure produced exactly the class of error it was written to detect.
+#
+# THE DIRECTION IS RECORDED, NOT OFFERED AS AN EXCUSE. Over-counting can only make
+# an under-marked file PASS, never make a well-marked one fail - which is the same
+# quiet direction F21 named as the one that hurts. No instance of it is known in
+# the shipped assets, and nothing checks that, and nothing here can. `u8` pins the
+# blindness the way `rt4` pins the narrowness of `_runtime_loaded_sibling_names` -
+# as a decision: if a later change closes the hole, that case goes red and is
+# deleted on purpose rather than a lint quietly becoming a different lint.
 _UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
 
 _UI_MARKER_RES = (
@@ -1409,6 +1449,13 @@ def ui_navigability_violations(ui_dir=None):
     Files below the line threshold are not checked at all, and any extension
     without a marker syntax in `_UI_MARKER_RES` (`.html`, and whatever else
     lands there) is skipped rather than guessed at.
+
+    A marker is found by matching a LINE and not by lexing the file, so a
+    marker-shaped line inside a string or a block comment is counted as one. The
+    sibling .py rule closed that hole with `tokenize`; CSS and JavaScript have no
+    stdlib tokenizer, and the tightening that needs none was measured and
+    rejected. Both are argued above `_UI_MARKER_RES`, and `u8` pins the resulting
+    blindness so that closing it later is a deliberate act rather than a drift.
     """
     ui_dir = ui_dir if ui_dir is not None else _UI_DIR
     violations = []
@@ -1442,10 +1489,27 @@ def ui_navigability_violations(ui_dir=None):
 
 
 # --- known layer debt ---------------------------------------------------------
-# ONE entry, down from the seventeen that became visible the moment this module
-# learned to read `_loader` calls. None of those seventeen was ever new: each had
-# been in the tree for months, certified clean by a lint that walked only
-# `ast.Import` while most of this codebase reaches its siblings at runtime.
+# HOW MANY ARE LEFT IS DELIBERATELY NOT WRITTEN HERE. The tuple below IS the count,
+# and a figure in this comment would be a second copy of it with nothing comparing
+# the two. That is not hypothetical: the module docstring said this table "stayed
+# at 17" for as long as it held ONE, and this comment opened with "ONE entry" -
+# both true the day they were typed, and one of them a lie by the next commit
+# (F39, the same disease as F29). Print it rather than reading it:
+#
+#   python3 -c "import sys; sys.path.insert(0, 'plugins/audit/scripts'); \
+# import _deps; print(len(_deps.KNOWN_LAYER_DEBT))"
+#
+# The numbers that DO survive below are HISTORY - what was retired, by which
+# extraction, in a change that has already happened - and history does not rot.
+# That difference is also why no lint sits behind this rule: "seventeen" is correct
+# in a sentence about the past and wrong in a sentence about now, and nothing
+# reading the source text can tell those two sentences apart. What a reader gets
+# instead is the command, one line up.
+#
+# Down from the seventeen that became visible the moment this module learned to
+# read `_loader` calls. None of those seventeen was ever new: each had been in the
+# tree for months, certified clean by a lint that walked only `ast.Import` while
+# most of this codebase reaches its siblings at runtime.
 #
 # HOW THE OTHER SIXTEEN WENT, because the shape generalises. Every one of them was
 # a module being used as a LIBRARY that happened to be shaped as a COMMAND, and in
