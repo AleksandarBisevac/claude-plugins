@@ -37,7 +37,6 @@ This module carries no `--selftest` of its own any more; its cases live in
 """
 import os
 import sys
-import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -83,7 +82,7 @@ def render_md(manifest, summary, usage=None):
     render_html is the hardened, self-contained output; prefer it when the
     source is untrusted and no sanitising renderer sits in front."""
     meta = manifest.get("meta") or {}
-    now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+    now = _report_html.stamp_time()
 
     def cell(v):
         return str(v if v is not None else "—").replace("|", "\\|").replace(

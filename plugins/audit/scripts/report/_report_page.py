@@ -43,7 +43,6 @@ import base64
 import json
 import os
 import sys
-import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -408,7 +407,7 @@ def _nojs_block():
 
 def _topbar_block(manifest, meta, summary, usage, owners):
     """The sticky top bar — identity, the global filters — and the shell it opens."""
-    now = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+    now = _report_html.stamp_time()
     ver = _plugin_version()
     parts = ['<header class="topbar"><div class="tb-id">'
              '<h1>%s</h1><p class="meta">%s · %d phases · %d tasks · %d bugs · '

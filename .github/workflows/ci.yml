@@ -316,6 +316,16 @@ jobs:
           python plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report
           test -s /tmp/audit-report/audit-report.html
           test -s /tmp/audit-report/audit-report.md
+      - name: Committed rendered artifacts match their source
+        shell: bash
+        run: |
+          set -e
+          # The step BELOW renders the example to a temp directory and greps
+          # that, which proves the renderer works and can never see the
+          # COMMITTED file drift. It did: examples/acme-store kept the pre-F28
+          # aria-labels -- the ones a speech user cannot reach -- long after the
+          # source was fixed. This compares the file a user actually opens.
+          python3 tools/check-rendered-artifacts.py
       - name: Example renders its Usage section (asserts content, not just a file)
         shell: bash
         run: |

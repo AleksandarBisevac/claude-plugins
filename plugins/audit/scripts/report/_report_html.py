@@ -32,6 +32,7 @@ This module carries no `--selftest` of its own any more; its cases live in
 """
 import html
 import os
+import time
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -70,6 +71,39 @@ _RISK_LEVELS = ("low", "med", "high")
 
 
 # --- escaping + basename ----------------------------------------------------
+def stamp_time():
+    """The generation stamp, honouring SOURCE_DATE_EPOCH.
+
+    Lives HERE because both renderers stamp, and both import this module.
+    The first version of this put it in `_report_page` and fixed the HTML
+    only -- the Markdown twin went on stamping wall-clock, so the freshness
+    check that motivated the whole change stayed red on the `.md`. Fixing
+    one of two call sites is the instance-not-class mistake this repo keeps
+    paying for; one definition is what stops the third copy appearing.
+
+    Without this the report stamps wall-clock and is UNREPRODUCIBLE BY
+    CONSTRUCTION, which is not a cosmetic problem: it is why nothing could ever
+    compare a COMMITTED artifact against a fresh render. `examples/acme-store`
+    drifted for exactly that reason -- it kept the pre-F28 `aria-label`s, the
+    ones a speech user cannot reach, long after the source was fixed, and CI
+    rendered its own copy to a temp directory and grepped that instead.
+
+    SOURCE_DATE_EPOCH is the reproducible-builds convention rather than a local
+    invention, so anything that already sets it gets a deterministic report for
+    free. A value that is not an integer is IGNORED rather than fatal: this is
+    an advisory path (a stamp), and a malformed environment variable must not
+    stop a user rendering their report. It is the freshness check's job to fail
+    loudly, and it sets the variable itself.
+    """
+    raw = os.environ.get("SOURCE_DATE_EPOCH")
+    if raw:
+        try:
+            return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(raw)))
+        except (TypeError, ValueError, OSError, OverflowError):
+            pass
+    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+
+
 def e(value):
     """Escape ANY manifest value for HTML context."""
     return html.escape(str(value if value is not None else ""), quote=True)
