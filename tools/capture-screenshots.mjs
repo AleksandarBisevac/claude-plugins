@@ -2068,6 +2068,126 @@ const shownMsgs = (page) => page.evaluate(() => {
  * a different path in the engine, and a probe in this repo has already reported
  * a confident wrong answer by taking it.
  */
+/**
+ * SC 2.5.8 Target Size across DENSITIES (F30).
+ *
+ * `--sp-*` are scaled by `layout.density`, and the spacing migration keeps moving
+ * declarations onto that scale — so a control that clears 24px today can be
+ * walked under it by `compact` tomorrow without a line of CSS changing. Measured
+ * 2026-08-19 it does not happen (175/176/175 under 24 across the three, which is
+ * the glyph size of shapes whose target comes from an `::after` overlay). This is
+ * here so that stays true rather than being remembered as true.
+ *
+ * Compares densities against each other rather than against 24: the register in
+ * `test__panel_page.py` owns the absolute judgement, including which shapes lean
+ * on an overlay. What this asks is narrower and is the thing density can break —
+ * did any control SHRINK when the scale did.
+ */
+async function assertTargetSizeAcrossDensities(page) {
+  const SEL = 'button,[role=button],a[href],input:not([type=hidden]),select,'
+            + 'textarea,summary,[tabindex]:not([tabindex="-1"])';
+  const TABS = ['guards', 'comp'];
+  const read = () => page.evaluate((sel) => {
+    const out = { min: {}, n: 0 };
+    document.querySelectorAll(sel).forEach((n) => {
+      if (!n.getClientRects().length) return;
+      const r = n.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const key = n.tagName.toLowerCase()
+        + (n.className && n.className.toString().trim()
+           ? '.' + n.className.toString().trim().split(/\s+/).slice(0, 2).join('.') : '');
+      const min = Math.min(r.width, r.height);
+      if (!(key in out.min) || min < out.min[key]) out.min[key] = Math.round(min * 10) / 10;
+      out.n += 1;
+    });
+    return out;
+  }, SEL);
+
+  const seen = {}, counts = {};
+  for (const density of ['comfortable', 'compact', 'spacious']) {
+    await page.click('.tab[data-t="look"]');
+    await page.waitForTimeout(250);
+    const btn = await page.$(`#look [data-thdensity=${density}]`);
+    if (!btn) { fail(`2.5.8/density: no control for density=${density}`); return; }
+    await btn.click();
+    await page.waitForTimeout(350);
+    // The vacuity guard, and it is the whole reason this can be believed: three
+    // rounds that measured the same page would report "no shrinkage" and mean
+    // nothing by it. Read the token the density is supposed to move.
+    const sp3 = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--sp-3').trim());
+    const want = { comfortable: '1rem', compact: '.8rem', spacious: '1.25rem' }[density];
+    if (sp3 !== want) {
+      fail(`2.5.8/density: --sp-3 reads "${sp3}" under density=${density}, expected `
+         + `"${want}" — the density did not apply, so any comparison below is three `
+         + 'readings of one page');
+      return;
+    }
+    const merged = {};
+    let controls = 0;
+    for (const t of TABS) {
+      await page.click(`.tab[data-t="${t}"]`);
+      await page.waitForTimeout(250);
+      const got = await read();
+      controls += got.n;
+      for (const k of Object.keys(got.min)) {
+        if (!(k in merged) || got.min[k] < merged[k]) merged[k] = got.min[k];
+      }
+    }
+    seen[density] = merged;
+    counts[density] = controls;
+  }
+  await page.click('.tab[data-t="look"]');
+  await page.waitForTimeout(200);
+  const back = await page.$('#look [data-thdensity=comfortable]');
+  if (back) { await back.click(); await page.waitForTimeout(300); }
+
+  const base = seen.comfortable || {};
+  const shapes = Object.keys(base);
+  // The bar is on CONTROLS, not distinct shapes. A shape count is a poor guard:
+  // these two tabs carry 13 shapes across 359 controls, so a threshold set by
+  // feel (20) failed a walk that had reached everything — measured, not guessed,
+  // after that guard refused a number nobody had derived. Controls is the
+  // quantity that says the forms rendered; shapes is what a UI edit legitimately
+  // moves.
+  if ((counts.comfortable || 0) < 150) {
+    fail(`2.5.8/density: only ${counts.comfortable || 0} control(s) measured across `
+       + `${TABS.join(' + ')} — the walk is not reaching the forms, so "nothing `
+       + 'shrank" is not a claim about anything');
+    return;
+  }
+  // CROSSING the floor, not moving. Shrinking is what density IS -- nine shapes
+  // move here and that is the feature. The failure is a shape that clears 24 at
+  // the default density and stops clearing it at another, because the register in
+  // test__panel_page.py graded it "ok" on a measurement taken at one density.
+  // A first version of this asserted non-movement and failed on the feature.
+  //
+  // Shapes already under 24 at the default are skipped on purpose: those are the
+  // glyph buttons whose target comes from an ::after overlay declared in px, and
+  // grading them is the register's job, not this one's.
+  const crossed = [];
+  for (const d of ['compact', 'spacious']) {
+    for (const k of shapes) {
+      if (base[k] < 24) continue;
+      const now = (seen[d] || {})[k];
+      if (now !== undefined && now < 24) {
+        crossed.push(`${k} ${base[k]}→${now} under ${d}`);
+      }
+    }
+  }
+  if (crossed.length) {
+    fail(`2.5.8 target size crosses the 24px floor with density: `
+       + `${crossed.length} shape(s) — ${crossed.slice(0, 4).join('; ')}`
+       + `${crossed.length > 4 ? `; +${crossed.length - 4} more` : ''}. `
+       + 'Declare the floor (min-width/min-height) rather than clearing it by '
+       + 'coincidence, and update the register.');
+  } else {
+    note(`2.5.8: ${shapes.length} shapes over ${counts.comfortable} controls, `
+       + 'measured at all three densities (--sp-3 confirmed 1rem/.8rem/1.25rem) '
+       + '— none that clears 24px at the default stops clearing it');
+  }
+}
+
 async function assertFocusNotObscured(page) {
   const TABS = ['guards', 'comp', 'over', 'usage', 'policy', 'look'];
   const STEPS = 30;
@@ -6450,6 +6570,7 @@ async function main() {
       await assertUsageWorks(page);
       await assertViewerIdentity(page);
       await assertFocusNotObscured(page);
+      await assertTargetSizeAcrossDensities(page);
       // Reads only, but it opens a modal over every tab it visits, so it runs
       // where no shutter follows it — the same rule the toast waiter enforces.
       await assertHelpDrawerWorks(page, declared);

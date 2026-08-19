@@ -1876,6 +1876,27 @@ def _cases(check):
     # The NUMBERS are the browser's, never this file's - Playwright at 390px and
     # 1200px, all six tabs, all four dialogs, keeping the smallest instance of each
     # shape. A static file cannot compute a rendered box and does not pretend to.
+    #
+    # AND AT ALL THREE DENSITIES (F30, measured 2026-08-19). `--sp-*` are scaled by
+    # `layout.density` - compact .8, comfortable 1.0, spacious 1.25 - and the
+    # spacing migration keeps moving declarations onto that scale, so compact can
+    # walk a control under the floor without a line of CSS changing. It does: NINE
+    # shapes move, and `.btn.small` crossed - 24.0 to 22.3 - which is why it now
+    # declares `min-width:24px` instead of clearing the floor by coincidence.
+    #
+    # The first pass at this measured the COUNT under 24px per density and read
+    # 175 / 176 / 175, and concluded density changes nothing. It changes plenty:
+    # an aggregate was stable while the shapes underneath it moved, and the one
+    # that crossed was the +1. Compare per shape, or a total will hide the thing
+    # it is made of. Proven to be three real readings rather than one page
+    # measured thrice by reading `--sp-3` each round - 1rem / .8rem / 1.25rem.
+    #
+    # The reason it does not move is worth keeping: the shapes that are under 24
+    # are under it by their GLYPH size (`.hint` is 1.02rem square, `.chip button`
+    # 6.4x12), and their target comes from a `::after` overlay declared in px. A
+    # `getBoundingClientRect()` on the element measures the glyph and not the
+    # target - which is why a raw census of rects reads 175 "failures" that are
+    # not failures, and why this register grades the MECHANISM instead.
     # What it checks instead is that the MECHANISM each non-conforming shape leans
     # on is still in the stylesheet, which is the part a later edit can quietly
     # remove: delete the ::after overlay or the min-width and ts2 names the shape.
@@ -1906,7 +1927,10 @@ def _cases(check):
         "input[type=checkbox]": ("exception=user-agent", "input[type=checkbox]"),
         # measured >= 24x24 already
         "button.btn.primary": ("ok", "105.4x39.8"),
-        "button.btn.small": ("ok", "25.6x29.2"),
+        # was ("ok", "25.6x29.2") - a measurement at ONE density, and its
+        # horizontal padding is `--sp-1`, which density scales: 22.3 under
+        # compact. The floor is declared now instead of being a coincidence.
+        "button.btn.small": ("min-width:24px", ".btn.small"),
         "button.btn.small.push": ("ok", "56.8x29.2"),
         "button.chip.ghosted.optnone": ("ok", "86.7x29.4"),
         "button.dtopic": ("ok", "343x78.6"),

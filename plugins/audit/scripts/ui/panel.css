@@ -139,7 +139,14 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .btn[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
 .btn[aria-disabled="true"]:hover{border-color:var(--border);transform:none;box-shadow:none}
 .btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
-.btn.small{font-size:.75rem;padding:var(--sp-0) var(--sp-1)}
+/* target-size: .btn.small — min-width:24px (WCAG 2.2 SC 2.5.8). MEASURED 25.6
+   wide at the default density, which clears 24 by 1.6px — and its horizontal
+   padding is `--sp-1`, which `layout.density` scales. Under `compact` that
+   becomes 22.3 and the rule stops holding, without a line of CSS changing. It
+   was the ONLY shape of nine that crosses the floor; the others move and stay
+   above it. The floor is pinned here rather than left to the scale, the same way
+   `.uhmarrow` does it, so the density is free to move the padding. */
+.btn.small{font-size:.75rem;padding:var(--sp-0) var(--sp-1);min-width:24px}
 .badge{font-size:.68rem;font-weight:700;padding:var(--sp-0) .5em;border-radius:var(--pill);
  background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
 .badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
