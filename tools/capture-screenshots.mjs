@@ -2359,6 +2359,93 @@ function unwiredStages(source) {
     .sort();
 }
 
+/**
+ * Reading the help must not change the setting it explains.
+ *
+ * The ⓘ is a control inside another control's activation area. While the wrapper
+ * was a `<label>`, clicking the hint activated the labelled field: MEASURED in
+ * Chromium before the F41 repair, **6 of 12 checkbox+hint pairs flipped** — six
+ * settings a user silently changed by reading about them. The F41 fix made those
+ * wrappers `<span>`s, and this is the gate that stops the shape returning, since
+ * the defect is invisible to every substring pin (the markup was valid, the names
+ * were fine, nothing threw).
+ *
+ * Covers checkbox/radio checked state, select value and text value, because the
+ * activation-area bug is not specific to checkboxes — it is specific to a control
+ * nested inside another control's hit area, and a check that only knew about
+ * checkboxes would go green on the first `<select>` that regressed.
+ *
+ * Every value it disturbs is put back: this runs in a file that also takes
+ * screenshots, and a probe that left a setting flipped would publish it.
+ */
+async function assertHintClickIsInert(page, areas) {
+  let pairs = 0;
+  const changed = [];
+  for (const a of areas) {
+    if (a.show) await a.show();
+    const res = await page.evaluate(async (sel) => {
+      const root = document.querySelector(sel);
+      if (!root) return { missing: sel };
+      const out = [];
+      const fields = [...root.querySelectorAll('input,select,textarea')]
+        .filter((f) => f.type !== 'hidden');
+      for (const f of fields) {
+        const wrap = f.closest('label,.f,.gf,.lbl,.row');
+        const hint = wrap && wrap.querySelector('.hint');
+        if (!hint || hint === f) continue;
+        const was = (f.type === 'checkbox' || f.type === 'radio') ? f.checked : f.value;
+        hint.click();
+        await new Promise((r) => setTimeout(r, 40));
+        const now = (f.type === 'checkbox' || f.type === 'radio') ? f.checked : f.value;
+        out.push({ id: f.id || f.name || f.type, moved: now !== was });
+        if (now !== was) {                       // never leave it disturbed
+          if (f.type === 'checkbox' || f.type === 'radio') f.checked = was;
+          else f.value = was;
+        }
+      }
+      return { out };
+    }, a.sel);
+    if (res.missing) {
+      fail(`hint-inertness: selector ${JSON.stringify(res.missing)} matched nothing, `
+         + `so this area was never examined`);
+      continue;
+    }
+    pairs += res.out.length;
+    changed.push(...res.out.filter((r) => r.moved).map((r) => `${a.name}/${r.id}`));
+    // Clicking the ⓘ OPENS THE HELP DRAWER — a <dialog> that then intercepts
+    // pointer events for every stage after this one. The first version of this
+    // probe restored the field values and left the drawer standing, and the
+    // next stage timed out clicking through it. Restoring what you disturbed
+    // means the whole page, not the value you were watching.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+  }
+  // ...and ASSERT the restore, rather than trusting the Escape landed. A probe
+  // that half-restores is worse than one that does not restore at all: the
+  // failure surfaces inside somebody else's stage, wearing their name.
+  const stillOpen = await page.evaluate(() =>
+    document.querySelectorAll('dialog[open]').length);
+  if (stillOpen) {
+    fail(`hint-inertness left ${stillOpen} dialog(s) open, which will intercept `
+       + `pointer events for every stage after this one`);
+  }
+  // Vacuity: a page where no field sits beside a hint cannot test this at all.
+  if (pairs < 5) {
+    fail(`hint-inertness: only ${pairs} field(s) sit beside a ⓘ across `
+       + `${areas.length} area(s) — too few to have tested anything, so a clean `
+       + `result here would mean nothing`);
+    return;
+  }
+  if (changed.length) {
+    fail(`hint-inertness: clicking the ⓘ CHANGED ${changed.length} of ${pairs} `
+       + `control(s) — reading the help edits the setting it explains: `
+       + `${changed.slice(0, 8).join(', ')}`);
+  } else {
+    note(`panel: reading the help changes nothing — ${pairs} control(s) beside a ⓘ, `
+       + `none moved when it was clicked`);
+  }
+}
+
 async function assertLabelInName(page, areas, surface) {
   const all = [];
   for (const a of areas) {
@@ -6801,6 +6888,11 @@ async function main() {
       // follows it, not merely be timed to miss one.
       await assertUsageWorks(page);
       await assertViewerIdentity(page);
+      await assertHintClickIsInert(page, ['guards', 'comp', 'policy', 'look']
+        .map((t) => ({ name: t, sel: '#' + t,
+          show: async () => { await page.evaluate((x) => {
+            if (typeof showTab === 'function') showTab(x); }, t);
+            await page.waitForTimeout(250); } })));
       await assertLabelInName(page, ['guards', 'comp', 'over', 'usage', 'policy', 'look']
         .map((t) => ({ name: t, sel: '#' + t,
           show: async () => { await page.evaluate((x) => {
