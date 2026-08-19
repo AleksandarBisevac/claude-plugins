@@ -2188,6 +2188,173 @@ async function assertTargetSizeAcrossDensities(page) {
   }
 }
 
+/**
+ * SC 2.5.3 Label in Name (AA). When a control carries a VISIBLE text label, its
+ * accessible name must CONTAIN that text -- speech users say what they can see.
+ *
+ * Kept HERE rather than in a scratch harness on purpose. F28's figure ("91
+ * instances across 41 shapes") was measured by a probe that then vanished, so by
+ * the time anyone read the number the population had changed and nothing could
+ * re-derive it. A criterion measured once is a criterion nobody is watching.
+ *
+ * Four things this got wrong before its numbers were worth reading, each kept as
+ * a rule rather than a memory:
+ *
+ *  1. A BUTTON or LINK is labelled by its OWN text. Letting one fall through to
+ *     the caption of the row it sits in charges that caption to every control in
+ *     the row -- 233 of 340 "failures", 53 of 53 on one tab. A 100% rate is a
+ *     harness defect until proven otherwise.
+ *  2. Every panel tab stays in the DOM (showTab only toggles .hidden), so marks
+ *     must be namespaced and cleared. A per-tab counter collides with marks left
+ *     on other tabs and DOM.querySelector returns the first match in document
+ *     order -- an element from a tab nobody is looking at.
+ *  3. Compare WORDS, not characters, and build the visible string by joining TEXT
+ *     NODES the way the browser assembles a name. `textContent` concatenates them
+ *     raw, so a row rendering "P18 Web pass" comes back "P18Web pass".
+ *  4. An ICON is not a visible text label. The ⓘ renders one glyph; under a
+ *     substring test it PASSED for the wrong reason, because "i" occurs inside
+ *     "What is this?".
+ *
+ * An empty accessible name is SC 4.1.2, a worse and different defect, and is
+ * counted separately -- never folded in, which would inflate this figure with
+ * cases 2.5.3 has nothing to say about.
+ */
+const LIN_CENSUS = ({ rootSel, pfx }) => {
+  // A selector that matches nothing must FAIL, not fall back to `document`:
+  // falling back silently widens the scope to the whole page and reports a
+  // healthy count for a walk that never reached the thing it was aimed at.
+  const root = document.querySelector(rootSel);
+  if (!root) return { missing: rootSel };
+  document.querySelectorAll('[data-lin253]').forEach((n) => n.removeAttribute('data-lin253'));
+  const SEL = 'button,select,textarea,a[href],[role="button"],[tabindex]:not([tabindex="-1"]),'
+    + 'input:not([type="hidden"])';
+  const vis = (e) => { const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
+  const norm = (t) => (t || '').replace(/[\u2013\u2014\u2018\u2019\u201c\u201d]/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
+  const strip = (el) => {
+    const c = el.cloneNode(true);
+    c.querySelectorAll('.hint,button,input,select,textarea,code.k2').forEach((n) => n.remove());
+    const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+    const parts = []; let t;
+    while ((t = w.nextNode())) { const v = (t.nodeValue || '').trim(); if (v) parts.push(v); }
+    return parts.join(' ');
+  };
+  const out = []; let i = 0;
+  for (const e of root.querySelectorAll(SEL)) {
+    if (!vis(e)) continue;
+    let visible = '', src = '';
+    const isCmd = /^(BUTTON|A)$/.test(e.tagName) || e.getAttribute('role') === 'button';
+    if (isCmd) {
+      visible = strip(e); src = 'self';
+      if (!norm(visible) && e.labels && e.labels.length) {
+        visible = [...e.labels].map(strip).join(' '); src = 'labels';
+      }
+    } else {
+      if (e.labels && e.labels.length) { visible = [...e.labels].map(strip).join(' '); src = 'labels'; }
+      if (!norm(visible) && e.getAttribute('aria-labelledby')) {
+        visible = e.getAttribute('aria-labelledby').split(/\s+/)
+          .map((id) => { const t = document.getElementById(id); return t ? strip(t) : ''; }).join(' ');
+        src = 'labelledby';
+      }
+      if (!norm(visible)) {
+        const wrap = e.closest('label,.gf,.f,.viewpick');
+        const sp = wrap && wrap.querySelector('.lbl,.tbl');
+        const fields = wrap ? wrap.querySelectorAll('input,select,textarea') : [];
+        if (sp && fields.length === 1) { visible = strip(sp); src = 'span'; }
+      }
+    }
+    if (!norm(visible)) continue;
+    if (norm(visible).replace(/\s+/g, '').length < 2) continue;   // an icon is not a text label
+    const mark = pfx + '-' + (i++);
+    e.setAttribute('data-lin253', mark);
+    out.push({ mark, visible, src, tag: e.tagName.toLowerCase(), id: e.id || '',
+      cls: typeof e.className === 'string' ? e.className : '' });
+  }
+  return out;
+};
+
+const linWords = (t) => (t || '').replace(/[\u2013\u2014\u2018\u2019\u201c\u201d]/g, ' ')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase().split(' ').filter(Boolean);
+const linContains = (hay, needle) => {
+  if (!needle.length) return true;
+  for (let i = 0; i + needle.length <= hay.length; i++) {
+    let ok = true;
+    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) { ok = false; break; }
+    if (ok) return true;
+  }
+  return false;
+};
+
+async function linCensus(page, rootSel, pfx) {
+  const cands = await page.evaluate(LIN_CENSUS, { rootSel, pfx });
+  if (!Array.isArray(cands)) {
+    fail(`SC 2.5.3 census: selector ${JSON.stringify(cands.missing)} matched nothing — `
+       + `the walk never reached the area it names, so any verdict from it is empty`);
+    return [];
+  }
+  if (!cands.length) return [];
+  const cdp = await page.context().newCDPSession(page);
+  const rows = [];
+  try {
+    await cdp.send('DOM.enable'); await cdp.send('Accessibility.enable');
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+    for (const c of cands) {
+      const { nodeId } = await cdp.send('DOM.querySelector',
+        { nodeId: root.nodeId, selector: `[data-lin253="${c.mark}"]` });
+      if (!nodeId) continue;
+      // Never getFullAXTree: it stops at 1000 nodes and says nothing about it.
+      const { nodes } = await cdp.send('Accessibility.getPartialAXTree',
+        { nodeId, fetchRelatives: false });
+      const n = nodes && nodes[0];
+      const accName = n && n.name ? String(n.name.value || '') : '';
+      const v = linWords(c.visible), a = linWords(accName);
+      let verdict;
+      if (!v.length) verdict = 'n/a';
+      else if (!a.length) verdict = 'NO-NAME';
+      else verdict = linContains(a, v) ? 'pass' : 'FAIL';
+      rows.push({ ...c, accName, verdict });
+    }
+  } finally { await cdp.detach(); }
+  return rows;
+}
+
+async function assertLabelInName(page, areas, surface) {
+  const all = [];
+  for (const a of areas) {
+    if (a.show) await a.show();
+    const rows = await linCensus(page, a.sel, `${surface}_${a.name}`);
+    all.push(...rows.map((r) => ({ ...r, area: a.name })));
+  }
+  const bad = all.filter((r) => r.verdict === 'FAIL');
+  const noname = all.filter((r) => r.verdict === 'NO-NAME');
+  // Vacuity: a census that reached nothing reports a page with nothing wrong.
+  // The floor is per SURFACE and deliberately well under the measured counts
+  // (233 panel + report at the time of writing), so it fails a walk that broke
+  // rather than a page that changed.
+  if (all.length < 20) {
+    fail(`${surface}: SC 2.5.3 census reached only ${all.length} labelled control(s) `
+        + `across ${areas.length} area(s) — the walk is not reaching the page, so `
+        + `"no failures" would mean nothing`);
+    return;
+  }
+  if (bad.length) {
+    const shown = bad.slice(0, 6).map((r) =>
+      `${r.tag}${r.id ? '#' + r.id : '.' + (r.cls || '?').split(' ')[0]} `
+      + `[${r.area}] shows ${JSON.stringify(r.visible.slice(0, 40))} `
+      + `but is named ${JSON.stringify(r.accName.slice(0, 40))}`);
+    fail(`${surface}: SC 2.5.3 Label in Name — ${bad.length} control(s) whose `
+        + `accessible name does not contain their visible label, so a speech user `
+        + `saying what they see cannot reach them: ${shown.join(' · ')}`
+        + (bad.length > 6 ? ` (+${bad.length - 6} more)` : ''));
+  } else {
+    note(`${surface}: SC 2.5.3 Label in Name — ${all.length} control(s) with a visible `
+     + `text label, every accessible name contains it`
+     + (noname.length ? `; ${noname.length} with NO accessible name at all, which is `
+         + `SC 4.1.2 and counted separately (F42)` : ''));
+  }
+}
+
 async function assertFocusNotObscured(page) {
   const TABS = ['guards', 'comp', 'over', 'usage', 'policy', 'look'];
   const STEPS = 30;
@@ -5525,6 +5692,9 @@ async function main() {
       await page.goto(url, { waitUntil: 'load' });
       await settle(page);
       await assertBarsPainted(page, 'report/light');
+      // Before any click: 2.5.3 is about the page as it is FOUND, and the legs
+      // below expand rows and press chips.
+      await assertLabelInName(page, [{ name: 'report', sel: 'body' }], 'report');
       await shot(page, 'overview', { full: true });
 
       await page.click('#audit-expand');
@@ -6591,6 +6761,11 @@ async function main() {
       // follows it, not merely be timed to miss one.
       await assertUsageWorks(page);
       await assertViewerIdentity(page);
+      await assertLabelInName(page, ['guards', 'comp', 'over', 'usage', 'policy', 'look']
+        .map((t) => ({ name: t, sel: '#' + t,
+          show: async () => { await page.evaluate((x) => {
+            if (typeof showTab === 'function') showTab(x); }, t);
+            await page.waitForTimeout(250); } })), 'panel');
       await assertFocusNotObscured(page);
       await assertTargetSizeAcrossDensities(page);
       // Reads only, but it opens a modal over every tab it visits, so it runs
