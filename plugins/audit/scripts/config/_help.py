@@ -40,8 +40,11 @@ Consumers: `panel-server.py` (`GET /api/help`, and the help drawer that consumes
 it), and the cases in `plugins/audit/tests/test__help.py`, which are the reason
 none of this is untested code while the drawer is still being built.
 
-This module carries no `--selftest` of its own any more; its 67 cases live in
+This module carries no `--selftest` of its own any more; its 82 cases live in
 that file, byte-identical labels and all - see `plugins/audit/tests/_harness.py`.
+(That figure read 67 against a real 70 before the twelve `schema_vocab_drift`
+cases landed, so it was already rotting; print it rather than trust it -
+`python3 plugins/audit/tests/test__help.py --selftest | tail -1`.)
 Three of them are CITATION cases: `source_drift()` and `agent_doc_drift()` read
 this repository's own `README.md`, `SECURITY.md`, `PLUGIN-BUILD-GUIDE.md`,
 `reference/*.md` and `agents/*.md` through `plugin_root()` - which is `_output`'s
@@ -87,6 +90,7 @@ import _areas                                    # noqa: E402  (the areas rule)
 import _policy                                   # noqa: E402  (the policy verdicts)
 import _loader                                   # noqa: E402  (the one path-importlib loader)
 import _journal_io                               # noqa: E402  (the journal row shape, at layer 1)
+import _manifest_vocab                           # noqa: E402  (the KNOWN_* sets schema_vocab_drift checks, at layer 1)
 
 # The schemas ARE the field documentation; these are the only two there are.
 SCHEMAS = {
@@ -741,6 +745,141 @@ def source_drift(root=None):
             if anchor not in slugs:
                 out.append((topic["id"], src, "no heading with that anchor"))
     return out
+
+
+def _direct_children(table, anchor):
+    """The property names one level under `anchor` in a `fields()` table.
+
+    `meta.ado` -> {organization, project, types, …} and NOT `types.bug`, which is
+    one level further down and belongs to a different question. `""` is the
+    document root, so `bugs` and `$schema` come back and `fileIndex.<name>` does
+    not. `<name>` itself is dropped: it is `fields()`' spelling for an open map's
+    values, a SHAPE rather than a key anybody writes.
+    """
+    prefix = (anchor + ".") if anchor else ""
+    out = set()
+    for path in table:
+        if not path.startswith(prefix):
+            continue
+        rest = path[len(prefix):]
+        if not rest or "." in rest or "[]" in rest or rest == "<name>":
+            continue
+        out.add(rest)
+    return out
+
+
+def schema_level_keys(root=None):
+    """`{KNOWN_* name: set of properties the plan schema declares there}`.
+
+    Split out of `schema_vocab_drift()` so the SIZE of the comparison is askable.
+    A set-difference against an empty set reports no problems, which reads exactly
+    like agreement — so `tests/test__manifest_vocab.py` holds a floor under this
+    total (mv19), and `schema_vocab_drift()` reports an anchor that resolves to
+    nothing as drift rather than letting it pass quietly.
+    """
+    table = manifest_fields(root)
+    return dict((name, _direct_children(table, anchor))
+                for name, anchor in _manifest_vocab.SCHEMA_ANCHORS)
+
+
+def vocab_sets(mod=None):
+    """`{name: value}` for every `KNOWN_*` attribute on the vocabulary module.
+
+    Read off the module rather than listed, so a set added later is compared
+    whether or not anybody remembered this function existed — an enumeration here
+    would make "forgot to register it" look identical to "agrees with the schema".
+    """
+    mod = _manifest_vocab if mod is None else mod
+    return dict((n, getattr(mod, n)) for n in dir(mod) if n.startswith("KNOWN_"))
+
+
+def vocab_drift(levels, sets, anchors, off_schema):
+    """The comparison itself, on four plain arguments.
+
+    Separate from `schema_vocab_drift()` because that one reads three of these off
+    a module and the fourth off a file on disk, and a lint you can only run against
+    the real tree is a lint whose own failure modes are untested. Every case that
+    proves this goes RED hands it a fixture here instead of mutating the shipped
+    vocabulary in place.
+
+    `levels` is `{set name: the properties the schema declares at its anchor}`,
+    `sets` is `{set name: the keys the vocabulary holds}`, `anchors` is the
+    `(name, dotted path)` pairs and `off_schema` the `{name: {key: reason}}` table.
+    """
+    anchored = dict(anchors)
+    out = []
+
+    for name in sorted(set(sets) - set(anchored)):
+        out.append((name, "no SCHEMA_ANCHORS entry: nothing says where in "
+                          "audit-plan.schema.json this set is defined"))
+    for name in sorted(set(off_schema) - set(anchored)):
+        out.append((name, "OFF_SCHEMA excuses keys for a set SCHEMA_ANCHORS does "
+                          "not anchor"))
+
+    for name, anchor in anchors:
+        where = anchor or "<root>"
+        if name not in sets:
+            out.append((name, "SCHEMA_ANCHORS anchors it at %r, but the vocabulary "
+                              "has no such set" % (where,)))
+            continue
+        vocab = set(sets[name])
+        schema = set(levels.get(name) or ())
+        if not schema:
+            out.append((name, "the anchor %r declares no properties in "
+                              "audit-plan.schema.json - a comparison against "
+                              "nothing passes for any set" % (where,)))
+            continue
+        exempt = off_schema.get(name) or {}
+        for key in sorted(schema - vocab):
+            out.append((name, "%s.%s is in the schema and not in the set - add it, "
+                              "or the typo-catcher warns about a real key"
+                        % (where, key)))
+        for key in sorted(vocab - schema - set(exempt)):
+            out.append((name, "%r is in the set and not in the schema - add it to "
+                              "the schema, or to OFF_SCHEMA with the reason it is "
+                              "accepted anyway" % (key,)))
+        for key in sorted(exempt):
+            if key in schema:
+                out.append((name, "OFF_SCHEMA excuses %r, but the schema now "
+                                  "declares it - drop the exemption" % (key,)))
+            elif key not in vocab:
+                out.append((name, "OFF_SCHEMA excuses %r, which the set no longer "
+                                  "holds - drop the exemption" % (key,)))
+            if not str(exempt[key]).strip():
+                out.append((name, "OFF_SCHEMA excuses %r with no reason" % (key,)))
+    return out
+
+
+def schema_vocab_drift(root=None):
+    """[(set-name, problem), …] — every `_manifest_vocab.KNOWN_*` set that has
+    stopped agreeing with `schema/audit-plan.schema.json`.
+
+    WHY THIS LIVES HERE AND NOT BESIDE THE SETS. The vocabulary is at layer 1; the
+    tree's only schema walk is `fields()`, in this module, at layer 2. Importing
+    upward is what `_deps.layer_violations()` fails, and writing a second walk down
+    there would move the duplication rather than remove it. `_manifest_vocab` keeps
+    the two claims it is the right owner of — `SCHEMA_ANCHORS` (where each set lives
+    in the document) and `OFF_SCHEMA` (which keys are wider than the schema on
+    purpose, with a reason each) — and this is the comparison.
+
+    Everything it can say, and each is a way this has gone wrong or could:
+
+      * the schema declares a property the set does not hold — the failure that
+        prompted this, where a field is added in one file and the typo-catcher
+        starts warning about a real key;
+      * the set holds a key the schema does not and `OFF_SCHEMA` does not excuse
+        it — a typo in the vocabulary itself is otherwise invisible;
+      * an anchor resolves to NO properties, which is what a renamed or
+        restructured `$def` looks like from here, and which would otherwise turn
+        that whole level into a comparison against nothing;
+      * a `KNOWN_*` attribute with no `SCHEMA_ANCHORS` entry, so a set added later
+        cannot opt out of the check by being forgotten;
+      * an `OFF_SCHEMA` entry that has gone stale — the schema has since grown the
+        key, or the set no longer holds it — or one whose reason is blank. An
+        exemption list without live reasons is where a lint goes to die.
+    """
+    return vocab_drift(schema_level_keys(root), vocab_sets(),
+                       _manifest_vocab.SCHEMA_ANCHORS, _manifest_vocab.OFF_SCHEMA)
 
 
 # --- the payload -----------------------------------------------------------------

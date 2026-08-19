@@ -234,7 +234,7 @@ L1:
 L2:
   _config_rules -> _output, _policy
   _doctor_report -> _loader, _output
-  _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
+  _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _manifest_vocab, _output
   _manifest_crossrefs -> _manifest_vocab, _output
   _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
@@ -858,6 +858,21 @@ four files is four vocabularies that disagree the first time one learns a word. 
 is deliberately **not** here — it is `_manifest_io`'s, and holding it would put this module
 at layer 2 and its consumers at layer 3.
 
+The `KNOWN_*` sets restate vocabulary `schema/audit-plan.schema.json` already owns, and they
+are now **checked against it rather than trusted**. `SCHEMA_ANCHORS` records where each set
+lives in that document, spelled as the dotted path `_help.fields()` produces
+(`phases[].tasks[]`), and `OFF_SCHEMA` records the thirteen keys that deliberately have no
+schema counterpart — legacy names v0.3.0 removed, plus `meta.workspaceRoot`, which
+`reference/orchestrator.md` still names as the pre-0.6 fallback for `gitRoot` — **one written
+reason each**, because an exemption list without reasons is where a lint goes to die.
+`_help.schema_vocab_drift()` is the comparison and names what disagrees: a schema property no
+set holds, a set key neither the schema nor `OFF_SCHEMA` accounts for, an anchor that resolves
+to no properties at all (a renamed `$def` would otherwise make that level a comparison against
+nothing), a `KNOWN_*` set nothing anchors, and a stale or reasonless exemption. It is a
+**lint, not a derivation**: the sets are deliberately WIDER than the schema, and derivation can
+express "equal to" but not "wider" — see the `SCHEMA_ANCHORS` comment for that argument and for
+why the comparison had to live with the walk, a layer up.
+
 ### `plugins/audit/scripts/manifest/_manifest_phases.py`
 The **one walk** over every phase and every task (layer 2), and the three checks it makes on
 the way. `_walk_phases` visits each object once and returns a five-key **index**
@@ -1379,7 +1394,12 @@ already shipped once. Topics are derived from the executable rule where one exis
 gate's tiers from `_config.plan_gate_mode`, area resolution from `_areas`' own pinned sentences,
 policy precedence from a worked `_policy.resolve` example) and are pointers, not restatements,
 where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
-so the panel cannot advertise a tool that agent does not hold.
+so the panel cannot advertise a tool that agent does not hold. Because it owns the tree's only
+schema walk it also owns `schema_vocab_drift()`, which holds `_manifest_vocab`'s `KNOWN_*` sets
+to `audit-plan.schema.json` — the vocabulary is at layer 1 and could not reach up for the walk,
+and a second walk written down there would have moved the duplication rather than removed it.
+`vocab_drift()` is the comparison on plain arguments, so its own failure modes are tested from
+fixtures instead of by mutating the shipped vocabulary.
 
 ### `plugins/audit/scripts/config/_config_rules.py`
 The rules for `.claude/audit.config.json` (layer 2), dependency-free, mirroring

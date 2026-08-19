@@ -37,6 +37,7 @@ import _manifest_ado as _ado                       # noqa: E402
 import _manifest_typos as _typos                   # noqa: E402
 import _manifest_crossrefs as _cross               # noqa: E402
 import _manifest_phases as _phases                 # noqa: E402
+import _help                                       # noqa: E402  (owns the schema walk these sets are checked against)
 
 
 # --- cases --------------------------------------------------------------------
@@ -161,6 +162,53 @@ def _cases(check):
               if getattr(m, n) is not getattr(M, n)]
     check("mv17 all four layer-2 pieces read this module's objects rather "
           "than their own: %r" % (_drift,), _drift == [])
+
+    # --- the agreement with the schema ---
+    # The sets restate vocabulary `schema/audit-plan.schema.json` owns, and until
+    # v0.40 nothing compared them: the schema could gain a property and the set
+    # beside it stayed behind in silence, so the typo-catcher warned about a real
+    # key. `_help.schema_vocab_drift()` is that comparison (it lives there because
+    # the tree's one schema walk does - see this module's SCHEMA_ANCHORS comment).
+    _levels = _help.schema_level_keys()
+    _compared = sum(len(v) for v in _levels.values())
+    check("mv18 every KNOWN_* set still agrees with audit-plan.schema.json - a "
+          "field added to the schema and not here arrives BY NAME: %r"
+          % (_help.schema_vocab_drift(),),
+          _help.schema_vocab_drift() == [])
+    # mv18 compares set differences, and a difference against an empty set is
+    # empty. Without this the whole check would pass over a renamed $def.
+    check("mv19 ...over %d schema properties at %d anchors, none of them zero - "
+          "the count is the case, because 'no drift' over nothing compared reads "
+          "exactly like agreement"
+          % (_compared, len(_levels)),
+          _compared >= 100 and len(_levels) == len(M.SCHEMA_ANCHORS)
+          and not [n for n, keys in _levels.items() if not keys],
+          repr(sorted((n, len(k)) for n, k in _levels.items())))
+    check("mv20 every KNOWN_* set on this module is anchored, so one added later "
+          "cannot opt out of mv18 by being forgotten",
+          set(_help.vocab_sets(M)) == {n for n, _ in M.SCHEMA_ANCHORS},
+          repr(sorted(set(_help.vocab_sets(M)) ^
+                      {n for n, _ in M.SCHEMA_ANCHORS})))
+    _exempt = [(name, key) for name, keys in M.OFF_SCHEMA.items()
+               for key in keys
+               if not str(keys[key]).strip()
+               or key not in set(getattr(M, name, ()))
+               or key in _levels.get(name, set())]
+    check("mv21 all %d OFF_SCHEMA entries are LIVE - each names a key its set "
+          "still holds, the schema still does not declare, and each carries a "
+          "reason. An exemption list without live reasons is where a lint goes "
+          "to die: %r" % (sum(len(v) for v in M.OFF_SCHEMA.values()), _exempt),
+          _exempt == [])
+    # Red-first against the REAL anchors rather than a fixture: the cases in
+    # test__help.py prove the comparison, this one proves it is pointed at this
+    # schema. Dropping a key from a COPY leaves the shipped set untouched.
+    _cut = dict(_help.vocab_sets(M))
+    _cut["KNOWN_ADO"] = set(M.KNOWN_ADO) - {"stateMap"}
+    _cut_drift = _help.vocab_drift(_levels, _cut, M.SCHEMA_ANCHORS, M.OFF_SCHEMA)
+    check("mv22 ...and dropping a real key from a copy of KNOWN_ADO names "
+          "`meta.ado.stateMap` - the mutation that would otherwise be silent",
+          [p for _, p in _cut_drift if "meta.ado.stateMap is in the schema" in p]
+          and "stateMap" in M.KNOWN_ADO, repr(_cut_drift))
 
 
 def _selftest():

@@ -47,6 +47,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _areas                                      # noqa: E402  (as _help imports it)
 import _policy                                     # noqa: E402  (as _help imports it)
+import _manifest_vocab as _vocab                   # noqa: E402  (as _help imports it)
 import _help as M                                  # noqa: E402
 
 
@@ -285,6 +286,93 @@ def _cases(check):
     finally:
         import shutil
         shutil.rmtree(_fake, ignore_errors=True)
+
+    # --- the manifest vocabulary against the schema -------------------------------
+    # `_manifest_vocab`'s KNOWN_* sets restate vocabulary this schema owns, and the
+    # comparison lives here because the walk does: the vocabulary is at layer 1 and
+    # `fields()` is at layer 2, so it could not reach up for it. The cases that
+    # assert the SHIPPED sets agree are in `test__manifest_vocab.py`, beside the
+    # thing a reader is editing; these prove the comparison itself can fail, which
+    # a green-only lint never does.
+    check("v1 an anchor yields the properties ONE level under it - `types` and "
+          "not `types.bug`, which belongs to a different question",
+          M._direct_children(man, "meta.ado") >= {"organization", "types",
+                                                  "stateMap"}
+          and "types.bug" not in M._direct_children(man, "meta.ado")
+          and "bug" not in M._direct_children(man, "meta.ado"),
+          repr(sorted(M._direct_children(man, "meta.ado"))))
+    check("v2 ...the document root is the empty anchor, and `<name>` is a SHAPE "
+          "rather than a key anybody writes, so it is dropped",
+          M._direct_children(man, "") == {"$schema", "meta", "phases", "bugs",
+                                          "deferred", "fileIndex", "proposals"}
+          and "<name>" not in M._direct_children(man, "fileIndex"),
+          repr(sorted(M._direct_children(man, ""))))
+    # Nine fixtures, one per thing the lint can say. Fixtures rather than the real
+    # module: mutating the shipped vocabulary to prove a lint would leave the tree
+    # one exception away from shipping the mutation.
+    _anch = (("KNOWN_X", "meta"),)
+
+    def _probe(levels, sets, off):
+        """Just the problems, against one anchor — the set name is `KNOWN_X` in
+        every fixture, so carrying it into each expected list is noise."""
+        return [p for _, p in M.vocab_drift(levels, sets, _anch, off)]
+
+    check("v3 a property the schema declares and the set does not is named, with "
+          "its anchor - the failure that prompted this whole check",
+          _probe({"KNOWN_X": {"a", "b"}}, {"KNOWN_X": {"a"}}, {}) ==
+          ["meta.b is in the schema and not in the set - add it, or the "
+           "typo-catcher warns about a real key"])
+    check("v4 ...and a key the set holds that the schema does not, unexcused - a "
+          "typo in the vocabulary is otherwise invisible",
+          len(_probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a", "z"}}, {})) == 1
+          and "'z' is in the set and not in the schema"
+          in _probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a", "z"}}, {})[0])
+    check("v5 an anchor that declares NOTHING is drift, not agreement - a renamed "
+          "$def would otherwise turn that level into a comparison against nothing "
+          "and pass for any set",
+          _probe({"KNOWN_X": set()}, {"KNOWN_X": {"a"}}, {}) ==
+          ["the anchor 'meta' declares no properties in audit-plan.schema.json - "
+           "a comparison against nothing passes for any set"])
+    check("v6 an exemption the schema has since grown is reported, so the list "
+          "cannot keep excusing a key that is now real",
+          _probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a"}},
+                 {"KNOWN_X": {"a": "r"}}) ==
+          ["OFF_SCHEMA excuses 'a', but the schema now declares it - drop the "
+           "exemption"])
+    check("v7 ...and one whose key the set no longer holds",
+          _probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a"}},
+                 {"KNOWN_X": {"q": "r"}}) ==
+          ["OFF_SCHEMA excuses 'q', which the set no longer holds - drop the "
+           "exemption"])
+    check("v8 ...and a blank reason, because an exemption list without reasons is "
+          "where a lint goes to die",
+          _probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a", "z"}},
+                 {"KNOWN_X": {"z": "  "}}) ==
+          ["OFF_SCHEMA excuses 'z' with no reason"])
+    check("v9 a KNOWN_* set with no anchor is named, so one added later cannot "
+          "opt out of the check by being forgotten",
+          _probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a"}, "KNOWN_Y": {"b"}}, {}) ==
+          ["no SCHEMA_ANCHORS entry: nothing says where in "
+           "audit-plan.schema.json this set is defined"])
+    check("v10 ...an OFF_SCHEMA entry for a set nothing anchors, and an anchor "
+          "naming a set the vocabulary does not have - the two halves of the "
+          "table disagreeing in either direction",
+          _probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a"}},
+                 {"KNOWN_Z": {"b": "r"}}) ==
+          ["OFF_SCHEMA excuses keys for a set SCHEMA_ANCHORS does not anchor"]
+          and _probe({"KNOWN_X": {"a"}}, {}, {}) ==
+          ["SCHEMA_ANCHORS anchors it at 'meta', but the vocabulary has no such "
+           "set"])
+    check("v11 ...and an agreeing table says nothing at all - the case that fails "
+          "if any of v3-v10 is firing on everything",
+          M.vocab_drift({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a"}}, _anch, {}) == [])
+    check("v12 `vocab_sets()` reads the sets OFF the module rather than listing "
+          "them, so v9 has something to catch",
+          M.vocab_sets(_vocab) == dict((n, getattr(_vocab, n)) for n in
+                                       ("KNOWN_ROOT", "KNOWN_META", "KNOWN_ADO",
+                                        "KNOWN_PHASE", "KNOWN_TASK", "KNOWN_BUG",
+                                        "KNOWN_PROPOSAL")),
+          repr(sorted(M.vocab_sets(_vocab))))
 
     # --- the guide agent ----------------------------------------------------------
     cards = {c["name"]: c for c in M.agent_cards()}

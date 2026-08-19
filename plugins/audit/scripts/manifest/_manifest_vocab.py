@@ -21,6 +21,17 @@ Unknown keys are WARNINGS, never findings: `additionalProperties` stays
 permissive for forward and backward compatibility, so the only honest thing to
 do with a key nobody recognises is to name it and carry on.
 
+THE `KNOWN_*` SETS ARE CHECKED AGAINST THE SCHEMA, NOT TRUSTED. Every one of
+them restates vocabulary `schema/audit-plan.schema.json` already owns, so
+`SCHEMA_ANCHORS` records where each set lives in that document and `OFF_SCHEMA`
+records, with a reason each, the thirteen keys that deliberately have no schema
+counterpart. `_help.schema_vocab_drift()` compares the two and names what
+disagrees. IF YOU ADD A KEY HERE, the schema is where it has to exist first; if
+it must not, it belongs in `OFF_SCHEMA` with the reason written down. The
+comparison lives in `_help` rather than here because the tree's one schema walk
+does - see the SCHEMA_ANCHORS comment for why that is a layer fact and not a
+preference.
+
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_vocab.py` - see
 `plugins/audit/tests/_harness.py`.
@@ -88,12 +99,13 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # copy from .claude/audit.config.json — the plugin's standing split):
               # ledgerDir, showCost, pricingAsOf, pricing.
               "usage",
-              # tolerated (older /audit:init wrote these; informational):
-              "notes", "baseCommit",
-              # workspaceRoot: 0.2.0-era name for gitRoot; audit.md reads it as
-              # a fallback when meta.gitRoot is absent.
-              "workspaceRoot",
-              # legacy (pre-0.3, ignored by the orchestrator):
+              # The rest are NOT in the schema, and the reason for each is in
+              # `OFF_SCHEMA` below rather than here - one copy, and a lint that
+              # goes red when it stops being true. (The comment that stood here
+              # said `audit.md` reads workspaceRoot as a fallback; the file has
+              # been `reference/orchestrator.md` for some time, which is what an
+              # unchecked reason costs.)
+              "notes", "baseCommit", "workspaceRoot",
               "signOffChecklist", "autoMode", "modelPolicy", "testPolicy",
               "reviewPolicy", "skillsPolicy", "statusLegend"}
 # Keys inside meta.ado (the connector config). Enumerated since the v2 connector
@@ -130,7 +142,7 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # may carry an optimistic parallel-run claim (both surface on the
                # assembled phase via _manifest_io):
                "shard", "claim",
-               # legacy (pre-0.3):
+               # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim (soft — missing ones are warnings).
 CLAIM_KEYS = ("sessionId", "host", "branch")
@@ -142,7 +154,7 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # the durable half of the mapping (the other half is the
               # journal's task.move row):
               "movedFrom",
-              # tolerated (older /audit:init wrote this; informational):
+              # not in the schema; reason in `OFF_SCHEMA` below:
               "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
              "description", "repro", "expected", "actual", "files", "taskId",
@@ -150,8 +162,117 @@ KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
 KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
                   "technicalNote", "openQuestions", "createdISO", "payload",
                   "materializedAs", "materializedAt",
-                  # tolerated on dropped proposals (/audit:propose drop note):
+                  # not in the schema; reason in `OFF_SCHEMA` below:
                   "notes"}
+
+
+# --- the schema these sets answer to ---------------------------------------------
+# Every `KNOWN_*` set above restates vocabulary that `schema/audit-plan.schema.json`
+# already defines, and until this section existed NOTHING compared the two: the
+# schema could gain a property and the set beside it stayed behind in silence, which
+# is a warning-on-a-real-key for as long as nobody noticed.
+#
+# LINTED, NOT DERIVED. Three reasons, in order of weight:
+#
+# 1. THE SETS ARE DELIBERATELY WIDER THAN THE SCHEMA. Thirteen keys above have no
+#    schema counterpart at all — `OFF_SCHEMA` names each one and says why. They are
+#    legacy or tolerated spellings the schema dropped in v0.3.0 and the orchestrator
+#    still accepts in a pre-0.3 manifest. Derivation can express "equal to the
+#    schema"; it cannot express "wider". A derived set would either start warning
+#    about `signOffChecklist` on every 0.2.0 manifest that still validates, or need
+#    this same hand-written table unioned back on — at which point the literal is
+#    back and only harder to read.
+# 2. THE ONE SCHEMA WALK IN THE TREE SITS A LAYER ABOVE THIS MODULE. `_help.fields()`
+#    already chases `$ref`, `$defs`, `items` and `additionalProperties`, and `_help`
+#    is at layer 2. This module is at layer 1 because four layer-2 modules import it,
+#    so importing `_help` here is an upward edge `_deps.layer_violations()` fails —
+#    and the alternative, a second walk written here, is the duplication being
+#    removed rather than deleted. So the COMPARISON lives with the walk, in
+#    `_help.schema_vocab_drift()`, and this module states the two things it is the
+#    right place to state: WHERE in the schema each set lives, and WHICH of its keys
+#    the schema does not have.
+# 3. Deriving costs about 0.43 ms per process — read 0.023 + `json.loads` 0.122 +
+#    `_help.fields()` 0.285, the mean of 200 in-process runs over the 46,220-byte
+#    `schema/audit-plan.schema.json` — which measured end to end is 1.2-3.2 ms of a
+#    24-33 ms `import _manifest_vocab` process. This is the WEAKEST of the three and
+#    is recorded so nobody re-argues it from the usual premise: nothing on the
+#    per-tool-call hook path imports this module (hooks resolve `_manifest_io.py` by
+#    basename through `_config.find_script()` and never reach here), so the cost
+#    would land on `validate-manifest.py` and the panel, not on every edit.
+#
+# `SCHEMA_ANCHORS` says where each set is defined, spelled as the dotted path
+# `_help.fields()` produces and `_help.COMPOSITION_PATHS` already uses; `""` is the
+# document root. A property the schema gains at one of these anchors, and this module
+# does not have, is a NAMED failure out of `_help.schema_vocab_drift()`.
+#
+# `CLAIM_KEYS` IS DELIBERATELY ABSENT, AND IT IS THEREFORE STILL UNGUARDED - said
+# plainly rather than left to be discovered. It is not a known-key set: it is the
+# RECOMMENDED subset `_manifest_phases` warns about when a claim omits one, so it is
+# a proper subset of the schema's four `claim` properties by design (`at` is written
+# by a claim and not required of it). Holding it to "covers the anchor" would fail a
+# rule that is doing its job, and folding a second rule into one lint is how a lint
+# stops being readable - so a typo in those three strings is still silent today. The
+# shape that would close it is a separate subset check, not a flag on this one.
+SCHEMA_ANCHORS = (
+    ("KNOWN_ROOT", ""),
+    ("KNOWN_META", "meta"),
+    ("KNOWN_ADO", "meta.ado"),
+    ("KNOWN_PHASE", "phases[]"),
+    ("KNOWN_TASK", "phases[].tasks[]"),
+    ("KNOWN_BUG", "bugs[]"),
+    ("KNOWN_PROPOSAL", "proposals[]"),
+)
+
+# The keys the schema does NOT define, one reason each — because an exemption list
+# without reasons is where a lint goes to die, and because these were prose comments
+# above until now, which is to say they were unchecked. `_help.schema_vocab_drift()`
+# reports an entry whose key the schema has since grown, an entry naming a key the
+# set no longer holds, and an empty reason: a stale exemption is a hole in the lint,
+# not a tidy detail.
+OFF_SCHEMA = {
+    "KNOWN_META": {
+        # CHANGELOG v0.3.0, "never-read meta fields removed ... legacy manifests
+        # still validate". The orchestrator has never read any of these seven.
+        "signOffChecklist": "legacy: removed from the schema in v0.3.0 (never read); "
+                            "a pre-0.3 manifest still carries it and still validates",
+        "autoMode": "legacy: removed from the schema in v0.3.0 with the undefined "
+                    "'auto mode' gate; high-risk confirmation is unconditional now",
+        "modelPolicy": "legacy: removed from the schema in v0.3.0 (never read); "
+                       "model choice is per-task `model` and per-phase `review.model`",
+        "testPolicy": "legacy: removed from the schema in v0.3.0 (never read); "
+                      "the test contract is per-task `tests` and per-phase `testGate`",
+        "reviewPolicy": "legacy: removed from the schema in v0.3.0 (never read); "
+                        "review is `meta.reviewSkill` and the phase `review` object",
+        "skillsPolicy": "legacy: removed from the schema in v0.3.0 (never read); "
+                        "skills are per-task `skills` and per-area `areas[].skills`",
+        "statusLegend": "legacy: removed from the schema in v0.3.0 (never read); "
+                        "the statuses are this module's STATUS tuple",
+        # docs/audit/phases/P5.json: a 0.2.0-generated manifest threw 21 warnings
+        # under 0.6.0 on these three plus task.details, and they were tolerated
+        # rather than schema'd because nothing reads them.
+        "notes": "tolerated: pre-0.3 /audit:init wrote a free-form note here; "
+                 "informational, never read, and not worth a schema field",
+        "baseCommit": "tolerated: pre-0.3 /audit:init wrote the starting commit "
+                      "here; the orchestrator reads meta.commit and phase.baseRef",
+        "workspaceRoot": "supported fallback, not a defect: the 0.2.0 name for "
+                         "gitRoot, and reference/orchestrator.md still says to fall "
+                         "back to it when meta.gitRoot is absent — warning on it "
+                         "would fire on a manifest the product deliberately supports",
+    },
+    "KNOWN_PHASE": {
+        "signOff": "legacy: removed from the schema in v0.3.0 alongside the meta "
+                   "policy fields; the phase `review` object replaced it",
+    },
+    "KNOWN_TASK": {
+        "details": "tolerated: pre-0.3 /audit:init wrote a free-form note here "
+                   "(docs/audit/phases/P5.json); informational, never read",
+    },
+    "KNOWN_PROPOSAL": {
+        "notes": "tolerated on a dropped proposal: commands/propose.md records the "
+                 "one-line justification for a drop here, and the schema describes "
+                 "the proposal a /audit:init park writes, not what drop adds",
+    },
+}
 
 
 # --- the shape checks every level shares -----------------------------------------
