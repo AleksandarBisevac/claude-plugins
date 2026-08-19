@@ -17,7 +17,7 @@ Two runs produce byte-identical output, so the committed ledger is reviewable in
 diff and a regeneration that changes nothing shows as no change.
 `plugins/audit/tests/test_gen_demo_usage.py` pins that, along with referential
 integrity against the manifest - this file carries no inline `--selftest` any
-more, and its 19 cases live there with byte-identical labels.
+more, and its 21 cases live there with byte-identical labels.
 
     gen-demo-usage.py <manifest> [--out-dir DIR] [--seed N] [--authors a,b,c]
                                  [--adhoc-days N] [--stdout] [--selftest]

@@ -134,6 +134,25 @@ def _cases(check):
     check("timestamps derive from the fixed base (no wall-clock)",
           m["meta"]["createdISO"] == "2026-04-01T09:00:00Z")
 
+    # The date printed beside a dollar figure is a CLAIM, and its basis is the
+    # rate table the figure was priced from. This fixture declares no
+    # `usage.pricing` of its own, so it is priced by the SHIPPED table, and the
+    # only place that table's date is written down is hooks/_config.py's DEFAULTS.
+    # Restating it here as a literal is deliberate - a derived date would move the
+    # demo's bytes silently the day rates change, which is exactly the drift a
+    # published artifact must not do quietly - so this case is what keeps the copy
+    # honest. Measured before it existed: setting the literal to "2019-01-01" left
+    # every suite in the tree green, with the demo page dating its costs eight
+    # years off the table that produced them.
+    hooks_cfg = _loader.load_hooks_config(modname="hooks_config_demo_rates")
+    shipped_as_of = (hooks_cfg.DEFAULTS.get("usage") or {}).get("pricingAsOf")
+    demo_as_of = (m["meta"].get("usage") or {}).get("pricingAsOf")
+    check("the demo dates its rates to the SHIPPED table's own pricingAsOf - it "
+          "declares no pricing table of its own, so any other date prints a basis "
+          "the numbers did not come from",
+          bool(shipped_as_of) and demo_as_of == shipped_as_of,
+          "demo=%r shipped=%r" % (demo_as_of, shipped_as_of))
+
     # haiku is never routed to high risk
     check("no high-risk task is routed to haiku",
           not [t for p in m["phases"] for t in p["tasks"]

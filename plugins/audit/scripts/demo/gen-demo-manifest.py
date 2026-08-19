@@ -3,10 +3,17 @@
 Synthetic LARGE audit manifest for demos, screenshots and CI — stdlib only.
 
 Two of this repo's most visible artifacts were built from a manifest that was never
-committed: `docs/demo-large.html` (the "big audit" scale demo) and the six
-`docs/screenshots/panel-*.png`, which exist to back the claim that the composition
-table stays usable at 50 phases x 20 tasks. Neither could be regenerated, so both
-drifted — the panel shots still show three tabs against a UI that has four.
+committed: `docs/demo-large.html` (the "big audit" scale demo) and the
+`docs/screenshots/panel-*.png` set, which exists to back the claim that the
+composition table stays usable at 50 phases x 20 tasks. Neither could be
+regenerated, so both drifted — on the day this file was written the panel shots
+showed three tabs against a UI that had already grown a fourth.
+
+That clause is history and is now written as history. It stood here in the present
+tense, carrying two live counts ("the six panel-*.png" and "a UI that has four"),
+long after both went wrong: there are sixteen shots today, the UI has six tabs, and
+the shots have matched it ever since they became regenerable. Nothing lints prose,
+so the only numbers that belong in it are the ones that cannot rot.
 
 This generates that fixture on demand instead of storing it. Nothing it writes needs
 committing: the same flags always produce the same bytes, so CI can build the
@@ -29,7 +36,7 @@ particular a `done` phase never contains an unfinished task, which is the
 constraint that makes naive random status assignment produce an invalid manifest.
 `plugins/audit/tests/test_gen_demo_manifest.py` pins determinism, referential
 integrity and that constraint - this file carries no inline `--selftest` any
-more, and its 42 cases live there with byte-identical labels.
+more, and its 43 cases live there with byte-identical labels.
 """
 import argparse
 import datetime

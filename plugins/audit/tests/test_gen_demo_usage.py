@@ -79,6 +79,47 @@ def _cases(check):
     check("shape: manifest tiers map to concrete ledger model ids",
           "claude-opus-5" in models and "claude-haiku-4-5" in models
           and not any(m in ("opus", "haiku", "sonnet") for m in models))
+
+    # The two generators share a VOCABULARY as well as a cast. `gen-demo-manifest`
+    # stamps a TIER on every task; this file maps it through
+    # `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)`, which cannot fail. A tier it has
+    # never heard of is not an error - it is a row relabelled DEFAULT_MODEL - so a
+    # drift between the two files crashes nothing and leaves the demo's by-model
+    # chart quietly wrong. Measured before this case existed: mutating
+    # `RISK_MODEL["high"]` from "opus" to "mythos" kept every suite in the tree
+    # green while 132 opus rows became sonnet and the demo's total spend fell from
+    # $414.28 to $291.66. The cast has `_demo_cast` and a case; the vocabulary had
+    # neither.
+    gdm = _loader.load_script("gen-demo-manifest.py",
+                              modname="gen_demo_manifest_tiers")
+    demo_manifest = gdm.generate(n_phases=8, n_tasks=3, seed=11)
+    tiers = sorted({t.get("model") for p in demo_manifest["phases"]
+                    for t in p["tasks"] if t.get("model")})
+    unmapped = [t for t in tiers if t not in M.TIER_TO_MODEL]
+    check("agreement: every tier the demo manifest stamps is one this generator "
+          "maps - an unmapped tier is silently relabelled %s, never an error"
+          % (M.DEFAULT_MODEL,),
+          bool(tiers) and unmapped == [],
+          "tiers=%r unmapped=%r" % (tiers, unmapped))
+
+    # ...and every id it can emit must price at its OWN row. `rates_for` falls
+    # back to `_default`, which is Opus-tier on purpose, so a renamed or retired
+    # model id does not fail either - it silently re-prices the demo UPWARD
+    # (mutating "claude-sonnet-5" to "claude-sonnet-6" took the same fixture from
+    # $414.28 to $461.08 with every suite green, because "cost is priced per row
+    # and non-zero" above is satisfied by the fallback). Asked through the real
+    # resolver rather than by looking the key up here, so a dated id like
+    # `claude-haiku-4-5-20251001` still counts as priced; identity against the
+    # `_default` ROW is what separates the two, because its numbers are EQUAL to
+    # Opus's and a value comparison would call the fallback a match.
+    fallback = ul.DEFAULT_PRICING["_default"]
+    emitted = sorted(set(M.TIER_TO_MODEL.values()) | set([M.DEFAULT_MODEL]))
+    unpriced = [mid for mid in emitted if ul.rates_for(mid) is fallback]
+    check("pricing: every model id this generator can emit resolves to its own "
+          "rate row - one that does not lands on the Opus-tier `_default` and "
+          "overstates the demo's spend without failing anything",
+          bool(emitted) and unpriced == [],
+          "emitted=%r unpriced=%r" % (emitted, unpriced))
     check("shape: more than one author appears",
           len({r["author"] for r in rows_a}) > 1)
     check("shape: an author is stable for a given task",
