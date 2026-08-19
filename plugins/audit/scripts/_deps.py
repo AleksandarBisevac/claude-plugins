@@ -151,7 +151,21 @@ LAYERS = (
      # word. `TERMINAL` is deliberately NOT here - it is `_manifest_io`'s, and
      # holding it would put this module at L2 and its consumers at L3.
      "_manifest_vocab"),
-    ("_panel_ui", "_report_html", "_report_ui", "_usage_analytics",
+    ("_panel_ui", "_report_html", "_report_ui",
+     # The four passes `_usage_analytics` was cut into. Each answers ONE of the
+     # questions that file held, each reads `_usage_core` at L1, and none reads
+     # another - which is what lets all four share a layer, and what they had to
+     # be cut to do: `usage_ledger` at L3 imports all four for its re-export, so
+     # L2 is the only layer available to them and a peer edge between two of
+     # them would have had nowhere to go. The three readers they all start from
+     # (`task_index`, `_tokens`, `_cost`) went DOWN into `_usage_core` for
+     # exactly that reason rather than into a shared L2 base.
+     #   `_usage_spend`      spend through time: series, window compare, cache
+     #   `_usage_economics`  what the work cost: unit economics, bands, budgets,
+     #                       retried vs blocked spend
+     #   `_usage_routing`    cost per task per model WITHIN a risk band, + advice
+     #   `_usage_coverage`   the ledger seen whole: attribution coverage, months
+     "_usage_spend", "_usage_economics", "_usage_routing", "_usage_coverage",
      # `_config_rules` is `validate-config.py` without its `main()`. It imports
      # `_policy` (L1), so L2 is the lowest layer it can occupy - and its deepest
      # consumer, `_panel_settings`, therefore had to move UP one, from here to L3.
@@ -190,13 +204,21 @@ LAYERS = (
      # without it the twelve runtime loads spelled in those six files would be a
      # dozen edges nothing could see.
      "_doctor_report"),
-    # The usage metering stack is a three-link chain, `_usage_core` -> `_usage_analytics`
-    # -> `usage_ledger`, so it needs three layers under its lowest consumer. That consumer
+    # The usage metering stack is a three-link chain, `_usage_core` -> the four
+    # analytics passes -> `usage_ledger`, so it needs three layers under its lowest
+    # consumer. That consumer
     # is `_report_usage`, which sat here beside `_help` and now sits one layer up: moving
     # ONE module was the whole cost of making room, where inserting a layer would have
     # renumbered every entry in KNOWN_LAYER_DEBT below without a single edge changing.
     # `_report_usage` reaches nothing at layer 4 or above, and only render-report (L7)
     # reaches it, so the move is free.
+    # `_usage_bench` sits HERE rather than at L2 with the passes it times, and that is
+    # the whole structural cost of cutting `_usage_analytics` into five: it calls all
+    # four of them, so it has to be above them. It reaches nothing at L3 and nothing at
+    # L3 reaches it - `render-report` (L7) loads it for `_time_best` and is the only
+    # thing that names it - so sharing this layer with `usage_ledger` costs nothing,
+    # where a new layer would have renumbered every entry in KNOWN_LAYER_DEBT below
+    # without a single edge changing.
     # `_panel_settings` sits here rather than at L2, and the move was forced by
     # `_config_rules`: it reads the four enum tuples off the module that ENFORCES
     # them, and a consumer at the same layer is still not strictly downward. It
@@ -226,6 +248,9 @@ LAYERS = (
     # one - four of them genuinely sit higher, so the layer would have had to be L5
     # and three modules would carry a position nothing about them requires.
     ("usage_ledger", "_panel_settings", "_manifest_rules",
+     # `_usage_bench` drives all four analytics passes (each L2), so L3 is the
+     # lowest layer that can reach them; `render-report` loads it for `_time_best`.
+     "_usage_bench",
      "_usage_viz", "_doctor_ado", "_doctor_hygiene",
      # `_panel_discovery` came down from L4 with `_help`, for the same reason and
      # by the same measurement: `_help` (now L2) and `_manifest_io` (L1) are its

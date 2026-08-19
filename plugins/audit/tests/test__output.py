@@ -530,8 +530,12 @@ def _cases(check):
                                   "scripts/status/_status_facts.py",
                                   "scripts/status/audit-doctor.py",
                                   "scripts/status/audit-status.py",
-                                  "scripts/usage/_usage_analytics.py",
+                                  "scripts/usage/_usage_bench.py",
                                   "scripts/usage/_usage_core.py",
+                                  "scripts/usage/_usage_coverage.py",
+                                  "scripts/usage/_usage_economics.py",
+                                  "scripts/usage/_usage_routing.py",
+                                  "scripts/usage/_usage_spend.py",
                                   "scripts/usage/audit-usage.py",
                                   "scripts/usage/usage_ledger.py"])
     check("sc12 every production file is accounted for, so a file can neither be "
@@ -615,8 +619,12 @@ def _cases(check):
                                      "plugins/audit/scripts/status/_status_facts.py",
                                      "plugins/audit/scripts/status/audit-doctor.py",
                                      "plugins/audit/scripts/status/audit-status.py",
-                                     "plugins/audit/scripts/usage/_usage_analytics.py",
+                                     "plugins/audit/scripts/usage/_usage_bench.py",
                                      "plugins/audit/scripts/usage/_usage_core.py",
+                                     "plugins/audit/scripts/usage/_usage_coverage.py",
+                                     "plugins/audit/scripts/usage/_usage_economics.py",
+                                     "plugins/audit/scripts/usage/_usage_routing.py",
+                                     "plugins/audit/scripts/usage/_usage_spend.py",
                                      "plugins/audit/scripts/usage/audit-usage.py",
                                      "plugins/audit/scripts/usage/usage_ledger.py"]
           and all(os.path.isfile(os.path.join(M.REPO_ROOT, p.replace("/", os.sep)))

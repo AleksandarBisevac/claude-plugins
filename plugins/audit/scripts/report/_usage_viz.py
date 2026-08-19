@@ -96,7 +96,7 @@ def _fmt_pct(x):
     rate, never the `0%` that reads as "none".
 
     These arrive as percentages rather than as a part and a whole: the divide
-    happened in _usage_analytics, which rounds each to one decimal.
+    happened in the analytics passes, which round each to one decimal.
     `fmt_share(x, 100)` is that percentage read back as a share of a hundred —
     the same identity `_fmt.bar_cells(part, whole, 100)` already uses for the
     CSS fill, and byte-identical to the `"%.0f%%"` it replaces everywhere

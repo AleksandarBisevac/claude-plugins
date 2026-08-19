@@ -1444,7 +1444,7 @@ def _cases(check):
           and _scoped["totals"]["tokens"] > 0,
           repr(_scoped is None))
     # DRY, pinned rather than asserted in a comment: best-of-N has one definition,
-    # in _usage_analytics. Two copies would let one take the mean.
+    # in _usage_bench. Two copies would let one take the mean.
     #
     # `not hasattr(M, "_time_best")`, not `"_time_best" not in globals()`. The
     # claim is about RENDER-REPORT holding no second copy, and inline that was
@@ -1452,7 +1452,7 @@ def _cases(check):
     # never going to define `_time_best` under any circumstances - so the clause
     # would be true forever and the half of the case that is actually load
     # bearing would have quietly stopped asking anything.
-    _ua = _loader.load_script("_usage_analytics.py", modname="usage_analytics_bench")
+    _ua = _loader.load_script("_usage_bench.py", modname="usage_analytics_bench")
     check("bn6 the report bench times with the ledger bench's harness rather "
           "than a second copy - one definition of best-of-N, in one place",
           callable(_ua._time_best) and not hasattr(M, "_time_best"))

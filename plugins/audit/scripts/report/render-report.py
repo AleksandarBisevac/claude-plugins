@@ -341,7 +341,7 @@ def main(argv):
 # and printed against the denominator that makes it comparable across scales.
 #
 # BEST-OF-N, NOT THE MEAN, and the definition of that has ONE home:
-# `_usage_analytics._time_best`. See the note at the call site for why it is reached
+# `_usage_bench._time_best`. See the note at the call site for why it is reached
 # the way it is.
 _BENCH_SCALES = ((10, 5), (50, 20))
 _BENCH_REPEATS = 3
@@ -459,16 +459,16 @@ def _bench(scales=None, repeats=None):
     """
     import shutil
     import tempfile
-    # ONE definition of best-of-N, in `_usage_analytics`, beside the note that
+    # ONE definition of best-of-N, in `_usage_bench`, beside the note that
     # argues for the minimum over the mean. A second copy here is how two benches
     # start disagreeing about what "the time" means — the same way this repo's
     # token formatter drifted once it existed twice. Reached through `_loader`
     # rather than by `import` for a reason worth stating: a static import would
     # change `_deps.render()`'s module map, which is byte-pinned to a fence in
     # PLUGIN-BUILD-GUIDE.md, and a measurement-only change must not rewrite the
-    # architecture guide. The runtime edge is L7 -> L2, strictly downward, so the
+    # architecture guide. The runtime edge is L7 -> L3, strictly downward, so the
     # layer rule is satisfied either way.
-    analytics = _loader.load_script("_usage_analytics.py",
+    analytics = _loader.load_script("_usage_bench.py",
                                     modname="usage_analytics_bench")
     scales = scales if scales is not None else _BENCH_SCALES
     repeats = repeats if repeats is not None else _BENCH_REPEATS

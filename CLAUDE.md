@@ -124,7 +124,7 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 ```
 
 **The second line is not optional and not decoration.** Every `--selftest` block has moved out
-of the module it tests into `plugins/audit/tests/`, all 71 of them; a migrated file still exits
+of the module it tests into `plugins/audit/tests/`, all 75 of them; a migrated file still exits
 0 on `--selftest` and prints where its cases went, so the first line stays green over suites it
 no longer runs. `_output.selftest_coverage()` is what keeps the two halves honest — the
 migration is finished, so `covered` is the only clean class: a file with a suite INLINE, with

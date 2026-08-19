@@ -53,12 +53,16 @@ model ids, timestamps, branch and author.
 
 WHAT LIVES HERE, AND WHAT MOVED. This file owns the SCAN: who spent the tokens,
 where the transcripts are, which phase or task an entry belongs to, and the
-append-only ledger on disk. Two layers underneath it were split out when the file
-passed 2,600 lines — `_usage_core` (the price table, the hour bucket, the roll-ups)
-and `_usage_analytics` (what a pile of rows MEANS). Every public name they define is
-RE-EXPORTED here, because nothing imports this module by name: every consumer loads
-`usage_ledger.py` by path and reads attributes off the module object, so the module
-object has to keep serving all of them. The `rx` selftest cases are what say so.
+append-only ledger on disk. Underneath it sit `_usage_core` (the price table, the
+hour bucket, the roll-ups, and the three per-row/per-plan readers) and the four
+modules that hold what a pile of rows MEANS — `_usage_spend`, `_usage_economics`,
+`_usage_routing`, `_usage_coverage`. Those four were one file, `_usage_analytics`,
+until it reached 955 lines; it was cut on its own section markers at U3.2 and its
+benchmark went with `_usage_bench`, which is the one piece that sits BESIDE this
+module rather than below it. Every public name the five define is RE-EXPORTED here,
+because nothing imports this module by name: every consumer loads `usage_ledger.py`
+by path and reads attributes off the module object, so the module object has to keep
+serving all of them. The `rx` selftest cases are what say so.
 
 This module carries no `--selftest` of its own any more; its 61 cases live in
 `plugins/audit/tests/test_usage_ledger.py`, byte-identical labels and all - see
@@ -107,13 +111,18 @@ import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 from _usage_core import (  # noqa: E402,F401  (re-exported, see above)
     DEFAULT_PRICING, GROUP_KEYS, TOKEN_KEYS, UNTAGGED_AREA, aggregate,
     aggregate_area, bucket_date, bucket_hour, bucket_month, heatmap, hour_bucket,
-    parse_ts, price, pricing_divergences, rates_for, rows_for_area, totals)
-from _usage_analytics import (  # noqa: E402,F401  (re-exported, see above)
-    ATTEMPT_TOLERANCE, BAND_ORDER, COST_BAND_PARAMS, MAX_SERIES,
-    MIN_ADVICE_SAVING_PCT, MIN_ADVICE_SAVING_USD, MIN_ROUTING_EVIDENCE,
-    MIN_TASKS_FOR_PROJECTION, MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, RISK_ORDER,
-    band_of, cache_profile, compare, cost_bands, coverage, monthly_activity,
-    phase_budgets, retry_cost, routing, series, task_index, unit_economics)
+    parse_ts, price, pricing_divergences, rates_for, rows_for_area, task_index,
+    totals)
+from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
+    MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
+from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)
+    BAND_ORDER, COST_BAND_PARAMS, MIN_TASKS_FOR_PROJECTION, band_of, cost_bands,
+    phase_budgets, retry_cost, unit_economics)
+from _usage_routing import (  # noqa: E402,F401  (re-exported, see above)
+    ATTEMPT_TOLERANCE, MIN_ADVICE_SAVING_PCT, MIN_ADVICE_SAVING_USD,
+    MIN_ROUTING_EVIDENCE, RISK_ORDER, routing)
+from _usage_spend import (  # noqa: E402,F401  (re-exported, see above)
+    MAX_SERIES, cache_profile, compare, series)
 
 
 # --- author ---------------------------------------------------------------------

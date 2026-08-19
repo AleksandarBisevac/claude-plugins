@@ -111,8 +111,12 @@ claude-plugins/                           # this repo (personal, public)
         _deps.py                          # the module layer table, checked against the real import graph every run
         _refs.py                          # every script path a document names, stat'd against the files on disk
         usage/                            # the usage domain: the ledger, the arithmetic over it, the CLI
-          _usage_core.py                  # usage arithmetic: the price table, the hour bucket, the roll-ups
-          _usage_analytics.py             # what the ledger MEANS: series, bands, budgets, routing, coverage
+          _usage_core.py                  # usage arithmetic: the price table, the hour bucket, the roll-ups, the row readers
+          _usage_spend.py                 # spend through time: series, window compare, cache profile
+          _usage_economics.py             # what the work cost: unit economics, cost bands, budgets, retried vs blocked
+          _usage_routing.py               # cost per task per model WITHIN a risk band, and the advice that survives its gates
+          _usage_coverage.py              # the ledger seen whole: attribution coverage, the 12-month roll-up
+          _usage_bench.py                 # the timer over those four passes, and the fixture it times them on
           usage_ledger.py                 # token-usage metering core: transcript scan, dedup, attribution
           audit-usage.py                  # /audit:usage: token spend, attributed
         config/                           # the config domain: the config file's validator and the self-description over both schemas
@@ -236,7 +240,10 @@ L2:
   _report_html -> _areas, _manifest_io, _output, _ui_theme
   _report_ui -> _output, _ui_theme
   _status_facts -> _areas, _manifest_io, _output
-  _usage_analytics -> _output, _usage_core
+  _usage_coverage -> _output, _usage_core
+  _usage_economics -> _output, _usage_core
+  _usage_routing -> _output, _usage_core
+  _usage_spend -> _output, _usage_core
 
 L3:
   _doctor_ado -> _doctor_report, _output
@@ -245,8 +252,9 @@ L3:
   _panel_discovery -> _help, _manifest_io, _output
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
+  _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
   _usage_viz -> _fmt, _output, _report_html
-  usage_ledger -> _manifest_io, _output, _usage_analytics, _usage_core
+  usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L4:
   _doctor_completions -> _doctor_report, _journal_io, _output
@@ -692,25 +700,53 @@ violation, and a lint that cries about correct code is one somebody switches off
 
 ### `plugins/audit/scripts/usage/_usage_core.py`
 The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`
-table plus `rates_for`/`price`, one ISO parser and one hour-bucket rule, and the roll-ups
+table plus `rates_for`/`price`, one ISO parser and one hour-bucket rule, the roll-ups
 (`totals`, `aggregate`, `aggregate_area`, `rows_for_area`, `heatmap`) the CLI, the report and
-the panel all read. Values in, values out — no file, no process, no transcript — which is why
-its 48 cases need no fixture directory. `pricing_divergences()` lives here too: `hooks/_config.py`
-must price a model with no config present and may import nothing from `scripts/`, so its copy
-of the 13 x 5 rate table is deliberate and the `pp` cases are what keep the two identical.
+the panel all read, and — since U3.2 — the three readers every analytics pass starts from
+(`task_index`, `_tokens`, `_cost`). Values in, values out — no file, no process, no transcript
+— which is why its 48 cases need no fixture directory. `pricing_divergences()` lives here too:
+`hooks/_config.py` must price a model with no config present and may import nothing from
+`scripts/`, so its copy of the 13 x 5 rate table is deliberate and the `pp` cases are what
+keep the two identical.
 `--selftest`.
 
-### `plugins/audit/scripts/usage/_usage_analytics.py`
-What the ledger MEANS, as `rows -> dict` functions: `series`, `compare`, `cache_profile`,
-`unit_economics`, `cost_bands`/`band_of`, `phase_budgets`, `retry_cost`, `routing` (+ its
-advice), `coverage` and `monthly_activity`. Every one of these is easy to compute and easy to
-present dishonestly, so the guards live here rather than in each renderer — a projection is
-suppressed below its sample gate, a cache profile reports rates and never a fabricated dollar
-saving, routing advice compares only WITHIN a risk band and only on this repo's own evidence,
-an absent phase budget renders as nothing rather than 0% or 100%. `COST_BAND_PARAMS` is the one
-statement of the relative basis's shape; `panel-server.py` serialises that exact dict into the
-page so `panel.js` cannot restate it differently. Depends on `_usage_core` and nothing else.
-`--selftest`.
+### `plugins/audit/scripts/usage/_usage_spend.py`, `_usage_economics.py`, `_usage_routing.py`, `_usage_coverage.py`
+What the ledger MEANS, as `rows -> dict` functions. One file until v0.40.x, when it reached 955
+lines and was cut on its own section markers (U3.2) — every body moved by line range, so each
+module does exactly what its section did:
+
+* **`_usage_spend.py`** — `series`, `compare`, `cache_profile`. A first-run dashboard has no
+  prior window and must not invent a "+100%", and a cache profile reports RATES rather than a
+  "you saved $N" nobody can check. `series` folds its tail past `MAX_SERIES` because the
+  categorical palette is only validated to eight slots.
+* **`_usage_economics.py`** — `unit_economics`, `cost_bands`/`band_of`, `phase_budgets`,
+  `retry_cost`. The projection is suppressed below its sample gate and is a p25-p75 RANGE when
+  it speaks; an absent phase budget renders as nothing rather than 0% or 100%; retried and
+  blocked spend are reported apart and never summed into "waste". `COST_BAND_PARAMS` is the one
+  statement of the relative basis's shape — `panel-server.py` serialises that exact dict into
+  the page so `panel.js` cannot restate it differently.
+* **`_usage_routing.py`** — `routing` and its advice. Cost per completed task per model WITHIN a
+  risk band, never a bare spend-share ratio, and advice only where this repo's own evidence
+  supports it: enough tasks on both models in that band, no worse mean attempts, real rates on
+  both sides, and a saving clearing both a percentage and an absolute floor.
+* **`_usage_coverage.py`** — `coverage` and `monthly_activity`. How much spend the attribution
+  layers resolved (a dashboard that is 90% `unattributed` says so), and the ONE computation site
+  behind the 12-month overview's three surfaces.
+
+All four sit at layer 2 and read `_usage_core` and nothing else — which is what lets
+`usage_ledger` (layer 3) import all four for its re-export. The three readers they share
+(`task_index`, `_tokens`, `_cost`) went DOWN into `_usage_core` rather than into a shared layer-2
+base, because a layer-2 module may not import a peer. `--selftest` on each.
+
+### `plugins/audit/scripts/usage/_usage_bench.py`
+The `--bench` mode of the four modules above, and the fixture it runs them on: a computed plan
+and `n` deterministic rows, timed best-of-N at 1k / 10k / 50k so the interesting property (the
+SHAPE of the per-row cost) is visible rather than a single number. It prints; it never fails —
+a shared runner's noise floor is wider than the regressions worth catching, and a gate that flaps
+teaches people to ignore it. It opens no file, so it can neither read nor grow this machine's own
+ledger. It sits at layer 3 rather than beside the passes because it calls all four of them, and
+`render-report.py --bench` loads it through `_loader` for `_time_best` so that the two benches in
+this tree share one definition of best-of-N. `--selftest`.
 
 ### `plugins/audit/scripts/usage/usage_ledger.py`
 The token-usage metering core `meter-usage.py` and `audit-usage.py --backfill` both call.
@@ -720,9 +756,10 @@ plus each subagent's sibling `subagents/agent-<id>.jsonl` + `.meta.json`. The on
 trap it exists to close: a single `message.usage` block repeats across every transcript entry
 sharing a `message.id`, so naive summation overcounts spend by roughly 2.4x — this module dedups
 by `message.id` within and across scans. Attribution runs task -> phase -> window ->
-unattributed, highest precision first, nothing ever dropped. The two layers beneath it
-(`_usage_core`, `_usage_analytics`) were split out when the file passed 2,600 lines, and every
-public name they define is RE-EXPORTED here: nothing imports this module by name — every
+unattributed, highest precision first, nothing ever dropped. The layer beneath it (`_usage_core`)
+was split out when the file passed 2,600 lines, along with the analytics that are now four
+modules, and every public name those five define is RE-EXPORTED here: nothing imports this
+module by name — every
 consumer loads `usage_ledger.py` by path and reads attributes off the module object — so the
 module object has to keep serving all of them, and the `rx` cases assert it does.
 
@@ -1411,7 +1448,7 @@ rather than loudly if carried:
   production function keeps using the real one, and the counter reads 0. Write `M.x = stub`, and
   restore on `M` in the same `finally`. `test__usage_core.py`'s `ag` group is the worked example;
   the literal move was run and goes red with `got 0` on four cases. Batch B found three more
-  (`test__usage_analytics.py`'s `bn4`, `test_usage_ledger.py`'s `_home`), and the `_home` one is
+  (the `bn4` now in `test__usage_bench.py`, `test_usage_ledger.py`'s `_home`), and the `_home` one is
   the reason this is stated as *dangerous* rather than merely wrong: the real function stayed
   live, the ledger walk left the fixture, and the three `discover:` cases went looking in the
   developer's own `~/.claude/usage` — the exact escape they exist to forbid.
@@ -1419,7 +1456,7 @@ rather than loudly if carried:
   this module define", "is this name served here". The subject is the module, so it is
   `vars(M)`, `hasattr(M, n)`, `M.__name__`. Carried literally these answer about the test file,
   which is empty of the thing being asked about: `usage_ledger`'s `rx1` reports all 40 re-exports
-  missing (loud), while `_usage_analytics`' `bn5` reduces to `set() - _timed == set()` and
+  missing (loud), while the bench's `bn5` reduces to `set() - _timed == set()` and
   `render-report`'s `bn6` to a clause that is true forever (both silent, both green).
   Batch E added the worst-behaved member of the family: `journal-writes`' `j4` read
   `getattr(sys.modules[__name__], "record_plugin_write", lambda *a: None)(...)`. From `tests/`

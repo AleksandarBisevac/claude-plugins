@@ -410,7 +410,17 @@ def _cases(check):
     # modules below actually define, not against a hand-copied list, so adding a
     # public name down there and forgetting it up here goes red HERE.
     import _usage_core as _core_mod
-    import _usage_analytics as _analytics_mod
+    import _usage_coverage
+    import _usage_economics
+    import _usage_routing
+    import _usage_spend
+
+    # The four modules `_usage_analytics` was cut into at U3.2. `_usage_bench` is
+    # NOT here and that is not an omission: every name it defines starts with an
+    # underscore, so it contributes nothing to re-export, and the passes it holds
+    # are the four below's, counted there.
+    _analytics_mods = (_usage_spend, _usage_economics, _usage_routing,
+                       _usage_coverage)
 
     def _public_names(mod):
         """What `mod` DEFINES for others: no underscore names, and no modules it
@@ -420,10 +430,11 @@ def _cases(check):
                       and not isinstance(v, type(_core_mod)))
 
     _core_public = _public_names(_core_mod)
-    # `_usage_analytics` imports 8 names from `_usage_core`, so they are ITS
+    # Each analytics module imports names from `_usage_core`, so they are ITS
     # attributes too. They belong to core and are counted there, once.
-    _analytics_public = [n for n in _public_names(_analytics_mod)
-                         if n not in _core_public]
+    _analytics_public = sorted(set(
+        n for mod in _analytics_mods for n in _public_names(mod)
+        if n not in _core_public))
     # `M` rather than `globals()`, and this is the pair that would have failed
     # LOUDLY rather than quietly - which is why it is worth naming. Inline,
     # "is this name served?" was "is it in my own namespace?", because the suite
@@ -432,21 +443,31 @@ def _cases(check):
     # names and rx1 would go red on a re-export that is perfectly intact.
     _missing = [n for n in _core_public + _analytics_public
                 if not hasattr(M, n)]
-    check("rx1 every public name _usage_core and _usage_analytics define is served "
-          "by usage_ledger too - the re-export is what lets a three-way split "
-          "change no call site",
+    check("rx1 every public name _usage_core and the four analytics modules define "
+          "is served by usage_ledger too - the re-export is what lets a six-way "
+          "split change no call site",
           _missing == [], "missing: %r" % (_missing,))
+
+    def _definer(name):
+        """The module that DEFINES `name`, for the identity check below. Read
+        rather than assumed: after U3.2 a name can come from any of five files,
+        and asking the wrong one would compare an object against itself."""
+        for mod in (_core_mod,) + _analytics_mods:
+            if name in _public_names(mod) and (
+                    mod is _core_mod or name not in _core_public):
+                return mod
+        return None
+
     check("rx2 ...and each one IS the object the defining module holds, not a "
           "same-named copy that could drift",
-          all(getattr(M, n, None) is getattr(_core_mod, n) for n in _core_public)
-          and all(getattr(M, n, None) is getattr(_analytics_mod, n)
-                  for n in _analytics_public))
+          all(getattr(M, n, None) is getattr(_definer(n), n, object())
+              for n in _core_public + _analytics_public))
     # The second direction, and it is the one that looks vacuous: rx1 passes by
-    # construction if the two modules define NOTHING (a filter that narrows to
+    # construction if the five modules define NOTHING (a filter that narrows to
     # empty must never read as 'all clear'). Only a literal count fails then.
-    check("rx3 ...and there are 17 + 23 of them, so rx1 cannot be green over an "
+    check("rx3 ...and there are 18 + 22 of them, so rx1 cannot be green over an "
           "empty or gutted module",
-          len(_core_public) == 17 and len(_analytics_public) == 23,
+          len(_core_public) == 18 and len(_analytics_public) == 22,
           "got %d + %d" % (len(_core_public), len(_analytics_public)))
 
 

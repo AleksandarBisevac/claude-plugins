@@ -3,12 +3,12 @@
 Prices, timestamps and roll-ups — the arithmetic every other usage module stands on.
 
 Split out of `usage_ledger.py` because the two halves above it (the transcript
-scanner in `usage_ledger.py`, the presentation analytics in `_usage_analytics.py`)
+scanner in `usage_ledger.py`, the presentation analytics that were then one file)
 both need this and neither needs the other. Nothing here reads a file, spawns a
 process or knows what a transcript is: every function takes values and returns
 values, which is why its cases need no fixture directory at all.
 
-Three things live here, and the reason each is HERE rather than beside its caller:
+Four things live here, and the reason each is HERE rather than beside its caller:
 
   pricing      - a rate table and the cost of a bag of tokens. `hooks/_config.py`
                  keeps its own copy (hooks may import nothing from scripts/) and
@@ -19,6 +19,12 @@ Three things live here, and the reason each is HERE rather than beside its calle
   aggregation  - `totals` / `aggregate` / `aggregate_area` / `heatmap`, the
                  roll-ups the CLI, the report and the panel all read. One home, so
                  three surfaces cannot disagree about a number.
+  rows + plan  - `task_index`, `_tokens`, `_cost`: one row's tokens, one row's
+                 cost, and the plan's tasks by id. They arrived with the U3.2
+                 split and the LAYER is why they are here rather than in a base
+                 module of their own - the four analytics passes that read them
+                 all sit at layer 2, and a layer-2 module may not import a peer.
+                 See the section at the foot of this file.
 
 `usage_ledger.py` re-exports every public name defined here, so no call site names
 this module: the split is a structural change, not an API change.
@@ -379,6 +385,39 @@ def heatmap(rows):
         wday = time.gmtime(epoch).tm_wday
         grid[wday][hour] += sum(int(row.get(k) or 0) for k in TOKEN_KEYS)
     return grid
+
+
+# --- rows and plan --------------------------------------------------------------
+# The three readers every analytics pass starts from: one row's tokens, one row's
+# cost, and the plan's tasks by id. They arrived here with the U3.2 split of
+# `_usage_analytics.py`, and the layer is the reason. The four passes that file
+# was cut into all sit at layer 2 so that `usage_ledger` (layer 3) can import
+# them, and a module at layer 2 may not import a peer - so anything more than one
+# of them needs has to live at layer 1 or below, which is where this module
+# already was. `_tokens` also needs `TOKEN_KEYS`, defined above, so a new layer-1
+# module could not have held it without importing this one, which is the same
+# peer edge one layer down.
+def task_index(manifest):
+    """{taskId: task dict} across every phase."""
+    out = {}
+    for ph in ((manifest or {}).get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("id"):
+                out[t["id"]] = t
+    return out
+
+
+def _tokens(row):
+    return sum(int(row.get(k) or 0) for k in TOKEN_KEYS)
+
+
+def _cost(row):
+    try:
+        return float(row.get("costUSD") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 if __name__ == "__main__":
