@@ -573,7 +573,7 @@ def _table_tools(manifest, summary):
         # views, the default is the work that is left, and the select carries
         # the answer even with the script dead.
         '<span class="viewpick"><label class="tbl" for="audit-view">View:</label>'
-        '<select id="audit-view" aria-label="Which phases to show">'
+        '<select id="audit-view" aria-label="View: which phases to show">'
         '<option value="active">Active &amp; pending</option>'
         '<option value="archived">Archived (done &amp; cancelled)</option>'
         '<option value="all">All phases</option></select></span>'

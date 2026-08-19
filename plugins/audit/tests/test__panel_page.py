@@ -2336,9 +2336,14 @@ def _cases(check):
     #
     # So the two klabel entries name the EXPLICIT association -- the control's own
     # id, handed to the <label> that names it -- because tree position is precisely
-    # what failed. The four flabel entries stay positional and may: flabel with two
-    # arguments builds a <span>, which is not labelable, so nothing can get between
-    # those labels and their field. kl1 above is what keeps that true.
+    # what failed. TWO of the flabel entries now bind by `for` as well (F28): their
+    # wrapper held a SECOND field, so the <label> collected that field's text too
+    # and the accessible name read "Provenance tag i no provenance tag at all no
+    # tag" against a visible "Provenance tag ... no tag" -- SC 2.5.3, measured, and
+    # the reason the wrapper is a <span> here. The remaining flabel entries stay
+    # positional and may: flabel with two arguments builds a <span>, which is not
+    # labelable, so nothing can get between those labels and their field. kl1
+    # above is what keeps that true.
     _FL_LABELLED = {
         "placeholder:def==null?(f.placeholder||''):String(def)":
             "klabel(f.label,f.path,tip,fieldId(f.path)),inp);",
@@ -2347,9 +2352,9 @@ def _cases(check):
         "placeholder:ph||''":
             "return el('label',{class:'f'},flabel(lbl,help),i);",
         "placeholder:'audit-plugin'":
-            "el('label',{class:'f'},flabel('Provenance tag',MDESC.adoTag),",
+            "el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,null,'ado-tag'),",
         "placeholder:'not written'":
-            "el('label',{class:'f'},flabel('Remaining Work on done',",
+            "el('span',{class:'f'},flabel('Remaining Work on done',",
         "placeholder:'empty = static iteration path'":
             "el('label',{class:'f'},flabel('Sprint team (current iteration)',",
     }

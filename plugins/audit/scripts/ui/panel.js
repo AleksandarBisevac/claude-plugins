@@ -605,7 +605,14 @@ function startTipPlacement(){
   TIPFOR.isConnected?showTip(TIPFOR):hideTip();},{capture:true,passive:true}));
  new MutationObserver(()=>{if(TIPFOR&&!TIPFOR.isConnected)hideTip();})
   .observe(document.body,{childList:true,subtree:true});}
-function flabel(text,tip,ref){return el('span',{class:'lbl'},text,hint(tip,ref));}
+// `forId` exists for the same reason klabel's does (F26): when this sits inside
+// a <label>, the ⓘ is a labelable <button> and its text joins the field's
+// accessible name. Where the wrapper holds TWO fields the pollution lands in
+// the MIDDLE of the name -- "Provenance tag i no provenance tag at all no tag"
+// against a visible "Provenance tag ... no tag" -- and SC 2.5.3 fails outright.
+// Pass forId and the wrapper becomes a <span>, binding by `for` instead.
+function flabel(text,tip,ref,forId){return el('span',{class:'lbl'},
+ forId?el('label',{for:forId},text):text,hint(tip,ref));}
 function h2h(text,tip,ref){return el('h2',{},text,hint(tip,ref));}
 // Heading in the reader's words, with the JSON key beside it for whoever is
 // editing .claude/audit.config.json by hand. Both audiences are real and they
@@ -1759,7 +1766,7 @@ function renderAdoCard(c){
    txt('types.task','Task','Task type'),
    txt('types.pbi','auto-detect at first phase push','Phase (PBI) type',
      MDESC.adoTypes),
-   el('label',{class:'f'},flabel('Provenance tag',MDESC.adoTag),
+   el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,null,'ado-tag'),
      el('span',{class:'inl'},tagIn,
        el('label',{class:'inl'},tagNone,'no tag')))));
  // --- stateMap: one fixed row per manifest status. Empty box = the built-in
@@ -1831,8 +1838,8 @@ function renderAdoCard(c){
    else if(ADRAFT)delPath(ADRAFT,'comments.'+key);pruneTop();};
   return el('label',{class:'f cbf'},cb,flabel(lbl,MDESC.adoComments));};
  card.append(el('div',{class:'row'},
-   el('label',{class:'f'},flabel('Remaining Work on done',
-     MDESC.adoRemainingWork),
+   el('span',{class:'f'},flabel('Remaining Work on done',
+     MDESC.adoRemainingWork,null,'ado-rw'),
      el('span',{class:'inl'},rw,el('label',{class:'inl'},rwNever,
        "don't touch"))),
    cflag('onBlocked','Comment when blocked'),
@@ -3206,7 +3213,7 @@ function renderPolicy(){closeCombo();
  const enb=el('input',{type:'checkbox',id:'polenabled'});enb.checked=en;
  enb.onchange=()=>pEdit(()=>{const b=pBlock();
    if(enb.checked)delete b.enabled;else b.enabled=false;pPrune();});
- const ovSel=el('select',{id:'polonviol','aria-label':'what a violation does'});
+ const ovSel=el('select',{id:'polonviol','aria-label':'On a violation - what the hook does'});
  (POLICY.onViolationChoices||['deny']).forEach(v=>{
    const o=el('option',{value:v},v+' — '+(PVIOL[v]||''));
    if(pOnViolation()===v)o.selected=true;ovSel.append(o);});

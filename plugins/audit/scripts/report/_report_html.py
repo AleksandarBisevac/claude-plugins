@@ -578,10 +578,10 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
         span = ' min="%s" max="%s"' % (e(dmin), e(dmax))
         bits.append(
             '<label class="gf"><span class="tbl">From</span>'
-            '<input type="date" id="audit-gfrom" aria-label="Start of the date '
-            'range scoping the task table and the usage charts"%s></label>'
+            '<input type="date" id="audit-gfrom" aria-label="From - start of the '
+            'date range scoping the task table and the usage charts"%s></label>'
             '<label class="gf"><span class="tbl">to</span>'
-            '<input type="date" id="audit-gto" aria-label="End of the date '
+            '<input type="date" id="audit-gto" aria-label="to - end of the date '
             'range scoping the task table and the usage charts"%s></label>'
             '<button type="button" class="btn" id="audit-gclear" hidden '
             'title="Clear the date range - back to all time">All time</button>'
