@@ -3520,13 +3520,45 @@ async function assertComboDescriptionSearch(page) {
   const inp = page.locator('#comp input[placeholder^="search a skill"]').first();
   await inp.click();
   await inp.fill(term);
-  await page.waitForTimeout(300);
-  const got = await page.evaluate(() => {
+  // POLL, do not sleep-and-peek. A fixed 300ms then one read made this flaky:
+  // `renderComp()` runs on the composition poll, and a refresh landing inside
+  // that window rebuilds the form, closes the menu, and leaves the read with an
+  // empty list. Measured: red on some runs and green on the very next one with
+  // nothing changed. The neighbour below already cured this disease by freezing
+  // its endpoint; this one just never noticed it had it.
+  // The discriminator is a MARKER ON THE ELEMENT, not the value in the box.
+  // A first attempt compared the box's text to the term, and with a REAL defect
+  // planted (the filter reading names only) the box held a different skill and
+  // the probe blamed a re-render — mis-reporting a genuine regression as "this
+  // run measured nothing", which is worse than the flake it was fixing. A
+  // re-render builds a NEW input and the marker cannot survive it; a defect
+  // leaves the element exactly where it was.
+  await inp.evaluate((n) => n.setAttribute('data-descprobe', '1'));
+  const read = () => page.evaluate(() => {
     const m = [...document.querySelectorAll('.combo-menu')]
       .find((x) => !x.classList.contains('hidden'));
-    return m ? [...m.querySelectorAll('.combo-n')].map((n) => n.textContent) : [];
+    return {
+      items: m ? [...m.querySelectorAll('.combo-n')].map((n) => n.textContent) : [],
+      alive: !!document.querySelector('#comp input[data-descprobe="1"]'),
+    };
   });
-  if (got.length !== 1 || got[0] !== want[0]) {
+  let seen = await read();
+  for (let i = 0; i < 20 && !(seen.items.length === 1 && seen.items[0] === want[0]); i++) {
+    await page.waitForTimeout(150);
+    seen = await read();
+  }
+  const got = seen.items;
+  // A form that re-rendered under the probe loses the typed term. Say THAT,
+  // rather than blaming the feature: reporting "the combo is not reading
+  // descriptions" for a harness race is how a real defect gets disbelieved
+  // later, and this check spent a while doing exactly that.
+  if (!seen.alive) {
+    fail(`policy: the composition form re-rendered under the description-search `
+       + `probe — the input carrying the term was replaced, so this run measured `
+       + `nothing about the combo. Re-run; if it persists, the poll is landing `
+       + `inside the probe and the endpoint needs freezing the way the model-combo `
+       + `step freezes its own`);
+  } else if (got.length !== 1 || got[0] !== want[0]) {
     fail(`policy: searching skills for "${term}" listed ${JSON.stringify(got)}, `
        + `expected ${JSON.stringify(want)} — the combo is not reading descriptions`);
   } else {
