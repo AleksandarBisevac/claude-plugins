@@ -35,7 +35,7 @@ State: <stateDir>/tdd-reminder-<session_id>.json
 Contract: ALWAYS exits 0. Any unexpected input / exception also exits 0 —
 a reminder must never break legitimate work.
 
-This hook carries no `--selftest` of its own any more; its 16 cases live in
+This hook carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_remind_tdd.py` (hyphens become underscores - a hyphenated
 name is not importable). It is one of the three pilots of that migration; see
 `plugins/audit/tests/_harness.py`. A test of a hook may import from `scripts/` even

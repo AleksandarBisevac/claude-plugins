@@ -771,7 +771,7 @@ def _carries_inline_selftest(path):
     EVERY DOCSTRING IS DROPPED, not only the module's, and the widening was forced by
     THIS module. The first version dropped `tree.body[0]` alone, on the argument that
     a module docstring is the one place a file legitimately DESCRIBES its suite ("its
-    11 cases live in ...") and a description is not an implementation. That argument
+    cases live in ...") and a description is not an implementation. That argument
     was right and under-applied: when `_output.py`'s own cases moved out it came back
     classified `both`, because two of ITS function docstrings - this one and
     `covered_repo_paths`' - spell the contract while explaining what the contract is.
@@ -806,7 +806,7 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     whether it is allowed:
 
       covered     no inline suite, and `tests/test_<name>.py` exists — the ONLY
-                  clean class, and since the migration finished, all 64 of them
+                  clean class, and since the migration finished, all of them
       inline      DEFECT: carries its own `--selftest` printing the contract and has
                   no test file. Clean while the migration ran and a regression now:
                   CI's sweep would run it, it would pass, and `tests/` would look
@@ -877,6 +877,107 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     out["defects"] = ["%s %s" % (cls, name)
                       for cls in _DEFECT_CLASSES for name in out[cls]]
     return out
+
+
+# --- documented case counts ---------------------------------------------------
+
+# NO REGEX ON PURPOSE. This module is the anchor every other `.py` imports, and
+# it deliberately carries only `ast`, `os` and `sys`; adding `re` here would put
+# a compile on the import path of every hook that must start fast on every tool
+# call. Word scanning is enough for shapes this narrow, and it is faster.
+#
+# The shapes below are PRESENT-TENSE claims. Historical prose ("down from the
+# seventeen", "it stood at 70 that day") stays writable on purpose: the past
+# tense is how a decision record explains itself, and forbidding it would push
+# the rot into vaguer wording rather than removing it.
+_CASE_WORDS = ("cases", "case")
+
+
+def _words(line):
+    """`line` as lowercase alphanumeric tokens, punctuation dropped."""
+    out, cur = [], []
+    for ch in line.lower():
+        if ch.isalnum():
+            cur.append(ch)
+        elif cur:
+            out.append("".join(cur))
+            cur = []
+    if cur:
+        out.append("".join(cur))
+    return out
+
+
+def _case_claim(line):
+    """The claim's text if this line writes a present-tense case count, else None.
+
+    A line that names the command recomputing the number is NOT a finding: the
+    house rule is that a claim carries the basis that makes it true, and such a
+    line has done exactly that.
+    """
+    if "`" in line:
+        for chunk in line.split("`")[1::2]:
+            if ("python3" in chunk or "grep" in chunk or "for f in" in chunk):
+                return None
+    w = _words(line)
+    for i, tok in enumerate(w):
+        if not tok.isdigit():
+            continue
+        nxt = w[i + 1] if i + 1 < len(w) else ""
+        prv = w[i - 1] if i else ""
+        # "its N cases", "N cases live in", "--selftest (N cases)"
+        if nxt in _CASE_WORDS:
+            if prv == "its":
+                return "its %s %s" % (tok, nxt)
+            if w[i + 2:i + 4] == ["live", "in"]:
+                return "%s %s live in" % (tok, nxt)
+            if "selftest" in w[max(0, i - 4):i]:
+                return "--selftest (%s %s)" % (tok, nxt)
+        # "all N of them", the shape selftest_coverage's own docstring used
+        if prv == "all" and w[i + 1:i + 3] == ["of", "them"]:
+            return "all %s of them" % tok
+    return None
+
+
+def case_count_claims(script_dir=None, hooks_dir=None):
+    """[(relpath, lineno, text), ...] -- case counts written into prose.
+
+    THE RULE: do not write the number. Every suite prints `N/M cases passed` on
+    every run and CI runs all of them, so the count already has a live source; a
+    copy in a docstring has no reader who acts on it and nothing comparing it.
+    The pointer to the suite is the informative half, and it stays.
+
+    Measured when this was written, and the reason this is a lint rather than a
+    round of corrections: **9 of the 51 such claims in the tree were already
+    wrong** -- `_panel_page.py` said 285 against a real 325, `_refs.py` said 32
+    against 80, `guard-secrets-read.py` said 93 against 108, and
+    `selftest_coverage`'s own docstring said 64 while 84 test files existed.
+    Correcting them buys one green day: every one rots again the next time
+    somebody adds a case, which is the entire point of adding cases.
+
+    WHAT IT CANNOT SEE, stated rather than implied: a count spelled in words
+    ("its forty cases"), a count split across two lines, and any document outside
+    `hooks/` and `scripts/`. Over-counting is impossible with shapes this narrow;
+    UNDER-counting is the failure mode, and that is the quiet direction -- so a
+    clean result means "none of the known shapes", not "no claims".
+    """
+    sd = script_dir if script_dir is not None else SCRIPTS_DIR
+    hd = hooks_dir if hooks_dir is not None else HOOKS_DIR
+    out = []
+    for base in (sd, hd):
+        for _rel, path in py_files(base):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    text = fh.read()
+            except (OSError, UnicodeDecodeError):
+                # Naming it beats skipping it: a file that cannot be read is not
+                # a file with nothing in it.
+                out.append((os.path.relpath(path, REPO_ROOT), 0, "<unreadable>"))
+                continue
+            for lineno, line in enumerate(text.split("\n"), 1):
+                claim = _case_claim(line)
+                if claim is not None:
+                    out.append((os.path.relpath(path, REPO_ROOT), lineno, claim))
+    return sorted(out)
 
 
 def covered_repo_paths(repo_root=None):

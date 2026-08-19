@@ -26,7 +26,7 @@ use layer 1 — `_ui_theme` for status/label vocabulary (same as the panel),
 shape, which is where the id -> task index and the derived bug status live so
 this file and the layer-7 commands cannot drift apart.
 
-This module carries no `--selftest` of its own any more; its 93 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__report_html.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

@@ -52,7 +52,7 @@ Both are advice and block nothing — and a Stop hook could not block even if it
 wanted to, since `decision: "block"` there means "do not stop, keep going". A real
 spend gate would belong on PreToolUse, like require-plan.py.
 
-This hook carries no `--selftest` of its own any more; its 30 cases live in
+This hook carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_meter_usage.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
 even though the hook itself may not; see `plugins/audit/tests/_harness.py`.

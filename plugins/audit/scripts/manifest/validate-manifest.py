@@ -20,7 +20,7 @@ Usage:
 Exit codes: 0 = valid (warnings allowed) · 1 = findings · 2 = usage error or
 unreadable/unparseable file.
 
-This module carries no `--selftest` of its own any more; its 131 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_validate_manifest.py`, byte-identical labels and all —
 see `plugins/audit/tests/_harness.py`.
 """

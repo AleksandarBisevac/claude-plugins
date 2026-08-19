@@ -29,7 +29,7 @@ Safe by default:
 
 Exit codes: 0 ok / already-sharded · 1 refused or validation failure · 2 usage/unreadable.
 
-This script carries no `--selftest` of its own any more; its 11 cases live in
+This script carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_migrate_manifest.py` (hyphens become underscores - a
 hyphenated name is not importable). It is one of the three pilots of that migration;
 see `plugins/audit/tests/_harness.py`.

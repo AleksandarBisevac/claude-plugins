@@ -42,7 +42,7 @@ Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 "permissionDecisionReason": ...}} on stdout and exits 0 — the canonical PreToolUse
 protocol. Anything unexpected exits 0 (never break legitimate work).
 
-This hook carries no `--selftest` of its own any more; its 30 cases live in
+This hook carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_guard_capabilities.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
 even though the hook itself may not; see `plugins/audit/tests/_harness.py`.

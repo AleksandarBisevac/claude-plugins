@@ -37,7 +37,7 @@ other, so the directory, the `newline=""` open, the CR check and the
 `read_asset` there for why the newline flag is load-bearing. What stays here
 is the panel's own half: the markers, the splice, and what it pins about them.
 
-This module carries no `--selftest` of its own any more; its 25 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__panel_ui.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

@@ -27,7 +27,7 @@ does the read that puts `scripts/ui/` in front of them (`UI_DIR`, `read_asset`,
 peers and cannot import each other, so this is the lowest layer both can reach:
 one io.open contract for the assets, instead of two copies kept in step by hand.
 
-This module carries no `--selftest` of its own any more; its 70 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__ui_theme.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. Both surfaces still depend on this module, so
 that suite is still the gate; it just runs from one directory over.

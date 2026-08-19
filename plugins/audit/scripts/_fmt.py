@@ -107,7 +107,7 @@ Golden values frozen from the five originals BEFORE any call site was touched
 Only the whole-is-0 inputs deliberately diverge from the originals, and that
 divergence is the point.
 
-This module carries no `--selftest` of its own any more; its 72 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__fmt.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

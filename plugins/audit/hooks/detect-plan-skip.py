@@ -34,7 +34,7 @@ on stdout with exit 0.
 
 Contract: always exit 0. Any unexpected input / exception also exits 0.
 
-This hook carries no `--selftest` of its own any more; its 24 cases live in
+This hook carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_detect_plan_skip.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
 even though the hook itself may not; see `plugins/audit/tests/_harness.py`.

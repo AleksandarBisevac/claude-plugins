@@ -21,7 +21,7 @@ _panel_state -> _panel_write -> panel-server.
 panel-server.py keeps a thin module-level alias for every name moved here, so its
 PUT/POST routes and the rest of the suite keep referring to them unchanged.
 
-This module carries no `--selftest` of its own any more; its 143 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__panel_write.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. One of them reads panel-server.py's source
 and pins all 17 alias lines this module's names are re-exported through, exactly

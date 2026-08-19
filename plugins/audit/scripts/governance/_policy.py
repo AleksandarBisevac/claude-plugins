@@ -60,7 +60,7 @@ hooks on every Claude Code version (anthropics/claude-code#43772), so a policy m
 be advisory inside a subagent; and hooks cannot gate hooks, so other plugins'
 hooks are inventoried, never enforced.
 
-This module carries no `--selftest` of its own any more; its 71 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__policy.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

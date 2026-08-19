@@ -31,7 +31,7 @@ sideways edge. Going to the twin directly is both legal and the shorter
 sentence: the report's Markdown renderer calls the Usage section's Markdown
 renderer.
 
-This module carries no `--selftest` of its own any more; its 8 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__report_md.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

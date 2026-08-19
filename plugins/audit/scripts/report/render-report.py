@@ -36,7 +36,7 @@ the stylesheet, the embedded script. A fragment module cannot produce one, so
 splitting those cases by whichever function happens to emit each string would
 have left two suites and no complete one.
 
-This module carries no `--selftest` of its own any more; its 239 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_render_report.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. `import re` and `import time` went with them:
 every use of either in this file was inside that suite. `--bench` stayed - the

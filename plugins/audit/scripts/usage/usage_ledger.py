@@ -64,7 +64,7 @@ because nothing imports this module by name: every consumer loads `usage_ledger.
 by path and reads attributes off the module object, so the module object has to keep
 serving all of them. The `rx` selftest cases are what say so.
 
-This module carries no `--selftest` of its own any more; its 61 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_usage_ledger.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. `rx1`/`rx2` still count the re-export, now
 against the module object a by-path loader hands back, which is what every

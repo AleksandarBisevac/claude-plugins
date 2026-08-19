@@ -21,7 +21,7 @@ Reads `_usage_core` and nothing else in the tree, which is what keeps it at
 layer 2 beside its three sibling passes; `usage_ledger.py` re-exports every
 public name defined here, so no call site names this module.
 
-This module carries no `--selftest` of its own; its 11 cases live in
+This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__usage_spend.py`, the moved labels byte-identical - see
 `plugins/audit/tests/_harness.py`.
 """

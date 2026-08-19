@@ -38,7 +38,7 @@ in full, so with --json they go to stderr - a caller piping into `jq` was gettin
 JSON with a trailing sentence glued on. Without --json nothing moves: stdout is
 byte-for-byte what it has always been, which is what CI reads.
 
-This module carries no `--selftest` of its own any more; its 182 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_audit_status.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. The `_fixture()` most of them start from went
 with them (no caller outside the suite), and so did the guard that keeps two case

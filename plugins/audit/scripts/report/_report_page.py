@@ -34,7 +34,7 @@ Imports go one way only: `_report_md` (the Markdown twin this page embeds),
 owns reading a manifest's shape) are all below this file; it must never import
 render-report.
 
-This module carries no `--selftest` of its own any more; its 18 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__report_page.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. One of them, `pg2c`, parses THIS file and
 fails if it ever grows an `import _loader` or a `".py"` literal.

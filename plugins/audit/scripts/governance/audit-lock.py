@@ -13,7 +13,7 @@ Usage:
   audit-lock.py release <name> [--project DIR] [--force]
   audit-lock.py status         [--project DIR] [--json]
 
-This module carries no inline `--selftest` any more; its 68 cases live in
+This module carries no inline `--selftest` any more; its cases live in
 `plugins/audit/tests/test_audit_lock.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. The flag is still accepted and still exits
 0, pointing there.

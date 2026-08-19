@@ -84,7 +84,7 @@ hooks->scripts import, with no allow-list. It had one, for one import: this
 module's own manifest read, which the checker's first run found (F11) and which
 was the only thing standing between the rule and being true.
 
-This module carries no `--selftest` of its own any more; its 124 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__config.py`. A test of a hook may import from `scripts/`
 even though the hook itself may not — the isolation rule is about what a hook costs
 at import time under a launcher, and a test has no launcher above it; see

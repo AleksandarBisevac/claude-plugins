@@ -1173,6 +1173,34 @@ def _cases(check):
           not (set(M._all_names()) & set(os.path.basename(r)[:-3]
                                          for r, _p in _output.py_files(M._output.TESTS_DIR))))
 
+    # --- gcc: the guide accumulates one stale count per module ----------------
+    _gcc = M.guide_case_counts()
+    check("gcc0 PLUGIN-BUILD-GUIDE.md writes no case count - it carries a line "
+          "per module, so it accrues one stale number per module; two of the "
+          "five it held were already wrong when this was added (_policy 60 vs "
+          "71, _refs 32 vs 80): %r" % (_gcc[:6],),
+          _gcc == [])
+    _guide_lines = 0
+    try:
+        with open(M._guide_path(), "r", encoding="utf-8") as _gfh:
+            _guide_lines = len(_gfh.read().split("\n"))
+    except (OSError, UnicodeDecodeError):
+        _guide_lines = 0
+    check("gcc1 gcc0 read the guide rather than an empty string - %d line(s); "
+          "an unreadable guide returns a NAMED finding, not the same empty list "
+          "a clean one returns" % _guide_lines,
+          _guide_lines > 500
+          and M.guide_case_counts("/nonexistent/GUIDE.md")[0][1].startswith("<unreadable"))
+    check("gcc2 the shape is defined ONCE - guide_case_counts delegates to "
+          "_output._case_claim, because a second copy of the pattern would be "
+          "exactly the defect both functions exist to catch",
+          M.guide_case_counts.__doc__ is not None
+          and "_output._case_claim" in M.guide_case_counts.__doc__
+          and "_case_claim" not in "".join(
+              l for l in open(M.__file__, encoding="utf-8").read().split("\n")
+              if "def _case_claim" in l))
+
+
 
 def _selftest():
     return _harness.run(_cases)

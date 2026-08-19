@@ -56,7 +56,7 @@ manifest edit into a line of transcript nobody asked for, and additionalContext 
 context the model then has to read. Failure is silent by design — a journal that
 cannot be written must never break the write it was recording. ALWAYS exits 0.
 
-This hook carries no `--selftest` of its own any more; its 65 cases live in
+This hook carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_journal_writes.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
 even though the hook itself may not; see `plugins/audit/tests/_harness.py`.

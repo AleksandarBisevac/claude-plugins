@@ -990,6 +990,45 @@ def _cases(check):
           "before the migration starts and after it ends",
           M.write_lf_lines([], io.StringIO()).getvalue() == "")
 
+    # --- cc: documented case counts (the rot this repo keeps meeting) ---------
+    _cc_live = M.case_count_claims()
+    check("cc0 no module under hooks/ or scripts/ writes a case count into its "
+          "prose - the suite prints N/M on every run, so a copy in a docstring "
+          "has no reader and nothing comparing it: %r" % (_cc_live[:6],),
+          _cc_live == [])
+    # Vacuity FIRST, because "no claims" and "read no files" print identically.
+    _cc_seen = len(M.py_files(M.SCRIPTS_DIR)) + len(M.py_files(M.HOOKS_DIR))
+    check("cc1 the walk that produced cc0 actually read the tree - %d file(s), "
+          "and a clean result over an empty walk would mean nothing" % _cc_seen,
+          _cc_seen >= 40)
+    check("cc2 a present-tense count IS caught, in each of the four shapes",
+          M._case_claim("its 124 cases live in `tests/test_x.py`") == "its 124 cases"
+          and M._case_claim("11 cases live in the suite") == "11 cases live in"
+          and M._case_claim("Config `x`. `--selftest` (26 cases).")
+              == "--selftest (26 cases)"
+          and M._case_claim("the migration finished, all 64 of them")
+              == "all 64 of them")
+    check("cc3 the REPAIR is not itself a finding - dropping the number is the "
+          "fix, so the fixed line must read clean or the lint would forbid its "
+          "own remedy",
+          M._case_claim("its cases live in `tests/test_x.py`") is None
+          and M._case_claim("`--selftest`.") is None
+          and M._case_claim("the migration finished, all of them") is None)
+    check("cc4 HISTORY stays writable - the past tense is how a decision record "
+          "explains itself, and a lint that forbade it would push the rot into "
+          "vaguer wording instead of removing it",
+          M._case_claim("ONE entry, down from the seventeen") is None
+          and M._case_claim("it stood at 70 cases that day, and was wrong") is None)
+    check("cc5 a number that carries its own re-derivation is NOT a finding - "
+          "the house rule is that a claim carries the basis that makes it true",
+          M._case_claim("its 82 cases live in x - re-derive with "
+                        "`python3 tests/test_x.py --selftest`") is None)
+    check("cc6 the word 'cases' without a count is untouched, so ordinary prose "
+          "about edge cases does not become a violation",
+          M._case_claim("the edge cases this guard cannot see") is None
+          and M._case_claim("in most cases the answer is no") is None)
+
+
 
 def _selftest():
     return _harness.run(_cases)

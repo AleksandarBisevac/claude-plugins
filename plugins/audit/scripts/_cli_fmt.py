@@ -38,7 +38,7 @@ Roles - the minimal set the three consumers actually use:
   header                section headings (bold)
   dim                   footnote-ish caveats (faint)
 
-This module carries no `--selftest` of its own any more; its 16 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__cli_fmt.py`, byte-identical labels and all. It is one of
 the three pilots of that migration - see `plugins/audit/tests/_harness.py`.
 

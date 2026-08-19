@@ -36,7 +36,7 @@ I/O contract: `load_manifest` raises (like open()/json.load) on a missing or inv
 index/shard, so existing callers' `try/except -> exit 2` keeps working. Hooks that must
 never raise use `load_manifest_safe` (returns {} on any error).
 
-This module carries no `--selftest` of its own any more; its 64 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__manifest_io.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

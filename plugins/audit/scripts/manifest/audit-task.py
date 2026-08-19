@@ -79,7 +79,7 @@ Design decisions, each mirroring a precedent rather than inventing one:
   * JOURNAL. A `task.add` row through audit-journal's `append`, in-process --
     see _journal_add for why the journal-writes hook cannot see this write.
 
-This module carries no `--selftest` of its own any more; its 83 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_audit_task.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. The note on which id LETTERS the suite has
 already taken went with them, because it is advice to whoever adds the next case.

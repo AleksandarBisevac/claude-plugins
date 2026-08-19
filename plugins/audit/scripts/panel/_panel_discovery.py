@@ -29,7 +29,7 @@ all of them still matches. It is not a TTL.
 This module must never import panel-server or _panel_settings: nothing that imports
 THIS module (both of them do) can form a cycle through it.
 
-This module carries no `--selftest` of its own any more; its 23 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__panel_discovery.py`, byte-identical labels and all -
 see `plugins/audit/tests/_harness.py`. One of them parses THIS file and fails if
 it ever grows an import of panel-server or _panel_settings.

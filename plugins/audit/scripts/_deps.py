@@ -1218,6 +1218,37 @@ def _real_source_files(script_dir=None, hooks_dir=None):
     return out
 
 
+def guide_case_counts(guide_path=None):
+    """[(lineno, text), ...] -- case counts written into PLUGIN-BUILD-GUIDE.md.
+
+    The same rule `_output.case_count_claims()` enforces over `hooks/` and
+    `scripts/`, applied to the one document that carries a line per module and so
+    accumulates one stale count per module. It REUSES `_output._case_claim`
+    rather than restating the shapes: a second copy of the pattern would be
+    precisely the defect both functions exist to catch.
+
+    Measured when this was written: of the five `--selftest (N cases)` claims in
+    the guide, TWO were already wrong -- `_policy.py` at 60 against a real 71 and
+    `_refs.py` at 32 against a real 80. The qualitative half of those notes
+    ("incl. a real `git init`") is worth keeping and is untouched; only the
+    number goes, because only the number rots.
+    """
+    path = guide_path if guide_path is not None else _guide_path()
+    try:
+        with io.open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError):
+        # F21's rule: name the file you could not read rather than returning the
+        # same empty list a clean file returns.
+        return [(0, "<unreadable: %s>" % os.path.basename(path))]
+    out = []
+    for lineno, line in enumerate(text.split("\n"), 1):
+        claim = _output._case_claim(line)
+        if claim is not None:
+            out.append((lineno, claim))
+    return out
+
+
 def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
     """[(filename, problem), ...] - every scripts/hooks .py file the guide's
     enumeration sections have gone out of step with.

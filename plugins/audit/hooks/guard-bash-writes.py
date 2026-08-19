@@ -33,7 +33,7 @@ Read-only sidecar: <stateDir>/bash-writes-plugin-<sid>.json {"pluginWrote": [rel
 Config: `.claude/audit.config.json` → bashWriteCheck.enabled (default true).
 Non-git repos, git errors/timeouts (5 s) → silent. ALWAYS exits 0.
 
-This hook carries no `--selftest` of its own any more; its 30 cases live in
+This hook carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_guard_bash_writes.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
 even though the hook itself may not; see `plugins/audit/tests/_harness.py`.

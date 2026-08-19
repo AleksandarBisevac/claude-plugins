@@ -25,7 +25,7 @@ Usage:
 
 Exit: Ctrl-C stops the server. --selftest reports where its cases went.
 
-This module carries no `--selftest` of its own any more; its 51 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_panel_server.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. Three of them slice THIS file's source at the
 handler's own method boundaries and at the first top-level def after the class, to

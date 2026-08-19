@@ -39,7 +39,7 @@ Paths are PROJECT-DIR-RELATIVE, the same as `task.files` and the `fileIndex` key
 (so they carry the `meta.gitRoot` prefix when the workspace sits in a subdirectory).
 An absolute root would not survive a second clone; the validator says so.
 
-This module carries no `--selftest` of its own any more; its 80 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__areas.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

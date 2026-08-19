@@ -29,7 +29,7 @@ Four things live here, and the reason each is HERE rather than beside its caller
 `usage_ledger.py` re-exports every public name defined here, so no call site names
 this module: the split is a structural change, not an API change.
 
-This module carries no `--selftest` of its own any more; its 48 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__usage_core.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

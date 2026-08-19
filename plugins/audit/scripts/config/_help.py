@@ -40,7 +40,7 @@ Consumers: `panel-server.py` (`GET /api/help`, and the help drawer that consumes
 it), and the cases in `plugins/audit/tests/test__help.py`, which are the reason
 none of this is untested code while the drawer is still being built.
 
-This module carries no `--selftest` of its own any more; its 82 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 that file, byte-identical labels and all - see `plugins/audit/tests/_harness.py`.
 (That figure read 67 against a real 70 before the twelve `schema_vocab_drift`
 cases landed, so it was already rotting; print it rather than trust it -

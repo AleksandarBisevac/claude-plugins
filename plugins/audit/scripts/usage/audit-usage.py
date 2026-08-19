@@ -26,7 +26,7 @@ the ONLY path that rewrites (and therefore locks); the metering hook only append
 
 Exit codes: 0 ok - 2 usage error / unreadable ledger.
 
-This module carries no `--selftest` of its own any more; its 106 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_audit_usage.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """

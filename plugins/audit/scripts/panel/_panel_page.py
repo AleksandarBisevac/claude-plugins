@@ -35,7 +35,7 @@ call (build_state, _run_status, help_field, the route slices) stayed behind rath
 than dragging half the server down here. The `_help` edge this file used to carry
 went with the suite: it was imported inside `_selftest()` and nowhere else.
 
-This module carries no `--selftest` of its own any more; its 285 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__panel_page.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`. One of them, `pg2`, parses THIS file and fails
 if it ever grows one of those four imports.

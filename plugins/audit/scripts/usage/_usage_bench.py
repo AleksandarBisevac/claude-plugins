@@ -14,7 +14,7 @@ exists at all, why it is not a CI threshold, why best-of-N rather than the mean,
 and why it opens no file). It moved with the code and is the thing to read
 before changing any of it.
 
-This module carries no `--selftest` of its own; its 10 cases live in
+This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__usage_bench.py`, the moved labels byte-identical - see
 `plugins/audit/tests/_harness.py`. `--bench` stayed: the benchmark is production
 code somebody runs, and only the `bn` cases ABOUT it moved.

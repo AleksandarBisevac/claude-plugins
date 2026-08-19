@@ -445,7 +445,7 @@ Bash events diff `git status --porcelain -uall` against the session's last-seen 
 a NEW dirty source file that is not exempt, not the manifest/lock, not tool-edited, and not
 covered by an `in_progress` task triggers a non-blocking `additionalContext` warning (once
 per file per session). Needs a git repo; git errors/timeouts (5 s) are silent. Config:
-`bashWriteCheck.enabled` (default true). `--selftest` (14 cases incl. a real `git init`
+`bashWriteCheck.enabled` (default true). `--selftest` (incl. a real `git init`
 integration case).
 
 ### `plugins/audit/agents/` (v0.6.0, a fourth in v0.31.0)
@@ -509,7 +509,7 @@ audit trail via `scripts/governance/audit-journal.py`. NO stdout at all — a re
 every manifest edit into transcript — and every failure is silent, because a journal that
 cannot be written must not break the write it was recording. A hook rather than an
 instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly
-like a covered-up one. Config `journal.enabled`. `--selftest` (30 cases, incl. an end-to-end
+like a covered-up one. Config `journal.enabled`. `--selftest` (incl. an end-to-end
 append + verify).
 
 ### `plugins/audit/hooks/guard-capabilities.py` (v0.30.0)
@@ -521,7 +521,7 @@ enforcement half only. Inert by default and short-circuits before reading a mani
 refusal names the rule that produced it. `onViolation` picks deny / ask / warn, and warn is a
 `systemMessage` rather than a `permissionDecision`, which would bypass the permission system.
 Leaves a throttled marker in `stateDir` so `/audit:doctor` can say whether the matchers ever
-reach it (subagent hook inheritance is not guaranteed). `--selftest` (26 cases).
+reach it (subagent hook inheritance is not guaranteed). `--selftest`.
 
 ### `plugins/audit/hooks/meter-usage.py`
 Stop / SubagentStop / SessionEnd hook that turns transcript JSONL into usage-ledger rows.
@@ -547,7 +547,7 @@ The policy block's shape, defaults, validation and resolution — required → d
 default, with area rules scoped to phases in progress. The required set (audit's own commands,
 skills and agents, which no policy can deny) is read off the plugin's own directory rather than
 listed. `validate-config.py` delegates to `validate_policy` here; `panel-server.py` and
-`audit-doctor.py` call `resolve` here. `--selftest` (60 cases).
+`audit-doctor.py` call `resolve` here. `--selftest`.
 
 ### `plugins/audit/scripts/_output.py`
 The one `safe_stdio()` guard against `UnicodeEncodeError` on a redirected Windows stream
@@ -700,7 +700,7 @@ are cased, including the one asserting the move stays green. The four trees it a
 from include `tests/` and `tools/` themselves, because a tool's usage line names itself and a
 docstring names where its behaviour is pinned; excluding them would make every usage string a
 violation, and a lint that cries about correct code is one somebody switches off.
-`--selftest` (32 cases).
+`--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_core.py`
 The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`
@@ -708,7 +708,7 @@ table plus `rates_for`/`price`, one ISO parser and one hour-bucket rule, the rol
 (`totals`, `aggregate`, `aggregate_area`, `rows_for_area`, `heatmap`) the CLI, the report and
 the panel all read, and — since U3.2 — the three readers every analytics pass starts from
 (`task_index`, `_tokens`, `_cost`). Values in, values out — no file, no process, no transcript
-— which is why its 48 cases need no fixture directory. `pricing_divergences()` lives here too:
+— which is why its cases need no fixture directory. `pricing_divergences()` lives here too:
 `hooks/_config.py` must price a model with no config present and may import nothing from
 `scripts/`, so its copy of the 13 x 5 rate table is deliberate and the `pp` cases are what
 keep the two identical.

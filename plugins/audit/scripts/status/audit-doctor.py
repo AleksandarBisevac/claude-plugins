@@ -57,7 +57,7 @@ the command both spell. `_manifest_rules` keeps a dozen aliases for the same
 reason; the alternative was making every caller learn which of six files a check
 now sits in, for a check that has not changed.
 
-This module carries no `--selftest` of its own; its 148 cases live in
+This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_audit_doctor.py`, byte-identical labels and all — see
 `plugins/audit/tests/_harness.py`. They moved WHOLE: 53 of them re-`diagnose()` one
 temp repository that the suite mutates step by step, so the sequence is the test.

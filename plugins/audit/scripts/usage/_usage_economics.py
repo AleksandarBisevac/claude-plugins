@@ -24,7 +24,7 @@ cannot restate it differently - keep it JSON-serializable.
 Reads `_usage_core` and nothing else in the tree; `usage_ledger.py` re-exports
 every public name defined here, so no call site names this module.
 
-This module carries no `--selftest` of its own; its 27 cases live in
+This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__usage_economics.py`, the moved labels byte-identical -
 see `plugins/audit/tests/_harness.py`.
 """

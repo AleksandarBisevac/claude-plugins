@@ -27,7 +27,7 @@ This module sits at the BOTTOM of the panel's own import graph: it must never
 import _help or panel-server, so nothing that imports THIS module (both of them
 do) can ever form a cycle through it.
 
-This module carries no `--selftest` of its own any more; its 44 cases live in
+This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__panel_settings.py`, byte-identical labels and all -
 see `plugins/audit/tests/_harness.py`.
 """
