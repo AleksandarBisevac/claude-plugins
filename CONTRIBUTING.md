@@ -410,13 +410,19 @@ trigger named — the analytics section — is exactly what came out.
 be one: hooks resolve by **basename** through `find_script()`, so neither the
 split nor the later move into `usage/` touched a hook.
 
-The largest file is now `_deps.py` at 1,479 lines, and **21 files remain over 500** under `scripts/` + `hooks/` (17 and 4) as of
-`73042a1` — print it with `python3 tools/count-ui-pins.py`, which reports the
-same figure it was measured with. It read **26** here for eight days after the
-split that changed it, and the sentence never said which directories it counted:
-adding `tests/` gives 38, so "26" was not merely stale, it was unscoped. That is
-the standing split list, tracked as work rather than as a decision — there is
-nothing left to decide here.
+The largest file is `_deps.py`, and the count of files over 500 lines under
+`scripts/` + `hooks/` is deliberately **not written here** — print it with
+`python3 tools/count-ui-pins.py`, which reports it split by directory. The
+figure lived in this sentence twice and was wrong both times: it read **26** for
+eight days after the split that changed it, and its replacement read **21**
+against a real 22 while naming the very command that would have said so. That is
+the whole argument for deleting a number rather than annotating it — a basis
+makes a claim checkable, and nothing runs a command on a reader's behalf. The
+scope was the other half of the failure: neither spelling said which directories
+it counted, and adding `tests/` gives a different answer again, so the numbers
+were not merely stale, they were unscoped. What remains is the standing split
+list, tracked as work rather than as a decision — there is nothing left to
+decide here.
 
 ### typing/dataclasses/annotations stay banned (standing since P9.3's AST enforcement)
 

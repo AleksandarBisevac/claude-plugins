@@ -1218,34 +1218,61 @@ def _real_source_files(script_dir=None, hooks_dir=None):
     return out
 
 
-def guide_case_counts(guide_path=None):
-    """[(lineno, text), ...] -- case counts written into PLUGIN-BUILD-GUIDE.md.
+# The three prose documents this repo keeps its numbers in. All three are
+# hard-wrapped markdown, which is why the scan below hands `_prose_number_claim`
+# the FOLLOWING line as well: "print it with" ends a line and the command that
+# is the claim's basis begins the next one, and judging a claim by its own line
+# alone would report a line that has already satisfied the house rule.
+#
+# Adding `CLAUDE.md` and `CONTRIBUTING.md` to the scan cost nothing when it was
+# done -- both were already clean under every shape -- and that is the point of
+# doing it while they are clean rather than after the next one is written.
+_PROSE_DOCS = (_GUIDE_REL_PATH, "CLAUDE.md", "CONTRIBUTING.md")
 
-    The same rule `_output.case_count_claims()` enforces over `hooks/` and
-    `scripts/`, applied to the one document that carries a line per module and so
-    accumulates one stale count per module. It REUSES `_output._case_claim`
-    rather than restating the shapes: a second copy of the pattern would be
-    precisely the defect both functions exist to catch.
 
-    Measured when this was written: of the five `--selftest (N cases)` claims in
-    the guide, TWO were already wrong -- `_policy.py` at 60 against a real 71 and
-    `_refs.py` at 32 against a real 80. The qualitative half of those notes
-    ("incl. a real `git init`") is worth keeping and is untouched; only the
-    number goes, because only the number rots.
+def doc_prose_numbers(doc_paths=None):
+    """[(docname, lineno, text), ...] -- present-tense numbers in the prose docs.
+
+    The same rule `_output.prose_number_claims()` enforces over `hooks/` and
+    `scripts/`, applied to the documents that carry a line per module and so
+    accumulate one stale number per module. It REUSES
+    `_output._prose_number_claim` rather than restating the shapes: a second
+    copy of the pattern would be precisely the defect both functions exist to
+    catch, and a case asserts there is no second `def` in this file.
+
+    Measured when the case-count family was written: of the five
+    `--selftest (N cases)` claims in the guide, TWO were already wrong --
+    `_policy.py` at 60 against a real 71 and `_refs.py` at 32 against a real 80.
+    Measured when the persistence and completeness families were added: THREE
+    more, all in the guide, all wrong -- `KNOWN_LAYER_DEBT` written as 17 twice
+    where the table held one entry (F43, which is F39 one document over, copied
+    to a place nothing compared it), and a migration total written as 48 where
+    the tree held eighty-three files. The qualitative half of every one of those
+    notes is worth keeping and is untouched; only the number goes, because only
+    the number rots.
+
+    An unreadable document is NAMED, never skipped -- F21's rule. A skip would
+    return the same empty list a clean document returns, and "nothing to report"
+    would then mean either "clean" or "could not look", which is the quiet
+    direction.
     """
-    path = guide_path if guide_path is not None else _guide_path()
-    try:
-        with io.open(path, "r", encoding="utf-8") as fh:
-            text = fh.read()
-    except (OSError, UnicodeDecodeError):
-        # F21's rule: name the file you could not read rather than returning the
-        # same empty list a clean file returns.
-        return [(0, "<unreadable: %s>" % os.path.basename(path))]
+    names = _PROSE_DOCS if doc_paths is None else tuple(doc_paths)
     out = []
-    for lineno, line in enumerate(text.split("\n"), 1):
-        claim = _output._case_claim(line)
-        if claim is not None:
-            out.append((lineno, claim))
+    for name in names:
+        path = name if os.path.isabs(name) else os.path.join(_output.REPO_ROOT, name)
+        label = os.path.basename(path)
+        try:
+            with io.open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError):
+            out.append((label, 0, "<unreadable: %s>" % label))
+            continue
+        lines = text.split("\n")
+        for lineno, line in enumerate(lines, 1):
+            nxt = lines[lineno] if lineno < len(lines) else ""
+            claim = _output._prose_number_claim(line, nxt)
+            if claim is not None:
+                out.append((label, lineno, claim))
     return out
 
 
@@ -1378,6 +1405,13 @@ def navigability_violations(script_dir=None, hooks_dir=None):
     rule `tests_import_violations()` follows for a file that will not parse, and
     for the same reason: a scan that silently passes over a file it could not
     read is claiming a clean answer about it.
+
+    A file that will not OPEN is now named on the same argument (F44). It was
+    a bare `continue` for as long as the tokenize branch has been a violation,
+    which made this function inconsistent with its own docstring: the rule was
+    applied to the parser's failure and not to the filesystem's, and an
+    unreadable file came back indistinguishable from a well-marked one. That is
+    the quiet direction, so it is the one that had to move.
     """
     script_dir = script_dir or _output.SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
@@ -1386,7 +1420,9 @@ def navigability_violations(script_dir=None, hooks_dir=None):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 lines = fh.readlines()
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as exc:
+            violations.append((rel, "unreadable: %s; its section headers cannot "
+                                    "be counted" % (exc,)))
             continue
         if len(lines) < _NAV_MIN_LINES:
             continue
@@ -1487,13 +1523,29 @@ def ui_navigability_violations(ui_dir=None):
     stdlib tokenizer, and the tightening that needs none was measured and
     rejected. Both are argued above `_UI_MARKER_RES`, and `u8` pins the resulting
     blindness so that closing it later is a deliberate act rather than a drift.
+
+    WHAT IS NOT A BLINDNESS ANY MORE, AND WHY IT WAS THE WORSE ONE (F44). This
+    function used to swallow an asset it could not read and return an empty list
+    for a directory it could not list. Both are the quiet direction that F21
+    named: a file nothing could open came back as a file with nothing wrong, and
+    a missing `scripts/ui/` - the whole report and panel UI gone - printed
+    exactly what a clean tree prints. The sibling .py rule already reported a
+    file it could not tokenize, so the pair disagreed about the same question,
+    and the disagreement was invisible because both halves were green. The
+    marker hole above is pinned as a decision because closing it would cost a
+    hand-rolled lexer for two languages; these two cost four lines, which is why
+    naming them is not a decision at all.
     """
     ui_dir = ui_dir if ui_dir is not None else _UI_DIR
     violations = []
     try:
         names = sorted(os.listdir(ui_dir))
-    except OSError:
-        return violations
+    except OSError as exc:
+        # NOT `return []`. An empty list is a real answer ("every asset here is
+        # navigable") and would make a directory nothing could read
+        # indistinguishable from one that was read and found clean.
+        return [(os.path.basename(ui_dir.rstrip(os.sep)) or ui_dir,
+                 "unlistable: %s; no asset here could be checked" % (exc,))]
     for name in names:
         rex = None
         for ext, candidate in _UI_MARKER_RES:
@@ -1505,7 +1557,9 @@ def ui_navigability_violations(ui_dir=None):
         try:
             with open(os.path.join(ui_dir, name), "r", encoding="utf-8") as fh:
                 lines = fh.readlines()
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as exc:
+            violations.append((name, "unreadable: %s; its section markers cannot "
+                                     "be counted" % (exc,)))
             continue
         if len(lines) < _NAV_MIN_LINES:
             continue

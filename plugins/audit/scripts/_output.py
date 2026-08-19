@@ -711,7 +711,7 @@ def redundant_constants(dirs=None):
 # nobody has looked at. So nothing here has ever returned a boolean: every production
 # file is placed in exactly one of four classes, and the caller asserts the COUNTS.
 #
-# All 48 files have moved, so the OR has nothing left to permit. `inline` is now a
+# Every one of them has moved, so the OR has nothing left to permit. `inline` is a
 # DEFECT class beside `both` and `neither`: a file that ships a new inline suite is
 # named here rather than quietly accepted as the other half of a choice that no
 # longer exists. That is a real tightening and not bookkeeping - a suite added inline
@@ -879,7 +879,7 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     return out
 
 
-# --- documented case counts ---------------------------------------------------
+# --- numbers written into prose -----------------------------------------------
 
 # NO REGEX ON PURPOSE. This module is the anchor every other `.py` imports, and
 # it deliberately carries only `ast`, `os` and `sys`; adding `re` here would put
@@ -890,7 +890,67 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 # seventeen", "it stood at 70 that day") stays writable on purpose: the past
 # tense is how a decision record explains itself, and forbidding it would push
 # the rot into vaguer wording rather than removing it.
+#
+# THREE FAMILIES, EACH ADOPTED ONLY AFTER MEASURING ITS SITES AND HOW MANY WERE
+# ALREADY WRONG. An extension that fires on forty correct lines is worse than no
+# extension: it gets routed around, and then it is its own defect class.
+#
+#   cardinality  "its N cases", "N cases live in", "--selftest (N cases)"
+#                51 sites when adopted, 9 already wrong.
+#   persistence  "`NAME` stayed at N", "`NAME` is still N" - a claim that a
+#                number HAS NOT CHANGED as of writing. 2 sites, BOTH wrong
+#                (`KNOWN_LAYER_DEBT` written as 17 twice against a real 1: F43,
+#                which is F39 one document over).
+#   completeness "all N of them", "all N ... have/are" - a claim that a
+#                collection's whole is N. 2 sites beyond the first shape, BOTH
+#                wrong (48 against a real 83).
+#
+# WHY EVERY ONE OF THEM TAKES "REMOVE THE NUMBER" AND NOT "REQUIRE THE BASIS".
+# Both remedies satisfy the house rule on paper. What separated them was a
+# measurement taken the day this was written: `CONTRIBUTING.md`'s files-over-500
+# figure DOES name its basis -- `tools/count-ui-pins.py`, a command that really
+# does print that number -- and it had rotted anyway, in both of its halves (it
+# read 21 where the tool printed 22, and named `_deps.py` at 1,479 lines where
+# the file held 1,621). A basis makes a claim CHECKABLE; only deleting the
+# number makes it un-rottable, because nothing runs a command on a reader's
+# behalf. So the basis stays the escape hatch for a number a reader genuinely
+# acts on, and is not the remedy of choice for one that restates a live source.
 _CASE_WORDS = ("cases", "case")
+
+# Token sequences that assert a number has not changed AS OF WRITING. The past
+# tense of `stayed`/`remained` is not what makes them history: "it stayed at N"
+# with no anchor to a past moment means "and it is N now", which is why
+# `_deps.py`'s own F39 note classifies exactly that spelling as the defect.
+# `was still N` and `stood at N` are deliberately absent - those ARE anchored to
+# a past moment, and `pn4` pins them as writable.
+#
+# EVERY EXAMPLE IN THIS SECTION SPELLS ITS NUMBER `N` ON PURPOSE. A lint that
+# scans the tree it lives in must not plant its own needle there - `_refs.py`
+# learned it with fixture paths and this module learned it twice on its own
+# first run. A real digit in an example below is a real finding, and exempting
+# the file would be the wrong repair.
+_PERSISTS = (
+    ("unchanged", "at"),
+    ("remained", "at"),
+    ("remains", "at"),
+    ("remain", "at"),
+    ("stayed", "at"),
+    ("staying", "at"),
+    ("stays", "at"),
+    ("is", "still"),
+    ("are", "still"),
+    ("remains",),
+)
+
+# A completeness claim is present-tense only when it carries one of these.
+# "all N files CARRIED their own copy" is a sentence about the world before a
+# migration and stays writable; "all N files HAVE moved" is a claim about now.
+# A whitelist of auxiliaries is the only half of that distinction a word scanner
+# can make honestly - there is no way to recognise an arbitrary past-tense verb
+# without a lexicon, so the miss is documented rather than guessed at.
+_PRESENT_AUX = ("is", "are", "has", "have")
+
+_BASIS_MARKERS = ("python3", "grep", "for f in")
 
 
 def _words(line):
@@ -907,24 +967,58 @@ def _words(line):
     return out
 
 
-def _case_claim(line):
-    """The claim's text if this line writes a present-tense case count, else None.
+def _backtick_chunks(line):
+    """The backticked spans of `line`, in order."""
+    return line.split("`")[1::2] if "`" in line else []
 
-    A line that names the command recomputing the number is NOT a finding: the
-    house rule is that a claim carries the basis that makes it true, and such a
-    line has done exactly that.
+
+def _carries_basis(line, following):
+    """True if this claim names the command that re-derives it.
+
+    `following` is the NEXT line, and it is read for one reason: prose wraps.
+    Every document here is hard-wrapped, so "print it with" routinely ends a
+    line and the command begins the next one. Judging the claim by its own line
+    alone would call a claim that HAS satisfied the house rule a violation, and
+    the repair for that false positive is to delete the basis - the exact
+    opposite of what this is for.
     """
-    if "`" in line:
-        for chunk in line.split("`")[1::2]:
-            if ("python3" in chunk or "grep" in chunk or "for f in" in chunk):
-                return None
-    w = _words(line)
+    for chunk in _backtick_chunks(line) + _backtick_chunks(following or ""):
+        for marker in _BASIS_MARKERS:
+            if marker in chunk:
+                return True
+    return False
+
+
+def _names_code(line):
+    """True if the line quotes a code identifier in backticks.
+
+    THE GATE ON THE PERSISTENCE FAMILY, and it is the reason that family can be
+    adopted at all. A persistence claim about a number with a live source is a
+    claim about a NAMED thing in this tree, and this repo writes code names in
+    backticks; a persistence claim with no code name on the line is prose about
+    something the tree does not hold, where neither remedy fits. The measured
+    case is `hooks/_config.py`: "the result is still N characters" is the width
+    of an invariant format string in a counterfactual about `time.localtime()`,
+    it is correct, removing the number would destroy the sentence, and it names
+    no code on that line. Without this gate the shape would fire on it.
+
+    A space inside the span means it is a command or a phrase (`_deps.py
+    --render` is still a name by its first token, so the check is on the span
+    having a spaceless form, not on the whole span).
+    """
+    for chunk in _backtick_chunks(line):
+        if chunk.strip() and " " not in chunk.strip():
+            return True
+    return False
+
+
+def _cardinality_claim(w):
+    """"its N cases" / "N cases live in" / "--selftest (N cases)" / "all N of them"."""
     for i, tok in enumerate(w):
         if not tok.isdigit():
             continue
         nxt = w[i + 1] if i + 1 < len(w) else ""
         prv = w[i - 1] if i else ""
-        # "its N cases", "N cases live in", "--selftest (N cases)"
         if nxt in _CASE_WORDS:
             if prv == "its":
                 return "its %s %s" % (tok, nxt)
@@ -938,27 +1032,93 @@ def _case_claim(line):
     return None
 
 
-def case_count_claims(script_dir=None, hooks_dir=None):
-    """[(relpath, lineno, text), ...] -- case counts written into prose.
+def _persistence_claim(line, w):
+    """"`NAME` stayed at N" / "`NAME` is still N" - F43's shape, and F39's."""
+    if not _names_code(line):
+        return None
+    for i, tok in enumerate(w):
+        if not tok.isdigit():
+            continue
+        for phrase in _PERSISTS:
+            n = len(phrase)
+            if i >= n and tuple(w[i - n:i]) == phrase:
+                return "%s %s" % (" ".join(phrase), tok)
+    return None
+
+
+def _completeness_claim(w):
+    """"all N <noun> have/are ..." - a cardinality for a whole, in the present.
+
+    The auxiliary must fall within three tokens of the number. That window is
+    not arbitrary: it separates "all N files have moved" (a claim about now)
+    from "pins all N alias lines this module's names ARE re-exported through"
+    (a count, and a relative clause seven tokens later that has nothing to do
+    with it). Both spellings are in this tree, and a window of three is what
+    tells them apart.
+    """
+    for i, tok in enumerate(w):
+        if not tok.isdigit() or not i or w[i - 1] != "all":
+            continue
+        for aux in w[i + 1:i + 4]:
+            if aux in _PRESENT_AUX:
+                return "all %s ... %s" % (tok, aux)
+    return None
+
+
+def _prose_number_claim(line, following=None):
+    """The claim's text if this line writes a present-tense number, else None.
+
+    A line that names the command recomputing the number is NOT a finding: the
+    house rule is that a claim carries the basis that makes it true, and such a
+    line has done exactly that.
+
+    THIS IS THE ONLY DEFINITION OF THE SHAPES. `_deps` scans the documents and
+    delegates here rather than restating them; a second copy of the pattern
+    would be precisely the defect both scanners exist to catch, and a case in
+    each suite asserts there is no second `def`.
+    """
+    if _carries_basis(line, following):
+        return None
+    w = _words(line)
+    return (_cardinality_claim(w)
+            or _persistence_claim(line, w)
+            or _completeness_claim(w))
+
+
+def prose_number_claims(script_dir=None, hooks_dir=None):
+    """[(relpath, lineno, text), ...] -- present-tense numbers written into prose.
 
     THE RULE: do not write the number. Every suite prints `N/M cases passed` on
-    every run and CI runs all of them, so the count already has a live source; a
-    copy in a docstring has no reader who acts on it and nothing comparing it.
-    The pointer to the suite is the informative half, and it stays.
+    every run and CI runs all of them; `len(_deps.KNOWN_LAYER_DEBT)` is one
+    command away; `selftest_coverage()['covered']` is another. The count already
+    has a live source, so a copy in a docstring has no reader who acts on it and
+    nothing comparing it. The pointer to the source is the informative half, and
+    it stays.
 
-    Measured when this was written, and the reason this is a lint rather than a
-    round of corrections: **9 of the 51 such claims in the tree were already
-    wrong** -- `_panel_page.py` said 285 against a real 325, `_refs.py` said 32
-    against 80, `guard-secrets-read.py` said 93 against 108, and
-    `selftest_coverage`'s own docstring said 64 while 84 test files existed.
+    Measured when the first family was written, and the reason this is a lint
+    rather than a round of corrections: **9 of the 51 such claims in the tree
+    were already wrong** -- `_panel_page.py` said 285 against a real 325,
+    `_refs.py` said 32 against 80, `guard-secrets-read.py` said 93 against 108,
+    and `selftest_coverage`'s own docstring said 64 while 84 test files existed.
     Correcting them buys one green day: every one rots again the next time
-    somebody adds a case, which is the entire point of adding cases.
+    somebody adds a case, which is the entire point of adding cases. The two
+    families added after it were measured the same way and were **4 sites, 4 of
+    them already wrong** -- a hit rate that is itself the argument.
 
-    WHAT IT CANNOT SEE, stated rather than implied: a count spelled in words
-    ("its forty cases"), a count split across two lines, and any document outside
-    `hooks/` and `scripts/`. Over-counting is impossible with shapes this narrow;
-    UNDER-counting is the failure mode, and that is the quiet direction -- so a
-    clean result means "none of the known shapes", not "no claims".
+    WHAT IT CANNOT SEE, stated rather than implied, and the direction matters
+    more than the list:
+
+      * a count spelled in words ("its forty cases");
+      * a claim whose NUMBER and whose SHAPE-WORD land on different lines --
+        only the basis is read across the wrap, never the claim;
+      * a completeness claim with no auxiliary ("(all 64)", "all 8 viz slots"),
+        because recognising an arbitrary present-tense verb needs a lexicon;
+      * a persistence claim that names no code in backticks on its own line;
+      * any document outside `hooks/`, `scripts/` and the three `_deps` scans.
+
+    Every one of those is an UNDER-count. Over-counting is impossible with
+    shapes this narrow, and under-counting is the quiet direction -- so a clean
+    result means "none of the known shapes", not "no claims".
     """
     sd = script_dir if script_dir is not None else SCRIPTS_DIR
     hd = hooks_dir if hooks_dir is not None else HOOKS_DIR
@@ -973,8 +1133,10 @@ def case_count_claims(script_dir=None, hooks_dir=None):
                 # a file with nothing in it.
                 out.append((os.path.relpath(path, REPO_ROOT), 0, "<unreadable>"))
                 continue
-            for lineno, line in enumerate(text.split("\n"), 1):
-                claim = _case_claim(line)
+            lines = text.split("\n")
+            for lineno, line in enumerate(lines, 1):
+                nxt = lines[lineno] if lineno < len(lines) else ""
+                claim = _prose_number_claim(line, nxt)
                 if claim is not None:
                     out.append((os.path.relpath(path, REPO_ROOT), lineno, claim))
     return sorted(out)

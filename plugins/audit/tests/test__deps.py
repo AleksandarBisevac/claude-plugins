@@ -793,6 +793,26 @@ def _cases(check):
               any(f == "broken.py" and "does not tokenize" in w
                   for f, w in nav_broken)
               and M._section_header_names("def (\n") is None)
+
+        # ---- F44: and a file that will not OPEN is named on the same argument ----
+        # The tokenize branch has reported its file since F21; the READ branch was
+        # a bare `continue` beside it, so this function disagreed with its own
+        # docstring and an unreadable file came back looking navigable. The
+        # fixture is a real mis-encoded asset rather than a chmod, because the
+        # windows CI leg cannot make a file unreadable by permission.
+        with open(os.path.join(nav_tmp, "mojibake.py"), "wb") as fh:
+            fh.write(b"# \xff\xfe not utf-8\n" + b"pass\n" * M._NAV_MIN_LINES)
+        nav_unread = M.navigability_violations(nav_tmp, hooks_dir=nav_hooks)
+        check("n10 a .py that will not DECODE is named, not skipped (F44) - the "
+              "sibling ui rule swallowed exactly this and so did this branch, "
+              "which made 'could not read it' print identically to 'nothing "
+              "wrong with it': %r"
+              % ([w for f, w in nav_unread if f == "mojibake.py"],),
+              any(f == "mojibake.py" and "unreadable" in w
+                  for f, w in nav_unread))
+        check("n11 ...and the clean fixtures beside it are still not named, so "
+              "n10 is not passing because the scan started reporting everything",
+              not any(f == "real_markers.py" for f, _ in nav_unread))
     finally:
         shutil.rmtree(nav_tmp, ignore_errors=True)
 
@@ -907,6 +927,39 @@ def _cases(check):
           % (len(_report_lines), len(_marked), len(_at_col0), len(_at_col0),
              max(2, -(-len(_report_lines) // M._NAV_MIN_LINES))),
           len(_marked) >= 2 and not _at_col0)
+
+    # ---- F44: the two quiet answers this function used to give ------------------
+    # The marker hole u8 pins is a DECISION - closing it costs a hand-rolled lexer
+    # for two languages. These two were never a decision: an asset nothing could
+    # read came back as an asset with nothing wrong, and a missing scripts/ui/ -
+    # the whole report and panel UI gone - printed exactly what a clean tree
+    # prints. Both are the direction F21 named as the one that hurts.
+    f44_tmp = tempfile.mkdtemp(prefix="audit-deps-f44-")
+    try:
+        with open(os.path.join(f44_tmp, "mojibake.js"), "wb") as fh:
+            fh.write(b"// \xff\xfe not utf-8\n" + b"x();\n" * M._NAV_MIN_LINES)
+        with open(os.path.join(f44_tmp, "fine.js"), "w", encoding="utf-8") as fh:
+            fh.write("x();\n" * 10)
+        f44_hits = M.ui_navigability_violations(f44_tmp)
+        check("u10 an asset that will not DECODE is named, never swallowed (F44): %r"
+              % (f44_hits,),
+              any(f == "mojibake.js" and "unreadable" in w for f, w in f44_hits))
+        check("u11 ...and the readable asset beside it is not named, which is what "
+              "tells u10 apart from a rule that started reporting every file",
+              not any(f == "fine.js" for f, _ in f44_hits))
+    finally:
+        shutil.rmtree(f44_tmp, ignore_errors=True)
+
+    _f44_gone = M.ui_navigability_violations(os.path.join(f44_tmp, "vanished"))
+    check("u12 a ui_dir that cannot be LISTED returns a NAMED finding, not the "
+          "empty list a clean directory returns (F44). `return []` there meant "
+          "'scripts/ui/ is missing' and 'every asset is navigable' printed the "
+          "same way, and the missing directory is the whole report and panel "
+          "UI: %r" % (_f44_gone,),
+          len(_f44_gone) == 1 and "unlistable" in _f44_gone[0][1])
+    check("u13 ...and the real directory still returns [] - the case that goes "
+          "red if u12's repair turned into 'always report something'",
+          M.ui_navigability_violations() == [])
 
     # ------------------------------------------- the scanners reach a subdirectory
     # A recursive walk that is never handed a subdirectory proves nothing, so this
@@ -1173,32 +1226,67 @@ def _cases(check):
           not (set(M._all_names()) & set(os.path.basename(r)[:-3]
                                          for r, _p in _output.py_files(M._output.TESTS_DIR))))
 
-    # --- gcc: the guide accumulates one stale count per module ----------------
-    _gcc = M.guide_case_counts()
-    check("gcc0 PLUGIN-BUILD-GUIDE.md writes no case count - it carries a line "
-          "per module, so it accrues one stale number per module; two of the "
-          "five it held were already wrong when this was added (_policy 60 vs "
-          "71, _refs 32 vs 80): %r" % (_gcc[:6],),
-          _gcc == [])
-    _guide_lines = 0
+    # --- dpn: the prose docs accumulate one stale number per module -----------
+    _dpn = M.doc_prose_numbers()
+    check("dpn0 no prose doc writes a present-tense number - they carry a line "
+          "per module, so they accrue one stale number per module; two of the "
+          "five case counts were already wrong when the first family landed "
+          "(_policy 60 vs 71, _refs 32 vs 80), and all three of the persistence "
+          "and completeness claims were wrong when these two did (F43): %r"
+          % (_dpn[:6],),
+          _dpn == [])
+    # Vacuity FIRST: "no claims" and "read nothing" print identically otherwise,
+    # and this scan now spans three files, so a per-file count is what says the
+    # walk reached all of them rather than stopping after the first.
+    _dpn_lines = []
+    for _dname in M._PROSE_DOCS:
+        try:
+            with open(os.path.join(M._output.REPO_ROOT, _dname),
+                      "r", encoding="utf-8") as _dfh:
+                _dpn_lines.append((_dname, len(_dfh.read().split("\n"))))
+        except (OSError, UnicodeDecodeError):
+            _dpn_lines.append((_dname, 0))
+    check("dpn1 dpn0 read all %d documents rather than an empty string - %r"
+          % (len(M._PROSE_DOCS), _dpn_lines),
+          len(_dpn_lines) == 3
+          and all(n > 100 for _d, n in _dpn_lines)
+          and max(n for _d, n in _dpn_lines) > 500)
+    check("dpn2 an unreadable document returns a NAMED finding, not the same "
+          "empty list a clean one returns - F21's rule, and the reason a clean "
+          "dpn0 means 'looked and found nothing' rather than 'could not look'",
+          M.doc_prose_numbers(["/nonexistent/GUIDE.md"])
+              == [("GUIDE.md", 0, "<unreadable: GUIDE.md>")])
+    check("dpn3 the shape is defined ONCE - doc_prose_numbers delegates to "
+          "_output._prose_number_claim, because a second copy of the pattern "
+          "would be exactly the defect both functions exist to catch",
+          M.doc_prose_numbers.__doc__ is not None
+          and "_output._prose_number_claim" in M.doc_prose_numbers.__doc__
+          and not [l for l in open(M.__file__, encoding="utf-8").read().split("\n")
+                   if l.startswith("def _prose_number_claim")
+                   or l.startswith("def _case_claim")])
+    # POSITIVE CONTROL. dpn0 asserts an empty list, which is also what a scanner
+    # that reads nothing returns; dpn1 proves the bytes arrived and this proves
+    # the predicate is still wired to them. The fixture is F43's own sentence,
+    # the wrap that carries a basis, and a historical line - so it fails if the
+    # scan dies, if the basis stops being read across the wrap, or if history
+    # stops being writable.
+    _dpn_tmp = tempfile.mkdtemp(prefix="audit-deps-dpn-")
     try:
-        with open(M._guide_path(), "r", encoding="utf-8") as _gfh:
-            _guide_lines = len(_gfh.read().split("\n"))
-    except (OSError, UnicodeDecodeError):
-        _guide_lines = 0
-    check("gcc1 gcc0 read the guide rather than an empty string - %d line(s); "
-          "an unreadable guide returns a NAMED finding, not the same empty list "
-          "a clean one returns" % _guide_lines,
-          _guide_lines > 500
-          and M.guide_case_counts("/nonexistent/GUIDE.md")[0][1].startswith("<unreadable"))
-    check("gcc2 the shape is defined ONCE - guide_case_counts delegates to "
-          "_output._case_claim, because a second copy of the pattern would be "
-          "exactly the defect both functions exist to catch",
-          M.guide_case_counts.__doc__ is not None
-          and "_output._case_claim" in M.guide_case_counts.__doc__
-          and "_case_claim" not in "".join(
-              l for l in open(M.__file__, encoding="utf-8").read().split("\n")
-              if "def _case_claim" in l))
+        _dpn_doc = os.path.join(_dpn_tmp, "FIXTURE.md")
+        with open(_dpn_doc, "w", encoding="utf-8") as fh:
+            fh.write("`KNOWN_LAYER_DEBT` stayed at 17 and the map did not move.\n"
+                     "It stood at 70 that day, and was wrong by the next commit.\n"
+                     "all 83 of them (`73042a1` - print it with\n"
+                     "`python3 -c \"...\"`); a migrated file still exits 0.\n")
+        _dpn_hits = M.doc_prose_numbers([_dpn_doc])
+        check("dpn4 POSITIVE CONTROL: F43's own sentence IS reported, with its "
+              "line number, while the historical line and the wrapped line whose "
+              "basis lands on the next one are both left alone. dpn0 is an empty "
+              "list, and an empty list is also what a broken scanner returns: %r"
+              % (_dpn_hits,),
+              _dpn_hits == [("FIXTURE.md", 1, "stayed at 17")])
+    finally:
+        shutil.rmtree(_dpn_tmp, ignore_errors=True)
 
 
 

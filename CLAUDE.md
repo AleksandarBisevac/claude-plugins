@@ -33,6 +33,16 @@ two copies of a procedure is one copy and one lie.
   that is the thing to say.** Never fall back to a default to fill the gap; a basis with no claim
   is noise. See `CONTRIBUTING.md` for the worked example (cost, and the five surfaces that
   render it).
+- **Do not write a number into prose when something already prints it.** This is the repo's
+  most frequent defect (F29, F39, F43 are one bug three times), and it is now a lint:
+  `_output.prose_number_claims()` over `hooks/` + `scripts/` and `_deps.doc_prose_numbers()`
+  over this file, `CONTRIBUTING.md` and `PLUGIN-BUILD-GUIDE.md` fail the build on a
+  present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``) or
+  completeness (`all N of them`, `all N … have`) claim. Three things stay legal on purpose:
+  **history** (`it stood at N that day`), a number **carrying the command that re-derives it**
+  — the basis may sit on the next line, because prose wraps — and the repair itself, which is
+  to delete the number and keep the pointer. When a number really is informative, carry the
+  basis; a basis makes a claim checkable, but only deleting the number stops it rotting.
 - Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
 
 ## Adding a `.py` under `hooks/` or `scripts/`

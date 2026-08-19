@@ -167,7 +167,7 @@ claude-plugins/                           # this repo (personal, public)
           gen-demo-manifest.py            # synthetic LARGE manifest fixture for demos/screenshots/CI
           gen-demo-usage.py               # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
-      tests/                              # selftest blocks moved OUT of the modules they test (all 64)
+      tests/                              # selftest blocks moved OUT of the modules they test (all of them)
         _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
         test__cli_fmt.py                  # pilot 1: an importable helper
         test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
@@ -579,6 +579,28 @@ exists to enable is decoration. `_output.py` is exempt by name, for two reasons:
 the marker, and it holds `PATH_PREAMBLE` as a string, so a text count over its own source
 would read as compliant.
 
+**`prose_number_claims()` is where this repo's most frequent defect goes to die.** A number
+written into prose rots, because nothing compares it to the thing it describes — F29, F39 and
+F43 are all one bug, and every earlier response was to correct the figure, which buys one green
+day. Three families of present-tense claim are recognised, and none was adopted before its
+sites were counted and checked — an extension that fires on forty correct lines is worse than
+no extension. What each measured on the day it landed: **cardinality** (`its N cases`) found
+51 sites, 9 already wrong; **persistence** (`` `NAME` stayed at N ``) found 2, both already
+wrong — that is F43; **completeness** (`all N of them`, `all N … have`) found 4, 3 already
+wrong. Re-derive any of them by breaking the check, never by reading this. All three take the same
+remedy — **delete the number** — and the evidence for choosing that over "make it carry its
+basis" is `CONTRIBUTING.md`, whose files-over-500 figure *does* name a command that prints it
+and rotted in both halves anyway. A basis makes a claim checkable; only deleting the number
+makes it un-rottable. Four things are designed in and each is pinned by its own case: no
+regex (this module carries `ast`, `os` and `sys` only, and hooks import it on every tool
+call); history stays writable, so `stood at N` and `was still N` are legal and `stayed at N`
+is not; a number carrying its own re-derivation is allowed, and the basis is read across a
+line wrap because every document here is hard-wrapped; and the repair must itself read clean,
+or the lint forbids its own remedy. What it cannot see is written down with its direction —
+counts spelled in words, claims split across a wrap, completeness with no auxiliary,
+persistence naming no code in backticks — and every one of those is an **under**-count, which
+is the quiet direction, so a clean result means "none of the known shapes", not "no claims".
+
 The consequence worth stating out loud: **the folders under `scripts/` are labels, not
 namespaces.** Everything stays in one flat name-space, `import` and `_loader.load_script()`
 both resolve by bare basename, and basename uniqueness — enforced by
@@ -665,7 +687,16 @@ directory tree / file-by-file sections against the truth, so the guide cannot si
 out from under the code it documents. The hooks rule has **no allow-list** — it had one entry,
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
-the build on any document that states the rule and then carves an exception out of it. `--selftest`.
+the build on any document that states the rule and then carves an exception out of it.
+`doc_prose_numbers()` runs `_output`'s prose-number rule over the three documents this repo keeps
+its numbers in — this guide, `CLAUDE.md` and `CONTRIBUTING.md` — and it **delegates** to
+`_output._prose_number_claim` rather than restating the shapes, because a second copy of the
+pattern would be precisely the defect both scanners exist to catch; a case asserts there is no
+second definition. `navigability_violations()` and `ui_navigability_violations()` both **name** an
+asset they could not read and a directory they could not list, rather than skipping it (F44): the
+`.py` side had reported a file it could not *tokenize* since F21 while quietly swallowing one it
+could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
+report and panel UI gone, printing exactly what a clean tree prints. `--selftest`.
 
 ### `plugins/audit/scripts/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
@@ -1458,7 +1489,7 @@ one-minute manifest overview.
 they test, and all 48 files carried their own copy of `check()`. Those blocks moved out, one
 file at a time — three pilots, then batches A through E, then batch F: `_refs.py`, `_deps.py`
 and `_output.py`, the three lints that own this boundary, migrating themselves with themselves.
-**All 48 have moved**, `tests/test__output.py`'s `sc10`/`sc11` assert that end state by name,
+**Every one of them has moved**, `tests/test__output.py`'s `sc10`/`sc11` assert that end state by name,
 and no production file carries a suite of its own. This section describes the whole
 directory on purpose: §2 exists to answer
 "what does this file decide", and a test file's answer is always "the cases of the file beside
@@ -1580,12 +1611,12 @@ Three loader names left the hooks' ASTs with their suites (`guard-bash-writes` d
 in-file call of its own `policy_mod`). None was an edge: `_deps` scans `hooks/` **only** for the
 static hooks→scripts import ban, never as graph nodes, and each of those loads physically lives in
 `_config.py`, which keeps it and still serves it to production through `manifest_lock_conflict()`
-and `guard-capabilities`. `KNOWN_LAYER_DEBT` stayed at 17 and the generated module map did not move.
+and `guard-capabilities`. `KNOWN_LAYER_DEBT` did not change and the generated module map did not move.
 
 **Batch F retired nothing either, and the reason is worth one line: none of the three lints
 makes a `_loader` call at all.** Their only sibling edges are static `import _output`
 (`_refs.py` once, in `__main__`; `_deps.py` twice, at module level and in `__main__`), and all
-three call sites are production. `KNOWN_LAYER_DEBT` is still 17 and `_deps.py --render` is
+three call sites are production. `KNOWN_LAYER_DEBT` is unchanged and `_deps.py --render` is
 byte-identical across the batch — which the fence below required rather than merely allowed.
 
 **A lint that scans the tree it lives in must not plant its own needle there, and batch F paid
