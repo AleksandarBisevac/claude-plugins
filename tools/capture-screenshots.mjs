@@ -2021,6 +2021,99 @@ const shownMsgs = (page) => page.evaluate(() => {
  * would produce a chip that silently selects nothing. This drives both ends — the
  * pill against `STATE.viewer`, and the chip against `USAGE.facts`.
  */
+/**
+ * SC 2.4.11 Focus Not Obscured (Minimum, AA): a control that takes focus may not
+ * be ENTIRELY hidden by author content.
+ *
+ * There was no check for this, and the absence was easy to miss because one
+ * looks like it: the hit test in `measureResponsiveFrame` excuses sticky chrome
+ * through `escapable`, and that excuse is CORRECT for the question it asks —
+ * "is this control buried" — because the reader can scroll a bar off a resting
+ * layout. 2.4.11 asks a different question. A keyboard user does not scroll
+ * first; the browser scrolls the control just into view and stops, which with
+ * pinned chrome lands it underneath. Nothing measured that until this.
+ *
+ * Drives REAL Tab presses rather than calling `.focus()`: programmatic focus is
+ * a different path in the engine, and a probe in this repo has already reported
+ * a confident wrong answer by taking it.
+ */
+async function assertFocusNotObscured(page) {
+  const TABS = ['guards', 'comp', 'over', 'usage', 'policy', 'look'];
+  const STEPS = 30;
+  // Measured after the browser's own scroll-into-view AND anything the page does
+  // in response to focus have landed. Reading immediately measures the position
+  // the control is leaving — which once credited a fix with 10 repairs when it
+  // had made 31.
+  const settle = () => page.evaluate(() => new Promise((r) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 30)))));
+  const read = () => page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el || el === document.body || !el.getClientRects().length) return null;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    const cx = r.left + r.width / 2;
+    const pts = [[cx, r.top + 1], [cx, r.top + r.height / 2], [cx, r.bottom - 1],
+                 [r.left + 1, r.top + 1], [r.right - 1, r.bottom - 1]];
+    let on = 0, covered = 0, by = null;
+    for (const [x, y] of pts) {
+      if (x < 0 || y < 0 || x > innerWidth - 1 || y > innerHeight - 1) continue;
+      on += 1;
+      const hit = document.elementFromPoint(x, y);
+      if (hit === el || (hit && (el.contains(hit) || hit.contains(el)))) continue;
+      for (let p = hit; p && p !== document.body; p = p.parentElement) {
+        const cs = getComputedStyle(p);
+        if (cs.position === 'fixed' || cs.position === 'sticky') {
+          covered += 1; by = (p.className || p.tagName).toString().split(/\s+/)[0]; break;
+        }
+      }
+    }
+    if (!on) return null;
+    return { on, covered, by,
+             what: el.tagName.toLowerCase()
+                 + (el.id ? '#' + el.id : '')
+                 + ((el.className || '').toString().trim()
+                    ? '.' + (el.className || '').toString().trim().split(/\s+/)[0] : '') };
+  });
+
+  let stops = 0;
+  const bad = [];
+  for (const t of TABS) {
+    for (const key of ['Tab', 'Shift+Tab']) {
+      await page.click(`.tab[data-t="${t}"]`);
+      await page.waitForTimeout(250);
+      await page.evaluate(() => { window.scrollTo(0, 0);
+        if (document.activeElement) document.activeElement.blur(); });
+      for (let i = 0; i < STEPS; i += 1) {
+        await page.keyboard.press(key);
+        await settle();
+        const r = await read();
+        if (!r) continue;
+        stops += 1;
+        if (r.covered === r.on) bad.push(`${t}/${key}: ${r.what} entirely under .${r.by}`);
+      }
+    }
+  }
+
+  // The vacuity guard, and it is not decoration: every count below narrows this
+  // set, so a walk that focused nothing would report a panel with no obscured
+  // control on it. Twelve walks that reach almost nothing is the shape a broken
+  // selector produces, and it would otherwise read as a clean pass.
+  if (stops < 200) {
+    fail(`2.4.11: only ${stops} focus stop(s) were measured across ${TABS.length} `
+       + 'tabs in both directions — the walk is not reaching the form, so "no '
+       + 'obscured control" is not a claim about anything');
+    return;
+  }
+  if (bad.length) {
+    fail(`2.4.11 Focus Not Obscured: ${bad.length} of ${stops} focus stop(s) land `
+       + `ENTIRELY under pinned chrome — ${bad.slice(0, 4).join('; ')}`
+       + (bad.length > 4 ? `; +${bad.length - 4} more` : ''));
+  } else {
+    note(`2.4.11: ${stops} focus stops across six tabs, both directions — none `
+       + 'entirely obscured by pinned chrome');
+  }
+}
+
 async function assertViewerIdentity(page) {
   const v = await page.evaluate(() => STATE.viewer || null);
   if (!v) { fail('panel: /api/state carries no viewer — the topbar cannot name you'); return; }
@@ -6325,6 +6418,7 @@ async function main() {
       // follows it, not merely be timed to miss one.
       await assertUsageWorks(page);
       await assertViewerIdentity(page);
+      await assertFocusNotObscured(page);
       // Reads only, but it opens a modal over every tab it visits, so it runs
       // where no shutter follows it — the same rule the toast waiter enforces.
       await assertHelpDrawerWorks(page, declared);

@@ -2443,6 +2443,44 @@ def _cases(check):
           and M.UI_HTML.count(
               "'Extra files treated as secrets: add a pattern'") == 1)
 
+    # --- WCAG 2.2 SC 2.4.11 Focus Not Obscured (Minimum) ------------------------
+    # MEASURED by driving real Tab presses, not `.focus()`: 72 of 942 focus stops
+    # across six tabs and two viewports landed ENTIRELY under pinned chrome -- 60
+    # under `.top`, 11 under `.savebar`, 1 under `.ufil`. Shift+Tab far worse than
+    # Tab, because backwards traversal walks up into the header.
+    #
+    # THE BEHAVIOUR IS PINNED BY THE BROWSER GATE, not by these lines: only
+    # `tools/capture-screenshots.mjs`'s 2.4.11 walk can see whether a control is
+    # covered, and it fails at 17 of 353 with this feature switched off. What the
+    # cases here add is the half a browser gate is bad at -- catching the feature
+    # being DELETED, which would leave that walk measuring a page that no longer
+    # tries.
+    check("fo1 the panel repairs an obscured focus, and does it on real focus "
+          "rather than on a scroll listener",
+          "function keepFocusClear(){" in M.UI_HTML
+          and "document.addEventListener('focusin'" in M.UI_HTML
+          and "try{keepFocusClear();}" in M.UI_HTML)
+    check("fo2 the correction terminates on PROGRESS, not on a tuned count: a "
+          "pass that moves nothing stops it, and the ceiling is only a spin "
+          "guard - a fixed 3 left 10 of the 72, 6 left 5, 8 left 2, 16 left none",
+          "if(now===was)return;" in M.UI_HTML
+          and "for(let pass=0;pass<16;pass++){" in M.UI_HTML)
+    check("fo3 which viewport HALF the chrome sits in decides the direction, not "
+          "how its edges compare - comparing edges reads a bottom bar backwards "
+          "the moment the control is fully under it, which left every savebar "
+          "case unrepaired",
+          "const atTop=(c.top+c.bottom)/2<innerHeight/2;" in M.UI_HTML
+          and "const by=atTop?-(c.bottom-r.top+GAP):(r.bottom-c.top+GAP);"
+              in M.UI_HTML)
+    check("fo4 an open dropdown is closed rather than scrolled out from under - "
+          "a fixed menu travels with the viewport, so scrolling cannot free "
+          "anything, and a menu whose input lost focus has nothing to choose for",
+          "over.classList.contains('combo-menu')&&!over.contains(n)" in M.UI_HTML
+          and "closeCombo();continue;" in M.UI_HTML)
+    check("fo5 the repair cannot be the reason the panel fails to come up",
+          "catch(cause){console.error('keepFocusClear failed',cause);}"
+          in M.UI_HTML)
+
     # --- isolation: the moved boundary stays real -------------------------------
     # This file is BELOW panel-server and below the panel's read/write sides. It
     # holds page claims only, which is what lets it sit at layer 4; an import of
