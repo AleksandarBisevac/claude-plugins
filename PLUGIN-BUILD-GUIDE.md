@@ -276,7 +276,7 @@ L4:
   _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
 
 L5:
-  _panel_state -> _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer
+  _panel_state -> _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 

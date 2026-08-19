@@ -1634,14 +1634,58 @@ KNOWN_LAYER_DEBT = (
     # takes the same code path the CLI takes, with no interpreter discovery and
     # the same behaviour on Windows.
     #
-    # There is no logic here to extract downward. What the panel wants is not a
+    # THIS ENTRY USED TO SAY "there is no logic here to extract downward", AND
+    # THAT WAS FALSE FOR HALF OF IT. The edge had TWO call sites, and they were
+    # not the same kind of thing. `_panel_state.report_paths()` reached the same
+    # L7 module for `_report_basename` - a pure naming rule that `_report_html`
+    # owns at L2 and `render-report.py` merely aliases. That is the exact shape
+    # every retired entry above had, a module used as a LIBRARY through a
+    # COMMAND, and the downward home for it was already built; the panel simply
+    # was not asking there. It asks `_report_html` directly now. The entry did
+    # not move, because an edge is a pair and the other call site keeps it - but
+    # a reason that is true of only one call site is a reason that stops the next
+    # reader looking, which is how debt becomes permanent without anyone deciding
+    # it should be.
+    #
+    # WHAT IS LEFT REALLY HAS NO DOWNWARD HOME, and the arithmetic is checkable
+    # rather than asserted (`ld1` in tests/test__deps.py recomputes it from
+    # LAYERS and fails if it stops holding). What `render_report` wants is not a
     # rule it could share but the WHOLE report pipeline ending in two files on
-    # disk, and that pipeline reaches `_report_page` at L6 - above this module's
-    # own L5. A helper holding it could therefore not sit anywhere `_panel_state`
-    # may import from. The two real fixes are both larger decisions than this
-    # entry: move `_panel_state` above the report stack (which renumbers the
-    # table), or split a writer out of `render-report.main()` and rehome the
-    # report modules under it.
+    # disk. That pipeline is a genuine chain - `_report_html` -> `_usage_viz` ->
+    # `_usage_markdown` -> `_report_md` -> `_report_page` - and it bottoms out at
+    # `_report_page`, ABOVE this module. A helper holding it could therefore not
+    # sit anywhere `_panel_state` may import from.
+    #
+    # THE TWO REAL FIXES, AND WHAT EACH COSTS. Both are larger decisions than
+    # this entry.
+    #
+    #   * MOVE `_panel_state` ABOVE THE REPORT STACK. It cannot land on the entry
+    #     point layer - a peer load is not strictly downward either - so it needs
+    #     a layer above that, and `_panel_write` and `panel-server` both import it
+    #     and must follow. The table gains layers and `panel-server` ends up alone
+    #     at the top while every other entry point stays put, which dissolves the
+    #     one property this table is FOR: a layer being a group a reader can hold
+    #     in their head. No edge changes behaviour; the map is renumbered
+    #     throughout. That is the same trade every "inserting a layer would have
+    #     renumbered every entry below" note above declines, and it declines
+    #     bigger here.
+    #
+    #   * SPLIT A WRITER OUT OF `render-report.main()`. Real, and it does not
+    #     reach this module: the extracted writer still has to call
+    #     `_report_page`, so it lands at L6, and `_panel_state` at L5 is still
+    #     below it. It shrinks the edge from "an entry point" to "a writer" and
+    #     leaves it pointing the same way, so it has to be paired with the move
+    #     above to retire anything.
+    #
+    # AND INVERTING THE CALL IS NOT A THIRD FIX, WHICH IS WORTH SAYING BECAUSE
+    # THIS FILE ALREADY HOLDS THE PRECEDENT THAT MAKES IT LOOK LIKE ONE.
+    # `render-report` takes the gate verdict as an INJECTED callable instead of
+    # reaching up to `audit-status`. That worked because the injected thing's
+    # implementation moved DOWN - `_status_facts` at L2 - so the supplier's own
+    # edge became downward. Here the implementation cannot go below `_report_page`,
+    # so injection only asks who supplies the callable, and every candidate is
+    # `_panel_write` or `panel-server`, at or above the entry point layer.
+    # The edge would be recorded against a different file, unchanged.
     #
     # WHAT WAS DELIBERATELY NOT DONE: swapping the in-process call for a
     # `script_path()` + subprocess. `_deps` does not count that as an edge, by
@@ -1650,6 +1694,15 @@ KNOWN_LAYER_DEBT = (
     # also change behaviour: a second interpreter, a different failure surface,
     # and an exit code where there is now an exception. A fix that makes an edge
     # invisible rather than absent is a regression wearing a green suite.
+    #
+    # NOR IS "TEACH THE LINT THAT A RUNTIME LOAD IS NOT A STATIC EDGE" A FIX,
+    # which has to be said because it is the one that looks free. `load_script`
+    # creates the module and runs it IN THIS PROCESS; the only reason it is not
+    # an `import` statement is that every entry point in this tree is hyphenated
+    # and no `import` can spell one. Narrowing the scan to `ast.Import` is the
+    # exact state the module docstring records - a clean report over a tree
+    # carrying twenty-one upward runtime edges - and `rt6`/`bw4` keep that
+    # version red on purpose. The edge is real; the spelling is what is unusual.
     ("panel/_panel_state.py",
      "runtime-loads render-report (layer 7) from layer 5 - not strictly downward"),
 )

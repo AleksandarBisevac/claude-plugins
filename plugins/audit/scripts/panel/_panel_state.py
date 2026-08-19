@@ -57,10 +57,22 @@ BOUNDARY DECISIONS -- read-side code that touched names the write path also uses
     mutating `_JOURNAL` in place still reach one shared piece of state.
 
   * `render_report` STAYS HERE rather than moving with the Usage tab, and that is
-    deliberate: it runtime-loads `render-report.py` at layer 7, which is the single
-    entry in `_deps.KNOWN_LAYER_DEBT`. Moving it into a layer-4 module would have
-    made that recorded edge span three layers instead of one while changing nothing
-    about it.
+    deliberate: it runtime-loads `render-report.py` at layer 7, the edge
+    `_deps.KNOWN_LAYER_DEBT` records against this file. Moving it into a
+    layer-4 module would have made that recorded edge span three layers instead
+    of one while changing nothing about it.
+
+    `report_paths` is NO LONGER part of that edge, and the difference is the
+    lesson. It reached the same layer-7 module for `_report_basename` — a pure
+    naming rule that `_report_html` owns at layer 2 and `render-report.py` merely
+    aliases — so one of the two call sites under that entry was a module being
+    used as a LIBRARY through a COMMAND, which is the shape every retired entry
+    in that table had. It now imports `_report_html` directly. What is left is
+    the half with no downward home: `render_report` wants the WHOLE pipeline
+    ending in files on disk, and that pipeline bottoms out at `_report_page`
+    (layer 6), above this module's layer 5. See the entry itself for why moving
+    this module up, or inverting the call, both relocate the edge rather than
+    retire it.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -106,6 +118,7 @@ import _panel_composition as _composition  # noqa: E402  (the plan as shown, at 
 import _panel_policy as _policy_mod    # noqa: E402  (the capability policy, at layer 4)
 import _panel_runstate as _runstate    # noqa: E402  (locks, stamp, gate, at layer 4)
 import _panel_usage as _usage          # noqa: E402  (the Usage tab's facts, at layer 4)
+import _report_html                    # noqa: E402  (the report's naming rule, at layer 2)
 
 discover = _panel_discovery.discover
 CONFIG_REL = _paths.CONFIG_REL
@@ -306,18 +319,26 @@ def report_paths(project):
     out_dir = os.path.dirname(os.path.abspath(mpath))
     if not _within(project, out_dir):
         return None
-    try:
-        rr = _load("audit_render_report", "render-report.py")
-        manifest = _mio.load_manifest_safe(mpath)
-        # `_report_basename` takes META, not the manifest — it reads
-        # `reportBasename` off the mapping it is handed. Passed the whole manifest
-        # it found no such key and always answered "audit-report", so on every
-        # project that sets meta.reportBasename (the shipped example does) the
-        # panel rendered the report correctly and then looked for it under the
-        # wrong name: "wrote 2 files" followed by a 404.
-        base = rr._report_basename(manifest.get("meta"), None)
-    except Exception:
-        base = "audit-report"
+    # ASKED AT ITS OWNER, NOT AT THE COMMAND THAT RE-EXPORTS IT — see the module
+    # docstring for why that retires half of the recorded layer debt. Same
+    # function object either way, so the name this returns does not change.
+    #
+    # THE `except Exception: base = "audit-report"` WENT WITH THE LOADER, because
+    # the loader was the only step here that could fail: `load_manifest_safe`
+    # documents itself as returning `{}` on ANY error, and `_report_basename` is
+    # total over JSON values (it guards `isinstance(meta, dict)` and ends in
+    # `or "audit-report"`). A fallback that can no longer fire is not a safety
+    # net, it is a defaulted answer waiting to be believed — and this one had
+    # been believed once already: `_report_basename` takes META, not the
+    # manifest, so handed the whole manifest it found no such key and answered
+    # "audit-report" anyway. Every project that sets meta.reportBasename (the
+    # shipped example does) rendered its report correctly and then looked for it
+    # under the wrong name — "wrote 2 files" followed by a 404. The default is
+    # what made that silent, which is the house rule exactly: never fall back to
+    # a default to fill a gap. `rb1`/`rb2` in tests/test__panel_state.py are the
+    # cases that would have caught it; nothing here could tell the two apart.
+    manifest = _mio.load_manifest_safe(mpath)
+    base = _report_html._report_basename(manifest.get("meta"), None)
     return mpath, out_dir, os.path.join(out_dir, base + ".html")
 
 

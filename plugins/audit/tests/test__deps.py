@@ -1289,6 +1289,95 @@ def _cases(check):
         shutil.rmtree(_dpn_tmp, ignore_errors=True)
 
 
+    # --- the ONE recorded layer debt, and whether its REASON still holds ----------
+    # KNOWN_LAYER_DEBT carries a written justification, and a written justification
+    # is the half of an allow-list that rots without anything noticing: `r2` pins
+    # the EDGE and would stay green for as long as the edge existed, whatever the
+    # comment above it had come to claim. These two recompute the claim instead.
+    #
+    # The claim: `_panel_state` runtime-loads `render-report` because what it wants
+    # is the whole report pipeline ending in files on disk, that pipeline bottoms
+    # out at `_report_page`, and `_report_page` is NOT strictly below
+    # `_panel_state` - so no module `_panel_state` may import from can hold it.
+    # Retiring the entry therefore means moving one of those two, and that is
+    # exactly what these cases watch for.
+    _ld_static, _ld_runtime, _ld_broken = M._scan_edges()
+    _ld_all = _ld_static | _ld_runtime
+    _ld_chain = ("_report_html", "_usage_viz", "_usage_markdown", "_report_md",
+                 "_report_page")
+    _ld_links = [(_ld_chain[i + 1], _ld_chain[i]) for i in range(len(_ld_chain) - 1)]
+    _ld_missing = [lk for lk in _ld_links if lk not in _ld_all]
+    _ld_layers = [M._layer_of(n) for n in _ld_chain]
+    check("ld0 the report document stack is a REAL chain in the scanned tree, not "
+          "a picture: every link of %r is an edge (%d links, %d missing: %r) and "
+          "its layers rise strictly (%r). Read off %d scanned edges, so an empty "
+          "scan cannot pass this"
+          % (_ld_chain, len(_ld_links), len(_ld_missing), _ld_missing, _ld_layers,
+             len(_ld_all)),
+          len(_ld_all) > 0 and not _ld_missing and None not in _ld_layers
+          and all(_ld_layers[i] < _ld_layers[i + 1]
+                  for i in range(len(_ld_layers) - 1)))
+
+    def _debt_reason_holds(layers):
+        """True while no layer under `_panel_state` can hold the report writer.
+
+        The entry's justification, as arithmetic: the deepest module the whole-
+        document pipeline needs (`_report_page`) is at or above the module that
+        wants it, so there is no legal home below the consumer.
+        """
+        consumer = M._layer_of("_panel_state", layers)
+        deepest = M._layer_of("_report_page", layers)
+        if consumer is None or deepest is None:
+            return None
+        return deepest >= consumer
+
+    _ld_consumer = M._layer_of("_panel_state")
+    _ld_deepest = M._layer_of("_report_page")
+    check("ld1 the justification written above KNOWN_LAYER_DEBT is still ARITHMETIC "
+          "and not history: `_report_page` (layer %r) is not strictly below "
+          "`_panel_state` (layer %r), so the report writer has no home this module "
+          "may import from and the edge cannot be retired by moving code. If this "
+          "goes red the entry has become retirable - rewrite or delete it, do not "
+          "re-green this case"
+          % (_ld_deepest, _ld_consumer),
+          _debt_reason_holds(M.LAYERS) is True)
+
+    # POSITIVE CONTROL for ld1. `ld1` asserts a condition that is true of the tree
+    # as it stands, so on its own it cannot distinguish "the reason holds" from
+    # "the predicate answers True to everything". This lifts `_panel_state` above
+    # the report stack - the FIRST of the two fixes the entry names - and requires
+    # the answer to flip. The mutation is asserted to have applied before it is
+    # judged, because a table that silently failed to change would make this pass.
+    _ld_mut = tuple(tuple(n for n in members if n != "_panel_state")
+                    for members in M.LAYERS) + (("_panel_state",),)
+    _ld_mut_layer = M._layer_of("_panel_state", _ld_mut)
+    check("ld2 POSITIVE CONTROL: the mutation APPLIED - `_panel_state` moved from "
+          "layer %r to layer %r and appears exactly once in the mutated table (%d "
+          "occurrences), which is what makes ld2b's answer mean anything"
+          % (_ld_consumer, _ld_mut_layer,
+             sum(1 for ms in _ld_mut for n in ms if n == "_panel_state")),
+          _ld_mut_layer is not None and _ld_mut_layer > _ld_consumer
+          and sum(1 for ms in _ld_mut for n in ms if n == "_panel_state") == 1)
+    check("ld2b ...and with `_panel_state` above `_report_page` the justification "
+          "STOPS holding - so ld1 is reading the table rather than answering True "
+          "unconditionally, and the entry really would be retirable if anyone made "
+          "that move",
+          _debt_reason_holds(_ld_mut) is False)
+
+    # The entry is a pair (file, what), and `r2` already pins it against the real
+    # violations. What r2 cannot see is WHICH file the reason is written about: a
+    # justification naming `_panel_state` while the recorded edge belonged to some
+    # other module would be an allow-list entry with a reason for a different
+    # thing. Cheap to state, and it is the join between ld1's arithmetic and r2's
+    # equality.
+    _ld_files = sorted(set(f for f, _w in M.KNOWN_LAYER_DEBT))
+    check("ld3 the arithmetic in ld1 is about the file the table actually records: "
+          "every debt entry names a `_panel_state` path (%r)"
+          % (_ld_files,),
+          _ld_files and all(os.path.basename(f) == "_panel_state.py"
+                            for f in _ld_files))
+
+
 
 def _selftest():
     return _harness.run(_cases)

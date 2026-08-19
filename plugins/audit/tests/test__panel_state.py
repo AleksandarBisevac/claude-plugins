@@ -49,6 +49,7 @@ fixture writer goes straight through `_mio.atomic_write_json`.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import json
 import os
 import sys
@@ -126,6 +127,98 @@ def _cases(check):
               and M.render_report(_np)["ok"] is False)
     finally:
         shutil.rmtree(_np, ignore_errors=True)
+
+    # --- the basename, and where it is asked (F47) ---------------------------------
+    # `report_paths` used to reach `render-report.py` - an ENTRY POINT at layer 7 -
+    # for `_report_basename`, a pure naming rule `_report_html` owns at layer 2.
+    # That was one of the two call sites under the sole `_deps.KNOWN_LAYER_DEBT`
+    # entry, and the only one with a downward home already built for it.
+    #
+    # NOTHING ABOVE COULD SEE THE DIFFERENCE, and that is why these cases exist.
+    # Every fixture in this file writes a manifest with no `meta.reportBasename`,
+    # so the derived name is "audit-report" whether the rule ran or the old
+    # `except Exception: base = "audit-report"` fallback fired. A fixture that
+    # cannot tell the two implementations apart is not evidence about either.
+    _rb = tempfile.mkdtemp(prefix="panel-basename-")
+    try:
+        _rb_dir = os.path.join(_rb, "docs", "audit")
+        os.makedirs(_rb_dir, exist_ok=True)
+        _rb_name = "quarterly-audit"
+
+        def _write_rb_manifest(meta):
+            with open(os.path.join(_rb_dir, "audit-plan.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"meta": meta, "phases": [
+                    {"id": "P1", "title": "A", "status": "done", "tasks": [
+                        {"id": "P1.1", "title": "t", "status": "done"}]}]}, fh)
+
+        _write_rb_manifest({"version": 2, "repo": "x",
+                            "reportBasename": _rb_name})
+        _rb_html = M.report_paths(_rb)[2]
+        check("rb1 report_paths derives the report's name from meta.reportBasename "
+              "- fixture declares %r, which is NOT the default, so this case fails "
+              "on any implementation that answers the default regardless. Got %r"
+              % (_rb_name, os.path.basename(_rb_html)),
+              _rb_name != "audit-report"
+              and os.path.basename(_rb_html) == _rb_name + ".html")
+
+        _write_rb_manifest({"version": 2, "repo": "x"})
+        _rb_default = M.report_paths(_rb)[2]
+        check("rb2 ...and the OTHER direction: with the key absent the name falls to "
+              "the rule's own 'audit-report', so rb1 is reading meta rather than "
+              "echoing whatever the manifest happens to hold. The two fixtures "
+              "differ only in that key and give different answers: %r vs %r"
+              % (os.path.basename(_rb_html), os.path.basename(_rb_default)),
+              os.path.basename(_rb_default) == "audit-report.html"
+              and _rb_default != _rb_html)
+    finally:
+        shutil.rmtree(_rb, ignore_errors=True)
+
+    # Same function object either way - the layer-2 module owns it, the layer-7
+    # command aliases it - which is what makes the move above a change of ROUTE and
+    # not of behaviour. Asserted rather than assumed: an alias that had drifted into
+    # a copy would make rb1 and rb2 pass while the panel and the CLI disagreed.
+    import _report_html as _rh
+    _rr = M._load("audit_render_report", "render-report.py")
+    check("rb3 `_report_html._report_basename` IS what render-report.py exports "
+          "under that name - one function, two spellings, so asking at the owner "
+          "cannot answer differently from asking at the command",
+          _rh._report_basename is _rr._report_basename
+          and M._report_html is _rh)
+
+    # The route itself, read from the AST rather than from a grep: a `.py` literal
+    # in a docstring or an error message is not a call, and the whole point of the
+    # change is WHICH FUNCTION spells this one.
+    _rr_lit = "render-report.py"
+    _rr_funcs = {}
+    for _node in ast.walk(ast.parse(_src)):
+        if isinstance(_node, ast.FunctionDef):
+            _rr_funcs[_node.name] = sum(
+                1 for _sub in ast.walk(_node)
+                if isinstance(_sub, ast.Constant) and _sub.value == _rr_lit)
+    _rr_total = sum(_rr_funcs.values())
+    check("rb4 the layer-7 load is spelled ONLY in `render_report`, the half that "
+          "genuinely wants the whole pipeline: report_paths=%d render_report=%d, "
+          "and %d such literal(s) in %d parsed function(s) overall - a walk that "
+          "read nothing would report 0 functions and cannot pass this"
+          % (_rr_funcs.get("report_paths", -1), _rr_funcs.get("render_report", -1),
+             _rr_total, len(_rr_funcs)),
+          len(_rr_funcs) > 0 and _rr_total > 0
+          and _rr_funcs.get("report_paths") == 0
+          and _rr_funcs.get("render_report", 0) >= 1)
+
+    # The edge that REMAINS is still recorded, and still exactly one - the repair
+    # narrowed a debt entry rather than retiring it, and a case that let it quietly
+    # become zero here while `_deps`' own r2 pinned it would be two answers to one
+    # question. Read off `_deps` so there is no second copy of the tuple.
+    _rr_debt = [w for f, w in _deps.KNOWN_LAYER_DEBT
+                if os.path.basename(f) == "_panel_state.py"]
+    check("rb5 ...and this module is still the file `_deps.KNOWN_LAYER_DEBT` records "
+          "the upward edge against (%d entr(y/ies): %r). Narrowing two call sites to "
+          "one does not retire the edge, and this case is what stops the repair being "
+          "read as one"
+          % (len(_rr_debt), _rr_debt),
+          len(_rr_debt) == 1 and "render-report" in _rr_debt[0])
 
 
     # --- isolation cases (P12.3): the moved boundary stays real -----------------
