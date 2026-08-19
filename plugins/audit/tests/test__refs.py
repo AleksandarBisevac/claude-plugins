@@ -846,6 +846,59 @@ def _cases(check):
           "the fence scope must be able to fire here")
 
 
+    # --- F36: a command's flags vs the README row that catalogues them ---------
+    # The defect this exists for was live when it was written: /audit:status had
+    # grown --gate and --fail-on while its README row said "-", and /audit:doctor
+    # had grown --deep while its row still said [--json]. A capability nobody can
+    # find is the thing this repo keeps meeting.
+    _cfd = M.command_flag_drift()
+    check("cf1 the README's command table names every flag its commands declare "
+          "- %d command(s) with an argument-hint and a row, missing %r"
+          % (_cfd["checked"], _cfd["missing"]),
+          _cfd["checked"] >= 12 and _cfd["missing"] == [])
+    # The vacuity guard, and it is not decoration: `missing == []` is also what a
+    # scan that read no commands returns, which is exactly how this check would
+    # rot into an always-green line.
+    check("cf2 ...and it read the commands rather than finding nothing to read - "
+          "a scan over an empty set reports no drift too",
+          M.command_flag_drift()["checked"] > 0)
+    # A SUBSET, never equality. The two are written for different readers: the
+    # README column carries prose and escaped pipes that no frontmatter string
+    # would, so demanding they match would fail on the difference that is the
+    # point of having both.
+    _tmp_ref = tempfile.mkdtemp(prefix="qg-cfd-")
+    try:
+        os.makedirs(os.path.join(_tmp_ref, "plugins", "audit", "commands"))
+        with open(os.path.join(_tmp_ref, "plugins", "audit", "README.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("| Command | Arguments | What |\n|---|---|---|\n"
+                     "| `/audit:demo` | `push [a\\|b] [--task <id>] \\| pull` | x |\n")
+        with open(os.path.join(_tmp_ref, "plugins", "audit", "commands", "demo.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("---\nargument-hint: 'push [a|b] [--task <id>] | pull'\n---\n")
+        _d = M.command_flag_drift(_tmp_ref)
+        check("cf3 an escaped pipe inside the args cell does not truncate it: the "
+              "cell ends at an UNESCAPED bar, and reading it the other way "
+              "reported six commands as missing flags written two characters "
+              "further along: %r" % (_d,),
+              _d["checked"] == 1 and _d["missing"] == [])
+        with open(os.path.join(_tmp_ref, "plugins", "audit", "commands", "demo.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("---\nargument-hint: 'push [a|b] [--task <id>] [--deep] | pull'\n---\n")
+        _d = M.command_flag_drift(_tmp_ref)
+        check("cf4 ...and a flag the row really does omit IS reported, by command "
+              "and by flag: %r" % (_d["missing"],),
+              _d["missing"] == [("demo", "--deep")])
+        with open(os.path.join(_tmp_ref, "plugins", "audit", "commands", "noargs.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("---\ndescription: 'x'\n---\n")
+        check("cf5 a command with no argument-hint is not a finding - it takes no "
+              "arguments, and silence there is an answer",
+              M.command_flag_drift(_tmp_ref)["checked"] == 1)
+    finally:
+        shutil.rmtree(_tmp_ref, ignore_errors=True)
+
+
 def _selftest():
     return _harness.run(_cases)
 

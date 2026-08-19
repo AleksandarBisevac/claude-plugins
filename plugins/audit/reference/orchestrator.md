@@ -34,9 +34,12 @@ either layout (the scripts and hooks assemble transparently), but WRITES must ta
   `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock. A phase run therefore touches
   **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
 - **Single-file layout** (`meta.version: 2` or absent): it's all one file, as before.
-- If a legacy single-file manifest is in play, a mutating command should note **once** that
-  `/audit:migrate` converts it to the sharded layout (fewer tokens per phase, parallel-safe) — a
-  non-blocking suggestion; the single-file layout keeps working indefinitely.
+- **Neither layout is legacy, and a mutating command should not nudge.** `meta.version` 2 and 3
+  encode a layout CHOICE, not an age: a single-file manifest never goes out of date, and
+  installing a newer plugin never makes migrating due. Sharding earns its keep when phases run in
+  parallel from separate worktrees, or when the index is large enough that per-phase context cost
+  matters — one session with few phases is better off single-file. If asked, say that; do not
+  volunteer it on every write. And say the direction plainly: `/audit:migrate` has no reverse.
 
 Below, "**Edit the phase's manifest file**" means the shard in the sharded layout, the one file otherwise.
 

@@ -513,6 +513,68 @@ def tool_basename_drift(repo_root=None):
     return {"unknown": unknown, "checked": checked, "files": len(files)}
 
 
+# --- what a command declares vs what the README says it takes -------------------
+# The args cell ends at an UNESCAPED pipe. Half these rows carry `\\|` inside
+# them (`push [bugs\\|tasks\\|all] ...`), and a lazy `.*?` up to the first `|`
+# truncates the cell there -- which reported six commands as missing flags that
+# were plainly written two characters further along. Measured before believing:
+# the first version of this check produced 20 findings, of which 2 were real.
+_CMD_ROW = re.compile(r"^\|\s*`/audit:([a-z-]+)`\s*\|((?:\\\||[^|])*)\|",
+                      re.MULTILINE)
+_FLAG = re.compile(r"--[a-z][a-z0-9-]*")
+
+
+def command_flag_drift(repo_root=None):
+    """{"missing": [(command, flag), ...], "checked": n} -- flags the README omits.
+
+    THE RULE: every flag a command's `argument-hint` declares must appear in that
+    command's row of the README's command table. A SUBSET check and deliberately
+    not equality: the two are written for different readers, and the README's
+    column legitimately carries prose (`[scope/goals - you'll be interviewed]`)
+    and escaped pipes that no frontmatter string would.
+
+    Why it exists (F36, and it was already true when written): `/audit:status`
+    grew `--gate` and `--fail-on` and its README row said `-`; `/audit:doctor`
+    grew `--deep` and its row still said `[--json]`. A capability nobody can find
+    is the defect this repo keeps meeting, and a second copy of a list with
+    nothing comparing it is how it comes back.
+
+    A command with no `argument-hint`, or with no README row, is not a finding:
+    the first takes no arguments and the second is `counts_by_surface`' business.
+    Silence there is an answer, not a gap.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    readme = os.path.join(root, "plugins", "audit", "README.md")
+    cmd_dir = os.path.join(root, "plugins", "audit", "commands")
+    try:
+        with open(readme, "r", encoding="utf-8") as fh:
+            rows = dict((m.group(1), m.group(2)) for m in _CMD_ROW.finditer(fh.read()))
+    except (OSError, UnicodeDecodeError):
+        return {"missing": [], "checked": 0}
+
+    missing, checked = [], 0
+    for name in sorted(os.listdir(cmd_dir) if os.path.isdir(cmd_dir) else []):
+        if not name.endswith(".md"):
+            continue
+        cmd = name[:-3]
+        if cmd not in rows:
+            continue
+        try:
+            with open(os.path.join(cmd_dir, name), "r", encoding="utf-8") as fh:
+                head = fh.read(4096)
+        except (OSError, UnicodeDecodeError):
+            continue
+        hint = re.search(r"^argument-hint:\s*(.+)$", head, re.MULTILINE)
+        if not hint:
+            continue
+        checked += 1
+        row_flags = set(_FLAG.findall(rows[cmd]))
+        for flag in sorted(set(_FLAG.findall(hint.group(1)))):
+            if flag not in row_flags:
+                missing.append((cmd, flag))
+    return {"missing": missing, "checked": checked}
+
+
 # --- the selftest sweep -------------------------------------------------------
 # `for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py` stops at the top level:
 # put a file one directory down, the glob does not match it, the loop never runs it, and

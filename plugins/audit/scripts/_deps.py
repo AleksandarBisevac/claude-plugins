@@ -84,7 +84,7 @@ This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/_harness.py`. The move retired NO edge, and that was measured per
 call site rather than assumed: this file makes no `_loader` call at all, and its only
 static sibling import (`_output`, twice) is production both times. `KNOWN_LAYER_DEBT`
-therefore stayed at 17 and `--render`'s output is byte-identical across the move —
+therefore did not change across that move, and `--render`'s output is byte-identical —
 which is what a fence pinned in `PLUGIN-BUILD-GUIDE.md` requires.
 """
 
