@@ -2498,9 +2498,22 @@ async function assertLabelInName(page, areas, surface) {
         + (bad.length > 6 ? ` (+${bad.length - 6} more)` : ''));
   } else {
     note(`${surface}: SC 2.5.3 Label in Name — ${all.length} control(s) with a visible `
-     + `text label, every accessible name contains it`
-     + (noname.length ? `; ${noname.length} with NO accessible name at all, which is `
-         + `SC 4.1.2 and counted separately (F42)` : ''));
+     + `text label, every accessible name contains it`);
+  }
+  // SC 4.1.2 is a SEPARATE criterion and now a separate FAILURE. It was a note
+  // while the number was untrustworthy — fifteen of the twenty-six turned out
+  // to be inside a closed <details> — and a number nobody can act on has no
+  // business failing a build. Both surfaces read zero now, so it gates: a
+  // control the browser gives no name is worse than one whose name disagrees
+  // with its label, because a screen-reader user gets nothing at all.
+  if (noname.length) {
+    const shown = noname.slice(0, 6).map((r) =>
+      `${r.tag}${r.id ? '#' + r.id : '.' + (r.cls || '?').split(' ')[0]} [${r.area}] `
+      + `shows ${JSON.stringify(r.visible.slice(0, 36))}`);
+    fail(`${surface}: SC 4.1.2 — ${noname.length} focusable control(s) with NO `
+       + `accessible name, so a screen reader announces nothing at all for them: `
+       + `${shown.join(' · ')}`
+       + (noname.length > 6 ? ` (+${noname.length - 6} more)` : ''));
   }
 }
 

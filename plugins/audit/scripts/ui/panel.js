@@ -521,7 +521,7 @@ const SETTINGS=__SETTINGS__, HELP=__FIELD_HELP__, MDESC=__COMP_HELP__, ENUMS=__C
 // `ref` decides whether there is a second depth at all — a hint on something the
 // schemas do not document (a policy switch, a discovered capability) stays a
 // tooltip rather than becoming a button that opens an empty page.
-function hint(t,ref){if(!t&&!ref)return null;
+function hint(t,ref,name){if(!t&&!ref)return null;
  // No `data-tip` at all when there is no tooltip, rather than an empty one: the
  // bubble's content IS that attribute, so an empty string draws an empty box on
  // hover. Two fields hit this the moment the ⓘ stopped needing tooltip text to
@@ -535,7 +535,19 @@ function hint(t,ref){if(!t&&!ref)return null;
   // field's hint rather than counting their way to it through a label's words.
   h.setAttribute('data-hint',ref.path||ref.comp||('topic:'+ref.topic));
   h.onclick=ev=>{ev.preventDefault();ev.stopPropagation();openHelp(ref);};}
- else h.tabIndex=0;
+ else{h.tabIndex=0;
+  // A focusable element with no role and no name announces NOTHING, and eleven
+  // of these were in the tab order doing exactly that (SC 4.1.2, F42). It is
+  // deliberately NOT a <button>: there is no drawer behind a ref-less hint, and
+  // a button that opens nothing is a worse lie than a missing name.
+  //
+  // The name is the SAME SHAPE the ref branch uses, and that is not tidiness.
+  // The first repair named it after the tooltip TEXT, which reads sensibly and
+  // fails SC 2.5.3 on the spot: the words beside the ⓘ are the field's caption,
+  // so a name built from anything else cannot contain them. The gate caught it —
+  // nine controls — before it was committed. Naming it after what it explains
+  // satisfies both criteria at once.
+  if(name)h.setAttribute('aria-label','What is '+name+'?');}
  // No listener here on purpose — showTip/hideTip below are delegated on the
  // document, so a hint that arrives with a re-render is covered without its
  // author remembering to wire anything.
@@ -612,8 +624,8 @@ function startTipPlacement(){
 // against a visible "Provenance tag ... no tag" -- and SC 2.5.3 fails outright.
 // Pass forId and the wrapper becomes a <span>, binding by `for` instead.
 function flabel(text,tip,ref,forId){return el('span',{class:'lbl'},
- forId?el('label',{for:forId},text):text,hint(tip,ref));}
-function h2h(text,tip,ref){return el('h2',{},text,hint(tip,ref));}
+ forId?el('label',{for:forId},text):text,hint(tip,ref,text));}
+function h2h(text,tip,ref){return el('h2',{},text,hint(tip,ref,text));}
 // Heading in the reader's words, with the JSON key beside it for whoever is
 // editing .claude/audit.config.json by hand. Both audiences are real and they
 // want different strings: "guardEdits.tokenVars" tells you nothing about what the

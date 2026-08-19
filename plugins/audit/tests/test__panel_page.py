@@ -2380,7 +2380,12 @@ def _cases(check):
           len(_fw_labels) >= 6 and _fw_flabels >= 10 and not _fw_bad)
 
     # THE REPAIR MUST READ CLEAN, or the lint forbids its own remedy and the next
-    # person deletes the lint instead of the defect. Two shapes have to survive it:
+    # person deletes the lint instead of the defect. The pinned builder text
+    # gained hint()'s third argument under F42 — the ref-less i is named after
+    # what it explains now, instead of being a focusable element announcing
+    # nothing — which changes the literal without touching the property this
+    # case is about: the builder still binds by `for` and still holds only the
+    # words. Two shapes have to survive it:
     # flabel's own `el('label',{for:forId},text)`, which is the fix, and a repaired
     # call site, whose wrapper is a <span> and so is not scanned at all.
     _fw_bound = [_c for _c in _fw_labels if "for:forId" in _c]
@@ -2390,7 +2395,7 @@ def _cases(check):
           "scanned set entirely" % (len(_fw_bound),),
           len(_fw_bound) == 2
           and not [_c for _c in _fw_bound if "flabel(" in _c]
-          and "forId?el('label',{for:forId},text):text,hint(tip,ref));}"
+          and "forId?el('label',{for:forId},text):text,hint(tip,ref,text));}"
               in M.UI_HTML
           and not _fl_in_label(
               "el('span',{class:'f'},flabel(lbl,help,null,'ado-x'),i)"))
