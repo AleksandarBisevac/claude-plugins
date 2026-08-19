@@ -410,9 +410,13 @@ trigger named — the analytics section — is exactly what came out.
 be one: hooks resolve by **basename** through `find_script()`, so neither the
 split nor the later move into `usage/` touched a hook.
 
-The largest file in the plugin is now `panel/_panel_state.py` at 1,586 lines, and
-**26 files remain over 500**. That is the standing split list, tracked as work
-rather than as a decision — there is nothing left to decide here.
+The largest file is now `_deps.py` at 1,479 lines, and **21 files remain over 500** under `scripts/` + `hooks/` (17 and 4) as of
+`73042a1` — print it with `python3 tools/count-ui-pins.py`, which reports the
+same figure it was measured with. It read **26** here for eight days after the
+split that changed it, and the sentence never said which directories it counted:
+adding `tests/` gives 38, so "26" was not merely stale, it was unscoped. That is
+the standing split list, tracked as work rather than as a decision — there is
+nothing left to decide here.
 
 ### typing/dataclasses/annotations stay banned (standing since P9.3's AST enforcement)
 

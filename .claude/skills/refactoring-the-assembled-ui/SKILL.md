@@ -1,6 +1,6 @@
 ---
 name: refactoring-the-assembled-ui
-description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the 737 byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching report.css, report.js, panel.css, panel.js or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
+description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching report.css, report.js, panel.css, panel.js or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
 ---
 
 # Refactoring the assembled UI
@@ -42,8 +42,10 @@ single self-contained HTML page. Almost every surprise in this area comes from f
 ## Splitting: cut, never regroup
 
 The current statement order is a **machine-checked contract**, and the suites that hold it now
-live in `plugins/audit/tests/`, not in the scripts that build the page: **47 index-slice
-assertions in `test__panel_page.py` and 39 in `test_render_report.py`.**
+live in `plugins/audit/tests/`, not in the scripts that build the page: **26 index-bounded
+slices in `test__panel_page.py`, 20 in `test_render_report.py` and 4 elsewhere — 50 in all**
+(`73042a1`; print it with `python3 tools/count-ui-pins.py`). This read "47 and 39" and counted
+`.index()` CALLS, of which a slice takes two.
 
 The shape is usually a *negative over a slice* rather than a simple "A before B" — for example
 `"renderSettings()" not in UI_HTML[index("async function pollRunStatus") : index("// ----------
@@ -82,26 +84,32 @@ pass untouched. That makes the cut provably behaviour-free.
 
 ## The pins are the budget
 
-**737 exact substring assertions** guard the assembled artifacts, and they live in
+**822 substring assertions** guard the assembled artifacts (`73042a1`), and they live in
 `plugins/audit/tests/`. Budget by what a change touches, because the split is very uneven:
 
 | target | pins | a change to… |
 |---|---:|---|
-| `UI_HTML` | 578 | anything in `panel.{css,js}` |
-| `_SCRIPT` | 100 | `report.js` |
-| `_CSS` | 48 | `report.css` |
+| `UI_HTML` | 676 | anything in `panel.{css,js}` |
+| `_SCRIPT` | 96 | `report.js` |
+| `_CSS` | 51 | `report.css` |
 | `TOKEN_CSS` | 11 | `_ui_theme.py` |
 
-**Only 59 of the 737 are CSS-shaped.** This section previously said "~70 … against the assembled
-stylesheet", which was about right *for CSS* — and that scoped number then got copied elsewhere as
+**Only 62 of them are CSS-shaped.** This section once said "~70 … against the assembled
+stylesheet", which was about right *for CSS* — and that scoped number then travelled elsewhere as
 if it covered everything. Attach the scope to the number or it will travel without it.
 
-Re-derive rather than trusting the table:
+**Print the figures rather than reading them here:**
 
 ```bash
-grep -rhoE '("[^"]*"|'"'"'[^'"'"']*'"'"') (not )?in M\.(UI_HTML|_SCRIPT|_CSS|TOKEN_CSS)' \
-  plugins/audit/tests | wc -l
+python3 tools/count-ui-pins.py            # --json for a machine-readable shape
 ```
+
+It walks the AST, and the two greps that preceded it could not. A line-based regex cannot see a
+pin whose literal is split across lines — the closing line reads `in M.UI_HTML)` with no literal
+on it — and cannot express a comparison whose left side is not a literal at all. The documented
+grep under-reported by 36; the one before it, written to fix an earlier mistake, was off by 73.
+The tool separates **822 literal** left-hand sides from **12 computed** ones, which is the
+distinction both greps silently collapsed.
 
 Some pin multi-line source text *including newlines and leading spaces*, so reflowing a rule turns
 them red.

@@ -83,32 +83,46 @@ each; **the report emits three `<script>` tags** — `window.AUDIT_USAGE`, the b
 and the code. The pin that reads `SCRIPT.count("<script>") == 1` counts tags in a **Python
 string**, not in the page, so it does not contradict this and never did.
 
-**737 exact substring assertions guard the assembled output**, and they live in
-`plugins/audit/tests/` — not in the scripts that build it. Some *require* duplication to stay as
-it is. What a UI change has to budget for, by what it pins:
+**822 substring assertions guard the assembled output** (as of `73042a1` — re-derive, see
+below), and they live in `plugins/audit/tests/` — not in the scripts that build it. Some
+*require* duplication to stay as it is. What a UI change has to budget for, by what it pins:
 
 | target | pins | built by |
 |---|---:|---|
-| `UI_HTML` | 578 | the panel page |
-| `_SCRIPT` | 100 | the report's code block |
-| `_CSS` | 48 | the report's stylesheet |
+| `UI_HTML` | 676 | the panel page |
+| `_SCRIPT` | 96 | the report's code block |
+| `_CSS` | 51 | the report's stylesheet |
 | `TOKEN_CSS` | 11 | `_ui_theme.py` |
 
-Only **59 are CSS-shaped** (`_CSS` + `TOKEN_CSS`); the other 678 pin JavaScript. A further
-**118 assertions slice by `.index()` for statement *order*** — 47 in `test__panel_page.py`, 39 in
-`test_render_report.py`.
+Only **62 are CSS-shaped** (`_CSS` + `TOKEN_CSS`); the rest pin JavaScript. A further **50
+assertions slice by `.index()` for statement *order*** — 26 in `test__panel_page.py`, 20 in
+`test_render_report.py`, 4 elsewhere.
 
-This figure stood at "~70", which is roughly the **CSS** count (49 on the day it was written, 59
-now) presented as if it covered everything — the two files it named held 1,022 pins between them
-at that commit. A number is only as good as the scope attached to it, and this one lost its scope
-in transit. **Re-derive it rather than trusting the table**: a count in prose rots, and the first
-replacement written here was itself off by 73 because it matched only double quotes and missed
-`not in`.
+**Every figure above rots, and all of them had.** The count read 737 against a real 822; the
+table read 578/100/48/11 against 676/96/51/11; the CSS figure read 59 against 62; and the order
+figure read *"118 — 47 in one file, 39 in the other"*, which is 86 by its own arithmetic and 50
+in fact, because it counted `.index()` CALLS and a slice takes two of them. Each was true when
+written.
+
+Two of those were already scars: the count once stood at "~70", which was roughly the **CSS**
+number presented as if it covered everything, and the replacement written to fix that was itself
+off by 73. So a third regex was not the answer.
+
+**Do not trust the numbers above — print them:**
 
 ```bash
-grep -rhoE '("[^"]*"|'"'"'[^'"'"']*'"'"') (not )?in M\.(UI_HTML|_SCRIPT|_CSS|TOKEN_CSS)' \
-  plugins/audit/tests | wc -l
+python3 tools/count-ui-pins.py            # add --json for a machine-readable shape
 ```
+
+That tool walks the AST, which is what the greps could not do. A line-based regex cannot see a
+pin whose literal is split across lines (the closing line reads `in M.UI_HTML)` with no literal
+on it), and it cannot express a comparison whose left side is not a literal at all
+(`json.dumps(M._cfg_enums(), sort_keys=True) in M.UI_HTML`). The documented grep under-reported
+by **36** at this commit for those two reasons — one needs the parser's idea of a line, the other
+its idea of an expression.
+
+The tool separates **822 literal** left-hand sides (the text pins) from **12 computed** ones, and
+that separation is the point: a number is only as good as the scope attached to it.
 
 **Read the `refactoring-the-assembled-ui` skill before editing `report.{css,js}`,
 `panel.{css,js}` or `_ui_theme.py`.** Assets of 400+ lines also owe one section marker per 400
@@ -124,7 +138,8 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 ```
 
 **The second line is not optional and not decoration.** Every `--selftest` block has moved out
-of the module it tests into `plugins/audit/tests/`, all 75 of them; a migrated file still exits
+of the module it tests into `plugins/audit/tests/`, all 83 of them (`73042a1` — print it with
+`python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _output;print(len(_output.selftest_coverage()['covered']))"`); a migrated file still exits
 0 on `--selftest` and prints where its cases went, so the first line stays green over suites it
 no longer runs. `_output.selftest_coverage()` is what keeps the two halves honest — the
 migration is finished, so `covered` is the only clean class: a file with a suite INLINE, with
