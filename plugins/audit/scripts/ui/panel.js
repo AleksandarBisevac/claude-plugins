@@ -619,7 +619,22 @@ function h2h(text,tip,ref){return el('h2',{},text,hint(tip,ref));}
 // this form gets its reference entry without a second list saying which ones have
 // one. A path the schema does not describe fails _help's own coverage selftest, so
 // "the drawer opens on nothing" is a build failure rather than a dead ⓘ.
-function klabel(text,key,tip){return el('span',{class:'lbl'},text,el('code',{class:'k2'},key),
+// The i is a <button>, and a <button> is a LABELABLE element -- so while it sat
+// INSIDE the <label>, the label named IT and not the field: HTML resolves a
+// label's control to its FIRST labelable descendant, and the button got there
+// first. MEASURED in Chromium at b586fe7, not read off the source: 20 fields on
+// Guards bound no label at all (`el.labels.length === 0`) and announced their own
+// VALUE -- "docs/audit/audit-plan.json" where "The plan" was meant, "80" where
+// "Free first touch, in lines" was, and three <select> announced nothing at all,
+// which is SC 4.1.2 as well as 1.3.1 and 3.3.2. The six checkboxes that DID bind
+// folded the i's own name in: "Meter token usage usage.enabled What is Meter
+// token usage?".
+//
+// So the <label> holds the words and points at the field by id, and the i is its
+// SIBLING -- beside the words on screen, outside the name in the tree. `closest
+// ('label')` cannot see any of this, which is why it was measured with `labels`.
+function klabel(text,key,tip,forId){return el('span',{class:'lbl'},
+ el('label',forId?{for:forId}:{},text,el('code',{class:'k2'},key)),
  hint(tip,{path:key,doc:'config',label:text}));}
 
 // ---------- the help drawer ----------
@@ -1053,7 +1068,10 @@ function boolField(cfg,d,f,tip){
  const cb=el('input',{type:'checkbox',id:fieldId(f.path)});
  cb.checked=cur===undefined?def:cur!==false;
  cb.onchange=()=>{if(cb.checked===def)delPath(cfg,f.path);else setPath(cfg,f.path,cb.checked);};
- return el('label',{class:'f cbf'},cb,klabel(f.label,f.path,tip));}
+ // The checkbox bound its label already -- it is the first labelable descendant,
+ // ahead of the i. What it did NOT have was a clean name. Same shape as every
+ // other field now: the control, then the words pointing at it by id.
+ return el('div',{class:'f cbf'},cb,klabel(f.label,f.path,tip,fieldId(f.path)));}
 
 function scalarField(cfg,d,f,tip){
  const cur=getPath(cfg,f.path),def=getPath(d,f.path);
@@ -1070,7 +1088,10 @@ function scalarField(cfg,d,f,tip){
   const ed=listEditor(()=>getPath(cfg,f.path)??def??[],a=>setPath(cfg,f.path,a),
     f.placeholder||'add…');
   ed.id=fieldId(f.path);ed.tabIndex=-1;
-  return el('label',{class:'f wide'},klabel(f.label,f.path,tip),ed);}
+  // No forId: the id is on the editor, which is a <div> and not labelable, so a
+  // `for` pointing at it would associate nothing while looking as if it did. The
+  // box inside it is named where it is built.
+  return el('div',{class:'f wide'},klabel(f.label,f.path,tip),ed);}
  else{const t=f.kind==='date'?'date':(f.kind==='int'||f.kind==='number')?'number':'text';
   // The placeholder is the DEFAULT, so an empty box says what leaving it empty
   // gets you. Some defaults are null and mean something anyway ("beside the
@@ -1084,7 +1105,7 @@ function scalarField(cfg,d,f,tip){
   if(f.kind==='int')setPath(cfg,f.path,parseInt(v,10));
   else if(f.kind==='number')setPath(cfg,f.path,Number(v));
   else setPath(cfg,f.path,v);};
- return el('label',{class:'f'},klabel(f.label,f.path,tip),inp);}
+ return el('div',{class:'f'},klabel(f.label,f.path,tip,fieldId(f.path)),inp);}
 
 // The plan gate's tier, stated ONCE. The select's preset also reads the LEGACY
 // `enforce` flag (true presets 'deny'), and any change writes planGate while
@@ -1208,7 +1229,7 @@ function bandsField(cfg){
   const inp=el('input',{type:'number',min:'0',step:'0.01',id:fieldId(p),
     value:getPath(cfg,p)??'',placeholder:'not set'});
   inp.oninput=()=>{if(inp.value==='')delPath(cfg,p);else setPath(cfg,p,Number(inp.value));lint();};
-  return el('label',{class:'f'},klabel(lbl,p,null),inp);};
+  return el('div',{class:'f'},klabel(lbl,p,null,fieldId(p)),inp);};
  const lint=()=>{const hi=getPath(cfg,'usage.bands.highUSD'),
    ou=getPath(cfg,'usage.bands.outlierUSD');
   warn.textContent='';

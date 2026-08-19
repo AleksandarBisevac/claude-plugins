@@ -92,7 +92,13 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mu
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
  box-shadow:var(--shadow-sm);padding:var(--sp-3) var(--sp-3);margin:var(--sp-2) 0}
 .row{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;margin:var(--sp-1) 0}
-label.f{display:flex;flex-direction:column;gap:var(--sp-0);flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
+/* `.f`, not `label.f`. The i inside a field's <label> was taking the label's
+   association away from the field (a <button> is labelable and came first), so a
+   field's container is a <div> now and the <label> inside it points at the control
+   by id. The element qualifier would have silently dropped every one of them.
+   It was also already wrong: three call sites wrote el('div',{class:'f'}) expecting
+   this rule and had been getting none of it. */
+.f{display:flex;flex-direction:column;gap:var(--sp-0);flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
 /* The control-boundary token, not the decorative one. This edge is the only
    thing that says "you may type here", so SC 1.4.11 wants it at 3:1; it measured
    1.23 against the card surface and 1.10 against the page -- a field a sighted
@@ -662,7 +668,7 @@ button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);curso
 .sub2{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;
  color:var(--muted);font-weight:700;margin:1.25rem 0 .4rem}
 .sub2 .lbl{gap:.35rem}
-label.f.wide{flex:1 1 100%}
+.f.wide{flex:1 1 100%}
 /* A checkbox and its words are one line, and the words are not a column header —
    until the line is wider than the phone holding it. `flex:0 0 auto` said the row
    may never shrink, so on a 390px screen "Always deny edits outside the plan" plus
@@ -673,7 +679,7 @@ label.f.wide{flex:1 1 100%}
    reason: once the label can be two lines, centring puts the box between them,
    beside neither. On a row that still fits — every row on a desktop — the two are
    the same picture. */
-label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;flex:0 1 auto;min-width:0}
+.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;flex:0 1 auto;min-width:0}
 /* target-size: input[type=checkbox] — exception=user-agent (WCAG 2.2 SC 2.5.8).
    Measured 13x13 CSS px, which is Chromium's own default box: nothing here sets a
    width, a height or an appearance on a checkbox. The shared `input,textarea,select`
@@ -682,7 +688,7 @@ label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;flex:0 1 auto;min-
    24px would forfeit the exception AND the native control; what this rule does is
    the other half of the answer, wrapping the box in a <label> that clicks it, which
    takes the real target to 124x21 and 268x21 on the Settings cards. */
-label.f.cbf input{margin:0}
+.f.cbf input{margin:0}
 /* non-text-contrast: input[type=checkbox] - exception=user-agent (WCAG 2.2 SC
    1.4.11). The SAME proof as the target-size exception above, and it has to be,
    because it is the same fact about the same control: an appearance:auto
@@ -776,6 +782,12 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
    as its content wherever it is put, which is how a 390px screen ended up with a
    447px row (F8). `min-width:0` for the same reason it is on the row above. */
 .lbl{display:inline-flex;align-items:center;gap:var(--sp-0);flex-wrap:wrap;min-width:0}
+/* The <label> inside .lbl inherits the row, and it has to: it holds the words and
+   the JSON key, and as ONE inline box they run together. MEASURED, not styled by
+   eye -- Chromium builds an accessible name by walking boxes, so the same collapse
+   that reads "The planmanifestPath" on screen is the name a screen reader gets.
+   Blockifying the two children restores the gap and the space in one go. */
+.lbl>label{display:inline-flex;align-items:center;gap:var(--sp-0);flex-wrap:wrap;min-width:0}
 .hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
  border:1px solid var(--field-border);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
  position:relative;flex:0 0 auto;text-transform:none}

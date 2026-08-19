@@ -356,10 +356,21 @@ def _cases(check):
     # F8. Both halves of one rule: a settings row is allowed to shrink, and the
     # words inside it are allowed to wrap. Either one alone leaves the row exactly
     # as wide as its content, which on a 390px screen was 447px of DOCUMENT.
+    # The selector is `.f.cbf`, not `label.f.cbf`: a field's container stopped
+    # being a <label> when the i had to move out of it (SC 1.3.1 - a <button> is
+    # labelable and was taking the association). The NEGATIVE is the load-bearing
+    # half. Left in, the element-qualified rule would still match the checkbox row,
+    # which IS still a <label>'s neighbour, so this case would go on passing while
+    # every OTHER field silently lost its layout - and a screenshot is what it
+    # would have taken to notice.
     check("shell: a checkbox row may shrink, so a long setting name cannot set the "
-          "page's width",
-          "label.f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;"
-          "flex:0 1 auto;min-width:0}" in M.UI_HTML)
+          "page's width - and the rule is not element-qualified, because the "
+          "container is a <div> now",
+          ".f.cbf{flex-direction:row;align-items:baseline;gap:.4rem;"
+          "flex:0 1 auto;min-width:0}" in M.UI_HTML
+          and "label.f.cbf{" not in M.UI_HTML
+          and "label.f{" not in M.UI_HTML
+          and "label.f.wide{" not in M.UI_HTML)
     check("shell: and the label inside it wraps, which is the only reason "
           "shrinking has anywhere to go",
           ".lbl{display:inline-flex;align-items:center;gap:var(--sp-0);"
@@ -2167,6 +2178,72 @@ def _cases(check):
           # "MANIFEST STATUS". The header row is the deliverable here, so the
           # reset is pinned rather than left to the next reflow of that rule.
           and "text-transform:none;letter-spacing:normal}" in M.UI_HTML)
+
+    def _re_starts(hay, needle):
+        """Every index at which `needle` occurs - the census counts, never finds."""
+        _out, _i = [], hay.find(needle)
+        while _i >= 0:
+            _out.append(_i)
+            _i = hay.find(needle, _i + 1)
+        return _out
+
+    # --- WCAG 2.2 SC 1.3.1 / 3.3.2 / 4.1.2: the i stopped stealing the label ----
+    # MEASURED IN CHROMIUM over `element.labels`, which is the only thing that can
+    # see this: a <button> is a LABELABLE element, so while the i sat inside a
+    # field's <label> the label named the BUTTON - HTML resolves a label's control
+    # to its first labelable descendant. 20 fields on Guards bound no label at all
+    # and announced their own VALUE ("docs/audit/audit-plan.json" where "The plan"
+    # was meant); three <select> announced nothing, which is 4.1.2 too.
+    #
+    # `closest('label')` reports all 20 as labelled and always did. THAT is why the
+    # cases below pin construction rather than presence, and why the number they
+    # rest on came from a browser: no substring pin can distinguish a <label> that
+    # names this field from one that names something else inside it.
+    check("kl0 the i is the <label>'s SIBLING, not its descendant - the words and "
+          "the JSON key are inside, the button is outside, so it cannot take the "
+          "association and cannot fold its own name into the field's",
+          "function klabel(text,key,tip,forId){return el('span',{class:'lbl'},"
+          in M.UI_HTML
+          and "el('label',forId?{for:forId}:{},text,el('code',{class:'k2'},key)),"
+          in M.UI_HTML
+          and "hint(tip,{path:key,doc:'config',label:text}));}" in M.UI_HTML)
+    # Both directions, and the negative is the one that matters: a container that
+    # went back to being a <label> would put the button inside it again, and every
+    # positive above would still be true.
+    # NOT "no <label class=f> exists": nine remain and are correct. The invariant
+    # is narrower and is the actual rule - a container may stay a <label> exactly
+    # while nothing labelable can get between it and its field. klabel() ALWAYS
+    # builds a button (it always passes a ref), so a klabel inside a <label> is the
+    # defect itself; flabel() called with two arguments builds a <span>, which is
+    # not labelable and cannot steal anything. The nine survivors are all the
+    # second kind, and this counts them rather than trusting the sentence.
+    _kl_ctr = [M.UI_HTML[m:m + 150] for m in
+               _re_starts(M.UI_HTML, "el('label',{class:'f")]
+    _kl_steal = [c[:64] for c in _kl_ctr if "klabel(" in c]
+    _kl_ref = [c[:64] for c in _kl_ctr
+               if re.search(r"flabel\([^)]*,[^)]*,[^)]*\{", c)]
+    check("kl1 a container may still be a <label> only while nothing labelable can "
+          "get between it and its field: %d such containers, %d holding a klabel "
+          "(which always builds a <button>), %d passing flabel a ref (which makes "
+          "one) - and the four klabel builders hand the control's id to the <label> "
+          "that names it, the list editor excepted because its id is on a <div>"
+          % (len(_kl_ctr), len(_kl_steal), len(_kl_ref)),
+          _kl_ctr and not _kl_steal and not _kl_ref
+          and "el('div',{class:'f'},klabel(f.label,f.path,tip,fieldId(f.path)),inp)"
+              in M.UI_HTML
+          and "el('div',{class:'f'},klabel(lbl,p,null,fieldId(p)),inp)" in M.UI_HTML
+          and "el('div',{class:'f cbf'},cb,klabel(f.label,f.path,tip,fieldId(f.path)))"
+              in M.UI_HTML
+          and "el('div',{class:'f wide'},klabel(f.label,f.path,tip),ed)" in M.UI_HTML)
+    # The rule that is easy to read as cosmetic and is not. MEASURED: without it
+    # Chromium names the field "The planmanifestPath" - it builds a name by walking
+    # boxes, so two inline children of the new <label> collapse in the NAME exactly
+    # as they collapse on screen. The visible defect and the announced one are one
+    # defect, and one rule fixes both.
+    check("kl2 the <label> inside .lbl is itself a row, which is what keeps the "
+          "words and the key apart on screen AND in the accessible name",
+          ".lbl>label{display:inline-flex;align-items:center;gap:var(--sp-0);"
+          "flex-wrap:wrap;min-width:0}" in M.UI_HTML)
 
     # --- isolation: the moved boundary stays real -------------------------------
     # This file is BELOW panel-server and below the panel's read/write sides. It
