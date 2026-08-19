@@ -2424,7 +2424,7 @@ def _cases(check):
                  "el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,"
                  "null,'ado-tag'),y)",
                  "el('th',{},flabel('model',MDESC.taskModel,{comp:'taskModel'}))",
-                 "el('label',{class:'inl'},nv,\"don't touch\"),"
+                 "el('label',{class:'inl',for:'ado-rw-never'},nv,\"don't touch\"),"
                  "el('div',{},flabel(lbl,MDESC.adoComments))")
     _FW_DIRTY = ("el('label',{class:'f'},flabel(lbl,help),i)",
                  "el('label',{class:'f cbf'},cb,flabel(lbl,help))",
@@ -2679,6 +2679,233 @@ def _cases(check):
               "'Secrets never written to logs: add an identifier'") == 2
           and M.UI_HTML.count(
               "'Extra files treated as secrets: add a pattern'") == 1)
+
+    # --- WCAG 2.2 SC 4.1.2 Name, Role, Value: the fields fl1 cannot reach --------
+    # EVERYTHING ABOVE IS SCOPED TO A PLACEHOLDER, and that scope is the reason
+    # the 4.1.2 half of this finding needed a browser at all. The buildCommands
+    # <textarea> carried no placeholder, so `_fl_ph` could never have contained
+    # it and no case here could have named it; what it got instead was fl3, two
+    # controls pinned as literal strings - which is a hand-kept list of the ones
+    # somebody remembered, the exact shape fl0's own comment says passes forever.
+    # 4.1.2 asks for a name on EVERY control, so the census below is over every
+    # field the script builds and the count in its label says how many of them
+    # fl1 never looks at.
+    #
+    # WHAT COUNTS AS A NAME HERE, and neither half is mere presence:
+    #   - `aria-label` / `aria-labelledby` in the attribute object; or
+    #   - an `id` that a <label> ACTUALLY binds. The vocabulary of bound ids is
+    #     read out of the page rather than listed: every `for:` value, plus every
+    #     4th argument handed to klabel()/flabel(), which is precisely what those
+    #     two builders turn into their `<label for>`. Drop that argument at a
+    #     call site and the field keeps its id, keeps its <label> and announces
+    #     its own value again - F26 in the one direction nothing here watched,
+    #     because the field's own attribute object does not change.
+    # A WRAPPING <label> IS DELIBERATELY NOT ONE OF THEM. _FL_LABELLED above
+    # records the whole reason: a <label> names its FIRST LABELABLE DESCENDANT,
+    # so tree position is an association no source check can verify, and twenty
+    # fields once sat exempted on it while the browser bound them nothing at all.
+    # The three `class:'inl'` checkboxes that were still positional - the
+    # provenance-tag opt-out, the stateMap "never" boxes and the Remaining-Work
+    # one - carry an explicit `for` now for that reason and no other: same words,
+    # same click target, an association that can go red. Every el('label') the
+    # script builds binds by `for` as a result, and fl8 is what keeps it that way
+    # rather than a case of its own - a field that went back to leaning on tree
+    # position has no aria-* and no bound id, so it lands in the offender list.
+    def _nv_args(js, i):
+        """The top-level arguments of the call whose '(' follows index `i`.
+
+        Depth- and quote-aware, and MEASURED rather than assumed: over today's
+        script a splitter that ignored string literals entirely disagrees with
+        this one on two of these calls, and on `flabel('Policy enabled', 'Off
+        writes policy.enabled:false, which is how you keep the rules and stop
+        applying them.', null, 'polenabled')` it reads the 4th argument as
+        `null` - a FALSE offender on a checkbox that is correctly bound. A
+        walker that knew only `'` agrees with this one today; all three quote
+        characters are tracked on the rule rather than on the census, the same
+        way `_el_calls` above does and for the same reason - which literals
+        happen to sit on the page today is not a thing to depend on.
+        """
+        _k = js.find("(", i)
+        if _k < 0:
+            return []
+        _depth, _quote, _out, _start, _j = 0, "", [], _k + 1, _k
+        while _j < len(js):
+            _ch = js[_j]
+            if _quote:
+                if _ch == "\\":
+                    _j += 2
+                    continue
+                if _ch == _quote:
+                    _quote = ""
+            elif _ch in _JS_QUOTES:
+                _quote = _ch
+            elif _ch in "([{":
+                _depth += 1
+            elif _ch in ")]}":
+                _depth -= 1
+                if _depth == 0:
+                    _out.append(js[_start:_j])
+                    return [" ".join(_a.split()) for _a in _out]
+            elif _ch == "," and _depth == 1:
+                _out.append(js[_start:_j])
+                _start = _j + 1
+            _j += 1
+        return []
+
+    def _nv_attr(attrs, key):
+        """The value of `key:` in a flattened el() attribute object, or ''.
+
+        Anchored to `{` or `,` so it reads a whole attribute name and not the
+        tail of a longer one - `id` is a suffix of plenty of plausible attribute
+        names. MEASURED: today it changes no answer, because no attribute name
+        in any of these objects ends in `id`. The anchor is on the RULE for the
+        same reason `_el_calls` tracks all three quote characters - which names
+        happen to sit on the page today is not a thing to depend on.
+        """
+        _m = re.search(r"(?:^|[{,])\s*%s\s*:" % key, attrs)
+        if not _m:
+            return ""
+        _depth, _quote, _j = 0, "", _m.end()
+        while _j < len(attrs):
+            _ch = attrs[_j]
+            if _quote:
+                if _ch == "\\":
+                    _j += 2
+                    continue
+                if _ch == _quote:
+                    _quote = ""
+            elif _ch in _JS_QUOTES:
+                _quote = _ch
+            elif _ch in "([{":
+                _depth += 1
+            elif _ch in ")]}":
+                if _depth == 0:
+                    break
+                _depth -= 1
+            elif _ch == "," and _depth == 0:
+                break
+            _j += 1
+        return " ".join(attrs[_m.end():_j].split())
+
+    _NV_BUILDERS = ("klabel(", "flabel(")
+    _nv_for = sorted(set(re.findall(r"\bfor\s*:\s*([^,}]+)", _ts_js)))
+    _nv_4th = set()
+    for _nv_b in _NV_BUILDERS:
+        for _nv_i in _re_starts(_ts_js, _nv_b):
+            _nv_a = _nv_args(_ts_js, _nv_i + len(_nv_b) - 1)
+            if len(_nv_a) >= 4:
+                _nv_4th.add(_nv_a[3])
+    _nv_bound = set(_nv_for) | _nv_4th
+    # The vacuity guard, and it guards the half that CAN go quiet. An empty
+    # vocabulary makes every id-bound field an offender, so fl8 goes red and says
+    # so - the loud direction. What would go quiet is a vocabulary that swallowed
+    # something it should not, so the two sources are counted separately and the
+    # landmarks are one per shape the reader has to reach: the builders' own
+    # parameter, a literal id written at a call site, an id computed per row, and
+    # a bare identifier passed through a local.
+    _NV_MARKS = ("forId", "'ado-tag-none'", "nvId", "'ado-sprint.team'", "cid")
+    _nv_missing = [_m for _m in _NV_MARKS if _m not in _nv_bound]
+    check("fl7 which ids a <label> really binds is read out of the page, not "
+          "listed: %d `for:` value(s) and %d 4th argument(s) to klabel/flabel, "
+          "%d distinct id(s) between them; landmarks missing %r"
+          % (len(_nv_for), len(_nv_4th), len(_nv_bound), _nv_missing),
+          _ts_js != "" and len(_nv_for) >= 5 and len(_nv_4th) >= 8
+          and not _nv_missing)
+
+    # The two controls no reader can reach, and each basis sits IN the attribute
+    # object it exempts, so it cannot quietly stop being true: make either one
+    # perceivable and the key stops matching and the field becomes an offender.
+    # That is the property _FL_LABELLED had to be rewritten twice to get.
+    #   - the theme import <input type=file>, which `display:none` takes out of
+    #     the accessibility tree entirely - the button beside it is what the
+    #     reader operates, and it has its own name;
+    #   - the copy fallback's <textarea>, which is appended, selected, read by
+    #     execCommand and removed inside one synchronous block. Offscreen is NOT
+    #     the exemption - offscreen is still announced - so the second half of
+    #     the basis is the removal, asserted below.
+    _NV_UNREACHABLE = {
+        "style:'display:none'": "theme import file input",
+        "style:'position:fixed;top:-1000px;opacity:0'": "copy fallback buffer",
+    }
+    _nv_bare = []
+    for _nv_t, _nv_ab in _fl_all:
+        _nv_id = _nv_attr(_nv_ab, "id")
+        if "'aria-label'" in _nv_ab or "'aria-labelledby'" in _nv_ab:
+            continue
+        if _nv_id and _nv_id in _nv_bound:
+            continue
+        _nv_bare.append((_nv_t, _nv_ab))
+    _nv_off = [_t + " " + _b[:78] for _t, _b in _nv_bare
+               if not [_k for _k in _NV_UNREACHABLE if _k in _b]]
+    _nv_stale = sorted([_k for _k in _NV_UNREACHABLE
+                        if not [_b for _, _b in _nv_bare if _k in _b]])
+    check("fl8 SC 4.1.2: every field the panel builds is named by something a "
+          "reader can hear - %d field(s) read, %d reaching no aria-* and no "
+          "bound id, of which %d are unreachable by construction (%r stale); "
+          "unnamed and reachable: %r"
+          % (len(_fl_all), len(_nv_bare),
+             len(_nv_bare) - len(_nv_off), _nv_stale, _nv_off),
+          not _nv_off and not _nv_stale
+          # The copy buffer's exemption is the removal, not the offset.
+          and "ta.remove();" in M.UI_HTML)
+
+    # A guard that overreaches gets routed around, so the binder is driven over
+    # fixtures in both directions rather than trusted from a green page. The
+    # POSITIVES are the two shapes that really do name a field; the NEGATIVES are
+    # the two ways a call site loses the binding while its own attribute object
+    # and its <label> both stay exactly as they were - the 4th argument dropped,
+    # and the `for` written to an id nothing carries.
+    def _nv_binds(field_src, page_src):
+        """True if the field built by `field_src` is bound by `page_src`."""
+        _ab = " ".join(_fl_fields(field_src)[0][1].split())
+        _id = _nv_attr(_ab, "id")
+        _vocab = set(re.findall(r"\bfor\s*:\s*([^,}]+)", page_src))
+        for _b in _NV_BUILDERS:
+            for _i in _re_starts(page_src, _b):
+                _a = _nv_args(page_src, _i + len(_b) - 1)
+                if len(_a) >= 4:
+                    _vocab.add(_a[3])
+        return bool(_id) and _id in _vocab
+    _NV_YES = (("el('input',{type:'checkbox',id:'x'})",
+                "el('label',{class:'inl',for:'x'},cb,'never')"),
+               ("el('input',{id:tid,placeholder:ph||''})",
+                "flabel(lbl,help,null,tid)"))
+    _NV_NO = (("el('input',{id:tid,placeholder:ph||''})",
+               "flabel(lbl,help,null)"),
+              ("el('input',{type:'checkbox',id:'x'})",
+               "el('label',{class:'inl',for:'y'},cb,'never')"))
+    _nv_fn = [_f for _f, _p in _NV_YES if not _nv_binds(_f, _p)]
+    _nv_fp = [_f for _f, _p in _NV_NO if _nv_binds(_f, _p)]
+    check("fl9 the binder fires on the association and not on its neighbourhood, "
+          "driven over fixtures both ways: %d/%d bound shapes missed %r, %d/%d "
+          "unbound shapes wrongly cleared %r"
+          % (len(_nv_fn), len(_NV_YES), _nv_fn, len(_nv_fp), len(_NV_NO), _nv_fp),
+          not _nv_fn and not _nv_fp)
+
+    # SAY WHAT fl8 CANNOT SEE, AND WHICH WAY EACH BLIND SPOT ERRS - they are not
+    # the same direction, which is why they are listed apart rather than together.
+    # fl8 is text over the assembled script: it reads a field only where the tag
+    # is a quoted literal in an el() call, and a name only where the attribute is
+    # written into that same call.
+    #   - A field built by document.createElement or by el() with a computed tag
+    #     is a row fl8 never emits, so it reads as no finding: UNDER-counting,
+    #     the quiet direction. fw3 above measures both routes at zero.
+    #   - A field NAMED after construction, by setAttribute('aria-label', ...),
+    #     is a row fl8 does emit and judges wrongly: it would be reported as an
+    #     offender while a reader hears its name. That is the loud direction and
+    #     still a wrong answer, so it is measured here rather than assumed away.
+    _nv_late = [_m for _m in re.findall(r"setAttribute\('([^']+)'", _ts_js)
+                if _m in ("aria-label", "aria-labelledby")]
+    check("fl9a the blind spot is measured rather than assumed: %d "
+          "setAttribute('aria-label'|'aria-labelledby') call(s) in the script, "
+          "all of them on the i rather than on a field - a name written after "
+          "construction is invisible to fl8 and would read as an offender"
+          % (len(_nv_late),),
+          len(_nv_late) == 2
+          and "h.setAttribute('aria-label','What is '+hRefName(ref)+'?');"
+              in M.UI_HTML
+          and "if(name)h.setAttribute('aria-label','What is '+name+'?');}"
+              in M.UI_HTML)
 
     # --- WCAG 2.2 SC 2.4.11 Focus Not Obscured (Minimum) ------------------------
     # MEASURED by driving real Tab presses, not `.focus()`: 72 of 942 focus stops

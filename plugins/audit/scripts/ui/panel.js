@@ -1770,7 +1770,13 @@ function renderAdoCard(c){
  const tagCur=ADRAFT?ADRAFT.tag:undefined;
  const tagIn=el('input',{id:'ado-tag',
    value:typeof tagCur==='string'?tagCur:'',placeholder:'audit-plugin'});
- const tagNone=el('input',{type:'checkbox',title:'no provenance tag at all'});
+ // The <label> below wraps this box, and a wrapper is an association a source
+ // check cannot verify: it holds only while the box stays the label's FIRST
+ // labelable descendant, which is exactly the property F26 lost when a <button>
+ // got there first. So the binding is explicit as well — same words, same click
+ // target, but now `for` says which control they name and dropping it goes red.
+ const tagNone=el('input',{type:'checkbox',id:'ado-tag-none',
+   title:'no provenance tag at all'});
  tagNone.checked=tagCur===null;tagIn.disabled=tagCur===null;
  const tagApply=()=>{
   if(tagNone.checked){A().tag=null;tagIn.value='';tagIn.disabled=true;}
@@ -1785,7 +1791,7 @@ function renderAdoCard(c){
      MDESC.adoTypes),
    el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,null,'ado-tag'),
      el('span',{class:'inl'},tagIn,
-       el('label',{class:'inl'},tagNone,'no tag')))));
+       el('label',{class:'inl',for:'ado-tag-none'},tagNone,'no tag')))));
  // --- stateMap: one fixed row per manifest status. Empty box = the built-in
  // default (its placeholder); "never" writes null — the team moves that card.
  // The phase block exists because phase work items carry a DIFFERENT state
@@ -1801,12 +1807,19 @@ function renderAdoCard(c){
   Object.keys(SMDEF[kind]).forEach(stt=>{
    const cur=getPath(ADRAFT||{},'stateMap.'+kind+'.'+stt);
    // The row's visible text is the status alone ("blocked"), and it repeats across
-   // the phase, task and bug tables — these have no <thead>, so nothing announces
-   // which table a row is in. The name carries the kind as well as the status.
+   // the phase, task and bug tables. The <thead> these grew under SC 1.3.1 names
+   // the COLUMNS, not which of the three tables a row is in — the only thing that
+   // says that is the flabel above the table, and a label is not a caption. So the
+   // name still carries the kind as well as the status.
    const i=el('input',{value:typeof cur==='string'?cur:'',
      placeholder:SMDEF[kind][stt],
      'aria-label':kind+' '+stt+' maps to ADO state'});
-   const nv=el('input',{type:'checkbox',
+   // One id per cell, not per column: this builder runs once per kind and once
+   // per status inside that, so a constant here would mint duplicate ids across
+   // the grids and a `for` that resolves to whichever box came first is worse
+   // than no `for` at all — it would name the wrong transition, confidently.
+   const nvId='ado-sm-'+kind+'-'+stt+'-never';
+   const nv=el('input',{type:'checkbox',id:nvId,
      title:'never move state on this transition'});
    nv.checked=cur===null;i.disabled=cur===null;
    const apply=()=>{
@@ -1821,7 +1834,7 @@ function renderAdoCard(c){
    // <td> — so the checkbox in row three announced as "never" with nothing
    // saying never WHAT. The row axis is the one that carries the transition.
    tb.append(el('tr',{},el('th',{scope:'row',class:'mono'},stt),el('td',{},i),
-     el('td',{},el('label',{class:'inl'},nv,'never'))));});
+     el('td',{},el('label',{class:'inl',for:nvId},nv,'never'))));});
   // ...and the column axis, announced (.vh) rather than painted. The legend a
   // sighted reader gets is adoStateMap's help on the label right above this
   // table; a visible header row would print those three words three times on
@@ -1838,7 +1851,7 @@ function renderAdoCard(c){
  const rwCur=getPath(ADRAFT||{},'onComplete.remainingWork');
  const rw=el('input',{type:'number',min:'0',step:'any',id:'ado-rw',
    value:typeof rwCur==='number'?String(rwCur):'',placeholder:'not written'});
- const rwNever=el('input',{type:'checkbox',
+ const rwNever=el('input',{type:'checkbox',id:'ado-rw-never',
    title:'never touch Remaining Work'});
  rwNever.checked=rwCur===null;rw.disabled=rwCur===null;
  const rwApply=()=>{
@@ -1858,7 +1871,7 @@ function renderAdoCard(c){
  card.append(el('div',{class:'row'},
    el('span',{class:'f'},flabel('Remaining Work on done',
      MDESC.adoRemainingWork,null,'ado-rw'),
-     el('span',{class:'inl'},rw,el('label',{class:'inl'},rwNever,
+     el('span',{class:'inl'},rw,el('label',{class:'inl',for:'ado-rw-never'},rwNever,
        "don't touch"))),
    cflag('onBlocked','Comment when blocked'),
    cflag('onComplete','Comment on completion')));
