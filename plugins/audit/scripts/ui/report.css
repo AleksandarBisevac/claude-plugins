@@ -54,7 +54,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .nojs{padding:.7rem 1.5rem;background:color-mix(in srgb,var(--st-prog) 14%,var(--surface));
   color:var(--text);border-bottom:1px solid color-mix(in srgb,var(--st-prog) 45%,transparent);
   font-size:.86rem;line-height:1.5}
-.nojs strong{color:var(--st-prog)}
+.nojs strong{color:var(--st-prog-ink)}
 .topbar{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
   flex-wrap:wrap;padding:.6rem 1.5rem;background:color-mix(in srgb,var(--surface) 88%,transparent);
   backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -79,7 +79,7 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .gfilters .gf{display:inline-flex;align-items:center;gap:.3rem}
 .gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
   padding:.28rem .4rem;color:var(--text);background:var(--bg);
-  border:1px solid var(--border);border-radius:var(--radius);max-width:11rem}
+  border:1px solid var(--field-border);border-radius:var(--radius);max-width:11rem}
 .gfilters select:focus,.gfilters input[type=date]:focus{outline:none;
   border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 .gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
@@ -233,7 +233,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
   gap:.4em;padding:.5rem .75rem;border-radius:var(--pill);border:1px solid var(--field-border);
   background:var(--surface);color:var(--text);
   transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease),background var(--dur),border-color var(--dur)}
-.btn:hover{border-color:var(--border-strong);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:hover{border-color:var(--field-border-hover);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn:active{transform:translateY(0);box-shadow:none}
 .btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .btn-primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
@@ -246,7 +246,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .fchip,.tf-chip{cursor:pointer;font:inherit;font-size:.79rem;line-height:1;padding:.25rem .75rem;
   border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);color:var(--text);
   transition:background var(--dur),border-color var(--dur),color var(--dur),transform var(--dur) var(--ease)}
-.fchip:hover,.tf-chip:hover{border-color:var(--border-strong);transform:translateY(-1px)}
+.fchip:hover,.tf-chip:hover{border-color:var(--field-border-hover);transform:translateY(-1px)}
 .fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .fchip.on,.tf-chip.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 /* State carried by more than hue: a filter that is on says so in forced-colours,
@@ -275,12 +275,12 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .fdetails{position:relative}
 .fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
   display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
-  border-radius:var(--pill);border:1px solid var(--border);background:var(--surface);
+  border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);
   color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
 .fdetails>summary::-webkit-details-marker{display:none}
 .fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
 .fdetails[open]>summary::after{content:"\25B4"}
-.fdetails>summary:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.fdetails>summary:hover{border-color:var(--field-border-hover);background:var(--surface-2)}
 .fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* The count of what is narrowing the table, on the closed control. A panel that
    hides an active filter behind a fold is how a reader concludes the report is
@@ -302,7 +302,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
   border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
 .frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
 .frow input[type=date]{font:inherit;font-size:.78rem;padding:.3rem .45rem;color:var(--text);
-  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)}
+  background:var(--bg);border:1px solid var(--field-border);border-radius:var(--radius)}
 .frow input[type=date]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 #audit-model,#audit-presets{display:inline-flex;gap:.25rem;flex-wrap:wrap}
 .fnote{margin:0;font-size:.7rem;line-height:1.45;color:var(--muted)}
@@ -379,7 +379,7 @@ td.when,td.mono{font-variant-numeric:tabular-nums}
    how a reader ends up reading "View:" over an unrelated line. */
 .viewpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
 .viewpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
-  border:1px solid var(--border);border-radius:var(--radius);
+  border:1px solid var(--field-border);border-radius:var(--radius);
   background:var(--surface);color:var(--text)}
 /* bl (F-P-4): "something in here is stuck" and "some of this was dropped" —
    counts, in the row's own words, wearing the status ink of what they count.
@@ -422,7 +422,7 @@ td.tid{white-space:nowrap}
    Copy button on every row of a fifty-phase table is fifty buttons shouting;
    keyboard users get it on :focus-visible, so quiet never means unreachable. */
 .shacell{display:inline-flex;align-items:center;gap:.4em}
-.shacopy{font-size:.66rem;padding:.1rem .4em;border:1px solid var(--border);
+.shacopy{font-size:.66rem;padding:.1rem .4em;border:1px solid var(--field-border);
   border-radius:var(--radius);background:var(--surface);color:var(--muted);
   cursor:pointer;opacity:0;transition:opacity var(--dur) var(--ease)}
 tr:hover .shacopy,.shacopy:focus-visible{opacity:1}
@@ -785,7 +785,7 @@ tr.outside .btn{margin-left:.5rem}
   font-size:.72rem;font-weight:600;white-space:nowrap}
 .b-typical{color:var(--st-done);
   background:color-mix(in srgb,var(--st-done) 13%,transparent)}
-.b-high{color:var(--st-prog);
+.b-high{color:var(--st-prog-ink);
   background:color-mix(in srgb,var(--st-prog) 16%,transparent)}
 .b-outlier{color:var(--st-blocked);
   background:color-mix(in srgb,var(--st-blocked) 14%,transparent)}

@@ -85,7 +85,7 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mu
  .tab{border-left:none;border-bottom:2px solid transparent;
   border-radius:var(--radius) var(--radius) 0 0}
 }
-.tab:hover{border-color:var(--border-strong)}
+.tab:hover{border-color:var(--field-border-hover)}
 .tab.on{background:var(--surface-2);color:var(--text);font-weight:600;
  border-left-color:var(--accent)}
 @media(max-width:70rem){.tab.on{border-left-color:transparent;border-bottom-color:var(--accent)}}
@@ -127,7 +127,7 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
    surface-coloured page, so its border is what identifies it as a control. */
 .btn{cursor:pointer;font:inherit;font-size:.85rem;padding:var(--sp-1) var(--sp-3);border-radius:var(--pill);
  border:1px solid var(--field-border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
-.btn:hover{border-color:var(--border-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:hover{border-color:var(--field-border-hover);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* Unavailable, but still reachable — WCAG 2.2 SC 2.4.3. These controls carry
    aria-disabled rather than `disabled` so they keep their tab stop (F16), and
@@ -156,7 +156,7 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
 .badge.area{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent;text-transform:uppercase;letter-spacing:.03em}
 .chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:var(--sp-0) .5em;border-radius:var(--pill);
- background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
+ background:var(--surface-2);border:1px solid var(--field-border);color:var(--text)}
 .chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
 /* WCAG 2.2 SC 2.5.8 Target Size (Minimum) — the hit-area rule, written once for
    the three hand-styled glyph buttons that need it.
@@ -208,7 +208,7 @@ button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--mut
 .ufil .combo{flex:1 1 9rem;min-width:7.5rem}
 .ufil input,.ufil select{font:inherit;font-size:.78rem;width:100%;
  padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
- border:1px solid var(--border);background:var(--bg);color:var(--text)}
+ border:1px solid var(--field-border);background:var(--bg);color:var(--text)}
 .ufil select{flex:0 0 auto;width:auto}
 .ufil .usearch{flex:2 1 12rem;min-width:9rem}
 .ufil input[type=date]{flex:0 0 auto;width:auto}
@@ -224,7 +224,7 @@ button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--mut
  margin:0 0 var(--sp-2)}
 .uchip{display:inline-flex;align-items:center;gap:var(--sp-0);font:inherit;
  font-size:.72rem;padding:var(--sp-0) var(--sp-1);border-radius:var(--pill);
- border:1px solid var(--border-strong);background:var(--surface-2);
+ border:1px solid var(--field-border);background:var(--surface-2);
  color:var(--text);cursor:pointer}
 .uchip:hover{border-color:var(--accent)}
 .uchip .ck{color:var(--muted)}
@@ -577,7 +577,7 @@ dialog.drawer::backdrop{background:rgb(0 0 0 / .45)}
 /* A topic is a destination, so it looks like one: a full-width target with its own
    summary under the title, not a link buried in a sentence. */
 .dtopic{display:block;width:100%;text-align:left;cursor:pointer;font:inherit;
- background:var(--bg);color:var(--text);border:1px solid var(--border);
+ background:var(--bg);color:var(--text);border:1px solid var(--field-border);
  border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);
  transition:border-color var(--dur) var(--ease)}
 .dtopic:hover,.dtopic:focus-visible{border-color:var(--accent)}
@@ -855,8 +855,8 @@ table.ptbl tbody tr:last-child td{border-bottom:none}
 .subtabs{display:flex;gap:var(--sp-0);margin:var(--sp-1) 0 var(--sp-1);flex-wrap:wrap}
 .subtab{cursor:pointer;font:inherit;font-size:.78rem;padding:var(--sp-0) var(--sp-2);border-radius:var(--pill);
  border:1px solid var(--field-border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
-.subtab:hover{border-color:var(--border-strong)}
-.subtab.on{background:var(--surface-2);color:var(--text);border-color:var(--border-strong)}
+.subtab:hover{border-color:var(--field-border-hover)}
+.subtab.on{background:var(--surface-2);color:var(--text);border-color:var(--field-border-hover)}
 .regtblwrap{max-height:22rem;overflow:auto;border:1px solid var(--border);border-radius:var(--radius)}
 table.regtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
 table.regtbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);text-align:left;
@@ -911,7 +911,7 @@ table.regtbl td.d{color:var(--muted)}
 .filtlbl{font-size:.72rem;color:var(--muted)}
 .filt{cursor:pointer;font:inherit;font-size:.75rem;padding:var(--sp-0) var(--sp-2);border-radius:var(--pill);
  border:1px solid var(--field-border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
-.filt:hover{border-color:var(--border-strong)}
+.filt:hover{border-color:var(--field-border-hover)}
 .filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 /* State carried by more than hue, as in the report. */
 .filt.on::before{content:"\2713\a0";font-weight:700}
@@ -1096,7 +1096,7 @@ table.poltbl td.pend{background:color-mix(in srgb,var(--accent-solid) 10%,transp
    so the select grows 2.2px inside a cell with 32px to spare and no table row
    moves. Measured before and after. */
 select.prule{font:inherit;font-size:.74rem;padding:.15rem .3rem;min-height:24px;
- border:1px solid var(--border);border-radius:var(--radius);
+ border:1px solid var(--field-border);border-radius:var(--radius);
  background:var(--surface);color:var(--text)}
 select.prule:disabled{opacity:.55;cursor:not-allowed}
 select.prule[data-set=deny]{border-color:var(--err);color:var(--err)}

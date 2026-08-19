@@ -300,6 +300,228 @@ def _cases(check):
           "to 14.5rem and 13.5rem again",
           "--nav-w:" in M.TOKEN_CSS and "--shell-gap:" in M.TOKEN_CSS)
 
+    # --- ct: WCAG 1.4.3 and 1.4.11, computed off the sheet ---------------------
+    # The finding these answer was a browser probe that named its failing pairs
+    # once and went stale inside a week. Everything below re-derives.
+    #
+    # THE FUNCTION IS VERIFIED BEFORE ANY COLOUR IS JUDGED BY IT. Three published
+    # values, one per decade of the range: the maximum, the AA boundary case that
+    # every checker is calibrated on, and the teal that carried the original
+    # finding. A contrast lint that agrees with itself and with nothing else is a
+    # very confident way to be wrong.
+    check("ct1 the ratio matches three published values - 21:1 for black on "
+          "white, 4.54:1 for #767676 (the AA boundary grey), 3.74:1 for the teal "
+          "the finding named (got %.2f / %.2f / %.2f)"
+          % (M.contrast_ratio("#000000", "#ffffff"),
+             M.contrast_ratio("#767676", "#ffffff"),
+             M.contrast_ratio("#0d9488", "#ffffff")),
+          M.contrast_ratio("#000000", "#ffffff") == 21.0
+          and M.contrast_ratio("#767676", "#ffffff") == 4.54
+          and M.contrast_ratio("#0d9488", "#ffffff") == 3.74
+          # ...and it is symmetric, which is what makes "foreground" and
+          # "background" a description rather than an argument order.
+          and M.contrast_ratio("#0d9488", "#ffffff")
+          == M.contrast_ratio("#ffffff", "#0d9488"))
+
+    _sheets = M.themed_stylesheets()
+    _audits = [(name, M.contrast_audit(css)) for name, css in _sheets]
+    # THE VACUITY GUARD. "No violations" over no pairs is true of every palette
+    # ever written, and the way to get there by accident is one line: the panel's
+    # sheet carries a MARKER where the token layer goes, so a walk over the raw
+    # file resolves nothing at all and reports a clean bill of health.
+    check("ct2 the walk found pairs on both surfaces (%s) and the grounds it "
+          "derived are the page's, not a guess (%s) - a comparison over zero "
+          "pairs passes for any palette, which is how this check would lie"
+          % (", ".join("%s %d" % (n, a["pairs"]) for n, a in _audits),
+             _audits[0][1]["grounds"]),
+          all(a["pairs"] > 40 for _n, a in _audits)
+          and all(a["grounds"] == ["--bg", "--surface", "--surface-2"]
+                  for _n, a in _audits))
+    check("ct3 the token layer really is in front of each sheet - the panel's "
+          "marker is in the asset and gone from the assembled string, so ct2's "
+          "pair count is over resolved colours rather than over var() names "
+          "nothing declares",
+          "/*__THEME_TOKENS__*/" in M.read_asset("panel.css")
+          and all("/*__THEME_TOKENS__*/" not in css for _n, css in _sheets)
+          and all(":root{" in css for _n, css in _sheets))
+    check("ct4 no text pair is under 4.5:1 and no control boundary under 3:1, "
+          "on either surface, in either theme: %s"
+          % ("; ".join(v for _n, a in _audits for v in a["violations"])
+             or "clean"),
+          not any(a["violations"] for _n, a in _audits))
+    check("ct5 ...and what it stepped over is a number rather than a silence - "
+          "color-mix() and rgba() are unresolvable and are skipped, never "
+          "guessed (%s)"
+          % ", ".join("%s %d" % (n, a["unresolved"]) for n, a in _audits),
+          all(a["unresolved"] > 0 for _n, a in _audits))
+
+    # The derivations, each proven in BOTH directions on a fixture. A predicate
+    # that only ever says yes is not a predicate.
+    _light = ":root{--bg:#ffffff;--faint:#dddddd;--ink:#767676;--mid:#8c8c8c}"
+    _ground = _light + ".page{padding:1rem;background:var(--bg)}"
+    check("ct6 a ground is DERIVED: a rule that paints a background, holds "
+          "content (padding) and sets no ink of its own is one; the same rule "
+          "with a fixed height is a swatch, and the same rule that sets its own "
+          "colour hands nothing down",
+          M.contrast_audit(_ground)["grounds"] == ["--bg"]
+          and M.contrast_audit(
+              _light + ".page{padding:1rem;height:2rem;background:var(--bg)}"
+          )["grounds"] == []
+          and M.contrast_audit(
+              _light + ".page{padding:1rem;background:var(--bg);color:var(--ink)}"
+          )["grounds"] == [])
+    check("ct7 1.4.3 reads the co-declared pair when there is one and falls "
+          "back to the grounds when there is not - and passes the same colours "
+          "at a ratio that clears",
+          M.contrast_audit(_ground + ".a{color:var(--faint);"
+                           "background:var(--bg)}")["violations"]
+          and M.contrast_audit(_ground + ".a{color:var(--faint)}")["violations"]
+          and not M.contrast_audit(_ground + ".a{color:var(--ink)}")["violations"])
+    check("ct8 large text takes the 3:1 floor and body text does not, so the "
+          "same colour is a finding at one size and fine at the other - #8c8c8c "
+          "measures %.2f:1, which is exactly between the two floors"
+          % M.contrast_ratio("#8c8c8c", "#ffffff"),
+          M.contrast_audit(_ground + ".a{color:var(--mid);font-size:.9rem}"
+                           )["violations"]
+          and not M.contrast_audit(_ground + ".a{color:var(--mid);"
+                                   "font-size:1.6rem}")["violations"]
+          and not M.contrast_audit(_ground + ".a{color:var(--mid);"
+                                   "font-size:1.25rem;font-weight:700}"
+                                   )["violations"])
+    check("ct9 1.4.11 reaches a CONTROL boundary and not a decorative one - the "
+          "same token, the same ratio, and only the rule that paints something "
+          "a reader operates is a finding. A lint that failed both would have "
+          "been routed around by dragging every hairline to 3:1",
+          M.contrast_audit(_ground + "button.c{border:1px solid var(--faint)}"
+                           )["violations"]
+          and not M.contrast_audit(_ground + ".card{border:1px solid "
+                                   "var(--faint)}")["violations"]
+          # ...and the subject is the last compound: the BAR around a select is
+          # not a control just because the select inside it is one.
+          and not M.contrast_audit(
+              _ground + ".bar select:focus{outline:none}"
+              + ".bar{border:1px solid var(--faint)}")["violations"])
+    check("ct10 a border the colour of its own fill is not a boundary - what "
+          "identifies a solid button is the FILL against the page, so that is "
+          "the pair judged, and it is judged rather than waved through",
+          M.contrast_audit(
+              _ground + "button.p{background:var(--faint);"
+              "border-color:var(--faint)}")["violations"]
+          and all("--faint on --bg" in v for v in M.contrast_audit(
+              _ground + "button.p{background:var(--faint);"
+              "border-color:var(--faint)}")["violations"]))
+
+    # The exemptions: the legitimate shape passes, and the exemption cannot be
+    # used as a route around the guard.
+    _dis = _ground + 'button.c[aria-disabled="true"]{border:1px solid var(--faint)}'
+    check("ct11 a disabled control is excused with the reason attached, and the "
+          "SAME token on the SAME element without the disabled state is a "
+          "finding - the exemption follows the state, not the token. Excused "
+          "once per theme (the fixture declares one, so both read the same), "
+          "counted rather than merely present",
+          not M.contrast_audit(_dis)["violations"]
+          and len(M.contrast_audit(_dis)["exempt"]) == 2
+          # the excused line carries WHAT was excused and WHY, not just a count
+          and all(w in M.contrast_audit(_dis)["exempt"][0]
+                  for w in ("1.4.11", "--faint", "--bg", "disabled"))
+          and M.contrast_audit(_ground + "button.c{border:1px solid "
+                               "var(--faint)}")["violations"])
+    # THE ROUTE AROUND THE GUARD, and the shape the first version shipped. It
+    # deduplicated by pair as it walked, so the first rule to produce a pair
+    # decided it for the whole sheet - and the panel's disabled-button rule sits
+    # ABOVE the fields, so its correct exemption silenced nine controls below it.
+    check("ct12 an excused rule cannot silence the same pair somewhere else: one "
+          "disabled control and one live control wearing the same border is a "
+          "FINDING, not an exemption",
+          M.contrast_audit(_dis + "button.d{border:1px solid var(--faint)}"
+                           )["violations"]
+          and not M.contrast_audit(
+              _dis + "button.d{border:1px solid var(--faint)}")["exempt"])
+    check("ct13 a placeholder is excused and the same colour on the field "
+          "itself is not - a hint about an empty field is quieter on purpose, "
+          "and raising it makes an empty field look filled",
+          not M.contrast_audit(_ground + "input.q::placeholder{color:var(--faint)}"
+                               )["violations"]
+          and M.contrast_audit(_ground + "input.q{color:var(--faint)}")["violations"])
+    check("ct14 an exemption is a claim about the sheet and decays like one: "
+          "over the real sheets it names nothing (%s), over an empty sheet it "
+          "names every entry, and a TOKEN entry naming something no rule "
+          "declares is reported too"
+          % (M.contrast_exemption_problems("".join(c for _n, c in _sheets)) or "-",),
+          not M.contrast_exemption_problems("".join(c for _n, c in _sheets))
+          and len(M.contrast_exemption_problems("")) == len(M.CONTRAST_EXEMPTIONS)
+          and M.contrast_exemption_problems(
+              _light, (("token", "--gone", "1.4.11", "no reason survives it"),))
+          and not M.contrast_exemption_problems(
+              _light, (("token", "--faint", "1.4.11", "declared right there"),)))
+
+    # The two trap doors, each of which produced a wrong NUMBER rather than a
+    # missing one - which is worse, and is why both are pinned.
+    _dark = (":root{--bg:#ffffff;--ink:#111111}"
+             '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])'
+             "{--bg:#000000;--ink:#eeeeee}}"
+             ".page{padding:1rem;background:var(--bg)}.a{color:var(--ink)}")
+    check("ct15 @media print is cut out before the walk: the report's print "
+          "sheet re-declares the DARK tokens as a white page, and reading it "
+          "measures a palette nobody sees. Renaming that block to @media screen "
+          "makes the same fixture fail, which is what proves the cut is doing it",
+          not M.contrast_audit(
+              _dark + '@media print{:root,:root[data-theme="dark"]'
+              "{--bg:#ffffff}}")["violations"]
+          and M.contrast_audit(
+              _dark + '@media screen{:root,:root[data-theme="dark"]'
+              "{--bg:#ffffff}}")["violations"])
+    check("ct16 a colour written as a FUNCTION is skipped and counted, never "
+          "half-parsed: reading the first var() out of a color-mix would report "
+          "the unmixed colour's ratio, and a wrong number is worse than a "
+          "missing one",
+          not M.contrast_audit(
+              _ground + ".a{color:color-mix(in srgb,var(--faint) 50%,white)}"
+          )["violations"]
+          and M.contrast_audit(
+              _ground + ".a{color:color-mix(in srgb,var(--faint) 50%,white)}"
+          )["unresolved"] == 1
+          and M.contrast_audit(_ground + ".a{color:var(--faint)}")["violations"])
+
+    # The tokens the audit moved, pinned by the PROPERTY that made each value
+    # right rather than by the hex, so a future retune is judged, not blocked.
+    _fb = M.DEFAULT_THEME["--field-border"]
+    _fbh = M.DEFAULT_THEME["--field-border-hover"]
+    check("ct17 the hover boundary is a token of its own and is STRONGER than "
+          "the resting one in both themes - it used to be --border-strong, "
+          "which is structure, so hovering a button made its edge fainter than "
+          "at rest (light %.2f:1 over %.2f:1, dark %.2f:1 over %.2f:1)"
+          % (M.contrast_ratio(_fbh["$value"], "#ffffff"),
+             M.contrast_ratio(_fb["$value"], "#ffffff"),
+             M.contrast_ratio(_fbh["$dark"], "#111a2b"),
+             M.contrast_ratio(_fb["$dark"], "#111a2b")),
+          M.contrast_ratio(_fbh["$value"], "#ffffff")
+          > M.contrast_ratio(_fb["$value"], "#ffffff")
+          and M.contrast_ratio(_fbh["$dark"], "#111a2b")
+          > M.contrast_ratio(_fb["$dark"], "#111a2b")
+          and "--field-border-hover" in M.THEME_TOKENS
+          and M.TOKEN_CSS.count("--field-border-hover:") == 3)
+    _as = M.DEFAULT_THEME["--accent-solid"]
+    check("ct18 --accent-solid answers both criteria at once and they pull "
+          "opposite ways: the fill has to clear 3:1 against the card it sits on "
+          "AND carry white at 4.5:1. Light %.2f/%.2f, dark %.2f/%.2f"
+          % (M.contrast_ratio(_as["$value"], "#eef2f7"),
+             M.contrast_ratio("#ffffff", _as["$value"]),
+             M.contrast_ratio(_as["$dark"], "#172236"),
+             M.contrast_ratio("#ffffff", _as["$dark"])),
+          M.contrast_ratio(_as["$value"], "#eef2f7") >= 3.0
+          and M.contrast_ratio("#ffffff", _as["$value"]) >= 4.5
+          and M.contrast_ratio(_as["$dark"], "#172236") >= 3.0
+          and M.contrast_ratio("#ffffff", _as["$dark"]) >= 4.5)
+    check("ct19 the amber fill is never ink: --st-prog is a FILL and unreadable "
+          "as text on every surface here (%.2f:1 on white), which is what "
+          "--st-prog-ink exists for - neither sheet uses the fill as a colour"
+          % M.contrast_ratio(
+              M.DEFAULT_THEME["--st-prog"]["$value"], "#ffffff"),
+          M.contrast_ratio(M.DEFAULT_THEME["--st-prog"]["$value"], "#ffffff") < 4.5
+          and not any(re.search(r"(?<![-\w])color\s*:\s*var\(--st-prog\)", css)
+                      for _n, css in _sheets))
+
     # Labels: every status either surface can render must have words.
     check("every task status reads as words", all(
         M.label(s) and " " not in M.label(s).strip()[:1] for s in M.STATUS))
