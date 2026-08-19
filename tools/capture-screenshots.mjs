@@ -2228,8 +2228,21 @@ const LIN_CENSUS = ({ rootSel, pfx }) => {
   document.querySelectorAll('[data-lin253]').forEach((n) => n.removeAttribute('data-lin253'));
   const SEL = 'button,select,textarea,a[href],[role="button"],[tabindex]:not([tabindex="-1"]),'
     + 'input:not([type="hidden"])';
-  const vis = (e) => { const r = e.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
+  // A rect is NOT enough. Content inside a CLOSED <details> keeps its layout box
+  // in Chromium -- 52x23 for a filter chip -- while the accessibility tree marks
+  // it ignored/notRendered, correctly, because nobody can see it. Judged on the
+  // rect alone, fifteen hidden filter chips read as "no accessible name" and
+  // this gate published that number. A control nobody can reach is not a control
+  // with a defect. <summary> is the exception: it IS rendered while its details
+  // is shut, and it is the thing you click to open it.
+  const vis = (e) => {
+    const r = e.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return false;
+    if (getComputedStyle(e).visibility === 'hidden') return false;
+    const shut = e.closest('details:not([open])');
+    if (shut && !e.closest('summary')) return false;
+    return true;
+  };
   const norm = (t) => (t || '').replace(/[\u2013\u2014\u2018\u2019\u201c\u201d]/g, ' ')
     .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
   const strip = (el) => {
@@ -2307,6 +2320,15 @@ async function linCensus(page, rootSel, pfx) {
       const { nodes } = await cdp.send('Accessibility.getPartialAXTree',
         { nodeId, fetchRelatives: false });
       const n = nodes && nodes[0];
+      // The browser's own verdict on whether this node is in the tree at all.
+      // `notRendered` and the aria-hidden/inert family mean deliberately absent,
+      // which is an answer and not a finding; anything else means the node is
+      // present and unnamed, which is.
+      const HIDDEN_ON_PURPOSE = ['notRendered', 'ariaHiddenElement',
+        'ariaHiddenSubtree', 'inertElement', 'inertSubtree', 'presentationalRole',
+        'uninteresting', 'notVisible'];
+      const why = (n && n.ignoredReasons || []).map((r) => r.name);
+      if (n && n.ignored && why.some((r) => HIDDEN_ON_PURPOSE.indexOf(r) >= 0)) continue;
       const accName = n && n.name ? String(n.name.value || '') : '';
       const v = linWords(c.visible), a = linWords(accName);
       let verdict;
