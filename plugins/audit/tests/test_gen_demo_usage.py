@@ -85,11 +85,14 @@ def _cases(check):
     # `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)`, which cannot fail. A tier it has
     # never heard of is not an error - it is a row relabelled DEFAULT_MODEL - so a
     # drift between the two files crashes nothing and leaves the demo's by-model
-    # chart quietly wrong. Measured before this case existed: mutating
+    # chart quietly wrong. Measured before this case existed, ON THE PRE-F34
+    # FIXTURE (40x5, before phases declared a tier of their own): mutating
     # `RISK_MODEL["high"]` from "opus" to "mythos" kept every suite in the tree
     # green while 132 opus rows became sonnet and the demo's total spend fell from
-    # $414.28 to $291.66. The cast has `_demo_cast` and a case; the vocabulary had
-    # neither.
+    # $414.28 to $291.66. The absolute figures moved when the fixture did - the
+    # scope is attached rather than the number refreshed, because the measurement
+    # is history and re-running it would prove a different thing. The cast has
+    # `_demo_cast` and a case; the vocabulary had neither.
     gdm = _loader.load_script("gen-demo-manifest.py",
                               modname="gen_demo_manifest_tiers")
     demo_manifest = gdm.generate(n_phases=8, n_tasks=3, seed=11)
@@ -102,12 +105,44 @@ def _cases(check):
           bool(tiers) and unmapped == [],
           "tiers=%r unmapped=%r" % (tiers, unmapped))
 
+    # F34, and it is the same failure one level up. `emit` reads the ORCHESTRATOR
+    # row's tier off `ph.get("model")`, and a phase that declares none maps
+    # through the same `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)` — so 148 of the
+    # 40x5 demo's 482 rows (31%) printed `claude-sonnet-5` as though the manifest
+    # had chosen it. Measured, not assumed.
+    #
+    # Asserting "no phase row equals DEFAULT_MODEL" would NOT catch it: sonnet is
+    # a legitimate declared tier, so the fallback and the truth print the same
+    # eight characters. The claim has to be checked against its basis, phase by
+    # phase — which is the only form that can tell them apart.
+    demo_rows = M.generate(demo_manifest, seed=7, adhoc_days=0)
+    orch = [r for r in demo_rows if r["attr"] == "phase"]
+    tier_of = {p["id"]: p.get("model") for p in demo_manifest["phases"]}
+    unbased = sorted({r["phaseId"] for r in orch
+                      if r["model"] != M.TIER_TO_MODEL.get(tier_of.get(r["phaseId"]))})
+    check("attribution: every orchestrator row's model is the mapping of its "
+          "phase's DECLARED tier, never the DEFAULT_MODEL fallback standing in "
+          "for a phase that declared none: %r" % (unbased,),
+          unbased == [])
+    # The vacuous direction, which is not hypothetical here: the filter above
+    # narrows 482 rows to the `attr == "phase"` ones, and if that ever narrowed
+    # to zero the case would read as a clean bill of health for a ledger with no
+    # orchestrator attribution in it at all.
+    check("attribution: ...and there ARE orchestrator rows to judge - an empty "
+          "filter must not read as all-clear",
+          len(orch) >= 10 and len(tier_of) > 1,
+          "orchestrator rows=%d over %d phase(s)" % (len(orch), len(tier_of)))
+    check("attribution: the demo spans more than one orchestrator tier, so a "
+          "generator that stamped one literal on every phase is not a pass "
+          "either", len({r["model"] for r in orch}) > 1,
+          sorted({r["model"] for r in orch}))
+
     # ...and every id it can emit must price at its OWN row. `rates_for` falls
     # back to `_default`, which is Opus-tier on purpose, so a renamed or retired
     # model id does not fail either - it silently re-prices the demo UPWARD
-    # (mutating "claude-sonnet-5" to "claude-sonnet-6" took the same fixture from
-    # $414.28 to $461.08 with every suite green, because "cost is priced per row
-    # and non-zero" above is satisfied by the fallback). Asked through the real
+    # (mutating "claude-sonnet-5" to "claude-sonnet-6" took the PRE-F34 fixture
+    # from $414.28 to $461.08 with every suite green, because "cost is priced per
+    # row and non-zero" above is satisfied by the fallback). Asked through the real
     # resolver rather than by looking the key up here, so a dated id like
     # `claude-haiku-4-5-20251001` still counts as priced; identity against the
     # `_default` ROW is what separates the two, because its numbers are EQUAL to

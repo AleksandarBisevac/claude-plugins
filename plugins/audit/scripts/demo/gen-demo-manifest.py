@@ -25,18 +25,29 @@ fixture, capture from it, and throw it away.
 WHAT IT DELIBERATELY CONTAINS. A fixture that only holds healthy rows exercises
 none of the surfaces that matter, so this one carries every state a reader can
 filter on: all four phase statuses and all four task statuses, a phase gated behind
-another (`blockedBy`), cross-task `dependsOn`, budgets both under and over, `area`
-tags so the monorepo grouping has something to group, tasks with and without
-`skills` so the panel's "needs skills" filter has both sides, and a full bug
-lifecycle including a reciprocal bug<->task link.
+another (`blockedBy`) and a task gated behind a phase, cross-task `dependsOn`,
+budgets both under and over, `area` tags so the monorepo grouping has something to
+group, tasks with and without `skills` so the panel's "needs skills" filter has
+both sides, all three levels of the review-skill chain plus the explicit null that
+stops it, sign-off with and without findings, work deferred out of scope, a parked
+proposal and a materialized one, and every bug state `_manifest_vocab.BUG_STATUS`
+defines including the reciprocal bug<->task links.
+
+WHAT KEEPS THAT LIST HONEST. Not this paragraph — prose is not linted, and the
+fixture had drifted 54 fields behind the schema before anything noticed.
+`schema_coverage()` below derives the field set FROM THE SCHEMA FILE and requires
+every field to be either carried here or named in `SCHEMA_EXEMPTIONS` with the
+reason it is not, so a field added to the schema tomorrow arrives as a gap.
 
 DETERMINISTIC BY CONSTRUCTION. A fixed seed, a fixed base date, no wall-clock. The
 validator's rules are respected by construction rather than by luck — in
 particular a `done` phase never contains an unfinished task, which is the
 constraint that makes naive random status assignment produce an invalid manifest.
 `plugins/audit/tests/test_gen_demo_manifest.py` pins determinism, referential
-integrity and that constraint - this file carries no inline `--selftest` any
-more, and its 43 cases live there with byte-identical labels.
+integrity, schema coverage and that constraint - this file carries no inline
+`--selftest` any more, and its cases live there with byte-identical labels. The
+count they once stood at is deliberately not written here: it rots, and this
+docstring has already carried two numbers that did.
 """
 import argparse
 import datetime
@@ -140,6 +151,64 @@ def _task_statuses(phase_status, n_tasks, rng):
     return ["pending"] * n_tasks           # blocked + pending phases: nothing started
 
 
+def _tests_add(mode, rel):
+    """The tests a task promises to author, in the wording its MODE gives them.
+
+    `audit-task.py` writes `expectRedFirst = mode == "tdd"` beside this list, and
+    the schema says the list's meaning is mode-dependent. So the two must be
+    generated together or the fixture would ship a manifest that disagrees with
+    itself about what its own tests are for.
+    """
+    if mode == "tdd":
+        return ["a failing repro for %s: it must go red on current code" % rel]
+    if mode == "regression":
+        return ["a guard locking %s's corrected behaviour" % rel]
+    return []                              # gate-only authors no test at all
+
+
+def _review_findings(area, pi, tasks):
+    """Sign-off findings in the STRUCTURED shape `agents/audit-reviewer.md` emits.
+
+    The schema tolerates a plain string for back-compat and prefers the object;
+    the demo shows the preferred one, because a fixture is also documentation of
+    what to write. Each finding names a real file from the phase it belongs to -
+    a `file` pointing nowhere is the kind of detail a reader checks first.
+    """
+    graded = ("low", "med", "high")
+    return [{"id": i + 1,
+             "severity": graded[(pi + i) % len(graded)],
+             "file": "%s:%d-%d" % (task["files"][0], 12 + 7 * i, 20 + 7 * i),
+             "issue": "The %s path is not covered for the empty-input case."
+                      % area,
+             "resolution": "Covered by the gate added in %s." % task["id"]}
+            for i, task in enumerate(tasks[:2])]
+
+
+def _phase_model(tasks):
+    """The phase's DEFAULT executor tier, or None when there is no basis.
+
+    The schema reads `model` as the tier the orchestrator spawns, and a task's
+    own `model` overrides it - so a phase declares the tier its TYPICAL task
+    needs, which is the modal risk among its tasks. Ties break upward, because
+    the audit's own routing rule forbids haiku on high risk: a default that
+    over-serves is recoverable, one that under-serves is a rule violation.
+
+    "The riskiest task" was tried first and measured: at five tasks a phase
+    almost always holds one `high`, so all 40 phases came out `opus` and the
+    orchestrator ledger was as uniform as the DEFAULT_MODEL fallback it replaced
+    - a basis, but one that answers the same for everybody, which is how a
+    derived value quietly becomes a constant again.
+
+    A phase with no risk-bearing task has NO basis, so it declares no tier.
+    Falling back to a plausible-looking one is what this whole change is against.
+    """
+    risks = [t.get("risk") for t in tasks if t.get("risk") in RISK_MODEL]
+    if not risks:
+        return None
+    modal = max(RISKS, key=lambda r: (risks.count(r), RISKS.index(r)))
+    return RISK_MODEL[modal]
+
+
 def _demo_areas():
     """The `meta.areas` registry, advisory owners included (v0.34).
 
@@ -168,6 +237,13 @@ def _demo_areas():
                  "skills": [SKILL_POOL[i % len(SKILL_POOL)]]}
         if tag != "infra":
             entry["owner"] = authors[i % len(authors)]
+        # The MIDDLE of `phase.reviewSkill ?? areas[tag].reviewSkill ??
+        # meta.reviewSkill`, and the level a monorepo actually uses: backend and
+        # mobile get different reviewers because they are different codebases.
+        # Not every area declares one — an area that stays silent is what makes
+        # the fall-through to meta.reviewSkill observable.
+        if tag in ("backend", "mobile"):
+            entry["reviewSkill"] = SKILL_POOL[(i + 1) % len(SKILL_POOL)]
         out[tag] = entry
     return out
 
@@ -190,6 +266,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
             risk = RISKS[rng.randrange(len(RISKS))]
             started = p_start + datetime.timedelta(hours=4 * (ti - 1))
             rel = "src/%s/mod%02d_%02d.ts" % (area, pi, ti)
+            mode = TEST_MODES[(pi + ti) % len(TEST_MODES)]
             task = {
                 "id": tid,
                 "title": "%s %s" % (TITLE_VERBS[(pi + ti) % len(TITLE_VERBS)],
@@ -199,12 +276,31 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
                 "risk": risk,
                 "files": [rel],
                 "tests": {
-                    "mode": TEST_MODES[(pi + ti) % len(TEST_MODES)],
+                    "mode": mode,
+                    # `add` and `expectRedFirst` are the two halves of the TDD
+                    # contract and they only mean anything together: the same
+                    # sentence in `add` describes a test that must FAIL first
+                    # under 'tdd' and a guard written AFTER the fix under
+                    # 'regression'. `gate-only` adds no test, so its `add` is
+                    # empty on purpose - the fixture carries that case too,
+                    # because an always-populated list never shows it.
+                    "add": _tests_add(mode, rel),
+                    "expectRedFirst": mode == "tdd",
                     "gate": ["yarn test --findRelatedTests %s" % rel],
                 },
                 "attempts": 0,
                 "maxAttempts": 3,
             }
+            # Prose and reference links on a SLICE of tasks, never all of them:
+            # the report has to render a task with a description and a task
+            # without one, and a fixture where every optional field is always
+            # present shows only half of what the surfaces do.
+            if (pi + ti) % 2 == 0:
+                task["description"] = (
+                    "%s so the behaviour is pinned by a test rather than by "
+                    "convention." % task["title"])
+            if (pi + ti) % 7 == 0:
+                task["docs"] = ["docs/architecture/%s.md" % area]
             # Only some tasks carry skills, so the panel's "needs skills" filter has
             # both sides to show. Exactly ONE task (P1.1) is explicitly opted
             # out (v0.37 B1): `skills: null` is the answer "none applies" that
@@ -216,6 +312,13 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
             # A within-phase dependency chain, so the readiness rule has real work.
             if ti > 1 and (pi + ti) % 5 == 0:
                 task["dependsOn"] = ["%s.%d" % (pid, ti - 1)]
+            # ...and the other kind of wait, which is not the same rule wearing a
+            # second name: `dependsOn` orders tasks inside a phase, `blockedBy` is
+            # the HARD GATE that can name a PHASE. A task waiting on the previous
+            # phase is the documented use, and the readiness list has to show both
+            # or a reader cannot tell them apart.
+            if pi > 1 and tstatus == "pending" and (pi + ti) % 9 == 0:
+                task["blockedBy"] = ["P%d" % (pi - 1)]
 
             if tstatus in ("done", "in_progress", "blocked"):
                 task["startedAt"] = _iso(started)
@@ -247,6 +350,32 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
             "testGate": ["yarn test --selectProjects %s" % area],
             "tasks": tasks,
         }
+        # F34: the tier this phase's ORCHESTRATOR runs at. It was absent, and
+        # `gen-demo-usage` maps an absent tier through
+        # `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)` - which cannot fail, so all 148
+        # orchestrator rows of the 40x5 demo (31% of 482) printed
+        # `claude-sonnet-5` as though the manifest had chosen it. A model
+        # attribution produced by a fallback is a claim with no basis, on the page
+        # this project uses to show what it does.
+        tier = _phase_model(tasks)
+        if tier:
+            phase["model"] = tier
+        if pi % 3 == 1:
+            phase["description"] = (
+                "Free-text context for the %s pass: what a reader needs to know "
+                "before opening the tasks." % area)
+        if pi % 5 == 2:
+            phase["docs"] = ["docs/architecture/%s.md" % area,
+                             "docs/runbooks/%s-oncall.md" % area]
+        # The middle of the documented resolution chain
+        # (phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill) needs
+        # all three levels present to be visible at all. An explicit null is the
+        # fourth state and not a miss: it is how a phase says "tests sign this
+        # one off", and it STOPS the fallback rather than deferring to it.
+        if pi % 6 == 3:
+            phase["reviewSkill"] = SKILL_POOL[pi % len(SKILL_POOL)]
+        elif pi % 6 == 0:
+            phase["reviewSkill"] = None
         # Budgets on a slice of phases only — an unbudgeted phase must render as
         # "no budget", never as a phase at zero, and the report needs both cases.
         if pi % 4 == 1:
@@ -259,8 +388,23 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
             phase["summary"] = (
                 "Met the desired outcome: every touched file under src/%s is "
                 "validated and the phase gate is green." % area)
-            phase["review"] = {"status": "passed",
-                               "outcome": "No actionable findings on the phase diff."}
+            # Sign-off carries the evidence that makes "passed" mean something:
+            # who signed (tool), at which tier (model), and — on some phases —
+            # the findings that were raised and resolved before it passed. A
+            # review that only ever says "no findings" shows the reviewer's
+            # empty state and nothing else, so the fixture carries both.
+            phase["review"] = {
+                "tool": "audit-reviewer",
+                "model": RISK_MODEL["high"],
+                "status": "passed",
+                "outcome": "No actionable findings on the phase diff.",
+                "findings": [],
+            }
+            if pi % 4 == 1:
+                phase["review"]["findings"] = _review_findings(area, pi, tasks)
+                phase["review"]["outcome"] = (
+                    "%d finding(s) raised on the phase diff and resolved before "
+                    "sign-off." % len(phase["review"]["findings"]))
         elif pstatus == "in_progress":
             phase["baseRef"] = _sha(rng)
             phase["branch"] = "audit/%s-%s" % (pid.lower(), area)
@@ -275,6 +419,10 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
     phases[0]["ado"] = {
         "id": 4700,
         "url": "https://dev.azure.com/demo-org/%s/_workitems/edit/4700" % repo,
+        # The sprint a push stamped this item into. Recorded so `/audit:status`
+        # can report sprint DRIFT after a rollover — which it cannot do from
+        # `meta.ado.iterationPath`, because that is the mode, not the stamp.
+        "iterationPath": "%s\\Sprint 12" % repo,
         "lastSyncedAt": "2026-08-06T12:00:00Z"}
     phases[0]["tasks"][0]["ado"] = {
         "id": 4711,
@@ -299,6 +447,22 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
                 % (n_phases, n_tasks)),
             "buildCommands": {"test": "yarn test", "lint": "yarn lint",
                               "build": "yarn build"},
+            # The build/runtime half of the configuration, which the orchestrator
+            # prose reads and the committed acme example already declares. The
+            # demo declared none of it, so the scale page showed a project with
+            # no commit convention, no node hint and no smoke gate — three
+            # answers a real audit always has, even when the answer is null.
+            "commit": {"type": "fix", "coauthor": None},
+            "node": "20.x",
+            "nodePreamble": None,
+            "runtimeBoot": {"appRootPath": "src",
+                            "launch": "yarn dev --port 4173",
+                            "verify": "GET http://localhost:4173/health is 200"},
+            # The BOTTOM of the review-skill chain: the default reviewer when
+            # neither the phase nor its area names one. Spelled from SKILL_POOL
+            # so panel discovery resolves it — a name nothing on disk answers to
+            # draws "discovery knows no such skill" across the screenshots.
+            "reviewSkill": SKILL_POOL[4],
             # Declared, like the acme example declares it. Without it the demo
             # rendered real dollar figures and, since the renderer refuses to
             # invent a rate date, correctly labelled them "rates undated" — an
@@ -319,55 +483,363 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
         "phases": phases,
         "fileIndex": file_index,
         "bugs": _bugs(phases),
-        "proposals": [],
+        # Work this audit decided NOT to do, which is a result and not an
+        # omission: /audit:status prints it and the acme example carries it.
+        "deferred": {
+            "note": "Out of scope for this cycle — tracked for the next audit.",
+            "target": "the Q3 platform audit",
+            "items": [
+                "Move the storefront catalog page to server components",
+                {"title": "Replace the bespoke retry wrapper with the platform one",
+                 "reason": "Blocked on the platform release that ships it.",
+                 "target": "the Q3 platform audit"},
+            ],
+        },
+        "proposals": _proposals(n_phases),
     }
     return manifest
 
 
-# --- bugs + output --------------------------------------------------------------
+# --- schema coverage -------------------------------------------------------------
+# The fixture is what the project SHOWS. A schema field it never carries is a
+# feature nobody sees working, and the gap is invisible because nothing compares
+# the two documents: the demo sat ~54 fields behind the schema for four releases
+# and no check could say so.
+#
+# THE FIELD SET IS DERIVED FROM THE SCHEMA FILE, never typed here. A hand-typed
+# list goes stale exactly the way the fixture did - `_manifest_vocab.KNOWN_*` is
+# the second copy that already exists - so a field added to the schema tomorrow
+# shows up here as an unexplained gap rather than passing forever.
+#
+# Every gap is then one of two things and never a third: covered by the fixture,
+# or named below with the reason it is not. A lint that skips quietly is the thing
+# this repo keeps rediscovering, so `schema_coverage()` also reports STALE
+# exemptions - an excuse for a field the schema dropped, or for one the fixture now
+# carries, is a reason nobody is paying and it has to go.
+ROOT_OWNER = "<root>"
+SCHEMA_REL = ("schema", "audit-plan.schema.json")
+
+# Fields whose VALUE the coverage walk records but does not enter. `payload` is a
+# whole phase parked losslessly inside a proposal — same `$ref`s, same task and
+# `tests` shapes — so walking into it lets a phase NOBODY RUNS answer for the live
+# plan. Measured: deleting `tests.add` from every live task left the lint green,
+# because the parked payload still carried one. A fixture exists to show the
+# surfaces working, and no surface renders a staged payload.
+OPAQUE_FIELDS = frozenset(["proposal.payload"])
+
+SCHEMA_EXEMPTIONS = {
+    "<root>.$schema":
+        "names a URL so an EDITOR can validate a document while a human types it. "
+        "This fixture is generated into a temp directory, rendered, and thrown "
+        "away - nothing ever opens it. Stamping it means either a fourth "
+        "hand-typed copy of the schema URL (there is no shared constant) or file "
+        "I/O inside a generate() documented as pure; CI validates the generated "
+        "manifest against the schema BY PATH instead.",
+    "phase.shard":
+        "written by `_manifest_io.split_manifest` onto the INDEX stub, never by "
+        "this generator. `generate()` returns the ASSEMBLED manifest, in which a "
+        "shard pointer would name a file that form does not have; the write path "
+        "is pinned by the sharded round-trip cases.",
+    "phase.claim":
+        "a LIVE lease: which session, host and branch is running this phase right "
+        "now, released when the phase finishes. A deterministic fixture carrying "
+        "one publishes a demo permanently held by a session that does not exist, "
+        "and /audit:doctor reports it as a stale claim on the page that exists to "
+        "show a healthy run.",
+    "claim.at":
+        "a field of phase.claim, which this fixture does not take: the timestamp "
+        "a lease that was never taken would carry is not a fact about the demo.",
+    "claim.branch":
+        "a field of phase.claim, which this fixture does not take: the branch a "
+        "lease that was never taken would name does not exist in the demo.",
+    "claim.host":
+        "a field of phase.claim, which this fixture does not take: a host name is "
+        "the one part of a claim that would publish whoever generated it.",
+    "claim.sessionId":
+        "a field of phase.claim, which this fixture does not take: a session id "
+        "invented for a fixture is exactly the stale claim /audit:doctor reports.",
+    "phase.reviewFindings":
+        "the schema itself calls it legacy (pre-plugin manifests), informational, "
+        "and not read by the orchestrator. Measured: no reader anywhere under "
+        "scripts/, hooks/, commands/ or agents/ - only the schema and "
+        "`_manifest_vocab.KNOWN_PHASE`. The demo shows what the plugin does.",
+    "review.preExistingNotCharged":
+        "defined by the schema and by nothing else - no reader, no writer, and not "
+        "even a `_manifest_vocab` entry. A fixture value would demonstrate nothing.",
+    "task.movedFrom":
+        "written by /audit:task move, and its whole purpose is to let a reader join "
+        "HISTORICAL ledger rows filed under the task's old id. `gen-demo-usage.py` "
+        "derives the demo's ledger from THIS manifest's current ids, so a "
+        "`movedFrom` here would advertise a join to rows the demo does not have - "
+        "the fixture would contradict itself.",
+}
+
+
+def load_schema():
+    """The manifest JSON Schema, read from the plugin's own copy.
+
+    By path from `_output.PLUGIN_ROOT` rather than from `__file__`: this file may
+    sit at any depth under `scripts/` and `depth_sensitive_paths()` forbids the
+    alternative.
+    """
+    path = os.path.join(_output.PLUGIN_ROOT, *SCHEMA_REL)
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _deref(schema, node):
+    """(def name, node) after following `$ref`; name is None for an inline node."""
+    name, cur, hops = None, node, 0
+    while isinstance(cur, dict) and "$ref" in cur and hops < 20:
+        name = str(cur["$ref"]).split("/")[-1]
+        cur = (schema.get("$defs") or {}).get(name) or {}
+        hops += 1
+    return (name, cur)
+
+
+def _property_maps(node):
+    """Every `properties` map a node contributes - its own and each oneOf/anyOf
+    branch's, because `finding` declares its object shape inside a oneOf."""
+    if not isinstance(node, dict):
+        return []
+    out = []
+    if isinstance(node.get("properties"), dict):
+        out.append(node["properties"])
+    for branch in list(node.get("oneOf") or []) + list(node.get("anyOf") or []):
+        if isinstance(branch, dict) and isinstance(branch.get("properties"), dict):
+            out.append(branch["properties"])
+    return out
+
+
+def schema_fields(schema):
+    """Every `<owner>.<field>` the schema DEFINES; owner is `<root>` or a $def name.
+
+    Owners are named things only. An object the schema spells out inline - the
+    sub-keys of `meta.ado`, of `meta.usage` - has no name to attribute a field to,
+    and attributing them to the parent would count `meta.organization` as a `meta`
+    field the schema never declared.
+    """
+    out = set()
+    for props in _property_maps(schema):
+        for key in props:
+            out.add("%s.%s" % (ROOT_OWNER, key))
+    for name, node in (schema.get("$defs") or {}).items():
+        for props in _property_maps(node):
+            for key in props:
+                out.add("%s.%s" % (name, key))
+    return out
+
+
+def _walk_fields(schema, node, data, owner, out):
+    """Record `<owner>.<field>` for every schema-declared key `data` carries.
+
+    Descending into an INLINE object drops the owner (None), which is the same
+    rule `schema_fields` applies from the other side; a `$ref` picks a new one up.
+    An `OPAQUE_FIELDS` entry is recorded and then not entered.
+    """
+    name, cur = _deref(schema, node)
+    if name is not None:
+        owner = name
+    if not isinstance(cur, dict):
+        return
+    for branch in list(cur.get("oneOf") or []) + list(cur.get("anyOf") or []):
+        _walk_fields(schema, branch, data, owner, out)
+    props = cur.get("properties") if isinstance(cur.get("properties"), dict) else {}
+    if isinstance(data, dict):
+        extra = cur.get("additionalProperties")
+        for key, val in data.items():
+            if key in props:
+                field = "%s.%s" % (owner, key) if owner is not None else None
+                if field is not None:
+                    out.add(field)
+                if field in OPAQUE_FIELDS:
+                    continue
+                _walk_fields(schema, props[key], val, None, out)
+            elif isinstance(extra, dict):
+                _walk_fields(schema, extra, val, None, out)
+    if isinstance(data, list) and isinstance(cur.get("items"), dict):
+        for item in data:
+            _walk_fields(schema, cur["items"], item, None, out)
+
+
+def manifest_fields(manifest, schema=None):
+    """Every `<owner>.<field>` the manifest actually CARRIES (presence, not value:
+    `skills: null` is an answer and counts, which is the point of that key)."""
+    schema = load_schema() if schema is None else schema
+    out = set()
+    _walk_fields(schema, schema, manifest, ROOT_OWNER, out)
+    return out
+
+
+def schema_coverage(manifest, schema=None):
+    """What the fixture exercises, what it skips on purpose, and what it just misses.
+
+    `gaps` is the answer the lint reads: a schema field the fixture does not carry
+    and `SCHEMA_EXEMPTIONS` does not explain. `stale` is the same question
+    backwards, and it is what stops the exemption list becoming a place to put
+    things: an entry naming a field the schema no longer defines, or one the
+    fixture now carries, is an unpaid reason.
+    """
+    schema = load_schema() if schema is None else schema
+    defined = schema_fields(schema)
+    carried = manifest_fields(manifest, schema) & defined
+    exempt = set(SCHEMA_EXEMPTIONS)
+    return {"defined": sorted(defined),
+            "covered": sorted(carried),
+            "exempt": sorted((exempt & defined) - carried),
+            "gaps": sorted(defined - carried - exempt),
+            "stale": sorted((exempt - defined) | (exempt & carried))}
+
+
+# --- proposals + bugs + output ---------------------------------------------------
+def _proposals(n_phases):
+    """Parked phases: what /audit:init synthesized and the user did not approve.
+
+    Both halves of the lifecycle, because they are validated by DIFFERENT rules
+    and a fixture carrying one of them proves only half the feature. A still-
+    PROPOSED payload RESERVES its phase and task ids (allocation counts them
+    alongside live ids), so its phase sits one past the last live one; a
+    MATERIALIZED record has already become a live phase, so its payload id is the
+    live id on purpose and `materializedAs` has to name a phase that exists.
+    """
+    parked = "P%d" % (n_phases + 1)
+    props = [{
+        "id": "PROP-1",
+        "name": "Observability pass",
+        "status": "proposed",
+        "origin": "audit:init",
+        "createdISO": _iso(BASE + datetime.timedelta(days=1)),
+        "scope": "src/infra, src/backend",
+        "benefit": "Every failing request can be traced to the call that made it.",
+        "technicalNote": "Needs the tracing SDK pinned before the first task runs.",
+        "openQuestions": ["Which sampling rate does the platform team run?"],
+        "materializedAs": None,
+        "materializedAt": None,
+        "payload": {"phase": {
+            "id": parked,
+            "title": "Observability pass",
+            "status": "pending",
+            "area": "infra",
+            "desiredOutcome": "Traces and structured logs on every request path.",
+            "testGate": ["yarn test --selectProjects infra"],
+            "tasks": [{"id": "%s.%d" % (parked, i),
+                       "title": "Instrument the %s boundary" % tag,
+                       "status": "pending", "model": RISK_MODEL["med"],
+                       "risk": "med", "files": ["src/infra/trace_%02d.ts" % i],
+                       "tests": {"mode": "regression",
+                                 "add": ["a guard asserting the span is emitted"],
+                                 "expectRedFirst": False,
+                                 "gate": ["yarn test --selectProjects infra"]},
+                       "attempts": 0, "maxAttempts": 3}
+                      for i, tag in enumerate(("http", "queue"), start=1)],
+        }},
+    }]
+    if n_phases < 2:
+        return props            # nothing live for a materialized record to name
+    props.append({
+        "id": "PROP-2",
+        "name": "Web storefront pass",
+        "status": "materialized",
+        "origin": "audit:init",
+        "createdISO": _iso(BASE + datetime.timedelta(days=1)),
+        "scope": "src/web",
+        "benefit": "The storefront's own passes stop riding on the backend phase.",
+        "technicalNote": "Materialized unchanged; the payload is kept as the record.",
+        "openQuestions": [],
+        "materializedAs": "P2",
+        "materializedAt": _iso(BASE + datetime.timedelta(days=2)),
+        "payload": {"phase": {"id": "P2", "title": "Web pass 2",
+                              "status": "pending", "area": "web", "tasks": []}},
+    })
+    return props
+
+
+def _first_task(phases, phase_status, task_status):
+    """The first task in document order matching (phase status, task status).
+
+    Two nested loops with a break out of each were how this used to find the one
+    task a bug links to, and it could only ever find one thing. Naming the pair it
+    matches on lets a second link ask for a different one without a second copy of
+    the walk.
+    """
+    for ph in phases:
+        if ph.get("status") != phase_status:
+            continue
+        for task in ph.get("tasks") or []:
+            if task.get("status") == task_status:
+                return task
+    return None
+
+
 def _bugs(phases):
-    """A full bug lifecycle, including one reciprocal bug<->task link.
+    """A full bug lifecycle, including two reciprocal bug<->task links.
 
     The link has to be reciprocal in both directions or the validator rejects it,
     and the linked task has to be a real id — which is why this runs after the
     phases exist rather than generating ids it hopes will be there.
+
+    "Full" now means what `_manifest_vocab.BUG_STATUS` means. It did not: the
+    fixture stopped at four of the five states and skipped `fixed`, so the only
+    terminal state that carries EVIDENCE — `fixedIn`, the commit of the task that
+    closed it — was the one state the demo never rendered.
     """
-    linked = None
-    for ph in phases:
-        if ph.get("status") == "in_progress":
-            for t in ph["tasks"]:
-                if t["status"] == "in_progress":
-                    linked = t
-                    break
-            break
+    running = _first_task(phases, "in_progress", "in_progress")
+    closed = _first_task(phases, "done", "done")
     bugs = [
         {"id": "BUG-1", "title": "Product images 404 intermittently on Safari",
-         "status": "open", "severity": "med",
+         "status": "open", "severity": "med", "reportedBy": "qa",
          "reportedAt": _iso(BASE + datetime.timedelta(days=5)),
          "description": "Some catalog images fail to load on first paint in Safari.",
          "repro": "Open the catalog in Safari with an empty cache.",
-         "expected": "Every image loads.", "actual": "Two or three 404 briefly."},
+         "expected": "Every image loads.", "actual": "Two or three 404 briefly.",
+         "files": ["src/web/image_pipeline.ts"]},
         {"id": "BUG-2", "title": "Checkout is slow on 3G mobile",
-         "status": "triaged", "severity": "low",
+         "status": "triaged", "severity": "low", "reportedBy": "support",
          "reportedAt": _iso(BASE + datetime.timedelta(days=7)),
-         "description": "Checkout takes over ten seconds on a throttled connection."},
+         "description": "Checkout takes over ten seconds on a throttled connection.",
+         "files": ["src/web/checkout.ts", "src/backend/pricing.ts"]},
         {"id": "BUG-4", "title": "Dark-mode label contrast below AA",
-         "status": "wontfix", "severity": "low",
+         "status": "wontfix", "severity": "low", "reportedBy": "design",
          "reportedAt": _iso(BASE + datetime.timedelta(days=11)),
          "notes": "Superseded by the design-token refresh; tracked there instead."},
     ]
-    if linked is not None:
+    if running is not None:
         bugs.insert(2, {
             "id": "BUG-3",
             "title": "Cart total off by one with stacked discounts",
-            "status": "in_progress", "severity": "high",
+            "status": "in_progress", "severity": "high", "reportedBy": "qa",
             "reportedAt": _iso(BASE + datetime.timedelta(days=9)),
             "description": "Two stacked percentage discounts round the wrong way.",
             "repro": "Apply a 10% and a 5% discount to a 19.99 item.",
             "expected": "17.09", "actual": "17.10",
-            "taskId": linked["id"],
+            "files": ["src/backend/pricing.ts"],
+            "taskId": running["id"],
+            # The connector's third link kind. The phase and task links below
+            # prove the panel's ADO banner reads EVIDENCE; a bug link is what
+            # /audit:sync writes for the tracker's own bug type.
+            "ado": {"id": 4722,
+                    "url": "https://dev.azure.com/demo-org/demo/_workitems/edit/4722",
+                    "lastSyncedAt": "2026-08-06T12:10:00Z"},
         })
-        linked["bugId"] = "BUG-3"
+        running["bugId"] = "BUG-3"
+    if closed is not None:
+        bugs.append({
+            "id": "BUG-5",
+            "title": "Logout leaves the session cookie in place",
+            "status": "fixed", "severity": "high", "reportedBy": "security",
+            "reportedAt": _iso(BASE + datetime.timedelta(days=3)),
+            "description": "The session cookie survives logout and still authenticates.",
+            "repro": "Log in, log out, replay the old cookie.",
+            "expected": "Logout clears the cookie and kills the server session.",
+            "actual": "The old cookie still authenticates.",
+            "files": ["src/backend/auth_middleware.ts"],
+            "taskId": closed["id"],
+            # The evidence that makes `fixed` different from `wontfix`: the
+            # commit of the task that closed it, taken from that task rather
+            # than invented, so the report's link lands somewhere real.
+            "fixedIn": closed.get("commit"),
+        })
+        closed["bugId"] = "BUG-5"
     return bugs
 
 

@@ -80,15 +80,34 @@ def _cases(check):
           all(t["id"] in fi.get(t["files"][0], [])
               for p in m["phases"] for t in p["tasks"]))
     linked = [b for b in m["bugs"] if b.get("taskId")]
-    check("a reciprocal bug<->task link exists", len(linked) == 1)
-    if linked:
-        tid = linked[0]["taskId"]
-        back = [t for p in m["phases"] for t in p["tasks"]
-                if t["id"] == tid and t.get("bugId") == linked[0]["id"]]
-        check("the linked task points back at the bug", len(back) == 1)
+    check("two reciprocal bug<->task links exist - the live one and the fixed "
+          "one, which are closed by different rules", len(linked) == 2)
+    unpaired = [b["id"] for b in linked
+                if not [t for p in m["phases"] for t in p["tasks"]
+                        if t["id"] == b["taskId"] and t.get("bugId") == b["id"]]]
+    check("every linked task points back at its bug: %r" % (unpaired,),
+          bool(linked) and unpaired == [])
     bst = {b["status"] for b in m["bugs"]}
-    check("bug lifecycle covers open/triaged/in_progress/wontfix",
-          bst == {"open", "triaged", "in_progress", "wontfix"}, sorted(bst))
+    # The vocabulary, asked of the vocabulary. The literal set that stood here
+    # named four of the five states and read as complete, so the fixture could
+    # skip `fixed` — the only terminal state carrying evidence (`fixedIn`) —
+    # and this case agreed with it.
+    vocab = _loader.load_script("_manifest_vocab.py",
+                                modname="manifest_vocab_demo_bugs")
+    check("the bug lifecycle covers every state _manifest_vocab.BUG_STATUS "
+          "defines, not a literal list that can fall behind it",
+          bst == set(vocab.BUG_STATUS),
+          "fixture=%r vocab=%r" % (sorted(bst), sorted(vocab.BUG_STATUS)))
+    fixed = [b for b in m["bugs"] if b.get("status") == "fixed"]
+    check("...and a fixed bug carries the commit that closed it, taken from the "
+          "task it links to rather than invented",
+          bool(fixed) and all(
+              b.get("fixedIn")
+              and b["fixedIn"] == ({t["id"]: t for p in m["phases"]
+                                    for t in p["tasks"]}
+                                   .get(b.get("taskId"), {})).get("commit")
+              for b in fixed),
+          repr([(b["id"], b.get("fixedIn")) for b in fixed]))
 
     # surfaces that need both states
     check("some tasks have skills and some do not",
@@ -105,6 +124,57 @@ def _cases(check):
           "advisory stays silent on a fixture meant to validate quietly",
           all(isinstance(v.get("skills"), list) and v["skills"]
               for v in m["meta"]["areas"].values()))
+    # The review-skill chain is only observable if every level of it is present:
+    # `phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill`, plus the
+    # explicit null that STOPS the fallback rather than deferring to it. Asked
+    # through the product's own resolver, so this reads the rule rather than
+    # restating it.
+    areas_lib = _loader.load_script("_areas.py", modname="areas_demo_review")
+    resolved = [areas_lib.resolve_review_skill(m, p) for p in m["phases"]]
+    # Sources of a NAMED reviewer, not of any answer. Measured: the set of raw
+    # sources was satisfied by the explicit null alone, so deleting every
+    # phase-level override left this green - the case was reading the null as
+    # proof that phases can override, which is the opposite of what it says.
+    named_sources = {src for skill, src in resolved if skill}
+    check("the demo exercises every level of the review-skill chain with a NAMED "
+          "reviewer - phase override, area default and meta fallback",
+          {"phase", "meta"} <= named_sources
+          and any(str(s).startswith("area ") for s in named_sources),
+          sorted(named_sources))
+    check("...including the explicit null, which is the answer 'tests sign this "
+          "one off' and not a missing value",
+          any(skill is None and "reviewSkill" in p
+              for (skill, _src), p in zip(resolved, m["phases"])))
+
+    # `tests.add` and `tests.expectRedFirst` are one contract in two keys: the
+    # same sentence in `add` means "must fail first" under tdd and "written after
+    # the fix" under regression, and `expectRedFirst` is what says which.
+    # `audit-task.py` writes `expectRedFirst = mode == "tdd"`; a fixture that
+    # disagreed would document the opposite of what the product does. Presence
+    # alone does not catch that - measured, by setting it to a constant False.
+    _tests = [(t["id"], t["tests"]) for p in m["phases"] for t in p["tasks"]]
+    _mismatched = [tid for tid, ts in _tests
+                   if ts.get("expectRedFirst") != (ts.get("mode") == "tdd")]
+    check("expectRedFirst agrees with the test mode on every task, the way "
+          "/audit:task add writes the pair: %r" % (_mismatched[:5],),
+          bool(_tests) and _mismatched == [])
+    check("...and both values of expectRedFirst occur, so the pairing is "
+          "observed rather than satisfied by one constant",
+          {ts.get("expectRedFirst") for _tid, ts in _tests} == {True, False})
+    # Every reviewer the fixture names must be a name the screenshot fixture's
+    # HOME declares, which is `SKILL_POOL` (tools/capture-screenshots.mjs
+    # BIG_USER_SKILLS). A reviewer outside the pool draws "discovery knows no
+    # such skill" across the committed panel shots - a defect the fixture would
+    # have invented for itself.
+    named = {p["reviewSkill"] for p in m["phases"]
+             if p.get("reviewSkill")} | {m["meta"]["reviewSkill"]} | {
+        a["reviewSkill"] for a in m["meta"]["areas"].values()
+        if a.get("reviewSkill")}
+    outside = sorted(named - set(M.SKILL_POOL))
+    check("every reviewSkill the fixture spells is in SKILL_POOL, the set the "
+          "screenshot fixture's HOME declares: %r" % (outside,),
+          bool(named) and outside == [])
+
     budgets = [p.get("budgetUSD") for p in m["phases"] if p.get("budgetUSD")]
     check("some phases carry a budget and some do not",
           budgets and len(budgets) < len(m["phases"]))
@@ -152,6 +222,121 @@ def _cases(check):
           "the numbers did not come from",
           bool(shipped_as_of) and demo_as_of == shipped_as_of,
           "demo=%r shipped=%r" % (demo_as_of, shipped_as_of))
+
+    # --- schema coverage (F35) ---------------------------------------------
+    # The fixture is what the project SHOWS, so a schema field it never carries
+    # is a feature nobody sees working. Measured before this existed: 129 fields
+    # defined, 75 carried, 54 missing - and nothing in the tree could say so.
+    # The field set comes out of the schema FILE, so a field added there tomorrow
+    # arrives here as a gap rather than passing forever.
+    schema = M.load_schema()
+    cov = M.schema_coverage(m, schema)
+    # Vacuity first, and it is not ceremony: every case below is a set
+    # comparison, and all of them pass over an empty schema. A filter that
+    # narrowed to nothing would read as "all clear".
+    check("the coverage lint reads a schema that actually declares fields - "
+          "an empty field set makes every case below vacuously green",
+          len(cov["defined"]) > 100, len(cov["defined"]))
+    check("...and it observes the fixture rather than the schema twice over",
+          len(cov["covered"]) > 100,
+          "covered=%d of %d" % (len(cov["covered"]), len(cov["defined"])))
+    check("every schema field the demo fixture does not carry has an explicit, "
+          "reasoned exemption in gen-demo-manifest.SCHEMA_EXEMPTIONS: %r"
+          % (cov["gaps"],), cov["gaps"] == [])
+    check("...and no exemption is stale - one naming a field the schema dropped, "
+          "or one the fixture now carries, is a reason nobody pays: %r"
+          % (cov["stale"],), cov["stale"] == [])
+    _mute = sorted(k for k, v in M.SCHEMA_EXEMPTIONS.items()
+                   if not (isinstance(v, str) and len(v.strip()) >= 40))
+    check("every exemption states a reason, not a shrug: %r" % (_mute,),
+          bool(M.SCHEMA_EXEMPTIONS) and _mute == [])
+    # The property that makes the lint worth having, asked directly: a field
+    # ADDED to the schema must arrive as a gap. Asked with a doctored copy of
+    # the real schema rather than by editing the file, because the claim is
+    # about the derivation being live - a lint built from a snapshot of today's
+    # fields would pass this suite for ever while the schema moved underneath it.
+    _grown = json.loads(json.dumps(schema))
+    _grown["$defs"]["phase"]["properties"]["hypotheticalNewField"] = {"type": "string"}
+    _grown_gaps = M.schema_coverage(m, _grown)["gaps"]
+    # Stated as a DIFFERENCE rather than as an equality against the whole gap
+    # list: an equality here goes red for every unrelated gap as well, which
+    # makes it a second copy of the case above instead of an independent one.
+    check("a field added to the schema arrives as an unexplained gap - the field "
+          "set is read from the schema, not snapshotted",
+          sorted(set(_grown_gaps) - set(cov["gaps"]))
+          == ["phase.hypotheticalNewField"], repr(_grown_gaps[:4]))
+    # ...and the mirror: a field REMOVED from the schema must strand its
+    # exemption rather than leaving a reason nobody reads.
+    _shrunk = json.loads(json.dumps(schema))
+    del _shrunk["$defs"]["phase"]["properties"]["reviewFindings"]
+    check("a field dropped from the schema strands its exemption",
+          "phase.reviewFindings" in M.schema_coverage(m, _shrunk)["stale"],
+          repr(M.schema_coverage(m, _shrunk)["stale"]))
+
+    # A parked proposal's `payload` is a whole phase, `$ref`s and all, so a walk
+    # that ENTERED it would let a phase nobody runs answer for the live plan.
+    # Measured before OPAQUE_FIELDS existed: deleting `tests.add` from every live
+    # task left the lint green, because the payload still carried one. Asked on a
+    # copy, because the claim is about the walk rather than today's fixture.
+    _hollow = json.loads(json.dumps(m))
+    for _p in _hollow["phases"]:
+        for _t in _p["tasks"]:
+            (_t.get("tests") or {}).pop("add", None)
+    check("a parked proposal's payload does not answer for the live plan - the "
+          "walk records `proposal.payload` and does not enter it",
+          "tests.add" in M.schema_coverage(_hollow, schema)["gaps"],
+          repr(M.schema_coverage(_hollow, schema)["gaps"][:4]))
+    _payload_tasks = [_t for _x in _hollow["proposals"]
+                      for _t in (((_x.get("payload") or {}).get("phase") or {})
+                                 .get("tasks") or [])]
+    check("...and the payload still carries the field that was stripped, so the "
+          "case above is about the walk and not about an empty payload",
+          bool(_payload_tasks)
+          and any("add" in (_t.get("tests") or {}) for _t in _payload_tasks))
+
+    # The owner rule, asserted from the other side: an inline object's keys
+    # (meta.ado's `organization`, meta.usage's `showCost`) belong to no named
+    # def, and attributing them to the parent would report coverage of `meta`
+    # fields the schema never declared.
+    _stray = sorted(M.manifest_fields(m, schema) - set(cov["defined"]))
+    check("the walker attributes nothing the schema does not declare - inline "
+          "objects contribute no fields to their parent: %r" % (_stray,),
+          _stray == [])
+
+    # F34: every phase declares the tier its orchestrator runs at. Without it
+    # `gen-demo-usage` mapped `None` through `TIER_TO_MODEL.get(tier,
+    # DEFAULT_MODEL)` and all 148 orchestrator rows in the 40x5 demo printed
+    # `claude-sonnet-5` as though the manifest had chosen it - a model
+    # attribution produced by a fallback, which is a claim with no basis.
+    _tierless = [p["id"] for p in m["phases"] if not p.get("model")]
+    check("every phase declares phase.model, so no orchestrator ledger row is "
+          "attributed by gen-demo-usage's DEFAULT_MODEL fallback: %r"
+          % (_tierless[:5],),
+          len(m["phases"]) > 1 and _tierless == [])
+    # ...and it is a DERIVED tier, not a constant: the phase declares the tier
+    # its TYPICAL task needs, which a task's own `model` then overrides. A
+    # generator that stamped one literal on every phase satisfies the case above
+    # and puts the fallback back by hand.
+    _by_phase = {p["id"]: p["model"] for p in m["phases"]}
+    _expected = {p["id"]: M.RISK_MODEL[max(
+        M.RISKS, key=lambda r, ts=p["tasks"]: (
+            [t["risk"] for t in ts].count(r), M.RISKS.index(r)))]
+        for p in m["phases"]}
+    check("phase.model is the modal risk of the phase's own tasks - a basis, "
+          "not a default", _by_phase == _expected,
+          repr(sorted(k for k in _expected if _by_phase.get(k) != _expected[k])))
+    # The measurement that sent the first basis back: "the riskiest task" is
+    # also derived, and at five tasks per phase it answered `opus` for all 40 —
+    # as uniform as the fallback it replaced. A derived value that answers the
+    # same for everybody has become a constant again, so the spread is pinned.
+    check("...and the fixture spans more than one orchestrator tier, so the "
+          "by-model chart has something to separate",
+          len(set(_by_phase.values())) > 1, sorted(set(_by_phase.values())))
+    _big = M.generate(n_phases=40, n_tasks=5, seed=11)
+    _big_tiers = sorted({p["model"] for p in _big["phases"]})
+    check("...at the 40x5 scale the published demo is rendered from, too - "
+          "where the first basis tried collapsed to a single tier",
+          len(_big_tiers) > 1, _big_tiers)
 
     # haiku is never routed to high risk
     check("no high-risk task is routed to haiku",
