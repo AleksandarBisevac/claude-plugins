@@ -644,9 +644,22 @@ def _cases(check):
               "failure (got %r)" % (_undeclared,),
               _undeclared == ["sub/extra.js"])
         check("ua14 ...and documentation beside it is not, because a README is "
-              "never assembled into a page - only %r suffixes count"
-              % (M._ASSET_SUFFIXES,),
+              "never assembled into a page. Docs are excluded BY NAME (%r) "
+              "rather than assets allowed by name, so a part with an "
+              "unfamiliar extension is reported instead of ignored"
+              % (M._DOC_SUFFIXES,),
               "sub/NOTES.md" not in _undeclared)
+        with io.open(os.path.join(_ua_tmp, "sub", "data.json"), "w") as _fh:
+            _fh.write("{}\n")
+        check("ua15 ...and an unfamiliar extension IS reported, which is what a "
+              "whitelist of asset suffixes would have silently swallowed",
+              "sub/data.json" in M.declared_asset_drift(_ua_tmp)[1])
+        check("ua16 an unreadable directory is a NAMED finding, not the empty "
+              "pair a clean tree returns - os.walk swallows the error by "
+              "default, so the guard is the onerror hook and not a try block",
+              M.declared_asset_drift(os.path.join(_ua_tmp, "nope"))[0][:1]
+              and M.declared_asset_drift(
+                  os.path.join(_ua_tmp, "nope"))[0][0].startswith("<unreadable"))
     finally:
         shutil.rmtree(_ua_tmp, ignore_errors=True)
 

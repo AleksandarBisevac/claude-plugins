@@ -64,6 +64,23 @@ def _cases(check):
           "brace-balanced on its own and `node --check` per part is meaningful",
           not _theme.read_asset(M._SCRIPT_PARTS[0]).startswith("(function () {")
           and not _theme.read_asset(M._SCRIPT_PARTS[-1]).rstrip().endswith("})();"))
+    # A part on disk that nothing LOADS is the expensive failure: the page
+    # assembles without it, every substring pin keeps passing, and the feature
+    # simply never ships. The declared-asset list is compared against the
+    # directory elsewhere; this compares it against what the page is BUILT from.
+    _declared_js = set(n for n in _theme.UI_ASSETS
+                       if n.startswith("report/") and n.endswith(".js"))
+    check("every report part on disk is loaded, and every loaded part is on "
+          "disk - declared %d, assembled %d, difference %r"
+          % (len(_declared_js), len(M._SCRIPT_PARTS),
+             sorted(_declared_js.symmetric_difference(M._SCRIPT_PARTS))),
+          _declared_js and _declared_js == set(M._SCRIPT_PARTS))
+    check("the first part declares and the last one boots, which is what makes "
+          "the order load-bearing rather than alphabetical - sorting the tuple "
+          "would leave this suite green and the page dead",
+          M._SCRIPT_PARTS[0] == "report/page-state.js"
+          and M._SCRIPT_PARTS[-1] == "report/exports.js"
+          and list(M._SCRIPT_PARTS) != sorted(M._SCRIPT_PARTS))
     check("the parts carry no <script> tags — those live in this module",
           "<script>" not in js_file and "</script>" not in js_file)
 
@@ -79,7 +96,11 @@ def _cases(check):
           not _theme.unterminated_css_decls(css_file))
 
     # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
-    ui_pyfiles = [f for f in os.listdir(_theme.UI_DIR) if f.endswith(".py")]
+    ui_pyfiles = sorted(
+        (_rel + "/" + _f if _rel != os.curdir else _f)
+        for _base, _dirs, _files in os.walk(_theme.UI_DIR)
+        for _rel in [os.path.relpath(_base, _theme.UI_DIR)]
+        for _f in _files if _f.endswith(".py"))
     check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
 
     # --- LF contract: none of the loaded ui/ assets (nor the assembled CSS/ ----

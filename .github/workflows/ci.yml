@@ -531,9 +531,19 @@ jobs:
           # the entire inline <script> while every substring pin stays green.
           npm ci
           npx vitest run
-          for f in plugins/audit/scripts/ui/*.js; do
+          # find, not a glob: the report's script lives in a feature directory,
+          # and `ui/*.js` matches panel.js alone — a syntax check that exits 0
+          # over a tenth of the tree while the rest goes unparsed.
+          n=0
+          for f in $(find plugins/audit/scripts/ui -name '*.js' | sort); do
             node --check "$f" || { echo "FAIL: $f is not parseable"; exit 1; }
+            n=$((n+1))
           done
+          if [ "$n" -lt 2 ]; then
+            echo "FAIL: only $n ui asset(s) parsed - the walk is not reaching them"
+            exit 1
+          fi
+          echo "OK: $n ui asset(s) parse"
       - name: Demo GIF still shows what it claims (the gate still refuses)
         shell: bash
         run: |

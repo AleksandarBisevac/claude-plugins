@@ -12,6 +12,9 @@ import { describe, expect, it } from 'vitest';
 import {
   PANEL_STRING_PLACEHOLDERS,
   REPORT_IIFE_HEAD,
+  reportParts,
+  reportWrapper,
+  assembleReportBody,
   REPORT_IIFE_TAIL,
   UI_DIR,
   loadPanel,
@@ -29,10 +32,16 @@ describe('every ui/ part parses', () => {
   // Counted, not merely iterated. `for (const p of [])` is a green test over
   // nothing, and a directory read that returned an empty list would look
   // exactly like a tree in which every part is fine.
-  it('finds at least the two known parts', () => {
+  it('finds the panel and every report part, including nested ones', () => {
+    // The report's script lives one directory down. A flat listing would find
+    // panel.js alone and report a clean syntax check over a tenth of the tree,
+    // which is the failure this count exists to make impossible.
     expect(parts.length).toBeGreaterThanOrEqual(2);
-    expect(parts).toContain('report.js');
     expect(parts).toContain('panel.js');
+    const nested = parts.filter((n) => n.includes('/'));
+    expect(nested.length).toBeGreaterThan(0);
+    // Every part the page is BUILT from must be a part this walk can see.
+    for (const name of reportParts()) expect(parts).toContain(name);
   });
 
   it.each(parts)('node --check %s', (name) => {
@@ -44,8 +53,19 @@ describe('every ui/ part parses', () => {
 });
 
 describe('the sandbox reads what it thinks it reads', () => {
-  it('report.js is still exactly one file-spanning IIFE', () => {
-    const src = readPart('report.js');
+  it('no part carries the wrapper, and the assembled script is one IIFE', () => {
+    // The wrapper lives in the Python that joins the parts, so each part is
+    // brace-balanced on its own and can be parsed one at a time. What must
+    // still hold is that the ASSEMBLED script is one wrapper spanning the whole
+    // body — that is what keeps roughly a hundred and thirty bindings out of
+    // the page's global scope.
+    const wrap = reportWrapper();
+    for (const name of reportParts()) {
+      const part = readPart(name);
+      expect(part.startsWith(wrap.open)).toBe(false);
+      expect(part.endsWith(wrap.close)).toBe(false);
+    }
+    const src = wrap.open + assembleReportBody() + wrap.close;
     expect(src.startsWith(REPORT_IIFE_HEAD)).toBe(true);
     expect(src.endsWith(REPORT_IIFE_TAIL)).toBe(true);
     // The claim is not "the head and tail are present" — report.js contains

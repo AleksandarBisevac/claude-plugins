@@ -1391,16 +1391,23 @@ def _cases(check):
         with open(os.path.join(_u_tmp, "feature", "big.js"), "w") as _fh:
             _fh.write(_long)
         _nested = M.ui_navigability_violations(_u_tmp)
-        check("u13 a long asset inside a feature directory is CHECKED - a flat "
+        check("u14 a long asset inside a feature directory is CHECKED - a flat "
               "listing would grade the directory clean without ever opening it, "
               "which is the shape that hides a whole surface (got %r)"
               % (_nested,),
               [n for n, _p in _nested] == ["feature/big.js"])
-        check("u14 ...and the real scripts/ui/ tree agrees, so the walk above is "
-              "measuring the same thing the shipped one does: %d asset(s) named "
-              "with a directory separator"
-              % (len([_a for _a in _theme_assets if "/" in _a]),),
-              any("/" in _a for _a in _theme_assets))
+        # Not "a declared name contains a slash" - that is a fact about a Python
+        # literal and stays true with the directory deleted. This asks the
+        # SHIPPED walk whether it visits the subdirectory, by comparing what it
+        # reaches against a deliberately flat listing of the same root.
+        _flat = [_f for _f in os.listdir(M._UI_DIR)
+                 if os.path.isfile(os.path.join(M._UI_DIR, _f))]
+        _seen = M.ui_asset_names(M._UI_DIR)
+        check("u15 the shipped walk reaches more than a flat listing of the same "
+              "directory - %d file(s) walked against %d at the top level, so it "
+              "is descending rather than agreeing by accident"
+              % (len(_seen), len(_flat)),
+              len(_seen) > len(_flat))
     finally:
         shutil.rmtree(_u_tmp, ignore_errors=True)
 

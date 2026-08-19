@@ -869,7 +869,11 @@ UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
 # `ua_declared_assets()` compares this against the directory in BOTH directions,
 # so a new part that is not declared fails, and a declared name that no longer
 # exists fails too.
-_ASSET_SUFFIXES = (".js", ".css", ".html")
+# Documentation is excluded BY NAME rather than assets being allowed by name.
+# A whitelist makes every new kind of file default to unwatched; this way a part
+# with an unfamiliar extension is reported instead of ignored, which is the loud
+# direction.
+_DOC_SUFFIXES = (".md", ".txt")
 
 UI_ASSETS = (
     "panel.css",
@@ -898,21 +902,27 @@ def declared_asset_drift(directory=None):
     passing against a script that lost a feature.
     """
     root = UI_DIR if directory is None else directory
+    walk_errors = []
     try:
         on_disk = set()
-        for base, _dirs, files in os.walk(root):
+        # `onerror` is the whole guard: os.walk swallows an unreadable directory
+        # by default, yielding nothing and raising nothing, so a missing tree
+        # would come back as "no assets" and read as agreement.
+        for base, _dirs, files in os.walk(root, onerror=walk_errors.append):
             rel = os.path.relpath(base, root)
             for f in files:
                 # Assets only. A directory may also carry documentation, which
                 # is never assembled into a page and must not read as an
                 # undeclared part; the extension is what separates the two.
-                if f.startswith(".") or not f.endswith(_ASSET_SUFFIXES):
+                if f.startswith(".") or f.endswith(_DOC_SUFFIXES):
                     continue
                 on_disk.add(f if rel == "." else (rel + "/" + f))
     except OSError:
         # Naming it beats returning the same empty pair a clean directory returns.
         return (list(UI_ASSETS), [])
-    declared = set(UI_ASSETS)
+    if walk_errors:
+        return (["<unreadable: %s>" % (walk_errors[0],)], [])
+    declared = set(n for n in UI_ASSETS if not n.endswith(_DOC_SUFFIXES))
     return (sorted(declared - on_disk), sorted(on_disk - declared))
 
 

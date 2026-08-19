@@ -1507,6 +1507,34 @@ _UI_MARKER_RES = (
 )
 
 
+def ui_asset_names(ui_dir):
+    """Every file under `ui_dir`, recursively, as forward-slashed relative names.
+
+    Recursive because an asset that moves into a feature directory must not stop
+    being checked; a flat listing does not report the file it no longer sees, it
+    reports the directory as clean.
+
+    Raises OSError if any directory in the tree cannot be listed. `os.walk`
+    swallows that by default -- it yields nothing and raises nothing -- so an
+    unreadable tree would otherwise come back as "no assets" and read exactly
+    like a tree in which everything is fine. The `onerror` hook is what makes
+    that failure loud, and it covers the root and every subdirectory alike.
+
+    Names use "/" on every platform so a caller can compare them against a
+    declared list without knowing the separator it is running on.
+    """
+    errors = []
+    names = []
+    for base, _dirs, files in os.walk(ui_dir, onerror=errors.append):
+        rel = os.path.relpath(base, ui_dir)
+        for f in files:
+            names.append(f if rel == os.curdir
+                         else (rel.replace(os.sep, "/") + "/" + f))
+    if errors:
+        raise errors[0]
+    return sorted(names)
+
+
 def ui_navigability_violations(ui_dir=None):
     """(filename, problem) for every long scripts/ui/ asset carrying too few
     section markers to be navigable.
@@ -1544,17 +1572,7 @@ def ui_navigability_violations(ui_dir=None):
         # silence as "nothing wrong". The report's script lives in `report/`, so
         # a flat walk here would check the panel and quietly grade the entire
         # report as clean.
-        # The top level is listed explicitly BEFORE walking, because os.walk
-        # swallows an unreadable root: it yields nothing and raises nothing, so
-        # a missing directory would come back as "no assets, all clean" and the
-        # named finding below would be unreachable.
-        os.listdir(ui_dir)
-        names = []
-        for base, _dirs, files in os.walk(ui_dir):
-            rel = os.path.relpath(base, ui_dir)
-            for f in files:
-                names.append(f if rel == "." else (rel + "/" + f))
-        names = sorted(names)
+        names = ui_asset_names(ui_dir)
     except OSError as exc:
         # NOT `return []`. An empty list is a real answer ("every asset here is
         # navigable") and would make a directory nothing could read

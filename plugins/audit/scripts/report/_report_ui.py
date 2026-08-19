@@ -94,10 +94,12 @@ def _css(cache=True):
 # `window.AUDIT_USAGE`, on a surface where every top-level name in the
 # concatenated script shares ONE scope.
 #
-# The numeric prefixes are the load order, not decoration. Alphabetical sorting
-# is not safe on its own — `report.00-shell.js` declares the elements and helpers
-# every later part reads at parse time — so the sequence is spelled out here and
-# a case pins it.
+# THE ORDER OF THIS TUPLE IS THE LOAD ORDER, and it is not alphabetical.
+# `report/page-state.js` resolves the elements and shared values every later part
+# reads, and `report/exports.js` ends with the boot call, so first and last are
+# fixed by what they do. Sorting this tuple leaves every Python suite green while
+# the page dies: `chips.js` runs `phaseRows.forEach(...)` at load, and under
+# alphabetical order `phaseRows` has not been declared yet.
 _SCRIPT_PARTS = (
     "report/page-state.js",
     "report/filters.js",

@@ -54,7 +54,62 @@ export const UI_DIR = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts', 'ui');
 // exists to catch. Callers assert the COUNT so an empty directory — or a walk
 // that silently found nothing — cannot read as "every part is fine".
 export function uiParts() {
-  return fs.readdirSync(UI_DIR).filter((n) => n.endsWith('.js')).sort();
+  const out = [];
+  const walk = (dir, prefix) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const rel = prefix ? prefix + '/' + entry.name : entry.name;
+      if (entry.isDirectory()) walk(path.join(dir, entry.name), rel);
+      else if (entry.name.endsWith('.js')) out.push(rel);
+    }
+  };
+  walk(UI_DIR, '');
+  return out.sort();
+}
+
+// The Python that assembles the page is the ONE source of truth for which parts
+// exist and what order they load in. Reading it here means this harness cannot
+// hold a second opinion that drifts: add a part and forget to register it, and
+// the list this returns is the list the page is really built from, so the gap
+// shows up as a part nobody parses rather than as two files agreeing with each
+// other and neither with the product.
+const REPORT_UI_PY = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts', 'report',
+  '_report_ui.py');
+
+function readReportUiPy() {
+  return fs.readFileSync(REPORT_UI_PY, 'utf8');
+}
+
+export function reportParts() {
+  const block = readReportUiPy().match(/_SCRIPT_PARTS = \(([\s\S]*?)\)/);
+  if (!block) {
+    throw new Error('_SCRIPT_PARTS is not in ' + REPORT_UI_PY
+      + ' — the assembly moved and this harness would otherwise read a stale list');
+  }
+  const names = [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (!names.length) {
+    throw new Error('_SCRIPT_PARTS is empty; joining nothing would load a blank '
+      + 'script and every case below would pass over it');
+  }
+  return names;
+}
+
+// The wrapper the page gets, read from the same place, for the same reason.
+export function reportWrapper() {
+  const py = readReportUiPy();
+  const open = py.match(/_SCRIPT_OPEN = "((?:[^"\\]|\\.)*)"/);
+  const close = py.match(/_SCRIPT_CLOSE = "((?:[^"\\]|\\.)*)"/);
+  if (!open || !close) {
+    throw new Error('_SCRIPT_OPEN/_SCRIPT_CLOSE are not in ' + REPORT_UI_PY);
+  }
+  const unescape = (t) => t.replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+  return { open: unescape(open[1]), close: unescape(close[1]) };
+}
+
+// The report's body exactly as the page receives it, minus the wrapper: the
+// parts joined in load order. This is what runs in the sandbox, because the
+// wrapper only creates a scope the sandbox already provides.
+export function assembleReportBody() {
+  return reportParts().map((n) => readPart(n)).join('');
 }
 
 export function readPart(name) {
@@ -266,8 +321,13 @@ export function reach(ctx, names) {
 
 export function loadReport(options) {
   const opts = options || {};
-  const body = unwrapReportSource(mutated(readPart('report.js'), opts));
-  return loadInto(body, 'report.js', opts);
+  const wrap = reportWrapper();
+  // Mutations are applied to the ASSEMBLED script, wrapper included, so a case
+  // can still test what happens when the wrapper itself is damaged. The unwrap
+  // then has to find it, which is the loud failure that stops a fixed-length
+  // slice from quietly deleting real code.
+  const script = mutated(wrap.open + assembleReportBody() + wrap.close, opts);
+  return loadInto(unwrapReportSource(script), 'report parts', opts);
 }
 
 export function loadPanel(options) {

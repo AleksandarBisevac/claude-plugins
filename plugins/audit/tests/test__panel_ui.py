@@ -76,7 +76,11 @@ def _cases(check):
           not _theme.unterminated_css_decls(css))
 
     # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
-    ui_pyfiles = [f for f in os.listdir(_theme.UI_DIR) if f.endswith(".py")]
+    ui_pyfiles = sorted(
+        (_rel + "/" + _f if _rel != os.curdir else _f)
+        for _base, _dirs, _files in os.walk(_theme.UI_DIR)
+        for _rel in [os.path.relpath(_base, _theme.UI_DIR)]
+        for _f in _files if _f.endswith(".py"))
     check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
 
     # --- LF contract: none of the loaded ui/ assets (nor the assembled ------
