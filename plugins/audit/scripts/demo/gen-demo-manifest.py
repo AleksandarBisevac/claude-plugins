@@ -39,6 +39,15 @@ fixture had drifted 54 fields behind the schema before anything noticed.
 every field to be either carried here or named in `SCHEMA_EXEMPTIONS` with the
 reason it is not, so a field added to the schema tomorrow arrives as a gap.
 
+WHAT IT DELIBERATELY DOES NOT CONTAIN — AND CAN BE ASKED TO. `phase.claim` is a
+live lease, and this generator's default output is what the committed
+`docs/demo-large.html` and panel screenshots are rendered from, so the default
+carries none. `generate(with_claim=True)` stamps one, for a suite that throws its
+fixture away, and there is no CLI flag that reaches it. That opt-in is what makes
+the exemption a policy about publishing rather than a gap in the generator, and it
+is the only thing that puts a fixture in front of
+`_manifest_phases._check_claim`. See the section above `_claim_for`.
+
 DETERMINISTIC BY CONSTRUCTION. A fixed seed, a fixed base date, no wall-clock. The
 validator's rules are respected by construction rather than by luck — in
 particular a `done` phase never contains an unfinished task, which is the
@@ -248,8 +257,106 @@ def _demo_areas():
     return out
 
 
-def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
-    """Build an ASSEMBLED manifest dict (the sharded split happens on write)."""
+# --- the lease, on request and never in the published fixture --------------------
+# `phase.claim` is the one region of the schema `SCHEMA_EXEMPTIONS` below holds back
+# on POLICY rather than on capability, and telling those two apart is the whole
+# point of this section.
+#
+# A claim is a LIVE LEASE — which session, on which host, on which branch is running
+# this phase right now — released when the phase finishes. The DEFAULT output of
+# this generator is what `docs/demo-large.html` and the `docs/screenshots/panel-*`
+# set are built from, and both are COMMITTED. A lease in that output publishes a
+# demo permanently held by a session that does not exist, `/audit:doctor` reports it
+# as a stale claim on the page that exists to show a healthy run, and `claim.host`
+# publishes whoever generated it.
+#
+# Every word of that is about what this generator PUBLISHES; none of it is about
+# what it can produce. So the lease is available on request and by nothing else:
+# `generate(with_claim=True)` stamps one, and there is deliberately NO CLI FLAG that
+# reaches it. Every command that produces a committed artifact — the scale-demo step
+# in `.github/workflows/ci.yml`, `tools/capture-screenshots.mjs` — goes through
+# `main()`, so the absence of the flag is what keeps `docs/` lease-free
+# structurally, rather than by anyone remembering. A flag would put the published
+# mistake one word away on the command line and buy nothing: nobody wants a claimed
+# demo, and the one caller that needs a lease is a suite that deletes its fixture in
+# a `finally`.
+#
+# WHY THE OPT-IN EXISTS AT ALL. Without it `_manifest_phases._check_claim` had no
+# fixture that reached it: its first statement is `if "claim" not in phase: return`,
+# so the validator's walk over this fixture entered and returned on every phase at
+# every size. That is a traversal, not coverage — and it left the exemption above
+# unfalsifiable, because nothing could show the generator was holding the lease back
+# rather than unable to produce one.
+#
+# EVERY VALUE IS A FIXED LITERAL OR DERIVED FROM THE FIXTURE. Nothing here reads the
+# machine, the environment or the clock, and that is a structural property rather
+# than a matter of care: `tests/test_gen_demo_manifest.py` parses this file and
+# fails on an identifier that could reach any of them. The `.invalid` top-level
+# domain is reserved by RFC 2606, so "resolves to nobody" is a fact about the name.
+CLAIM_HOST = "runner.demo.invalid"
+CLAIM_SESSION_PREFIX = "demo-session"
+
+
+def _claim_for(phase):
+    """The lease a phase is entitled to, or None when it is entitled to none.
+
+    Only an `in_progress` phase holds one. `_manifest_phases._check_claim` warns
+    about a claim left on a done, blocked or cancelled phase, so stamping one there
+    would make the fixture demonstrate the warning instead of the feature.
+
+    `at` is the moment the session picked the phase up, taken from the phase's own
+    earliest task start: the fixture already knows when work on the phase began, and
+    a second timestamp invented beside it would be a figure with no basis. A phase
+    with no started task, or no branch to name, has no such moment — it gets no
+    lease rather than a filled-in one.
+    """
+    if phase.get("status") != "in_progress":
+        return None
+    starts = sorted(t.get("startedAt") for t in phase.get("tasks") or []
+                    if t.get("startedAt"))
+    if not starts or not phase.get("branch"):
+        return None
+    return {
+        "sessionId": "%s-%s" % (CLAIM_SESSION_PREFIX, str(phase.get("id")).lower()),
+        "host": CLAIM_HOST,
+        "branch": phase["branch"],
+        "at": starts[0],
+    }
+
+
+def _stamp_claims(phases):
+    """Attach a lease to every phase entitled to one; returns the ids stamped.
+
+    Raises rather than returning an empty list. A `with_claim=True` that stamped
+    nothing would hand back a claim-free manifest under a name saying otherwise,
+    and a case asserting "the validator walks the lease clean" over that document
+    would be asserting nothing — the exact silent pass this fixture exists to end.
+    """
+    stamped = []
+    for phase in phases:
+        claim = _claim_for(phase)
+        if claim is None:
+            continue
+        phase["claim"] = claim
+        stamped.append(phase.get("id"))
+    if not stamped:
+        raise ValueError(
+            "with_claim=True stamped no lease: no phase was in_progress with a "
+            "branch and a started task, so there was no basis for one - and a "
+            "claim-free manifest returned under this flag would read as coverage "
+            "of a path nothing entered")
+    return stamped
+
+
+def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
+    """Build an ASSEMBLED manifest dict (the sharded split happens on write).
+
+    `with_claim` stamps the parallel-run lease on the one `in_progress` phase. It
+    is OFF for every published artifact and no CLI flag turns it on — the section
+    comment above `_claim_for` says why, and `SCHEMA_EXEMPTIONS` records what the
+    default fixture therefore does not carry. It draws nothing from `rng` and runs
+    after the loop, so the default bytes are the same bytes either way.
+    """
     rng = random.Random(seed)
     statuses = _phase_plan(n_phases)
     phases, file_index, cursor = [], {}, BASE
@@ -429,6 +536,11 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo"):
         "url": "https://dev.azure.com/demo-org/%s/_workitems/edit/4711" % repo,
         "lastSyncedAt": "2026-08-06T12:05:00Z"}
 
+    # After the loop and outside it: the lease draws nothing from `rng`, so the
+    # default run's bytes cannot move whichever way this flag is set.
+    if with_claim:
+        _stamp_claims(phases)
+
     manifest = {
         "meta": {
             "version": 3,
@@ -542,22 +654,32 @@ SCHEMA_EXEMPTIONS = {
         "is pinned by the sharded round-trip cases.",
     "phase.claim":
         "a LIVE lease: which session, host and branch is running this phase right "
-        "now, released when the phase finishes. A deterministic fixture carrying "
-        "one publishes a demo permanently held by a session that does not exist, "
-        "and /audit:doctor reports it as a stale claim on the page that exists to "
-        "show a healthy run.",
+        "now, released when the phase finishes. The DEFAULT output is what "
+        "docs/demo-large.html and the panel screenshots are built from and both "
+        "are committed, so a lease there publishes a demo permanently held by a "
+        "session that does not exist, and /audit:doctor reports it as a stale "
+        "claim on the page that exists to show a healthy run. THIS IS A POLICY "
+        "ABOUT WHAT IS PUBLISHED, NOT A GAP IN THE GENERATOR: "
+        "generate(with_claim=True) stamps one for a suite that throws its fixture "
+        "away, and no CLI flag reaches it. See the section above _claim_for.",
     "claim.at":
-        "a field of phase.claim, which this fixture does not take: the timestamp "
-        "a lease that was never taken would carry is not a fact about the demo.",
+        "a field of phase.claim, which the default fixture does not take: the "
+        "timestamp a lease nobody holds would carry is not a fact about the demo. "
+        "Under with_claim it is the phase's own earliest task start.",
     "claim.branch":
-        "a field of phase.claim, which this fixture does not take: the branch a "
-        "lease that was never taken would name does not exist in the demo.",
+        "a field of phase.claim, which the default fixture does not take: the "
+        "branch a lease nobody holds would name is not a fact about the demo. "
+        "Under with_claim it is the phase's own branch, not a second invention.",
     "claim.host":
-        "a field of phase.claim, which this fixture does not take: a host name is "
-        "the one part of a claim that would publish whoever generated it.",
+        "a field of phase.claim, which the default fixture does not take: a host "
+        "name is the one part of a claim that would publish whoever generated it. "
+        "Under with_claim it is CLAIM_HOST, a reserved .invalid name that resolves "
+        "to nobody, and the suite parses this file to keep it that way.",
     "claim.sessionId":
-        "a field of phase.claim, which this fixture does not take: a session id "
-        "invented for a fixture is exactly the stale claim /audit:doctor reports.",
+        "a field of phase.claim, which the default fixture does not take: a "
+        "session id invented for a published fixture is exactly the stale claim "
+        "/audit:doctor reports. Under with_claim it is CLAIM_SESSION_PREFIX and "
+        "the phase id, in a document no artifact is rendered from.",
     "phase.reviewFindings":
         "the schema itself calls it legacy (pre-plugin manifests), informational, "
         "and not read by the orchestrator. Measured: no reader anywhere under "

@@ -19,6 +19,7 @@ resolved by `_loader` from `scripts/`. Nothing is derived from this file's locat
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import json
 import os
 import shutil
@@ -30,6 +31,90 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 
 M = _loader.load_script("gen-demo-manifest.py", modname="gen_demo_manifest")
+
+# Identifiers that could reach the machine the generator runs on, the account
+# running it, the clock, or a random id. `claim.host` is the one field of a lease
+# that would publish the first of those, and the generator's own docstring claims
+# the third ("no wall-clock"); neither was a checkable property before this.
+_BANNED_MODULES = ("socket", "uuid", "platform", "getpass", "pwd", "time",
+                   "subprocess")
+_BANNED_NAMES = ("gethostname", "getfqdn", "gethostbyname", "uname", "getlogin",
+                 "getuser", "environ", "getenv", "now", "utcnow", "today")
+
+
+# --- source scanner -----------------------------------------------------------
+def _machine_reads(src):
+    """Sorted identifiers in `src` that reach the machine, the account or the clock.
+
+    AST, and the parser is doing two things a substring scan cannot. The banned
+    words have to be SPELLABLE in the comments and docstrings that explain why they
+    are banned, and a text scan finds them there; and `datetime.timedelta` contains
+    the substring `time.time`, so a text scan reports the fixture's own arithmetic
+    as a wall-clock read. Both were measured on this file before this function
+    replaced the grep that produced them.
+
+    WHAT IT CANNOT SEE, and the direction is the same for every item — it
+    UNDER-counts, so a clean result means "none of the known spellings", never "no
+    machine read":
+
+      * a name assembled at runtime (`getattr(os, "envi" + "ron")`) - nothing
+        static reads that;
+      * an identity source whose spelling is in neither tuple;
+      * a read performed by a module this file imports rather than by this file -
+        the scan takes one source text, and `_loader`, `_output` and `_demo_cast`
+        are not it;
+      * a value read out of a FILE the generator opens, which is not an identifier
+        at all.
+    """
+    hits = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                if root in _BANNED_MODULES:
+                    hits.add(root)
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if root in _BANNED_MODULES:
+                hits.add(root)
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _BANNED_NAMES:
+                hits.add(node.attr)
+        elif isinstance(node, ast.Name):
+            if node.id in _BANNED_NAMES:
+                hits.add(node.id)
+    return sorted(hits)
+
+
+def _cli_claim_options(src):
+    """Sorted `add_argument` option strings in `src` that mention a claim.
+
+    The lease has no argv path on purpose, and that absence is what keeps `docs/`
+    claim-free structurally rather than by anyone remembering. Read from the AST so
+    the reason can say the word.
+
+    WHAT IT CANNOT SEE, under-counting in every case: an option that does not spell
+    "claim" (`--lease`, `--live`), an option string built by concatenation, and any
+    route to a lease that is not an `add_argument` at all. The behavioural case at
+    the end of this suite covers the last of those for the command AS IT STANDS by
+    loading what `main()` wrote; neither case can cover a caller reaching
+    `generate(with_claim=True)` from Python by hand, and nothing in the tree
+    compares the committed `docs/demo-large.html` to a fresh render byte for byte
+    (CI asserts its CONTENT, deliberately, because the render stamps a wall-clock).
+    So a lease could still reach a published page by that route, and this suite
+    would stay green - which is the honest shape of the guarantee.
+    """
+    out = set()
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "attr", None) != "add_argument":
+            continue
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                if "claim" in arg.value.lower():
+                    out.add(arg.value)
+    return sorted(out)
 
 
 # --- cases --------------------------------------------------------------------
@@ -303,6 +388,113 @@ def _cases(check):
           "objects contribute no fields to their parent: %r" % (_stray,),
           _stray == [])
 
+    # --- the lease, and the exemption that holds it back (F48) --------------
+    # `phase.claim` and its fields are the one region SCHEMA_EXEMPTIONS holds
+    # back on POLICY: the default output is rendered into committed artifacts,
+    # so a lease there publishes a demo permanently held by a session that does
+    # not exist and `claim.host` publishes whoever generated it. That reason is
+    # about publishing, and nothing showed it was about publishing rather than
+    # about the generator being unable to produce a claim at all - while
+    # `_manifest_phases._check_claim` had no fixture that reached it: its first
+    # statement is `if "claim" not in phase: return`, so the validator's walk
+    # over this fixture entered and returned on every phase at every size.
+    _claim_exempt = sorted(k for k in M.SCHEMA_EXEMPTIONS
+                           if k == "phase.claim" or k.startswith("claim."))
+    _claimed = M.generate(n_phases=12, n_tasks=6, seed=11, with_claim=True)
+    _claim_cov = M.schema_coverage(_claimed, schema)
+    _newly = sorted(set(_claim_cov["covered"]) - set(cov["covered"]))
+    check("with_claim covers EXACTLY the %d schema field(s) SCHEMA_EXEMPTIONS "
+          "holds back for the lease and nothing else, which is what makes the "
+          "exemption a policy about the published artifact rather than a gap in "
+          "the generator: %r" % (len(_claim_exempt), _newly),
+          bool(_claim_exempt) and _newly == _claim_exempt,
+          "exempt=%r" % (_claim_exempt,))
+    check("...and every one of those exemptions goes STALE against that same "
+          "document, which is why coverage is measured on the DEFAULT fixture: "
+          "an exemption for a field the fixture carries is a reason nobody pays",
+          sorted(_claim_cov["stale"]) == _claim_exempt, _claim_cov["stale"])
+
+    # Determinism, both halves. The lease must not draw from `rng`, and it must
+    # not move a byte of the default run - `docs/demo-large.html` (ci.yml's
+    # 40x5 scale demo) and the `docs/screenshots/panel-*` set are rendered from
+    # that run and are committed.
+    check("with_claim is deterministic: two runs are byte-identical",
+          json.dumps(M.generate(n_phases=9, n_tasks=4, seed=11, with_claim=True),
+                     sort_keys=True)
+          == json.dumps(M.generate(n_phases=9, n_tasks=4, seed=11,
+                                   with_claim=True), sort_keys=True))
+    _bare = json.loads(json.dumps(_claimed))
+    _dropped = 0
+    for _p in _bare["phases"]:
+        _dropped += 1 if _p.pop("claim", None) is not None else 0
+    check("...and it moves no default byte: dropping the %d lease(s) from a "
+          "with_claim run reproduces the default run exactly, so nothing "
+          "rendered from this fixture into docs/ moves" % (_dropped,),
+          _dropped > 0
+          and json.dumps(_bare, sort_keys=True) == json.dumps(m, sort_keys=True))
+
+    _leased = [p for p in _claimed["phases"] if "claim" in p]
+    check("exactly one phase holds the lease and it is the LIVE one - a claim "
+          "on a finished phase is the stale-claim warning, not the feature: %r"
+          % ([(p["id"], p["status"]) for p in _leased],),
+          len(_leased) == 1 and _leased[0]["status"] == "in_progress")
+    _lease = _leased[0]["claim"]
+    _starts = sorted(t["startedAt"] for t in _leased[0]["tasks"]
+                     if t.get("startedAt"))
+    check("...and every value has a basis: the branch is the phase's own, `at` "
+          "is its own earliest task start, and the host is the reserved "
+          "RFC 2606 .invalid name that resolves to nobody",
+          _lease["branch"] == _leased[0].get("branch")
+          and bool(_starts) and _lease["at"] == _starts[0]
+          and _lease["host"] == M.CLAIM_HOST
+          and M.CLAIM_HOST.endswith(".invalid"), repr(_lease))
+    check("...and `_claim_for` refuses a phase with no basis rather than "
+          "filling one in - no started task, and no branch to name",
+          M._claim_for({"id": "P1", "status": "in_progress", "branch": "b",
+                        "tasks": [{"id": "P1.1"}]}) is None
+          and M._claim_for({"id": "P1", "status": "in_progress",
+                            "tasks": [{"id": "P1.1", "startedAt": "x"}]}) is None
+          and M._claim_for({"id": "P1", "status": "done", "branch": "b",
+                            "tasks": [{"id": "P1.1", "startedAt": "x"}]}) is None)
+    _stamp_err = None
+    try:
+        M._stamp_claims([{"id": "P1", "status": "pending", "tasks": []}])
+    except ValueError as exc:                      # the documented contract
+        _stamp_err = str(exc)
+    check("...and stamping nothing is an ERROR, not an empty list: a "
+          "claim-free manifest returned under with_claim would make every case "
+          "above assert a path nothing entered",
+          bool(_stamp_err) and "no basis" in _stamp_err, repr(_stamp_err))
+
+    # `claim.host` is the one field of a lease that would publish whoever ran
+    # the generator, and "we were careful" is not a property. Read the source.
+    _gdm_src = open(_loader.script_path("gen-demo-manifest.py"),
+                    encoding="utf-8").read()
+    check("the source scanner sees a machine read when there is one, and does "
+          "not invent one - the measurement that makes the case below mean "
+          "something rather than being an empty parse",
+          _machine_reads("import socket\nh = socket.gethostname()\n")
+          == ["gethostname", "socket"]
+          and _machine_reads("import datetime\nx = datetime.datetime.utcnow()\n")
+          == ["utcnow"]
+          and _machine_reads("import datetime\nd = datetime.timedelta(days=1)\n")
+          == [])
+    _reads = _machine_reads(_gdm_src)
+    check("...and gen-demo-manifest.py performs none of them, so `claim.host` "
+          "CANNOT publish the machine that generated the fixture and no "
+          "timestamp anywhere comes from the clock: %r" % (_reads,),
+          _reads == [])
+    _cli_claim = _cli_claim_options(_gdm_src)
+    check("no argv reaches the lease: every committed artifact goes through "
+          "main() (ci.yml's scale-demo step, tools/capture-screenshots.mjs), so "
+          "the absence of a flag is what keeps docs/ claim-free structurally "
+          "rather than by habit: %r" % (_cli_claim,), _cli_claim == [])
+    check("...and the scanner would see such a flag if one were added - it "
+          "reads add_argument's own option strings, so this is a measurement",
+          _cli_claim_options(
+              "p.add_argument('--with-claim', action='store_true')\n")
+          == ["--with-claim"])
+
     # F34: every phase declares the tier its orchestrator runs at. Without it
     # `gen-demo-usage` mapped `None` through `TIER_TO_MODEL.get(tier,
     # DEFAULT_MODEL)` and all 148 orchestrator rows in the 40x5 demo printed
@@ -383,6 +575,64 @@ def _cases(check):
         check("the validator reports no warnings", not warnings,
               "; ".join(warnings[:3]))
 
+        # --- F48: the claim path, end to end ----------------------------
+        # generate -> split into shards -> load back -> the real validator's
+        # walk. This is the leg nothing had: `_check_claim` returns on its
+        # first line when a phase carries no claim, so the walk above proves
+        # only that it was called.
+        cdir = os.path.join(tmp, "leased")
+        M.write_manifest(_claimed, cdir)
+        cidx = json.load(open(os.path.join(cdir, "audit-plan.json"),
+                              encoding="utf-8"))
+        _stub_claims = [p.get("id") for p in cidx["phases"] if "claim" in p]
+        check("the lease is written into the phase SHARD and not mirrored onto "
+              "the index stub - that is what makes a same-phase double-claim a "
+              "shard merge conflict instead of a silent overwrite: %r"
+              % (_stub_claims,), _stub_claims == [])
+        _shard_rel = [p["shard"] for p in cidx["phases"]
+                      if p.get("id") == _leased[0]["id"]]
+        _shard = json.load(open(os.path.join(cdir, _shard_rel[0]),
+                                encoding="utf-8"))
+        check("...and the shard body carries it, which is the round-trip leg "
+              "the hand-built stub fixture in test__manifest_io.py does not "
+              "take", bool(_shard_rel)
+              and (_shard.get("claim") or {}).get("host") == M.CLAIM_HOST,
+              repr(_shard.get("claim")))
+
+        cback = mio.load_manifest(os.path.join(cdir, "audit-plan.json"))
+        _held = [p for p in cback["phases"] if p.get("claim")]
+        cf, cw = vm.validate(cback)
+        check("the lease survives the split and reassembly and the real "
+              "validator walks it clean: %d phase(s) claimed, %d finding(s), "
+              "%d warning(s)" % (len(_held), len(cf), len(cw)),
+              len(_held) == 1 and not cf and not cw,
+              "; ".join((cf + cw)[:3]))
+
+        # A clean walk over a lease and a clean walk over no lease print the
+        # same nothing, so the case above is only evidence if the SAME document
+        # goes red when the lease goes wrong. Two controls, one per branch of
+        # `_check_claim` a demo fixture can reach.
+        _stale_doc = json.loads(json.dumps(cback))
+        _finished = [p for p in _stale_doc["phases"] if p["status"] == "done"]
+        _finished[0]["claim"] = dict(_held[0]["claim"])
+        _sf, _sw = vm.validate(_stale_doc)
+        check("...control: the same lease on a DONE phase draws the stale-claim "
+              "warning - which is exactly what a committed fixture would "
+              "publish, and the reason SCHEMA_EXEMPTIONS holds phase.claim back",
+              bool(_finished) and not _sf
+              and len(_sw) == 1 and "stale claim" in _sw[0],
+              "; ".join((_sf + _sw)[:3]))
+        _thin_doc = json.loads(json.dumps(cback))
+        _thin = [p for p in _thin_doc["phases"] if p.get("claim")][0]
+        del _thin["claim"]["host"]
+        _tf, _tw = vm.validate(_thin_doc)
+        check("...control: dropping `host` from the round-tripped lease draws "
+              "exactly one warning naming it, so the clean result above is a "
+              "walk that ENTERED `_check_claim` rather than one that returned "
+              "on its first line",
+              not _tf and len(_tw) == 1 and "claim is missing host" in _tw[0],
+              "; ".join((_tf + _tw)[:3]))
+
         single = M.write_manifest(M.generate(n_phases=4, n_tasks=2, seed=11),
                                   os.path.join(tmp, "flat"), single_file=True)
         check("--single-file writes one manifest plus the config", len(single) == 2)
@@ -393,8 +643,18 @@ def _cases(check):
               "; ".join((f2 + w2)[:3]))
 
         check("CLI exits 2 on --phases 0", M.main([tmp, "--phases", "0"]) == 2)
+        cli_dir = os.path.join(tmp, "cli")
         check("CLI exits 0 on a normal run",
-              M.main([os.path.join(tmp, "cli"), "--phases", "5", "--tasks", "3"]) == 0)
+              M.main([cli_dir, "--phases", "5", "--tasks", "3"]) == 0)
+        # The behavioural half of "no argv reaches the lease": the AST case
+        # above says no flag exists, this says the command as it stands writes
+        # a claim-free fixture. Both, because a flag is not the only way one
+        # could arrive.
+        cli_doc = mio.load_manifest(os.path.join(cli_dir, "audit-plan.json"))
+        cli_claims = [p["id"] for p in cli_doc["phases"] if p.get("claim")]
+        check("...and what it wrote holds no lease, which is the property "
+              "every committed artifact depends on: %r" % (cli_claims,),
+              bool(cli_doc["phases"]) and cli_claims == [])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
