@@ -27,13 +27,13 @@ import _report_ui as M                             # noqa: E402
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- the two asset files exist and decode as utf-8 ---------------------------
-    names = ("report.css", "report.js")
+    names = ("report.css",) + M._SCRIPT_PARTS
     unreadable = _theme.unreadable_assets(names)
     for name in names:
         check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
     css_file = _theme.read_asset("report.css")
-    js_file = _theme.read_asset("report.js")
+    js_file = "".join(_theme.read_asset(n) for n in M._SCRIPT_PARTS)
 
     # --- CSS starts with the TOKEN_CSS block: the tokens sit in front -----------
     check("CSS starts with the TOKEN_CSS block", M.CSS.startswith(_theme.TOKEN_CSS))
@@ -48,9 +48,23 @@ def _cases(check):
           "this module rather than carried in report.js",
           M.SCRIPT.startswith("<script>") and M.SCRIPT.endswith("</script>"))
     inner = M.SCRIPT[len("<script>"):-len("</script>")]
-    check("the JS between the tags is exactly report.js's own content, unmodified",
-          inner == js_file)
-    check("report.js itself carries no <script> tags — those live in this module",
+    # The wrapper moved into this module when the script became ordered parts:
+    # its body is one IIFE, so the opening and closing braces cannot live in the
+    # first and last part without leaving both individually unparseable. What the
+    # page receives is therefore the parts joined INSIDE that wrapper, and the
+    # parts themselves hold no wrapper of their own.
+    check("the JS between the tags is the ordered parts joined inside the IIFE "
+          "this module adds, and nothing else",
+          inner == M._SCRIPT_OPEN + js_file + M._SCRIPT_CLOSE)
+    # Inner IIFEs are ordinary code and appear in several parts; what must not
+    # appear is the OUTER wrapper's own boundary, which would make the first and
+    # last part unbalanced and defeat parsing them one at a time.
+    check("no part carries the outer wrapper's boundary - the first does not "
+          "open with it and the last does not close with it, so every part is "
+          "brace-balanced on its own and `node --check` per part is meaningful",
+          not _theme.read_asset(M._SCRIPT_PARTS[0]).startswith("(function () {")
+          and not _theme.read_asset(M._SCRIPT_PARTS[-1]).rstrip().endswith("})();"))
+    check("the parts carry no <script> tags — those live in this module",
           "<script>" not in js_file and "</script>" not in js_file)
 
     # --- mutation proof: a doubled open tag is caught by the same check ----------

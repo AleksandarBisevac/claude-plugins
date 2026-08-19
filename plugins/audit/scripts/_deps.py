@@ -1539,7 +1539,22 @@ def ui_navigability_violations(ui_dir=None):
     ui_dir = ui_dir if ui_dir is not None else _UI_DIR
     violations = []
     try:
-        names = sorted(os.listdir(ui_dir))
+        # Recursive, and that is the whole point: a flat listing stops seeing an
+        # asset the moment it moves into a feature directory, and reports the
+        # silence as "nothing wrong". The report's script lives in `report/`, so
+        # a flat walk here would check the panel and quietly grade the entire
+        # report as clean.
+        # The top level is listed explicitly BEFORE walking, because os.walk
+        # swallows an unreadable root: it yields nothing and raises nothing, so
+        # a missing directory would come back as "no assets, all clean" and the
+        # named finding below would be unreachable.
+        os.listdir(ui_dir)
+        names = []
+        for base, _dirs, files in os.walk(ui_dir):
+            rel = os.path.relpath(base, ui_dir)
+            for f in files:
+                names.append(f if rel == "." else (rel + "/" + f))
+        names = sorted(names)
     except OSError as exc:
         # NOT `return []`. An empty list is a real answer ("every asset here is
         # navigable") and would make a directory nothing could read

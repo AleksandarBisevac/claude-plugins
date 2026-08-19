@@ -21,6 +21,8 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import io
 import os
+import shutil
+import tempfile
 import re
 import sys
 
@@ -317,7 +319,10 @@ def _cases(check):
     # they sit a layer above, and reaching up for a test is the one shortcut
     # _deps.layer_violations() would be right to fail. These cases stand on
     # their own, against the real ui/ directory and against fixtures.
-    _ASSETS = ("report.css", "report.js", "panel.html", "panel.css", "panel.js")
+    # Derived, not restated: this tuple used to be a second copy of the same
+    # list, and splitting report.js into ordered parts turned it red along
+    # with two others. `ua_decl` below is what keeps the one copy honest.
+    _ASSETS = M.UI_ASSETS
     # `os.path.dirname(os.path.abspath(__file__))` is what this said inline, and
     # it meant "the directory `_ui_theme.py` sits in". From `tests/` that clause
     # is simply FALSE - `UI_DIR` is not beside this file - and a case that has to
@@ -388,13 +393,41 @@ def _cases(check):
           not M.unreadable_assets(_ASSETS))
     check("ua10 ...and names one that is not there, in the order given - so the "
           "empty list above is an answer, not a no-op",
-          M.unreadable_assets(("report.css", "nope.css", "report.js"))
+          M.unreadable_assets(("report.css", "nope.css",
+                               "report/page-state.js"))
           == ["nope.css"])
     check("ua11 ...and one that EXISTS and does not decode as utf-8, while the "
           "CRLF fixture beside it decodes fine. A check written as "
           "os.path.isfile would pass ua10 and still miss this half",
           M.unreadable_assets((_crlf, _notutf8), _uidir) == [_notutf8])
     _sh.rmtree(_uidir, ignore_errors=True)
+
+    # --- assets live in feature directories, so every walk must descend --------
+    _ua_nested = [n for n in M.UI_ASSETS if "/" in n]
+    check("ua12 the declared asset list carries files from feature "
+          "subdirectories (%d of %d), so a walk that stopped at the top level "
+          "would disagree with it rather than pass quietly"
+          % (len(_ua_nested), len(M.UI_ASSETS)),
+          _ua_nested and M.declared_asset_drift() == ([], []))
+    _ua_tmp = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(_ua_tmp, "sub"))
+        with io.open(os.path.join(_ua_tmp, "sub", "extra.js"), "w") as _fh:
+            _fh.write("var x = 1;\n")
+        with io.open(os.path.join(_ua_tmp, "sub", "NOTES.md"), "w") as _fh:
+            _fh.write("# notes\n")
+        _missing, _undeclared = M.declared_asset_drift(_ua_tmp)
+        check("ua13 a file added inside a subdirectory is REPORTED as undeclared "
+              "- the walk descends, and an asset nobody declared is the quiet "
+              "failure (got %r)" % (_undeclared,),
+              _undeclared == ["sub/extra.js"])
+        check("ua14 ...and documentation beside it is not, because a README is "
+              "never assembled into a page - only %r suffixes count"
+              % (M._ASSET_SUFFIXES,),
+              "sub/NOTES.md" not in _undeclared)
+    finally:
+        shutil.rmtree(_ua_tmp, ignore_errors=True)
+
 
 
 def _selftest():

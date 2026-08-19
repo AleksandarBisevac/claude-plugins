@@ -844,6 +844,62 @@ def list_themes(project, home=None):
 UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
 
 
+# Every file `scripts/ui/` holds, DECLARED once. Three suites used to carry their
+# own copy of this tuple, and splitting `report.js` into ordered parts turned all
+# three red at once — which is the cheap version of the failure. The expensive
+# version is a part nobody declares: the page would assemble without it and every
+# substring pin would go on passing against a script missing a whole feature.
+#
+# `ua_declared_assets()` compares this against the directory in BOTH directions,
+# so a new part that is not declared fails, and a declared name that no longer
+# exists fails too.
+_ASSET_SUFFIXES = (".js", ".css", ".html")
+
+UI_ASSETS = (
+    "panel.css",
+    "panel.html",
+    "panel.js",
+    "report.css",
+    "report/areas.js",
+    "report/authors.js",
+    "report/chips.js",
+    "report/date-range.js",
+    "report/exports.js",
+    "report/filters.js",
+    "report/heatmap.js",
+    "report/page-state.js",
+    "report/sorting.js",
+    "report/usage-range.js",
+)
+
+
+def declared_asset_drift(directory=None):
+    """(missing_from_disk, undeclared_on_disk) -- UI_ASSETS against the directory.
+
+    Both directions, because they fail differently: a declared name that is gone
+    breaks every reader at import, loudly; an UNDECLARED file on disk is the
+    quiet one -- the page assembles without it and the substring pins keep
+    passing against a script that lost a feature.
+    """
+    root = UI_DIR if directory is None else directory
+    try:
+        on_disk = set()
+        for base, _dirs, files in os.walk(root):
+            rel = os.path.relpath(base, root)
+            for f in files:
+                # Assets only. A directory may also carry documentation, which
+                # is never assembled into a page and must not read as an
+                # undeclared part; the extension is what separates the two.
+                if f.startswith(".") or not f.endswith(_ASSET_SUFFIXES):
+                    continue
+                on_disk.add(f if rel == "." else (rel + "/" + f))
+    except OSError:
+        # Naming it beats returning the same empty pair a clean directory returns.
+        return (list(UI_ASSETS), [])
+    declared = set(UI_ASSETS)
+    return (sorted(declared - on_disk), sorted(on_disk - declared))
+
+
 def read_asset(name, directory=None):
     """One `ui/` asset, decoded as utf-8 with NO line-ending translation.
 

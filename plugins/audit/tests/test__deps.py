@@ -906,27 +906,30 @@ def _cases(check):
         shutil.rmtree(ui_tmp, ignore_errors=True)
 
     # ---- why the column-0 tightening was rejected, measured on the real asset ----
-    # The alternative to living with u8's hole was "a marker must sit at column 0
-    # and be alone on its line". This case is the measurement that killed the first
-    # half of it: report.js indents every marker two spaces inside its IIFE, so a
-    # column-0 rule counts NONE of them and the lint would fail the file whose
-    # markers are the most consistent in the directory. Derived from the shipped
-    # regex and the shipped asset, never from a literal - if report.js is ever
-    # unwrapped and its markers reach column 0, this goes red and the tightening
-    # becomes available, which is the observable trigger for revisiting F37.
+    # Why the marker rule allows up to two leading spaces. The report's script
+    # body is wrapped, so every line in it is indented and so is every section
+    # marker; a column-0 rule would count none of them. Measured from the shipped
+    # regex against the shipped parts rather than from a literal, so the day the
+    # body stops being wrapped this reports it.
     _js_marker_re = dict(M._UI_MARKER_RES)[".js"]
-    _report_js = os.path.join(M._UI_DIR, "report.js")
-    with open(_report_js, "r", encoding="utf-8") as fh:
-        _report_lines = fh.readlines()
+    _report_dir = os.path.join(M._UI_DIR, "report")
+    _report_parts = sorted(n for n in os.listdir(_report_dir)
+                           if n.endswith(".js"))
+    _report_lines = []
+    for _n in _report_parts:
+        with open(os.path.join(_report_dir, _n), "r", encoding="utf-8") as fh:
+            _report_lines.extend(fh.readlines())
     _marked = [ln for ln in _report_lines if _js_marker_re.match(ln)]
     _at_col0 = [ln for ln in _marked if not ln.startswith(" ")]
-    check("u9 the rejected tightening, measured rather than argued: report.js is "
-          "%d lines and the shipped rule finds %d markers in it, of which %d begin "
-          "at column 0 - so 'column 0 only' would count %d in a file that needs %d, "
-          "and fail it. The 0-2 space allowance stays (F37)."
-          % (len(_report_lines), len(_marked), len(_at_col0), len(_at_col0),
-             max(2, -(-len(_report_lines) // M._NAV_MIN_LINES))),
-          len(_marked) >= 2 and not _at_col0)
+    check("u9 the report's script body indents every section marker, because the "
+          "whole body runs inside one wrapper: %d line(s) across %d part(s), %d "
+          "marker(s), %d of them at column 0. A column-0 rule would therefore "
+          "count none of them and fail the best-marked source in the directory, "
+          "which is why the leading-space allowance exists. If the body is ever "
+          "unwrapped and its markers reach column 0, this goes red and the "
+          "stricter rule becomes available"
+          % (len(_report_lines), len(_report_parts), len(_marked), len(_at_col0)),
+          len(_report_parts) >= 2 and len(_marked) >= 2 and not _at_col0)
 
     # ---- F44: the two quiet answers this function used to give ------------------
     # The marker hole u8 pins is a DECISION - closing it costs a hand-rolled lexer
@@ -1376,6 +1379,30 @@ def _cases(check):
           % (_ld_files,),
           _ld_files and all(os.path.basename(f) == "_panel_state.py"
                             for f in _ld_files))
+
+
+    # --- the navigability walk must descend into feature directories ----------
+    import _ui_theme as _uith
+    _theme_assets = _uith.UI_ASSETS
+    _u_tmp = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(_u_tmp, "feature"))
+        _long = "".join("  var x%d = %d;\n" % (_i, _i) for _i in range(900))
+        with open(os.path.join(_u_tmp, "feature", "big.js"), "w") as _fh:
+            _fh.write(_long)
+        _nested = M.ui_navigability_violations(_u_tmp)
+        check("u13 a long asset inside a feature directory is CHECKED - a flat "
+              "listing would grade the directory clean without ever opening it, "
+              "which is the shape that hides a whole surface (got %r)"
+              % (_nested,),
+              [n for n, _p in _nested] == ["feature/big.js"])
+        check("u14 ...and the real scripts/ui/ tree agrees, so the walk above is "
+              "measuring the same thing the shipped one does: %d asset(s) named "
+              "with a directory separator"
+              % (len([_a for _a in _theme_assets if "/" in _a]),),
+              any("/" in _a for _a in _theme_assets))
+    finally:
+        shutil.rmtree(_u_tmp, ignore_errors=True)
 
 
 

@@ -82,14 +82,47 @@ def _css(cache=True):
     return out
 
 
+# The ordered parts of the report's one inline script, and the ORDER IS THE
+# CONTRACT: `report.js` was a single file whose whole body sat inside one IIFE,
+# so a naive split left every piece individually unparseable — the opening
+# `(function () {` in the first and the closing `})();` in the last. The wrapper
+# lives HERE now, which is what lets each part be a real, brace-balanced,
+# `node --check`-able file while the assembled page is byte-for-byte what it was.
+#
+# Dropping the IIFE instead was never an option: roughly a hundred and thirty
+# bindings would land in the global scope of a page that already carries
+# `window.AUDIT_USAGE`, on a surface where every top-level name in the
+# concatenated script shares ONE scope.
+#
+# The numeric prefixes are the load order, not decoration. Alphabetical sorting
+# is not safe on its own — `report.00-shell.js` declares the elements and helpers
+# every later part reads at parse time — so the sequence is spelled out here and
+# a case pins it.
+_SCRIPT_PARTS = (
+    "report/page-state.js",
+    "report/filters.js",
+    "report/sorting.js",
+    "report/chips.js",
+    "report/areas.js",
+    "report/authors.js",
+    "report/date-range.js",
+    "report/usage-range.js",
+    "report/heatmap.js",
+    "report/exports.js",
+)
+_SCRIPT_OPEN = "\n(function () {\n"
+_SCRIPT_CLOSE = "})();\n"
+
+
 def _script(cache=True):
-    """`<script>...</script>`, assembled from ui/report.js.
+    """`<script>...</script>`, assembled from the ordered `ui/report.*.js` parts.
 
     `cache=False` forces a fresh read (used by `tests/test__report_ui.py`)."""
     global _script_cache
     if cache and _script_cache is not None:
         return _script_cache
-    out = "<script>" + _theme.read_asset("report.js") + "</script>"
+    body = "".join(_theme.read_asset(n) for n in _SCRIPT_PARTS)
+    out = "<script>" + _SCRIPT_OPEN + body + _SCRIPT_CLOSE + "</script>"
     if cache:
         _script_cache = out
     return out
