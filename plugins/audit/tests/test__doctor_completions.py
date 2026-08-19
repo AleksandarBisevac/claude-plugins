@@ -255,6 +255,93 @@ def _cases(check):
                   "version comparing the sets the other way round reports the "
                   "wrong id: %r" % (_detail(rep, "completions"),),
                   "no usage-ledger rows: P1.9" in _detail(rep, "completions"))
+
+            # ------------------------------------------------ --deep (F33)
+            # The deep arm asks whether the task's own commit carries the
+            # journal file that records it. Its finding was invisible to the
+            # all-clear guard, so a run printed the warning and "all carry
+            # chained records" side by side - the check contradicting itself in
+            # two adjacent lines.
+            #
+            # `tmp`'s HEAD already CARRIES the journal (the rows were appended
+            # before `git add -A` above), which makes it the control. The
+            # defective fixture needs the opposite order, so it gets its own
+            # repo: commit first, journal second, and then the commit's tree
+            # cannot contain a file that did not exist when it was written.
+            deep_tmp = tempfile.mkdtemp(prefix="doctor-completions-deep-")
+            try:
+                os.makedirs(os.path.join(deep_tmp, "docs", "audit"))
+                subprocess.run(["git", "init", "-q", deep_tmp], check=True,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+                for k, v in (("user.email", "p@example.com"),
+                             ("user.name", "P")):
+                    subprocess.run(["git", "-C", deep_tmp, "config", k, v],
+                                   check=True)
+                with open(os.path.join(deep_tmp, "a.py"), "w",
+                          encoding="utf-8") as fh:
+                    fh.write("x = 1\n")
+                subprocess.run(["git", "-C", deep_tmp, "add", "-A"], check=True,
+                               stdout=subprocess.DEVNULL)
+                subprocess.run(["git", "-C", deep_tmp, "-c",
+                                "commit.gpgsign=false", "commit", "-q", "-m",
+                                "i"], check=True, stdout=subprocess.DEVNULL)
+                deep_head = subprocess.run(
+                    ["git", "-C", deep_tmp, "rev-parse", "HEAD"],
+                    stdout=subprocess.PIPE, check=True).stdout.decode().strip()
+                for ts, tid in (("2026-03-01T00:00:00Z", "P1.1"),
+                                ("2026-09-01T00:00:00Z", "P1.2")):
+                    _journal_io.append(deep_tmp,
+                                       {"action": "task.complete", "actor": "p",
+                                        "ts": ts, "details": {"taskId": tid}})
+                deep_ledger = os.path.join(deep_tmp, ".claude", "usage")
+                ul.ensure_ledger_dir(deep_ledger)
+                ul.append_rows(deep_ledger, [{"ts": "2026-03-01T00:00:00Z",
+                                              "taskId": "P1.1", "author": "p",
+                                              "model": "m", "inputTokens": 1,
+                                              "outputTokens": 1}])
+                deep_mf = _manifest([_task("P1.1",
+                                           completedAt="2026-03-01T00:00:00Z",
+                                           commit=deep_head)])
+
+                rep = base.Report()
+                M.check_completions(rep, deep_tmp, {}, deep_mf, mrel, deep_tmp,
+                                    deep=True)
+                check("dc18 --deep finds a commit that does not carry its own "
+                      "journal file, and the all-clear is SUPPRESSED - a check "
+                      "may not warn and report everything clean in the same "
+                      "breath: %r" % (_detail(rep, "completions"),),
+                      "does not carry the journal" in _detail(rep, "completions")
+                      and "chained records" not in _detail(rep, "completions")
+                      and "OK" not in _levels(rep, "completions"))
+
+                rep = base.Report()
+                M.check_completions(rep, deep_tmp, {}, deep_mf, mrel, deep_tmp,
+                                    deep=False)
+                check("dc19 ...and WITHOUT --deep that same fixture is one ok "
+                      "line: the deep arm is opt-in and its verdict must not "
+                      "leak into a shallow run: %r"
+                      % (_detail(rep, "completions"),),
+                      _levels(rep, "completions") == ["OK"]
+                      and "chained records" in _detail(rep, "completions"))
+            finally:
+                shutil.rmtree(deep_tmp, ignore_errors=True)
+
+            # THE OTHER DIRECTION, on the repo whose commit DOES carry the
+            # journal: --deep has to stay silent and the all-clear has to
+            # print. Suppressing it unconditionally would pass dc18 and fail
+            # here, which is the whole reason this case exists.
+            mf = _manifest([_task("P1.1", completedAt="2026-03-01T00:00:00Z",
+                                  commit=head)])
+            rep = base.Report()
+            M.check_completions(rep, tmp, {}, mf, mrel, tmp, deep=True)
+            check("dc20 --deep on a commit that DOES carry its journal file is "
+                  "silent, and the all-clear still prints: %r"
+                  % (_detail(rep, "completions"),),
+                  _levels(rep, "completions") == ["OK"]
+                  and "does not carry the journal"
+                  not in _detail(rep, "completions")
+                  and "chained records" in _detail(rep, "completions"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

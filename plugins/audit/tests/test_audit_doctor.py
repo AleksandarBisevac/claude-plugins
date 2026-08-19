@@ -1247,6 +1247,16 @@ def _cases(check):
                   "WARNING" in levels(repc, "completions")
                   and "does not carry the journal" in detail(repc, "completions"),
                   detail(repc, "completions"))
+            # The half this case was missing, and F33 is what it cost: asserting
+            # only that the warning FIRES let the all-clear print beside it for
+            # as long as the two lines both existed. A run that says a task is
+            # short a journal file and that every task is clean has answered the
+            # question twice, opposite ways, and a reader believes whichever
+            # they read first.
+            check("completions: ...and the all-clear does NOT print beside it - "
+                  "one --deep run, one verdict",
+                  "chained records" not in detail(repc, "completions"),
+                  detail(repc, "completions"))
 
             with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
                       encoding="utf-8") as fh:

@@ -42,6 +42,12 @@ pipeline runs with no Claude session involved. `--gate` prints one
 `GATE PASSED: <conditions>` and exits **0**. `docs/examples/azure-pipelines.yml` runs
 exactly this to block a merge on manifest state.
 
+**With `--json` those lines go to stderr instead**, so stdout stays parseable — it used
+to print the JSON and then the `GATE ...` line on the same stream, which is not JSON and
+which nothing could pipe into `jq`. The verdict is not lost by the move: `.gate` in the
+payload carries `conditions`, `failed` and `passed` in full, and the exit code says the
+same. Without `--json` stdout is unchanged, which is what the pipeline above reads.
+
 `--fail-on <c1,c2,...>` chooses the conditions, and it **replaces** the default set
 (`invalid,open-high-bugs,blocked-tasks`) rather than adding to it — `--fail-on in-progress`
 gates on in-progress work and on nothing else. The seven names:

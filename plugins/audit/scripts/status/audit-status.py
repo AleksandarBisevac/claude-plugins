@@ -7,6 +7,7 @@ pass/fail signal — so a pipeline can block a merge on manifest state without
 any Claude session involved.
 
 Usage:
+  audit-status.py --help
   audit-status.py <manifest> [--json [--discovery]] [--gate] [--phase <id>]
                              [--color auto|always|never]
                              [--fail-on <c1,c2,...>]
@@ -22,22 +23,20 @@ Modes: a bare invocation renders a human report; --json is for machines.
   --phase   scope the human render to one phase (totals stay whole-plan)
   --gate    evaluate fail conditions; exit 1 when any trips (prints a summary)
 
-Conditions for --fail-on (comma list; the --gate default is
-`invalid,open-high-bugs,blocked-tasks`):
-  invalid          the structural validator reports findings
-  open-high-bugs   high-or-worse severity bugs not yet fixed/wontfix
-                   (high/critical/blocker/severe/fatal/urgent/sev0-1/s0-1/p0-1)
-  open-bugs        ANY bug not yet fixed/wontfix
-  blocked-tasks    any task with status "blocked"
-  in-progress      any phase or task "in_progress" (for release-freeze gates)
-  over-budget      a phase at or past 100% of its `budgetUSD`
-  budget-80        a phase at or past 80% of its `budgetUSD`
-
-Neither budget condition is in the --gate default: spend is a signal, not a defect,
-and a phase at 105% may be entirely justified. Opt in when a budget is a commitment.
+The seven `--fail-on` conditions are NOT listed a second time here. They live in
+`CONDITION_HELP` below, keyed by `_status_facts.CONDITIONS`, and `--help` renders
+them - so the names a user can pass and the names the gate evaluates are one list.
+Read them with `audit-status.py --help`; cases `ap8`/`ap10` fail the build if the
+two ever disagree.
 
 Exit codes: 0 pass · 1 gate failed · 2 usage error / unreadable manifest
-(matching validate-manifest.py's convention).
+(matching validate-manifest.py's convention). `--help` exits 0.
+
+**Under --json, stdout carries exactly one JSON document.** The `GATE PASSED/FAILED`
+lines are a human rendering of `summary["gate"]`, which the payload already carries
+in full, so with --json they go to stderr - a caller piping into `jq` was getting
+JSON with a trailing sentence glued on. Without --json nothing moves: stdout is
+byte-for-byte what it has always been, which is what CI reads.
 
 This module carries no `--selftest` of its own any more; its 182 cases live in
 `plugins/audit/tests/test_audit_status.py`, byte-identical labels and all - see
@@ -45,9 +44,11 @@ This module carries no `--selftest` of its own any more; its 182 cases live in
 with them (no caller outside the suite), and so did the guard that keeps two case
 groups from claiming one id letter.
 """
+import argparse
 import json
 import os
 import sys
+import textwrap
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -734,89 +735,153 @@ def _resumable_lines(manifest, summary, pt=None):
 # list may only shrink, and only deliberately.
 
 
-def _extract_opt(args, flag):
-    """Pull `--flag value` out of args; return the value or None."""
-    if flag in args:
-        i = args.index(flag)
-        if i + 1 >= len(args):
-            return "__MISSING__"
-        val = args[i + 1]
-        del args[i:i + 2]
-        return val
-    return None
+# --- the CLI ---------------------------------------------------------------------
+# The one-line meaning of each `--fail-on` condition, keyed by the SAME tuple the
+# gate evaluates (`_status_facts.CONDITIONS`). It is a dict rather than prose so
+# `--help` can render it and a case can compare its keys against `CONDITIONS`: the
+# seven names used to exist only in this file's docstring, unreachable from the
+# command line, and a name added to `CONDITIONS` alone would have gone undocumented
+# with nothing going red. `ap8`/`ap10` are what make that impossible now.
+CONDITION_HELP = {
+    "invalid": "the structural validator reports findings",
+    "open-high-bugs": "high-or-worse severity bugs not yet fixed/wontfix "
+                      "(high/critical/blocker/severe/fatal/urgent/sev0-1/s0-1/p0-1)",
+    "open-bugs": "ANY bug not yet fixed/wontfix",
+    "blocked-tasks": 'any task with status "blocked"',
+    "in-progress": 'any phase or task "in_progress" (for release-freeze gates)',
+    "over-budget": "a phase at or past 100% of its `budgetUSD`",
+    "budget-80": "a phase at or past %g%% of its `budgetUSD`" % BUDGET_WARN_PCT,
+}
+# What `--help` says about a condition CONDITION_HELP has no entry for. It is a
+# `.get` default rather than a KeyError because the caller is `--help`: a condition
+# added to `CONDITIONS` alone must make the omission visible in the output someone
+# is reading, not take the help screen down. Case `ap10` fails the build on it
+# either way, so this is loud without being fatal.
+UNDOCUMENTED = "(undocumented - add it to CONDITION_HELP)"
+
+
+def _conditions_epilog():
+    """The seven condition names with their meanings, for `--help`.
+
+    Rendered from CONDITIONS + CONDITION_HELP rather than typed, so the listing a
+    user reads IS the list the gate evaluates."""
+    lines = ["conditions for --fail-on (comma list; the --gate default is",
+             "  %s):" % ",".join(DEFAULT_GATE)]
+    width = max(len(c) for c in CONDITIONS)
+    body = 2 + width + 2
+    for cond in CONDITIONS:
+        lines.append(textwrap.fill(
+            CONDITION_HELP.get(cond, UNDOCUMENTED), width=78,
+            initial_indent="  %-*s  " % (width, cond),
+            subsequent_indent=" " * body))
+    lines.append("")
+    lines.append(textwrap.fill(
+        "Neither budget condition is in the --gate default: spend is a signal, "
+        "not a defect, and a phase at 105% of budget may be entirely justified. "
+        "Opt in when a budget is a commitment.", width=78))
+    lines.append("")
+    lines.append(textwrap.fill(
+        "exit codes: 0 pass | 1 gate failed | 2 usage error / unreadable "
+        "manifest. Under --json, stdout is exactly one JSON document and the "
+        "human GATE line goes to stderr - the verdict is already in the "
+        "payload's `gate` key.", width=78))
+    return "\n".join(lines)
+
+
+def build_parser():
+    """The argument parser, separated so a case can read the option table.
+
+    `allow_abbrev=False` on purpose: the hand-rolled parser this replaced treated an
+    abbreviation as an unknown argument, and argparse's default would have silently
+    started accepting `--js` for `--json` - a widening nobody asked for."""
+    p = argparse.ArgumentParser(
+        prog="audit-status.py", add_help=True, allow_abbrev=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Headless status rollup + CI gate for the audit manifest.",
+        epilog=_conditions_epilog())
+    p.add_argument("manifest", help="path to the audit manifest (single-file or "
+                                    "sharded index)")
+    p.add_argument("--json", action="store_true", dest="as_json",
+                   help="print the rollup as JSON instead of the human render")
+    p.add_argument("--discovery", action="store_true",
+                   help="with --json only: add a `discovery` block naming the "
+                        "skills and agents this project can actually see")
+    p.add_argument("--gate", action="store_true",
+                   help="evaluate the fail conditions; exit 1 when any trips")
+    p.add_argument("--fail-on", dest="fail_on", default=None, metavar="c1,c2,...",
+                   help="override the gate conditions (see the list below)")
+    # --phase <id>: scope the HUMAN render to one phase. /audit:phase and
+    # /audit:next need a deterministic entry view; their per-task progress lines are
+    # emitted as the work happens and cannot be pre-rendered, so this covers the
+    # half that can be, rather than pretending to cover both.
+    p.add_argument("--phase", default=None, metavar="ID",
+                   help="scope the human render to one phase (totals stay "
+                        "whole-plan)")
+    # --color auto|always|never: ANSI for the human render only (--json and
+    # --gate output stay plain). Resolution lives in _cli_fmt - the one place
+    # CLI color lives.
+    p.add_argument("--color", choices=list(_cli_fmt.MODES), default="auto",
+                   help="ANSI color for the human render (auto colors only a TTY "
+                        "and respects NO_COLOR; --json never colors)")
+    # --submodules <.gitmodules path> [--git-root <prefix>]: preflight guard,
+    # exits 1 when a task file lives inside a submodule. Standalone mode.
+    p.add_argument("--submodules", default=None, metavar="GITMODULES",
+                   help="standalone preflight: exit 1 when a task file lives "
+                        "inside a submodule listed in this .gitmodules")
+    p.add_argument("--git-root", dest="git_root", default="", metavar="PREFIX",
+                   help="path prefix stripped from task files before the "
+                        "--submodules comparison")
+    return p
 
 
 def main(argv):
-    args = list(argv)
-    want_json = "--json" in args
-    want_gate = "--gate" in args
-    want_discovery = "--discovery" in args
-    for flag in ("--json", "--gate", "--discovery"):
-        while flag in args:
-            args.remove(flag)
+    try:
+        args = build_parser().parse_args(list(argv))
+    except SystemExit as exc:
+        # argparse EXITS the process on --help and on a usage error. This command
+        # RETURNS its exit code - `__main__` hands it to sys.exit, and the cases in
+        # tests/test_audit_status.py call main() in-process and compare against 0/1/2
+        # - so the exit is converted here rather than escaping. argparse has already
+        # written the help to stdout or the error to stderr.
+        return exc.code if isinstance(exc.code, int) else 2
+    want_json = args.as_json
+    want_gate = args.gate
+    want_discovery = args.discovery
     if want_discovery and not want_json:
         sys.stderr.write("usage: --discovery requires --json (it enriches the "
                          "machine payload only)\n")
         return 2
 
-    # --submodules <.gitmodules path> [--git-root <prefix>]: preflight guard,
-    # exits 1 when a task file lives inside a submodule. Standalone mode.
-    gitmodules = _extract_opt(args, "--submodules")
-    git_root_prefix = _extract_opt(args, "--git-root") or ""
-    # --phase <id>: scope the HUMAN render to one phase. /audit:phase and
-    # /audit:next need a deterministic entry view; their per-task progress lines are
-    # emitted as the work happens and cannot be pre-rendered, so this covers the
-    # half that can be, rather than pretending to cover both.
-    only_phase = _extract_opt(args, "--phase")
-    if only_phase == "__MISSING__":
-        sys.stderr.write("usage: --phase <phaseId>\n")
-        return 2
-    if git_root_prefix == "__MISSING__":
-        sys.stderr.write("usage: --git-root <prefix>\n")
-        return 2
-    # --color auto|always|never: ANSI for the human render only (--json and
-    # --gate output stay plain). Resolution lives in _cli_fmt - the one place
-    # CLI color lives.
-    color = _extract_opt(args, "--color")
-    if color is not None and color not in _cli_fmt.MODES:
-        sys.stderr.write("usage: --color <%s>\n" % "|".join(_cli_fmt.MODES))
-        return 2
-    pt = _cli_fmt.painter(color or "auto")
+    gitmodules = args.submodules
+    git_root_prefix = args.git_root or ""
+    only_phase = args.phase
+    pt = _cli_fmt.painter(args.color)
 
     conditions = list(DEFAULT_GATE)
-    if "--fail-on" in args:
-        i = args.index("--fail-on")
-        if i + 1 >= len(args):
-            sys.stderr.write("usage: --fail-on <%s>[,...]\n" % "|".join(CONDITIONS))
-            return 2
-        conditions = [c.strip() for c in args[i + 1].split(",") if c.strip()]
+    if args.fail_on is not None:
+        conditions = [c.strip() for c in args.fail_on.split(",") if c.strip()]
         unknown = [c for c in conditions if c not in CONDITIONS]
         if unknown:
             sys.stderr.write("unknown condition(s): %s (known: %s)\n"
                              % (", ".join(unknown), ", ".join(CONDITIONS)))
             return 2
-        del args[i:i + 2]
-    if len(args) != 1:
-        sys.stderr.write(
-            "usage: audit-status.py <manifest> [--json [--discovery]] [--gate] "
-            "[--phase <id>] [--color auto|always|never] [--fail-on <c1,c2,...>] "
-            "[--submodules <.gitmodules> [--git-root <prefix>]]\n")
-        return 2
 
+    manifest_path = args.manifest
     try:
-        manifest = _mio.load_manifest(args[0])
+        manifest = _mio.load_manifest(manifest_path)
     except Exception as exc:
-        sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (args[0], exc))
+        sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (manifest_path, exc))
         return 2
     if not isinstance(manifest, dict):
         sys.stderr.write("ERROR: %s is not a JSON object (got %s)\n"
-                         % (args[0], type(manifest).__name__))
+                         % (manifest_path, type(manifest).__name__))
         return 2
 
     if gitmodules is not None:
-        if gitmodules == "__MISSING__":
-            sys.stderr.write("usage: --submodules <path-to-.gitmodules>\n")
-            return 2
+        # No `__MISSING__` sentinel branch any more: the hand-rolled `_extract_opt`
+        # returned one when a flag was last on the line, and argparse answers that
+        # case itself ("expected one argument", exit 2, measured). A branch nothing
+        # can reach reads like a guard that is working.
         try:
             with open(gitmodules, "r", encoding="utf-8") as fh:
                 sub_paths = parse_gitmodules(fh.read())
@@ -846,7 +911,7 @@ def main(argv):
         findings, warnings = ["internal validator error: %s" % exc], []
 
     summary = rollup(manifest, findings, warnings,
-                     usage=usage_summary(manifest, args[0]))
+                     usage=usage_summary(manifest, manifest_path))
 
     if want_discovery:
         # CLAUDE_PROJECT_DIR is how Claude Code names the project on every
@@ -875,12 +940,21 @@ def main(argv):
             known = [p.get("id") for p in summary["phases"]]
             if only_phase not in known:
                 sys.stderr.write("ERROR: no phase %r in %s (have: %s)\n"
-                                 % (only_phase, args[0], ", ".join(
+                                 % (only_phase, manifest_path, ", ".join(
                                      str(k) for k in known)))
                 return 2
         print(render_status(manifest, summary, only_phase=only_phase, pt=pt))
 
     if want_gate:
+        # WHERE THE VERDICT GOES. The machine-readable verdict is already whole in
+        # `summary["gate"]` (conditions/failed/passed) and in the exit code; these
+        # lines are its HUMAN rendering. Printing them after the JSON put a trailing
+        # sentence on the payload, so `--gate --json | jq` failed on "Extra data".
+        # Under --json they go to stderr - a CI log still shows them, `jq` no longer
+        # chokes, and nothing had to be duplicated into the payload to say it twice.
+        # Without --json this is `print` unchanged: stdout is what CI has always
+        # grepped, and moving it there too would break that for no gain.
+        say = (lambda line: sys.stderr.write(line + "\n")) if want_json else print
         failed = summary["gate"]["failed"]
         if failed:
             for c in failed:
@@ -895,9 +969,9 @@ def main(argv):
                     "over-budget": _budget_detail(summary, 100.0),
                     "budget-80": _budget_detail(summary, BUDGET_WARN_PCT),
                 }.get(c, "")
-                print("GATE FAILED: %s (%s)" % (c, detail))
+                say("GATE FAILED: %s (%s)" % (c, detail))
             return 1
-        print("GATE PASSED: %s" % ", ".join(conditions))
+        say("GATE PASSED: %s" % ", ".join(conditions))
     return 0
 
 

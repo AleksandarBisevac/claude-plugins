@@ -207,6 +207,14 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                  "the ledger is re-derivable from Claude Code's own read-only "
                  "transcripts: /audit:usage --backfill")
 
+    # Initialised HERE rather than inside the `if deep:` block, and that placement
+    # IS the fix for F33: the all-clear at the bottom of this function reads every
+    # arm's result, and a name bound only inside the deep branch could not be read
+    # there at all. So a --deep run printed "the task commit does not carry the
+    # journal file" and "N done task(s) ... all carry chained records" side by side
+    # - the check contradicting itself in two adjacent lines. A shallow run leaves
+    # it empty, which is the right answer: the arm did not look.
+    unstaged = []
     if deep and git_root and shutil.which("git"):
         try:
             # realpath BOTH sides: on macOS the project arrives as /var/... while
@@ -217,7 +225,6 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
             jrel = os.path.relpath(jdir, groot)
             if jrel.startswith(".."):
                 raise ValueError("journal dir %s is outside the git root" % jdir)
-            unstaged = []
             for t in done:
                 sha = t.get("commit")
                 fname = row_file.get(t.get("id"))
@@ -243,7 +250,8 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     if could_not:
         rep.warn("completions",
                  "could not check: %s" % "; ".join(sorted(set(could_not))[:3]))
-    if not (missing or bad_sha or no_sha or drift or unspent or could_not):
+    if not (missing or bad_sha or no_sha or drift or unspent or unstaged
+            or could_not):
         rep.ok("completions",
                "%d done task(s) in the completion-record era all carry chained "
                "records" % len(done))

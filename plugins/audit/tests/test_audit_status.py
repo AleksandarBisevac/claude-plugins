@@ -1106,6 +1106,109 @@ def _cases(_record):
         import shutil as _sh_dv
         _sh_dv.rmtree(_dtmp, ignore_errors=True)
 
+    # --- (ap) the CLI contract itself: --help, and one JSON document on stdout ----
+    # F32, both halves. `--help` used to be read as a MANIFEST PATH ("ERROR: cannot
+    # read/parse --help", exit 2), so the seven `--fail-on` condition names had no
+    # user-reachable listing at all. And `--gate --json` printed the payload and then
+    # the `GATE ...` line on the SAME stream, so `| jq` died on "Extra data".
+    #
+    # Both halves are checked in BOTH directions on purpose: ap1/ap2 would still pass
+    # if the fix over-corrected and moved the gate line off stdout unconditionally,
+    # which would break the pipeline in docs/examples/azure-pipelines.yml - so ap4
+    # pins the no-`--json` stream where it has always been.
+    #
+    # The stream half runs FIRST so a run against the pre-fix module reaches all ten:
+    # `CONDITION_HELP` does not exist there at all, and the AttributeError that ends
+    # the body would otherwise hide ap1-ap5 behind it. `getattr` in ap9/ap10 is for
+    # the same reason - a MISSING constant must read as a failed case, not a crash.
+    import contextlib as _ctx_ap
+    import io as _io_ap
+
+    def _cli_io(argv):
+        """(exit code, stdout, stderr) - the STREAMS, which is what F32 is about."""
+        _o, _e = _io_ap.StringIO(), _io_ap.StringIO()
+        with _ctx_ap.redirect_stdout(_o), _ctx_ap.redirect_stderr(_e):
+            _c = M.main(argv)
+        return _c, _o.getvalue(), _e.getvalue()
+
+    fd, _ap_path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)          # clean: the gate PASSES
+    _ap_bad = copy.deepcopy(_fixture())
+    _ap_bad["bugs"].append({"id": "BUG-9", "title": "live", "status": "open",
+                            "severity": "critical"})
+    fd, _ap_bad_path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_ap_bad, fh)             # the gate FAILS
+
+    def _parses(text):
+        try:
+            return json.loads(text)
+        except ValueError:
+            return None
+
+    _c_gp, _o_gp, _e_gp = _cli_io([_ap_path, "--gate", "--json"])
+    _c_gf, _o_gf, _e_gf = _cli_io([_ap_bad_path, "--gate", "--json"])
+    check("ap1 --gate --json puts exactly ONE JSON document on stdout, on a "
+          "PASSING gate - what `| jq` reads",
+          _parses(_o_gp) is not None and _c_gp == 0,
+          "trailing bytes: %r" % (_o_gp[-70:],))
+    check("ap2 ...and on a FAILING gate too, where the GATE FAILED line used to "
+          "land on the payload",
+          _parses(_o_gf) is not None and _c_gf == 1,
+          "trailing bytes: %r" % (_o_gf[-70:],))
+    check("ap3 the verdict is not LOST, it is on stderr - and the payload's "
+          "`gate` key already carried it in full",
+          "GATE PASSED" in _e_gp and "GATE FAILED" in _e_gf
+          and (_parses(_o_gf) or {}).get("gate", {}).get("failed")
+          == ["open-high-bugs"],
+          repr((_e_gp.strip()[:60], _e_gf.strip()[:60])))
+    _c_np, _o_np, _e_np = _cli_io([_ap_path, "--gate"])
+    _c_nf, _o_nf, _e_nf = _cli_io([_ap_bad_path, "--gate"])
+    check("ap4 WITHOUT --json the GATE line stays on STDOUT, both verdicts - "
+          "docs/examples/azure-pipelines.yml greps that stream",
+          "GATE PASSED" in _o_np and "GATE FAILED" in _o_nf
+          and _e_np == "" and _e_nf == "" and _c_np == 0 and _c_nf == 1,
+          repr((_o_np.strip()[:60], _e_np[:60], _o_nf.strip()[:60], _e_nf[:60])))
+    check("ap5 an ABBREVIATION is still a usage error - argparse's default "
+          "would have started accepting --js for --json",
+          _cli_io([_ap_path, "--js"])[0] == 2
+          and _cli_io([_ap_path, "--fail"])[0] == 2)
+    os.unlink(_ap_path)
+    os.unlink(_ap_bad_path)
+
+    _c_h, _o_h, _e_h = _cli_io(["--help"])
+    check("ap6 --help is help, not a manifest path: exit 0, usage on STDOUT, "
+          "nothing read from disk",
+          _c_h == 0 and _o_h.startswith("usage: audit-status.py")
+          and "cannot read/parse" not in _o_h + _e_h,
+          repr((_c_h, _o_h[:80], _e_h[:80])))
+    _c_h2, _o_h2, _e_h2 = _cli_io(["-h"])
+    check("ap7 -h is the same door (argparse gives both, the hand-rolled parser "
+          "gave neither)",
+          _c_h2 == 0 and _o_h2 == _o_h, repr((_c_h2, _o_h2[:80])))
+    _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
+    check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
+          "not exist" % len(M.CONDITIONS),
+          _missing_ap == [] and len(M.CONDITIONS) == 7,
+          "absent from --help: %r" % (_missing_ap,))
+    _help_txt = getattr(M, "CONDITION_HELP", None)
+    check("ap9 ...and every condition's MEANING is rendered there too, so the "
+          "listing is usable rather than seven bare tokens",
+          isinstance(_help_txt, dict)
+          and all(_help_txt.get(c, "\0").split("(")[0].strip() in _o_h
+                  for c in M.CONDITIONS),
+          repr([c for c in M.CONDITIONS
+                if not isinstance(_help_txt, dict)
+                or _help_txt.get(c, "\0").split("(")[0].strip() not in _o_h]))
+    check("ap10 CONDITION_HELP keys are EXACTLY _status_facts.CONDITIONS - a "
+          "condition added to one and not the other cannot ship",
+          isinstance(_help_txt, dict) and set(_help_txt) == set(M.CONDITIONS)
+          and len(_help_txt) == len(M.CONDITIONS),
+          "help-only %r / gate-only %r"
+          % (sorted(set(_help_txt or {}) - set(M.CONDITIONS)),
+             sorted(set(M.CONDITIONS) - set(_help_txt or {}))))
+
 
 def _selftest():
     return _harness.run(_cases)
