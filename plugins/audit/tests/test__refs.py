@@ -673,13 +673,20 @@ def _cases(check):
         _rp = os.path.join(tmp, "plugins", "audit", "README.md")
         with open(_rp, "r", encoding="utf-8") as fh:
             _orig = fh.read()
+        # READ the shipped version, never spell it. Both mutations below used to
+        # name v0.39.0 and 0.40.0 as literals, so cutting 0.40.0 made p4's
+        # replace() a no-op and p6's "bump" a no-op -- two cases that go GREEN by
+        # measuring nothing, at the exact moment a release needs them.
+        _pjr = os.path.join(tmp, "plugins", "audit", ".claude-plugin", "plugin.json")
+        with open(_pjr, "r", encoding="utf-8") as fh:
+            _cur = json.load(fh)["version"]
 
         check("p3 ...and that fixture is green, so the cases below fail for the "
               "reason they name", M.raw_url_pin_drift(tmp) == [],
               repr(M.raw_url_pin_drift(tmp)))
 
         with open(_rp, "w", encoding="utf-8") as fh:
-            fh.write(_orig.replace("/v0.39.0/", "/main/"))
+            fh.write(_orig.replace("/v%s/" % _cur, "/main/"))
         _d = M.raw_url_pin_drift(tmp)
         check("p4 a README reverted to the moving ref reports EVERY runnable fetch, "
               "not just the first", len(_d) == 3
@@ -694,17 +701,18 @@ def _cases(check):
         _pj = os.path.join(tmp, "plugins", "audit", ".claude-plugin", "plugin.json")
         with open(_pj, "r", encoding="utf-8") as fh:
             _data = json.load(fh)
-        _data["version"] = "0.40.0"
+        _next = "99.0.0"
+        _data["version"] = _next
         with open(_pj, "w", encoding="utf-8") as fh:
             json.dump(_data, fh, indent=2)
         _d = M.raw_url_pin_drift(tmp)
         check("p6 bumping plugin.json without the README turns the pin red - the rule "
               "fires at the moment it is needed", len(_d) == 3
-              and all("plugin.json says 0.40.0" in r[2] for r in _d), repr(_d))
+              and all("plugin.json says %s" % _next in r[2] for r in _d), repr(_d))
         check("p7 ...and the report names both versions, since 'stale' without the "
               "pair is not actionable",
-              all("v0.39.0" in r[2] and "0.40.0" in r[2] for r in _d), repr(_d))
-        _data["version"] = "0.39.0"
+              all("v%s" % _cur in r[2] and _next in r[2] for r in _d), repr(_d))
+        _data["version"] = _cur
         with open(_pj, "w", encoding="utf-8") as fh:
             json.dump(_data, fh, indent=2)
 
