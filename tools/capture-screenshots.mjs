@@ -3372,11 +3372,33 @@ async function assertModelCombo(page, project) {
   } else {
     await rev.click();
     await page.waitForTimeout(250);
-    const pick = page.locator('.combo-menu:not(.hidden) .combo-it').first();
-    if (!(await pick.count())) {
+    const items = page.locator('.combo-menu:not(.hidden) .combo-it');
+    const nItems = await items.count();
+    // The menu is FILTERED by whatever the input already holds, so its first
+    // entry is routinely the current value verbatim - `opus` filtering to
+    // ["opus", "claude-opus-4-5", ...]. Choosing that is a no-op, the panel
+    // correctly writes no change row, and a test that picked `.first()` then
+    // read the absence as "onChoose is broken". It is not: refusing to record
+    // an edit that changes nothing is the behaviour we want. Pick the first
+    // entry that would actually MOVE the value, so the assertion below is
+    // about onChoose rather than about which model a generated fixture
+    // happened to sort first.
+    const current = ((await rev.evaluate((n) => n.value)) || '').trim();
+    let pick = null, name = null;
+    for (let i = 0; i < nItems; i++) {
+      const it = items.nth(i);
+      const t = ((await it.locator('.combo-n').textContent()) || '').trim();
+      if (t && t !== current) { pick = it; name = t; break; }
+    }
+    if (!nItems) {
       fail('composition: focusing the review-model input opened no menu');
+    } else if (!pick) {
+      // Never skip: a menu whose every entry equals the current value cannot
+      // test onChoose, and passing quietly would assert nothing at all.
+      fail(`composition: all ${nItems} review-menu entr(ies) equal the current `
+         + `value ${JSON.stringify(current)} - nothing to choose that would be `
+         + `a change, so onChoose went untested`);
     } else {
-      const name = await pick.locator('.combo-n').textContent();
       await pick.click();
       await page.waitForTimeout(250);
       const after = await page.evaluate(() => ({
