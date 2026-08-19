@@ -1,25 +1,35 @@
+  // Author chips, inside the Usage section. They toggle `hidden` on the section's
+  // per-author views and nothing else — the tiles and trend above stay
+  // project-wide, and the task table has no author to filter by. The default view
+  // is restored by re-applying hidden from the data-top marker the renderer
+  // stamped on the top cells, so a release is exact rather than a re-render's
+  // guess.
+
+  /**
+   * Narrow the Usage section to the selected author, or restore the default view
+   * when no author is selected, and say in the note what the selection covers.
+   * @returns {void}
+   */
   function applyAuthor() {
     if (auSelect) auSelect.value = auFilter;   // the global twin says the same
-    smCells.forEach(function (c) {
+    smCells.forEach((c) => {
       c.hidden = auFilter ? c.getAttribute('data-author') !== auFilter
                           : !c.hasAttribute('data-top');
     });
-    auRows.forEach(function (r) {
+    auRows.forEach((r) => {
       r.hidden = !!auFilter && r.getAttribute('data-author') !== auFilter;
     });
     if (auNote) {
-      var chip = null;
-      if (authorBar && auFilter) {
-        [].forEach.call(authorBar.children, function (x) {
-          if (x.getAttribute && x.getAttribute('data-au') === auFilter) chip = x;
-        });
-      }
+      /** @type {HTMLButtonElement|undefined} */
+      const chip = authorBar && auFilter
+        ? [...authorBar.children].find((x) => x.getAttribute('data-au') === auFilter)
+        : undefined;
       if (chip) {
         // Assembled from the chip's own data attributes — the renderer already
         // did this arithmetic once, and a second implementation here is how a
         // summary ends up disagreeing with the chips it summarises.
-        var cost = chip.getAttribute('data-cost');
-        var sep = ' \u00b7 ';   // a middot, as an escape so the source stays ASCII
+        const cost = chip.getAttribute('data-cost');
+        const sep = ' \u00b7 ';   // a middot, as an escape so the source stays ASCII
         auNote.textContent = auFilter + ': ' + chip.getAttribute('data-tokens')
           + ' tokens' + (cost ? sep + cost : '')
           + sep + chip.getAttribute('data-msgs') + ' msgs'
@@ -32,13 +42,14 @@
     }
     syncHash();
   }
-  wireChips(authorBar, 'data-au', function (val, host, attr) {
+  wireChips(authorBar, 'data-au', (val, host, attr) => {
     auFilter = (auFilter === val) ? '' : val;
     highlight(host, attr, auFilter);
     applyAuthor();
   });
-  // The authors dropdown (C2) drives the same state the chips do; both paint.
-  if (auSelect) auSelect.addEventListener('change', function () {
+  // The authors dropdown drives the same state the chips do, and both are
+  // painted from it, so touching either one leaves the other agreeing.
+  if (auSelect) auSelect.addEventListener('change', () => {
     auFilter = auSelect.value;
     if (authorBar) highlight(authorBar, 'data-au', auFilter);
     applyAuthor();
