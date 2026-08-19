@@ -1728,18 +1728,23 @@ function renderAdoCard(c){
  // (delPath's rule); an emptied draft reads as null — connector removed.
  const A=()=>(ADRAFT=ADRAFT||{});
  const pruneTop=()=>{if(ADRAFT&&!Object.keys(ADRAFT).length)ADRAFT=null;};
+ // The id is the config path, which is already unique per field and is the string
+ // a reader of audit.config.json recognises. Dots in an id are fine here -- `for`
+ // is an exact-string match, not a selector, and fieldId() has been minting
+ // `set-usage.bands` on the Guards form all along.
  const txt=(path,ph,lbl,help)=>{
-  const i=el('input',{value:getPath(ADRAFT||{},path)??'',placeholder:ph||''});
+  const tid='ado-'+path;
+  const i=el('input',{id:tid,value:getPath(ADRAFT||{},path)??'',placeholder:ph||''});
   i.oninput=()=>{const v=i.value.trim();
    if(v)setPath(A(),path,v);else if(ADRAFT)delPath(ADRAFT,path);pruneTop();};
-  return el('label',{class:'f'},flabel(lbl,help),i);};
+  return el('span',{class:'f'},flabel(lbl,help,null,tid),i);};
  // absent = ON for these three; the checkbox writes false or deletes the key.
  const onoff=(key,lbl,help)=>{
   const cb=el('input',{type:'checkbox',id:'ado-'+key});
   cb.checked=!ADRAFT||ADRAFT[key]!==false;
   cb.onchange=()=>{if(cb.checked){if(ADRAFT)delete ADRAFT[key];}
    else A()[key]=false;pruneTop();};
-  return el('label',{class:'f cbf'},cb,flabel(lbl,help));};
+  return el('span',{class:'f cbf'},cb,flabel(lbl,help,null,'ado-'+key));};
  card.append(el('div',{class:'row'},
    onoff('enabled','Connector enabled',MDESC.adoEnabled),
    onoff('echo','Echo on task/phase transitions',MDESC.adoEcho),
@@ -1832,11 +1837,12 @@ function renderAdoCard(c){
    else if(ADRAFT)delPath(ADRAFT,'onComplete.remainingWork');}
   pruneTop();};
  rw.oninput=rwApply;rwNever.onchange=rwApply;
- const cflag=(key,lbl)=>{const cb=el('input',{type:'checkbox'});
+ const cflag=(key,lbl)=>{const cid='ado-comments.'+key;
+  const cb=el('input',{type:'checkbox',id:cid});
   cb.checked=!!getPath(ADRAFT||{},'comments.'+key);
   cb.onchange=()=>{if(cb.checked)setPath(A(),'comments.'+key,true);
    else if(ADRAFT)delPath(ADRAFT,'comments.'+key);pruneTop();};
-  return el('label',{class:'f cbf'},cb,flabel(lbl,MDESC.adoComments));};
+  return el('span',{class:'f cbf'},cb,flabel(lbl,MDESC.adoComments,null,cid));};
  card.append(el('div',{class:'row'},
    el('span',{class:'f'},flabel('Remaining Work on done',
      MDESC.adoRemainingWork,null,'ado-rw'),
@@ -1845,24 +1851,30 @@ function renderAdoCard(c){
    cflag('onBlocked','Comment when blocked'),
    cflag('onComplete','Comment on completion')));
  // --- sprint + pull scoping
- const team=el('input',{value:getPath(ADRAFT||{},'sprint.team')??'',
+ const team=el('input',{id:'ado-sprint.team',
+   value:getPath(ADRAFT||{},'sprint.team')??'',
    placeholder:'empty = static iteration path'});
  team.oninput=()=>{const v=team.value.trim();
   if(v)setPath(A(),'sprint.team',v);
   else if(ADRAFT)delPath(ADRAFT,'sprint');pruneTop();};
- // Same reason, and this one is the case that proved it: this editor IS inside a
- // <label>, and it binds that label only while it holds no tags. Add one and the
- // chip's remove button takes the association.
+ // Same reason, and this one is the case that proved it: this editor SAT inside a
+ // <label>, and it bound that label only while it held no tags. Add one and the
+ // chip's remove button takes the association. So the wrapper below is a <span>
+ // now and this box keeps the name it always relied on -- the ariaName argument,
+ // which fl6 requires of every listEditor call site. No forId: the only labelable
+ // thing in a list editor is an <input> that draw() destroys and rebuilds, and the
+ // id that does exist on these editors is on the <div>, where a `for` would
+ // associate nothing while looking as if it did (renderField says the same).
  const tags=listEditor(()=>getPath(ADRAFT||{},'pull.tags')||[],
    a=>{if(a.length)setPath(A(),'pull.tags',a);
     else if(ADRAFT)delPath(ADRAFT,'pull.tags');pruneTop();},'tag…',null,
    'Pull tags: add a tag');
  card.append(el('div',{class:'row'},
-   el('label',{class:'f'},flabel('Sprint team (current iteration)',
-     MDESC.adoSprint),team),
+   el('span',{class:'f'},flabel('Sprint team (current iteration)',
+     MDESC.adoSprint,null,'ado-sprint.team'),team),
    txt('pull.areaPath','falls back to Area path','Pull area path',
      MDESC.adoPull),
-   el('label',{class:'f'},flabel('Pull tags',MDESC.adoPull),tags)));
+   el('span',{class:'f'},flabel('Pull tags',MDESC.adoPull),tags)));
  // --- identityMap: a pair editor, edited directly — NEVER through delPath,
  // whose dotted paths would split the ledger keys (emails carry dots).
  const imWrap=el('div',{});
@@ -3226,12 +3238,17 @@ function renderPolicy(){closeCombo();
    else b.onViolation=ovSel.value;
    pPrune();});
  head.append(el('div',{class:'row'},
-   el('label',{class:'f cbf'},enb,flabel('Policy enabled',
+   el('span',{class:'f cbf'},enb,flabel('Policy enabled',
      'Off writes policy.enabled:false, which is how you keep the rules and stop '
-     +'applying them.')),
-   el('label',{class:'f'},flabel('On a violation','What the hook does when a call '
+     +'applying them.',null,'polenabled')),
+   // ovSel keeps its aria-label, which still WINS the accessible name over this
+   // <label>. The `for` is here for the pointer: it makes the visible words a
+   // click target for the select, which the wrapping <label> used to give and a
+   // <span> does not. Collapsing the two name sources into the <label> alone is a
+   // change that has to re-run the browser census, not one to make blind.
+   el('span',{class:'f'},flabel('On a violation','What the hook does when a call '
      +'breaks a rule. warn is deliberately NOT a permission grant — it lets the '
-     +'call through and says so.'),ovSel)));
+     +'call through and says so.',null,'polonviol'),ovSel)));
  // Which area rules are deciding anything TODAY. An area rule applies only while
  // some phase in that area has work in progress, so a column of denials for a
  // dormant area is inert — and becomes live the moment that phase starts, which is

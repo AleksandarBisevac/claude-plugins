@@ -2211,6 +2211,82 @@ def _cases(check):
             _i = hay.find(needle, _i + 1)
         return _out
 
+    _JS_QUOTES = ("'", '"', "`")
+
+    def _el_calls(js, tag):
+        """Every `el('<tag>', ...)` construction in `js`, as its whole source span.
+
+        Balanced over parentheses, skipping string literals - and MEASURED rather
+        than assumed, because the obvious justification for the skipping is not the
+        true one. Over today's script a walk that ignored strings entirely agrees
+        with this one on all 7 spans: the tempting example,
+        `flabel('Sprint team (current iteration)', ...)`, has a BALANCED pair inside
+        its literal and costs a naive count nothing. What does bite is the
+        half-measure - a walker that knows only `'`, the quote this file writes
+        almost everything in, disagrees on ONE span: `"don't touch"` at the
+        Remaining-Work row, where a single apostrophe inside a double-quoted string
+        leaves it in string state to the end of the file and the span swallows the
+        `cflag()` calls after it. So all three quote characters are tracked, and
+        backslash escapes with them, on the rule rather than on the census - which
+        literals happen to be on the page today is not something to depend on.
+        `fw2` carries that case as a fixture.
+
+        WHAT IT CANNOT SEE, AND THE DIRECTION IS THE POINT. This is TEXT over the
+        assembled script, so it finds a `<label>` only where the tag name is a
+        quoted literal in an `el()` call. A label built by `document.createElement`,
+        by `el()` with a computed tag, or through `el()`'s `html:` (innerHTML)
+        attribute is invisible to it. Each of those is a row it fails to produce,
+        never a row it invents: the error is UNDER-counting, which is the quiet
+        direction -- a clean result means "no offender of this shape", not "no
+        offender". `fw3` below keeps that gap measured rather than assumed.
+        """
+        _needle, _out = "el('%s'," % tag, []
+        _i = js.find(_needle)
+        while _i >= 0:
+            _depth, _quote, _k = 0, "", js.find("(", _i)
+            while _k < len(js):
+                _ch = js[_k]
+                if _quote:
+                    if _ch == "\\":
+                        _k += 2
+                        continue
+                    if _ch == _quote:
+                        _quote = ""
+                elif _ch in _JS_QUOTES:
+                    _quote = _ch
+                elif _ch == "(":
+                    _depth += 1
+                elif _ch == ")":
+                    _depth -= 1
+                    if _depth == 0:
+                        break
+                _k += 1
+            _out.append(js[_i:_k + 1])
+            _i = js.find(_needle, _i + 1)
+        return _out
+
+    def _fl_in_label(js):
+        """Every el('label', ...) span in `js` that holds a flabel(), one line each.
+
+        THE RULE, and it is one line: a `<label>`'s accessible name is its OWN
+        SUBTREE, and flabel() appends the i to the span it returns - so wherever
+        that span sits inside a `<label>`, the i's text is inside the name. That is
+        true of the `<span tabindex=0>` i as much as the `<button>` one, which is
+        exactly the half `kl1` cannot see: kl1 asks whether anything LABELABLE can
+        get between the label and its field, and a span is not labelable.
+
+        STRICTER THAN "unless it binds by `for`", on purpose and stated so it is a
+        choice rather than an oversight. No `for` rescues this shape: the wrapper's
+        name is its subtree however the association is made, and a `<label>` inside
+        a `<label>` is not valid content either. The binding that DOES fix it is
+        flabel's own `el('label',{for:forId},text)` -- which holds the words and
+        nothing else, and so reads clean here by construction (`fw1`).
+        """
+        return [" ".join(_c.split()) for _c in _el_calls(js, "label")
+                if "flabel(" in _c]
+
+    _ts_js = _ts_script.group(1) if _ts_script else ""
+
     # --- WCAG 2.2 SC 1.3.1 / 3.3.2 / 4.1.2: the i stopped stealing the label ----
     # MEASURED IN CHROMIUM over `element.labels`, which is the only thing that can
     # see this: a <button> is a LABELABLE element, so while the i sat inside a
@@ -2234,23 +2310,32 @@ def _cases(check):
     # Both directions, and the negative is the one that matters: a container that
     # went back to being a <label> would put the button inside it again, and every
     # positive above would still be true.
-    # NOT "no <label class=f> exists": nine remain and are correct. The invariant
-    # is narrower and is the actual rule - a container may stay a <label> exactly
+    # NOT "no <label> exists": several remain and are correct. The invariant is
+    # narrower and is the actual rule - a container may stay a <label> exactly
     # while nothing labelable can get between it and its field. klabel() ALWAYS
     # builds a button (it always passes a ref), so a klabel inside a <label> is the
-    # defect itself; flabel() called with two arguments builds a <span>, which is
-    # not labelable and cannot steal anything. The nine survivors are all the
-    # second kind, and this counts them rather than trusting the sentence.
-    _kl_ctr = [M.UI_HTML[m:m + 150] for m in
-               _re_starts(M.UI_HTML, "el('label',{class:'f")]
-    _kl_steal = [c[:64] for c in _kl_ctr if "klabel(" in c]
-    _kl_ref = [c[:64] for c in _kl_ctr
+    # defect itself; flabel() called with a ref builds one too.
+    #
+    # TWO DELIBERATE CHANGES HERE, and F41 forced both. The census was keyed on
+    # `el('label',{class:'f` over 150-character windows, and F41's repair emptied
+    # that set - which failed this case rather than passing it, because the
+    # vacuity guard is real. Keying it on EVERY el('label', ...) construction
+    # instead is strictly more: it now also reads the `class:'inl'` wrappers, which
+    # this case has never looked at, and a fixed-width window that could run past
+    # the end of a call into the next statement is replaced by the call's own
+    # balanced span. What it no longer covers on its own is the flabel-without-a-ref
+    # case, which was never this case's claim: `fw0` below owns that, and owns it
+    # for a stronger reason than labelability.
+    _kl_ctr = _el_calls(_ts_js, "label")
+    _kl_steal = [" ".join(c.split())[:64] for c in _kl_ctr if "klabel(" in c]
+    _kl_ref = [" ".join(c.split())[:64] for c in _kl_ctr
                if re.search(r"flabel\([^)]*,[^)]*,[^)]*\{", c)]
     check("kl1 a container may still be a <label> only while nothing labelable can "
-          "get between it and its field: %d such containers, %d holding a klabel "
-          "(which always builds a <button>), %d passing flabel a ref (which makes "
-          "one) - and the four klabel builders hand the control's id to the <label> "
-          "that names it, the list editor excepted because its id is on a <div>"
+          "get between it and its field: %d el('label') construction(s) read, %d "
+          "holding a klabel (which always builds a <button>), %d passing flabel a "
+          "ref (which makes one) - and the four klabel builders hand the control's "
+          "id to the <label> that names it, the list editor excepted because its "
+          "id is on a <div>"
           % (len(_kl_ctr), len(_kl_steal), len(_kl_ref)),
           _kl_ctr and not _kl_steal and not _kl_ref
           and "el('div',{class:'f'},klabel(f.label,f.path,tip,fieldId(f.path)),inp)"
@@ -2259,6 +2344,117 @@ def _cases(check):
           and "el('div',{class:'f cbf'},cb,klabel(f.label,f.path,tip,fieldId(f.path)))"
               in M.UI_HTML
           and "el('div',{class:'f wide'},klabel(f.label,f.path,tip),ed)" in M.UI_HTML)
+
+    # --- F41: the i is inside the wrapper's NAME, not merely labelable ----------
+    # F26 repaired klabel and stopped. The rule it discovered was never written
+    # down as a check, so it reached exactly the one builder somebody edited: NINE
+    # call sites put flabel() inside an el('label', ...) and all nine kept the
+    # defect. Two of them (`ado-tag`, `ado-rw`) were caught at 9415a43 only because
+    # their wrapper held a SECOND field, which pushed the i's text into the MIDDLE
+    # of the name -- "Provenance tag i no provenance tag at all no tag" -- and
+    # failed SC 2.5.3 outright. The other seven put the i AFTER the visible words,
+    # so 2.5.3 held and nothing looked at them again.
+    #
+    # kl1 above cannot see them and never could. It asks whether anything LABELABLE
+    # sits between the label and its field, and a two-argument flabel builds a
+    # `<span tabindex=0>`, which is not labelable. The association was fine. The
+    # NAME was not: a label's accessible name is its own subtree, so the i's "i"
+    # is in the name of every field those seven wrappers bound - the same fold-in
+    # F26 measured on the six checkboxes that DID bind ("Meter token usage
+    # usage.enabled What is Meter token usage?").
+    #
+    # And the span i inside a <label> is a live functional bug on top of that: it
+    # is not interactive content, so a click on it activates the wrapper's control.
+    # Three of the seven wrapped a CHECKBOX -- reading the hint toggled the setting
+    # it was explaining. hint() in panel.js records that this is exactly why the i
+    # becomes a real <button> when it has a ref; the span case was left standing.
+    _fw_labels = _el_calls(_ts_js, "label")
+    _fw_flabels = _ts_js.count("flabel(")
+    _fw_bad = [_c[:104] for _c in _fl_in_label(_ts_js)]
+    check("fw0 no flabel() sits inside an el('label', ...): a <label>'s accessible "
+          "name is its OWN SUBTREE, so a wrapper holding one announces the i's "
+          "stray \"i\" whether or not that i is labelable - which is the half kl1 "
+          "is blind to. Read %d el('label') construction(s) against %d flabel() "
+          "call(s) in the script; offenders %r"
+          % (len(_fw_labels), _fw_flabels, _fw_bad),
+          len(_fw_labels) >= 6 and _fw_flabels >= 10 and not _fw_bad)
+
+    # THE REPAIR MUST READ CLEAN, or the lint forbids its own remedy and the next
+    # person deletes the lint instead of the defect. Two shapes have to survive it:
+    # flabel's own `el('label',{for:forId},text)`, which is the fix, and a repaired
+    # call site, whose wrapper is a <span> and so is not scanned at all.
+    _fw_bound = [_c for _c in _fw_labels if "for:forId" in _c]
+    check("fw1 the remedy is not itself a finding: the two label BUILDERS bind by "
+          "`for` and hold only the words (%d of them), and a repaired site - "
+          "wrapper turned <span>, flabel given its 4th argument - leaves the "
+          "scanned set entirely" % (len(_fw_bound),),
+          len(_fw_bound) == 2
+          and not [_c for _c in _fw_bound if "flabel(" in _c]
+          and "forId?el('label',{for:forId},text):text,hint(tip,ref));}"
+              in M.UI_HTML
+          and not _fl_in_label(
+              "el('span',{class:'f'},flabel(lbl,help,null,'ado-x'),i)"))
+
+    # A guard that overreaches gets routed around and becomes its own defect class,
+    # so both directions are driven over fixtures rather than assumed from a green
+    # run on the page. The negatives are the shapes that are CORRECT and must stay
+    # correct: a <label> with no flabel in it at all, and a two-argument flabel in
+    # any wrapper that is not a <label> - a <span>, a <div>, a <th> - where the i
+    # is beside the words and inside nobody's name.
+    #
+    # The third positive is why this check is stricter than "unless it binds by
+    # `for`": a wrapper that binds by `for` is STILL a finding, because the name is
+    # the subtree and `for` moves the association, not the i. A <label> inside a
+    # <label> is not valid content either.
+    #
+    # The last CLEAN fixture is the quoting rule, and it is the one that has ever
+    # been wrong in measurement: a walker that knew only `'` reads the apostrophe
+    # in "don't" as an opening quote, never closes it, and runs the span on until
+    # it has swallowed the flabel() that follows - a FALSE POSITIVE on a correct
+    # <label>. It is copied from the shape the page really has at the
+    # Remaining-Work row, where a `cflag()` call is the next argument along.
+    _FW_CLEAN = ("el('label',{class:'inl'},tagNone,'no tag')",
+                 "el('label',{class:'inl',for:'ovarea'},cb,'group by area')",
+                 "el('div',{class:'f'},flabel(kind+' states',MDESC.adoStateMap),b)",
+                 "el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,"
+                 "null,'ado-tag'),y)",
+                 "el('th',{},flabel('model',MDESC.taskModel,{comp:'taskModel'}))",
+                 "el('label',{class:'inl'},nv,\"don't touch\"),"
+                 "el('div',{},flabel(lbl,MDESC.adoComments))")
+    _FW_DIRTY = ("el('label',{class:'f'},flabel(lbl,help),i)",
+                 "el('label',{class:'f cbf'},cb,flabel(lbl,help))",
+                 "el('label',{class:'f',for:'x'},flabel(lbl,help),i)",
+                 "el('label',{class:'f'},flabel('Sprint team (current iteration)',"
+                 "MDESC.adoSprint),team)")
+    _fw_fp = [_s for _s in _FW_CLEAN if _fl_in_label(_s)]
+    _fw_fn = [_s for _s in _FW_DIRTY if not _fl_in_label(_s)]
+    check("fw2 the rule fires on the class and nothing else, driven over fixtures "
+          "in both directions rather than trusted from a green page: %d/%d correct "
+          "shapes wrongly flagged %r, %d/%d offending shapes missed %r"
+          % (len(_fw_fp), len(_FW_CLEAN), _fw_fp,
+             len(_fw_fn), len(_FW_DIRTY), _fw_fn),
+          not _fw_fp and not _fw_fn)
+
+    # SAY WHAT IT CANNOT SEE. The scanner is text over the assembled script, so it
+    # sees a <label> only where the tag is a quoted literal in an el() call. Three
+    # routes would build one without writing that, and each produces a row the
+    # scanner never emits -- so the error is UNDER-counting, the quiet direction:
+    # "no offenders" would read the same on a page full of them. The claim here is
+    # not that the routes are impossible; it is that all three are MEASURED and
+    # today carry no <label>, which is what makes the census above complete.
+    _fw_ce = _ts_js.count("document.createElement(") - 1   # el()'s own is the one
+    _fw_html = _ts_js.count("html:")                       # el()'s innerHTML hatch
+    _fw_calc = re.findall(r"\bel\((?!')([^,)]{1,40})", _ts_js)
+    _fw_calc_label = [_t for _t in _fw_calc if "'label'" in _t]
+    check("fw3 the blind spot is measured, not assumed - and it under-counts, "
+          "which is the direction that reads as \"nothing wrong\": %d "
+          "createElement outside el()'s own, %d html:/innerHTML attribute(s), %d "
+          "el() call(s) with a computed tag, %d of those able to yield 'label' "
+          "(the one is hint()'s `ref?'button':'span'`)"
+          % (_fw_ce, _fw_html, len(_fw_calc), len(_fw_calc_label)),
+          _fw_ce == 0 and _fw_html == 0
+          and len(_fw_calc) == 1 and not _fw_calc_label)
+
     # The rule that is easy to read as cosmetic and is not. MEASURED: without it
     # Chromium names the field "The planmanifestPath" - it builds a name by walking
     # boxes, so two inline children of the new <label> collapse in the NAME exactly
@@ -2340,23 +2536,30 @@ def _cases(check):
     # wrapper held a SECOND field, so the <label> collected that field's text too
     # and the accessible name read "Provenance tag i no provenance tag at all no
     # tag" against a visible "Provenance tag ... no tag" -- SC 2.5.3, measured, and
-    # the reason the wrapper is a <span> here. The remaining flabel entries stay
-    # positional and may: flabel with two arguments builds a <span>, which is not
-    # labelable, so nothing can get between those labels and their field. kl1
-    # above is what keeps that true.
+    # the reason the wrapper is a <span> here.
+    #
+    # NOW EVERY ENTRY NAMES AN EXPLICIT BINDING, and F41 is what finished that. The
+    # remaining flabel entries used to stay POSITIONAL on the reading that a
+    # two-argument flabel builds a <span>, which is not labelable, so nothing could
+    # get between those wrappers and their field. True, and beside the point: a
+    # <label>'s accessible name is its own subtree, so the i's "i" was in the name
+    # of every field they bound whether or not it could steal the association. The
+    # wrappers are <span> now and each field is reached by `for` - so this table no
+    # longer has two kinds of entry in it, and `fw0` above is the check that stops
+    # a third from being written.
     _FL_LABELLED = {
         "placeholder:def==null?(f.placeholder||''):String(def)":
             "klabel(f.label,f.path,tip,fieldId(f.path)),inp);",
         "placeholder:'not set'":
             "klabel(lbl,p,null,fieldId(p)),inp);",
         "placeholder:ph||''":
-            "return el('label',{class:'f'},flabel(lbl,help),i);",
+            "return el('span',{class:'f'},flabel(lbl,help,null,tid),i);",
         "placeholder:'audit-plugin'":
             "el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,null,'ado-tag'),",
         "placeholder:'not written'":
             "el('span',{class:'f'},flabel('Remaining Work on done',",
         "placeholder:'empty = static iteration path'":
-            "el('label',{class:'f'},flabel('Sprint team (current iteration)',",
+            "el('span',{class:'f'},flabel('Sprint team (current iteration)',",
     }
 
     _fl_all = _fl_fields(_ts_script.group(1) if _ts_script else "")
