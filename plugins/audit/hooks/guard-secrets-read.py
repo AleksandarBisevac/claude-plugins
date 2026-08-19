@@ -141,9 +141,21 @@ SECRET_TOKEN_RE = re.compile(_SECRET_TOKEN, re.IGNORECASE)
 # the false positive.
 _WRITE_CALL = re.compile(
     r"(?:open\s*\(\s*['\"]([\w./-]+)['\"]\s*,\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
-    r"|(?:fs\.)?write(?:File)?(?:Sync)?\s*\(\s*['\"]([\w./-]+)['\"]"
+    # `append` alongside `write`: appending to a source file edits it, and
+    # `fs.appendFileSync` walked straight through a pattern that only knew the
+    # word "write".
+    r"|(?:fs\.)?(?:write|append)(?:File)?(?:Sync)?\s*\(\s*['\"]([\w./-]+)['\"]"
     r"|createWriteStream\s*\(\s*['\"]([\w./-]+)['\"]"
-    r"|File\.(?:open|write)\s*\(\s*['\"]([\w./-]+)['\"])",
+    r"|File\.(?:open|write)\s*\(\s*['\"]([\w./-]+)['\"]"
+    # The RECEIVER form. `Path('x.py').write_text(...)` names its target before
+    # the call, so a pattern that only looks inside the parentheses cannot reach
+    # it however many call names it is given -- which is why adding names had
+    # not found it. F20 listed `Path.write_*` in its fix shape.
+    r"|Path\s*\(\s*['\"]([\w./-]+)['\"]\s*\)\s*\.\s*write_(?:text|bytes)"
+    # Two-argument forms where the SECOND path is the one written. An atomic
+    # rename and a copy are edits with different spelling.
+    r"|(?:os\.(?:replace|rename)|shutil\.(?:copy2?|copyfile|move))\s*\(\s*"
+    r"(?:['\"][^'\"]*['\"]|[\w.]+)\s*,\s*['\"]([\w./-]+)['\"])",
     re.IGNORECASE,
 )
 
@@ -163,7 +175,15 @@ _NON_EXEMPT_WRITE_TARGET = re.compile(
     re.IGNORECASE,
 )
 _EXEMPT_WRITE_PATH = re.compile(
-    r"(?:\.claude/|docs/audit/|\.md['\"\s])",
+    r"(?:\.claude/|docs/audit/|\.md['\"\s]"
+    # F20's own class, found by measuring this function rather than by a report:
+    # a scratch file under a temp root is not source, and refusing it is how a
+    # guard teaches people to route around it -- into the shape it cannot see at
+    # all. `/private/tmp` and `/var/folders` are what a macOS session actually
+    # gets, so listing only `/tmp` would have exempted the example and not the
+    # reality. Matched against the TARGET, never the clause: a source write that
+    # merely reads from /tmp stays a write (s43).
+    r"|^['\"]/(?:private/)?tmp/|^['\"]/var/folders/)",
     re.IGNORECASE,
 )
 # F-A-1 (v0.37 A1): `\.test\.|\.spec\.` used to live in _EXEMPT_WRITE_PATH, so

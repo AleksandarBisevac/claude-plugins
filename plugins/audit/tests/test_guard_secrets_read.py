@@ -376,6 +376,50 @@ def _cases(check):
                   'python3 -c "open(\'src/x.ts\',\'w\').write(1)"') == ["src/x.ts"]
           ) else "block", bash("true"))
 
+    # (s35+) F20/F22. The original symptom - a read-only one-liner refused as a
+    # write - is gone with F-P-7 above. Measuring the same function again found
+    # it wrong in BOTH directions instead, which is the shape a heuristic decays
+    # into when only one side is ever tested.
+    #
+    # Direction one, the FALSE POSITIVE, and it is the F20 class exactly: a
+    # scratch file under a temp root is not source, and blocking it teaches the
+    # reader to route around the guard - which is also where the guard is blind.
+    _expect("s35 an eval that writes a SCRATCH file under /tmp is not a source "
+          "write", "allow",
+          bash('python3 -c "import json; json.dump(d, open(\'/tmp/scratch.json\',\'w\'))"'))
+    _expect("s36 ...including the macOS temp roots a session actually gets, "
+          "which is where this would have bitten first", "allow",
+          bash('python3 -c "open(\'/private/tmp/claude-501/x.json\',\'w\').write(s)"'))
+    _expect("s37 ...and /var/folders, which is what $TMPDIR expands to there",
+          "allow",
+          bash('node -e "require(\'fs\').writeFileSync(\'/var/folders/d1/pw/T/o.json\', x)"'))
+    # Direction two, the FALSE NEGATIVES. Each is a real source write the pattern
+    # could not see, and F20's fix shape named three of them. `Path(...)
+    # .write_text` is the one that matters most: the path is the RECEIVER rather
+    # than an argument, so a pattern that only looks inside the call's
+    # parentheses cannot reach it however many call names it lists.
+    _expect("s38 Path('x.py').write_text() is a source write - the path is the "
+          "receiver, which is why listing more call names would never find it",
+          "block",
+          bash('python3 -c "from pathlib import Path; '
+               'Path(\'scripts/build.py\').write_text(src)"'))
+    _expect("s39 ...write_bytes too", "block",
+          bash('python3 -c "from pathlib import Path; Path(\'src/gen.ts\').write_bytes(b)"'))
+    _expect("s40 os.replace onto source is a write - the atomic-rename spelling "
+          "of the same edit", "block",
+          bash('python3 -c "import os; os.replace(\'/tmp/new\', \'src/app.ts\')"'))
+    _expect("s41 shutil.copy onto source is a write", "block",
+          bash('python3 -c "import shutil; shutil.copy(\'/tmp/a\', \'src/app.ts\')"'))
+    _expect("s42 fs.appendFileSync is a write - append is not a read", "block",
+          bash('node -e "require(\'fs\').appendFileSync(\'tools/build.mjs\', x)"'))
+    # The pair that keeps the temp exemption honest: exempting a ROOT must not
+    # exempt a source path that merely shares the clause with it.
+    _expect("s43 a source write is still a write when the clause also touches "
+          "/tmp - the exemption is about the TARGET, not about the clause",
+          "block",
+          bash('python3 -c "s=open(\'/tmp/in.json\').read(); '
+               'open(\'src/out.ts\',\'w\').write(s)"'))
+
     # The ask payload's SHAPE is the pinned contract (the dialog cannot be
     # driven by a selftest) - mirror of require-plan's g9 and of j1 below.
     _ap = json.loads(json.dumps(M._ask_payload("why")))
