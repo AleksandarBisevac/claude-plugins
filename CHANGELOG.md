@@ -4,7 +4,7 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [0.40.0] - 2026-08-19
 
 **The panel's dropdown stops running away, the report's table starts answering — and
 `scripts/` stops being one flat pile.** Five dogfooding findings, each reproduced in a real
@@ -13,6 +13,67 @@ modules they test, grouped `scripts/` into domain directories, and gave JavaScri
 unit test — which immediately found two formatters printing different numbers from the CLI.
 
 ### Fixed
+
+**The panel and the report commit to WCAG 2.2 AA, and the criteria were measured before
+anything was written.** Of the 55 AA criteria, 19 are N/A here; of the 36 that apply the
+panel conclusively met 15 and conclusively failed 8. Every fix below was reproduced in a
+browser first and re-measured after -- none of them was read off the stylesheet.
+
+- **Two cases in the raw-URL pin lint went green by measuring nothing at a release.**
+  `test__refs.py` spelled `v0.39.0` and `0.40.0` as literals in its own mutations, so
+  cutting 0.40.0 turned p4's `replace()` and p6's "bump" into no-ops -- the two cases that
+  exist to catch a stale README pin would have passed at the exact moment they were needed.
+  Both now read the shipped version instead of naming it, and p6 bumps to a version that
+  cannot collide with one.
+- **A focused control could be activated but not reached, and the gate was reading a dead
+  property** (SC 2.4.3, 2.4.7). The four Discard buttons carried native `disabled`, which
+  removes the tab stop, so the caret landed on `BODY` after a discard. They now carry
+  `aria-disabled` and keep their stop, with **one capture-phase guard** refusing activation
+  for anything claiming it -- because `aria-disabled` is a promise the platform does not
+  keep. `tools/capture-screenshots.mjs` read `.disabled` at **six** sites rather than the
+  four this was expected to touch, and one of them (`[data-discard=policy]`) asserted a
+  button is *not* dead: it would have passed vacuously for the rest of time.
+- **A clipped name had no keyboard path** (SC 1.4.13). The report's `.rank` rows became tab
+  stops (11 on the shipped report) and the hover layer grew `focusin`/`focusout` plus a
+  `placeAt()` that positions from the element's own rect -- `place()` read `ev.clientX`,
+  which a focus event has not got. Escape dismisses, and every close funnels through one
+  `hide()`. The negative meant to guard this had been scanning the whole 190KB page and
+  asserting nothing.
+- **Contrast is a token problem, and one palette was not in the token layer** (SC 1.4.11).
+  The control boundary measured **1.23** against the card surface and **1.10** against the
+  page where 3:1 is required -- a field a sighted reader finds by habit and a low-vision
+  reader does not find at all. Repaired with a `--field-border` token rather than per-rule
+  colours; the palette that sat outside the token layer is why this had been missed.
+- **Three tables named neither axis** (SC 1.3.1). The ADO connector's phase / task / bug
+  stateMap grids are one builder called three times, and every cell was a `<td>` -- so the
+  checkbox in row three announced as "never" with nothing saying never *what*. The manifest
+  status is a `<th scope=row>` now, and a clipped `<thead>` carries the column names because
+  their legend already sits in the label above each grid. Two browser-only consequences no
+  substring pin can see: `table-layout:fixed` takes its column widths from the **first row**,
+  which is now the header row (90 / 682 / 67 CSS px with the rule naming `:is(th,td)`, an
+  even 280 / 280 / 280 without it); and Chromium folds `text-transform` into the computed
+  accessible **name**, so the uppercase meant for painted text had the three headers
+  announcing as "MANIFEST STATUS".
+- **The i was a `<button>` inside the `<label>`, so the `<label>` named the i** (SC 1.3.1,
+  3.3.2, 4.1.2). A `<button>` is a labelable element, and HTML resolves a label's control to
+  its *first labelable descendant*. Measured over `element.labels` across 2335 fields:
+  **20 fields on the Guards tab bound no label at all** and announced their own value --
+  `"docs/audit/audit-plan.json"` where "The plan" was meant, `"80"` for "Free first touch,
+  in lines" -- and three `<select>` announced nothing whatever. `closest('label')` reports
+  all 20 as labelled and always did, which is why a pass dedicated to labels had missed it:
+  the defect is not in the text, it is in what the browser does with the text. The `<label>`
+  now holds the words and points at the control by id, with the i beside it as a sibling.
+  **17 of the 20 are repaired**, and the six checkboxes that already bound a label lost the
+  i's own name from theirs ("Meter token usage usage.enabled What is Meter token usage?").
+- **A placeholder is not a name** (SC 3.3.2, 4.1.2). A placeholder is the accessible name of
+  last resort and is gone the moment a character is typed, so a field labelled by one is
+  nameless exactly while it is being used. 38 `aria-label`s, each written where no visible
+  text names one field, each folding in the row's own id, and each still containing the
+  visible word so SC 2.5.3 holds with it. At this release: **334 visible fields, 0 with no
+  programmatic name.** The exemption table that had recorded 20 of them as already labelled
+  is re-grounded on the explicit `for`-by-id association -- it previously verified that a
+  source construction was still present, which stayed true throughout the defect, so it could
+  not have failed.
 
 - **The panel's Usage tab pushed the whole page sideways on a small phone** — 49px of it at
   320px, and anything narrower than 369px was affected. Two independent causes, both now
@@ -280,6 +341,27 @@ unit test — which immediately found two formatters printing different numbers 
   two copies match is exactly what was false before.
 
 ### Changed
+
+- **`panel.css` spacing moved into the token layer, which makes it density-responsive.**
+  77 lines, **107 -> 226** `var(--sp-*)` references. Nothing about the default rendering
+  changes: expanding every token back to its declared literal reproduces the previous line
+  byte for byte across all 1063 lines, 0 exceptions. The consequence is the other two
+  densities -- 119 declarations that used to hold still are now scaled by `layout.density`
+  (compact .8, roomy 1.25), and the target-size register records default-theme measurements
+  only. **72 literal rem values remain** in padding/margin/gap declarations, so this is a
+  step in the migration rather than its end.
+- **`_panel_state.py` 1594 -> 414, split six ways**, and `_usage_analytics.py` split on its
+  own six markers. The blocker was never `_stamp`/`_settled` but `_cores()`'s positional
+  four-tuple, which bundled `_manifest_rules` with three modules that have nothing to do
+  with it. Differential: **0/289 probes differ**, on a corpus whose harness catches 39/39
+  planted mutations, with `UI_HTML` sha256 unchanged.
+- **The browser dialect is decided: modern ES, and still no build step.** `report.js` is
+  strictly ES5 and `panel.js` is modern, so the same feature exists twice and cannot be
+  shared -- two `isDark()`, two tooltip placers, two CSV quoters, and two token formatters
+  that already disagree while both claiming to mirror the same Python function. ES modules
+  stay impossible here (the opaque `file://` origin), but that restricts *loading*, not
+  syntax. The decision takes effect for new code immediately; the rewrite waits behind the
+  pin migration, because the pins assert text.
 
 - **BREAKING — `validate-manifest.py` now lives at
   `plugins/audit/scripts/manifest/validate-manifest.py`.** The plugin README publishes a `curl`
