@@ -4,6 +4,131 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.41.0] - 2026-08-20
+
+**The two surfaces stop being two codebases.** A `ui/shared/` layer now exists and holds
+the rules that had been retyped into both -- a blob download whose four copies had drifted
+to three revoke policies, fourteen hand-written storage guards, one agreement rule for a
+count and its noun, one day-in-milliseconds constant, the clipboard's two failure paths, and
+the heatmap calendar that had existed twice under the same names for as long as both heatmaps
+have. `report.js` speaks the same modern dialect as the panel for the first time. And the
+duplication is no longer a matter of anyone remembering: `_deps.SHARED_CONCERNS` is a
+register with a home, a needle and an allowance per concern, and it fails the build when a
+row spreads past its cap.
+
+Twenty-nine fix commits landed against the panel and the report, most of them reproduced in
+a browser before anything was written. Several were the same shape: a claim on screen that
+the code had not established.
+
+### Added
+
+- **`ui/shared/`** -- `download.js`, `storage.js`, `plural.js`, `dates.js`, `calendar.js`,
+  `clipboard.js`, joined into BOTH surfaces ahead of every part that reads them. The
+  promotion rule is one reader stays put, two readers move up, and a shared part may not
+  reach back into a surface -- which is what decides how high a helper's own primitives have
+  to sit. Its `README.md` carries the rule, the four wiring steps and both feature gates,
+  because the previous phrasing "anything both surfaces need goes in the shared layer" was
+  in force while fifteen rules were retyped: it named a directory that did not exist, so
+  complying meant inventing it and retyping was one edit.
+- **`_deps.SHARED_CONCERNS`** -- twelve rows, each with the file that owns the concern, a
+  needle (substring or `re:` pattern), an allowance and a reason. It is a CAP, never an
+  equality, which is the whole difference between it and the three save/discard counts it
+  replaced: those required the duplication to stay, so removing a copy turned them red.
+  Two rows carry a declared residual and say what it is.
+- **`tools/find-shared-candidates.mjs`** -- a scout that reads the assembled sources and
+  reports repeated windows across files. It found the table-header duplication that five
+  agents had read past, and after each extraction it surfaced the next-largest one, which is
+  the argument for running it again rather than once.
+- **A harness that grades its own coverage.** `tools/check-report-interactive.mjs` derives
+  the set of assertions it declares from its own source and refuses to report success for
+  work it did not do; the floor is never written down as a number, because a constant there
+  would rot on the first added check.
+- **`/audit:sync` learns a board's standard** -- the ADO connector reads what the project's
+  board actually uses rather than assuming, and nested ADO vocabularies now answer to the
+  schema.
+
+### Fixed
+
+- **One broken view took the whole panel, and then blamed the load.** `boot()` ran seven
+  view renderers, the initial-tab restore, the run poller and the tip placement as a single
+  sequence of bare calls. A throw in any one of them -- a malformed ledger reaching the usage
+  view is the realistic one -- skipped every later view, the poller and the tips, and the
+  outer catch then reported "load failed" about the one thing that had not failed. Each step
+  now runs contained, and what a reader gets is the parts that are missing, by name.
+- **Closing the Appearance tab discarded an unsaved theme, silently.** Every other writable
+  surface registers a way to ask it what is unsaved; the theme card registered nothing, and
+  its draft lives in memory only. It is the one surface whose Save has no Discard beside it,
+  on the grounds that it offers an undo trail instead -- and an undo trail does not survive
+  the page.
+- **The Appearance pill said "unsaved" about a number that was not.** It counted the theme
+  minus the shipped default, so a project wearing any theme opened claiming changes nobody
+  had made. The pill, the out-of-band repaint and the save now count one set.
+- **Every density or card-order save reported "not exactly what the dialog listed."** The
+  change row's field read `layout · density · ` against the server's `layout · density` --
+  two characters, invisible on screen, and the applied-diff keys on that field. A separate
+  version of the same fault made every FIRST-TIME token edit report drift, because the panel
+  showed the value on screen while the server reported the raw file entry.
+- **A caret resting in a clean Composition field froze the live view.** The disk refresh and
+  the deferral that holds it back each worked out which views hold unsaved edits, and
+  disagreed about the ADO card: the refresh folds it into `#comp` and the deferral did not.
+  One map answers both now, and the CSS selector is derived from its keys rather than typed
+  a second time.
+- **A malformed policy list blanked the Policy tab**, and the rule lookup matched a
+  serialised list rather than a name.
+- **The theme's undo trail could not express a clear**, so Redo re-applied the value Undo had
+  just put back; and a clear that changed nothing counted as one unsaved change.
+- **Numbers that disagreed with the Python that renders them elsewhere.** The panel's token
+  formatter rounded where Python truncates. The contrast checker graded four pairs against
+  Python's six. `plural(1.7, "task")` rendered `1 tasks`, because `%d` truncated while the
+  agreement was decided on the raw value. `share_pct` let a NaN whole through -- NaN is
+  truthy in Python -- and `fmt_share` rendered it `nan%`. Each is now held equal by a
+  differential test that asks live Python, and the NaN case is pinned on both sides
+  separately because JSON cannot carry it between them.
+- **The panel said "1 task(s)".** Two competing conventions for one job, thirty-one sites;
+  six of them put a count in front of a clause whose verb agrees too, which the literal
+  `(s)` could never express -- "1 task(s) are blocked", "1 linked item stay frozen".
+- **A focused control could land underneath the chrome pinned over it** (SC 2.4.11).
+  Measured before anything was written: 85 of 942 focus stops across six tabs and two
+  viewports were entirely covered.
+- **SC 2.5.3 Label in Name: six failures, measured, now none** -- and the tooltip-only ⓘ was
+  a focusable element that announced nothing (SC 4.1.2). Both are gates now rather than
+  probes that vanish.
+- **Reading the help edited the setting it explained.** Opening a field's explanation wrote
+  to the field. Gated.
+- **`--help` was treated as a filename and `--json` stopped being JSON** in `/audit:status`
+  and `/audit:doctor`.
+- **The shipped example carried the accessibility bug the plugin had already fixed**, because
+  nothing compared a committed artifact against what its source would now produce. It is
+  compared on every run now, which is what caught this release's own artifacts drifting.
+
+### Changed
+
+- **The assembled UI is parts, not four big files.** `panel.js` became twenty-one feature
+  parts, `panel.css` twenty-three, the report's script ten and its stylesheet thirteen --
+  every cut order-preserving and proven byte-for-byte identical, because the statement order
+  is a machine-checked contract and a "logical" regrouping would break it.
+- **The report's inline script is a `<script type="module">` and the file-spanning IIFE is
+  gone.** A module's own scope is what keeps the parts' top-level names off the page.
+  `import` between parts remains impossible on an opaque origin, which is why Python still
+  does the joining -- the experiment that measured this is recorded in the decision record,
+  along with the two claims it disproved.
+- **One dialect.** `report.js` had been ES5 with `var` and hand-rolled DOM assembly against a
+  modern panel, undocumented drift rather than a compatibility decision. Zero `var`, zero
+  `function ()`, and JSDoc on every function across both surfaces -- with concrete types,
+  never `{Object}`.
+- **A theme save's change rows carry `target`, not `scope`.** Both sides spelled it the way
+  nothing else in the protocol does, so the confirm dialog printed a blank target cell and
+  the phase lookup collected a null for every theme row. Journal entries for `theme.save`
+  record the new key.
+- **`/api/theme` no longer sends a `presets` field**, which nothing read and which contradicted
+  the reasoning two lines below it in the same payload.
+- **Published counts in the documentation are gone, and the command that prints them stays.**
+  Six figures in one table were wrong at once, twice over. A number carrying its command is
+  legal here; only deleting the number stops it rotting.
+- **`tools/capture-screenshots.mjs` pins its scratch root.** It read `TMPDIR`, so one host
+  under two environments painted two different paths into the topbar the panel photographs --
+  and fifteen committed PNGs "changed" for that reason alone.
+
 ## [0.40.0] - 2026-08-19
 
 **The panel's dropdown stops running away, the report's table starts answering — and
