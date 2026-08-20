@@ -109,6 +109,51 @@ const EXPECT_SITES = new Set();
 // it moves, and this file is edited from the top. Each names the sibling that
 // must have run INSTEAD, so the exemption is self-checking -- if both halves of
 // a pair go silent, that is a skipped leg and it fails.
+// A whole FEATURE can be absent from a plan, and then every check about it is
+// unrunnable rather than skipped. The harness already says so out loud at the
+// guard -- "no phase in this plan carries an area tag - area chips skipped" --
+// so the grader reads that note instead of demanding a site it could never have
+// reached. Keyed by the note's own words and by label PREFIX, never by line
+// number: this file is edited from the top.
+//
+// Without this the grader is a gate that only works on one report. Measured on a
+// plan with no areas, no authors and nothing ready: 29 of 133 sites unreachable
+// and every one of them correct.
+const FEATURE_ABSENT = [
+  { note: 'no author chips',
+    covers: ['the author view is a link', 'releasing the chip restores the top-8',
+             '...and the summary line leaves with it', '...and the au fragment leaves',
+             'the authors dropdown narrows', 'the dropdown selection is a link (au=',
+             '...and the author chips light', 'All authors restores',
+             '...and au= leaves the URL'] },
+  { note: 'no phase in this plan carries an area tag',
+    covers: ['an area chip reports itself as on', 'the area view is a link (a=',
+             'Clear filters restores the hidden phases',
+             '...and the chip stops reporting itself as on', '...and a= leaves the URL',
+             'the area dropdown keeps only', 'the dropdown selection is a link (a=',
+             'All areas restores every phase', '...and hides all',
+             'the "'] },
+  { note: 'nothing is ready in this plan',
+    covers: ['every ready task is a term', 'the list carries as many terms',
+             'every term names its task id', 'every definition says why',
+             'tasks of tagged phases wear the area chips'] },
+  { note: 'no status chips in this report',
+    covers: ['searching', '...and names how many', '...and the one press shows them',
+             '...with the search still applied'] },
+  { note: 'no heatmap in this report',
+    covers: [] },
+  // Not a missing feature but a plan whose DEFAULT VIEW is not "active" - every
+  // phase shares one status, so the renderer opens on all of them. The checks
+  // that ride that fragment and the archived-vs-active search cannot run, and
+  // the else-halves beside them do.
+  { note: 'a plan with nothing active opens on all phases',
+    covers: ['on load the archived phases are off screen',
+             '...and the view rides the shareable fragment',
+             'searching', '...and names how many',
+             '...and the one press shows them',
+             '...with the search still applied'] },
+];
+
 const CONDITIONAL_EXPECTS = [
   { label: 'a plan with nothing active opens on all phases',
     why: 'the else-half of the default-view branch: it runs only on a plan whose '
@@ -1767,8 +1812,13 @@ else notes.push('ok   no page errors');
         + `expect() call site declares any more — the exemption outlived its check`);
     }
   }
+  // A feature that reported itself absent excuses the sites that ask about it.
+  const absent = FEATURE_ABSENT.filter((f) => said.indexOf(f.note) >= 0);
+  const excusedByAbsence = (label) => absent.some((f) =>
+    f.covers.some((c) => c === label || c.startsWith(label) || label.startsWith(c)));
   const unexplained = missed.filter((d) => !d.label
-    || !CONDITIONAL_EXPECTS.some((c) => c.label.startsWith(d.label)));
+    || (!CONDITIONAL_EXPECTS.some((c) => c.label.startsWith(d.label))
+        && !excusedByAbsence(d.label)));
   if (unexplained.length) {
     failures.push(`FAIL ${unexplained.length} of ${declared.length} expect() call site(s) `
       + `never ran, so this report was graded on work that did not happen: `
@@ -1778,10 +1828,24 @@ else notes.push('ok   no page errors');
   // A pair whose BOTH halves went silent is a skipped leg wearing an exemption.
   for (const c of CONDITIONAL_EXPECTS) {
     const skipped = missed.some((d) => d.label && c.label.startsWith(d.label));
-    if (skipped && said.indexOf(c.instead) < 0) {
+    // A pair whose whole FEATURE is absent has no halves to run. Demanding one
+    // of them there turns a report that simply does not use areas into a
+    // failure, which is the overreach that gets a gate switched off.
+    if (skipped && !excusedByAbsence(c.label) && said.indexOf(c.instead) < 0) {
       failures.push(`FAIL "${c.label}" was skipped and so was its counterpart `
         + `"${c.instead}" — the exemption says one of the two always runs, and `
         + `neither did, which is a skipped leg rather than a branch not taken`);
+    }
+  }
+  // The table must describe this file, or it is a list of excuses for checks
+  // that no longer exist.
+  for (const f of FEATURE_ABSENT) {
+    for (const c of f.covers) {
+      if (!declared.some((d) => d.label
+          && (c === d.label || c.startsWith(d.label) || d.label.startsWith(c)))) {
+        failures.push(`FAIL the feature-absence table excuses ${JSON.stringify(c)}, `
+          + `which no expect() call site declares any more`);
+      }
     }
   }
   if (!unexplained.length) {

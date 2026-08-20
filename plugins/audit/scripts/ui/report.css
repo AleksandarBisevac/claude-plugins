@@ -772,8 +772,14 @@ tr.outside .btn{margin-left:.5rem}
   color:var(--muted)}
 /* Proportional figures on purpose: tabular-nums makes a big standalone value look
    loose. Columns of numbers below keep tabular alignment. */
+/* The delta pill sits beside the value on one line. A four-digit change reads
+   "+1104%", which is wider than a phone leaves for it, and a non-wrapping row
+   pushed the whole document sideways rather than the pill dropping under the
+   number. Wrapping costs a line on a narrow screen and nothing at all on a wide
+   one, where the row never fills. */
 .tile .v{font-size:1.55rem;font-weight:680;letter-spacing:-.02em;line-height:1.15;
-  margin-top:var(--sp-0);display:flex;align-items:baseline;gap:var(--sp-1)}
+  margin-top:var(--sp-0);display:flex;align-items:baseline;gap:var(--sp-1);
+  flex-wrap:wrap}
 .tile .s{font-size:.72rem;color:var(--muted);margin-top:var(--sp-0)}
 .dl{font-size:.72rem;font-weight:600;padding:.05rem .3rem;border-radius:var(--pill);
   letter-spacing:0}
