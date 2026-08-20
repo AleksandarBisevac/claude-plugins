@@ -225,7 +225,7 @@ function hTopicView(doc,id){
     (r||[]).map(cell=>el('td',{},hcode(cell))))));
   body.append(hsec(null,
     el('div',{class:'dtblwrap'},el('table',{class:'dtbl','data-htable':id},
-      el('thead',{},el('tr',{},(t.table.columns||[]).map(c=>el('th',{},c)))),tb)),
+      tableHead(t.table.columns||[]),tb)),
     t.table.caption?el('p',{class:'dcap'},hcode(t.table.caption)):null));}
  if((t.sources||[]).length)body.append(hsec('Stated in full in',
    el('div',{class:'dsrc'},t.sources.map(s=>el('span',{},s)))));

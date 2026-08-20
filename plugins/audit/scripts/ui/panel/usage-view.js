@@ -317,8 +317,8 @@ function renderUsage(){closeCombo();const c=$('#usage');
   el('div',{class:'mut small'},'Compared inside a band on purpose: hard work is '+
    'routed to the stronger model deliberately, so a raw spend-per-task comparison '+
    'across bands would flag that working system as a fault.'));
-  const tbl=el('table',{class:'utbl'},el('thead',{},el('tr',{},
-    ['risk','model','tasks','cost/task','mean attempts'].map(h=>el('th',{},h)))));
+  const tbl=el('table',{class:'utbl'},
+    tableHead(['risk','model','tasks','cost/task','mean attempts']));
   const tb=el('tbody',{});let last='';
   rows.forEach(r=>{tb.append(el('tr',{},el('td',{},r.risk===last?'':r.risk),
     el('td',{class:'mono'},r.model),el('td',{},String(r.tasks)),

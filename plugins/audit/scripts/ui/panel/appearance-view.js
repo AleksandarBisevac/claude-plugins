@@ -140,12 +140,9 @@ function renderAppearance(){closeCombo();
    // nothing on screen — correct, and baffling unless the table says so.
    const livemode=isDark()?'dark':'light';
    const tbl=el('table',{class:'thtbl'});
-   tbl.append(el('thead',{},el('tr',{},el('th',{},'token'),
-     el('th',{class:livemode==='light'?'thlive':'thoff'},'light',
-       livemode==='light'?el('span',{class:'mut'},' · previewing'):null),
-     el('th',{class:livemode==='dark'?'thlive':'thoff'},'dark',
-       livemode==='dark'?el('span',{class:'mut'},' · previewing'):null),
-     el('th',{}))));
+   const modeCol=m=>({attrs:{class:livemode===m?'thlive':'thoff'},label:m,
+     extra:livemode===m?el('span',{class:'mut'},' · previewing'):null});
+   tbl.append(tableHead(['token',modeCol('light'),modeCol('dark'),null]));
    const tb=el('tbody');
    g.tokens.forEach(name=>{
     const row=el('tr',{'data-thtoken':name});

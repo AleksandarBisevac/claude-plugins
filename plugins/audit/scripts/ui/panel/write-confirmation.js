@@ -624,8 +624,7 @@ function confirmChanges(o){
     el('td',{},cfVal(r.from,'was',r.field),el('span',{class:'cfarr'},'→'),
       cfVal(r.to,'now',r.field)))));
   d.append(el('div',{class:'cflist'},el('table',{class:'cftbl'},
-    el('thead',{},el('tr',{},el('th',{},'what'),el('th',{},'field'),
-      el('th',{},'change'))),tb)));
+    tableHead(['what','field','change']),tb)));
   const lk=o.lock===false?null:cfLock(o.rows,o.scope);
   if(lk)d.append(el('div',{class:'cflock'},
     el('div',{class:'findings '+lk.kind},lk.text)));

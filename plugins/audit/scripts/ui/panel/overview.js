@@ -226,8 +226,7 @@ function ovDetail(p){
     // A start stamp is labelled as one, or an unfinished task reads as finished.
     el('td',{class:'mut'},when+(t.completedAt?'':(when?' (started)':'')))));});
   box.append(el('table',{class:'ovtasks'},
-    el('thead',{},el('tr',{},el('th',{},'id'),el('th',{},'title'),el('th',{},'status'),
-      el('th',{},'risk'),el('th',{},'commit'),el('th',{},'done (UTC)'))),tb));}
+    tableHead(['id','title','status','risk','commit','done (UTC)']),tb));}
  if(p.desiredOutcome)box.append(el('div',{class:'mut small'},'Desired: '+p.desiredOutcome));
  box.append(el('div',{class:'row',style:'margin-top:.4rem'},
    el('button',{class:'btn small','data-ovedit':p.id,type:'button',
@@ -492,8 +491,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
      el('td',{class:'mono'},e.file||''),
      el('td',{class:'d'},e.reason||''))));
    gcard.append(el('div',{class:'regtblwrap'},el('table',{class:'regtbl'},
-     el('thead',{},el('tr',{},el('th',{},'when'),el('th',{},'event'),
-       el('th',{},'file'),el('th',{},'why'))),tb)));}
+     tableHead(['when','event','file','why']),tb)));}
   c.append(gcard);}
 
  // --- ready now ----------------------------------------------------------------

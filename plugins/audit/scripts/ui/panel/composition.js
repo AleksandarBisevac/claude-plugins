@@ -372,9 +372,10 @@ function renderComp(){closeCombo();
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
    // The two editable columns carry the reference for the whole column. A ⓘ per
    // row would be a thousand of them saying one thing.
-   el('thead',{},el('tr',{},el('th',{},'id'),el('th',{},'title'),el('th',{},'status'),
-     el('th',{},flabel('model',MDESC.taskModel,{comp:'taskModel',label:'Task model'})),
-     el('th',{},flabel('skills',MDESC.taskSkills,{comp:'taskSkills',label:'Task skills'})))),tbody)));
+   tableHead(['id','title','status',
+     {label:flabel('model',MDESC.taskModel,{comp:'taskModel',label:'Task model'})},
+     {label:flabel('skills',MDESC.taskSkills,{comp:'taskSkills',
+       label:'Task skills'})}]),tbody)));
 
  const open=COMPF.open;
  const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
@@ -524,7 +525,7 @@ function renderComp(){closeCombo();
      el('td',{},it.source?el('span',{class:'src badge'},it.source):null),
      el('td',{class:'d'},it.description||''))));
    host.replaceChildren(el('table',{class:'regtbl'},
-     el('thead',{},el('tr',{},el('th',{},'name'),el('th',{},'source'),el('th',{},'description'))),tb));};
+     tableHead(['name','source','description']),tb));};
  ['skills','agents','mcp'].forEach(k=>subtabs.append(el('button',{class:'subtab'+(k===cur?' on':''),
    onclick:e=>{cur=k;[...subtabs.children].forEach(x=>x.classList.toggle('on',x===e.currentTarget));drawTbl();}},
    k+' ('+(datasets[k]||[]).length+')')));

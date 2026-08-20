@@ -1594,13 +1594,17 @@ SHARED_CONCERNS = (
      "NOT EXTRACTED. Both sites guard correctly, but their FALLBACKS differ on "
      "purpose (the report selects the text, the panel uses execCommand and a "
      "toast), so the shared part is thin and needs the fallback injected."),
-    ("table header construction", None, "el('thead'", 15,
-     "NOT EXTRACTED, and the first row this registry gained from the SCOUT "
-     "rather than from reading: fifteen sites across eleven panel parts "
-     "hand-nest el('thead',{},el('tr',{},el('th',...)...)) from a list of "
-     "column labels. Five agents read all 8,584 lines of the panel and none "
-     "reported it, which is the case tools/find-shared-candidates.mjs exists "
-     "for. Panel-only, so the home is panel/core.js rather than shared/."),
+    ("table header construction", "panel/core.js", "el('thead'", 1,
+     "EXTRACTED into headRow/tableHead, and the row this registry gained from "
+     "the SCOUT rather than from reading - five agents read the whole panel and "
+     "none reported it. Fourteen of the fifteen sites are converted, including "
+     "every decorated one: a column may be a string, `null` for an action "
+     "column, or {attrs,label,extra}, which is three shapes rather than an "
+     "optional field per caller. The ONE left is browse-dialog's, which builds "
+     "an empty <thead> and fills it on every redraw - a different job, and "
+     "forcing it through a helper for the count's sake would be the tail "
+     "wagging the lint. Panel-only: `el()` is the panel's builder and the "
+     "report assembles its tables with createElement."),
     ("day <-> milliseconds", None, "864e5", 8,
      "NOT EXTRACTED. Eight sites across four panel parts spell the same "
      "conversion, in both directions. The needle is the CONSTANT rather than one "

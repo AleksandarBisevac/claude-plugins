@@ -443,7 +443,7 @@ def _cases(check):
           "title, status, risk as coloured TEXT, commit and the completion "
           "stamp to the minute",
           "function ovDetail(" in M.UI_HTML
-          and "el('th',{},'risk'),el('th',{},'commit'),el('th',{},'done (UTC)')"
+          and "tableHead(['id','title','status','risk','commit','done (UTC)'])"
           in M.UI_HTML
           and "class:'rk','data-risk':t.risk" in M.UI_HTML
           and ".rk[data-risk=\"high\"]{color:var(--err)}" in M.UI_HTML)
@@ -2348,7 +2348,14 @@ def _cases(check):
     for _m in re.finditer(r"el\('table',\{([^}]*)\}", _ir_slice):
         _src = _ir_call(_ir_slice, _ir_slice.index("(", _m.start()))
         _cm = re.search(r"class:'([^']*)'", _m.group(1))
-        _ir_tables.append((_cm.group(1) if _cm else "", "el('th'" in _src))
+        # A header cell, HOWEVER it is built. Three of these tables reached
+        # `el('th'` directly until the fifteen hand-nested headers across the
+        # panel became one `tableHead`/`headRow`; a census that only knew the old
+        # spelling would have reported three headerless tables in a tab whose
+        # headers had just been made harder to omit.
+        _ir_tables.append((_cm.group(1) if _cm else "",
+                           "el('th'" in _src or "tableHead(" in _src
+                           or "headRow(" in _src))
     _ir_classes = [c for c, _ in _ir_tables]
     # The vacuity guard, first and for the same reason ts0 exists: ir1 narrows
     # this set, and a slice that found nothing would report a tab with no
@@ -2373,7 +2380,15 @@ def _cases(check):
           "announced as never/in_progress rather than as a loose checkbox",
           "el('th',{scope:'row',class:'mono'},stt)" in M.UI_HTML
           and "el('td',{class:'mono'},stt)" not in M.UI_HTML
-          and M.UI_HTML.count("scope:'col'") == 3
+          # ONE spelling now, mapped over the three column names, where there
+          # were three copies of it. The count was a proxy for "all three
+          # columns are scoped" and it stopped being one the moment they came
+          # from a map - so what is checked here is that the scope is applied
+          # where the columns are BUILT, and the rendered grid is counted by
+          # assertStateMapAxes in tools/capture-screenshots.mjs, which can see
+          # the cells rather than the source that makes them.
+          and M.UI_HTML.count("scope:'col'") == 1
+          and "['manifest status','ADO state','never move'].map(h=>" in M.UI_HTML
           and "smTbl('phase'),smTbl('task'),smTbl('bug')" in M.UI_HTML)
     # The half a substring pin cannot see, so the numbers are the browser's:
     # `table-layout:fixed` takes its column widths from the table's FIRST ROW,

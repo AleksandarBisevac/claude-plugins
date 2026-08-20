@@ -92,7 +92,7 @@ function uMonthly(facts){
  const heads=['month','tokens'].concat(USAGE.showCost?['cost']:[])
    .concat(['msgs','tasks done','bugs','fixed','merged']);
  const tbl=el('table',{class:'utbl','data-umonthly':'1'},
-   el('thead',{},el('tr',{},heads.map(h=>el('th',{},h)))));
+   tableHead(heads));
  const tb=el('tbody');
  for(const k of show){
   const s=led.get(k)||[0,0,0],p=plan[k]||{};
@@ -240,9 +240,9 @@ function uHeatmap(facts){
   arrow('next','›',canNext));
  out.push(nav);
  const tbl=el('table',{class:'uhm','data-hmpeak':String(peak)});
- const hd=el('tr',{},el('th',{class:'uhmc'}));
- for(let h=0;h<24;h++)hd.append(el('th',{},h%6===0?p2(h):''));
- tbl.append(el('thead',{},hd));
+ // The corner cell, then one per hour with a label every sixth.
+ tbl.append(tableHead([{attrs:{class:'uhmc'}}].concat(
+   Array.from({length:24},(_x,h)=>h%6===0?p2(h):''))));
  const tb=el('tbody');
  rows.forEach(r=>{
   const tr=el('tr',{},el('th',{},r.label));

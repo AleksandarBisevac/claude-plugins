@@ -51,15 +51,14 @@ function pCapTable(kind,rows,full){
    title:'Expand — read the whole table without the frame. Esc closes it.',
    onclick:()=>polFullOpen()},'⤢ Expand'));
  const cols=POLICY.areaInfo||[];
- const head2=el('tr',{},el('th',{},'capability'),el('th',{},'source'),
-   el('th',{},'rule'),
-   cols.map(a=>el('th',{class:'ar'+(a.active?'':' dormant'),
+ const head2=tableHead(['capability','source','rule'].concat(
+   cols.map(a=>({attrs:{class:'ar'+(a.active?'':' dormant'),
      title:a.active
        ?('area '+a.tag+' has work in progress, so its rules apply right now')
        :('no phase tagged '+a.tag+' has work in progress, so its rules decide '
          +'nothing until one does')},
-     a.tag,el('span',{class:'mut'},a.active?'live':'dormant'))),
-   el('th',{},'verdict, and why'));
+     label:a.tag,extra:el('span',{class:'mut'},a.active?'live':'dormant')})),
+   ['verdict, and why']));
  const tb=el('tbody');
  shown.forEach(r=>{
   const tr=el('tr',{'data-pcap':r.name,'data-verdict':r.verdict});
@@ -84,7 +83,7 @@ function pCapTable(kind,rows,full){
    rows.length?el('button',{class:'btn small',type:'button','data-polclear':'1',
      onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},'Clear filters'):null)
  :el('div',{class:'poltblwrap'+(full?' full':''),id:full?'poltblfull':'poltbl'},
-   el('table',{class:'poltbl'},el('thead',{},head2),tb));
+   el('table',{class:'poltbl'},head2,tb));
  return {tools:tools,body:body};}
 
 /**
@@ -282,8 +281,7 @@ function renderPolicy(){closeCombo();
        'aria-label':'remove '+r.list+' rule '+r.pattern,
        onclick:()=>pEdit(()=>pDropPattern(kind,r.list,r.scope,r.pattern))},'×'))));});
   card.append(el('table',{class:'polrules'},
-    el('thead',{},el('tr',{},el('th',{},'scope'),el('th',{},'list'),
-      el('th',{},'pattern'),el('th',{},'matches now'),el('th',{}))),rtb));}
+    tableHead(['scope','list','pattern','matches now',null]),rtb));}
  card.append(pAddRow(kind));
  c.append(card);
 

@@ -979,10 +979,21 @@ def _cases(check):
           "allowing copies while finding none is a needle that has stopped "
           "working, and it would read exactly like a clean tree (dead: %r)"
           % (_live, _dead), not _dead)
-    check("sc3 the two EXTRACTED concerns allow nothing outside their home, "
-          "which is what makes them extracted rather than merely tidied",
-          all(allowed == 0 for _c, home, _n, allowed, _w in M.SHARED_CONCERNS
-              if home is not None)
+    # A HOME used to imply an allowance of zero, and that held while every homed
+    # row was fully extracted. The table-header row broke it honestly: fourteen of
+    # fifteen sites reach the helper, and the fifteenth builds an empty <thead>
+    # and fills it on every redraw - a different job, which forcing through the
+    # helper for this lint's sake would be the tail wagging the dog. So a residual
+    # is allowed and must be DECLARED here, which is what stops "extracted, with
+    # an exception" from quietly becoming "extracted, with several".
+    _RESIDUAL = {"table header construction"}
+    _homed = [(c, a) for c, home, _n, a, _w in M.SHARED_CONCERNS if home is not None]
+    _undeclared = sorted(c for c, a in _homed if a > 0 and c not in _RESIDUAL)
+    _stale = sorted(c for c, a in _homed if a == 0 and c in _RESIDUAL)
+    check("sc3 an EXTRACTED concern allows nothing outside its home, unless its "
+          "residual is declared here - undeclared %r, and %r declared a residual "
+          "it no longer has" % (_undeclared, _stale),
+          not _undeclared and not _stale
           and any(home is not None for _c, home, _n, _a, _w in M.SHARED_CONCERNS))
     check("sc4 every row carries a reason, because a bare number in this table "
           "is a number nobody can re-derive the intent of",

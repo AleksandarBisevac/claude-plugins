@@ -376,6 +376,39 @@ function runContained(steps){
   catch(cause){const name=step.name||'(anonymous)';broke.push(name);
    console.error('panel step failed: '+name,cause);}}
  return broke;}
+/**
+ * One row of column headers, from a list of columns.
+ *
+ * Fifteen sites across eleven parts hand-nested `el('th',...)` from a list of
+ * labels, and this is the row the SCOUT found rather than a reader: five agents
+ * read the whole panel and none reported it, because each copy is short enough
+ * to look like the cheapest thing available.
+ *
+ * A column is one of three things and no more, which is the point — a helper
+ * that grew an optional field per caller would be the duplication again with
+ * extra steps:
+ *
+ *   a STRING  — a plain header cell
+ *   `null`    — an empty one, which every table with an action column needs
+ *   an OBJECT — `{attrs, label, extra}`, where `attrs` goes to `el` verbatim
+ *               rather than being re-listed here field by field
+ *
+ * Panel-only, so it lives here and not in `shared/`: `el()` is the panel's
+ * builder and the report has none — it assembles its tables with
+ * `createElement`, which is a different job and not one to unify by adding a
+ * parameter to this.
+ *
+ * ONE function, not a `headRow` and a `tableHead`. The row was briefly its own
+ * helper for the single caller that had a `<thead>` already; giving that caller
+ * the whole `<thead>` instead was smaller than keeping a seam for it.
+ *
+ * @param {Array<?string|{attrs: (Object|undefined), label: (*|undefined),
+ *   extra: (*|undefined)}>} cols - one entry per column, in order
+ * @returns {HTMLTableSectionElement} the `<thead>`, holding one row
+ */
+const tableHead=cols=>el('thead',{},el('tr',{},cols.map(c=>
+ (c==null||typeof c==='string')?el('th',{},c)
+ :el('th',c.attrs||{},c.label,c.extra))));
 /** How long a plain success stays in a savebar's note slot before it dissolves. */
 const SAVE_NOTE_MS=5000;
 /**

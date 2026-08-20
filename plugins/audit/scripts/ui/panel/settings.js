@@ -655,8 +655,8 @@ function pricingField(cfg,d){
  const shipped=((d&&d.usage)||{}).pricing||{};
  const draw=()=>{wrap.textContent='';
   const over=cur(),models=[...new Set([...Object.keys(shipped),...Object.keys(over)])].sort();
-  const tbl=el('table',{class:'ptbl'},el('thead',{},el('tr',{},
-    el('th',{},'model'),COLS.map(([,l])=>el('th',{class:'n'},l)),el('th',{}))));
+  const tbl=el('table',{class:'ptbl'},tableHead(['model'].concat(
+    COLS.map(([,l])=>({attrs:{class:'n'},label:l})),[null])));
   const tb=el('tbody');
   models.forEach(m=>{
    const def=shipped[m]||{},row=over[m]||{};

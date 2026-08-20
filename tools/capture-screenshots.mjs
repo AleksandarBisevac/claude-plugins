@@ -5986,6 +5986,95 @@ async function assertAppearanceWorks(page) {
  * nothing to throw away" describes a known state rather than whatever the
  * preceding checks left behind.
  */
+/**
+ * SC 1.3.1, read off the RENDERED page: every table has header cells, and the
+ * stateMap grid names both of its axes.
+ *
+ * This exists because the selftest that used to carry the claim could only see
+ * source text. It asserted `el('th'` inside each table builder and counted
+ * `scope:'col'` at three - both fair proxies while three builders each nested
+ * their own headers, and neither survivable once the fifteen hand-nested headers
+ * across the panel became one `tableHead`. The count went to one because there is
+ * one spelling now, mapped over three column names, which is a better state of
+ * affairs that the proxy reads as a regression.
+ *
+ * So the proxy stays where it belongs - "the builders reach the helper" is a
+ * source fact - and the claim it was standing in for is answered here, from the
+ * cells that actually exist.
+ */
+async function assertTableHeaders(page) {
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => document.querySelector('#guards')?.children.length > 0,
+    { timeout: 10000 }).catch(() => {});
+  const tabs = await page.$$eval('.tab', (bs) => bs.map((b) => b.getAttribute('data-t')));
+  for (const t of tabs) { await tabTo(page, t); await page.waitForTimeout(200); }
+
+  const found = await page.evaluate(() => Array.from(document.querySelectorAll('table'))
+    .map((tb) => ({
+      cls: tb.className || '(none)',
+      view: (() => {
+        for (let n = tb; n; n = n.parentElement) {
+          if (['guards', 'comp', 'over', 'usage', 'policy', 'look'].includes(n.id)) return n.id;
+        }
+        return '(none)';
+      })(),
+      ths: tb.querySelectorAll('th').length,
+      // A data row is one with a td in it, so a table that is nothing BUT
+      // headers is not reported as missing them.
+      dataRows: Array.from(tb.rows).filter((r) => r.querySelector('td')).length,
+      colScoped: tb.querySelectorAll('th[scope="col"]').length,
+      rowScoped: tb.querySelectorAll('th[scope="row"]').length,
+    })));
+
+  // The vacuity guard first: everything below narrows this set.
+  if (found.length < 6) {
+    fail(`tables: only ${found.length} table(s) found across ${tabs.length} tab(s) `
+       + '\u2014 too few to be checking anything, so either the fixture stopped '
+       + 'reaching the views that build them or they stopped being tables');
+    return;
+  }
+  // EVERY table, not only the ones with rows in this fixture. Gating on
+  // `dataRows > 0` was the first version and it passed a deliberate mutation:
+  // the policy rules table has no rules on this fixture, so removing its headers
+  // was invisible. A table declares its columns whether or not this project
+  // happens to fill it, and "the fixture did not exercise it" is the one excuse a
+  // gate must never make silently.
+  const bare = found.filter((t) => t.ths === 0);
+  const empty = found.filter((t) => t.dataRows === 0);
+  if (bare.length) {
+    fail('tables: ' + bare.length + ' table(s) with NO header cell at all '
+       + '\u2014 SC 1.3.1 needs the axes named: '
+       + bare.map((t) => `#${t.view} .${t.cls}`).join(', '));
+  } else {
+    // NAMED, not counted. This can only see the tables this fixture RENDERS -
+    // the policy rules table needs rules to exist before it is built at all, and
+    // a mutation removing its headers passed here for exactly that reason. A
+    // reader who can see the covered set can see what is missing from it; a bare
+    // count hides the gap it has.
+    note(`tables: ${found.length} table(s) across ${tabs.length} tab(s), every one `
+       + `carries header cells (${empty.length} empty of data, checked anyway) - `
+       + found.map((t) => `#${t.view} .${t.cls}`).sort().join(', '));
+  }
+
+  // The stateMap grids specifically, because their ROW axis is what carries the
+  // meaning: the column says what kind of value, the row says which transition.
+  const grids = found.filter((t) => /adosm/.test(t.cls));
+  if (grids.length !== 3) {
+    fail(`tables: expected three stateMap grids (phase, task, bug), found `
+       + `${grids.length} \u2014 the axis check below would pass over the wrong set`);
+  } else {
+    const wrong = grids.filter((g) => g.colScoped !== 3 || g.rowScoped < 1);
+    if (wrong.length) {
+      fail('tables: a stateMap grid does not name both axes \u2014 '
+         + wrong.map((g) => `col=${g.colScoped} row=${g.rowScoped}`).join(', ')
+         + ' (three scope=col and at least one scope=row are the claim)');
+    } else {
+      note('tables: all three stateMap grids name both axes '
+         + `(3 scope=col, ${grids[0].rowScoped} scope=row each)`);
+    }
+  }
+}
+
 async function assertSavebarCensus(page) {
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#guards')?.children.length > 0,
@@ -7688,6 +7777,7 @@ async function main() {
       // to the same writes-last discipline and runs after live-data.
       await assertGateCard(page, big);
       await assertSavebarCensus(page);
+      await assertTableHeaders(page);
 
       // ---- the policy switchboard, on a fixture of its own ---------------------
       // Its own project and its own HOME — see writePolicyFixture for why a tab

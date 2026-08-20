@@ -209,10 +209,8 @@ function renderAdoCard(c){
   // tree, which is the one thing it must not do.
   return el('div',{class:'f'},flabel(kind+' states',MDESC.adoStateMap),
     el('table',{class:'regtbl adosm'},
-      el('thead',{},el('tr',{},
-        el('th',{scope:'col'},el('span',{class:'vh'},'manifest status')),
-        el('th',{scope:'col'},el('span',{class:'vh'},'ADO state')),
-        el('th',{scope:'col'},el('span',{class:'vh'},'never move')))),tb));};
+      tableHead(['manifest status','ADO state','never move'].map(h=>
+        ({attrs:{scope:'col'},label:el('span',{class:'vh'},h)}))),tb));};
  card.append(el('div',{class:'row'},smTbl('phase'),smTbl('task'),smTbl('bug')));
  // --- the done move: Remaining Work + generated comments
  const rwCur=getPath(ADRAFT||{},'onComplete.remainingWork');
