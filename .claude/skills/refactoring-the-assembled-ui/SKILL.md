@@ -160,6 +160,30 @@ them red.
 Treat each red pin as a **review checkpoint, and update it on purpose**. A pin deleted rather than
 updated is the failure this whole area is guarded against.
 
+### Read the label against the clauses before you update
+
+**A pin whose label names a BEHAVIOUR while its clauses assert HOW the code is written keeps
+passing after the behaviour is gone.** Three went red on one day for this reason, and all three
+were right to: one labelled "a tip whose anchor was re-rendered away is hidden" asserted that
+`boot` ended with `startTipPlacement();`; one labelled "the topbar names the identity a write will
+be recorded under" asserted the spelling of the render sequence; one labelled "the refresh defers
+while a control in a CLEAN form is focused" asserted a hand-typed CSS selector. Each clause was a
+fair proxy the day it was written, and none of them would have failed if the behaviour it was
+named for had been deleted.
+
+So when a pin goes red, ask which of the two it was really holding:
+
+- **A behaviour** — move it to a suite that can execute the behaviour (`tools/ui-tests/*.test.mjs`
+  for a pure function or a control-flow claim, the browser gates for anything painted), and leave
+  behind only the construct that suite depends on, labelled as a construct.
+- **A property of the source** — "there is no second list of view ids", "these three sites call one
+  function", "this file contains no wall-clock call". Source text is the right instrument for those
+  and nothing else can check them. Say so in the label.
+
+A slice endpoint that stops resolving is the good outcome, not the bad one: it raises. The bad
+outcome is an endpoint that still resolves somewhere else, because the window then silently
+changes size and the assertion goes on passing about a different span.
+
 Negative pins worth memorising: no hand-tuned sticky offset may reappear; the name `--chip-ink`
 is forbidden; and `report.js` may contain **no wall-clock call at all** (`Date.now()`, `new
 Date()`), which constrains what a shared date helper may contain.

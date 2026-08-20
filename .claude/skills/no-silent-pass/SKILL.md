@@ -85,6 +85,32 @@ thing being asserted could legitimately appear more than once.
 Assert the escaped form is **present**, not only that the dangerous form is absent — otherwise a
 filter that silently deletes the whole field passes.
 
+## A lint that reads text will read yours
+
+Several guards here scan source as TEXT rather than as code: `_refs` looks for a `.py` basename
+anywhere under `tools/`, `_output.prose_number_claims()` and `_deps.doc_prose_numbers()` look for a
+cardinality in prose, `_ui_theme` looks for an undeclared `var(--…)`, and the shared layer forbids
+naming a scheme it must not depend on. **None of them can tell your code from your comment about
+your code**, and the usual way to meet one is to explain it — the explanation contains the shape.
+
+It has happened six times: `path.join(SCRIPTS, …)` written in a comment, a `var(--viz-N)` inside a
+JSDoc, the four letters of a scheme in a sentence saying the panel is served over one, a lint whose
+own comment and own fixture failed the lint, and — twice in one edit — a test field abbreviated to
+the two letters of the Python extension, first in the code and then in the comment added to explain
+why the code had been renamed.
+
+Every one of those firings was **correct**. The pattern to learn is not "the pattern is too broad";
+it is:
+
+- **Repair by rewording, not by widening.** A pattern loosened to admit your prose stops catching
+  the thing it exists for, and you will not notice, because the case that would have caught it is
+  the one you just changed.
+- **Describe the shape without spelling it.** "a field abbreviated to the two letters of the Python
+  extension" survives the scanner; the literal does not.
+- **Build a forbidden literal rather than writing it**, when a fixture genuinely needs one.
+- **Re-run the lint after writing the comment**, not only after writing the code. The second firing
+  above cost a full cycle purely because the comment was assumed to be inert.
+
 ## Pick fixture values that separate the bug from the fix
 
 A case survives mutation most often because its *data* cannot tell the two implementations apart.
