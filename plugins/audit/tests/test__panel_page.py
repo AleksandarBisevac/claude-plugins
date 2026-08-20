@@ -898,6 +898,25 @@ def _cases(check):
           "data-thpreset" in M.UI_HTML and "{use:sel.value}" in M.UI_HTML
           and "data-thsaveas" in M.UI_HTML and "saveAs:name.trim()" in M.UI_HTML)
 
+    # THREE PLACES SAY HOW MUCH IS UNSAVED and they must read ONE function. The
+    # pill in the head, the out-of-band repaint that keeps it current under a
+    # drag, and the rows the save sends. Two of them have already drifted twice:
+    # once when the repaint counted `tChanges()` while the render counted tokens
+    # plus layout, and again when both counted the DEFAULT-relative set while the
+    # word on screen said "unsaved". The values are driven in
+    # tools/ui-tests/theme-surface.test.mjs and the pill is read from the live
+    # page by capture-screenshots.mjs; this is the part those two cannot see -
+    # that the three sites ask the SAME question.
+    check("th-p13 the pill, the repaint and the save all count tChangeRows - "
+          "one question, asked once",
+          "const nch=tChangeRows().length;" in M.UI_HTML
+          and "const n=tChangeRows().length;" in M.UI_HTML
+          and "const rows=tChangeRows();" in M.UI_HTML
+          # ...and the default-relative set is still what the CHANGES CARD shows,
+          # which says so in its own header. Two meanings, both named.
+          and "const changes=tChanges().concat(tLayChanges());" in M.UI_HTML
+          and "this is the theme minus the default" in M.UI_HTML)
+
     check("th-p8 export hands over a FILE and import takes only JSON - the "
           "compiled .css goes one way, so no importer ever parses CSS",
           "data-thexport" in M.UI_HTML and "function tImport(" in M.UI_HTML

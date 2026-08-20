@@ -369,16 +369,18 @@ function tLayChanges(){
     from:base.density||shipped,to:cur.density||shipped,layout:1});
  Object.keys(cur.order||{}).forEach(view=>{
   const now=(cur.order[view]||[]).join(', ');
-  // Measured against the SAVED order, unlike the density above it, which is
-  // measured against the shipped default. So a theme file that names an order
-  // reads as no change while one that names a density reads as one change the
-  // moment it is worn.
+  // Measured against the SAVED order, like the density above it. This comment
+  // used to say "unlike the density, which is measured against the shipped
+  // default" - true when it was written, and left standing four lines below the
+  // note explaining that the density had been changed to match. Two comments in
+  // one function disagreeing about one rule is worse than neither.
   const was=((base.order||{})[view]||[]).join(', ');
   // An order equal to the DRAWN one is not a change: moving a card down and
   // back up must leave the tab saying "no changes", not offering to write an
-  // order that says what the default already says.
-  const shipped=((THEME&&THEME.cards)||{})[view];
-  const isDefault=Array.isArray(shipped)&&now===shipped.join(', ');
+  // order that says what the default already says. Named `drawn` rather than
+  // shadowing the density's `shipped` above, which is a different default.
+  const drawn=((THEME&&THEME.cards)||{})[view];
+  const isDefault=Array.isArray(drawn)&&now===drawn.join(', ');
   if(now&&now!==was&&!isDefault)out.push({token:'layout · order · '+view,mode:'',
     from:was||'(default)',to:now,layout:1});});
  return out;}

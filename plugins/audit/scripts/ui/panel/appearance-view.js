@@ -55,7 +55,13 @@ function renderAppearance(){closeCombo();
  if(THEME.error)head.append(el('div',{class:'findings warn','data-therr':'1'},
    THEME.error));
  const bar=el('div',{class:'row'});
- const nch=changes.length;
+ // UNSAVED, not "differs from the built-in look". The card below shows the
+ // second thing and says so in its own header; this pill sits beside Save and
+ // says what Save will report, so it counts the rows Save actually sends. It
+ // counted the card's set, so a project wearing a theme opened claiming unsaved
+ // changes nobody had made - and now that beforeunload reads the same registry,
+ // the pill would have contradicted a close that went through without a word.
+ const nch=tChangeRows().length;
  bar.append(el('span',{class:'pill'+(nch?' unsaved':''),'data-thcount':String(nch)},
    nch?(nch+' unsaved change'+(nch===1?'':'s')):'no changes'));
  // Which saved theme is worn, and Save-as beside it: a preset here is a FILE
@@ -343,16 +349,17 @@ function tSoon(){if(TSOON)clearTimeout(TSOON);
  * fight the drag — but a counter that only caught up 350ms later would read as
  * a stuck control.
  *
- * Counts the SAME set renderAppearance counts — token rows plus layout rows. It
- * used to count `tChanges()` alone, so typing a colour while a density or a card
- * order was pending dropped the layout rows out of the pill until `tSoon`
- * rebuilt the tab 350ms later: one sentence, two different numbers, in the
- * control whose whole job is saying how much is unsaved.
+ * Counts the SAME set the pill above is built with — `tChangeRows`, which is
+ * what Save sends. It used to count `tChanges()` alone, so typing a colour while
+ * a density or a card order was pending dropped the layout rows out of the pill
+ * until `tSoon` rebuilt the tab 350ms later: one sentence, two different
+ * numbers, in the control whose whole job is saying how much is unsaved. Reading
+ * a different SET from the render was the same bug one level up.
  * @returns {void}
  */
 function tRepaintBar(){
  const pill=$('#look [data-thcount]');if(!pill)return;
- const n=tChanges().length+tLayChanges().length;
+ const n=tChangeRows().length;
  pill.textContent=n?(n+' unsaved change'+(n===1?'':'s')):'no changes';
  pill.setAttribute('data-thcount',String(n));
  pill.className='pill'+(n?' unsaved':'');}
