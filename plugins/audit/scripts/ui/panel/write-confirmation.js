@@ -130,6 +130,25 @@ function surfaceDirty(k){const r=editRows(k);return r===null||r.length>0;}
  *   empty when the panel is clean
  */
 function dirtyRows(){return Object.keys(EDITS).reduce((a,k)=>a.concat(editRows(k)),[]);}
+/**
+ * Which VIEWS a disk refresh would leave alone, because they hold unsaved edits.
+ *
+ * Keyed by the view's container id, and that is NOT the same set as the registry
+ * keys: the ADO card has an entry of its own but no container of its own - it
+ * lives inside #comp - so its rows keep THAT view dirty.
+ *
+ * Asked in one place because both readers need the same answer. `refreshFromDisk`
+ * decides from it which views to re-render, and `interacting()` decides from it
+ * whether to defer the refresh at all. When the two spelled it separately they
+ * disagreed about exactly this fold, and a caret resting in an untouched
+ * Composition field then froze the live view for as long as the ADO card below it
+ * was dirty - deferring a refresh that would have skipped #comp anyway.
+ *
+ * @returns {Object<string, boolean>} true for a view the refresh must not rebuild
+ */
+function dirtyViews(){return {guards:surfaceDirty('guards'),
+ comp:surfaceDirty('comp')||surfaceDirty('ado'),
+ policy:surfaceDirty('policy')};}
 addEventListener('beforeunload',ev=>{
  // `some(surfaceDirty)` rather than `dirtyRows().length`: a surface whose rows
  // could not be computed counts as dirty, and its rows cannot appear in a list.

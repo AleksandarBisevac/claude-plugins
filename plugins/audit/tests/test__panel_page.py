@@ -1831,10 +1831,17 @@ def _cases(check):
           "defers nothing, since the refresh never rebuilds it (F-P-1b)",
           "function interacting(" in M.UI_HTML
           and "if(comboOpen())return true;" in M.UI_HTML
-          and "const v=a.closest('#comp,#guards,#policy');" in M.UI_HTML
+          # The selector is DERIVED from dirtyViews, never typed here as a
+          # second list - the two spellings disagreed about the ADO fold, and a
+          # caret in a clean Composition field then froze the live view. Which
+          # carets defer is driven for real in
+          # tools/ui-tests/refresh-deferral.test.mjs; these keep the derivation.
+          and "const views=dirtyViews();" in M.UI_HTML
+          and "const v=a.closest(Object.keys(views).map(id=>'#'+id).join(','));"
+              in M.UI_HTML
           # ...and ONLY there: a caret in Overview's or Usage's search box is a
           # filter, whose state the refresh preserves, so it defers nothing.
-          and "return !!v&&!surfaceDirty(v.id);}" in M.UI_HTML
+          and "return !!v&&!views[v.id];}" in M.UI_HTML
           and "&&!interacting()){FP=fp;refreshFromDisk();}" in M.UI_HTML)
 
     # --- v0.34 C2 (mc): the model combo, three sources -------------------------
@@ -1972,7 +1979,7 @@ def _cases(check):
     check("lv: dirtiness is judged BEFORE the state swap and only clean views "
           "re-render - a dirty one keeps its edits and gets the persistent "
           "notice instead",
-          "const dirty={guards:surfaceDirty('guards')" in _rfd
+          "const dirty=dirtyViews();" in _rfd
           and "if(!dirty.guards)reRender('guards',renderSettings);"
               "else staleNote('guards');" in _rfd
           and "if(!dirty.comp)reRender('comp',renderComp);"

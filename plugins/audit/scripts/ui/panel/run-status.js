@@ -84,12 +84,15 @@ function interacting(){
  // who leaves the cursor in a search box must not freeze the live view for the
  // rest of the session — which is exactly what the first version of this did,
  // caught by the out-of-band write test one step later.
- const v=a.closest('#comp,#guards,#policy');
+ // The views, and their dirtiness, from the one map the refresh itself reads -
+ // never a second list of ids typed here. The selector is derived from it.
+ const views=dirtyViews();
+ const v=a.closest(Object.keys(views).map(id=>'#'+id).join(','));
  // A CLEAN form defers the refresh; a dirty one does not, because the refresh
- // never rebuilds a dirty view. `surfaceDirty` also answers true when the rows
+ // never rebuilds a dirty view. The map also answers true when a surface's rows
  // could not be read, which lands on "do not defer" — correct, because the
  // refresh will then leave the view alone anyway.
- return !!v&&!surfaceDirty(v.id);}
+ return !!v&&!views[v.id];}
 /**
  * One tick: fetch the narrow payload, hand a moved disk stamp off, and repaint
  * Overview if — and only if — something a badge shows actually changed.

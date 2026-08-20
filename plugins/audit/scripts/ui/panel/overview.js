@@ -47,16 +47,11 @@ function staleNote(id){const slot=$('#'+id+' .findings-slot');
  *   position has been scheduled for restoration
  */
 async function refreshFromDisk(){
- // Dirtiness is judged BEFORE the state swap: the EDITS closures compare each
- // form against STATE, and a swapped STATE would misjudge every open form.
- // The ADO card lives inside #comp, so its unsaved edits keep that view dirty
- // too — a disk refresh must not eat them any more than the form's own.
- // surfaceDirty, not `.length>0`: a surface that could not be read is treated as
- // dirty, so it keeps its edits and gets the notice instead of being re-rendered
- // out from under whoever was typing in it.
- const dirty={guards:surfaceDirty('guards'),
-   comp:surfaceDirty('comp')||surfaceDirty('ado'),
-   policy:surfaceDirty('policy')};
+ // BEFORE the state swap, and that is this line's position rather than
+ // dirtyViews' business: the registered closures compare each form against
+ // STATE, so a swapped STATE would misjudge every open form. What counts as
+ // dirty - and why an unreadable surface counts - belongs to dirtyViews.
+ const dirty=dirtyViews();
  const y=window.scrollY;
  try{
   STATE=await api('GET','/api/state');
