@@ -96,46 +96,32 @@ each; **the report emits three `<script>` tags** — `window.AUDIT_USAGE`, the b
 and the code. The pin that reads `SCRIPT.count("<script>") == 1` counts tags in a **Python
 string**, not in the page, so it does not contradict this and never did.
 
-**822 substring assertions guard the assembled output** (as of `73042a1` — re-derive, see
-below), and they live in `plugins/audit/tests/` — not in the scripts that build it. Some
-*require* duplication to stay as it is. What a UI change has to budget for, by what it pins:
-
-| target | pins | built by |
-|---|---:|---|
-| `UI_HTML` | 676 | the panel page |
-| `_SCRIPT` | 96 | the report's code block |
-| `_CSS` | 51 | the report's stylesheet |
-| `TOKEN_CSS` | 11 | `_ui_theme.py` |
-
-Only **62 are CSS-shaped** (`_CSS` + `TOKEN_CSS`); the rest pin JavaScript. A further **50
-assertions slice by `.index()` for statement *order*** — 26 in `test__panel_page.py`, 20 in
-`test_render_report.py`, 4 elsewhere.
-
-**Every figure above rots, and all of them had.** The count read 737 against a real 822; the
-table read 578/100/48/11 against 676/96/51/11; the CSS figure read 59 against 62; and the order
-figure read *"118 — 47 in one file, 39 in the other"*, which is 86 by its own arithmetic and 50
-in fact, because it counted `.index()` CALLS and a slice takes two of them. Each was true when
-written.
-
-Two of those were already scars: the count once stood at "~70", which was roughly the **CSS**
-number presented as if it covered everything, and the replacement written to fix that was itself
-off by 73. So a third regex was not the answer.
-
-**Do not trust the numbers above — print them:**
+**Substring assertions guard the assembled output**, and they live in `plugins/audit/tests/` —
+not in the scripts that build it. Some *require* duplication to stay as it is. What a UI change
+has to budget for is the pins against the surface it touches, so **print them before you start**:
 
 ```bash
 python3 tools/count-ui-pins.py            # add --json for a machine-readable shape
 ```
 
-That tool walks the AST, which is what the greps could not do. A line-based regex cannot see a
-pin whose literal is split across lines (the closing line reads `in M.UI_HTML)` with no literal
-on it), and it cannot express a comparison whose left side is not a literal at all
-(`json.dumps(M._cfg_enums(), sort_keys=True) in M.UI_HTML`). The documented grep under-reported
-by **36** at this commit for those two reasons — one needs the parser's idea of a line, the other
-its idea of an expression.
+It reports each target separately, because that is what a change budget needs: `UI_HTML` is the
+panel page, `_SCRIPT` the report's code block, `_CSS` the report's stylesheet, `TOKEN_CSS`
+`_ui_theme.py`. It also separates the **literal** left-hand sides from the **computed** ones, and
+counts the `.index()` slices that pin statement *order* — which fail differently, because moving
+an endpoint silently changes what the window covers.
 
-The tool separates **822 literal** left-hand sides (the text pins) from **12 computed** ones, and
-that separation is the point: a number is only as good as the scope attached to it.
+**This section used to carry those numbers, and every one of them rotted.** Six figures were wrong
+at once here, twice: a total, a four-way table, a CSS subtotal, and an order figure that had
+counted `.index()` CALLS when a slice takes two of them. Two of those were already scars — the
+total once stood at "~70", which was roughly the CSS number presented as if it covered everything,
+and the replacement written to fix that was wrong too. So the numbers are gone and the command
+stays, which is what this file's own rule about numbers in prose prescribes.
+
+The tool walks the AST, which is what the greps before it could not do. A line-based regex cannot
+see a pin whose literal is split across lines — the closing line reads `in M.UI_HTML)` with no
+literal on it — and cannot express a comparison whose left side is not a literal at all
+(`json.dumps(M._cfg_enums(), sort_keys=True) in M.UI_HTML`). Those two blind spots are why a
+documented grep under-reported by dozens and why a third regex was never the answer.
 
 **Read the `refactoring-the-assembled-ui` skill before editing anything under `scripts/ui/`, or
 `_ui_theme.py`.** Neither surface is a single file any more — the report's script and stylesheet

@@ -55,10 +55,9 @@ single self-contained HTML page. Almost every surprise in this area comes from f
 ## Splitting: cut, never regroup
 
 The current statement order is a **machine-checked contract**, and the suites that hold it now
-live in `plugins/audit/tests/`, not in the scripts that build the page: **26 index-bounded
-slices in `test__panel_page.py`, 20 in `test_render_report.py` and 4 elsewhere — 50 in all**
-(`73042a1`; print it with `python3 tools/count-ui-pins.py`). This read "47 and 39" and counted
-`.index()` CALLS, of which a slice takes two.
+live in `plugins/audit/tests/`, not in the scripts that build the page — index-bounded slices,
+counted per file by `python3 tools/count-ui-pins.py`. A figure here once read "47 and 39" because
+it counted `.index()` CALLS, of which a slice takes two, so the count stays in the tool.
 
 The shape is usually a *negative over a slice* rather than a simple "A before B" — for example
 `"renderSettings()" not in UI_HTML[index("async function pollRunStatus") : index("// ----------
@@ -127,32 +126,32 @@ pass untouched. That makes the cut provably behaviour-free.
 
 ## The pins are the budget
 
-**822 substring assertions** guard the assembled artifacts (`73042a1`), and they live in
-`plugins/audit/tests/`. Budget by what a change touches, because the split is very uneven:
-
-| target | pins | a change to… |
-|---|---:|---|
-| `UI_HTML` | 676 | anything in `panel.{css,js}` |
-| `_SCRIPT` | 96 | `report.js` |
-| `_CSS` | 51 | `report.css` |
-| `TOKEN_CSS` | 11 | `_ui_theme.py` |
-
-**Only 62 of them are CSS-shaped.** This section once said "~70 … against the assembled
-stylesheet", which was about right *for CSS* — and that scoped number then travelled elsewhere as
-if it covered everything. Attach the scope to the number or it will travel without it.
-
-**Print the figures rather than reading them here:**
+Substring assertions guard the assembled artifacts, and they live in `plugins/audit/tests/`.
+The split across targets is very uneven, so **budget by printing it, not by reading it here**:
 
 ```bash
 python3 tools/count-ui-pins.py            # --json for a machine-readable shape
 ```
 
-It walks the AST, and the two greps that preceded it could not. A line-based regex cannot see a
+| target | a change to… |
+|---|---|
+| `UI_HTML` | anything in `panel.{css,js}` |
+| `_SCRIPT` | `report.js` |
+| `_CSS` | `report.css` |
+| `TOKEN_CSS` | `_ui_theme.py` |
+
+**The counts used to be in that table and every one of them rotted, repeatedly.** The total once
+read "~70", which was roughly the CSS subtotal presented as if it covered everything; the
+replacement written to fix that was wrong too; the four-way split was wrong on all four; and the
+order figure had counted `.index()` CALLS when a slice takes two of them. A scoped number travels
+without its scope, so the numbers are gone and the command stays.
+
+The tool walks the AST, and the greps that preceded it could not. A line-based regex cannot see a
 pin whose literal is split across lines — the closing line reads `in M.UI_HTML)` with no literal
-on it — and cannot express a comparison whose left side is not a literal at all. The documented
-grep under-reported by 36; the one before it, written to fix an earlier mistake, was off by 73.
-The tool separates **822 literal** left-hand sides from **12 computed** ones, which is the
-distinction both greps silently collapsed.
+on it — and cannot express a comparison whose left side is not a literal at all. It also separates
+LITERAL left-hand sides from COMPUTED ones, which is the distinction both greps silently collapsed,
+and counts the `.index()` slices that pin statement order separately, because those fail
+differently.
 
 Some pin multi-line source text *including newlines and leading spaces*, so reflowing a rule turns
 them red.

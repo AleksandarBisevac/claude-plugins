@@ -58,9 +58,15 @@ parts contain no `import` either — but the reason is a missing route, not the 
 
 - **`map`/`filter`/`reduce` when the result is a value**; a `for` loop when the point is a side
   effect. Do not force either.
-- **Build DOM with the `el()` helper, not `createElement` + `appendChild`.** `el()` is used at
-  693 sites in the panel and takes `(tag, attrs, ...children)`, handling `class`, `on*` handlers
-  and text nodes. Hand-rolled DOM assembly is longer, easier to get wrong, and cannot be shared.
+- **Build DOM with the `el()` helper, not `createElement` + `appendChild`.** It takes
+  `(tag, attrs, ...children)` and handles `class`, `on*` handlers and text nodes; it is the
+  panel's builder at several hundred call sites, and a count belongs in a shell rather than here:
+
+  ```bash
+  grep -rohE '\bel\(' plugins/audit/scripts/ui/panel/ | wc -l
+  ```
+
+  Hand-rolled DOM assembly is longer, easier to get wrong, and cannot be shared.
 - **A render function takes state and returns a node.** Do not have it also fetch, also persist,
   and also toast. The panel's six tab renderers are where this has drifted — seven functions over
   100 lines account for a third of that file — so a new one should not join them.
@@ -70,8 +76,10 @@ parts contain no `import` either — but the reason is a missing route, not the 
 
 ## Structure, and the shared layer
 
-Every top-level name in the concatenated script shares **one global scope** — the panel currently
-leaks around 302 names. The advice "module scope encapsulates" is false here.
+Every top-level name in the concatenated script shares **one global scope**: the panel's entire
+top level, across every part, is in it. The advice "module scope encapsulates" is false here — the
+panel gets one classic `<script>`, so the concatenation IS the scope, and the report's module scope
+covers its own parts and nothing about collisions between them.
 
 - **Prefix by feature**, as the panel already does (`u*` usage, `p*` policy, `t*` theme, `ov*`
   overview). The file itself records the near-miss this prevents: `manifestFindingsBox` is named
@@ -87,12 +95,19 @@ leaks around 302 names. The advice "module scope encapsulates" is false here.
   grep -rnE '^\s{0,2}(function|const|let) NAME\b' plugins/audit/scripts/ui/
   ```
 
-  Nobody ran them at any of the sites below, and the reason is worth knowing: the instruction
-  named a directory that did not exist until now, so there was nothing to find and no cheap way
-  to comply. The duplication it allowed is real and measured — two `isDark()`, two tooltip
-  placers, two CSV quoters, four blob downloaders with three revoke policies, two heatmap
-  calendars, fourteen hand-written storage guards. `refactoring-the-assembled-ui` has the
-  four-step wiring; the promotion rule is one reader stays put, two readers move up.
+  Nobody ran them for a long time, and the reason is worth knowing: the instruction named a
+  directory that did not exist, so there was nothing to find and no cheap way to comply. What that
+  allowed was measured and is now mostly repaid — the blob downloaders, the storage guards, the
+  agreement rule for a count and its noun, the day-in-milliseconds constant, the clipboard's
+  two failure paths, and the heatmap calendar that existed twice under the same names since both
+  heatmaps did. **`_deps.SHARED_CONCERNS` is the register**, one row per concern with its home, a
+  needle and an allowance, and `shared_concern_violations()` fails the build when a row spreads
+  past its cap. Read it before adding a helper: a row that names your concern has already decided
+  where it goes.
+
+  `refactoring-the-assembled-ui` has the four-step wiring; the promotion rule is one reader stays
+  put, two readers move up — and a shared part may not reach back into a surface, which is what
+  decides how high a helper's own primitives have to sit.
 - **Reach elements through dedicated `data-` attributes, not styling classes.** The hook is then
   explicit and greppable, and renaming a CSS class cannot silently break behaviour.
 - **Wrap each independent feature so its failure is contained.** A report is opened from a CI

@@ -42,10 +42,17 @@ practice that means, for anything written here:
   opaque origin, so a cross-file import fails outright. (The panel is served over
   `http://127.0.0.1` and *could* import — measured — which is exactly why the rule
   has to be stated for the shared layer rather than per surface.)
-- **No wall-clock call.** `Date.now()` and `new Date()` are pinned as absent from
-  the report's assembled script, because a wall-clock read makes the rendered
-  artifact differ between runs and nothing could then compare a committed report
-  to a fresh one. Take a timestamp as an argument instead.
+- **No wall-clock call.** `Date.now()` and `new Date()` — the argument-less form —
+  are pinned as absent from the report's assembled script, because a wall-clock
+  read makes the rendered artifact differ between runs and nothing could then
+  compare a committed report to a fresh one. Take a timestamp as an argument
+  instead.
+
+  What is *forbidden* is READING THE CLOCK, not the `Date` type: `dates.js` and
+  `calendar.js` are full of `new Date(x)` with an explicit argument, which is
+  arithmetic on a value the caller supplied and is reproducible by construction.
+  The pin is written as the two argument-less spellings for exactly that reason,
+  and a shared part that needs "now" takes it as a parameter.
 - **No `fetch`, no `XMLHttpRequest`, no service worker, nothing gated on a secure
   context.** The panel has an origin and the report does not.
 - **Storage is best-effort.** Wrap it; a page opened from disk may refuse.
