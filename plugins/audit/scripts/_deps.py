@@ -1605,13 +1605,17 @@ SHARED_CONCERNS = (
      "forcing it through a helper for the count's sake would be the tail "
      "wagging the lint. Panel-only: `el()` is the panel's builder and the "
      "report assembles its tables with createElement."),
-    ("day <-> milliseconds", None, "864e5", 8,
-     "NOT EXTRACTED. Eight sites across four panel parts spell the same "
-     "conversion, in both directions. The needle is the CONSTANT rather than one "
-     "spelling of the arithmetic: a narrower pattern found five and a shell "
-     "regex found three, and the concern is the constant. By the promotion rule "
-     "this belongs in panel/core.js rather than shared/, since only the panel "
-     "reads it - the report carries milliseconds throughout."),
+    ("day <-> milliseconds", "shared/dates.js", r"re:864e5|86400000", 0,
+     "EXTRACTED as DAY_MS. The needle is the CONSTANT rather than one spelling "
+     "of the arithmetic - a narrower pattern found five of the nine and a shell "
+     "regex found three, because the divisions and the multiplications look "
+     "nothing alike - and it now matches BOTH spellings, which is how the "
+     "report's own `86400000` came to light. That second reader is why this went "
+     "to shared/ and not to panel/core.js as the earlier note predicted: the "
+     "note said the report carries milliseconds throughout, and it does, in a "
+     "constant of its own under a different name. The panel's day-number helpers "
+     "(dnum, dayIso) stayed in panel/core.js, where they have one reader - "
+     "dayIso replacing three identical local copies."),
 )
 
 

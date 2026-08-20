@@ -20,7 +20,6 @@
     const peakEl = document.getElementById('audit-hm-peak');
     if (!U || !body || !granBar || !prevBtn || !nextBtn || !periodEl) return;
 
-    const DAY = 86400000;
     const HOURS = 24;
     const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -82,7 +81,7 @@
      * @returns {string} ISO day the period starts on.
      */
     function startOf(g, day) {
-      if (g === 'week') return dIso(dParse(day) - wdayOf(day) * DAY);
+      if (g === 'week') return dIso(dParse(day) - wdayOf(day) * DAY_MS);
       if (g === 'month') return day.slice(0, 7) + '-01';
       if (g === 'year') return day.slice(0, 4) + '-01-01';
       return day;
@@ -95,7 +94,7 @@
      * @returns {string} ISO day the period ends on.
      */
     function endOf(g, s) {
-      if (g === 'week') return dIso(dParse(s) + 6 * DAY);
+      if (g === 'week') return dIso(dParse(s) + 6 * DAY_MS);
       if (g === 'month') {
         // Day zero of the FOLLOWING month is the last day of this one, which is
         // the only spelling that gets February right without a leap-year rule.
@@ -113,8 +112,8 @@
      * @returns {string} ISO day the neighbouring period starts on.
      */
     function shift(g, s, dir) {
-      if (g === 'day') return dIso(dParse(s) + dir * DAY);
-      if (g === 'week') return dIso(dParse(s) + dir * 7 * DAY);
+      if (g === 'day') return dIso(dParse(s) + dir * DAY_MS);
+      if (g === 'week') return dIso(dParse(s) + dir * 7 * DAY_MS);
       if (g === 'month') {
         return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1 + dir, 1));
       }
@@ -214,7 +213,7 @@
      */
     function weekRows(s, en, lo, hi) {
       const rows = [];
-      for (let ms = dParse(s); ms <= dParse(en); ms += DAY) {
+      for (let ms = dParse(s); ms <= dParse(en); ms += DAY_MS) {
         const d = dIso(ms);
         const inRange = d >= lo && d <= hi;
         rows.push({ label: WD[wdayOf(d)] + ' ' + d.slice(5),

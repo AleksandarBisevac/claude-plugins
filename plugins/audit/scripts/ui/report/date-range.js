@@ -114,7 +114,7 @@
       // Inclusive of the last day, so "7 days" spans seven of them and not eight.
       // The arithmetic is UTC-anchored and lands back on a `YYYY-MM-DD` string,
       // so the value handed to setRange is the same shape every other bound has.
-      dFrom = new Date(ms - (Number(days) - 1) * 86400000).toISOString().slice(0, 10);
+      dFrom = new Date(ms - (Number(days) - 1) * DAY_MS).toISOString().slice(0, 10);
       dTo = DMAX;
     }
     paintDates();

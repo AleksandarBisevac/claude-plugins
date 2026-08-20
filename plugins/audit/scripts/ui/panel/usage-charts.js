@@ -148,7 +148,6 @@ const BINNAME={1:'day',7:'week',28:'month',91:'quarter',364:'year'};
  * @param {string} d ISO day; a longer timestamp is sliced by the caller.
  * @returns {number} Days since 1970-01-01, UTC.
  */
-const dnum=d=>Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))/864e5;
 /**
  * Two-digit form, for assembling ISO days and hours by hand.
  * @param {number} n Value to pad; 10 and above come back unchanged, so this
@@ -202,10 +201,10 @@ function uBin(days){
   if(forced||bins.length<=MAXPTS)return{size:28,bins:bins};
   size=91;}
  if(size===1)return{size:1,bins:days.map(d=>[d,d])};
- const start=dnum(days[0]),iso=n=>new Date(n*864e5).toISOString().slice(0,10);
+ const start=dnum(days[0]);
  const bins=[];
  for(let a=0;a<span;a+=size)
-  bins.push([iso(start+a),iso(start+Math.min(a+size,span)-1)]);
+  bins.push([dayIso(start+a),dayIso(start+Math.min(a+size,span)-1)]);
  return{size,bins};}
 // Which bin a day falls in. Extracted because the sparklines bin the same days by
 // the same ladder: two binary searches over one bin list is two chances for the

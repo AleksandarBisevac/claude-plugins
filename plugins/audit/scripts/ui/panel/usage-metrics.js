@@ -203,13 +203,12 @@ function uRouting(facts){const M=USAGE.taskMeta||{},acc={};
 function uDelta(facts,days){
  if(!days.length)return null;
  const all=UF.range==='all',span=all?30:parseInt(UF.range,10);
- const iso=n=>new Date(n*864e5).toISOString().slice(0,10);
- const anchor=all?days[days.length-1]:iso(Math.floor(Date.now()/864e5));
+ const anchor=all?days[days.length-1]:dayIso(Math.floor(Date.now()/DAY_MS));
  // One boundary convention: the window is [cut, anchor], the one before it is
  // [prevCut, cut). Under a range preset `cut` is the same cut uFiltered() applies,
  // so the "now" side is exactly the rows the tiles are counting and `facts` can be
  // used as-is; under "all time" `facts` is the whole ledger and has to be sliced.
- const cut=iso(dnum(anchor)-span+(all?1:0)),prevCut=iso(dnum(cut)-span);
+ const cut=dayIso(dnum(anchor)-span+(all?1:0)),prevCut=dayIso(dnum(cut)-span);
  const day=f=>f[F.ts].slice(0,10);
  const now=all?facts.filter(f=>day(f)>=cut):facts;
  const base=USAGE.facts.filter(f=>{const d=day(f);
@@ -230,7 +229,7 @@ function uDelta(facts,days){
            ?null:A.attributed-B.attributed,
          label:'vs prior '+span+'d',
          basis:(all?'the ledger’s last '+span+' days':'the last '+span+' days')
-           +' ('+cut+' to '+anchor+') against '+prevCut+' to '+iso(dnum(cut)-1)};}
+           +' ('+cut+' to '+anchor+') against '+prevCut+' to '+dayIso(dnum(cut)-1)};}
 
 // --- CSV export ------------------------------------------------------------------
 // The rows behind the view, as a file, because the questions a spreadsheet is for

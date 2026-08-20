@@ -112,6 +112,7 @@ _SCRIPT_PARTS = (
     # shared part cannot call a surface helper because the surface has not been
     # declared yet. See `ui/shared/README.md`.
     "shared/plural.js",
+    "shared/dates.js",
     "shared/download.js",
     "shared/storage.js",
     "report/page-state.js",

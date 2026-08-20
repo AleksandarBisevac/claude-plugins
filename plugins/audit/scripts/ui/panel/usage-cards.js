@@ -165,16 +165,15 @@ function uHeatmap(facts){
  const ds=[...perDay.keys()].sort();
  const b={lo:ds[0],hi:ds[ds.length-1]};
  const wday=d=>(new Date(d+'T00:00:00Z').getUTCDay()+6)%7;   // Monday-first
- const iso=n=>new Date(n*864e5).toISOString().slice(0,10);
- const startOf=(g,d)=>g==='week'?iso(dnum(d)-wday(d))
+ const startOf=(g,d)=>g==='week'?dayIso(dnum(d)-wday(d))
   :g==='month'?d.slice(0,7)+'-01':g==='year'?d.slice(0,4)+'-01-01':d;
- const endOf=(g,s)=>g==='week'?iso(dnum(s)+6)
+ const endOf=(g,s)=>g==='week'?dayIso(dnum(s)+6)
   :g==='month'?s.slice(0,7)+'-'
     +p2(new Date(Date.UTC(+s.slice(0,4),+s.slice(5,7),0)).getUTCDate())
   :g==='year'?s.slice(0,4)+'-12-31':s;
- const shift=(g,s,dir)=>g==='day'?iso(dnum(s)+dir)
-  :g==='week'?iso(dnum(s)+7*dir)
-  :g==='month'?iso(Date.UTC(+s.slice(0,4),+s.slice(5,7)-1+dir,1)/864e5)
+ const shift=(g,s,dir)=>g==='day'?dayIso(dnum(s)+dir)
+  :g==='week'?dayIso(dnum(s)+7*dir)
+  :g==='month'?dayIso(Date.UTC(+s.slice(0,4),+s.slice(5,7)-1+dir,1)/DAY_MS)
   :(+s.slice(0,4)+dir)+'-01-01';
  const hasData=(a,z)=>{for(const d of ds)if(d>=a&&d<=z)return true;return false;};
  // The next period in `dir` that is inside the bounds AND records anything —
@@ -200,7 +199,7 @@ function uHeatmap(facts){
   rows.push({label:UHM_WD[wday(lo)]+' '+lo,
     cells:perDay.get(lo)||new Array(24).fill(0)});}
  else if(UHM.g==='week'){
-  for(let n=dnum(s);n<=dnum(en);n++){const d=iso(n);
+  for(let n=dnum(s);n<=dnum(en);n++){const d=dayIso(n);
    rows.push({label:UHM_WD[wday(d)]+' '+d.slice(5),head:UHM_WD[wday(d)]+' '+d,
      cells:(d>=lo&&d<=hi)?(perDay.get(d)||new Array(24).fill(0)):null});}}
  else{

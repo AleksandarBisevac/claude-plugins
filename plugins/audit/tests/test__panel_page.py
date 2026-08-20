@@ -447,6 +447,23 @@ def _cases(check):
           in M.UI_HTML
           and "class:'rk','data-risk':t.risk" in M.UI_HTML
           and ".rk[data-risk=\"high\"]{color:var(--err)}" in M.UI_HTML)
+    # TIMEZONE-PROOF, which the behavioural case in tools/ui-tests/dates.test.mjs
+    # is not: it asserts that a day number is a whole number, and a
+    # local-midnight parse is a whole number too on a UTC host. CI sets no TZ, so
+    # its runner is UTC and that case passes either way. This one cannot: the
+    # constructor is in the text.
+    check("dates: a day number is built with Date.UTC, never by parsing the "
+          "string - `new Date('2026-8-20')` is LOCAL midnight while the ledger's "
+          "days are UTC dates, and the two differ by an offset that turns a day "
+          "number into a fraction",
+          "const dnum=d=>Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))"
+          "/DAY_MS;" in M.UI_HTML
+          # ...and the inverse formats through toISOString, which is UTC by
+          # definition, so the round trip cannot drift.
+          and "const dayIso=n=>new Date(n*DAY_MS).toISOString().slice(0,10);"
+              in M.UI_HTML
+          # One constant, shared with the report rather than spelled again.
+          and "const DAY_MS = 86400000;" in M.UI_HTML)
     check("composition's filter state is hoisted too, so it survives a re-render",
           "const COMPF={q:'',status:'',needs:false,open:{},apply:null};" in M.UI_HTML
           and "const open=COMPF.open;" in M.UI_HTML
@@ -1525,7 +1542,7 @@ def _cases(check):
     check("and it carries both date ranges, because a percentage against an "
           "unnamed period is not a measurement",
           "basis:(all?'the ledger" in M.UI_HTML
-          and "') against '+prevCut+' to '+iso(dnum(cut)-1)" in M.UI_HTML
+          and "') against '+prevCut+' to '+dayIso(dnum(cut)-1)" in M.UI_HTML
           and "'Trend is '+dl.label+': '+dl.basis" in M.UI_HTML)
     check("a share moves in POINTS, a magnitude in per cent",
           "attributed:(A.attributed==null||B.attributed==null)" in _dl
@@ -1684,7 +1701,7 @@ def _cases(check):
     check("the presets still measure back from today — the explanation is the "
           "fix, not a silently re-anchored window",
           "if(UF.range!=='all'){const d=new Date(Date.now()-parseInt(UF.range,10)"
-          "*864e5)" in M.UI_HTML)
+          "*DAY_MS)" in M.UI_HTML)
     # An explanation computed by a second copy of "what matches" is an explanation
     # that can contradict the view it is explaining.
     check("the diagnosis re-runs uFiltered with one slot blanked instead of "

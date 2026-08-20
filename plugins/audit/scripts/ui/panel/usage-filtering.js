@@ -218,7 +218,7 @@ function uFiltered(){if(!USAGE)return[];let out=USAGE.facts.filter(uMatch);
  if(UF.day){const[a,b]=UF.day.split('..');
   out=b?out.filter(f=>{const d=f[F.ts].slice(0,10);return d>=a&&d<=b;})
        :out.filter(f=>f[F.ts].slice(0,10)===a);}
- if(UF.range!=='all'){const d=new Date(Date.now()-parseInt(UF.range,10)*864e5)
+ if(UF.range!=='all'){const d=new Date(Date.now()-parseInt(UF.range,10)*DAY_MS)
    .toISOString().slice(0,10);out=out.filter(f=>f[F.ts].slice(0,10)>=d);}
  return out;}
 /**
@@ -268,7 +268,7 @@ function uEmptyWhy(){
  const C=USAGE.counts||{};
  const toAll=()=>{UF.range='all';renderUsage();};
  if(UF.range!=='all'){
-  const cut=new Date(Date.now()-parseInt(UF.range,10)*864e5)
+  const cut=new Date(Date.now()-parseInt(UF.range,10)*DAY_MS)
     .toISOString().slice(0,10);
   if(C.to&&C.to<cut)return{why:'range-after-ledger',
    text:'The last '+UF.range+' days begin '+cut+', and the ledger ends '+C.to+
