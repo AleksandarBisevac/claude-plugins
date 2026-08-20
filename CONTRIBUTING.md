@@ -568,3 +568,51 @@ agree on syntax. That is the cost itself rather than a proxy for it — the prev
 two reversals in this record both happened because the trigger was a threshold on
 something incidental while the real cost was discoverability or navigability, and a
 green trigger is not evidence a decision is still right.
+
+### Real ES modules in the panel (measured 2026-08-20): possible, and not adopted yet
+
+The panel is served over `http://127.0.0.1` by `panel-server.py`, so the reason the report
+cannot have cross-file `import` — an opaque `file://` origin refusing a CORS-mode module fetch —
+does not apply to it. That was the standing assumption in both directions, and it has now been
+put to a browser instead of argued.
+
+**What was measured**, four probes, each declaring the outcome it expected and several expecting
+failure, with a `file://` control in the same run reproducing the report's `net::ERR_FAILED` so
+that a probe which could only pass was not mistaken for evidence:
+
+- A cross-file `import` **works** over this origin, against the panel server's exact response
+  profile (`Content-Type` + charset, `Content-Length`, `Cache-Control: no-store`, no CORS header,
+  Host check), both from an external module script and from an inline one.
+- The browser is not what blocks it. The **real** server has no static route at all: a module
+  fetch of `/ui/panel.js` answers 403 without the session token and 404 with it, and `/api/state`
+  cannot double as a module because module scripts are strictly MIME-checked.
+- A **relative specifier inherits the path but never the `?t=` query**, so a token-guarded module
+  graph must either be open (host-check only — which is what `/` already is, and `/` already hands
+  the token to any loopback client) or chain the credential through `import.meta.url`. Both were
+  confirmed working.
+- The panel's script is still a **classic** `<script>`, not `type="module"` like the report's. It
+  boots unchanged as a module — measured by rewriting only the response body through route
+  interception, so no tracked file was touched and every `/api` call still went to the real
+  server — and the change removes every top-level `function` declaration from `window`.
+
+**Not adopted, and the reason is not the effort.** Adopting it is behaviour change: a static
+route, and a new home for the `__*__` placeholders substituted into the script text. Neither can
+ride in a commit whose whole safety argument is that the assembled page is byte-identical, which
+is what made the cut into `ui/panel/` provably behaviour-free. So the order is: cut first (done),
+then decide the route.
+
+**What the decision will actually cost, stated now rather than discovered during it.** Most of
+`test__panel_page.py`'s literal `UI_HTML` pins have their literal in the panel's script, so they
+stop seeing the code the moment it leaves the page — count them with
+`python3 tools/count-ui-pins.py` and the JS-bearing share with a one-off scan of the suite against
+the parts. That is not an edit budget; it changes what those pins ASSERT, from "the page contains"
+to "a file contains", and the browser gate becomes the only thing left proving the page loads what
+it claims. Worse, the negative (`not in`) pins mostly name text that is absent from the script
+today, so they stay green whether or not the script is in the page at all — they cannot detect it
+leaving. Any adoption has to convert those deliberately, not discover them going quietly green.
+
+**Revisit trigger:** the placeholder question gets an answer that does not need a route — for
+instance the panel already serving its per-request values from an endpoint the page reads — or the
+one-scope collision hazard actually bites again (the `findingsBox` near-miss is the recorded one).
+The `type="module"` half needs no trigger at all: it is available now, costs a route nothing, and
+is held back only by wanting the cut reviewed on its own.

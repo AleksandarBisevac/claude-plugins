@@ -1,30 +1,37 @@
 ---
 name: writing-javascript
-description: How browser JavaScript is written in this repo — the two surfaces currently speak different dialects and this says which one to write, why ES modules are structurally impossible here, and how to pick a feature (Baseline plus a file:// gate). Covers functional idiom over imperative DOM work, the shared helper layer, modular structure without a bundler, DRY across the report and the panel, keeping features isolated so one failure cannot blank a page, readability, testability through the black-box browser gates, and the anti-patterns that have already shipped bugs here. Use when planning, writing, reading, reviewing or refactoring report.js or panel.js, when adding a UI behaviour, or when a helper is about to exist twice.
+description: How browser JavaScript is written in this repo — both surfaces now speak one modern dialect and this says what that means for the code you type, where ES modules are impossible and where they are merely unused, and how to pick a feature (Baseline plus a file:// gate). Covers functional idiom over imperative DOM work, the shared helper layer, modular structure without a bundler, DRY across the report and the panel, keeping features isolated so one failure cannot blank a page, readability, testability through the black-box browser gates, and the anti-patterns that have already shipped bugs here. Use when planning, writing, reading, reviewing or refactoring anything under scripts/ui/report/ or scripts/ui/panel/, when adding a UI behaviour, or when a helper is about to exist twice.
 ---
 
 # Writing JavaScript here
 
-There is no bundler, no npm, no TypeScript and no build step. `report.js` and `panel.js` are
-concatenated by Python into exactly one inline `<script>` in a self-contained page. The
-mechanics of that — ordering, the byte pins, splitting — belong to
+There is no bundler, no npm, no TypeScript and no build step. The ordered parts under
+`ui/report/` and `ui/panel/` are concatenated by Python into exactly one inline `<script>` per
+page. The mechanics of that — ordering, the byte pins, splitting — belong to
 `refactoring-the-assembled-ui`. This file is about the code you type.
 
 ## Which dialect
 
-The two surfaces disagree today, and nothing on record says why:
+**Modern ES, in both — and both surfaces now speak it.** This section used to carry a table
+showing `report.js` as strictly ES5 against a modern `panel.js`; that gap was closed, and the
+table went on describing it. Re-derive rather than reading a number here:
 
-| | `panel.js` | `report.js` |
-|---|---|---|
-| `const` / `var` | 915 / 6 | 0 / 287 |
-| arrow functions | 590 | 0 |
-| `map`/`filter`/`reduce` | 129 | 6 |
-| `for`/`while` | 66 | 23 |
-| classes | 0 | 0 |
+```bash
+for d in report panel; do
+  printf '%s: var=%s function()=%s\n' "$d" \
+    "$(grep -rho '\bvar ' plugins/audit/scripts/ui/$d/ | wc -l | tr -d ' ')" \
+    "$(grep -rho 'function *(' plugins/audit/scripts/ui/$d/ | wc -l | tr -d ' ')"
+done
+```
 
-**Write modern ES, in both.** `report.js`'s ES5 is undocumented drift, not a compatibility
-decision: `let-const` has been Baseline *widely available* since 2019-03-20, and every other
-modern construct this code would use is in the same bracket. Check before assuming, though —
+Both are at zero `var` and zero `function ()`. What is NOT yet symmetric is JSDoc — the report's
+parts carry a block per exported behaviour and the panel's parts carry almost none — and since
+this project has no TypeScript, JSDoc is the type system it gets. Types must be specific
+(`{HTMLTableRowElement}`, `{(a: string, b: string) => number}`), never `{Object}`; when the type
+and the code disagree, fix the CODE.
+
+`let-const` has been Baseline *widely available* since 2019-03-20, and every other modern
+construct this code would use is in the same bracket. Check before assuming, though —
 `grep '^| let-const '` in
 `.claude/skills/refactoring-the-assembled-ui/references/baseline-snapshot.md`.
 
@@ -34,10 +41,16 @@ widely available since 2020 and still impossible here, and `localStorage` is wid
 inconsistent from disk (which is why every storage call in the tree is already wrapped in
 `try`/`catch`). A feature must pass both.
 
-**ES modules are not available.** "Module" here means an ordered part plus a name prefix, not
-`import`/`export`. The report's block IS `type="module"` — a module scope is the point — but do
-not write `import`, `export` or dynamic `import()`: those need loading, and loading is what an
-opaque origin refuses.
+**ES modules: not available in the report, and available-but-unused in the panel.** Do not
+compress this into "modules are impossible here", which is what the previous version of this line
+said and what kept the question closed. In the REPORT they are impossible: the block IS
+`type="module"` — a module scope is the point — but `import`, `export` and dynamic `import()` all
+need loading, and loading is what an opaque `file://` origin refuses. The PANEL is served over
+`http://127.0.0.1`, where a cross-file import works; it is measured, with a `file://` control in
+the same run failing as the report does. Writing one still needs a static route in
+`panel-server.py` and a new home for the `__*__` placeholders, so until that lands the panel's
+parts contain no `import` either — but the reason is a missing route, not the platform. See
+`refactoring-the-assembled-ui` for what adopting it would cost.
 
 ## Functional idiom
 

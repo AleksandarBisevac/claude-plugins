@@ -1,6 +1,6 @@
 ---
 name: refactoring-the-assembled-ui
-description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching report.css, report.js, panel.css, panel.js or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
+description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching anything under scripts/ui/ or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
 ---
 
 # Refactoring the assembled UI
@@ -30,6 +30,17 @@ single self-contained HTML page. Almost every surprise in this area comes from f
   `<script type="module">`: that is where its scope and its strict mode come from, and it is why
   no IIFE wraps it. What a module does NOT buy here is loading — `import`/`export` cannot work on an
   opaque `file://` origin. There is no build step and there will not be one.
+- **The panel is different in kind, and it has been measured.** It is served over
+  `http://127.0.0.1`, where a real cross-file `import` DOES work — verified in Chromium against
+  the panel server's exact response profile, with a `file://` control in the same run reproducing
+  the report's `net::ERR_FAILED`. What blocks it is not the browser: `panel-server.py` has no
+  static route (a module fetch gets 403 without the session token, 404 with it), a relative
+  specifier inherits the path but never the `?t=` query, module scripts are strictly MIME-checked,
+  and the `__*__` placeholders substituted into the script text would need a new home. The panel's
+  script is also still a CLASSIC `<script>`, so it has neither module scope nor strict mode; it
+  boots unchanged as `type="module"` (measured by rewriting only the response body), which removes
+  every top-level `function` declaration from `window`. Until a route is decided, Python joins the
+  parts — but do not repeat "ES modules are impossible here" as if it covered both surfaces.
 - **Order is load-bearing.** `TOKEN_CSS` must come first — both stylesheets are *individually
   invalid* without it (undeclared custom properties, and `panel.css` alone fails the
   `color-scheme` check). Then base, then components, then the surface file, because
@@ -62,22 +73,42 @@ casually.
 All of them survive an order-preserving split. **All of them die under any "logical" regrouping.**
 So: cut at existing seams, keep the sequence, change nothing else in the same commit.
 
-Concretely:
+**Both scripts have now been cut this way, and the order lives in exactly one place per
+surface:** `_report_ui._SCRIPT_PARTS`, `_report_ui._CSS_PARTS` (declared as
+`_ui_theme.REPORT_CSS_PARTS`, where the theme lints can see the shipping cascade) and
+`_panel_ui._JS_PARTS`. A harness that needs the order reads it from there — `sandbox.mjs` parses
+the tuple out of the Python rather than keeping a list of its own.
 
-- **`panel.js` — number the filename prefixes.** Alphabetical ordering is not safe. Only 13
-  top-level statements execute at parse time and every `function` hoists, but 134 top-level
-  `const`/`let` sit in TDZ, and `$`, `el` and `api` (lines 3–7) are read by executable statements
-  at lines 19–35. The core part must be first and `boot()` must stay last.
-- **`report.js` — move the IIFE wrapper into `_report_ui._script()`.** It straddles the whole file
-  (`(function () {` at line 2, `})();` at the end), so a naive split leaves every part
-  individually unparseable, defeating the "real, editor-highlightable files" rationale. Wrapping
-  in Python keeps zero globals and keeps every part brace-balanced. **Do not simply drop the
-  IIFE** — that would dump ~130 bindings (`root`, `count`, `download`, `refresh`, `cell`, `q`…)
-  into global scope on a page that already carries `window.AUDIT_USAGE`.
-- **Repoint `tools/capture-screenshots.mjs`**, which reads `ui/panel.js` by literal path and
-  slices from `async function pollRunStatus`. It fails loudly by design when that moves; point it
-  at the assembled template instead.
-- A split makes `node --check` per part possible for the first time. Add it.
+What each cut had to solve, kept because the next one will meet the same shapes:
+
+- **`panel.js` — the first part declares, the last part boots.** Alphabetical ordering is not
+  safe: every `function` hoists, but each top-level `const`/`let` is in TDZ until its own line
+  runs, and `$`, `el` and `api` are read by executable statements a few lines below them. So
+  `panel/core.js` is first and `panel/boot.js` last, and `test__panel_ui.py` pins both by NAME
+  plus `list(_JS_PARTS) != sorted(_JS_PARTS)` — sorting the tuple would otherwise leave every
+  Python suite green and the page dead.
+- **`report.js` — the IIFE wrapper moved into `_report_ui._script()`.** It straddled the whole
+  file, so a naive split left every part individually unparseable, defeating the "real,
+  editor-highlightable files" rationale. Dropping it instead was never an option: ~130 bindings
+  would land in the global scope of a page that already carries `window.AUDIT_USAGE`. (The block
+  is now `type="module"`, and the module scope does that job natively.)
+- **Byte-identity cannot see a part that nothing loads.** Both sides of `assembled == parts
+  joined` are built from the same tuple, so dropping an entry shrinks both and the check stays
+  green while the feature silently stops shipping. `declared_asset_drift()` compares the declared
+  list against the DIRECTORY; the case that compares it against what the page is BUILT from is a
+  separate one, and it is the only thing that fails. Write it, and prove it red by deleting an
+  entry.
+- **A guard that reads a part by path is a guard bound to a filing decision.**
+  `tools/capture-screenshots.mjs` read `ui/panel.js` literally, with an argument at the site for
+  why that could not go stale (a UI asset is not a script, so it cannot be relabelled). The
+  argument was sound about relabelling and silent about the file simply ceasing to exist. It asks
+  `_panel_ui.py` for the assembled page now, which was its subject all along.
+- **Keep every part under the 400-line navigability threshold, or give it two section markers.**
+  `_deps.ui_navigability_violations()` wants `max(2, ceil(lines/400))`. Cutting at author seams
+  alone left three parts over 400 with one marker each, so those needed one further cut at a
+  top-level boundary — taking the leading comment block WITH the function it introduces.
+- `node --check` per part is possible after a split, and CI does it with `find`, not a glob:
+  `ui/*.js` now matches nothing at all.
 
 **The strongest reason to do the pure cut before anything else:**
 `tools/check-report-interactive.mjs` never opens `report.js` — it drives the rendered artifact in
