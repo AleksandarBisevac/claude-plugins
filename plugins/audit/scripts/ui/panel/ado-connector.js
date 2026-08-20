@@ -319,20 +319,12 @@ function renderAdoCard(c){
    const slot=$('#adocard .findings-slot');
    if(slot)slot.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the manifest',slot);}},'Save ADO connector');
- const discard=el('button',{class:'btn small','data-discard':'ado',
-   type:'button',onclick:async()=>{
-   const rows=adoRows(saved,ADRAFT);
-   if(!rows.length)return;
-   if(!await confirmChanges({title:'Discard unsaved connector edits',rows,
-     danger:1,lock:false,
-     verb:'Discard '+rows.length+' change'+(rows.length===1?'':'s'),
-     note:'nothing is written; the card goes back to the saved manifest'}))
-    return;
-   renderComp();toast('discarded — the card is back to the saved manifest');}},
-   'Discard');
- const upd=()=>{const n=adoRows(saved,ADRAFT).length;
-  offState(discard,!n);
-  discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';};
+ const discard=discardButton({key:'ado',rows:()=>adoRows(saved,ADRAFT),
+   title:'Discard unsaved connector edits',
+   note:'nothing is written; the card goes back to the saved manifest',
+   toast:'discarded — the card is back to the saved manifest',
+   revert:renderComp});
+ const upd=()=>refreshDiscard(discard,adoRows(saved,ADRAFT).length);
  ['input','change','click'].forEach(e=>
   card.addEventListener(e,()=>requestAnimationFrame(upd)));
  upd();

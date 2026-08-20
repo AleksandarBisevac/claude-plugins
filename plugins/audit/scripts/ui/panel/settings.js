@@ -228,24 +228,15 @@ function renderSettings(){closeCombo();
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the config',findings);
    if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));}}},'Save settings');
- // Enabled only when there is something to discard, and it says how much: a
- // control that throws work away must not be reachable by an idle click, and
- // "Discard" alone does not tell you whether pressing it costs you anything.
- const discard=el('button',{class:'btn small','data-discard':'guards',
-   type:'button',onclick:async()=>{
-   const rows=configChanges(cfg);
-   if(!rows.length)return;
-   if(!await confirmChanges({title:'Discard unsaved settings',rows,danger:1,
-     lock:false,verb:'Discard '+rows.length+' change'+(rows.length===1?'':'s'),
-     note:'nothing is written; the form goes back to the saved file'}))return;
-   renderSettings();toast('discarded — the form is back to the saved file');}},
-   'Discard');
+ const discard=discardButton({key:'guards',rows:()=>configChanges(cfg),
+   title:'Discard unsaved settings',
+   note:'nothing is written; the form goes back to the saved file',
+   toast:'discarded — the form is back to the saved file',
+   revert:renderSettings});
  // Every control in this form mutates `cfg` and none of them announces it, so the
  // counter is refreshed from the events that reach the view rather than from a
  // hook added to each of the twenty-odd field builders.
- onViewEdit('guards',()=>{const n=configChanges(cfg).length;
-   offState(discard,!n);
-   discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';});
+ onViewEdit('guards',()=>refreshDiscard(discard,configChanges(cfg).length));
  const CUSTOM={
   'planGate':()=>planGateField(cfg),
   'guardEdits.tokenVars':()=>tokenVarsField(cfg,d),

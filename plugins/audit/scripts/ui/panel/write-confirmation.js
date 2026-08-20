@@ -419,6 +419,61 @@ function focusBack(ref){
 function offState(n,off){
  n.setAttribute('aria-disabled',off?'true':'false');
  return n;}
+/**
+ * The Discard control for one surface: dead while there is nothing to throw
+ * away, saying how much when there is, and confirming before it does it.
+ *
+ * ONE OF THESE, not four. Every writable surface had its own copy of the same
+ * eleven lines, and the four copies had already diverged in the way copies do:
+ * the label was refreshed from the shared view listener in two of them, from a
+ * bespoke set of card listeners on the ADO card (which cannot use the shared one
+ * without aborting the composition form's), and once per render on the policy
+ * view — correctly, since `pEdit` re-renders that view on every edit, so a
+ * listener there would recompute what the render already did. Three mechanisms
+ * for one rule, and none of them the part that actually varies.
+ *
+ * What genuinely differs per surface is the four fields below and nothing else.
+ * `revert` is a function rather than a re-render name because the policy view
+ * does not re-render to discard; it restores a draft and lets its own edit
+ * plumbing repaint.
+ *
+ * The counting and the dead state are NOT parameters. A control that throws work
+ * away must not be reachable by an idle click, and "Discard" alone does not tell
+ * you whether pressing it costs you anything — so both are the helper's job, and
+ * `refreshDiscard` is what a caller drives when the form changes under it.
+ *
+ * @param {{key: string, rows: function(): Array<Object>, title: string,
+ *   note: string, toast: string, revert: function(): void}} o - `key` is the
+ *   EDITS key and the `data-discard` hook; `rows` is asked afresh on every press
+ *   because the form moves between renders
+ * @returns {HTMLButtonElement} dead, until `refreshDiscard` is called with rows
+ */
+function discardButton(o){
+ const b=el('button',{class:'btn small','data-discard':o.key,type:'button',
+   onclick:async()=>{
+   // Asked again here, never closed over: the count in the label is from the
+   // last repaint, and what gets discarded has to be what the form holds NOW.
+   const rows=o.rows();
+   if(!rows.length)return;
+   if(!await confirmChanges({title:o.title,rows:rows,danger:1,lock:false,
+     verb:'Discard '+plural(rows.length,'change'),note:o.note}))return;
+   o.revert();toast(o.toast);}},'Discard');
+ return refreshDiscard(b,0);}
+/**
+ * Put a Discard control's count and dead state in step with the form.
+ *
+ * Split from `discardButton` because the two happen at different times: the
+ * button is built once per render and this runs on every keystroke that reaches
+ * the view.
+ *
+ * @param {HTMLButtonElement} b - the control `discardButton` returned
+ * @param {number} n - how many unsaved rows the surface reports right now
+ * @returns {HTMLButtonElement} `b`, so a builder can return the call
+ */
+function refreshDiscard(b,n){
+ offState(b,!n);
+ b.textContent=n?('Discard '+plural(n,'change')):'Discard';
+ return b;}
 // aria-disabled is a promise to assistive technology and the platform enforces
 // none of it — unlike `disabled`, the browser still dispatches the click (and
 // Enter/Space arrive as one). Kept here, once, in the capture phase: four handlers

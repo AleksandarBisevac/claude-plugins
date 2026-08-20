@@ -499,19 +499,12 @@ function renderComp(){closeCombo();
    const slot=$('#comp .findings-slot');
    if(slot)slot.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the manifest',slot);}},'Save composition');
- const discard=el('button',{class:'btn small','data-discard':'comp',type:'button',
-   onclick:async()=>{
-   const rows=compChanges(patch);
-   if(!rows.length)return;
-   if(!await confirmChanges({title:'Discard unsaved composition edits',rows,
-     danger:1,lock:false,
-     verb:'Discard '+rows.length+' change'+(rows.length===1?'':'s'),
-     note:'nothing is written; the table goes back to the saved manifest'}))return;
-   renderComp();toast('discarded — the table is back to the saved manifest');}},
-   'Discard');
- onViewEdit('comp',()=>{const n=compChanges(patch).length;
-   offState(discard,!n);
-   discard.textContent=n?('Discard '+n+' change'+(n===1?'':'s')):'Discard';});
+ const discard=discardButton({key:'comp',rows:()=>compChanges(patch),
+   title:'Discard unsaved composition edits',
+   note:'nothing is written; the table goes back to the saved manifest',
+   toast:'discarded — the table is back to the saved manifest',
+   revert:renderComp});
+ onViewEdit('comp',()=>refreshDiscard(discard,compChanges(patch).length));
  tcard.append(el('div',{class:'row',style:'margin-top:.9rem'},save,discard),
    el('div',{class:'findings-slot'}));
  if(!STATE.manifestExists)tcard.append(el('div',{class:'findings warn'},'No manifest yet — run /audit:init first.'));

@@ -308,18 +308,16 @@ function renderPolicy(){closeCombo();
    PNOTE=[...findings.childNodes];
    renderPolicy();
  }},'Save policy');
- const discard=el('button',{class:'btn small','data-discard':'policy',type:'button',
-   onclick:async()=>{
-   const chg=policyChanges();
-   if(!chg.length)return;
-   if(!await confirmChanges({title:'Discard unsaved policy changes',rows:chg,danger:1,
-     lock:false,verb:'Discard '+chg.length+' change'+(chg.length===1?'':'s'),
-     note:'nothing is written; the form goes back to the saved block'}))return;
-   pEdit(()=>{PDRAFT=pClone(POLICY&&POLICY.stored);});
-   toast('discarded — the form is back to the saved policy');}},
-   pending.length?('Discard '+pending.length+' change'+(pending.length===1?'':'s'))
-     :'Discard');
- offState(discard,!pending.length);
+ // Two things this surface does differently, both because `pEdit` re-renders the
+ // whole view on every edit: revert restores the draft and lets pEdit repaint
+ // (calling renderPolicy here would fight it), and the count is refreshed once
+ // per render instead of from a view listener, since the render IS the refresh.
+ const discard=discardButton({key:'policy',rows:policyChanges,
+   title:'Discard unsaved policy changes',
+   note:'nothing is written; the form goes back to the saved block',
+   toast:'discarded — the form is back to the saved policy',
+   revert:()=>pEdit(()=>{PDRAFT=pClone(POLICY&&POLICY.stored);})});
+ refreshDiscard(discard,pending.length);
  c.append(el('div',{class:'savebar'},save,discard,
    el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));
 

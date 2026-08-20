@@ -704,14 +704,27 @@ def _cases(check):
     # `assertSavebarCensus`, which also carries the ONE exemption by name: the
     # theme card has a Save and no Discard, because it offers an undo trail
     # instead. That asymmetry is why the retired counts read 4 against 5.
-    check("Discard exists on every writable surface, counts what it would throw "
-          "away, and is dead while there is nothing to throw",
-          "'data-discard':'guards'" in M.UI_HTML
-          and "'data-discard':'comp'" in M.UI_HTML
-          and "'data-discard':'ado'" in M.UI_HTML
-          and "'data-discard':'policy'" in M.UI_HTML
-          and "offState(discard," in M.UI_HTML
-          and "offState(discard,!pending.length);" in M.UI_HTML)
+    # ...and now there is ONE helper, so what source text is the right instrument
+    # for is narrower again: that each surface reaches it, by name, and that the
+    # dead state and the count live inside it rather than in four callers. Whether
+    # a Discard is actually dead on a freshly loaded page is behaviour, and
+    # `assertSavebarCensus` reads it off the rendered document; the helper's own
+    # cases are in tools/ui-tests/discard-footer.test.mjs.
+    check("every writable surface builds its Discard through the one helper, "
+          "and the dead state is the helper's to keep",
+          "discardButton({key:'guards'" in M.UI_HTML
+          and "discardButton({key:'comp'" in M.UI_HTML
+          and "discardButton({key:'ado'" in M.UI_HTML
+          and "discardButton({key:'policy'" in M.UI_HTML
+          and "'data-discard':o.key" in M.UI_HTML
+          # The count and the dead state, in one place and reachable by callers
+          # on every keystroke that lands in the view.
+          and "function refreshDiscard(b,n){\n offState(b,!n);" in M.UI_HTML
+          and "b.textContent=n?('Discard '+plural(n,'change')):'Discard';"
+              in M.UI_HTML
+          # ...and no caller sets either any more.
+          and "offState(discard," not in M.UI_HTML
+          and "discard.textContent=" not in M.UI_HTML)
 
     # --- WCAG 2.2 SC 1.4.11 Non-text Contrast: the exemption, by name -----------
     # The five normative exceptions are NOT interchangeable and this register uses

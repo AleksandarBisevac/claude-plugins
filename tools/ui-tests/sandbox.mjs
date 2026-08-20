@@ -36,8 +36,16 @@
 //   browser: it stores attributes and returns stub elements, and it says
 //   nothing true about layout, event order or rendering. Those belong to the
 //   browser gates (tools/capture-screenshots.mjs, tools/check-report-interactive.mjs)
-//   and this file does not compete with them. Only pure functions are asserted
-//   through here.
+//   and this file does not compete with them.
+//
+//   It does store LISTENERS, and `__fire(type)` calls the ones registered on
+//   that element for that type. So a handler is reachable — which is the whole
+//   difference between asserting what a control is built LIKE and asserting what
+//   pressing it DOES. What is still absent is everything that makes a real
+//   event: no bubbling, no capture phase, no ordering between elements, no
+//   default action, and no proof that the element is even in a document. A claim
+//   that depends on any of those is a browser-gate claim, and calling `__fire`
+//   on a chain of parents would be inventing propagation rather than testing it.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -152,6 +160,7 @@ export function assemblePanelBody() {
 
 function stubElement(tag) {
   const attrs = new Map();
+  const listeners = {};
   const self = {
     nodeType: 1,
     tagName: String(tag || 'div').toUpperCase(),
@@ -182,7 +191,33 @@ function stubElement(tag) {
     getAttribute(k) { return attrs.has(String(k)) ? attrs.get(String(k)) : null; },
     removeAttribute(k) { attrs.delete(String(k)); },
     hasAttribute(k) { return attrs.has(String(k)); },
-    addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; },
+    // RECORDED, and reachable as `__fire(type, ev)`. They used to be dropped,
+    // which meant no suite could reach a handler at all: `el()` wires an `onclick`
+    // key through addEventListener, so every button built by the page was inert
+    // here and every claim about what pressing one DOES had to be taken on trust
+    // or driven in a browser. Storing them costs nothing and does not change any
+    // existing case, because nothing dispatched before.
+    //
+    // This is still not a browser: no bubbling, no capture order, no default
+    // actions. `__fire` calls the handlers registered on THIS element for THIS
+    // type, in order, and returns what they returned — so a handler that awaits
+    // can be awaited. Anything depending on propagation belongs in a browser gate.
+    addEventListener(t, fn) {
+      if (typeof fn !== 'function') return;
+      const key = String(t);
+      (listeners[key] || (listeners[key] = [])).push(fn);
+    },
+    removeEventListener(t, fn) {
+      const l = listeners[String(t)];
+      if (l) listeners[String(t)] = l.filter((f) => f !== fn);
+    },
+    dispatchEvent() { return true; },
+    __listeners: listeners,
+    __fire(t, ev) {
+      const l = listeners[String(t)] || [];
+      return l.map((fn) => fn.call(self, ev || { type: String(t),
+        target: self, preventDefault() {}, stopPropagation() {} })).pop();
+    },
     appendChild(c) { return c; }, append() {}, prepend() {}, remove() {},
     insertBefore(c) { return c; }, replaceChildren() {},
     click() {}, focus() {}, blur() {}, scrollIntoView() {}, closest() { return null; },
