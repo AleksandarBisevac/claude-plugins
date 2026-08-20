@@ -5958,6 +5958,142 @@ async function assertAppearanceWorks(page) {
  * place by expanding), and Esc gives the focus back to the control that opened
  * it — a dialog that strands the caret is worse than no dialog.
  */
+/**
+ * Every save/discard footer the panel renders, as a set derived from the PAGE.
+ *
+ * WHAT THIS REPLACES, AND WHY IT HAD TO MOVE. Three assertions in
+ * `test__panel_page.py` guarded this by counting occurrences in the assembled
+ * source: `count("'data-save':'") == 3`, `count("'data-discard':'") == 4`,
+ * `count("offState(discard,!n);") == 3`. Each protected something real — a Save
+ * with no hook cannot be named after its view is rebuilt, so a caret handed back
+ * by a confirm dialog had nowhere to go, measured once as arriving at 676ms and
+ * being taken away at 682ms — and each did it by requiring the copies to stay
+ * copies. Factoring the five footers into one helper would have turned all three
+ * red while making the page better, which is a check that has outlived its claim.
+ *
+ * A count cannot survive that refactor and this can: one helper emitting five
+ * footers still renders five footers.
+ *
+ * KEYED ON THE BUTTON LABEL, not on a container or a hook, and both alternatives
+ * were tried first. `.savebar` sees only two of the five — `guards` and `policy`
+ * use it while `comp` and `ado` use a bare `.row` with an inline margin, so the
+ * census silently checked 40% of the page. Keying on the hook is worse than
+ * wrong, it is vacuous: the property being checked IS that a Save carries a hook,
+ * so enumerating by hook can never find one that lacks it. What the reader sees
+ * is the label, so that is what this reads.
+ *
+ * Reloads first, so every view is CLEAN and "Discard is dead when there is
+ * nothing to throw away" describes a known state rather than whatever the
+ * preceding checks left behind.
+ */
+async function assertSavebarCensus(page) {
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => document.querySelector('#guards')?.children.length > 0,
+    { timeout: 10000 }).catch(() => {});
+  // Visit every tab: a view that has never rendered has no footer to inspect, and
+  // its absence reads exactly like a view that legitimately has none.
+  const tabs = await page.$$eval('.tab', (bs) => bs.map((b) => b.getAttribute('data-t')));
+  for (const t of tabs) { await tabTo(page, t); await page.waitForTimeout(200); }
+
+  const found = await page.evaluate(() => {
+    const dataHooks = (el) => Array.from(el.attributes).map((a) => a.name)
+      .filter((n) => n.startsWith('data-'));
+    const viewOf = (el) => {
+      for (let n = el; n; n = n.parentElement) {
+        if (n.id && ['guards', 'comp', 'over', 'usage', 'policy', 'look'].includes(n.id)) return n.id;
+      }
+      return '(none)';
+    };
+    return Array.from(document.querySelectorAll('button'))
+      .filter((b) => /^(save|discard)\b/i.test((b.textContent || '').trim()))
+      .map((b) => ({
+        kind: /^save/i.test((b.textContent || '').trim()) ? 'save' : 'discard',
+        text: (b.textContent || '').trim().slice(0, 26),
+        view: viewOf(b),
+        hooks: dataHooks(b),
+        aria: b.getAttribute('aria-disabled'),
+        // Nameability is computed by the PAGE'S OWN focusSel, not by a rule
+        // re-derived here. focusSel prefers an id and otherwise builds a selector
+        // out of whatever `data-` attributes it finds, so "carries a hook" is not
+        // the property - "focusSel can produce a selector that resolves to
+        // exactly this element" is. A census that reimplemented the rule would
+        // drift from it, and a first attempt here asserted only that SOME data-
+        // attribute existed, which a meaningless one satisfies.
+        sel: (() => { try { return focusSel(b); } catch (e) { return '(threw)'; } })(),
+        selMatches: (() => {
+          try {
+            const s = focusSel(b);
+            return s ? document.querySelectorAll(s).length : 0;
+          } catch (e) { return -1; }
+        })(),
+        // The footer is whatever element holds both, so it is found rather than
+        // named: two container conventions ship today and a third would not break
+        // this.
+        footerHasDiscard: !!(b.parentElement
+          && Array.from(b.parentElement.querySelectorAll('button'))
+              .some((x) => /^discard\b/i.test((x.textContent || '').trim()))),
+      }));
+  });
+
+  const saves = found.filter((f) => f.kind === 'save');
+  const discards = found.filter((f) => f.kind === 'discard');
+  // The vacuity guard first: everything below narrows this set, and a set that
+  // narrowed to nothing would report a page with no unhooked control on it.
+  if (saves.length < 4 || discards.length < 3) {
+    fail(`panel footers: the census found ${saves.length} Save and `
+       + `${discards.length} Discard control(s) across ${tabs.length} tab(s), which `
+       + 'is too few to be checking anything — either the fixture stopped reaching '
+       + 'the writable views or the labels changed');
+    return;
+  }
+
+  for (const s of saves) {
+    if (!s.sel || s.selMatches !== 1) {
+      fail(`panel footers: #${s.view} "${s.text}" is not uniquely nameable — `
+         + `focusSel gives ${JSON.stringify(s.sel)} matching ${s.selMatches} `
+         + 'element(s), so a caret handed back after the view is rebuilt lands '
+         + 'nowhere or on the wrong control');
+    }
+    // Two exemptions, and they are named by HOOK rather than by view on purpose.
+    // Exempting `#look` wholesale - which is what this did first - would exempt
+    // any future writable footer added to that tab, forever and silently.
+    //
+    //   data-thsave   the theme card's Save. The one writable footer with no
+    //                 Discard, by design: it offers an undo/redo trail instead,
+    //                 which is why the retired count read 4 discards to 5 saves.
+    //   data-thsaveas "Save as…", which writes a theme FILE rather than the
+    //                 config. It is not a footer save and is owed no Discard;
+    //                 it is in this census at all only because the label reads
+    //                 "Save as", and being hooked is still required of it.
+    const exempt = s.hooks.some((h) => h === 'data-thsave' || h === 'data-thsaveas');
+    if (!s.footerHasDiscard && !exempt) {
+      fail(`panel footers: #${s.view} "${s.text}" has no Discard beside it — every `
+         + 'writable view owes the reader a way back, and only the theme card is '
+         + 'exempt because it carries an undo trail instead');
+    }
+  }
+  for (const d of discards) {
+    if (!d.sel || d.selMatches !== 1) {
+      fail(`panel footers: #${d.view} Discard is not uniquely nameable — focusSel `
+         + `gives ${JSON.stringify(d.sel)} matching ${d.selMatches} element(s)`);
+    }
+    // Dead while there is nothing to throw away. `null` is the state that let a
+    // Discard look live over a clean form: nobody ever set the attribute.
+    if (d.aria !== 'true') {
+      fail(`panel footers: #${d.view} Discard reads aria-disabled=${d.aria} on a `
+         + 'freshly loaded page — it should be dead until something is dirty');
+    }
+  }
+  const shape = saves.map((s) => `${s.view}:${s.sel}`).join(', ');
+  note(`panel footers: ${saves.length} Save / ${discards.length} Discard across `
+     + `${tabs.length} tab(s); every Save hooked, every Discard hooked and dead while `
+     + `clean — ${shape}`);
+  // Stated rather than implied: the Save hooks are NOT uniform (data-save,
+  // data-psave, data-thsave) and the containers are not either (.savebar vs a
+  // bare .row). This census accepts any of them on purpose, so it keeps holding
+  // when the footers become one helper emitting one convention.
+}
+
 async function assertPolicyExpand(page) {
   await tabTo(page, 'policy');
   await page.waitForTimeout(300);
@@ -7521,6 +7657,7 @@ async function main() {
       // gt (v0.34 B3): writes into the fixture's logs/state dirs, so it keeps
       // to the same writes-last discipline and runs after live-data.
       await assertGateCard(page, big);
+      await assertSavebarCensus(page);
 
       // ---- the policy switchboard, on a fixture of its own ---------------------
       // Its own project and its own HOME — see writePolicyFixture for why a tab

@@ -563,14 +563,24 @@ def _cases(check):
           and "focusKeep('#comp')" in M.UI_HTML)
     # A savebar Save carried neither an id nor a data- hook, so focusSel could not
     # name it and the caret a confirm dialog gave back had nowhere to go across the
-    # re-render that followed. Counted, not merely found: `in` would pass with one
-    # of the three wired up. #policy and the theme card already had data-psave and
-    # data-thsave, which is why they are not in this count.
+    # re-render that followed.
+    #
+    # THE COUNT THAT USED TO BE HERE IS GONE ON PURPOSE. It read
+    # `count("'data-save':'") == 3`, which was the only thing in this suite
+    # forbidding the five copy-pasted footers from becoming one helper: one helper
+    # emitting five footers writes that literal ONCE, so the count would have gone
+    # red for a change that made the page better. What the count was reaching for -
+    # every footer's Save is nameable, and a new writable view cannot arrive
+    # without one - cannot be said in source text at all once the emitter is
+    # shared, so it is said in the browser instead:
+    # `assertSavebarCensus` in tools/capture-screenshots.mjs enumerates the
+    # rendered controls by LABEL and checks each one's hook. What stays here is the
+    # half source text can still carry: each hook that ships today is present by
+    # name.
     check("every savebar Save can be NAMED after its view is rebuilt - the "
           "measured hole was Save, not Discard: the caret came back to it at "
           "676ms and renderComp took it away again at 682ms",
-          M.UI_HTML.count("'data-save':'") == 3
-          and "'data-save':'guards'" in M.UI_HTML
+          "'data-save':'guards'" in M.UI_HTML
           and "'data-save':'comp'" in M.UI_HTML
           and "'data-save':'ado'" in M.UI_HTML
           and "'data-psave':'1'" in M.UI_HTML
@@ -623,10 +633,21 @@ def _cases(check):
           "STATE=await api('GET','/api/state');renderComp();renderOver();" in M.UI_HTML)
     check("an unparseable buildCommands box cannot be confirmed as something else",
           "if(bcBad){toast('meta.buildCommands is not valid JSON" in M.UI_HTML)
+    # Same retirement as the Save hooks above, and the same reason: the two counts
+    # here (`'data-discard':'` == 4 and `offState(discard,!n);` == 3) required four
+    # footers to stay four. The per-view names are what survives in source; "every
+    # writable view offers a way back, and the control is dead while there is
+    # nothing to throw away" is checked against the rendered page by
+    # `assertSavebarCensus`, which also carries the ONE exemption by name: the
+    # theme card has a Save and no Discard, because it offers an undo trail
+    # instead. That asymmetry is why the retired counts read 4 against 5.
     check("Discard exists on every writable surface, counts what it would throw "
           "away, and is dead while there is nothing to throw",
-          M.UI_HTML.count("'data-discard':'") == 4
-          and M.UI_HTML.count("offState(discard,!n);") == 3
+          "'data-discard':'guards'" in M.UI_HTML
+          and "'data-discard':'comp'" in M.UI_HTML
+          and "'data-discard':'ado'" in M.UI_HTML
+          and "'data-discard':'policy'" in M.UI_HTML
+          and "offState(discard," in M.UI_HTML
           and "offState(discard,!pending.length);" in M.UI_HTML)
 
     # --- WCAG 2.2 SC 1.4.11 Non-text Contrast: the exemption, by name -----------
