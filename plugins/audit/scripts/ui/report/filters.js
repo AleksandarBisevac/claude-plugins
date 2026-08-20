@@ -200,9 +200,14 @@
       outsideRow.hidden = !show;
       outsideRow.style.display = show ? 'table-row' : 'none';
       if (show && outsideN) {
-        outsideN.textContent = hiddenByView + (hiddenByView === 1
-          ? ' phase matches outside this view'
-          : ' phases match outside this view') + ' \u2014 ';
+        // Through the shared `plural`, giving BOTH halves: the noun and the verb
+        // agree together here, which no suffix rule produces and which is the
+        // whole reason that helper takes a `many` at all. It was written to serve
+        // this clause and then left with no caller in the report — a promotion
+        // justified by a reader that did not exist yet.
+        outsideN.textContent = plural(hiddenByView,
+          'phase matches outside this view',
+          'phases match outside this view') + ' \u2014 ';
       }
     }
     // The toolbar copy appears the moment anything is filtering, so there is a way
