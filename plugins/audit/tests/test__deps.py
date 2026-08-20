@@ -1034,6 +1034,37 @@ def _cases(check):
     finally:
         shutil.rmtree(_slack_fixture, ignore_errors=True)
 
+    # The comment scanner, pinned on the three constructs that actually appear in
+    # `ui/` and that broke the two-regex version. Each is a real line from the
+    # tree, reduced: a `//` comment containing `/*`, a string containing `//`, and
+    # a regex literal containing a quote. The direction of every failure here is
+    # UNDER-counting, which reads as "no duplication".
+    _co = [
+        ("// a note about .claude/themes/*.json\nreal();\n", "real();",
+         "a /* inside a LINE comment must not open a block comment - it did, and "
+         "swallowed 150 lines of appearance-view.js including a real occurrence"),
+        ("const NS='http://www.w3.org/2000/svg';\nkeep();\n", "keep();",
+         "a // inside a STRING must not start a comment - which is why stripping "
+         "line comments first is not the fix either"),
+        ("const q=/[\",\\r\\n]/;\nkeep2();\n", "keep2();",
+         "a quote inside a REGEX literal must not open a string; three of these "
+         "ship in ui/ as CSV quoters"),
+        ("/* block\n * spanning\n */ after();\n", "after();",
+         "and a real block comment is still removed"),
+    ]
+    for _src, _want, _why in _co:
+        check("sc9 comment scanner: %s" % (_why,), _want in M._code_only(_src))
+    check("sc10 ...and the scanner keeps line numbers, so a scout reporting a hit "
+          "sends a reader to the right line: a three-line block comment leaves "
+          "three newlines behind",
+          M._code_only("/* a\n b\n */x;\n").count("\n") == 3)
+    # The other direction: it must still REMOVE comments, or sc7 passes for the
+    # wrong reason.
+    check("sc11 a needle that appears ONLY in a comment is not counted, and the "
+          "same needle in code is - the pair is what makes sc7 mean anything",
+          "URL.createObjectURL" not in M._code_only("// URL.createObjectURL\n")
+          and "URL.createObjectURL" in M._code_only("x=URL.createObjectURL(b);\n"))
+
     # ------------------------------------------- the scanners reach a subdirectory
     # A recursive walk that is never handed a subdirectory proves nothing, so this
     # builds one. Every scanner in this module used a flat `os.listdir`, which is

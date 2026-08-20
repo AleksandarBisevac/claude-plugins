@@ -1572,6 +1572,13 @@ SHARED_CONCERNS = (
      "NOT EXTRACTED. Both sites guard correctly, but their FALLBACKS differ on "
      "purpose (the report selects the text, the panel uses execCommand and a "
      "toast), so the shared part is thin and needs the fallback injected."),
+    ("table header construction", None, "el('thead'", 15,
+     "NOT EXTRACTED, and the first row this registry gained from the SCOUT "
+     "rather than from reading: fifteen sites across eleven panel parts "
+     "hand-nest el('thead',{},el('tr',{},el('th',...)...)) from a list of "
+     "column labels. Five agents read all 8,584 lines of the panel and none "
+     "reported it, which is the case tools/find-shared-candidates.mjs exists "
+     "for. Panel-only, so the home is panel/core.js rather than shared/."),
     ("day <-> milliseconds", None, "864e5", 8,
      "NOT EXTRACTED. Eight sites across four panel parts spell the same "
      "conversion, in both directions. The needle is the CONSTANT rather than one "
@@ -1582,19 +1589,110 @@ SHARED_CONCERNS = (
 )
 
 
-def _code_only(text):
-    """`text` with JavaScript comments removed, so a comment cannot read as a hit.
+# A `/` starts a regex literal rather than a division when the previous
+# significant character is an operator, an opening bracket or nothing at all.
+# This is the standard heuristic and it is enough here: the three regex literals
+# in `ui/` that contain a quote character are each preceded by `=` or `(`.
+_REGEX_PREV = frozenset("(,=:[!&|?{};+-*%~^<>")
 
-    This is not tidiness. Three separate checks in this tree have been tripped by
-    PROSE rather than by code - a sentence explaining the SCRIPTS-join rule broke
-    it, a JSDoc block containing `var(--viz-N)` failed the undeclared-token lint,
-    and `x5` fired on a comment naming a URL scheme. A registry that counted
-    comments would report the paragraph explaining a concern as a second
-    implementation of it, which is the most annoying false positive there is,
-    because the only fix is to stop documenting the rule.
+
+def _code_only(text):
+    """`text` with JavaScript comments removed and everything else kept verbatim.
+
+    STRINGS ARE PRESERVED, because the needles include string content -
+    `el('thead'` and `===1?''` are both partly a literal. Only comments go.
+
+    WHY THIS IS A SCANNER AND NOT TWO REGEXES, measured on this tree rather than
+    argued. The first version stripped block comments first with a DOTALL regex,
+    and `appearance-view.js` line 69 is a `//` comment containing
+    `.claude/themes/*.json`. That `/*` opened a false block comment which closed
+    150 lines later, swallowing real code - including a genuine occurrence the
+    registry then failed to count. UNDER-counting is the silent direction: the
+    lint would have reported no violation while a second implementation sat
+    inside the swallowed region.
+    Reversing the order does not fix it either: `usage-charts.js` carries
+    `'http://www.w3.org/2000/svg'` and `ado-connector.js` an Azure URL, so
+    stripping line comments first truncates real code at a `//` inside a string.
+    Neither order is safe, so the states are tracked properly.
+
+    Newlines are preserved through comments so a caller can still report a line
+    number - a scout that reports real duplication at the wrong coordinates sends
+    a reader somewhere irrelevant, and the natural conclusion is that the tool is
+    noise.
+
+    KNOWN LIMIT: a regex literal is detected by the previous significant
+    character, so a division written where a regex could appear would be read as
+    a regex and the rest of the line kept as literal text. That direction is
+    safe - it keeps too much rather than too little, so it cannot hide a needle.
     """
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
-    return re.sub(r"(?m)//.*$", " ", text)
+    out = []
+    i = 0
+    end = len(text)
+    state = None            # None | line | block | ' | " | ` | regex
+    prev_sig = ""
+    while i < end:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < end else ""
+        if state is None:
+            if ch == "/" and nxt == "/":
+                state = "line"
+                i += 2
+                continue
+            if ch == "/" and nxt == "*":
+                state = "block"
+                i += 2
+                continue
+            if ch in ("'", '"', "`"):
+                state = ch
+                out.append(ch)
+                i += 1
+                continue
+            if ch == "/" and (prev_sig == "" or prev_sig in _REGEX_PREV):
+                state = "regex"
+                out.append(ch)
+                i += 1
+                continue
+            out.append(ch)
+            if not ch.isspace():
+                prev_sig = ch
+            i += 1
+            continue
+        if state == "line":
+            if ch == "\n":
+                state = None
+                out.append("\n")
+            i += 1
+            continue
+        if state == "block":
+            if ch == "*" and nxt == "/":
+                state = None
+                i += 2
+                continue
+            if ch == "\n":
+                out.append("\n")
+            i += 1
+            continue
+        # Inside a string, a template or a regex: copied through verbatim.
+        out.append(ch)
+        if ch == "\\" and i + 1 < end:
+            out.append(text[i + 1])
+            i += 2
+            continue
+        if state == "regex":
+            if ch == "/":
+                state = None
+                prev_sig = "/"
+            elif ch == "\n":
+                # An unterminated regex is a mis-detected division; recover rather
+                # than swallowing the rest of the file.
+                state = None
+            i += 1
+            continue
+        if ch == state:
+            state = None
+            prev_sig = ch
+        i += 1
+    return "".join(out)
 
 
 def _concern_hits(root, home, needle):
