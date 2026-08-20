@@ -115,18 +115,18 @@ def _cases(check):
           "path - `_load_scripts_module` turns any answer into a module or into "
           "None, so a confident wrong path is the one failure it cannot report",
           M.find_script("no-such-script-xyz.py") is None)
-    # The recursion. `ui/report.css` was the only file one directory down when this
+    # The recursion. `ui/` holds the report's CSS and script parts one directory
     # was written, so fs4 asked about the WALK through a non-`.py`; fs4b now asks the
     # question that was actually meant, because the four files this hook reaches have
     # since been filed under domains and a `.py` at depth is no longer hypothetical.
     # Both are kept: fs4 fails if the walk stops descending at all, fs4b if it
     # descends but the resolved path is wrong, and those are different defects.
-    _fs_deep = M.find_script("report.css")
-    check("fs4 the walk is RECURSIVE - it reaches scripts/ui/report.css, which is "
+    _fs_deep = M.find_script("shell.css")
+    check("fs4 the walk is RECURSIVE - it reaches scripts/ui/report-css/shell.css, "
           "the property a `.py` filed one directory down depends on. Without it "
           "that file comes back None and reads as 'not installed': %r" % (_fs_deep,),
           _fs_deep is not None and os.path.isfile(_fs_deep)
-          and os.path.basename(os.path.dirname(_fs_deep)) == "ui")
+          and os.path.basename(os.path.dirname(_fs_deep)) == "report-css")
     # THE FOUR THIS FILE ACTUALLY LOADS, and each one is now at depth. A flat
     # resolver returns None for all four, `_load_scripts_module` turns that into
     # None, and the capability policy, the journal, the ledger and the lock switch

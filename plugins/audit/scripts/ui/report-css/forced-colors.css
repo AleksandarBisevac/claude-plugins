@@ -1,0 +1,95 @@
+/* ---- colored bits must print ---------------------------------------------
+   Browsers drop backgrounds on paper by default, which is the right default for
+   decoration and the wrong one for anything whose FILL is the value. The list
+   grew when one pill grammar replaced four: a status chip is now a 12% tint
+   rather than a solid, and the same recipe went on to carry what holds a phase
+   shut, which cost band a task landed in and which way a usage figure moved.
+   Dropped, those print as bare text in a hairline outline.
+   `print-color-adjust` inherits, so naming the pill covers the dot, the bar and
+   any ::before it draws — which is why .chip is here and .chip::before is not. */
+.chip,.fill,.rchip,.heldby,.bandpill,.dl,tr.phase>td::before,
+.rank .track i,.bud .track i{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+/* ---- responsive: tablet / mobile ----------------------------------------- */
+/* Wide tables (9 / 7 cols) scroll INSIDE their own frame instead of pushing the
+   whole page sideways. The scroll container breaks viewport-sticky headers, so
+   sticky is disabled only at these widths (desktop keeps it). */
+@media (max-width:52rem){
+  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);
+    border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
+  table.phases,table.data{border:none;border-radius:0;box-shadow:none;min-width:34rem}
+  /* Prose must not live at the table's scroll width. A phase's desiredOutcome is a
+     sentence, and inside a 34rem-min table under overflow-x it was being laid out
+     683px wide on a 390px screen — so reading one line meant scrolling sideways and
+     back, per line. Sticky pins it to the visible left edge and the cap makes it
+     wrap inside the viewport, so the prose reads straight down while the COLUMNS
+     keep their scroll. Text wraps to the reader; data tables scroll. */
+  .pmeta{position:sticky;left:0;max-width:calc(100vw - 5.5rem);white-space:normal}
+  thead th{position:static}
+  thead th:first-child,thead th:last-child,
+  tbody tr:last-child td:first-child,tbody tr:last-child td:last-child{border-radius:0}
+  /* The More-filters panel comes back INTO the flow, and this is a correctness fix
+     wearing a breakpoint. Out of flow it is hung from its control's right edge at
+     `min-width:32rem` — and min-width beats max-width, so `max-width:calc(100vw -
+     2rem)` never capped anything. Measured on a 390px viewport: a 512px panel
+     spanning x=-353 to x=159, with BOTH date inputs at -225..-100, i.e. entirely
+     off the left of the screen. Not clipped-but-scrollable either — the document's
+     scrollWidth stayed 390, so there was no way to reach them at all. The whole
+     date-range filter was unreachable on a phone.
+     In flow it cannot leave the viewport, and the reason it is out of flow does not
+     apply here: absolute positioning buys a constant --sectools-h so that opening
+     the panel never moves the column headers and anchors under a reader mid-scroll.
+     On a phone the reader has just TAPPED the control, so the bar growing is the
+     answer to what they did — and the ResizeObserver on .sectools re-measures the
+     stack either way, so nothing downstream is left pointing at the old height. */
+  .filterpanel{position:static;min-width:0;max-width:none;flex-basis:100%;
+    margin-top:.5rem;box-shadow:none}
+  /* ...and in flow it takes the bar with it, which the bar cannot stay sticky
+     through. Measured at 390x780: the bar is 156px shut and 481px open — 62% of
+     the screen, pinned, over the very rows it is filtering. Sticky exists to keep
+     controls reachable while the content scrolls; a control that covers the
+     content has stopped doing that. Open, it scrolls away like the block of
+     controls it now is; closed, the rule stops matching and the bar is sticky
+     again, with no state kept anywhere. A browser without `:has()` drops this one
+     rule and keeps the panel fix above — the selector is a lower bar than the
+     `color-mix()` this sheet already paints every status pill with. */
+  .sectools:has(.fdetails[open]){position:static}
+}
+@media (max-width:40rem){
+  body{padding:1.5rem .75rem 3rem;font-size:14.5px}
+  h1{font-size:1.1rem}
+  .vd-word{font-size:1.75rem}
+  .overall,.summary{padding:.75rem 1rem}
+  .toolbar{gap:.5rem .5rem}
+  #audit-q{flex-basis:100%;order:-1}
+  .bar{max-width:52vw}
+  /* A date field is the widest control the panel has and the one with the most to
+     lose from being squeezed: below its intrinsic width the UA elides the picker
+     glyph, then the year. Given the row to itself it is legible and tappable, and
+     the label above it stops reading as a caption for whatever wrapped next to it. */
+  .frow{align-items:stretch}
+  .frow input[type=date]{flex:1 1 100%;padding:.45rem .5rem}
+}
+
+/* ---- motion: a row arriving --------------------------------------------- */
+/* Expanding a phase swaps several rows in at once with no transition at all, so
+   the table simply becomes a different table and the reader has to find their
+   place in it again. A fade says WHICH rows are the new ones.
+   Opacity, and only opacity: a table row cannot be height-animated (`tr` has no
+   independent box to interpolate), and animating the cells' padding instead
+   reflows the whole table on every frame of every expand.
+   `@starting-style` is the entire mechanism — a browser that does not know the
+   at-rule drops it with its block and the rows appear instantly, which is the
+   existing behaviour. That is why the reveal is stated this way rather than as a
+   keyframe animation: this stylesheet has already pinned two blocks at opacity 0
+   forever, when `fadeUp`'s easing token stopped resolving (see @keyframes above).
+   An animation whose failure mode is "invisible" is a bad trade for a fade; a
+   starting style's failure mode is "no fade", and `check-report-interactive.mjs`
+   asserts every revealed row settles at opacity 1 in a real browser.
+   Screen only. Print takes its snapshot when it takes it, and a transition mid-run
+   would put a half-faded row on paper. */
+@media screen and (prefers-reduced-motion:no-preference){
+  tr.task{transition:opacity var(--dur) var(--ease)}
+  @starting-style{tr.task{opacity:0}}
+}
+

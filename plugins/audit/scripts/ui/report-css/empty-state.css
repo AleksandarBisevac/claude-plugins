@@ -1,0 +1,20 @@
+/* ---- the empty state ------------------------------------------------------
+   Filtered down to nothing, the table was an empty frame: no rows, no
+   explanation, and no way back except undoing each control by hand. Same
+   `display:none` default as tr.taskfilter, and for the same reason — with no
+   script running, every row is shown, so an empty state would be a lie. It lives
+   in its own <tbody> so `tbody tr:last-child` still means the last DATA row and
+   the table keeps its rounded bottom edge while this is hidden. */
+tr.norows{display:none}
+/* Out-specifies the gate rail deliberately: the rail is a drawing of what holds
+   what, and there is nothing here for it to run past. */
+table.phases tbody>tr.norows>td:first-child{text-align:center;color:var(--muted);
+  padding:1.5rem .75rem;background:var(--surface)}
+table.phases tbody>tr.norows>td:first-child::after{content:none}
+tr.norows .btn{margin-left:.6rem}
+
+/* ---- load reveal (ends visible -> readable with JS off) ------------------ */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
+.meta{animation-delay:.04s}.overall{animation-delay:.09s}.summary{animation-delay:.14s}
+

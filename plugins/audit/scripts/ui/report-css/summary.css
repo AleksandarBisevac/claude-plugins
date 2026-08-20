@@ -1,0 +1,51 @@
+/* ---- verdict hero --------------------------------------------------------
+   The page opens on the question the reader actually has: can this ship? The
+   answer is not composed here — it is `audit-status.py --gate`, the same verdict
+   the CI job produces, with the conditions that decided it printed underneath.
+   A hero that scored the plan by its own private rule would be a second opinion
+   nobody asked for; this one can be checked by running the gate. */
+.overall{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--vd);
+  border-radius:var(--radius-lg);padding:1rem 1.25rem;margin:1rem 0;box-shadow:var(--shadow-sm);
+  --vd:var(--st-pending)}
+.overall[data-gate="clear"]{--vd:var(--st-done)}
+.overall[data-gate="blocked"]{--vd:var(--st-blocked)}
+.vd-eyebrow{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.14em;
+  color:var(--muted);font-weight:700;margin:0}
+/* Mono, uppercase, tight: the display voice of this report is the stamp on an
+   inspection record, not a marketing headline. §7 asked for typography with a
+   point of view and for mono to stop being spent on chrome — this is both. */
+.vd-word{font-family:var(--mono);font-size:2.15rem;line-height:1.1;letter-spacing:-.01em;
+  font-weight:700;color:var(--vd);margin:.1rem 0 .3rem;text-transform:uppercase}
+.vd-why{margin:0;font-size:.95rem}
+.vd-basis{margin:.35rem 0 0;color:var(--muted);font-size:.78rem}
+.vd-next{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.9rem;
+  padding-top:.9rem;border-top:1px solid var(--border)}
+.vd-run{font-family:var(--mono);font-size:.9rem;background:var(--surface-2);
+  border:1px solid var(--border-strong);border-radius:var(--radius);padding:.2rem .45rem;
+  font-variant-numeric:tabular-nums}
+.vd-stats{display:flex;align-items:center;gap:.6rem 1.25rem;flex-wrap:wrap;margin-top:.8rem}
+.vd-stats .muted{font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+
+/* ---- summary card -------------------------------------------------------- */
+.summary{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:var(--radius);padding:.75rem 1rem;margin:1rem 0;box-shadow:var(--shadow-sm)}
+.summary>strong{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--accent);font-weight:700;margin-bottom:.25rem}
+
+/* ---- progress bar (animated fill) ---------------------------------------- */
+.bar{position:relative;display:inline-block;vertical-align:middle;width:13rem;max-width:38vw;
+  height:.62rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--pill);overflow:hidden}
+/* `display:block` is load-bearing, not tidiness: the fill is a <span>, and an inline
+   box ignores width and height outright. Without it every progress bar in the report
+   rendered as an empty track — including a phase at 2/2 — which is why the committed
+   README screenshots showed 4/10 against a blank bar. The two bars that always worked
+   (`.rank .track i`, `.bud .track i`) both declare it; this one was the omission. */
+.fill{display:block;height:100%;border-radius:inherit;background:var(--accent);
+  box-shadow:0 0 10px -2px var(--accent);
+  width:var(--w,0);animation:fillIn .9s var(--ease) both}
+/* Both endpoints are explicit. A single `from` keyframe leaves the end state to be
+   synthesised from the underlying value, and combined with `fill-mode:both` that is
+   how `fadeUp` pinned two blocks at opacity 0 the moment its easing token started
+   resolving. An animation that reveals something states what "revealed" means. */
+@keyframes fillIn{from{width:0}to{width:var(--w,0)}}
+

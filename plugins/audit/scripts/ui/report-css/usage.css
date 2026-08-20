@@ -1,0 +1,249 @@
+/* ---- usage section ---------------------------------------------------------
+   Every mark is hand-rolled CSS/SVG: the report ships as one self-contained file
+   with zero network fetches (selftest x5 pins that), so a chart library is not an
+   option. Layout follows one rule — a metric strip, ONE dominant chart and three
+   ranked lists on first paint, everything else behind a disclosure. */
+.notice{border:1px solid var(--border);border-left:3px solid var(--st-prog);
+  border-radius:var(--radius);padding:var(--sp-2) var(--sp-3);margin:var(--sp-2) 0;
+  font-size:var(--t-3);background:var(--surface)}
+.notice.warn{border-left-color:var(--st-blocked)}
+/* Scale and span, ahead of the tiles. Counts, not metrics — five more cards would
+   have said the same thing while diluting the five that can be acted on. */
+.uctx{font-size:.75rem;color:var(--muted);margin:var(--sp-2) 0 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));
+  gap:var(--sp-2);margin:var(--sp-2) 0 var(--sp-5)}
+.tile{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:var(--sp-2) var(--sp-3);
+  box-shadow:var(--shadow-sm)}
+.tile .k{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.08em;
+  color:var(--muted)}
+/* Proportional figures on purpose: tabular-nums makes a big standalone value look
+   loose. Columns of numbers below keep tabular alignment. */
+/* The delta pill sits beside the value on one line. A four-digit change reads
+   "+1104%", which is wider than a phone leaves for it, and a non-wrapping row
+   pushed the whole document sideways rather than the pill dropping under the
+   number. Wrapping costs a line on a narrow screen and nothing at all on a wide
+   one, where the row never fills. */
+.tile .v{font-size:1.55rem;font-weight:680;letter-spacing:-.02em;line-height:1.15;
+  margin-top:var(--sp-0);display:flex;align-items:baseline;gap:var(--sp-1);
+  flex-wrap:wrap}
+.tile .s{font-size:.72rem;color:var(--muted);margin-top:var(--sp-0)}
+.dl{font-size:.72rem;font-weight:600;padding:.05rem .3rem;border-radius:var(--pill);
+  letter-spacing:0}
+.dl.up{color:var(--st-done);background:color-mix(in srgb,var(--st-done) 14%,transparent)}
+.dl.down{color:var(--muted);background:var(--surface-2)}
+/* Cost band. Status colours are reserved and never travel alone, so the pill
+   carries the word — the row's own status wears the same palette right beside it. */
+.bandpill{display:inline-block;padding:.05rem .45rem;border-radius:var(--pill);
+  font-size:.72rem;font-weight:600;white-space:nowrap}
+.b-typical{color:var(--st-done);
+  background:color-mix(in srgb,var(--st-done) 13%,transparent)}
+.b-high{color:var(--st-prog-ink);
+  background:color-mix(in srgb,var(--st-prog) 16%,transparent)}
+.b-outlier{color:var(--st-blocked);
+  background:color-mix(in srgb,var(--st-blocked) 14%,transparent)}
+h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
+  margin:var(--sp-4) 0 var(--sp-1);border:0;text-transform:none;color:var(--text)}
+.small{font-size:.75rem}
+.fact{font-size:var(--t-3);margin:var(--sp-1) 0}
+/* The one recommendation in the section — flagged so it reads as advice rather
+   than as another measurement. */
+.advice{margin:var(--sp-1) 0;padding-left:0;list-style:none;font-size:var(--t-3)}
+.advice li{border-left:3px solid var(--st-prog);padding:var(--sp-1) var(--sp-2);
+  background:var(--surface);border-radius:var(--radius);margin:var(--sp-1) 0}
+/* The one dominant chart. The bars stretch to fill the width, which is the intent;
+   the type does NOT live in that stretched space (see _usage_trend) — it is HTML
+   positioned over the same percentages, so a digit is the same shape at 390px and
+   at 1400px. */
+.colswrap{position:relative;height:210px;margin-bottom:var(--sp-1)}
+.cols{width:100%;height:210px;display:block;overflow:visible}
+.cols .grid{stroke:var(--border);stroke-width:1;fill:none}
+.cols .col{fill:var(--viz-1)}
+/* C1: columns outside the active date range recede rather than vanish — the
+   geometry never moves (deterministic render, stable x axis) and the excluded
+   context stays honestly visible as context. Same treatment for the tick
+   labels under them. Prints as it shows; #audit-urange names the range. */
+.cols .col.dimout{opacity:.15}
+.colswrap .xt.dimout{opacity:.35}
+.urange{font-variant-numeric:tabular-nums}
+.colswrap .yt,.colswrap .xt{position:absolute;font-size:.62rem;color:var(--muted);
+  font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;
+  pointer-events:none}
+.colswrap .yt{left:0}
+.xts{position:absolute;left:0;right:0;bottom:2px;height:.8rem}
+.colswrap .xt{bottom:0;transform:translateX(-50%)}
+@media (max-width:34rem){.colswrap .yt,.colswrap .xt{font-size:.55rem}}
+/* three ranked lists, side by side on wide screens */
+.ranks{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));
+  gap:var(--sp-1) var(--sp-5);margin-top:var(--sp-2)}
+.rank{display:grid;grid-template-columns:minmax(0,1fr) 6rem auto;
+  align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0;font-size:.8rem}
+.rank .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .track{height:.5rem;background:var(--surface-2);border-radius:var(--pill);
+  overflow:hidden}
+.rank .track i{display:block;height:100%;border-radius:var(--pill);
+  transition:filter var(--dur) var(--ease)}
+.rank .amt{font-size:.72rem;color:var(--muted);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+/* Every rank row carries a tooltip — five figures the row itself has no space for
+   — and nothing about the row said so, so the numbers were there and unfindable.
+   The bar brightens under the pointer: the affordance is on the mark the tooltip
+   is about, and `cursor:help` names what the pointer will get. Deliberately not a
+   background change on the row; these sit three-across in a grid and a full-row
+   tint at that density reads as a selection the reader did not make. */
+.rank{cursor:help}
+.rank:hover .track i{filter:brightness(1.15)}
+/* The row is a tab stop now (F17) - the name is clipped and the whole of it lives
+   in a tooltip no browser opens on focus. A tab stop with no ring would trade one
+   AA failure for another (SC 2.4.7), so the ring is the same one every other
+   focusable in this report uses. `outline-offset` is negative: the row is full
+   width and a positive offset would draw the ring over its neighbours. */
+.rank:focus-visible{outline:2px solid var(--ring);outline-offset:-2px;
+  border-radius:var(--radius)}
+.rank:focus-visible .track i{filter:brightness(1.15)}
+.rank:hover .nm{color:var(--text)}
+/* One shared tooltip element, moved on hover. Its content is NOT a second copy of
+   the numbers: it is the `title` already on the mark, re-rendered. With JS off the
+   browser shows the same text natively, so the file still explains itself from a
+   file:// URL — which is how a shared report is usually opened. */
+.rtip{position:fixed;z-index:60;pointer-events:none;background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:var(--radius);
+  box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-2);font-size:.74rem;
+  max-width:18rem;color:var(--text)}
+.rtip[hidden]{display:none}
+.rtip b{display:block;font-weight:600;margin-bottom:var(--sp-0);
+  word-break:break-word}
+.rtip span{display:flex;gap:var(--sp-2);font-variant-numeric:tabular-nums;
+  line-height:1.5}
+.rtip span em{color:var(--muted);font-style:normal;flex:1 1 auto;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rtip span i{font-style:normal;font-weight:600}
+@media print{.rtip{display:none!important}}
+/* Budget burn-down. Only rendered when a phase declares one, so it costs nothing
+   in the common case and is prominent in the case that matters. */
+.buds{margin-top:var(--sp-1)}
+/* Name capped, bar takes the slack — otherwise a 1fr name column pushes the bar
+   to the far right and the row stops reading as one thing. */
+.buds{max-width:58rem}
+.bud{display:grid;grid-template-columns:minmax(9rem,20rem) minmax(5rem,1fr) 3rem auto;
+  align-items:center;gap:var(--sp-2);margin:var(--sp-1) 0;font-size:.8rem}
+.bud .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bud .track{height:.55rem;background:var(--surface-2);border-radius:var(--pill);
+  overflow:hidden}
+.bud .track i{display:block;height:100%;border-radius:var(--pill);
+  background:var(--st-done)}
+.bud.over .track i{background:var(--st-blocked)}
+.bud .pct{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.bud.over .pct{color:var(--st-blocked);font-weight:640}
+.bud .amt{font-size:.72rem;color:var(--muted);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.bud.total{border-top:1px solid var(--border);padding-top:var(--sp-1);
+  margin-top:var(--sp-1)}
+.bud.total .nm{color:var(--muted)}
+/* The total has no bar; an empty track would paint a grey rail that reads as a
+   phase sitting at zero, which is the one thing this block must never imply. */
+.bud.total .track{background:none}
+@media (max-width:34rem){
+  .bud{grid-template-columns:1fr auto;gap:.15rem}
+  .bud .track{display:none}
+}
+.legend{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-3);
+  margin:var(--sp-1) 0 var(--sp-2);font-size:.78rem;color:var(--muted)}
+.legend b{display:inline-flex;align-items:center;gap:var(--sp-1);
+  font-weight:500;color:var(--text)}
+.legend i{width:.62rem;height:.62rem;border-radius:3px;display:inline-block}
+details.more{margin-top:var(--sp-5);border-top:1px solid var(--border);
+  padding-top:var(--sp-2)}
+details.more>summary{cursor:pointer;font-size:.8rem;color:var(--muted);
+  padding:var(--sp-1) 0}
+details.more>summary:hover{color:var(--text)}
+/* small multiples: one cell per author, one row per model */
+.smgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));
+  gap:var(--sp-3)}
+.smcell{border:1px solid var(--border);border-radius:var(--radius);
+  padding:var(--sp-2);background:var(--surface)}
+/* C3: the author chips toggle `hidden` on the section's per-author views.
+   Author-origin rules, not the UA default: .rank declares display:grid, which
+   would beat the UA's [hidden]{display:none} - the same trap .pmatch[hidden]
+   already documents. .smcell gets the twin rule so the pair cannot drift. */
+.auchips{display:flex;flex-wrap:wrap;gap:var(--sp-1);margin:var(--sp-2) 0 0}
+.rank[hidden]{display:none}
+.smcell[hidden]{display:none}
+.aunote{font-variant-numeric:tabular-nums}
+.smcell h4{font-size:.78rem;margin:0 0 var(--sp-1);font-weight:600;border:0;
+  text-transform:none;letter-spacing:0;color:var(--text)}
+.mm{display:grid;grid-template-columns:.62rem 8rem 1fr;align-items:center;
+  gap:var(--sp-1);margin:var(--sp-0) 0}
+.mk{width:.62rem;height:.62rem;border-radius:3px}
+.mn{font-size:.68rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.spark{width:100%;height:30px;display:block}
+.spark rect{fill:var(--sc,var(--bar-neutral));opacity:.9}
+/* Full-height invisible hit targets, so a 2px column is still hoverable.
+   pointer-events is set explicitly: the default (visiblePainted) is not required
+   to hit a fully transparent fill. */
+.spark rect.hit{fill:transparent;opacity:1;pointer-events:all;cursor:default}
+/* phase composition */
+.uphase{display:grid;grid-template-columns:minmax(6rem,13rem) 1fr auto;
+  gap:var(--sp-1) var(--sp-2);align-items:center;margin:var(--sp-0) 0}
+.uphase .nm{font-size:.83rem;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.uphase .amt{font-size:.78rem;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Stacked bar: the 2px flex gap IS the separator - no strokes around segments. */
+.stack{display:flex;gap:2px;height:14px;align-items:stretch}
+.seg{min-width:2px;border-radius:1px}
+.seg:last-child{border-radius:1px 4px 4px 1px}
+/* day x hour heatmap */
+/* C3: the calendar navigation row above the grid. Chips share the .fchip
+   grammar (they are pressable); the period label NAMES what the grid shows,
+   because "which week is this" must never be implied by cell tooltips alone.
+   A disabled arrow is muted and inert rather than hidden: at the edge of the
+   data the control still says where the edge is. */
+.hmnav{display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap;
+  margin:var(--sp-1) 0}
+#audit-hm-gran{display:inline-flex;gap:.25rem;flex-wrap:wrap;margin-right:var(--sp-1)}
+.hmperiod{font-size:.78rem;color:var(--text);font-variant-numeric:tabular-nums;
+  min-width:11rem;text-align:center}
+.hmarrow{padding:.3rem .55rem;line-height:1}
+.hmarrow[disabled]{opacity:.35;cursor:default;pointer-events:none;transform:none;
+  box-shadow:none}
+@media print{.hmnav .fchip,.hmarrow{display:none!important}}
+.hmwrap{overflow-x:auto}
+/* Full width (C3): the grid is the section's second-largest reading surface and
+   drew at a fixed 20px per cell — half the column the trend chart uses. Fixed
+   layout hands the 24 hour columns equal shares of the row; the min-width keeps
+   a cell from collapsing below legibility on a phone, where .hmwrap already
+   scrolls the grid inside its own frame instead of widening the page. */
+.hm{border-collapse:separate;border-spacing:2px;font-size:.62rem;color:var(--muted);
+  width:100%;table-layout:fixed;min-width:42rem}
+.hm .hmc{width:4.8rem}
+/* The report's global `thead th` is sticky for the long phases table; a 7-row
+   heatmap must opt out or its hour ruler detaches and floats over the grid. */
+.hm thead th{position:static;background:none;border:0;padding:0 var(--sp-0)}
+.hm th{font-weight:500;color:var(--muted);padding:0 var(--sp-0);text-align:right;
+  white-space:nowrap}
+.hm td{padding:0}
+.hm i{display:block;width:auto;height:22px;border-radius:2px;background:var(--hm-0);
+  cursor:help}
+/* 168 cells, each with a tooltip naming its day, hour and token count, and no cell
+   ever indicated that. An OUTLINE rather than a border or a transform: outlines are
+   drawn outside the box and take no space, so hovering one cell of a 24x7 grid
+   cannot nudge the other 167 — which a border would, on every mouse move across the
+   chart. --text rather than the accent, because the cell underneath is already one
+   of seven accent tints and an eighth would be lost among them. */
+.hm i:hover{outline:2px solid var(--text);outline-offset:1px}
+.hm i[data-l="1"]{background:var(--hm-1)}.hm i[data-l="2"]{background:var(--hm-2)}
+.hm i[data-l="3"]{background:var(--hm-3)}.hm i[data-l="4"]{background:var(--hm-4)}
+.hm i[data-l="5"]{background:var(--hm-5)}.hm i[data-l="6"]{background:var(--hm-6)}
+.hmkey{display:flex;align-items:center;gap:var(--sp-0);font-size:.7rem;
+  color:var(--muted);margin-top:var(--sp-1)}
+.hmkey i{width:20px;height:15px;border-radius:2px;display:inline-block}
+@media (max-width:40rem){
+  .uphase,.rank{grid-template-columns:1fr;gap:.15rem}
+  .uphase .amt,.rank .amt{text-align:left}
+  .rank .track{display:none}
+  .mm{grid-template-columns:.62rem 1fr}
+  .mm .spark{grid-column:1/-1}
+}
+

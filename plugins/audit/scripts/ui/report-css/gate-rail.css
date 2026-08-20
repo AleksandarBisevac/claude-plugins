@@ -1,0 +1,72 @@
+/* ---- the gate rail (signature) -------------------------------------------
+   A continuous spine down the phase list, with one gate per phase. The CROSSBAR
+   is the gate: broken in the middle when work can pass, solid when something
+   holds it shut. Below a closed gate the rail dims, because that is exactly what
+   `blockedBy` means and it was invisible in this report until now — the reader
+   could see that P3 was pending but not that P2 was the reason.
+   Colour is never the only carrier: every phase row also states its status in a
+   text chip, and a held one names what holds it. */
+tr.phase{cursor:pointer}
+/* The spine is drawn on EVERY row in the body, not just phase rows, which is what
+   makes it continuous: a rail that restarts at each group reads as a set of ticks,
+   not as one line running the length of the plan. It sits INSIDE the table with
+   clear space either side — sharing the card's left border made it read as the
+   border it was sitting on rather than as a structure of its own. */
+table.phases tbody>tr>td:first-child{position:relative;padding-left:2.3rem}
+table.phases tbody>tr>td:first-child::after{content:"";position:absolute;left:1.15rem;top:0;bottom:0;
+  width:2px;background:var(--rail)}
+table.phases tbody>tr[data-held]>td:first-child::after{background:var(--rail-held)}
+tr.phase>td{position:relative;background:var(--surface-2);border-top:1px solid var(--border-strong);
+  padding:.75rem .75rem .75rem 2.3rem;transition:background var(--dur)}
+tr.phase:hover>td{background:var(--surface)}
+/* Open gate: a crossbar with a gap you can pass through. */
+tr.phase>td::before{content:"";position:absolute;left:calc(1.15rem - 9px);top:1.2rem;width:20px;height:3px;
+  border-radius:1px;z-index:1;
+  background:linear-gradient(90deg,var(--st,var(--st-pending)) 0 7px,var(--surface-2) 7px 13px,
+    var(--st,var(--st-pending)) 13px 20px)}
+tr.phase:hover>td::before{background:linear-gradient(90deg,var(--st,var(--st-pending)) 0 7px,
+  var(--surface) 7px 13px,var(--st,var(--st-pending)) 13px 20px)}
+/* Closed gate: solid, no gap. Everything it holds is dimmed below it. */
+tr.phase[data-held]>td::before,tr.phase[data-held]:hover>td::before{background:var(--st-blocked);width:22px;
+  left:calc(1.15rem - 10px);height:3px}
+/* The stamp: the last commit recorded inside a signed-off phase. */
+.stamp{font-family:var(--mono);font-size:.7rem;letter-spacing:.02em;color:var(--muted);
+  border:1px dashed var(--border-strong);border-radius:3px;padding:.05rem .3rem;margin-left:.4rem;
+  vertical-align:.06em}
+/* What holds this phase shut, named and linkable — the rail says "closed", this
+   says by what. A gate that cannot tell you what shut it is a locked door with no
+   sign on it. */
+.heldby{font-family:var(--mono);font-size:.7rem;color:var(--st-blocked-ink);
+  background:color-mix(in srgb,var(--st-blocked) 12%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--st-blocked) 30%,transparent);
+  border-radius:var(--pill);padding:.15rem .5rem;margin-left:.4rem;text-decoration:none;vertical-align:.06em}
+.heldby:hover{background:var(--st-blocked);color:var(--surface)}
+/* "3 of 12 match" on a COLLAPSED phase. Filtering no longer forces phases open —
+   a search used to expand every hit at once, which turned a five-character query
+   into a page that jumped and scrolled away from what you were reading. The cost
+   of not opening them is that a closed row hides its own evidence: the phase
+   survived the filter and you cannot see why. This is that evidence, and it is
+   also the affordance — a row that says 3 of 12 is a row worth opening. */
+.pmatch{font-size:.72rem;font-weight:600;color:var(--accent);margin-left:.4rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+/* `hidden` is a presentation hint, and any class rule with a display beats it.
+   Without this the badge would be permanently visible, reading "10 of 10 match"
+   at rest on every phase in an unfiltered report. */
+.pmatch[hidden]{display:none}
+.tri{display:inline-block;width:1em;color:var(--muted);transition:transform var(--dur) var(--ease)}
+.tri::before{content:"\25B6";font-size:.72em}
+tr.phase.open .tri{transform:rotate(90deg)}
+tr.phase strong{font-weight:650}
+.pmeta{font-size:.82rem;color:var(--muted);margin-top:.25rem}
+
+/* ---- task rows continue the rail ----------------------------------------- */
+tr.task>td{background:var(--surface)}
+tr.task:hover>td{background:var(--surface-2)}
+tr.task>td.tid{padding-left:3.1rem}
+
+/* ---- per-phase task-status filter row ------------------------------------ */
+tr.taskfilter{display:none}
+tr.taskfilter>td{background:var(--surface);padding:.5rem .75rem .5rem 3.1rem;border-bottom:1px dashed var(--border)}
+.tf-label{font-size:.75rem;color:var(--muted);margin-right:.5rem}
+.tf-chips{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+

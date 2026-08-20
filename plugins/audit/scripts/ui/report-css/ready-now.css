@@ -1,0 +1,15 @@
+/* ---- ready now (C4) ------------------------------------------------------
+   A definition list: the term is the task (id, title, its phase's area tags in
+   the chip style areas wear everywhere), the definition is why it is ready.
+   Kept quiet — a left rule and a hanging indent, no cards: this section is a
+   work queue, and twenty framed boxes would out-shout the phases table. */
+dl.ready{margin:.25rem 0 0;padding:0}
+dl.ready dt{padding:.35rem 0 0;display:flex;align-items:baseline;gap:.5rem;
+  flex-wrap:wrap}
+dl.ready dt code{font-family:var(--mono);font-size:.8rem;
+  font-variant-numeric:tabular-nums;color:var(--accent)}
+dl.ready dt strong{font-weight:600}
+dl.ready dd{margin:.1rem 0 .35rem;padding:0 0 .35rem 1.1rem;
+  border-left:2px solid var(--border);font-size:.78rem;color:var(--muted)}
+@media print{dl.ready dd{break-inside:avoid}}
+

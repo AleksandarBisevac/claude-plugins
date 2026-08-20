@@ -1,0 +1,28 @@
+/* ---- badges -------------------------------------------------------------
+   ONE grammar for everything that REPORTS a value: tinted from its own colour,
+   inked in that colour, outlined in it, with a dot carrying the hue at full
+   strength. Four different grammars used to share these tables — a solid fill
+   with white text (status), an outline that inverted when active (filters), a
+   pastel fill with a matching border (risk), and a grey uppercase tag (area) —
+   so four things that all mean "here is a value" looked like four kinds of
+   thing. Interactive chips (.fchip/.tf-chip) keep a deliberately different,
+   button-like grammar, because they are the one kind you can press. */
+.chip{display:inline-flex;align-items:center;gap:.4em;padding:.25rem .65em;border-radius:var(--pill);
+  font-size:.76rem;font-weight:600;letter-spacing:.01em;white-space:nowrap;
+  background:color-mix(in srgb,var(--st,var(--st-pending)) 12%,var(--surface));
+  color:var(--st-ink,var(--st-pending-ink));
+  border:1px solid color-mix(in srgb,var(--st,var(--st-pending)) 30%,transparent)}
+/* The hue at full strength, so the status stays legible at a glance without the
+   text having to carry the colour at a contrast that hurts to read. */
+.chip::before{content:"";width:.45em;height:.45em;border-radius:50%;flex:none;
+  background:var(--st,var(--st-pending))}
+/* rk (F-P-4): risk is TEXT, in its own ink — not a pill. A row carrying two
+   pills (status and risk) reads as two states of equal weight, and only one of
+   them is a state: status is where the task IS, risk is a property of it. The
+   ink is the same token the pill used, so nothing about the colour system
+   changes; what goes is the fill, the outline and the pill's visual claim. */
+.rchip{display:inline-block;font-size:.8rem;font-weight:600}
+.rchip[data-risk="low"]{color:var(--rk-low-fg)}
+.rchip[data-risk="med"]{color:var(--rk-med-fg)}
+.rchip[data-risk="high"]{color:var(--rk-high-fg)}
+

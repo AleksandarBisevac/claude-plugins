@@ -1,0 +1,108 @@
+/* ---- toolbar ------------------------------------------------------------- */
+/* The toolbar moved into the top bar: these are global actions (search the whole
+   plan, filter every phase, print, download, theme) and they were scrolling away
+   from the reader halfway down a long report. */
+.toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0}
+/* Section-scoped controls sit on the thing they act on, sticky under the top bar
+   so they stay reachable while you scroll the table they filter — and stop
+   existing once you have scrolled past it. */
+.sectools{position:sticky;top:var(--sticky-2);z-index:var(--z-sectools);padding:.5rem .75rem;margin:0 0 .75rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  transition:box-shadow var(--dur) var(--ease)}
+/* Stuck, this bar is drawn OVER the rows it filters and has to read as a layer
+   rather than as the row it happens to be covering — the same shadow the top bar
+   takes for the same reason. It cannot be a permanent shadow: at rest the bar sits
+   in the flow directly above the table, and a card floating over nothing is a
+   promise about scroll position that the page has not made. There is no CSS
+   selector for "currently stuck", so the class is toggled from the one scroll
+   listener that already runs, by comparing the bar's own top against the sticky
+   offset it computed from --sticky-2 — no sentinel element, no second observer. */
+.sectools.stuck{box-shadow:var(--shadow-sm)}
+@media print{.sectools{display:none!important}}
+#audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
+  transition:border-color var(--dur),box-shadow var(--dur)}
+#audit-q::placeholder{color:var(--muted)}
+#audit-q:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.tbl{font-size:.76rem;color:var(--muted);margin-left:.25rem}
+#audit-phase-status{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+
+/* ---- buttons ------------------------------------------------------------- */
+.btn{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;display:inline-flex;align-items:center;
+  gap:.4em;padding:.5rem .75rem;border-radius:var(--pill);border:1px solid var(--field-border);
+  background:var(--surface);color:var(--text);
+  transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease),background var(--dur),border-color var(--dur)}
+.btn:hover{border-color:var(--field-border-hover);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:active{transform:translateY(0);box-shadow:none}
+.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.btn-primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.btn-primary:hover{filter:brightness(1.08);background:var(--accent-solid);border-color:var(--accent-solid)}
+.btn-icon{padding:.5rem .5rem;font-size:1rem}
+/* `hidden` is only a hint, and .btn's own display beats it. */
+.btn[hidden]{display:none}
+
+/* ---- filter chips (toolbar phase-status + per-phase task-status) --------- */
+.fchip,.tf-chip{cursor:pointer;font:inherit;font-size:.79rem;line-height:1;padding:.25rem .75rem;
+  border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);color:var(--text);
+  transition:background var(--dur),border-color var(--dur),color var(--dur),transform var(--dur) var(--ease)}
+.fchip:hover,.tf-chip:hover{border-color:var(--field-border-hover);transform:translateY(-1px)}
+.fchip:focus-visible,.tf-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.fchip.on,.tf-chip.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+/* State carried by more than hue: a filter that is on says so in forced-colours,
+   in greyscale and on paper, where the accent fill says nothing. Both backslashes
+   are DOUBLED because this sheet is a non-raw Python string. Written once, Python
+   reads the hex escape as an OCTAL byte and the `a0` as the bell character, and
+   the browser is handed `¹3<BEL>0` — which it draws, faithfully, on the one chip
+   whose entire purpose was to be legible without colour. `mangled_css_escapes()`
+   now fails the build on either half; the panel's copy of this rule always had it
+   right, and nothing in either suite could see the two disagree. */
+.fchip.on::before,.tf-chip.on::before{content:"\2713\a0";font-weight:700}
+.tf-chip{font-size:.73rem;padding:.25rem .5rem}
+
+/* ---- more filters: model + dates, in a native <details> ------------------
+   A <details>, not a scripted popover, for the same reason the chips above are
+   rendered server-side: it opens, closes, takes focus and answers the keyboard
+   with no script at all, and a reader who prints the page or runs none still
+   sees what the filters ARE.
+
+   The panel is absolutely positioned, and that is load-bearing rather than
+   decorative. This bar is the thing the rest of the document pins against —
+   --sectools-h decides where the column headers land, where every anchor lands
+   and where the scroll-spy fold sits — so a panel that pushed the bar taller
+   when opened would move all three under the reader mid-scroll. Out of flow, the
+   bar is one height open or shut, and the panel is drawn OVER the table. */
+.fdetails{position:relative}
+.fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
+  display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
+  border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);
+  color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
+.fdetails>summary::-webkit-details-marker{display:none}
+.fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
+.fdetails[open]>summary::after{content:"\25B4"}
+.fdetails>summary:hover{border-color:var(--field-border-hover);background:var(--surface-2)}
+.fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* The count of what is narrowing the table, on the closed control. A panel that
+   hides an active filter behind a fold is how a reader concludes the report is
+   missing rows; the summary has to say that something is on. */
+.fdetails .fcount{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+/* Hung from its control's RIGHT edge, because this control sits near the right of
+   the bar: anchored left, a panel this wide ran off the side of the viewport and
+   took its last column with it.
+
+   The floor was 19rem, then 27rem — the width at which "Worked between: [date]
+   and [date]" stopped wrapping after the word "and" and reading as a broken
+   sentence. 27rem cleared that but left the panel feeling cramped: four control
+   rows at .5rem apart inside .75rem of padding, with nothing to separate the
+   date range from the model chips from the note. 32rem with roomier padding and
+   gap is the same content given space to be read. `max-width` still caps it to
+   the viewport, so the extra width costs nothing on a narrow screen. */
+.filterpanel{position:absolute;top:calc(100% + .4rem);right:0;z-index:1;min-width:32rem;max-width:calc(100vw - 2rem);
+  display:flex;flex-direction:column;gap:.7rem;padding:1rem 1.1rem;background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
+.frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.frow input[type=date]{font:inherit;font-size:.78rem;padding:.3rem .45rem;color:var(--text);
+  background:var(--bg);border:1px solid var(--field-border);border-radius:var(--radius)}
+.frow input[type=date]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+#audit-model,#audit-presets{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+.fnote{margin:0;font-size:.7rem;line-height:1.45;color:var(--muted)}
+

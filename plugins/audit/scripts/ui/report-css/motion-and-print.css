@@ -1,0 +1,20 @@
+/* ---- reduced motion ------------------------------------------------------
+   The global opt-out moved into the token layer (F25), so BOTH surfaces get it
+   from one definition instead of the panel getting none. What stays here is the
+   part that is the report's own: `.fill` needs its final width pinned, which a
+   duration of .001ms does not give it. */
+@media (prefers-reduced-motion:reduce){
+  .fill{animation:none;width:var(--w,0)}
+}
+
+/* ---- print: force a light sheet + keep the interactive semantics ---------
+   No `size` here, and that omission is the whole point. `size:A4` does not tell
+   the browser what paper to expect; it tells it what page box the document
+   REQUIRES, and Chrome and Edge respond by greying the print dialog's
+   orientation control out. The report's widest table is nine columns, which is
+   the one thing on the page that genuinely wants landscape — so the stylesheet
+   was locking off the orientation its own layout most needed. Measured, not
+   assumed: `page.pdf({preferCSSPageSize:true, landscape:true})` against the
+   committed example produced seven 595x842 pages, i.e. portrait, every time.
+   The margin stays. That is a request about ink and about the reader's eye;
+   the sheet and which way round it goes belong to whoever holds the printer. */

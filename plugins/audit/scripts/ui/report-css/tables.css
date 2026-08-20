@@ -1,0 +1,98 @@
+/* ---- tables -------------------------------------------------------------- */
+.tablewrap{margin:.5rem 0 1rem}
+table.phases,table.data{border-collapse:separate;border-spacing:0;width:100%;font-size:.92rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);margin:0}
+/* Pinned BELOW the filter bar, not above it. At top:3.5rem these headers pinned
+   1.6px higher than the bar that filters them and, being the lower layer, were
+   painted out completely — the table scrolled with no headers at all. */
+thead th{position:sticky;top:var(--sticky-3);z-index:var(--z-thead);background:var(--surface-2);color:var(--muted);font-weight:700;
+  font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;text-align:left;
+  padding:.5rem .75rem;border-bottom:1px solid var(--border)}
+/* Only headers that actually sort look and behave like controls. `role="button"` is
+   set by wireSort() on exactly the tables it wires, so the cursor and the focus ring
+   cannot disagree with the behaviour — three tables (the two usage breakdowns and
+   the heatmap) previously showed a pointer on headers that did nothing. */
+/* non-text-contrast: thead th[role="button"] - NOT an exception, and saying so
+   matters. A measurement reports this header at 1.05:1, but what it measured is
+   the sticky header's --surface-2 FILL against the page: table furniture, not
+   the information that identifies the control. SC 1.4.11 asks for 3:1 on the
+   visual information REQUIRED to identify a component and its states, and here
+   that information is carried by three other things, each of which is checked:
+     - the component: its text label, which clears 1.4.3 as ordinary text
+     - its state:     the sorted glyph below, drawn in --accent
+     - its focus:     the ring on the next line, --accent at 2px
+   Naming the decoration exception for that fill would be the easy write-up and
+   it would be wrong: the fill is not what fails, it is what was measured.
+   Reaching for a normative exception name that does not fit is how an exemption
+   register turns into a place to put things. (Spelled in words, not in the
+   `exception=NAME` grammar: the case below reads this block for that grammar and
+   cannot tell a claim from a mention of one - which is F21, and the third time
+   this shape has bitten in this tree.) */
+thead th[role="button"]{cursor:pointer;user-select:none}
+thead th[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+thead th:first-child{border-top-left-radius:var(--radius-lg)}
+thead th:last-child{border-top-right-radius:var(--radius-lg)}
+th.sorted::after{content:"\25B2";font-size:.75em;margin-left:.35em;color:var(--accent)}
+th.sorted[data-sort="desc"]::after{content:"\25BC"}
+td{padding:.5rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+td.when,td.mono{font-variant-numeric:tabular-nums}
+/* vw: the label and its select are one control and wrap as one — the toolbar
+   is a flex row, and letting the words break away from the box they name is
+   how a reader ends up reading "View:" over an unrelated line. */
+.viewpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
+.viewpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
+  border:1px solid var(--field-border);border-radius:var(--radius);
+  background:var(--surface);color:var(--text)}
+/* bl (F-P-4): "something in here is stuck" and "some of this was dropped" —
+   counts, in the row's own words, wearing the status ink of what they count.
+   Not chips: the phase already carries one, and a row with three pills makes
+   the reader compare them instead of reading them. */
+.pblocked,.pcancelled{font-size:.72rem;font-weight:600;margin-left:.15rem}
+.pblocked{color:var(--st-blocked)}
+.pcancelled{color:var(--st-cancelled)}
+/* ex (F-P-4): the detail row. Two labelled groups side by side, wrapping to one
+   column on a narrow screen — the compact row above it stays the scanning
+   surface, and this is the reading one. It is a table row, so it obeys every
+   filter its task obeys; the toggle only decides whether an already-visible
+   task shows it. Key/value pairs rather than a paragraph: these are answers to
+   named questions, and a reader looking for the commit should not have to read
+   a sentence about the model first. */
+tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--border);
+  padding:.6rem .75rem .7rem 2.4rem}
+.dtwrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);
+  gap:.5rem 2rem}
+@media (max-width:52rem){.dtwrap{grid-template-columns:minmax(0,1fr)}}
+.dtcol h4{margin:0 0 .3rem;font-size:var(--t-label);text-transform:uppercase;
+  letter-spacing:.08em;color:var(--muted);font-weight:700}
+.dt-r{display:flex;gap:.6rem;align-items:baseline;padding:.12rem 0;font-size:.86rem}
+.dt-k{flex:0 0 6.2rem;color:var(--muted);font-size:.76rem;text-align:right}
+.dt-v{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;white-space:pre-wrap}
+/* The disclosure control. A chevron that rotates, in the id cell, sized to a
+   comfortable target without pushing the column wider than its ids. */
+/* The id and its control are one unit and must not wrap apart — "BF1.1" under
+   a lone chevron reads as two cells. */
+td.tid{white-space:nowrap}
+.dtoggle{border:0;background:none;cursor:pointer;color:var(--muted);
+  padding:0 .35em 0 0;font:inherit;line-height:1}
+.dtoggle::before{content:"\25B8";display:inline-block;font-size:.8em;
+  transition:transform var(--dur) var(--ease)}
+.dtoggle[aria-expanded="true"]::before{transform:rotate(90deg)}
+.dtoggle:hover{color:var(--accent)}
+.dtoggle:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* sha (F-P-4): the commit and the one press that copies all forty characters
+   of it. The button is quiet until the row is hovered or it takes focus — a
+   Copy button on every row of a fifty-phase table is fifty buttons shouting;
+   keyboard users get it on :focus-visible, so quiet never means unreachable. */
+.shacell{display:inline-flex;align-items:center;gap:.4em}
+.shacopy{font-size:.66rem;padding:.1rem .4em;border:1px solid var(--field-border);
+  border-radius:var(--radius);background:var(--surface);color:var(--muted);
+  cursor:pointer;opacity:0;transition:opacity var(--dur) var(--ease)}
+tr:hover .shacopy,.shacopy:focus-visible{opacity:1}
+.shacopy:hover{color:var(--accent);border-color:var(--accent)}
+@media (hover:none){.shacopy{opacity:1}}
+td.muted{font-size:.86em}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:last-child td:first-child{border-bottom-left-radius:var(--radius-lg)}
+tbody tr:last-child td:last-child{border-bottom-right-radius:var(--radius-lg)}
+

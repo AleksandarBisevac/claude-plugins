@@ -1,0 +1,96 @@
+/* ---- segments (D1) --------------------------------------------------------
+   The phases table renders in three blocks — active, pending, done — each
+   introduced by a full-width header row. The header is quiet chrome, not a
+   status chip: a tinted band with an uppercase label, the phase count, and
+   (D2) the segment's export controls hung off its right edge. The done
+   segment's header is the ARCHIVE toggle; report.js collapses the done rows
+   under it at load so a long finished run stops burying the work in motion.
+
+   Deliberately NOT a per-segment vertical scroll box: the segments live in
+   ONE table (splitting it would re-measure the columns per segment and skew
+   every row against the shared thead), and table rows cannot be
+   height-clipped without display:block, which breaks that same alignment.
+   The View select is what delivers the scanning win instead; the house
+   rule the table does keep is horizontal — .tablewrap owns any sideways
+   overflow, and the page never scrolls sideways. */
+tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);padding:.45rem .75rem;
+  font-size:.72rem;color:var(--muted)}
+.segname{font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text)}
+.segn{margin-left:.5rem}
+/* The export cluster: on the header's right edge, out of the label's way. */
+.segx{float:right;display:inline-flex;gap:.3rem}
+.segbtn{font-size:.68rem;padding:.25rem .5rem}
+/* The usage exports sit under the trend heading as their own right-aligned
+   row — the h3 above them is a nav anchor whose exact bytes render-report
+   rewrites, so nothing may ride inside it. */
+.usx{float:none;display:flex;justify-content:flex-end;gap:.3rem;
+  margin:.2rem 0 0}
+/* vw (F-P-4): the archive's disclosure button is gone — which segments are on
+   screen is the toolbar's View select now, and a segment that ALSO hid itself
+   was a second gate saying something different. The row below is what replaced
+   the one thing the toggle did well: it said the rows were there. */
+tr.outside td{background:var(--surface-2);color:var(--muted);font-size:.78rem;
+  padding:.5rem .75rem;text-align:center}
+tr.outside .btn{margin-left:.5rem}
+/* The advisory owner suffix on an area tag (D4): same chip, quieter voice —
+   the tag is the identifier, the owner is a note about it. */
+.area-tag .aown{font-weight:400;letter-spacing:normal;text-transform:none;
+  opacity:.8}
+
+@page{margin:1.4cm}
+@media print{
+  /* color-scheme comes with the colours. Overriding the tokens alone would print
+     a white sheet whose checkboxes, selects and date picker are still painted
+     dark by the UA, because those read this property and nothing else. */
+  :root,:root[data-theme="dark"]{color-scheme:light;
+    --bg:#fff;--surface:#fff;--surface-2:#f3f4f6;--text:#111827;
+    --muted:#374151;--border:#d1d5db}
+  /* Three lines is the least that still reads as a paragraph: below that a page
+     break strands a line whose sentence began on the sheet before. Set on body
+     because both properties inherit — every block in the document, not the six
+     someone remembered to name. */
+  body{max-width:none;margin:0;padding:0;font-size:10.5pt;orphans:3;widows:3}
+  /* Paper has no scroll position to indicate and no controls to press, so the
+     whole shell collapses back to the document it always was underneath. The
+     disclosure triangle goes with them: on a page where every phase is already
+     printed open, an arrow inviting you to open one is a control that lies. */
+  .topbar,.snav,.toolbar,tr.taskfilter,.nojs,.tri{display:none!important}
+  .shell{display:block;max-width:none;padding:0}
+  .topgrid{display:block}
+  /* Now that BOTH orientations reach this stylesheet they land on opposite sides
+     of the 52rem breakpoint: A4 portrait inside a 1.4cm margin is ~688px, i.e.
+     43rem, and matches the tablet rules; landscape is ~1016px and does not. So
+     portrait paper was quietly being handed the small-screen layout — every
+     table sealed inside an `overflow-x:auto` frame that paper cannot scroll, and
+     the phase prose pinned sticky against a left edge that never moves. A sheet
+     is not a small screen. It is a wide one that has been cut into pages. */
+  .tablewrap{overflow:visible;border:0;border-radius:0;box-shadow:none}
+  table.phases,table.data{min-width:0;box-shadow:none}
+  .pmeta{position:static;max-width:none;white-space:normal}
+  /* Paper prints the plan whole, filtered or not — which is what the Save as PDF
+     button has always promised, and what forcing `tr.task` visible already did
+     for collapsed rows. Left half-done it printed the filtered view's leftovers:
+     task rows under phase headings the filter had hidden, a "3 of 12 match"
+     badge on a page carrying all twelve, and — filtered down to nothing — the
+     empty state announcing that no phase matched, directly above every phase.
+     Each of those is an inline style written by the filter, so each needs
+     `!important` to be taken back here. */
+  tr.phase,tr.task,tr.taskdetail{display:table-row!important;break-inside:avoid}
+  .pmatch,tr.norows{display:none!important}
+  /* A table that spans pages has to carry its column headers onto each of them,
+     or page two of a long plan is a grid of unlabelled cells. */
+  thead{display:table-header-group}
+  thead th{position:static!important}
+  /* A heading at the foot of a page introduces nothing. */
+  h1,h2,h3,h4,.sub{break-after:avoid;break-inside:avoid}
+  a[href]{color:inherit;text-decoration:none}
+  .tiles,.uphase,.hm,.cols,.smcell,.rank{break-inside:avoid}
+  /* a folded disclosure prints as a stub; force it open so the PDF is whole */
+  details.more{display:block!important}
+  details.more>summary{display:none!important}
+  details.more>*{display:revert!important}
+  .seg,.hm i,.cols rect{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}
+

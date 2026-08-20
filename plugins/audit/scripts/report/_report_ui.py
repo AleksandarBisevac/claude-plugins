@@ -71,12 +71,19 @@ _script_cache = None
 
 
 # --- asset loading ------------------------------------------------------------
+# THE ORDER OF THIS TUPLE IS THE CASCADE. Two rules of equal specificity are
+# decided by which one is read last, so this sequence is behaviour: the shell
+# before the components that sit in it, and the print and forced-colours blocks
+# after the colours they override.
+_CSS_PARTS = _theme.REPORT_CSS_PARTS
+
+
 def _css(cache=True):
     """The plain-CSS part of `_CSS` (without the TOKEN_CSS prefix)."""
     global _css_cache
     if cache and _css_cache is not None:
         return _css_cache
-    out = _theme.read_asset("report.css")
+    out = "".join(_theme.read_asset(n) for n in _CSS_PARTS)
     if cache:
         _css_cache = out
     return out

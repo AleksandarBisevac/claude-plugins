@@ -875,11 +875,47 @@ UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
 # direction.
 _DOC_SUFFIXES = (".md", ".txt")
 
+# THE CASCADE ORDER of the report's stylesheet parts, declared once. Two rules
+# of equal specificity are decided by which is read last, so this sequence is
+# behaviour and not filing: the shell before what sits in it, and the print
+# and forced-colours blocks after the colours they override.
+#
+# It lives HERE rather than beside the assembler because the theme lints run
+# at this layer and must audit the sheet in the order that SHIPS. Sorting
+# these names alphabetically would audit a sheet nobody serves.
+REPORT_CSS_PARTS = (
+    "report-css/shell.css",
+    "report-css/summary.css",
+    "report-css/controls.css",
+    "report-css/badges.css",
+    "report-css/tables.css",
+    "report-css/gate-rail.css",
+    "report-css/empty-state.css",
+    "report-css/forced-colors.css",
+    "report-css/motion-and-print.css",
+    "report-css/ready-now.css",
+    "report-css/segments.css",
+    "report-css/usage.css",
+    "report-css/print-segments.css",
+)
+
 UI_ASSETS = (
     "panel.css",
     "panel.html",
     "panel.js",
-    "report.css",
+    "report-css/badges.css",
+    "report-css/controls.css",
+    "report-css/empty-state.css",
+    "report-css/forced-colors.css",
+    "report-css/gate-rail.css",
+    "report-css/motion-and-print.css",
+    "report-css/print-segments.css",
+    "report-css/ready-now.css",
+    "report-css/segments.css",
+    "report-css/shell.css",
+    "report-css/summary.css",
+    "report-css/tables.css",
+    "report-css/usage.css",
     "report/areas.js",
     "report/authors.js",
     "report/chips.js",
@@ -1680,8 +1716,12 @@ def themed_stylesheets():
     of those sit a layer up and this module may not import them.
     """
     panel = read_asset("panel.css")
+    # The report's sheet is ordered parts, joined in cascade order. The order is
+    # taken from UI_ASSETS rather than restated, so a part added there is a part
+    # this lint sees; a second list here would be a sheet nobody audits.
+    report = "".join(read_asset(n) for n in REPORT_CSS_PARTS)
     return [("panel", panel.replace("/*__THEME_TOKENS__*/", TOKEN_CSS)),
-            ("report", TOKEN_CSS + read_asset("report.css"))]
+            ("report", TOKEN_CSS + report)]
 
 
 if __name__ == "__main__":

@@ -1,0 +1,150 @@
+
+/* One status token drives the pipeline rail AND the badge, and now carries its
+   own ink with it. The amber exception below this is gone: it existed because a
+   solid amber fill needs dark text while the other three need white, i.e. because
+   the fill was the design. */
+[data-status="done"],[data-status="fixed"]{--st:var(--st-done);--st-ink:var(--st-done-ink)}
+[data-status="in_progress"],[data-status="triaged"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
+[data-status="blocked"],[data-status="open"]{--st:var(--st-blocked);--st-ink:var(--st-blocked-ink)}
+[data-status="pending"]{--st:var(--st-pending);--st-ink:var(--st-pending-ink)}
+/* ca (F-P-4): the two "settled, not achieved" states share an ink. A cancelled
+   phase beside a done one must not read as a second success — see the token. */
+[data-status="cancelled"],[data-status="wontfix"]{--st:var(--st-cancelled);
+  --st-ink:var(--st-cancelled-ink)}
+.area-tag{display:inline-block;font-size:var(--t-label);font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  padding:.25rem .5em;border-radius:var(--pill);background:var(--surface-2);color:var(--muted);
+  border:1px solid var(--border);vertical-align:middle}
+
+/* ---- base ---------------------------------------------------------------- */
+*{box-sizing:border-box}
+/* Reserve the scrollbar's width always. Without it a short section and a long one
+   centre the whole shell at two different offsets, and every jump between them
+   shifts the page sideways. */
+html{background:var(--bg);scrollbar-gutter:stable}
+/* Every anchor in this document lands under a sticky bar unless it says otherwise
+   — and this report is navigated almost entirely by anchor. One rule covers the
+   section headings, the phase rows a "held by" link points at, and anything a
+   later section adds an id to. */
+[id]{scroll-margin-top:calc(var(--sticky-2) + var(--sp-2))}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
+     margin:0;padding:0;-webkit-font-smoothing:antialiased}
+
+/* ---- app shell -----------------------------------------------------------
+   A 70rem centred column wasted half a laptop screen and gave a long document no
+   map: this report runs verdict -> phases -> bugs -> ready -> usage, and usage
+   alone has a chart, tiles, ranked lists, a budget block and a heatmap. So:
+   navigation at the side, actions on top — the split follows what the controls
+   DO, not where they fit.
+
+   The side nav is not a menu of five links, which a top bar would carry perfectly
+   well. It is a position indicator for a document you scroll for a long time, and
+   that is a different job: it says where you are, not only where you can go.
+
+   One information architecture, two presentations (the app-shell rule): above
+   72rem it is a sticky column; below, the same items become a horizontal strip
+   under the top bar. Never two different menus. */
+/* Shown only when the script did not run - its first act is to remove this.
+   Amber (the in-progress token), not the blocked red: nothing is broken, the page
+   is just being viewed somewhere that will not run it, and the reader fixes that
+   in one step. Read, not dismissed - but not an error state.
+   Tokens are the ones THIS stylesheet declares. The first draft reached for the
+   panel's palette, which is a different file, and the undeclared-var guard caught
+   it: an undeclared token makes the whole declaration invalid at computed-value
+   time, so the banner would have painted transparent and logged nothing. */
+.nojs{padding:.7rem 1.5rem;background:color-mix(in srgb,var(--st-prog) 14%,var(--surface));
+  color:var(--text);border-bottom:1px solid color-mix(in srgb,var(--st-prog) 45%,transparent);
+  font-size:.86rem;line-height:1.5}
+.nojs strong{color:var(--st-prog-ink)}
+.topbar{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:.75rem 1rem;
+  flex-wrap:wrap;padding:.6rem 1.5rem;background:color-mix(in srgb,var(--surface) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.topbar.scrolled{box-shadow:var(--shadow-sm)}
+/* The title identifies the report and must survive being shared, so it stays in
+   the bar — but capped and elided. Uncapped it pushed the actions onto a third
+   row at 1440px, which is the opposite of what a persistent action bar is for. */
+.tb-id{display:flex;flex-direction:column;min-width:0;margin-right:auto;
+  max-width:min(40%,32rem)}
+.tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+.tb-id .meta{font-size:.72rem}
+.tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
+/* The global filter row (C1/C2): a second line of the SAME sticky bar, never a
+   separate floating element — the full argument lives on the Python builder
+   (_report_html._global_filter_row). Geometry cost is absorbed by the measured
+   --topbar-h, print cost is zero (the whole .topbar is dropped from paper by a
+   pinned rule), and on a phone the row wraps under the title like any flex
+   line. flex-basis:100% is what makes it a row of the bar rather than one more
+   item competing with the actions for the first line. */
+.gfilters{flex-basis:100%;display:flex;align-items:center;gap:.3rem .5rem;
+  flex-wrap:wrap;padding-top:.45rem;border-top:1px solid var(--border)}
+.gfilters .gf{display:inline-flex;align-items:center;gap:.3rem}
+.gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
+  padding:.28rem .4rem;color:var(--text);background:var(--bg);
+  border:1px solid var(--field-border);border-radius:var(--radius);max-width:11rem}
+.gfilters select:focus,.gfilters input[type=date]:focus{outline:none;
+  border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
+.shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
+  max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
+.content{min-width:0}
+/* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
+   not "using the space", it is unreadable. Tables and charts take the full
+   column; text does not. */
+.pmeta{max-width:82ch}
+/* How the cards compose as the screen grows. Below 78rem they stack, because two
+   400px columns of prose is worse than one. Above it they pair, which is the only
+   honest use of the extra width: a summary paragraph set 1100px wide is not
+   "filling the space", it is 130 characters per line and unreadable. The verdict
+   takes the larger share — it is the answer, the summary is the elaboration.
+   A lone card spans the full width rather than sitting in half of it. */
+.topgrid{display:grid;gap:1rem;grid-template-columns:minmax(0,1fr);margin:1rem 0}
+.topgrid>*{margin:0}
+.topgrid>:only-child{grid-column:1/-1}
+@media (min-width:78rem){.topgrid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+  align-items:start}}
+.snav{position:sticky;top:calc(var(--topbar-h) + var(--sp-1));
+  max-height:calc(100vh - var(--topbar-h) - var(--sp-4));overflow:auto;
+  padding-right:.25rem}
+.snav ol{list-style:none;margin:0;padding:0}
+.snav a{display:flex;align-items:center;gap:.5rem;text-decoration:none;color:var(--muted);
+  font-size:.85rem;padding:.34rem .6rem;border-radius:var(--radius);
+  border-left:2px solid transparent;transition:color var(--dur),background var(--dur)}
+.snav a:hover{color:var(--text);background:var(--surface-2)}
+.snav a[aria-current="true"]{color:var(--text);background:var(--surface-2);
+  border-left-color:var(--accent);font-weight:600}
+.snav .sub-item a{padding-left:1.5rem;font-size:.8rem}
+/* The count is the point of putting it here: "Bugs 5" tells you whether the
+   section is worth the scroll before you take it. */
+.snav .n{margin-left:auto;font-family:var(--mono);font-size:.72rem;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.snav-title{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
+  color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
+@media (max-width:48rem){
+  /* On a phone the title is the only thing identifying the report, and 40% of
+     390px is not a title, it is three words and an ellipsis. It takes the row. */
+  .tb-id{max-width:100%}
+}
+@media (max-width:72rem){
+  .shell{grid-template-columns:minmax(0,1fr);gap:1rem;padding-top:.5rem}
+  /* Same items, different presentation — a horizontal strip, not a second menu. */
+  .snav{position:sticky;top:var(--topbar-h);max-height:none;overflow-x:auto;overflow-y:hidden;
+    margin:0 -1.5rem;padding:.4rem 1.5rem;background:var(--bg);
+    border-bottom:1px solid var(--border);z-index:var(--z-strip)}
+  .snav-title{display:none}
+  .snav ol{display:flex;gap:.25rem;white-space:nowrap}
+  .snav a{border-left:none;border-bottom:2px solid transparent;border-radius:var(--radius) var(--radius) 0 0}
+  .snav a[aria-current="true"]{border-left-color:transparent;border-bottom-color:var(--accent)}
+  .snav .sub-item{display:none}
+}
+a{color:var(--accent);text-underline-offset:2px}
+/* The title names the document; it does not lead it. §7: the reader arrives with
+   one question and it is not "what is this called". So the h1 is set at body-ish
+   size and the verdict below it carries the display weight. */
+h1{font-size:1.22rem;font-weight:680;letter-spacing:-.01em;margin:0 0 .2rem}
+h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+   margin:2rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+.meta{color:var(--muted);font-family:var(--mono);font-size:.8rem;margin:0 0 1.5rem;
+      font-variant-numeric:tabular-nums}
+.invalid{color:var(--st-blocked);font-weight:600}
+.muted{color:var(--muted)}
+.mono{font-family:var(--mono);font-size:.86em;font-variant-numeric:tabular-nums}
+

@@ -7,7 +7,7 @@ The cases for `_report_ui.py`, moved out of it - an importable helper.
 `_report_ui.py` itself spells it: the module UNDER TEST is `M`, every other
 production module keeps the name production gives it.
 
-These cases read `ui/report.css` and `ui/report.js` - ASSETS, not another module's
+These cases read the `ui/report-css/` and `ui/report/` parts - ASSETS, not another module's
 Python source - and they reach them through `_theme.read_asset` / `_theme.UI_DIR`,
 both of which resolve from `_ui_theme.py`'s own location. Nothing here is computed
 from this file's path, so moving one directory over changes nothing.
@@ -27,17 +27,17 @@ import _report_ui as M                             # noqa: E402
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- the two asset files exist and decode as utf-8 ---------------------------
-    names = ("report.css",) + M._SCRIPT_PARTS
+    names = M._CSS_PARTS + M._SCRIPT_PARTS
     unreadable = _theme.unreadable_assets(names)
     for name in names:
         check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
-    css_file = _theme.read_asset("report.css")
+    css_file = "".join(_theme.read_asset(n) for n in M._CSS_PARTS)
     js_file = "".join(_theme.read_asset(n) for n in M._SCRIPT_PARTS)
 
     # --- CSS starts with the TOKEN_CSS block: the tokens sit in front -----------
     check("CSS starts with the TOKEN_CSS block", M.CSS.startswith(_theme.TOKEN_CSS))
-    check("CSS is TOKEN_CSS immediately followed by report.css's own content",
+    check("CSS is TOKEN_CSS immediately followed by the CSS parts joined in cascade order",
           M.CSS == _theme.TOKEN_CSS + css_file)
 
     # --- exactly one <script> open/close in SCRIPT -------------------------------

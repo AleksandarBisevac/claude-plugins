@@ -583,12 +583,12 @@ def _cases(check):
           "scripts/ui/** to eol=lf",
           _translated.count("\r") == 0 and _translated != _kept
           and _translated == _kept.replace("\r\n", "\n"))
-    with io.open(os.path.join(M.UI_DIR, "report.css"), "r", encoding="utf-8",
+    with io.open(os.path.join(M.UI_DIR, "report-css", "shell.css"), "r", encoding="utf-8",
                  newline="") as _fh:
         _direct = _fh.read()
     check("ua5 read_asset defaults to UI_DIR and is byte for byte the read both "
           "surfaces already do, so adopting it changes nothing on screen",
-          bool(_direct) and M.read_asset("report.css") == _direct)
+          bool(_direct) and M.read_asset("report-css/shell.css") == _direct)
 
     # cr_violations. The fixture carries a real \r on purpose: an all-LF one
     # cannot tell a working check apart from `return []`.
@@ -615,7 +615,7 @@ def _cases(check):
           not M.unreadable_assets(_ASSETS))
     check("ua10 ...and names one that is not there, in the order given - so the "
           "empty list above is an answer, not a no-op",
-          M.unreadable_assets(("report.css", "nope.css",
+          M.unreadable_assets(("report-css/shell.css", "nope.css",
                                "report/page-state.js"))
           == ["nope.css"])
     check("ua11 ...and one that EXISTS and does not decode as utf-8, while the "
@@ -662,6 +662,24 @@ def _cases(check):
                   os.path.join(_ua_tmp, "nope"))[0][0].startswith("<unreadable"))
     finally:
         shutil.rmtree(_ua_tmp, ignore_errors=True)
+
+
+    # --- the audited sheet must be the shipped sheet --------------------------
+    _rc = M.REPORT_CSS_PARTS
+    check("cs1 the cascade order is declared ONCE and is not alphabetical - two "
+          "rules of equal specificity are decided by which is read last, so "
+          "sorting these %d names would change what ships" % (len(_rc),),
+          len(_rc) >= 5 and list(_rc) != sorted(_rc)
+          and _rc[0].endswith("shell.css"))
+    check("cs2 every declared part exists and every report-css asset is "
+          "declared - a part on disk that the sheet does not join is a feature "
+          "that silently never ships",
+          set(_rc) == set(n for n in M.UI_ASSETS if n.startswith("report-css/")))
+    _shipped = M.TOKEN_CSS + "".join(M.read_asset(_n) for _n in _rc)
+    check("cs3 the sheet the theme lints audit IS the sheet the page receives, "
+          "byte for byte - auditing a differently-ordered join would clear a "
+          "palette nobody serves",
+          dict(M.themed_stylesheets())["report"] == _shipped)
 
 
 

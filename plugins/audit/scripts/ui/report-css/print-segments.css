@@ -1,0 +1,41 @@
+/* ---- segment print rules (D1) ----------------------------------------------
+   A page break lands before every segment header, so each segment starts its
+   own sheet — except the first, which would otherwise print a blank page
+   ahead of the whole table. The header itself is forced visible: a filter
+   may have hidden it inline on screen, and paper prints the plan whole (the
+   pinned tr.phase/tr.task rule two blocks up), so the landmark each break
+   lands on has to be there.
+
+   THE ARCHIVE PRINTS EXPANDED, not as a summary. Chosen because the pinned
+   whole-plan rule (`tr.phase,tr.task{display:table-row!important}`) is the
+   Save-as-PDF button's standing promise — paper gets every row, filtered or
+   collapsed or not — and an archive that printed as one count line would be
+   the first exception to it: a PDF silently missing the signed-off record it
+   exists to archive. The reader who wants less paper has the per-segment
+   Print buttons instead. */
+@media print{
+  tr.seghead{break-before:page;display:table-row!important}
+  #phases tbody tr.seghead:first-child{break-before:auto}
+  /* The export controls are screen furniture; on paper they are dead ink. */
+  .segx,.secx{display:none!important}
+  /* Screen-only: on paper every row is already there, so a line offering to
+     show more of them is a control that lies (the .tri rule's own argument). */
+  tr.outside{display:none!important}
+}
+
+/* ---- one segment on paper (D2) ---------------------------------------------
+   The per-segment Print button stamps body[data-printseg="<seg>"], opens the
+   print dialog, and afterprint takes the attribute back off. Under it, print
+   CSS isolates the segment: everything in the main column except the phases
+   section goes (the hero, usage, bugs, ready — each would print a statement
+   about the WHOLE plan on a sheet claiming to be one segment), and inside
+   the table every row of the other segments goes, seghead included. Higher
+   specificity than the pinned whole-plan rule, and later in the sheet, so
+   these !important rules win exactly where the attribute says they should. */
+@media print{
+  body[data-printseg] .content>*:not(#phases){display:none!important}
+  body[data-printseg="active"] #phases tr[data-seg]:not([data-seg="active"]),
+  body[data-printseg="pending"] #phases tr[data-seg]:not([data-seg="pending"]),
+  body[data-printseg="archived"] #phases tr[data-seg]:not([data-seg="archived"]){
+    display:none!important}
+}
