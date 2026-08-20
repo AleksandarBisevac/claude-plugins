@@ -172,7 +172,7 @@ $('#report').onclick=async e=>{const b=e.currentTarget;
   if(!r.ok){if(win)win.close();toast((r.findings||['render failed'])[0],'err');return;}
   if(!r.exists){if(win)win.close();
    toast('rendered, but no HTML report was written — check /audit:report','err');return;}
-  toast('wrote '+(r.files||[]).length+' file(s)','ok');
+  toast('wrote '+plural((r.files||[]).length,'file'),'ok');
   if(win){win.location=url('/report');}
   else{
    // Blocked anyway: leave a link rather than a button that did nothing.

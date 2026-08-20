@@ -1573,11 +1573,23 @@ SHARED_CONCERNS = (
     ("web storage", "shared/storage.js", "localStorage.", 0,
      "fourteen sites each wrapped their own try/catch for one rule: a document "
      "opened over file:// may refuse storage, and neither surface may break."),
-    ("pluralisation", None, "===1?''", 22,
-     "NOT EXTRACTED, and blocked on a decision rather than on effort: the panel "
-     "carries two competing conventions for one job - this one and a literal "
-     "'(s)' - so a helper adopted by only one of them makes the split permanent. "
-     "Python already owns the rule as _fmt.plural."),
+    ("pluralisation", "shared/plural.js", "===1?'':'s'", 0,
+     "EXTRACTED, and the decision it was blocked on went the only way it could: "
+     "the panel carried two conventions for one job - this suffix and a literal "
+     "'(s)' - so adopting a helper in one of them would have made the split "
+     "permanent. Both are gone. The literal cannot be a needle of its own "
+     "(`test(s)`, `label(s)` and `dParse(s)` all match it), so it is not counted "
+     "here; what stops it returning is that `plural` expresses what it never "
+     "could - a clause whose VERB agrees too, which is why several of those "
+     "sites read '1 task(s) are blocked'."),
+    ("literal (s) pluralisation", "shared/plural.js", r"re:\(s\)\s+[a-z]", 0,
+     "The second convention, and the row that made the registry learn regexes. "
+     "A substring cannot express it: `(s) ` matches the sentences AND "
+     "`dParse(s) + 6 * DAY`, since a space follows the paren in both, and what "
+     "separates them is whether a WORD or an operator comes next. Kept as its "
+     "own row rather than folded into the suffix one, because one needle cannot "
+     "see both and a row that silently covers half its concern is worse than "
+     "two rows that each say what they check."),
     ("clipboard copy", None, "navigator.clipboard", 2,
      "NOT EXTRACTED. Both sites guard correctly, but their FALLBACKS differ on "
      "purpose (the report selects the text, the panel uses execCommand and a "
@@ -1705,12 +1717,34 @@ def _code_only(text):
     return "".join(out)
 
 
+def _needle_counter(needle):
+    """A `count(body)` for one needle, substring or regex.
+
+    A needle wrapped in `re:` is compiled; anything else is a plain substring, as
+    every row was until the literal `(s)` convention needed a row of its own.
+    That one cannot be a substring: `(s) ` matches the sentences AND
+    `dParse(s) + 6 * DAY`, because a space follows the paren in both. What
+    separates them is what comes NEXT -- a word in the sentence, an operator in
+    the call -- and that is a distinction no substring can draw.
+
+    The alternative was to leave the concern unguarded and say so in its `why`.
+    Widening the registry once is cheaper than a row that admits it cannot see
+    half of what it names, and this is the second row that would have wanted it
+    (the day/millisecond needle settled on the CONSTANT for the same reason).
+    """
+    if needle.startswith("re:"):
+        rx = re.compile(needle[3:])
+        return lambda body: len(rx.findall(body))
+    return lambda body: body.count(needle)
+
+
 def _concern_hits(root, home, needle):
     """[(asset, count)] for `needle` outside `home`, comments stripped.
 
     One walk, used by both callers. They had a copy each until this was written,
     which in a module whose subject is duplication is not an irony worth keeping.
     """
+    count_in = _needle_counter(needle)
     hits = []
     for name in sorted(n for n in ui_asset_names(root) if n.endswith(".js")):
         if home is not None and name == home:
@@ -1723,7 +1757,7 @@ def _concern_hits(root, home, needle):
             # with no duplication in it.
             hits.append((name + " <unreadable: %s>" % (exc,), 1))
             continue
-        count = body.count(needle)
+        count = count_in(body)
         if count:
             hits.append((name, count))
     return hits

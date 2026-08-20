@@ -85,8 +85,8 @@ function modelItems(){
  (comp.phases||[]).forEach(p=>{if(p.reviewModel)useP[p.reviewModel]=(useP[p.reviewModel]||0)+1;});
  [...new Set([...Object.keys(useT),...Object.keys(useP)])].sort().forEach(m=>{
   const bits=[];
-  if(useT[m])bits.push(useT[m]+' task(s)');
-  if(useP[m])bits.push(useP[m]+' review(s)');
+  if(useT[m])bits.push(plural(useT[m],'task'));
+  if(useP[m])bits.push(plural(useP[m],'review'));
   add(m,'manifest','used by '+bits.join(', '));});
  const rates=Object.assign({},(((STATE||{}).defaults||{}).usage||{}).pricing||{},
    (((STATE||{}).config||{}).usage||{}).pricing||{});
@@ -483,7 +483,7 @@ function renderComp(){closeCombo();
    const rows=compChanges(patch);
    if(!rows.length){toast('nothing to save — no values changed');return;}
    if(!await confirmChanges({title:'Save composition',rows,scope:'comp',
-     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     verb:'Save '+plural(rows.length,'change'),
      note:'writes '+STATE.manifestPath}))return;
    const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
    for(const k of Object.keys(patch.meta))clean.meta[k]=patch.meta[k];

@@ -44,8 +44,8 @@ function uBudgets(facts){
    el('span',{class:'uamt'},uCost(ts)+' of '+uCost(tb))));
  const missing=Object.keys(USAGE.phaseTitles||{}).filter(p=>!(p in B)).length;
  if(missing)out.push(el('div',{class:'mut small'},
-   missing+' phase(s) have no budgetUSD set and are not listed - they are not '
-   +'phases at zero.'));
+   plural(missing,'phase has','phases have')
+   +' no budgetUSD set and are not listed - they are not phases at zero.'));
  return out;}
 
 // --- monthly overview -------------------------------------------------------
@@ -307,7 +307,8 @@ function uPerson(){
  const bits=[uTok(tok)+' tokens ('+uPct(uShare(tok,allTok))+' of the project)'];
  if(USAGE.showCost)bits.push(uCost(cost)+' of '+uCost(allCost));
  bits.push(msgs.toLocaleString()+' messages');
- bits.push(phases.size+' phase(s) and '+tasks.size+' task(s) touched');
+ bits.push(plural(phases.size,'phase')+' and '+plural(tasks.size,'task')
+   +' touched');
  if(first)bits.push('active '+(first===last?first:first+' to '+last));
  const named=[...models.entries()].sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
  bits.push('models: '+named.slice(0,3).join(', ')

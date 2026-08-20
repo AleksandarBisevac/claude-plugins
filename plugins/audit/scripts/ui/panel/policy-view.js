@@ -157,9 +157,9 @@ function renderPolicy(){closeCombo();
  // two differ, or a reader edits a switch, reads "inert" underneath it and
  // concludes the switch did nothing.
  if(pending.length)head.append(el('div',{class:'findings warn','data-ppend':'1'},
-   'Described above: the policy as SAVED. You have '+pending.length+' unsaved '
-   +'change'+(pending.length===1?'':'s')+' — verdicts are re-read from the server '
-   +'once they are written.'));
+   'Described above: the policy as SAVED. You have '
+   +plural(pending.length,'unsaved change')
+   +' — verdicts are re-read from the server once they are written.'));
  (POLICY.findings||[]).forEach(f=>head.append(
    el('div',{class:'findings err','data-pfinding':'1'},'✗ '+f)));
  (POLICY.warnings||[]).forEach(w=>head.append(el('div',{class:'findings warn'},'! '+w)));
@@ -292,7 +292,7 @@ function renderPolicy(){closeCombo();
    const chg=policyChanges();
    if(!chg.length){toast('nothing to save — the policy is unchanged');return;}
    if(!await confirmChanges({title:'Save capability policy',rows:chg,scope:'policy',
-     verb:'Save '+chg.length+' change'+(chg.length===1?'':'s'),
+     verb:'Save '+plural(chg.length,'change'),
      note:'writes .claude/audit.config.json'}))return;
    const res=await api('PUT','/api/policy',{policy:PDRAFT||{}});
    findings.replaceChildren(findingsBox(res));
@@ -348,7 +348,7 @@ function pAgo(days){
  if(days==null)return 'at an unknown time';
  if(days<1/24)return 'within the hour';
  if(days<1)return 'today';
- return Math.round(days)+' day(s) ago';}
+ return plural(Math.round(days),'day')+' ago';}
 
 // One switch, for one capability, in one scope.
 

@@ -988,6 +988,44 @@ def _cases(check):
           "is a number nobody can re-derive the intent of",
           all(isinstance(why, str) and len(why) > 40
               for _c, _h, _n, _a, why in M.SHARED_CONCERNS))
+    # sc2 can only vouch for a row that still ALLOWS copies: it calls a live count
+    # of 0 a dead needle, which is right for an unextracted row and wrong for an
+    # extracted one, where 0 is the goal. So an extracted row whose needle stopped
+    # matching reads exactly like a clean tree - the failure this whole registry
+    # exists to prevent, one level up.
+    #
+    # Each needle is therefore pointed at a sample that MUST match and one that
+    # must not. Hand-kept, and a row with no sample fails rather than being
+    # skipped, because a skipped row is the same silence.
+    _SAMPLES = {
+        "blob download": ("const u=URL.createObjectURL(b);", "revokeObjectURL(u)"),
+        "web storage": ("localStorage.setItem(k,v)", "storageSet(k,v)"),
+        "pluralisation": ("' change'+(n===1?'':'s')", "plural(n,'change')"),
+        # The four that made this needle a regex: a space follows the paren in
+        # `dParse(s) + 6 * DAY` too, so only what comes NEXT tells them apart.
+        "literal (s) pluralisation": ("' row(s) match everything'",
+                                      "dIso(dParse(s) + 6 * DAY)"),
+        "clipboard copy": ("navigator.clipboard.writeText(t)", "copyText(t)"),
+        "table header construction": ("el('thead',{},el('tr',{}))",
+                                      "tableHead(['a','b'])"),
+        "day <-> milliseconds": ("const d=ms/864e5;", "const d=ms/DAY;"),
+    }
+    _missing = [c for c, _h, _n, _a, _w in M.SHARED_CONCERNS if c not in _SAMPLES]
+    check("sc12 every row has a sample its needle is checked against - a row "
+          "without one would be a needle nothing proves can fire: %r" % (_missing,),
+          not _missing and len(_SAMPLES) == len(M.SHARED_CONCERNS))
+    _blind, _noisy = [], []
+    for _c, _h, _needle, _a, _w in M.SHARED_CONCERNS:
+        _hit, _miss = _SAMPLES.get(_c, ("", ""))
+        _count = M._needle_counter(_needle)
+        if _count(_hit) < 1:
+            _blind.append((_c, _needle, _hit))
+        if _count(_miss) > 0:
+            _noisy.append((_c, _needle, _miss))
+    check("sc13 ...and each needle FIRES on the convention it names (blind: %r)"
+          % (_blind,), not _blind)
+    check("sc14 ...and does NOT fire on the repaired form, or on the calls that "
+          "merely look like it (noisy: %r)" % (_noisy,), not _noisy)
     # It is a CAP, not an equality, and that is the entire difference between this
     # registry and the three save/discard counts retired in 9f73b22: those
     # required the duplication to stay, so removing a copy turned them red.

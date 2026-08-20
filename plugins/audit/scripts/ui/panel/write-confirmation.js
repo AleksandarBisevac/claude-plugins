@@ -708,11 +708,12 @@ function saveOutcome(res,rows,what,slot){
  const diff=appliedDiff(rows,res);
  const log=res.journaled?' · logged'
    :(res.journaledWhy==='failed'?' · NOT logged':'');
- toast('Saved · '+n+' change'+(n===1?'':'s')+log,diff?'warn':'ok');
+ toast('Saved · '+plural(n,'change')+log,diff?'warn':'ok');
  if(diff&&slot)slot.append(el('div',{class:'findings warn','data-cfdiff':'1'},
    'Saved, but not exactly what the dialog listed: '+diff.applied+' of the '
-   +diff.shown+' change(s) shown were applied'
-   +(diff.extra?(', and '+diff.extra+' other change(s) were'):'')
+   +plural(diff.shown,'change shown was','changes shown were')+' applied'
+   +(diff.extra?(', and '+plural(diff.extra,'other change was',
+     'other changes were')):'')
    +'. The file moved between opening this view and saving — reload the panel to '
    +'see what it holds now.'));}
 

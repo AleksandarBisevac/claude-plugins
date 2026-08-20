@@ -289,7 +289,7 @@ function uExport(facts){
   // as an escape, never as the character itself — an invisible literal in the
   // source is unreviewable and ungreppable.
   downloadText(name,'\ufeff'+uCsvText(facts),'text/csv');
-  toast(facts.length+' row(s) exported to '+name);
+  toast(plural(facts.length,'row')+' exported to '+name);
  }catch(e){toast('export failed: '+e,'err');}}
 
 // --- render --------------------------------------------------------------------

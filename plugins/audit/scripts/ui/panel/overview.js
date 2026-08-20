@@ -417,9 +417,11 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
    // Only when the phase itself is not blocked: the status pill already says
    // that, and two words for one fact reads as two problems.
    nBlocked&&p.status!=='blocked'?el('span',{class:'pblocked',
-     title:nBlocked+' task(s) in this phase are blocked'},nBlocked+' blocked'):null,
+     title:plural(nBlocked,'task in this phase is blocked',
+       'tasks in this phase are blocked')},nBlocked+' blocked'):null,
    nCancelled?el('span',{class:'pcancelled',
-     title:nCancelled+' task(s) in this phase were cancelled'},nCancelled+' cancelled'):null,
+     title:plural(nCancelled,'task in this phase was cancelled',
+       'tasks in this phase were cancelled')},nCancelled+' cancelled'):null,
    OVF.ts?el('span',{class:'ovmatch'},((pStatus[p.id]||{})[OVF.ts]||0)+' '+label(OVF.ts).toLowerCase()):null,
    el('span',{class:'bar'},el('i',{style:'width:'+w+'%'})),
    el('span',{class:'mut'},p.done+'/'+p.total),

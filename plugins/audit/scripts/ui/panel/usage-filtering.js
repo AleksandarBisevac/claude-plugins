@@ -284,7 +284,7 @@ function uEmptyWhy(){
   if(!n)continue;
   return{why:d,
    text:'No rows match. It is the '+fName(d)+' filter ('+fVal(d)+') doing it: '+
-     n+' row(s) match everything else.',
+     plural(n,'row matches','rows match')+' everything else.',
    fix:{key:d,label:d==='range'?'Show all time':'Remove the '+fName(d)+' filter',
      run:d==='range'?toAll:()=>setF(d,'')}};}
  return{why:'combination',

@@ -222,7 +222,7 @@ function renderSettings(){closeCombo();
    const rows=configChanges(cfg);
    if(!rows.length){toast('nothing to save — no settings changed');return;}
    if(!await confirmChanges({title:'Save settings',rows,scope:'guards',
-     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     verb:'Save '+plural(rows.length,'change'),
      note:'writes .claude/audit.config.json'}))return;
    const res=await api('PUT','/api/config',cfg);
    findings.replaceChildren(findingsBox(res));

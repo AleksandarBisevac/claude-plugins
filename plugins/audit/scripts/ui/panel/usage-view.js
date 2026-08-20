@@ -117,7 +117,7 @@ function renderUsage(){closeCombo();const c=$('#usage');
   // filter as the cause and offers to lift it.
   r1.append(el('button',{class:'filt'+(on?' on':''),type:'button','data-umine':'1',
     'aria-pressed':on?'true':'false',
-    title:mine?('Scope to the '+mine+' row(s) recorded for '+me)
+    title:mine?('Scope to the '+plural(mine,'row')+' recorded for '+me)
       :('No rows are recorded for '+me+' in this ledger'),
     onclick:()=>setF('author',on?'':me)},'my spend'));}
  [['agent','all agents'],['attr','all attributions']].forEach(([dim,none])=>{
@@ -297,15 +297,16 @@ function renderUsage(){closeCombo();const c=$('#usage');
 
  // economics - the same honesty caveats the report carries
  card.append(el('h2',{},'Unit economics'));
- if(unit.proj)card.append(el('div',{class:'ufact'},'Remaining '+unit.remaining+
-   ' task(s) project to '+uCost(unit.proj.low)+' to '+uCost(unit.proj.high)+
+ if(unit.proj)card.append(el('div',{class:'ufact'},'Remaining '
+   +plural(unit.remaining,'task projects','tasks project')
+   +' to '+uCost(unit.proj.low)+' to '+uCost(unit.proj.high)+
    ' at the p25-p75 per-task rate.'));
  else card.append(el('div',{class:'mut small'},'Projection needs '+unit.gate+
    ' completed tasks to mean anything; there are '+unit.completed+
    '. A forecast off a smaller sample would be noise.'));
  if(rt.tot)card.append(el('div',{class:'ufact'},uCost(rt.re)+' on tasks that needed '+
-   'more than one attempt ('+rt.rn+' task(s)) - '+uCost(rt.bl)+
-   ' on tasks that ended blocked ('+rt.bn+' task(s)).'),
+   'more than one attempt ('+plural(rt.rn,'task')+') - '+uCost(rt.bl)+
+   ' on tasks that ended blocked ('+plural(rt.bn,'task')+').'),
   el('div',{class:'mut small'},'Retried spend is not wasted spend: the ledger '+
    'buckets by hour, not by attempt, so a task that retried and then landed did not '+
    'burn every attempt for nothing. Only the blocked figure is spend with no '+
@@ -338,13 +339,14 @@ function renderUsage(){closeCombo();const c=$('#usage');
     'Across the whole ledger - this one does not follow the filters above.'));
   adv.forEach(a=>card.append(el('div',{class:'advice'},
     el('div',{},el('b',{},a.risk),' work is running on ',
-      el('code',{},a.from),' - '+a.tasks+' task(s) at '
+      el('code',{},a.from),' - '+plural(a.tasks,'task')+' at '
       +(a.fromMeanAttempts||0).toFixed(1)+' mean attempts. Those same tokens cost '
       +uCost(a.atToRates)+' at ',el('code',{},a.to),' rates versus '
       +uCost(a.atFromRates)+', ',el('b',{},uCost(a.saving)+' less ('
       +a.savingPct.toFixed(0)+'%)'),'.'),
-    el('div',{class:'mut small'},a.to+' has already run '+a.evidenceTasks
-      +' task(s) in this band here, at '+(a.evidenceAttempts||0).toFixed(1)
+    el('div',{class:'mut small'},a.to+' has already run '
+      +plural(a.evidenceTasks,'task')
+      +' in this band here, at '+(a.evidenceAttempts||0).toFixed(1)
       +' mean attempts.'))));
   card.append(el('div',{class:'mut small'},
     'An upper bound, not a forecast: this re-prices the tokens that were actually '

@@ -88,14 +88,14 @@ function renderAdoCard(c){
     +'Fill in organization + project below, or see /audit:sync.']
   :!st.enabled
   ?['off','warn','Turned off. Sync push/pull and the orchestration echo do '
-    +'nothing; '+n+' linked item'+(n===1?'':'s')+' stay frozen, links kept.']
+    +'nothing; '+plural(n,'linked item stays','linked items stay')
+    +' frozen, links kept.']
   :!n
   ?['unverified','warn','Configured, but no item has ever synced — everything '
     +'below is configuration, not evidence. Run /audit:sync push to link work '
     +'items.']
-  :['linked','ok','Linked: '+st.linked.tasks+' task'+(st.linked.tasks===1?'':'s')
-    +' · '+st.linked.bugs+' bug'+(st.linked.bugs===1?'':'s')+' · '
-    +st.linked.phases+' phase'+(st.linked.phases===1?'':'s')
+  :['linked','ok','Linked: '+plural(st.linked.tasks,'task')
+    +' · '+plural(st.linked.bugs,'bug')+' · '+plural(st.linked.phases,'phase')
     +(st.lastSyncedAt?(' · last synced '+st.lastSyncedAt):'')
     +(st.echo?' · echo on':' · echo off')];
  card.append(el('div',{class:'findings '+banner[1],'data-adostate':banner[0]},
@@ -309,7 +309,7 @@ function renderAdoCard(c){
    const rows=adoRows(saved,ADRAFT);
    if(!rows.length){toast('nothing to save — no values changed');return;}
    if(!await confirmChanges({title:'Save ADO connector',rows,scope:'comp',
-     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     verb:'Save '+plural(rows.length,'change'),
      note:'writes '+STATE.manifestPath}))return;
    const res=await api('PUT','/api/ado',{ado:ADRAFT});
    if(!res.ok){
@@ -381,7 +381,7 @@ function findingKind(s){
  */
 function manifestFindingsBox(n,list){
  const box=el('div',{class:'findings err'},
-   el('b',{},'✗ '+n+' finding(s)'));
+   el('b',{},'✗ '+plural(n,'finding')));
  if(list.length<FGROUP_MIN){
   box.append(' '+list.join(' · '));return box;}
  const by=new Map();

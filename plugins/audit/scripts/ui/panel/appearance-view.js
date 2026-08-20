@@ -63,7 +63,7 @@ function renderAppearance(){closeCombo();
  // the pill would have contradicted a close that went through without a word.
  const nch=tChangeRows().length;
  bar.append(el('span',{class:'pill'+(nch?' unsaved':''),'data-thcount':String(nch)},
-   nch?(nch+' unsaved change'+(nch===1?'':'s')):'no changes'));
+   nch?plural(nch,'unsaved change'):'no changes'));
  // Which saved theme is worn, and Save-as beside it: a preset here is a FILE
  // somebody saved, so the menu lists what is on disk rather than a registry.
  const sel=el('select',{'aria-label':'which theme to wear','data-thpreset':'1',
@@ -277,7 +277,7 @@ function renderAppearance(){closeCombo();
    // nothing to save without matching the built-in look at all.
    if(!rows.length){toast('nothing to save — this is already what is on disk');return;}
    if(!await confirmChanges({title:'Save theme',rows:rows,scope:'look',
-     verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
+     verb:'Save '+plural(rows.length,'change'),
      note:'writes .claude/audit.theme.json — the CSS is compiled from it, never stored'}))
     return;
    const lay=tLayout();
@@ -360,7 +360,7 @@ function tSoon(){if(TSOON)clearTimeout(TSOON);
 function tRepaintBar(){
  const pill=$('#look [data-thcount]');if(!pill)return;
  const n=tChangeRows().length;
- pill.textContent=n?(n+' unsaved change'+(n===1?'':'s')):'no changes';
+ pill.textContent=n?plural(n,'unsaved change'):'no changes';
  pill.setAttribute('data-thcount',String(n));
  pill.className='pill'+(n?' unsaved':'');}
 
@@ -515,6 +515,6 @@ function tImport(input){
     +unusable.slice(0,3).join(', '));
   const tail=notes.length?(' ('+notes.join('; ')+')'):'';
   if(!applied)toast('nothing in that file could be applied'+tail,'err');
-  else toast(applied+' token(s) loaded as a draft'+tail
+  else toast(plural(applied,'token')+' loaded as a draft'+tail
     +' — nothing is written until you Save');};
  rd.readAsText(f);}

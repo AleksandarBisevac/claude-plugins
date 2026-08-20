@@ -688,7 +688,7 @@ def _cases(check):
           and "res.applied.map(key)" in M.UI_HTML
           and "'data-cfdiff':'1'" in M.UI_HTML)
     check("the save toast says how many landed and whether it was recorded",
-          "'Saved · '+n+' change'+(n===1?'':'s')+log" in M.UI_HTML
+          "'Saved · '+plural(n,'change')+log" in M.UI_HTML
           # "not logged" only when a journal exists and refused: reporting the
           # absence of a feature as a failed save would cry wolf on every write.
           and "res.journaledWhy==='failed'?' · NOT logged':''" in M.UI_HTML)
@@ -1694,7 +1694,7 @@ def _cases(check):
           and "for(const d of UORDER.concat(" in _emp)
     check("one filter doing the emptying is named, counted and liftable on its "
           "own — clear-all throws away the ones that were fine",
-          "n+' row(s) match everything else.'" in _emp
+          "plural(n,'row matches','rows match')+' everything else.'" in _emp
           and "'Remove the '+fName(d)+' filter'" in _emp)
     check("and where no single filter explains it, the page says so rather than "
           "blaming one at random",
