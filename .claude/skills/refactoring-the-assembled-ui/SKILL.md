@@ -231,6 +231,12 @@ Rules going forward:
      makes "a shared part may not call a surface helper" mechanical;
   4. give it a row in `ui/shared/README.md`.
 
+  The rule is enforced, not requested: `_deps.SHARED_CONCERNS` lists each concern
+  with its home and a cap on copies outside it, and `shared_concern_violations()`
+  fails the build when a second implementation appears. Add a row when you extract
+  something; add a row with today's count when you find duplication you are not
+  extracting yet, and the cap can then only go down.
+
   Check the name is free on **both** surfaces first — one scope per page, and the report's
   block is a module, so a duplicate top-level declaration is a `SyntaxError`, not a shadowing
   bug you find later:

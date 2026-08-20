@@ -964,6 +964,76 @@ def _cases(check):
           "red if u12's repair turned into 'always report something'",
           M.ui_navigability_violations() == [])
 
+    # --------------------------------------------------- one concern, one home
+    _sc = M.shared_concern_violations()
+    check("sc1 no registered shared concern has spread past its allowance: %r"
+          % (_sc,), _sc == [])
+    # The check on the check. Every row's live count is computed here so an empty
+    # violation list cannot mean "the needles stopped matching". A row whose live
+    # count is 0 AND whose home is None would be a needle that found nothing
+    # anywhere, which is the shape a typo takes.
+    _live = [(c, sum(n for _f, n in M._concern_hits(M._UI_DIR, home, needle)), allowed)
+             for c, home, needle, allowed, _w in M.SHARED_CONCERNS]
+    _dead = [(c, n, a) for c, n, a in _live if a > 0 and n == 0]
+    check("sc2 ...and that verdict is over needles that still match - %r; a row "
+          "allowing copies while finding none is a needle that has stopped "
+          "working, and it would read exactly like a clean tree (dead: %r)"
+          % (_live, _dead), not _dead)
+    check("sc3 the two EXTRACTED concerns allow nothing outside their home, "
+          "which is what makes them extracted rather than merely tidied",
+          all(allowed == 0 for _c, home, _n, allowed, _w in M.SHARED_CONCERNS
+              if home is not None)
+          and any(home is not None for _c, home, _n, _a, _w in M.SHARED_CONCERNS))
+    check("sc4 every row carries a reason, because a bare number in this table "
+          "is a number nobody can re-derive the intent of",
+          all(isinstance(why, str) and len(why) > 40
+              for _c, _h, _n, _a, why in M.SHARED_CONCERNS))
+    # It is a CAP, not an equality, and that is the entire difference between this
+    # registry and the three save/discard counts retired in 9f73b22: those
+    # required the duplication to stay, so removing a copy turned them red.
+    _slack_fixture = tempfile.mkdtemp(prefix="audit-deps-sc-")
+    try:
+        os.makedirs(os.path.join(_slack_fixture, "shared"))
+        with open(os.path.join(_slack_fixture, "shared", "x.js"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("// nothing here\n")
+        _empty = M.shared_concern_violations(_slack_fixture)
+        check("sc5 a tree with NO copies of anything is not a violation - removing "
+              "a duplicate must never fail this lint, or it forbids its own "
+              "remedy exactly as the retired counts did (%r)" % (_empty,),
+              _empty == [])
+        _slack = M.shared_concern_slack(_slack_fixture)
+        check("sc6 ...and the freed allowance is REPORTED instead, so the table "
+              "cannot quietly become a column of numbers nobody re-derived: %r"
+              % (_slack,),
+              sorted(c for c, _n, _a in _slack)
+              == sorted(c for c, _h, _n, a, _w in M.SHARED_CONCERNS if a > 0))
+        # A comment is not an implementation. This is the false positive that
+        # would make the lint hostile: the paragraph explaining a concern would be
+        # reported as a second copy of it.
+        with open(os.path.join(_slack_fixture, "shared", "y.js"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("// localStorage.getItem is what this file does NOT do\n"
+                     "/* URL.createObjectURL, also only in prose */\n"
+                     "const ok = 1;\n")
+        check("sc7 a comment naming a concern is not a copy of it - three checks "
+              "in this repo have already been tripped by prose, and a registry "
+              "that counted comments would punish documenting the rule (%r)"
+              % (M.shared_concern_violations(_slack_fixture),),
+              M.shared_concern_violations(_slack_fixture) == [])
+        # ...and the same text in CODE is caught, which is what stops sc7 from
+        # being "the lint sees nothing".
+        with open(os.path.join(_slack_fixture, "shared", "z.js"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("const u = URL.createObjectURL(b);\n")
+        _caught = M.shared_concern_violations(_slack_fixture)
+        check("sc8 mutation proof: the SAME text as real code IS caught, and "
+              "named with the file and the count - %r" % (_caught,),
+              len(_caught) == 1 and _caught[0][0] == "blob download"
+              and "z.js" in _caught[0][4])
+    finally:
+        shutil.rmtree(_slack_fixture, ignore_errors=True)
+
     # ------------------------------------------- the scanners reach a subdirectory
     # A recursive walk that is never handed a subdirectory proves nothing, so this
     # builds one. Every scanner in this module used a flat `os.listdir`, which is

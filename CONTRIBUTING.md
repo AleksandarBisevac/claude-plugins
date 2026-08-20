@@ -104,6 +104,23 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   `scripts/`, so they resolve a scripts file by basename through
   `hooks/_config.find_script()`, and `tests/test__config.py` pins that third copy
   against `_output.script_files()` by reading both rather than merging them.
+- **One concern, one home, and the registry is what enforces it.**
+  `_deps.SHARED_CONCERNS` names each shared concern, its single home under
+  `ui/shared/` (or `panel/core.js` when only one surface reads it), the text that
+  betrays a second implementation, and how many sites are allowed outside that
+  home. `shared_concern_violations()` fails the build on growth. It is a **cap,
+  never an equality** — that difference is the whole lesson of the three
+  save/discard counts retired in `9f73b22`, which required the duplication to stay
+  and so forbade the helper that would have removed it. A freed allowance is
+  reported by `shared_concern_slack()` rather than failed, so improving the code
+  can never turn this red. Comments are stripped before counting: three checks
+  here have already been tripped by prose, and a registry that counted comments
+  would punish documenting the rule.
+  A **registry rather than a similarity score, measured rather than preferred**: a
+  normalising token scanner over the same files reported 3,732 cross-file repeat
+  groups, and 725 after preserving the shared vocabulary, topped by this
+  codebase's own `el()` idiom. A gate at that noise level is one people learn to
+  ignore, so similarity is at most a scout for rows to add here.
 - **Never reach a file by absolute path.** A module specifier, or the first
   argument of a read/write call, must be relative — an absolute one encodes one
   machine's layout into a repository other people check out.

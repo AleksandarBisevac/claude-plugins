@@ -1535,6 +1535,137 @@ def ui_asset_names(ui_dir):
     return sorted(names)
 
 
+# --- one concern, one home ------------------------------------------------------
+# A REGISTRY, NOT A SIMILARITY SCORE, and that choice was measured rather than
+# preferred. A normalising token scanner over these same files reported 3,732
+# cross-file repeat groups; tuned to preserve the shared vocabulary it still
+# reported 725, and the top hits were this codebase's own `el()` DOM idiom - which
+# is house style, not duplication. A gate at that noise level is a gate people
+# learn to ignore. So the thing that GATES is a named list, and a similarity
+# scanner is at most a scout for finding rows to add to it.
+#
+# Each row is a decision with its reason attached, the way `EXCLUDED` and
+# `KNOWN_LAYER_DEBT` already are here. `allowed` is a RATCHET: a concern that has
+# been extracted allows zero copies outside its home, and one that has not yet
+# been extracted records how many sites exist today so the number can only go
+# down. It is `<=`, never `==`, and that distinction is the whole lesson of the
+# three save/discard counts this repo just retired: those required the duplication
+# to STAY, so removing a copy turned them red and a helper could never be written.
+# A cap punishes growth and stays silent when the code improves.
+#
+# The live count is printed on every run, so the number in this table is never
+# what a reader trusts - the same reason `count-ui-pins.py` exists.
+SHARED_CONCERNS = (
+    ("blob download", "shared/download.js", "URL.createObjectURL", 0,
+     "one revoke policy. Four sites had drifted to three, one of them revoking "
+     "synchronously after click() while a sibling part argued that must never "
+     "happen - a download that fails with no error anywhere."),
+    ("web storage", "shared/storage.js", "localStorage.", 0,
+     "fourteen sites each wrapped their own try/catch for one rule: a document "
+     "opened over file:// may refuse storage, and neither surface may break."),
+    ("pluralisation", None, "===1?''", 22,
+     "NOT EXTRACTED, and blocked on a decision rather than on effort: the panel "
+     "carries two competing conventions for one job - this one and a literal "
+     "'(s)' - so a helper adopted by only one of them makes the split permanent. "
+     "Python already owns the rule as _fmt.plural."),
+    ("clipboard copy", None, "navigator.clipboard", 2,
+     "NOT EXTRACTED. Both sites guard correctly, but their FALLBACKS differ on "
+     "purpose (the report selects the text, the panel uses execCommand and a "
+     "toast), so the shared part is thin and needs the fallback injected."),
+    ("day <-> milliseconds", None, "864e5", 8,
+     "NOT EXTRACTED. Eight sites across four panel parts spell the same "
+     "conversion, in both directions. The needle is the CONSTANT rather than one "
+     "spelling of the arithmetic: a narrower pattern found five and a shell "
+     "regex found three, and the concern is the constant. By the promotion rule "
+     "this belongs in panel/core.js rather than shared/, since only the panel "
+     "reads it - the report carries milliseconds throughout."),
+)
+
+
+def _code_only(text):
+    """`text` with JavaScript comments removed, so a comment cannot read as a hit.
+
+    This is not tidiness. Three separate checks in this tree have been tripped by
+    PROSE rather than by code - a sentence explaining the SCRIPTS-join rule broke
+    it, a JSDoc block containing `var(--viz-N)` failed the undeclared-token lint,
+    and `x5` fired on a comment naming a URL scheme. A registry that counted
+    comments would report the paragraph explaining a concern as a second
+    implementation of it, which is the most annoying false positive there is,
+    because the only fix is to stop documenting the rule.
+    """
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    return re.sub(r"(?m)//.*$", " ", text)
+
+
+def _concern_hits(root, home, needle):
+    """[(asset, count)] for `needle` outside `home`, comments stripped.
+
+    One walk, used by both callers. They had a copy each until this was written,
+    which in a module whose subject is duplication is not an irony worth keeping.
+    """
+    hits = []
+    for name in sorted(n for n in ui_asset_names(root) if n.endswith(".js")):
+        if home is not None and name == home:
+            continue
+        try:
+            with open(os.path.join(root, name), "r", encoding="utf-8") as fh:
+                body = _code_only(fh.read())
+        except (OSError, UnicodeDecodeError) as exc:
+            # Named, never skipped: an asset nothing can read is not an asset
+            # with no duplication in it.
+            hits.append((name + " <unreadable: %s>" % (exc,), 1))
+            continue
+        count = body.count(needle)
+        if count:
+            hits.append((name, count))
+    return hits
+
+
+def shared_concern_violations(ui_dir=None):
+    """[(concern, home, total, allowed, where)] for concerns that have SPREAD.
+
+    A violation is `total > allowed` outside the concern's home. Below the
+    allowance is not a violation - see `shared_concern_slack`.
+    """
+    root = ui_dir if ui_dir is not None else _UI_DIR
+    try:
+        ui_asset_names(root)
+    except OSError as exc:
+        # NOT an empty list: a directory nothing could read is not a directory
+        # with no duplication in it.
+        return [("<unlistable>", "", -1, 0, "%s" % (exc,))]
+    out = []
+    for concern, home, needle, allowed, _why in SHARED_CONCERNS:
+        hits = _concern_hits(root, home, needle)
+        total = sum(c for _n, c in hits)
+        if total > allowed:
+            out.append((concern, home or "(not extracted)", total, allowed,
+                        ", ".join("%s x%d" % (n, c) for n, c in hits)))
+    return out
+
+
+def shared_concern_slack(ui_dir=None):
+    """[(concern, total, allowed)] where the allowance is looser than reality.
+
+    Reported rather than failed, because failing here would punish exactly the
+    change this registry exists to encourage - and that is the difference between
+    a cap and the three `== N` counts this repo retired, which required the
+    duplication to stay. Printing it is what stops the table becoming a column of
+    numbers nobody has re-derived.
+    """
+    root = ui_dir if ui_dir is not None else _UI_DIR
+    try:
+        ui_asset_names(root)
+    except OSError:
+        return []
+    out = []
+    for concern, home, needle, allowed, _why in SHARED_CONCERNS:
+        total = sum(c for _n, c in _concern_hits(root, home, needle))
+        if total < allowed:
+            out.append((concern, total, allowed))
+    return out
+
+
 def ui_navigability_violations(ui_dir=None):
     """(filename, problem) for every long scripts/ui/ asset carrying too few
     section markers to be navigable.
