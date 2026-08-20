@@ -28,7 +28,7 @@ function uBudgets(facts){
  if(UORDER.length)out.push(el('div',{class:'ucrumb mut'},
    'Counting only the rows the filters above leave in view.'));
  for(const r of rows){
-  const nm=(r.id+' '+(USAGE.phaseTitles[r.id]||'')).trim();
+  const nm=(r.id+' '+((USAGE.phaseTitles||{})[r.id]||'')).trim();
   out.push(el('div',{class:'bud'+(r.over?' over':'')},
    el('span',{class:'unm'},nm),
    // The fill stops at the track; the number beside it does not, so an overrun

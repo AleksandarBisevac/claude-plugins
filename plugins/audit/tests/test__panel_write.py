@@ -129,6 +129,41 @@ def _cases(check):
           and any(r["field"] == "layout · density" and r["to"] == "compact"
                   for r in _lres["applied"])
           and "--sp-3:.8rem" in _theme.token_css_for(_thp, M.read_config(_thp))[0])
+    # A CHANGE ROW MUST DESCRIBE A CHANGE. `_layout_changes` compared the raw
+    # values while the row printed both through `or "comfortable"`, so saving a
+    # theme with no density from a panel that sends the default explicitly emitted
+    # `layout · density: comfortable -> comfortable`. Found by the differential
+    # test that holds this function equal to the panel's `tLayChanges`, which
+    # normalises both sides - so the dialog showed nothing and the save reported a
+    # row, the exact mismatch `appliedDiff` exists to notice.
+    check("th-w8b absent and 'comfortable' are the same density, so no row is "
+          "emitted for the pair - a row whose from equals its to is a save "
+          "reporting a change nobody made: %r"
+          % (M._layout_changes({}, {"density": "comfortable", "order": {}}),),
+          M._layout_changes({}, {"density": "comfortable", "order": {}}) == []
+          and M._layout_changes({"density": "comfortable"}, {}) == [])
+    check("th-w8c ...while a real density change is still one row, with both "
+          "ends named",
+          M._layout_changes({}, {"density": "spacious"})
+          == [{"scope": "theme", "field": "layout · density",
+               "from": "comfortable", "to": "spacious"}])
+    # And the row can never be a no-op by construction, over every pair the
+    # densities allow. The check on the check: a fix that returned [] always would
+    # pass th-w8b and fail this.
+    _dens = [None, "comfortable", "compact", "spacious"]
+    _pairs = [(b, a) for b in _dens for a in _dens]
+    _noop = [(b, a) for b, a in _pairs
+             for r in M._layout_changes({} if b is None else {"density": b},
+                                        {} if a is None else {"density": a})
+             if r["from"] == r["to"]]
+    _rows = sum(len(M._layout_changes({} if b is None else {"density": b},
+                                      {} if a is None else {"density": a}))
+                for b, a in _pairs)
+    check("th-w8d no density pair produces a row whose from equals its to, over "
+          "all %d pairs, and %d real rows were produced (noop: %r)"
+          % (len(_pairs), _rows, _noop),
+          not _noop and _rows >= 6)
+
     check("th-w9 ...and it comes back in the state the editor reads",
           M.theme_state(_thp)["layout"].get("density") == "compact"
           and M.theme_state(_thp)["densities"] == ["comfortable", "compact",

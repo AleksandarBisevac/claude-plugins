@@ -48,6 +48,13 @@ export function pythonInterpreter() {
 const BRIDGE = [
   'import importlib, json, os, sys',
   'sys.path.insert(0, sys.argv[1])',
+  // install_path() puts scripts/ AND every subdirectory of it holding a .py on
+  // the path, which is how the plugin itself resolves a sibling: by BARE
+  // BASENAME, because the folders under scripts/ are labels rather than
+  // namespaces. Without it this bridge could only reach the modules at the root,
+  // and `_panel_write` — which owns the change rows the panel's dialog is
+  // compared against — sits in scripts/panel/.
+  "import _output; _output.install_path()",
   'mod = importlib.import_module(sys.argv[2])',
   'calls = json.load(sys.stdin)',
   'out = []',

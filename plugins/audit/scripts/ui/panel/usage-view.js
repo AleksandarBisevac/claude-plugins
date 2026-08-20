@@ -37,7 +37,11 @@ function renderUsage(){closeCombo();const c=$('#usage');
  const done=()=>{c.append(card);
   if(keepQ){const n=$('#uq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
   else focusBack(keepBack);};
- if(!USAGE||!USAGE.facts.length){
+ // `USAGE.facts` and not just `USAGE`: `api()` returns `r.json()` whatever the
+ // status, so a server error that is valid JSON arrives here as a truthy object
+ // with no `facts` - and `USAGE.facts.length` threw, blanking the tab with a
+ // console trace instead of saying anything.
+ if(!USAGE||!Array.isArray(USAGE.facts)||!USAGE.facts.length){
   card.append(USAGE&&!USAGE.enabled
    ?el('div',{class:'mut'},'Token metering is off — ',
      settingsLink('turn it back on in Settings','usage.enabled'),'.')

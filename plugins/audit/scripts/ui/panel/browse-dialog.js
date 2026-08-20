@@ -69,7 +69,7 @@ function browseRows(dim,facts){
   const top=[...models].sort((a,b)=>b.tokens-a.tokens)[0];
   return {id:k,
     title:isUncat(k)?UNCAT_WHY
-      :dim==='phase'?(USAGE.phaseTitles[k]||'')
+      :dim==='phase'?((USAGE.phaseTitles||{})[k]||'')
       :dim==='task'?(meta.title||''):'',
     status:meta.status||'',risk:meta.risk||'',
     band:(dim==='task'?bandOf(k):null)||'',

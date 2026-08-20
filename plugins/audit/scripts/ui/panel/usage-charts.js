@@ -332,8 +332,12 @@ function uChart(sr,dim,W){
   const li=e.values.length-1;
   svg.appendChild(svgEl('circle',{class:'dot',cx:X(li),cy:Y(e.values[li]),r:3.5,
     fill:uCol(e.key)}));});
- [0,n-1].forEach(i=>{if(n<2&&i)return;const t=svgEl('text',{class:'ax',x:X(i),y:H-4,
-   'text-anchor':i?'end':'start'});t.textContent=sr.buckets[i].slice(5);
+ // (i,j): the guard has to test the POSITION, not the value. With one bucket the
+ // array is [0,0], so `i` is 0 on both passes and `n<2&&i` never fired - the same
+ // date was drawn twice, at both ends of the axis, one left-anchored and one
+ // right-anchored.
+ [0,n-1].forEach((i,j)=>{if(n<2&&j)return;const t=svgEl('text',{class:'ax',x:X(i),y:H-4,
+   'text-anchor':j?'end':'start'});t.textContent=sr.buckets[i].slice(5);
   svg.appendChild(t);});
  // Crosshair: nearest bucket to the cursor, one tooltip row per series.
  const idxAt=ev=>{const r=svg.getBoundingClientRect();

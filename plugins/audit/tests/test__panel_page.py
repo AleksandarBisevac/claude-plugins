@@ -483,6 +483,30 @@ def _cases(check):
     # agent may do, and nothing asserted the badge's text at all. The wording is
     # decided by `hToolClaim` now; its three answers are asserted in
     # tools/ui-tests/claims.test.mjs and what belongs here is the WIRING.
+    # The axis-label guard tested the VALUE where it had to test the POSITION.
+    # `[0,n-1].forEach(i=>{if(n<2&&i)return;...})` over one bucket walks [0,0], so
+    # `i` is 0 on both passes and the same date was drawn twice - once
+    # left-anchored and once right-anchored at the same x. The arithmetic is
+    # covered in tools/ui-tests/usage-edges.test.mjs; what belongs here is that
+    # the shipped source really takes the index.
+    check("ax1 the one-bucket axis guard tests the position, not the value",
+          "[0,n-1].forEach((i,j)=>{if(n<2&&j)return;" in M.UI_HTML
+          and "'text-anchor':j?'end':'start'" in M.UI_HTML
+          and "[0,n-1].forEach(i=>{if(n<2&&i)return;" not in M.UI_HTML)
+    # `api()` hands back `r.json()` whatever the status, so a server error that
+    # serialises cleanly is a truthy object with no `facts`.
+    check("ax2 the Usage tab checks the SHAPE of the payload before indexing it, "
+          "so a JSON error response reaches the empty state instead of throwing",
+          "if(!USAGE||!Array.isArray(USAGE.facts)||!USAGE.facts.length){" in M.UI_HTML)
+    # Every reader of these two maps guards the CONTAINER. Two sites did not, and
+    # two spellings of one read is how the live failure eventually arrives.
+    check("ax3 no reader indexes USAGE.taskMeta or USAGE.phaseTitles without "
+          "guarding the container first",
+          "USAGE.taskMeta[" not in M.UI_HTML
+          and "USAGE.phaseTitles[" not in M.UI_HTML
+          and "(USAGE.taskMeta||{})[" in M.UI_HTML
+          and "(USAGE.phaseTitles||{})[" in M.UI_HTML)
+
     check("hg1 the guide card's tool badge reads the payload's own readOnly "
           "verdict, and the fixed claim it used to print is gone",
           "hToolClaim(a.readOnly)+(a.tools||[]).join(' · ')" in M.UI_HTML

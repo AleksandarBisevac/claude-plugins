@@ -312,9 +312,13 @@ function uBars(facts,dim,title){
  const peak=Math.max(...head.map(x=>x[1][0]))||1;
  const out=[el('h2',{},title)];
  for(const[k,v]of head){
-  const meta=USAGE.taskMeta[k]||{};
+  // `||{}` on the container, not only on the lookup: every neighbouring reader
+  // spells it this way, and these two were the exceptions. The server's shape
+  // always carries both keys today, so this is consistency rather than a live
+  // bug - but two spellings of one read is how the live one arrives.
+  const meta=(USAGE.taskMeta||{})[k]||{};
   const nm=isUncat(k)?label(UNCAT)
-    :dim==='phase'?(k+' '+(USAGE.phaseTitles[k]||'')).trim()
+    :dim==='phase'?(k+' '+((USAGE.phaseTitles||{})[k]||'')).trim()
     :(dim==='task'&&meta.title?(k+' '+meta.title):k);
   const active=UF[dim]===k;
   const row=el('div',{class:'urow pick'+(active?' on':''),

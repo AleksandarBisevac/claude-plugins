@@ -275,9 +275,17 @@ function tChanges(){
 function tLayChanges(){
  const cur=tLayout(),base=(THEME&&THEME.layout)||{};
  const out=[];
+ // AGAINST THE SAVED LAYOUT, like the order below it and like Python. This used
+ // to compare the density with the shipped 'comfortable' constant, so wearing a
+ // theme that NAMES a density read as one unsaved change the moment it loaded -
+ // and because `appliedDiff` keys on `field`, pressing Save then produced
+ // "Saved, but not exactly what the dialog listed" for a change nobody made.
+ // `_panel_write._layout_changes` compares `before.density != after.density`;
+ // this is that comparison, with the same display fallback.
  const shipped='comfortable';
- if((cur.density||shipped)!==shipped)
-  out.push({token:'layout · density',mode:'',from:shipped,to:cur.density,layout:1});
+ if((cur.density||shipped)!==(base.density||shipped))
+  out.push({token:'layout · density',mode:'',
+    from:base.density||shipped,to:cur.density||shipped,layout:1});
  Object.keys(cur.order||{}).forEach(view=>{
   const now=(cur.order[view]||[]).join(', ');
   // Measured against the SAVED order, unlike the density above it, which is

@@ -338,13 +338,16 @@ function tSoon(){if(TSOON)clearTimeout(TSOON);
  * fight the drag — but a counter that only caught up 350ms later would read as
  * a stuck control.
  *
- * Counts tChanges() only, so the pill it repaints can disagree with the one
- * renderAppearance drew, which counts the layout rows too.
+ * Counts the SAME set renderAppearance counts — token rows plus layout rows. It
+ * used to count `tChanges()` alone, so typing a colour while a density or a card
+ * order was pending dropped the layout rows out of the pill until `tSoon`
+ * rebuilt the tab 350ms later: one sentence, two different numbers, in the
+ * control whose whole job is saying how much is unsaved.
  * @returns {void}
  */
 function tRepaintBar(){
  const pill=$('#look [data-thcount]');if(!pill)return;
- const n=tChanges().length;
+ const n=tChanges().length+tLayChanges().length;
  pill.textContent=n?(n+' unsaved change'+(n===1?'':'s')):'no changes';
  pill.setAttribute('data-thcount',String(n));
  pill.className='pill'+(n?' unsaved':'');}

@@ -636,10 +636,19 @@ def _layout_changes(before, after):
     before = before if isinstance(before, dict) else {}
     after = after if isinstance(after, dict) else {}
     rows = []
-    if before.get("density") != after.get("density"):
+    # NORMALISED BEFORE COMPARING, not only for display. Comparing the raw values
+    # made "absent" differ from "comfortable" while the row then printed both as
+    # "comfortable" - a change row whose from and to were IDENTICAL, emitted
+    # whenever a theme with no density was saved by a panel that sends the
+    # default explicitly. Found by the differential test that holds this function
+    # equal to the panel's `tLayChanges`: the panel normalises both sides, so the
+    # dialog showed nothing and the save reported a row, which is exactly the
+    # mismatch `appliedDiff` is there to notice.
+    b_density = before.get("density") or "comfortable"
+    a_density = after.get("density") or "comfortable"
+    if b_density != a_density:
         rows.append({"scope": "theme", "field": "layout · density",
-                     "from": before.get("density") or "comfortable",
-                     "to": after.get("density") or "comfortable"})
+                     "from": b_density, "to": a_density})
     bo, ao = before.get("order") or {}, after.get("order") or {}
     for view in sorted(set(list(bo) + list(ao))):
         if bo.get(view) != ao.get(view):
