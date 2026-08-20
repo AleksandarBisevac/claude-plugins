@@ -145,7 +145,7 @@ def _cases(check):
     check("th-w8c ...while a real density change is still one row, with both "
           "ends named",
           M._layout_changes({}, {"density": "spacious"})
-          == [{"scope": "theme", "field": "layout · density",
+          == [{"target": "theme", "field": "layout · density",
                "from": "comfortable", "to": "spacious"}])
     # And the row can never be a no-op by construction, over every pair the
     # densities allow. The check on the check: a fix that returned [] always would

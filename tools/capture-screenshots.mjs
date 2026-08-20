@@ -6084,6 +6084,36 @@ async function assertSavebarCensus(page) {
          + 'freshly loaded page — it should be dead until something is dirty');
     }
   }
+  // EVERY VIEW OFFERING A SAVE MUST BE ONE beforeunload CAN PROTECT, asked of the
+  // live page rather than of a list in a test. The registry is built at render
+  // time, so this is the only place the question has a real answer: a new
+  // writable view that never registers is invisible to a substring pin, and its
+  // reader loses everything typed the moment they close the tab. The theme card
+  // was exactly that for as long as it existed.
+  //
+  // A view is covered either by its own key or by a documented FOLD onto another
+  // view - the ADO card has a key of its own but lives inside #comp - so the
+  // dirtiness map is consulted too rather than requiring the ids to match.
+  const registry = await page.evaluate(() => ({
+    keys: Object.keys(EDITS), views: Object.keys(dirtyViews()),
+  }));
+  if (!registry.keys.length) {
+    fail('panel footers: Object.keys(EDITS) is empty on a rendered page — the '
+       + 'coverage check below would pass over nothing at all');
+  } else {
+    const covered = new Set([...registry.keys, ...registry.views]);
+    for (const view of new Set(saves.map((f) => f.view))) {
+      if (view === '(none)') continue;      // a Save outside every view container
+      if (!covered.has(view)) {
+        fail(`panel footers: #${view} offers a Save but nothing registers its `
+           + 'unsaved work — beforeunload will let a closing tab discard it '
+           + `silently. Registered: ${[...covered].sort().join(', ')}`);
+      }
+    }
+    note(`panel footers: every view with a Save is covered — keys `
+       + `[${registry.keys.sort().join(', ')}], views `
+       + `[${registry.views.sort().join(', ')}]`);
+  }
   const shape = saves.map((s) => `${s.view}:${s.sel}`).join(', ');
   note(`panel footers: ${saves.length} Save / ${discards.length} Discard across `
      + `${tabs.length} tab(s); every Save hooked, every Discard hooked and dead while `

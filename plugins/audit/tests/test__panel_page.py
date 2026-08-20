@@ -469,13 +469,25 @@ def _cases(check):
     check("no author resolved -> a way to the setting that decides it, not a blank",
           "settingsLink(v.mode==='none'?'not recorded':'unknown','usage.authorMode')"
           in M.UI_HTML)
+    # THE ENUMERATION IS HERE, and it is hand-kept, which is why it is not the
+    # only thing checking it. The literal used to carry a partial list of its own
+    # and went stale twice - three names while four, then five, registered - so
+    # the registry now starts empty and the list lives where a miss fails by
+    # name. What this cannot see is a NEW writable surface that never registers;
+    # assertSavebarCensus in tools/capture-screenshots.mjs asks the live page
+    # that question, by cross-checking every view offering a Save against
+    # Object.keys(EDITS).
     check("unsaved work is registered per surface, and every writable surface "
-          "registers — a surface that forgets is one beforeunload cannot protect",
-          "const EDITS={guards:null,comp:null,policy:null};" in M.UI_HTML
+          "known today registers — a surface that forgets is one beforeunload "
+          "cannot protect",
+          "const EDITS={};" in M.UI_HTML
           and "EDITS.comp=()=>compChanges(patch);" in M.UI_HTML
           and "EDITS.guards=()=>configChanges(cfg);" in M.UI_HTML
           and "EDITS.policy=()=>policyChanges();" in M.UI_HTML
-          and "EDITS.ado=()=>adoRows(saved,ADRAFT);" in M.UI_HTML)
+          and "EDITS.ado=()=>adoRows(saved,ADRAFT);" in M.UI_HTML
+          # The theme card: registered last of the five, because its draft lives
+          # in memory only and a closing tab used to take it silently.
+          and "EDITS.look=()=>tChangeRows();" in M.UI_HTML)
     # `some(surfaceDirty)`, not `dirtyRows().length`. A surface whose change
     # computation THROWS used to answer `[]` - the same answer as a clean one - so
     # the close was not interrupted and the reader lost everything typed since the

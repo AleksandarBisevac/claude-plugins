@@ -26,6 +26,11 @@ function renderAppearance(){closeCombo();
  c.textContent='';
  if(!THEME){c.append(el('div',{class:'card'},el('div',{class:'findings warn'},
    'The theme could not be read from this project.')));return;}
+ // Registered here, where the view is wired, exactly as the other writable
+ // surfaces are. The theme draft lives in memory only - nothing persists TDRAFT
+ // or TLAY - so before this, closing the tab took every unsaved colour with it
+ // without asking, on the one surface whose Save has no Discard beside it.
+ EDITS.look=()=>tChangeRows();
  const changes=tChanges().concat(tLayChanges());
 
  // --- the bar: where this look comes from, and what to do with it -----------
@@ -260,10 +265,11 @@ function renderAppearance(){closeCombo();
  (THEME.warnings||[]).concat(tLocalWarnings()).slice(0,6).forEach(w=>
    chg.append(el('div',{class:'mut small','data-thwarn':'1'},w)));
  const save=el('button',{class:'btn primary','data-thsave':'1',onclick:async()=>{
-   const rows=changes.map(ch=>({scope:'theme',
-     field:ch.token+(tSingle(ch.token)?'':' · '+ch.mode),
-     from:ch.from,to:ch.to}));
-   if(!rows.length){toast('nothing to save — the theme matches the default');return;}
+   const rows=tChangeRows();
+   // "matches the default" was the old measurement talking: these rows are
+   // measured against what is ON DISK, so an untouched themed project has
+   // nothing to save without matching the built-in look at all.
+   if(!rows.length){toast('nothing to save — this is already what is on disk');return;}
    if(!await confirmChanges({title:'Save theme',rows:rows,scope:'look',
      verb:'Save '+rows.length+' change'+(rows.length===1?'':'s'),
      note:'writes .claude/audit.theme.json — the CSS is compiled from it, never stored'}))
@@ -294,8 +300,7 @@ function renderAppearance(){closeCombo();
    // draft did. `lock:false` because deleting the theme file is not a write the
    // gate holds; `danger` because the file goes, not just its values.
    if(!await confirmChanges({title:'Reset the theme',danger:1,lock:false,
-     rows:changes.map(ch=>({scope:'theme',
-       field:ch.token+(tSingle(ch.token)?'':' · '+ch.mode),from:ch.to,to:ch.from})),
+     rows:tResetRows(),
      verb:'Back to the built-in look',
      note:'removes .claude/audit.theme.json — the file goes, not just its values'}))
     return;

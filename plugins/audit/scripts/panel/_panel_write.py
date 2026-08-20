@@ -607,20 +607,41 @@ def theme_state(project):
 
 def _theme_changes(before, after):
     """Dotted change rows for a theme save, in the shape confirmChanges reads —
-    the same vocabulary the config and composition saves answer in."""
+    the same vocabulary the config and composition saves answer in.
+
+    EFFECTIVE values on both sides, resolved through the shipped default. A theme
+    file names only what its author overrode, so the raw entry for anything else
+    is absent — and reporting `from: null` for a token the reader saw a colour in
+    made every first-time edit read as a mismatch against the dialog, which shows
+    what is on screen. The same absence appears on the `after` side when a token
+    is reverted, so both are resolved the same way.
+    """
     rows = []
+    defaults = _theme.DEFAULT_THEME
+
+    def effective(entry, name, key):
+        v = (entry or {}).get(key)
+        if v is not None:
+            return v
+        d = defaults.get(name) or {}
+        return d.get(key) if d.get(key) is not None else d.get("$value")
+
     for name in _theme.THEME_TOKENS:
         b = before.get(name) if isinstance(before, dict) else None
         a = after.get(name) if isinstance(after, dict) else None
         for mode, key in (("light", "$value"), ("dark", "$dark")):
             if name in _theme.THEME_SINGLE and mode == "dark":
                 continue
-            bv = (b or {}).get(key)
-            av = (a or {}).get(key)
+            bv = effective(b, name, key)
+            av = effective(a, name, key)
             if bv == av:
                 continue
             rows.append({
-                "scope": "theme",
+                # `target`, the key every change row in this protocol uses and
+                # the one the panel's dialog and cfTouched dereference. Both
+                # sides said `scope` here, so they agreed with each other and
+                # with nothing else: the dialog printed a blank target cell.
+                "target": "theme",
                 "field": "%s · %s" % (name, mode) if name not in _theme.THEME_SINGLE
                          else name,
                 "from": bv,
@@ -646,12 +667,12 @@ def _layout_changes(before, after):
     b_density = before.get("density") or "comfortable"
     a_density = after.get("density") or "comfortable"
     if b_density != a_density:
-        rows.append({"scope": "theme", "field": "layout · density",
+        rows.append({"target": "theme", "field": "layout · density",
                      "from": b_density, "to": a_density})
     bo, ao = before.get("order") or {}, after.get("order") or {}
     for view in sorted(set(list(bo) + list(ao))):
         if bo.get(view) != ao.get(view):
-            rows.append({"scope": "theme", "field": "layout · order · " + view,
+            rows.append({"target": "theme", "field": "layout · order · " + view,
                          "from": ", ".join(bo.get(view) or []) or "(default)",
                          "to": ", ".join(ao.get(view) or []) or "(default)"})
     return rows

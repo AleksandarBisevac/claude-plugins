@@ -27,11 +27,17 @@ function jsRows(saved, draft) {
   const { ctx } = loadPanel();
   vm.runInContext('THEME = ' + JSON.stringify({ layout: saved })
     + '; TLAY = ' + JSON.stringify(draft) + ';', ctx);
-  const { tLayChanges } = reach(ctx, ['tLayChanges']);
-  // The panel's row carries `token`/`mode`/`layout`; Python's carries
-  // `scope`/`field`. The comparable part is the FIELD and the two values, which is
-  // exactly what appliedDiff keys on.
-  return tLayChanges().map((r) => ({ field: r.token, from: r.from, to: r.to }));
+  // `tChangeRows` too, and that is the repair this file needed: it compared
+  // `r.token` against Python's `field`, which are equal for a layout row and are
+  // NOT what the panel sends. The row that goes to the dialog and into
+  // `appliedDiff` carries a COMPOSED field, and the composition appended a
+  // separator to a row with no mode - so the real field was `'layout · density · '`
+  // against the server's `'layout · density'`, and every layout save reported
+  // "not exactly what the dialog listed". A test comparing the raw token could
+  // not see it.
+  const { tLayChanges, tChangeRows } = reach(ctx, ['tLayChanges', 'tChangeRows']);
+  return { raw: tLayChanges().map((r) => ({ field: r.token, from: r.from, to: r.to })),
+    sent: tChangeRows().map((r) => ({ field: r.field, from: r.from, to: r.to })) };
 }
 
 /** The same question put to `_panel_write._layout_changes`. */
@@ -62,20 +68,27 @@ describe('the dialog shows the rows the save will report', () => {
       const after = draft || { density: saved.density || 'comfortable',
                                order: saved.order || {} };
       const want = pyRows(saved, after);
-      expect(jsRows(saved, draft).slice().sort((a, b) => a.field.localeCompare(b.field)))
-        .toEqual(want.slice().sort((a, b) => a.field.localeCompare(b.field)));
+      const byField = (rows) => rows.slice()
+        .sort((a, b) => a.field.localeCompare(b.field));
+      const got = jsRows(saved, draft);
+      expect(byField(got.raw)).toEqual(byField(want));
+      // ...and the rows the panel ACTUALLY SENDS agree too. With no token
+      // override in play, tChangeRows carries exactly the layout rows.
+      expect(byField(got.sent)).toEqual(byField(want));
     });
   }
 
   it('and a saved density is NOT a change on load [was: 1 unsaved change]', () => {
     // The case the divergence was. Named separately from the sweep above because
     // it is the one a reader met.
-    expect(jsRows({ density: 'spacious' }, null)).toEqual([]);
+    expect(jsRows({ density: 'spacious' }, null).raw).toEqual([]);
+    expect(jsRows({ density: 'spacious' }, null).sent).toEqual([]);
   });
 
   it('while an actual edit still IS one — the guard is not satisfiable by '
      + 'reporting nothing', () => {
-    const rows = jsRows({ density: 'spacious' }, { density: 'compact', order: {} });
+    const rows = jsRows({ density: 'spacious' },
+      { density: 'compact', order: {} }).raw;
     expect(rows.length).toBe(1);
     expect(rows[0]).toEqual({ field: 'layout · density', from: 'spacious', to: 'compact' });
   });
@@ -83,7 +96,7 @@ describe('the dialog shows the rows the save will report', () => {
   it('at least one case in the sweep produces a row', () => {
     // The check on the check: every case above would pass over two empty lists.
     const totals = CASES.map(([label, saved, draft]) =>
-      [label, jsRows(saved, draft).length]);
+      [label, jsRows(saved, draft).raw.length]);
     expect(totals.filter(([, n]) => n > 0).length,
       'no case produced a row: ' + JSON.stringify(totals)).toBeGreaterThan(0);
   });

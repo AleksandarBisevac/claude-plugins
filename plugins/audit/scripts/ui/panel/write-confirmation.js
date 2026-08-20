@@ -81,13 +81,20 @@ function onViewEdit(id,fn){
  * lost, and beforeunload only earns the right to interrupt a close when there
  * really are some.
  *
- * A surface registers when its view is wired, so the ADO connector's entry joins
- * this object at render time rather than appearing in the literal: the keys are
- * read off the object, never off the text below.
+ * EMPTY, and every entry arrives when its view is wired. The keys are read off
+ * the object, never off a list in the text — and the list that used to be here
+ * proved that by going stale twice: it named three surfaces while four, then
+ * five, registered. A partial enumeration reads as the whole set, so the
+ * enumeration lives where it can fail — the registration cases in
+ * test__panel_page.py, and the savebar census in tools/capture-screenshots.mjs,
+ * which asks the LIVE page whether every view offering a Save has an entry here.
  *
- * @type {Object<string, (() => Array<{target: string, field: string, from: *, to: *}>)|null>}
+ * A pre-declared `null` bought nothing either way: an unwired surface has
+ * nothing unsaved, which is the same answer `editRows` gives for a missing key.
+ *
+ * @type {Object<string, () => Array<{target: string, field: string, from: *, to: *}>>}
  */
-const EDITS={guards:null,comp:null,policy:null};
+const EDITS={};
 /**
  * What one surface has unsaved, asked of the surface itself.
  *

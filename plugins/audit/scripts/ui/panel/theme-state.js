@@ -220,8 +220,22 @@ const tKey=mode=>mode==='dark'?'$dark':'$value';
  * @returns {string} the value, or '' when not even the default names this token
  */
 function tVal(name,mode){
+ const d=TDRAFT&&TDRAFT[name]?TDRAFT[name][tKey(mode)]:undefined;
+ return (d!==undefined&&d!==null)?d:tSavedVal(name,mode);}
+/**
+ * The value ON DISK for one token and mode: the saved theme's, or the shipped
+ * default's where the saved theme is silent.
+ *
+ * `tVal` is this with the draft laid over it, and it is expressed that way
+ * rather than repeating the walk - two spellings of one layer stack is how
+ * "unsaved" comes to mean two different things on one tab.
+ *
+ * @param {string} name - the custom property, '--' included
+ * @param {'light'|'dark'} mode - which column
+ * @returns {string} the value, or '' when not even the default names this token
+ */
+function tSavedVal(name,mode){
  const from=o=>o&&o[name]?o[name][tKey(mode)]:undefined;
- const d=from(TDRAFT);if(d!==undefined&&d!==null)return d;
  const s=from(THEME&&THEME.theme);if(s!==undefined&&s!==null)return s;
  const f=from(THEME&&THEME.default);
  return f===undefined?'':f;}
@@ -272,6 +286,73 @@ function tChanges(){
  *   a layout field instead of writing a token. The two halves are measured
  *   against different baselines — see the comment on the order loop.
  */
+/**
+ * What the DRAFT has that the disk does not — this tab's unsaved work.
+ *
+ * NOT `tChanges()`, and the difference is the whole point. `tChanges` measures
+ * against the shipped DEFAULT because that is what gets written into a theme
+ * file: `tPayload` is built from it, so a file says what its author decided and
+ * nothing more. On a project wearing the built-in look the two agree; on any
+ * other, `tChanges` reports the theme's OWN values as changes the moment the tab
+ * opens. The server answers in this one - `_theme_changes(before=saved,
+ * after=incoming)` - so a dialog built on the other disagreed with the save it
+ * had just described, and registering it as unsaved work would interrupt every
+ * close on a themed project.
+ *
+ * @returns {ThemeChange[]} one row per token and mode whose draft value differs
+ *   from the value on disk, in group then token then mode order
+ */
+function tUnsaved(){
+ const out=[];
+ ((THEME&&THEME.groups)||[]).forEach(g=>g.tokens.forEach(name=>{
+  TMODES.forEach(mode=>{
+   if(mode==='dark'&&tSingle(name))return;
+   const now=tVal(name,mode),was=tSavedVal(name,mode);
+   if(String(now)!==String(was))out.push({token:name,mode:mode,from:was,to:now});});}));
+ return out;}
+/**
+ * The theme's unsaved work as CHANGE ROWS, in the shape every other surface
+ * reports and every reader of a row expects.
+ *
+ * Built through `cfRow`, which is what makes the key `target` rather than a
+ * `scope` of this surface's own. Two readers dereference it and both used to get
+ * `undefined` here: the confirm dialog printed a blank target cell and stamped
+ * `data-cfrow="undefined <field>"`, and `cfTouched` - which decides the phases a
+ * lock notice names - collected a null for every theme row.
+ *
+ * @returns {Array<{target: string, field: string, from: *, to: *}>} token rows
+ *   then layout rows, each field naming the token and, for a two-valued token,
+ *   its mode
+ */
+/**
+ * How a change row NAMES a token: the token, and its mode where the mode says
+ * something. A single-valued token has one column, and a LAYOUT row has no mode
+ * at all - it carries `mode:''`.
+ *
+ * That empty mode is why this is a function. Both callers used to append
+ * `' · '+ch.mode` unless the token was single-valued, which spelled a layout row
+ * `'layout · density · '` - a dangling separator in the dialog, and a field that
+ * never equalled the `'layout · density'` the server echoes back. So every
+ * density or card-order save reported "not exactly what the dialog listed", from
+ * a difference of two characters nobody could see.
+ *
+ * @param {ThemeChange} ch - a row from tUnsaved, tChanges or tLayChanges
+ * @returns {string} the `field` of the change row
+ */
+const tRowField=ch=>ch.token+(ch.mode&&!tSingle(ch.token)?' · '+ch.mode:'');
+function tChangeRows(){return tUnsaved().concat(tLayChanges())
+ .map(ch=>cfRow('theme',tRowField(ch),ch.from,ch.to));}
+/**
+ * What Reset is about to do, as change rows.
+ *
+ * DEFAULT-relative, unlike tChangeRows, and reversed. Reset removes the theme
+ * FILE, so the destination is the built-in look rather than what is on disk -
+ * and the dialog has to describe what reset will do, not what the draft did.
+ *
+ * @returns {Array<{target: string, field: string, from: *, to: *}>}
+ */
+function tResetRows(){return tChanges().concat(tLayChanges())
+ .map(ch=>cfRow('theme',tRowField(ch),ch.to,ch.from));}
 function tLayChanges(){
  const cur=tLayout(),base=(THEME&&THEME.layout)||{};
  const out=[];
