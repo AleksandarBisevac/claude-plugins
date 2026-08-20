@@ -102,6 +102,7 @@ _JS_PARTS = (
     # The shared layer first, for the reason `ui/shared/README.md` gives: the
     # order is the dependency direction, so a shared part cannot reach back into
     # a surface helper.
+    "shared/plural.js",
     "shared/download.js",
     "shared/storage.js",
     "panel/core.js",

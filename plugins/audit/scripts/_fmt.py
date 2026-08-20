@@ -185,7 +185,17 @@ def plural(n, one, many=None):
     `hooks/journal-writes.py` keeps its copy and cannot stop: hooks may import
     nothing from `scripts/`. That copy is held to this one by a case that
     exercises both, the same way `find_script()`'s third copy is — read, not
-    merged."""
+    merged. It is handed `len(edits)`, so the truncation below cannot separate
+    them.
+
+    TRUNCATED BEFORE THE AGREEMENT IS DECIDED, and the order is the point. `%d`
+    truncates while `n == 1` was asked of the raw value, so `plural(1.7, "task")`
+    rendered `1 tasks` — a number and a noun describing different values. No
+    caller passes a fraction (every one of them counts a list), which is exactly
+    why it went unnoticed and why the JavaScript mirror in `ui/shared/plural.js`
+    could have been written either way without anyone finding out. Agreeing here
+    means nobody has to re-derive that."""
+    n = int(n)
     return "%d %s" % (n, one if n == 1 else (many or one + "s"))
 
 

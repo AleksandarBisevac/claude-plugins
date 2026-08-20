@@ -190,6 +190,19 @@ def _cases(check):
           M.plural(1, "person", "people") == "1 person"
           and M.plural(2, "person", "people") == "2 people"
           and M.plural(2, "entry", "entries") == "2 entries")
+    check("plural: the number and the noun describe the SAME value - `%d` "
+          "truncates, so deciding agreement on the raw value rendered "
+          "'1 tasks'. Mirrored in ui/shared/plural.js, and pinned because no "
+          "caller passes a fraction, which is why either order could have "
+          "shipped unnoticed",
+          M.plural(1.7, "task") == "1 task"
+          # -1 is not 1, so it takes the plural, exactly as plural(-1) does.
+          and M.plural(-1.7, "task") == "-1 tasks"
+          and M.plural(-1, "task") == "-1 tasks"
+          and M.plural(0.4, "task") == "0 tasks"
+          and M.plural(2.9, "task") == "2 tasks"
+          # ...and the integers it is actually given are untouched by it.
+          and M.plural(1, "task") == "1 task" and M.plural(2, "task") == "2 tasks")
     check("plural: a multi-word noun pluralises its LAST word, which is what the "
           "report's gate wording depends on (`0 open bugs`, not `0 open bugss`)",
           M.plural(0, "open bug") == "0 open bugs"

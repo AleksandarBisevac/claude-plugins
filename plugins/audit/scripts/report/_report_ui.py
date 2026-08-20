@@ -111,6 +111,7 @@ _SCRIPT_PARTS = (
     # The shared layer first, and that order IS the dependency direction: a
     # shared part cannot call a surface helper because the surface has not been
     # declared yet. See `ui/shared/README.md`.
+    "shared/plural.js",
     "shared/download.js",
     "shared/storage.js",
     "report/page-state.js",
