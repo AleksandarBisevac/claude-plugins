@@ -356,7 +356,23 @@ function tPaint(){
  */
 function tSet(name,mode,value,record){
  const was=tVal(name,mode);
- if(String(was)===String(value))return;
+ // `undefined` means CLEAR THE OVERRIDE, which the Revert control produces for any
+ // token the default payload does not name (`tDefault` answers undefined there).
+ // Clearing is only a change if what it falls back to differs — and comparing
+ // `was` with `String(undefined)` never matched, so a revert that changed nothing
+ // recorded an undo step and counted as one unsaved change.
+ //
+ // Asked of tVal rather than by re-deriving the fallback chain: there is one
+ // chain and it lives in tVal.
+ if(value===undefined){
+  const cur=TDRAFT&&TDRAFT[name];
+  if(!cur)return;                      // no override to clear
+  const keep=cur[tKey(mode)];
+  cur[tKey(mode)]=undefined;
+  const after=tVal(name,mode);
+  cur[tKey(mode)]=keep;
+  if(String(was)===String(after))return;
+ } else if(String(was)===String(value))return;
  TDRAFT=TDRAFT||{};
  const e=TDRAFT[name]||(TDRAFT[name]={$value:tVal(name,'light')});
  if(!tSingle(name)&&e.$dark===undefined)e.$dark=tVal(name,'dark');
@@ -376,13 +392,13 @@ function tSet(name,mode,value,record){
  */
 function tUndo(stack,other){
  const step=stack.pop();if(!step)return;
- const back={token:step.token,mode:step.mode,from:step.to,to:step.from};
  tSet(step.token,step.mode,step.from,false);
- // A step whose `to` was never a value has no inverse to offer, so the step is
- // pushed back as it stands rather than an entry that would ask the other trail
- // to apply an undefined.
- other.push(back.from===undefined?step:{token:step.token,mode:step.mode,
-   from:step.to,to:step.from});
+ // ALWAYS THE INVERSE. This used to push the step back UNCHANGED when its `to`
+ // was undefined, reasoning that such a step "has no inverse to offer" — but the
+ // inverse is `{from: undefined, to: <the old value>}`, and applying an undefined
+ // `from` is precisely the clear. Pushed unchanged, Redo applied `from` instead:
+ // the value Undo had just restored, so Redo repeated the undo.
+ other.push({token:step.token,mode:step.mode,from:step.to,to:step.from});
  renderAppearance();}
 /**
  * The value as a six-digit hex colour, or null when it is not one.
