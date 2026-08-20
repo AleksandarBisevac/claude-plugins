@@ -404,6 +404,61 @@ function focusKeep(within){
  *   where no specific control was kept
  * @returns {boolean} whether a control ended up focused
  */
+/**
+ * Ask a surface what it would write, refuse an empty save, and get consent.
+ *
+ * The three steps every Save begins with, in the same order, on all four writable
+ * surfaces — and the only part of a save that IS the same on all four. What
+ * follows differs completely: a different endpoint, a different payload, a
+ * different re-render, so none of that is here.
+ *
+ * `rows` is asked here rather than passed, for the reason `discardButton` asks
+ * again on the press: the form moves between renders, and confirming a list the
+ * caller captured earlier would write something other than what is on screen.
+ *
+ * @param {{rows: function(): Array<Object>, title: string, scope: string,
+ *   empty: string, note: string}} o - `empty` completes "nothing to save — …",
+ *   `scope` is what the lock notice names, `note` says what file is touched
+ * @returns {Promise<?Array<Object>>} the rows to write, or null when there was
+ *   nothing to save or the reader declined — one answer for "do not proceed",
+ *   because a caller has nothing different to do about the two
+ */
+async function confirmSave(o){
+ const rows=o.rows();
+ if(!rows.length){toast('nothing to save — '+o.empty);return null;}
+ if(!await confirmChanges({title:o.title,rows:rows,scope:o.scope,
+   verb:'Save '+plural(rows.length,'change'),note:o.note}))return null;
+ return rows;}
+/**
+ * Paint what a write returned into a view's findings slot.
+ *
+ * @param {string} sel - the view container's selector, e.g. `'#comp'`
+ * @param {Object} res - the write endpoint's answer
+ * @returns {?Element} the slot, or null when the view has none rendered
+ */
+function showFindings(sel,res){
+ const slot=$(sel+' .findings-slot');
+ if(slot)slot.replaceChildren(findingsBox(res));
+ return slot;}
+/**
+ * Paint it AND say what happened — the pair every save ends with.
+ *
+ * Split from `showFindings` rather than taking a flag, because the theme card
+ * genuinely needs them apart: it paints before its re-render so that a REFUSAL is
+ * readable on a path that returns without redrawing, and reports once, on
+ * whichever slot survives. A boolean argument would have made one function serve
+ * two shapes and told a reader nothing about why.
+ *
+ * @param {string} sel - the view container's selector
+ * @param {Object} res - the write endpoint's answer
+ * @param {Array<Object>} rows - the rows the dialog listed, for the applied-diff
+ * @param {string} what - what was being written, for the refusal sentence
+ * @returns {?Element} the slot
+ */
+function showWriteResult(sel,res,rows,what){
+ const slot=showFindings(sel,res);
+ saveOutcome(res,rows,what,slot);
+ return slot;}
 function restoreCaret(n,caret,keepBack){
  if(!n||!n.focus)return focusBack(keepBack);
  n.focus();

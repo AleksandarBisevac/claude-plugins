@@ -1019,7 +1019,10 @@ def _cases(check):
         "clipboard copy": ("navigator.clipboard.writeText(t)", "copyText(t)"),
         "table header construction": ("el('thead',{},el('tr',{}))",
                                       "tableHead(['a','b'])"),
-        "day <-> milliseconds": ("const d=ms/864e5;", "const d=ms/DAY;"),
+        "day <-> milliseconds": ("const d=ms/864e5;", "const d=ms/DAY_MS;"),
+        "save confirmation": ("toast('nothing to save - x')", "confirmSave({})"),
+        "caret restore": ("n.setSelectionRange(caret,caret)",
+                          "restoreCaret(n,caret,back)"),
     }
     _missing = [c for c, _h, _n, _a, _w in M.SHARED_CONCERNS if c not in _SAMPLES]
     check("sc12 every row has a sample its needle is checked against - a row "

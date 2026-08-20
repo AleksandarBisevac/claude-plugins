@@ -287,11 +287,11 @@ function renderPolicy(){closeCombo();
 
  // --- save --------------------------------------------------------------------
  const save=el('button',{class:'btn primary','data-psave':'1',onclick:async()=>{
-   const chg=policyChanges();
-   if(!chg.length){toast('nothing to save — the policy is unchanged');return;}
-   if(!await confirmChanges({title:'Save capability policy',rows:chg,scope:'policy',
-     verb:'Save '+plural(chg.length,'change'),
-     note:'writes .claude/audit.config.json'}))return;
+   const chg=await confirmSave({rows:policyChanges,
+     title:'Save capability policy',scope:'policy',
+     empty:'the policy is unchanged',
+     note:'writes .claude/audit.config.json'});
+   if(!chg)return;
    const res=await api('PUT','/api/policy',{policy:PDRAFT||{}});
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,chg,'the config',findings);

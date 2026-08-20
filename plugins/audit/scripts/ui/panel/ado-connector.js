@@ -304,19 +304,16 @@ function renderAdoCard(c){
  // form's own listener.
  EDITS.ado=()=>adoRows(saved,ADRAFT);
  const save=el('button',{class:'btn primary','data-save':'ado',onclick:async()=>{
-   const rows=adoRows(saved,ADRAFT);
-   if(!rows.length){toast('nothing to save — no values changed');return;}
-   if(!await confirmChanges({title:'Save ADO connector',rows,scope:'comp',
-     verb:'Save '+plural(rows.length,'change'),
-     note:'writes '+STATE.manifestPath}))return;
+   const rows=await confirmSave({rows:()=>adoRows(saved,ADRAFT),
+     title:'Save ADO connector',scope:'comp',empty:'no values changed',
+     note:'writes '+STATE.manifestPath});
+   if(!rows)return;
    const res=await api('PUT','/api/ado',{ado:ADRAFT});
    if(!res.ok){
     card.querySelector('.findings-slot').replaceChildren(findingsBox(res));
     saveOutcome(res,rows,'the manifest',null);return;}
    STATE=await api('GET','/api/state');renderComp();renderOver();
-   const slot=$('#adocard .findings-slot');
-   if(slot)slot.replaceChildren(findingsBox(res));
-   saveOutcome(res,rows,'the manifest',slot);}},'Save ADO connector');
+   showWriteResult('#adocard',res,rows,'the manifest');}},'Save ADO connector');
  const discard=discardButton({key:'ado',rows:()=>adoRows(saved,ADRAFT),
    title:'Discard unsaved connector edits',
    note:'nothing is written; the card goes back to the saved manifest',

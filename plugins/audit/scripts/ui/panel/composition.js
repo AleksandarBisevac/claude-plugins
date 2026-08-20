@@ -481,11 +481,10 @@ function renderComp(){closeCombo();
    // dialog, so this is refused at the door and the field says which one it is.
    if(bcBad){toast('meta.buildCommands is not valid JSON — fix it or clear it '
      +'before saving','err');bc.focus();return;}
-   const rows=compChanges(patch);
-   if(!rows.length){toast('nothing to save — no values changed');return;}
-   if(!await confirmChanges({title:'Save composition',rows,scope:'comp',
-     verb:'Save '+plural(rows.length,'change'),
-     note:'writes '+STATE.manifestPath}))return;
+   const rows=await confirmSave({rows:()=>compChanges(patch),
+     title:'Save composition',scope:'comp',empty:'no values changed',
+     note:'writes '+STATE.manifestPath});
+   if(!rows)return;
    const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
    for(const k of Object.keys(patch.meta))clean.meta[k]=patch.meta[k];
    const res=await api('PUT','/api/composition',clean);
@@ -497,9 +496,7 @@ function renderComp(){closeCombo();
    // part of a patch. COMPF is hoisted, so the filter, the search and which
    // phases were open all survive this.
    STATE=await api('GET','/api/state');renderComp();renderOver();
-   const slot=$('#comp .findings-slot');
-   if(slot)slot.replaceChildren(findingsBox(res));
-   saveOutcome(res,rows,'the manifest',slot);}},'Save composition');
+   showWriteResult('#comp',res,rows,'the manifest');}},'Save composition');
  const discard=discardButton({key:'comp',rows:()=>compChanges(patch),
    title:'Discard unsaved composition edits',
    note:'nothing is written; the table goes back to the saved manifest',

@@ -268,15 +268,14 @@ function renderAppearance(){closeCombo();
  (THEME.warnings||[]).concat(tLocalWarnings()).slice(0,6).forEach(w=>
    chg.append(el('div',{class:'mut small','data-thwarn':'1'},w)));
  const save=el('button',{class:'btn primary','data-thsave':'1',onclick:async()=>{
-   const rows=tChangeRows();
    // "matches the default" was the old measurement talking: these rows are
    // measured against what is ON DISK, so an untouched themed project has
    // nothing to save without matching the built-in look at all.
-   if(!rows.length){toast('nothing to save — this is already what is on disk');return;}
-   if(!await confirmChanges({title:'Save theme',rows:rows,scope:'look',
-     verb:'Save '+plural(rows.length,'change'),
-     note:'writes .claude/audit.theme.json — the CSS is compiled from it, never stored'}))
-    return;
+   const rows=await confirmSave({rows:tChangeRows,title:'Save theme',
+     scope:'look',empty:'this is already what is on disk',
+     note:'writes .claude/audit.theme.json — the CSS is compiled from it, '
+       +'never stored'});
+   if(!rows)return;
    const lay=tLayout();
    const layPayload={};
    if(lay.density&&lay.density!=='comfortable')layPayload.density=lay.density;
@@ -287,14 +286,11 @@ function renderAppearance(){closeCombo();
    // must be readable even though the failure path returns without redrawing,
    // and the second slot is a different node because renderAppearance rebuilt
    // the card the first one lived in.
-   const slot=$('#look .findings-slot');
-   if(slot)slot.replaceChildren(findingsBox(res));
+   const slot=showFindings('#look',res);
    if(!res.ok){saveOutcome(res,rows,'the theme',slot);return;}
    THEME=await api('GET','/api/theme');TDRAFT=null;TLAY=null;
    renderAppearance();
-   const s2=$('#look .findings-slot');
-   if(s2)s2.replaceChildren(findingsBox(res));
-   saveOutcome(res,rows,'the theme',s2);
+   showWriteResult('#look',res,rows,'the theme');
    toast('theme saved — reload to see the report wear it too');}},'Save theme');
  const reset=el('button',{class:'btn small','data-threset':'1',type:'button',
    onclick:async()=>{

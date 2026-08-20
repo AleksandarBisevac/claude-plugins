@@ -1610,6 +1610,20 @@ SHARED_CONCERNS = (
      "forcing it through a helper for the count's sake would be the tail "
      "wagging the lint. Panel-only: `el()` is the panel's builder and the "
      "report assembles its tables with createElement."),
+    # The three the SCOUT found after the save/discard footers were factored -
+    # reshaping the tree moved the next-largest duplications into view, which is
+    # the argument for running it again after every extraction rather than once.
+    ("save confirmation", "panel/write-confirmation.js", "'nothing to save", 0,
+     "EXTRACTED as confirmSave. Four surfaces opened their Save with the same "
+     "three steps in the same order - ask the form, refuse an empty save, get "
+     "consent - and then diverged completely: a different endpoint, payload and "
+     "re-render each. Only the opening was ever shared, and the needle is its "
+     "one user-visible string, which is what a fifth surface would copy first."),
+    ("caret restore", "panel/write-confirmation.js", "setSelectionRange(caret,caret)", 0,
+     "EXTRACTED as restoreCaret. The panel had carried a comment calling this "
+     "'ONE rule, and two places that need it' while four views spelled it - the "
+     "comment was written when it was true and nothing counted it afterwards, "
+     "which is the whole case for a row here rather than a note there."),
     ("day <-> milliseconds", "shared/dates.js", r"re:864e5|86400000", 0,
      "EXTRACTED as DAY_MS. The needle is the CONSTANT rather than one spelling "
      "of the arithmetic - a narrower pattern found five of the nine and a shell "

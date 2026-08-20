@@ -897,7 +897,9 @@ def _cases(check):
           and "TPAINTED.forEach(n=>root.style.removeProperty(n));" in M.UI_HTML)
     check("th-p5 saving goes through the same confirm-and-echo path every other "
           "write here uses, and says what file it writes",
-          "confirmChanges({title:'Save theme'" in M.UI_HTML
+          # "the same path every other write uses" is now literally the same
+          # function, which is what this case always claimed and could not check.
+          "confirmSave({rows:tChangeRows,title:'Save theme'" in M.UI_HTML
           and "PUT','/api/theme'" in M.UI_HTML
           and "writes .claude/audit.theme.json" in M.UI_HTML)
     check("th-p6 the chart palette opens deliberately - locked by default, "
@@ -946,7 +948,7 @@ def _cases(check):
           "one question, asked once",
           "const nch=tChangeRows().length;" in M.UI_HTML
           and "const n=tChangeRows().length;" in M.UI_HTML
-          and "const rows=tChangeRows();" in M.UI_HTML
+          and "confirmSave({rows:tChangeRows," in M.UI_HTML
           # ...and the default-relative set is still what the CHANGES CARD shows,
           # which says so in its own header. Two meanings, both named.
           and "const changes=tChanges().concat(tLayChanges());" in M.UI_HTML
@@ -1051,7 +1053,10 @@ def _cases(check):
     check("a save goes through the one confirm flow, writes through the one policy "
           "endpoint, and describes itself in the vocabulary the server echoes "
           "(four call sites: boot, PUT, the post-save re-read, refreshFromDisk)",
-          "confirmChanges({title:'Save capability policy'" in M.UI_HTML
+          # Through `confirmSave` now, which is where the confirm flow lives for
+          # all four writable surfaces - the title is what identifies this one.
+          "confirmSave({rows:policyChanges,\n     title:'Save capability policy'"
+          in M.UI_HTML
           and M.UI_HTML.count("'/api/policy'") == 4
           and "function policyChanges(){" in M.UI_HTML
           and "return configChanges(cfg);}" in M.UI_HTML)

@@ -219,11 +219,10 @@ function renderSettings(){closeCombo();
  // across the re-render that followed. #policy and the theme card already had
  // data-psave and data-thsave; these three are the ones that did not.
  const save=el('button',{class:'btn primary','data-save':'guards',onclick:async()=>{
-   const rows=configChanges(cfg);
-   if(!rows.length){toast('nothing to save — no settings changed');return;}
-   if(!await confirmChanges({title:'Save settings',rows,scope:'guards',
-     verb:'Save '+plural(rows.length,'change'),
-     note:'writes .claude/audit.config.json'}))return;
+   const rows=await confirmSave({rows:()=>configChanges(cfg),
+     title:'Save settings',scope:'guards',empty:'no settings changed',
+     note:'writes .claude/audit.config.json'});
+   if(!rows)return;
    const res=await api('PUT','/api/config',cfg);
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the config',findings);
