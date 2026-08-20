@@ -267,6 +267,7 @@ const uKeyEl=(k,cls)=>isUncat(k)
  * `data-t` values on the tab buttons, and the names a `#/<tab>` link uses — so
  * renaming one breaks a link somebody saved.
  */
+// ---------- tabs, the toast, and where the reader was ----------
 const TABS=['guards','comp','over','usage','policy','look'],SCROLL={};
 let CURTAB=null;
 /**
@@ -345,6 +346,36 @@ function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'').split('!')
  */
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'');
  setTimeout(()=>t.className=t.className.replace('show','').trim(),2600);}
+/**
+ * Run each step, containing a failure to the step that caused it.
+ *
+ * THE RULE, not caution: the views and the live pollers are INDEPENDENT of one
+ * another, and `boot()` used to run them as one sequence of bare calls. A throw
+ * in any of them - a malformed ledger reaching renderUsage is the realistic one -
+ * skipped every later view, the initial tab, the run poller and the tip
+ * placement, and then the outer `boot().catch` reported "load failed" about a
+ * load that had already succeeded. One broken view cost the whole panel and
+ * misnamed the cause on the way out.
+ *
+ * The names come back rather than being reported from here, because WHO needs to
+ * hear about it is the caller's question and not this function's.
+ *
+ * A step is named by its own identifier, so a caller passes NAMED functions; an
+ * inline arrow has no name and would report as nothing at all, which is why the
+ * one step boot() has to wrap is a named const. An unnamed step is reported as
+ * `(anonymous)` rather than silently as an empty entry - it is a wiring mistake,
+ * and a blank in a list of failures is the kind of thing a reader reads past.
+ *
+ * @param {Function[]} steps - each called with no arguments, in the order given
+ * @returns {string[]} the names of the steps that threw, in the order they threw
+ */
+function runContained(steps){
+ const broke=[];
+ for(const step of steps){
+  try{step();}
+  catch(cause){const name=step.name||'(anonymous)';broke.push(name);
+   console.error('panel step failed: '+name,cause);}}
+ return broke;}
 /** How long a plain success stays in a savebar's note slot before it dissolves. */
 const SAVE_NOTE_MS=5000;
 /**

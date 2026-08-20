@@ -249,12 +249,19 @@ Rules going forward:
 - **Wrap each independent feature in its own `try`/`catch`** at the registration point, so one
   broken feature cannot blank a report someone opened from a CI artifact:
 
+  **The panel already has this as a function** — `runContained` in `ui/panel/core.js`, which
+  returns the names that threw rather than reporting them itself. `boot()` routes its view
+  renderers, then the initial-tab restore, then the pollers through it — separate calls rather
+  than one list, because the order between those groups is load-bearing. Call it; a retyped loop is a second
+  implementation of the same rule.
+
   ```js
-  for (const feature of [themeToggle, filterBar, heatmap]) {
-    try { feature(); }
-    catch (cause) { console.error('feature failed: ' + feature.name, cause); }
-  }
+  const broke = runContained([themeToggle, filterBar, heatmap]);
+  if (broke.length) toast('these are not up: ' + broke.join(', '), 'err');
   ```
+
+  It has one reader today, so it sits in the panel's core rather than `shared/` — the report wires
+  its features individually and has no registration point to route through.
 
 - **Identifiers are global in a concatenated script.** There is no module scope to rely on — the
   advice "module scope already encapsulates" is false here. Prefix by feature, the way the panel's

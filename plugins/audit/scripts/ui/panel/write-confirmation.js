@@ -668,8 +668,17 @@ async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/
    if(s)uApplyFragment(s);}}
  THEME=await api('GET','/api/theme').catch(()=>null);
  tCaptureBase();
- renderViewer();renderSettings();renderComp();renderOver();renderUsage();renderPolicy();renderAppearance();
- // Restored last, once every view has content to scroll to.
- showTab(initialTab());
+ // Every one of these is contained - see runContained. Three calls rather than
+ // one list because the ORDER between them is load-bearing: the initial tab is
+ // restored once every view has content to scroll to, and RUNSTATUS is read by
+ // the header the poller then keeps up to date.
+ const broke=runContained([renderViewer,renderSettings,renderComp,renderOver,
+   renderUsage,renderPolicy,renderAppearance]);
+ const showInitialTab=()=>showTab(initialTab());
+ broke.push(...runContained([showInitialTab]));
  RUNSTATUS=STATE.runStatus||null;FP=(RUNSTATUS||{}).fingerprint||null;
- startRunPoll();startTipPlacement();}
+ broke.push(...runContained([startRunPoll,startTipPlacement]));
+ // Named, not counted. A reader who can see WHICH part is missing knows what to
+ // distrust on this page; a number would only say that something is.
+ if(broke.length)toast('the panel is up, but these parts of it are not: '
+   +broke.join(', ')+'. The console names the cause of each.','err');}

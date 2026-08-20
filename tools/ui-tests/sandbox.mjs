@@ -245,6 +245,11 @@ function stubWindow(options) {
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     requestAnimationFrame: () => 0, cancelAnimationFrame() {},
     fetch: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+    // The real one from this Node, not a stub: `api()` builds a signal and hands
+    // it to fetch, so a fake that merely has the shape would let a change to the
+    // timeout path pass unnoticed. Without it `boot()` rejects on its first call
+    // and nothing after the first await is reachable from a test at all.
+    AbortController,
     URL: { createObjectURL: () => 'blob:stub', revokeObjectURL() {} },
     Blob: function Blob() {},
     FormData: function FormData() {},

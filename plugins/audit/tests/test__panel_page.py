@@ -352,7 +352,12 @@ def _cases(check):
           "scrolled anchor re-places its tip",
           "TIPFOR.isConnected?showTip(TIPFOR):hideTip()" in M.UI_HTML
           and "if(TIPFOR&&!TIPFOR.isConnected)hideTip()" in M.UI_HTML
-          and "startTipPlacement();}" in M.UI_HTML)
+          # Boot starts it. The spelling changed when the boot sequence moved
+          # inside runContained, so that a throw in one view stops costing the
+          # tip placement and the run poller; WHICH steps boot contains is
+          # driven for real in tools/ui-tests/boot-containment.test.mjs, and
+          # this clause only keeps the call site from disappearing.
+          and "runContained([startRunPoll,startTipPlacement])" in M.UI_HTML)
     # F8. Both halves of one rule: a settings row is allowed to shrink, and the
     # words inside it are allowed to wrap. Either one alone leaves the row exactly
     # as wide as its content, which on a 390px screen was 447px of DOCUMENT.
@@ -455,7 +460,7 @@ def _cases(check):
     check("the topbar names the identity a write will be recorded under",
           "<span class=who id=who hidden></span>" in M.UI_HTML
           and "function renderViewer()" in M.UI_HTML
-          and "renderViewer();renderSettings();" in M.UI_HTML)
+          and "runContained([renderViewer,renderSettings," in M.UI_HTML)
     check("the write dialog names the identity too — the topbar pill is dropped "
           "below 34rem, which is where the question is least easy to answer",
           "'data-cfwho':who&&!o.danger?'1':null" in M.UI_HTML
@@ -1923,12 +1928,17 @@ def _cases(check):
           "plan, while the theme and the active tab stay global on purpose",
           "const UFSTORE='audit-panel-uf:'+PROJECT;" in M.UI_HTML)
     _boot = M.UI_HTML[M.UI_HTML.index("async function boot()"):]
-    _boot = _boot[:_boot.index("startRunPoll()")]
+    # The endpoint was `startRunPoll()` until the boot sequence moved inside
+    # runContained and the bare calls became names in a list. It raised rather
+    # than drifting, which is the good outcome for a slice endpoint - the window
+    # is the same span of boot() either way, and a pin that silently resized
+    # would have gone on passing about something else.
+    _boot = _boot[:_boot.index("runContained([startRunPoll")]
     check("fp: restore runs in boot() BEFORE the first renderUsage - hash "
           "over storage over defaults",
           "uApplyFragment(h.slice(bang+1))" in _boot
           and "storageGet(UFSTORE)" in _boot
-          and _boot.index("uApplyFragment") < _boot.index("renderUsage()"))
+          and _boot.index("uApplyFragment") < _boot.index("renderUsage"))
     check("fp: clearAll clears the store AND the fragment INSIDE its own "
           "slice (the F-D1 lesson: a pin outside the function it vouches for "
           "vouches for nothing)",

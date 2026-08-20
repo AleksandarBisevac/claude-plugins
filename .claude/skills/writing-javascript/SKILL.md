@@ -98,12 +98,18 @@ leaks around 302 names. The advice "module scope encapsulates" is false here.
 - **Wrap each independent feature so its failure is contained.** A report is opened from a CI
   artifact by someone who cannot fix it; one throwing feature must not blank the page:
 
+  **On the panel, call `runContained` — do not retype the loop.** It lives in
+  `ui/panel/core.js`, takes named functions, and returns the names of the ones that threw so the
+  caller decides who hears about it:
+
   ```js
-  for (const feature of [themeToggle, filterBar, heatmap]) {
-    try { feature(); }
-    catch (cause) { console.error('feature failed: ' + feature.name, cause); }
-  }
+  const broke = runContained([themeToggle, filterBar, heatmap]);
+  if (broke.length) toast('these are not up: ' + broke.join(', '), 'err');
   ```
+
+  Pass **named** functions: an inline arrow has no name and reports as `(anonymous)`. The report
+  has no central registration point yet, so it has no second reader and the helper has not been
+  promoted to `shared/`; centralising the report's wiring is what would move it.
 
 ## Readability
 
