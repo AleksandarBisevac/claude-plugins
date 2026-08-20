@@ -1,0 +1,26 @@
+/* custom autocomplete combobox (replaces native datalist).
+   The menu is position:FIXED, placed by JS (comboWrap's place(), the showTip
+   pattern): absolutely-positioned inside the wrap it was clipped by any
+   ancestor with an overflow frame of its own — the composition table's
+   .comptblwrap scrolls sideways by design and cut the model menu off at the
+   frame's bottom edge. left/top/width are written by JS; the sheet owns the
+   rest. */
+.combo{position:relative;flex:1 1 18rem}
+.combo>input{width:100%}
+.combo-menu{position:fixed;z-index:40;background:var(--surface);
+ border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);max-height:15rem;
+ overflow-y:auto;overflow-x:hidden;padding:var(--sp-0)}
+/* The overflow footer: a count, not a choice — keyboard nav never reaches it. */
+.combo-more{padding:.35rem var(--sp-1);color:var(--muted);font-size:.72rem;
+ font-style:italic;cursor:default;border-top:1px solid var(--border)}
+/* A menu never scrolls sideways (live feedback: a dropdown with both scrollbars).
+   The name is mono and unbreakable by default — a long model id used to push the
+   row wider than the menu, and overflow:auto drew the horizontal bar. Names may
+   break anywhere, descriptions wrap to their own lines, and the row wraps its
+   parts; the menu clips X outright so nothing regresses this quietly. */
+.combo-it{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-0) var(--sp-1);padding:var(--sp-1) var(--sp-1);border-radius:6px;cursor:pointer}
+.combo-it:hover,.combo-it.active{background:var(--surface-2)}
+.combo-n{font-size:.82rem;flex:0 0 auto;overflow-wrap:anywhere;min-width:0;max-width:100%}
+.combo-d{color:var(--muted);font-size:.72rem;white-space:normal;overflow-wrap:anywhere;flex:1 1 8rem;min-width:0}
+.chipwrap{display:flex;flex-direction:column;gap:var(--sp-1);flex:1 1 auto}
+.chips{display:flex;gap:var(--sp-0);flex-wrap:wrap}

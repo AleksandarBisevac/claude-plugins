@@ -1,0 +1,43 @@
+/* info hints on labels.
+   Wrapping, because a label is a sentence: the words, the JSON key beside them and
+   the ⓘ are three items on one line only while one line is wide enough. An
+   inline-flex that cannot wrap has no narrow layout at all — it is exactly as wide
+   as its content wherever it is put, which is how a 390px screen ended up with a
+   447px row (F8). `min-width:0` for the same reason it is on the row above. */
+.lbl{display:inline-flex;align-items:center;gap:var(--sp-0);flex-wrap:wrap;min-width:0}
+/* The <label> inside .lbl inherits the row, and it has to: it holds the words and
+   the JSON key, and as ONE inline box they run together. MEASURED, not styled by
+   eye -- Chromium builds an accessible name by walking boxes, so the same collapse
+   that reads "The planmanifestPath" on screen is the name a screen reader gets.
+   Blockifying the two children restores the gap and the space in one go. */
+.lbl>label{display:inline-flex;align-items:center;gap:var(--sp-0);flex-wrap:wrap;min-width:0}
+.hint{display:inline-flex;align-items:center;justify-content:center;width:1.02rem;height:1.02rem;border-radius:50%;
+ border:1px solid var(--field-border);color:var(--muted);font:italic 700 .62rem/1 var(--sans);cursor:help;
+ position:relative;flex:0 0 auto;text-transform:none}
+.hint:hover,.hint:focus{border-color:var(--accent);color:var(--accent);outline:none}
+/* The ⓘ's 24x24 hit area is declared with the other two glyph buttons, beside
+   .chip button — one rule, one argument, three components. `position:relative` is
+   already on .hint above (the tip used to be a pseudo here) and is what that rule
+   needs. The Inline exception is the tempting one for this ⓘ, since it does sit in
+   a label's line box; it is not claimed, because a button that opens a drawer is
+   an affordance and not a word in a sentence. */
+/* THE tip is one element on <body>, not a pseudo inside whatever box carries the
+   ⓘ. Third mechanism, and the shape of the two failures says why it is the last:
+   absolute got buried under the comp table's stacking contexts and grew its
+   scroll frame (0.34, live repo); fixed-as-pseudo still LIVED inside the th —
+   one transformed/filtered/containing ancestor from being demoted to absolute
+   again, invisibly. On <body> there is no ancestor to trap, clip, restack or
+   resize anything: hovering an ⓘ can never grow a scroll frame again, because
+   nothing exists inside one. Geometry (left/top/width) is written ONLY by
+   showTip() in panel.js from the icon's own viewport rect — the sheet owns the
+   skin and deliberately not one coordinate, so a stale stylesheet cannot
+   disagree with the script about where the tip goes. display:none until shown:
+   a tip with no words must draw nothing, not an empty box. */
+#hinttip{position:fixed;z-index:200;display:none;box-sizing:border-box;
+ background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);
+ box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-1);font:400 .74rem/1.45 var(--sans);text-transform:none;letter-spacing:0;
+ white-space:normal;pointer-events:none}
+/* The clamp itself — TIPW/TIPGUT, viewport edges, the flip above a bottom-edge
+   icon — lives in showTip() with the rest of the geometry. There is deliberately
+   no `max-width` here: the width IS the clamp, and a second cap expressed in
+   `vw` would disagree with it by the width of a scrollbar (F9's lesson, kept). */

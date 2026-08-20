@@ -1,0 +1,56 @@
+/* ov (F-P-5): Overview follows the report's table — a compact row that opens
+   in place. The wrapper exists so the detail is a sibling of its row rather
+   than inside a <button>, which may not contain interactive content. */
+.ovwrap{display:block}
+.ovtri{display:inline-block;width:.9em;color:var(--muted);
+  transition:transform var(--dur) var(--ease)}
+.ovtri::before{content:"\25B8";font-size:.8em}
+.ovrow.open .ovtri{transform:rotate(90deg)}
+.ovdetail{margin:0 0 var(--sp-1) 1.6rem;padding:var(--sp-1) .6rem;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--radius)}
+table.ovtasks{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.ovtasks th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted);padding:.2rem .4rem;font-weight:700}
+table.ovtasks td{padding:var(--sp-0) .4rem;border-top:1px solid var(--border);
+  vertical-align:top}
+table.ovtasks td.ovt{max-width:22rem;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+/* risk as coloured TEXT, the same decision the report's table made (rk). */
+.rk{font-weight:600}
+.rk[data-risk="low"]{color:var(--st-done)}
+.rk[data-risk="med"]{color:var(--warn)}
+.rk[data-risk="high"]{color:var(--err)}
+.ovoutside{margin:.4rem 0;padding:.4rem .6rem;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);
+  font-size:.8rem;text-align:center}
+.ovgrp .gname{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent)}
+/* A row is one control: it opens this phase in Composition. A <button> rather than
+   a div with a click handler, so it is reachable by keyboard and announced as
+   something you can press without a hand-written role/tabindex/keydown trio. */
+.ovrow{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;width:100%;text-align:left;
+ font:inherit;color:var(--text);cursor:pointer;background:none;border:1px solid transparent;
+ border-left:3px solid var(--st,var(--border));border-radius:var(--radius);
+ padding:.4rem var(--sp-1);margin:.15rem 0;transition:background var(--dur) var(--ease)}
+.ovrow:hover{background:var(--surface-2)}
+.ovrow:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+.ovrow .pid{font-family:var(--mono);font-size:.8rem;color:var(--muted);flex:0 0 3rem}
+.ovrow .ptitle{flex:1 1 12rem;min-width:8rem}
+.ovout{flex:1 1 100%;font-size:.76rem;color:var(--muted);margin:.1rem 0 0 3.75rem;
+ max-width:80ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ovmatch{font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.ovempty{color:var(--muted);font-size:.85rem;padding:.6rem .2rem}
+/* ready-now: the one thing you can act on without reading anything else */
+.rdy{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:.35rem .2rem;
+ border-bottom:1px solid var(--border)}
+.rdy:last-child{border-bottom:none}
+.rdy .rcmd{font-family:var(--mono);font-size:.78rem;background:var(--surface-2);
+ border:1px solid var(--border);border-radius:var(--radius);padding:.15rem .45rem;
+ white-space:nowrap}
+.rdy .rt{flex:1 1 12rem;min-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sev{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.sev.high{color:var(--err)}
+@media(max-width:48rem){
+ .ovout{margin-left:0}
+ .ovrow .ptitle{flex:1 1 100%}
+}
+

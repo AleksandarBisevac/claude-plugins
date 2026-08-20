@@ -4,7 +4,7 @@ The panel's ONE assembled page: UI_HTML / UI_TEMPLATE, and what they must say.
 
 Moved out of panel-server.py. That file was 2,542 lines of which 1,927 were its
 `--selftest`, and ~1,450 of those were assertions about the CSS and JavaScript in
-`ui/panel.css` and `ui/panel.js` — the assembled page, not the HTTP server that
+`ui/panel-css/` and `ui/panel.js` — the assembled page, not the HTTP server that
 happens to serve it. They lived in an entry point they had nothing to do with, and
 a reader looking for "what does the panel's front end have to be true of" had to
 read past a pidfile, a socket and six route handlers to find out. panel-server.py

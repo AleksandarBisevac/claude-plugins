@@ -184,7 +184,7 @@ apply_composition = _panel_write.apply_composition
 # --- the assembled page ---------------------------------------------------------
 # The page itself -- the eight-substitution chain that turns _panel_ui.raw_template()
 # into what the browser gets -- and the cases in tests/ that assert about the
-# CSS and JS in it live in _panel_page.py. They are claims about ui/panel.css and
+# CSS and JS in it live in _panel_page.py. They are claims about ui/panel-css/ and
 # ui/panel.js, not about this HTTP server, and they were three quarters of this
 # file. Aliased here so `do_GET` and the cases that mix a page claim with a server
 # call keep spelling the same two names.

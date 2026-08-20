@@ -1,0 +1,26 @@
+@media (max-width:34rem){
+ .urow{grid-template-columns:1fr;gap:0}
+ .urow .bar{display:none}
+ .ufil .combo{flex:1 1 100%}
+ /* A date input has an intrinsic width of about 9rem plus the picker glyph. Two of
+    them, two labels and a select do not fit a 360px row, and `flex:0 0 auto` means
+    they do not shrink either - so the pair takes a line of its own and each half
+    takes half of it. Measured at 390px, which is where the report's own filter
+    panel was found hanging off the left edge. */
+ /* `Measured at 390px` above is the whole bug: the pair still overflows below
+    ~350px, and the 320px assertion that would have caught it only ever ran on the
+    `guards` tab. Wrapping is the repair the owner asked for by name - a different
+    layout beats a broken one - and it costs nothing above the width where the two
+    halves already fit, because a flex line only breaks when it must.
+    Note the floor is NOT the date input: forced to `flex:0 0 1px` it measures
+    18px, so `min-width:0` is honoured and 126px is this rule's arithmetic, not an
+    engine limit. Wrapping is therefore a layout choice, not a workaround. */
+ .udates{flex:1 1 100%;flex-wrap:wrap}
+ .ufil input[type=date]{flex:1 1 calc(50% - 3rem);min-width:0}
+ .ufil .push{margin-left:0}
+ /* And it stops pinning. Nine controls stacked at this width measure 311px, which
+    on an 844px phone is a sticky bar owning 37% of the screen for the whole scroll
+    - the same shape as the report's filter panel covering the table it filtered.
+    Above the breakpoint the bar is two lines and worth pinning; here it is not. */
+ .ufil{position:static}
+}

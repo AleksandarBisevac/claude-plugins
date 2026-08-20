@@ -1,0 +1,96 @@
+/* ---- the help drawer -----------------------------------------------------
+   A third native <dialog>, for the third time and the same reasons: Esc, the
+   backdrop, the focus trap and — the one that matters most here — returning focus
+   to the control you opened it from, so a keyboard reader who asks what a field
+   means lands back on that field. It is a side sheet rather than a centred box
+   because it is READ AGAINST the form: the setting you are asking about stays on
+   screen beside its own explanation. */
+/* `max-width` is restated because the UA sheet sets `calc(100% - 2px - 2em)` on
+   every dialog — a sensible cap for a centred box and 36px of nothing down the
+   side of a sheet that is supposed to reach the edge. Measured at 390px, where it
+   made a "full width" drawer 339px wide, hanging 36px off the left. */
+dialog.drawer{margin:0 0 0 auto;height:100dvh;max-height:100dvh;
+ width:min(31rem,100%);max-width:100%;
+ padding:0;border:none;border-left:1px solid var(--border-strong);border-radius:0;
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden;flex-direction:column}
+/* `display` on `[open]` ONLY, and this is not a nicety. The UA sheet hides a shut
+   dialog with `dialog:not([open]){display:none}` — an author rule of equal
+   specificity beats it, so `dialog.drawer{display:flex}` un-hides the drawer the
+   moment it is closed. A shut dialog is `position:absolute` at its static
+   position, which is the end of <body>: every view then carried a dead 100dvh
+   block below the fold, and the Overview screenshot grew 900px with the drawer
+   printed across the bottom of it. Found by a picture; it would not have shown up
+   in any viewport-sized shot. */
+dialog.drawer[open]{display:flex}
+dialog.drawer::backdrop{background:rgb(0 0 0 / .45)}
+@media (prefers-reduced-motion:no-preference){
+ dialog.drawer[open]{animation:dslide var(--dur) var(--ease)}
+ @keyframes dslide{from{transform:translateX(1.5rem);opacity:.4}}}
+.dhead{display:flex;align-items:center;gap:var(--sp-1);padding:var(--sp-2) var(--sp-3);
+ border-bottom:1px solid var(--border);background:var(--surface-2);flex:0 0 auto}
+/* The panel's h2 rule uppercases, which is a card heading's job and not a field
+   label's: this one is the words beside the control you just pressed, and shouting
+   them back reads as a different string from the one you clicked. */
+.dhead h2{margin:0;font-size:.95rem;flex:1 1 auto;word-break:break-word;
+ text-transform:none;letter-spacing:0}
+.dbody{flex:1 1 auto;overflow:auto;padding:var(--sp-2) var(--sp-3) var(--sp-4)}
+.dsec{margin:0 0 var(--sp-3)}
+.dsec>h3{margin:0 0 var(--sp-1);font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:700}
+.dsec p{margin:0 0 var(--sp-1);font-size:.84rem;line-height:1.6;max-width:64ch}
+.dsec p:last-child{margin-bottom:0}
+.dsec code{font-family:var(--mono);font-size:.78rem;background:var(--surface-2);
+ border-radius:4px;padding:0 .2rem;word-break:break-word}
+/* The dotted path, big enough to read and selectable — someone editing the JSON by
+   hand came here for exactly this string. */
+.dpath{font-family:var(--mono);font-size:.78rem;color:var(--text);
+ background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
+ padding:.3rem .45rem;display:block;word-break:break-all;user-select:all}
+.dfacts{display:grid;grid-template-columns:auto 1fr;gap:.2rem var(--sp-2);
+ font-size:.8rem;margin:var(--sp-1) 0 0}
+.dfacts dt{color:var(--muted)}
+.dfacts dd{margin:0;font-family:var(--mono);font-size:.76rem;word-break:break-word}
+.dlist{display:flex;flex-direction:column;gap:var(--sp-1);margin:0;padding:0;
+ list-style:none}
+/* A topic is a destination, so it looks like one: a full-width target with its own
+   summary under the title, not a link buried in a sentence. */
+.dtopic{display:block;width:100%;text-align:left;cursor:pointer;font:inherit;
+ background:var(--bg);color:var(--text);border:1px solid var(--field-border);
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);
+ transition:border-color var(--dur) var(--ease)}
+.dtopic:hover,.dtopic:focus-visible{border-color:var(--accent)}
+.dtopic b{display:block;font-size:.85rem}
+.dtopic span{display:block;color:var(--muted);font-size:.76rem;line-height:1.5;
+ margin-top:.15rem}
+.dtblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+table.dtbl{border-collapse:collapse;width:100%;font-size:.76rem}
+table.dtbl th{text-align:left;background:var(--surface-2);color:var(--muted);
+ font-size:var(--t-label);text-transform:uppercase;letter-spacing:.05em;
+ padding:.3rem var(--sp-1);border-bottom:1px solid var(--border);white-space:nowrap}
+table.dtbl td{padding:.3rem var(--sp-1);border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.dtbl tbody tr:last-child td{border-bottom:none}
+.dcap{color:var(--muted);font-size:.74rem;margin:.35rem 0 0}
+.dsrc{font-family:var(--mono);font-size:.74rem;color:var(--muted);
+ display:flex;flex-wrap:wrap;gap:var(--sp-0) var(--sp-2)}
+/* The paid half of the help, and the drawer never spends it for you. */
+.dagent{border-top:1px solid var(--border);padding:var(--sp-2) var(--sp-3);
+ background:var(--surface-2);flex:0 0 auto;font-size:.78rem;color:var(--muted);
+ max-height:60vh;overflow:auto}
+.dagent summary{cursor:pointer;color:var(--text)}
+.dagent p{margin:var(--sp-1) 0 0}
+.dagent b{color:var(--text)}
+.dagent code{font-family:var(--mono);background:var(--bg);border-radius:4px;
+ padding:0 .2rem}
+.dagent .dtools{display:flex;gap:var(--sp-0);flex-wrap:wrap;margin:.35rem 0 0}
+.dmiss{font-style:italic}
+/* The ⓘ opens this. It is a real button when it does — a focusable span with a
+   click handler is a control screen readers announce as text. */
+button.hint{background:none;padding:0;font:italic 700 .62rem/1 var(--sans);cursor:help}
+/* `width:100%` is NOT restated here: `min(31rem,100%)` above already collapses to
+   the screen below 31rem, and a mutation deleting a rule that changes nothing is a
+   mutation that goes green — which is how a redundant rule gets mistaken for the
+   one doing the work. All this breakpoint owes is the edge that has nothing on the
+   other side of it. */
+@media (max-width:34rem){dialog.drawer{border-left:none}}

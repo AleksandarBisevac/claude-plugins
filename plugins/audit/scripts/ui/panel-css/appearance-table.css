@@ -1,0 +1,23 @@
+/* th (F-P-6): Appearance. A token table — name, light, dark — where the two
+   values sit SIDE BY SIDE: a reader who edits one theme and flips to check the
+   other is how the pair drifts, and the parity lint downstream refuses a colour
+   that exists in one theme only. The swatch is a native <input type=color>
+   beside the text, so a hex anybody pasted stays editable as text. */
+.thwrap{overflow-x:auto}
+table.thtbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
+table.thtbl th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted);padding:.3rem .4rem;font-weight:700}
+table.thtbl td{padding:var(--sp-0) .4rem;border-top:1px solid var(--border);
+  vertical-align:middle}
+td.thname{white-space:nowrap;color:var(--muted);font-size:.78rem}
+td.thcell{display:table-cell;white-space:nowrap}
+/* 1.5rem, not 1.4rem: WCAG 2.2 SC 2.5.8 wants 24 CSS px and 1.4rem is 22.4. The
+   swatch sits beside a 27.8px .thtext in the same cell, so the extra 1.6px is
+   inside a row that is already taller — measured, no row moved. */
+.thpick{width:1.7rem;height:1.5rem;padding:0;border:1px solid var(--field-border);
+  border-radius:5px;background:none;vertical-align:middle;cursor:pointer}
+input.thtext{width:11rem;padding:.2rem .4rem;font-family:var(--mono);
+  font-size:.76rem;vertical-align:middle;margin-left:.3rem}
+.thdiff{gap:var(--sp-1);font-size:.82rem;padding:.15rem 0}
+.thdiff .mono{min-width:12rem}
+

@@ -11,9 +11,10 @@ production module keeps the name production gives it.
 rather than moving here with the cases: they are the module's own statement of what
 panel-server.py substitutes, not test data, and the loop below reads them off `M`.
 
-These cases read `ui/panel.{html,css,js}` - ASSETS, not another module's Python
-source - through `_theme.read_asset` / `_theme.UI_DIR`, which resolve from
-`_ui_theme.py`'s own location. Nothing here is computed from this file's path.
+These cases read `ui/panel.html`, `ui/panel.js` and the `ui/panel-css/` parts -
+ASSETS, not another module's Python source - through `_theme.read_asset` /
+`_theme.UI_DIR`, which resolve from `_ui_theme.py`'s own location. Nothing here is
+computed from this file's path.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -30,13 +31,16 @@ import _panel_ui as M                              # noqa: E402
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- every asset file exists and decodes as utf-8 ---------------------------
-    names = ("panel.html", "panel.css") + M._JS_PARTS
+    # Both layers are ordered parts now, and both tuples are read off the module
+    # rather than restated: a part this suite does not know about is a part it
+    # cannot fail to read.
+    names = ("panel.html",) + tuple(M._CSS_PARTS) + tuple(M._JS_PARTS)
     unreadable = _theme.unreadable_assets(names)
     for name in names:
         check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
     skeleton = _theme.read_asset("panel.html")
-    css = _theme.read_asset("panel.css")
+    css = "".join(_theme.read_asset(n) for n in M._CSS_PARTS)
     js = "".join(_theme.read_asset(n) for n in M._JS_PARTS)
     template = M.raw_template(cache=False)
 
@@ -100,9 +104,20 @@ def _cases(check):
           and _theme.read_asset(M._JS_PARTS[-1]).rstrip().endswith("boot().catch(e=>toast('load failed: '+e,'err'));"))
 
     # --- CSS brace balance, via _ui_theme's existing lints -----------------------
-    check("panel.css braces balance", css.count("{") == css.count("}"))
-    check("no declaration in panel.css is left unterminated",
+    # Over the JOIN, not per part: `@media` blocks and their rules could be split
+    # across two parts and each half would still have to balance for the sheet to
+    # parse, so the assembled string is the only honest subject.
+    check("the joined panel-css/ parts balance their braces",
+          css.count("{") == css.count("}"))
+    check("no declaration in the joined panel-css/ parts is left unterminated",
           not _theme.unterminated_css_decls(css))
+    # Every part ends with a newline. panel-server.py lints over
+    # UI_HTML.splitlines(), so a part without one joins two lines - which can
+    # hide a real offender or manufacture a false one, and no other case here
+    # would see it.
+    _no_nl = [n for n in M._CSS_PARTS if not _theme.read_asset(n).endswith("\n")]
+    check("every panel-css/ part ends with a newline, so the join cannot weld "
+          "two lines together (offenders: %r)" % (_no_nl,), not _no_nl)
 
     # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
     ui_pyfiles = sorted(
@@ -115,9 +130,9 @@ def _cases(check):
     # --- LF contract: none of the loaded ui/ assets (nor the assembled ------
     # template) carry a "\r" — a CRLF checkout (e.g. windows-latest CI without
     # a .gitattributes eol=lf pin) would shift every cross-line selftest pin.
-    real_assets = ([("panel.html", skeleton), ("panel.css", css)]
-                   + [(n, _theme.read_asset(n)) for n in M._JS_PARTS]
-                   + [("raw_template()", template)])
+    real_assets = ([("panel.html", skeleton), ("raw_template()", template)]
+                   + [(n, _theme.read_asset(n)) for n in M._CSS_PARTS]
+                   + [(n, _theme.read_asset(n)) for n in M._JS_PARTS])
     real_cr = _theme.cr_violations(real_assets)
     check("no \\r (CRLF) in any loaded ui/ asset or the assembled template "
           "(found in: %r)" % (real_cr,), not real_cr)

@@ -1,0 +1,24 @@
+
+/*__THEME_TOKENS__*/
+/* Panel-only roles. The shared tokens carry the product's colour; these three
+   name jobs the report has no equivalent of — a validated field, a warning on a
+   config value, a refused write — so they live here rather than pushing
+   panel-shaped vocabulary into the shared layer. */
+:root{--ok:#157f3d;--warn:#b35209;--err:#d62323}
+/* A THIRD palette, raw hex, outside the token layer -- which is why moving
+   --st-done/--st-blocked for AA did not reach `span.st`: the status pills read
+   these, not those. Values solved against the surface they actually sit on
+   (--surface-2, where they measured 4.30-4.47). They still duplicate the
+   status tokens and belong in _ui_theme.py; that merge is its own change,
+   because --warn has no token twin (--st-prog is a FILL and unreadable as
+   ink). Recorded rather than quietly left as three more magic numbers. */
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+ --ok:#34d399;--warn:#fbbf24;--err:#f87171}}
+:root[data-theme=dark]{--ok:#34d399;--warn:#fbbf24;--err:#f87171}
+*{box-sizing:border-box}
+/* Reserve the scrollbar always: Guards is short and Overview is long, and
+   without this the whole centred shell jumps sideways between them. */
+html{background:var(--bg);scrollbar-gutter:stable}
+body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
+ margin:0;padding:0;-webkit-font-smoothing:antialiased}
+

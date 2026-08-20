@@ -1,0 +1,13 @@
+/* Who the panel thinks you are. A pill rather than plain text: it is a fact about
+   the session, not a heading, and it sits beside the two controls that act on the
+   project. Elided rather than wrapped — an email address is long, and the topbar is
+   nowrap, so an un-capped name would push the buttons off the edge. */
+.who{display:inline-flex;align-items:center;gap:.35rem;font-size:.74rem;
+ color:var(--muted);background:var(--surface-2);border:1px solid var(--border);
+ border-radius:var(--pill);padding:.15rem .6rem;max-width:16rem;min-width:0}
+.who b{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+.who .wk{white-space:nowrap}
+.who[hidden]{display:none}
+@media(max-width:60rem){.who{max-width:10rem}.who .wk{display:none}}
+@media(max-width:34rem){.who{display:none}}

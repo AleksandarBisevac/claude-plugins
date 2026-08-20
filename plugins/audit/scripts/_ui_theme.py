@@ -899,8 +899,68 @@ REPORT_CSS_PARTS = (
     "report-css/print-segments.css",
 )
 
+# THE CASCADE ORDER of the panel's stylesheet parts, and it lives here for the
+# same reason the report's does: the lints below audit the sheet in the order
+# that SHIPS, so the one declaration has to sit where they can see it.
+#
+# The sequence is the file's own, cut and not regrouped: the token placeholder
+# and the reset first, then the shell the five views are drawn in, then the
+# primitives they compose from, then one view at a time. Some names say out loud
+# that the order is not filing - `usage-narrow.css` holds the usage tab's
+# below-34rem overrides, which sit AFTER the tooltip in the sheet and therefore
+# in a part of their own; `usage-tables.css` and `overview-rows.css` are the
+# runs their features resume in after another feature interrupts them. Sorting
+# these names alphabetically would change what ships.
+PANEL_CSS_PARTS = (
+    "panel-css/tokens-and-reset.css",
+    "panel-css/app-shell.css",
+    "panel-css/base-controls.css",
+    "panel-css/usage-tab.css",
+    "panel-css/usage-heatmap.css",
+    "panel-css/usage-tables.css",
+    "panel-css/browse-dialog.css",
+    "panel-css/identity-pill.css",
+    "panel-css/confirm-dialog.css",
+    "panel-css/help-drawer.css",
+    "panel-css/tooltip.css",
+    "panel-css/usage-narrow.css",
+    "panel-css/settings-form.css",
+    "panel-css/save-result.css",
+    "panel-css/labels-and-hints.css",
+    "panel-css/combobox.css",
+    "panel-css/blocks-and-ado.css",
+    "panel-css/status-colours.css",
+    "panel-css/composition.css",
+    "panel-css/overview-filters.css",
+    "panel-css/appearance-table.css",
+    "panel-css/overview-rows.css",
+    "panel-css/policy.css",
+)
+
 UI_ASSETS = (
-    "panel.css",
+    "panel-css/app-shell.css",
+    "panel-css/appearance-table.css",
+    "panel-css/base-controls.css",
+    "panel-css/blocks-and-ado.css",
+    "panel-css/browse-dialog.css",
+    "panel-css/combobox.css",
+    "panel-css/composition.css",
+    "panel-css/confirm-dialog.css",
+    "panel-css/help-drawer.css",
+    "panel-css/identity-pill.css",
+    "panel-css/labels-and-hints.css",
+    "panel-css/overview-filters.css",
+    "panel-css/overview-rows.css",
+    "panel-css/policy.css",
+    "panel-css/save-result.css",
+    "panel-css/settings-form.css",
+    "panel-css/status-colours.css",
+    "panel-css/tokens-and-reset.css",
+    "panel-css/tooltip.css",
+    "panel-css/usage-heatmap.css",
+    "panel-css/usage-narrow.css",
+    "panel-css/usage-tab.css",
+    "panel-css/usage-tables.css",
     "panel.html",
     "panel/ado-connector.js",
     "panel/appearance-view.js",
@@ -987,9 +1047,10 @@ def read_asset(name, directory=None):
 
     `newline=""` is the load-bearing part, not a tidy default. Both surfaces
     assemble their page by concatenating these files and then prove the result
-    BYTE FOR BYTE — the report pins `CSS == TOKEN_CSS + report.css` and that the
-    text between its `<script>` tags is report.js unmodified; the panel pins that
-    the spliced `<style>` span IS panel.css — and every cross-line pin in either
+    BYTE FOR BYTE — the report pins `CSS == TOKEN_CSS + the joined report-css/
+    parts` and that the text between its `<script>` tags is the joined report/
+    parts unmodified; the panel pins that the spliced `<style>` span IS the
+    joined panel-css/ parts — and every cross-line pin in either
     suite spans a newline. Read with Python's default universal-newline
     translation, a CRLF checkout (windows-latest CI with core.autocrlf rewriting
     the repo) hands back "\\n" where the file holds "\\r\\n", so those proofs would
@@ -1729,16 +1790,16 @@ def themed_stylesheets():
     """[(surface, assembled css), ...] - the token layer in front of each sheet.
 
     The five lints above all run against the ASSEMBLED string, and so does this
-    one: `panel.css` alone declares no `--bg` to measure against, so a walk over
-    the bare file would resolve nothing, find no pairs and report a clean sheet.
+    one: the panel's parts declare no `--bg` between them to measure against, so
+    a walk over one would resolve nothing, find no pairs and report a clean sheet.
     The join is the same one the surfaces do (`_panel_page` substitutes the
     marker, `render-report` concatenates), spelled again here only because both
     of those sit a layer up and this module may not import them.
     """
-    panel = read_asset("panel.css")
-    # The report's sheet is ordered parts, joined in cascade order. The order is
-    # taken from UI_ASSETS rather than restated, so a part added there is a part
-    # this lint sees; a second list here would be a sheet nobody audits.
+    # Both sheets are ordered parts, joined in CASCADE order - the tuples above,
+    # never a filter over the alphabetically-sorted UI_ASSETS. A differently
+    # ordered join would have these lints clear a palette nobody is served.
+    panel = "".join(read_asset(n) for n in PANEL_CSS_PARTS)
     report = "".join(read_asset(n) for n in REPORT_CSS_PARTS)
     return [("panel", panel.replace("/*__THEME_TOKENS__*/", TOKEN_CSS)),
             ("report", TOKEN_CSS + report)]

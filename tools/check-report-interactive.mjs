@@ -1710,7 +1710,7 @@ expect('the filter bar never reaches portrait paper, where its phone rules also 
 expect('...nor the panel inside it', onPaper.panel, true);
 
 // 10. The responsive contract, at every width either side of a breakpoint
-//     report.css or panel.css declares. What existed before this was two
+//     the report's or the panel's stylesheet declares. What existed before this was two
 //     widths — 390 and 688 — and only `.gfilters` and `.filterpanel` at them:
 //     no whole-document assertion at any width, and nothing at all between 390
 //     and 688 or between 688 and 1200. The ladder and the four things measured

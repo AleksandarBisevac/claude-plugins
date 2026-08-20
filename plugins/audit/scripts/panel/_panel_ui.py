@@ -10,9 +10,11 @@ read as one indistinguishable wall of text regardless of which layer actually ch
 
 The three layers now live as real, editor-highlightable files under `ui/`:
 
-  * `ui/panel.css` — everything between `<style>` and `</style>` (the
-    `/*__THEME_TOKENS__*/` placeholder included; panel-server.py's substitution
-    chain fills it in after this module hands back the assembled string).
+  * `ui/panel-css/*.css` — everything between `<style>` and `</style>`, cut into
+    ordered feature parts and joined in the cascade order `_ui_theme`'s
+    `PANEL_CSS_PARTS` declares (the `/*__THEME_TOKENS__*/` placeholder included,
+    in the first part; panel-server.py's substitution chain fills it in after
+    this module hands back the assembled string).
   * `ui/panel/*.js` — everything between `<script>` and `</script>` (every
     `__*__` placeholder included, same reason), cut into the ordered feature parts
     `_JS_PARTS` below lists. It was one 5,141-line file until that cut; the parts
@@ -122,6 +124,14 @@ _JS_PARTS = (
 
 _cache = None
 
+# THE ORDER OF THIS TUPLE IS THE CASCADE. Two rules of equal specificity are
+# decided by which one is read last, so this sequence is behaviour: the reset
+# before the shell, the shell before the views drawn in it, and each view's
+# narrow-screen overrides after the rules they override. It is declared in
+# `_ui_theme` and only pointed at here, because the theme lints run at that
+# layer and must audit the sheet in the order that ships.
+_CSS_PARTS = _theme.PANEL_CSS_PARTS
+
 
 # --- template assembly --------------------------------------------------------
 def raw_template(cache=True):
@@ -133,7 +143,7 @@ def raw_template(cache=True):
     if cache and _cache is not None:
         return _cache
     skeleton = _theme.read_asset("panel.html")
-    css = _theme.read_asset("panel.css")
+    css = "".join(_theme.read_asset(n) for n in _CSS_PARTS)
     js = "".join(_theme.read_asset(n) for n in _JS_PARTS)
     out = skeleton.replace(CSS_MARK, css, 1).replace(JS_MARK, js, 1)
     if cache:

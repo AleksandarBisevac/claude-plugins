@@ -1,0 +1,29 @@
+/* overview: summary strips, phase rows, ready-now
+   The strips are a legend AND the filter — one row of pills that says how the work
+   is distributed and scopes the list below when you press one. Two separate
+   affordances for the same eight numbers is how a reader ends up believing the
+   legend and the list disagree. */
+.ovstrip{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin:.35rem 0 .1rem}
+.ovstrip .ovlbl{font-size:.72rem;color:var(--muted);flex:0 0 auto;min-width:3.2rem}
+.ovpill{cursor:pointer;font:inherit;display:inline-flex;align-items:center;gap:.4em;
+ font-size:.74rem;padding:.28rem .7em;border-radius:var(--pill);
+ background:color-mix(in srgb,var(--st,var(--muted)) 12%,transparent);
+ color:var(--st,var(--muted));
+ border:1px solid color-mix(in srgb,var(--st,var(--muted)) 30%,transparent);
+ transition:all var(--dur) var(--ease)}
+.ovpill:hover{border-color:var(--st,var(--border-strong))}
+.ovpill:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.ovpill[aria-pressed=true]{background:color-mix(in srgb,var(--st,var(--muted)) 26%,transparent);
+ border-color:var(--st,var(--muted));font-weight:640}
+/* Selected state carried by more than hue, as in the report and the composition
+   filters — in greyscale, in forced-colours and on paper the fill says nothing. */
+.ovpill[aria-pressed=true]::before{content:"\2713\a0";font-weight:700}
+.ovpill b{font-variant-numeric:tabular-nums;font-weight:640}
+/* a severity cut, not a status — it carries no data-status, so it sets --st itself */
+.ovpill.hi{--st:var(--err)}
+.ovtools{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;margin:.6rem 0 .4rem}
+.ovtools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:var(--sp-0) var(--sp-2)}
+.ovtools select{font-size:.8rem;padding:var(--sp-0) var(--sp-1)}
+.ovtools label.inl{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--muted)}
+.ovgrp{display:flex;align-items:baseline;gap:var(--sp-1);margin:.9rem 0 .1rem;
+ padding-bottom:var(--sp-0);border-bottom:1px solid var(--border)}

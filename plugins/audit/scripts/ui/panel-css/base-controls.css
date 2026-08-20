@@ -1,0 +1,106 @@
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+ box-shadow:var(--shadow-sm);padding:var(--sp-3) var(--sp-3);margin:var(--sp-2) 0}
+.row{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;margin:var(--sp-1) 0}
+/* `.f`, not `label.f`. The i inside a field's <label> was taking the label's
+   association away from the field (a <button> is labelable and came first), so a
+   field's container is a <div> now and the <label> inside it points at the control
+   by id. The element qualifier would have silently dropped every one of them.
+   It was also already wrong: three call sites wrote el('div',{class:'f'}) expecting
+   this rule and had been getting none of it. */
+.f{display:flex;flex-direction:column;gap:var(--sp-0);flex:1 1 15rem;font-size:.82rem;color:var(--muted)}
+/* The control-boundary token, not the decorative one. This edge is the only
+   thing that says "you may type here", so SC 1.4.11 wants it at 3:1; it measured
+   1.23 against the card surface and 1.10 against the page -- a field a sighted
+   reader finds by habit and a low-vision reader does not find at all. */
+input,textarea,select{font:inherit;color:var(--text);background:var(--bg);
+ border:1px solid var(--field-border);
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);font-size:.9rem}
+/* Every <summary> on this page is a disclosure a pointer has to hit, and its box
+   is a bare line box: measured 20px in the help drawer and 20px on the policy
+   honesty note, against the 24 WCAG 2.2 SC 2.5.8 asks for. One base rule rather
+   than three (.dagent, .fall, .polhonest each set their own colour and font-size,
+   and none of them wants its own copy of this), at specificity zero so a surface
+   rule still wins. */
+:where(summary){min-height:24px}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:vertical}
+.mono{font-family:var(--mono)}
+/* Announced, not painted. Real markup the accessibility tree keeps and the eye
+   never sees — the ADO stateMap's column headers (SC 1.3.1) are its only user so
+   far, because their legend already sits in the label above them. `display:none`
+   and `visibility:hidden` both take a node OUT of that tree, which is the one
+   thing this must not do, so the text is clipped instead. */
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;
+ overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* Same reasoning as the fields: a ghost button is a surface-coloured box on a
+   surface-coloured page, so its border is what identifies it as a control. */
+.btn{cursor:pointer;font:inherit;font-size:.85rem;padding:var(--sp-1) var(--sp-3);border-radius:var(--pill);
+ border:1px solid var(--field-border);background:var(--surface);color:var(--text);transition:all var(--dur) var(--ease)}
+.btn:hover{border-color:var(--field-border-hover);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* Unavailable, but still reachable — WCAG 2.2 SC 2.4.3. These controls carry
+   aria-disabled rather than `disabled` so they keep their tab stop (F16), and
+   aria-disabled has NO user-agent styling the way :disabled does: without this
+   rule the button would look pressable while refusing every press. The hover
+   lift is cancelled for the same reason — it is the affordance that says "this
+   does something". Focus is deliberately NOT suppressed: the whole point is that
+   a keyboard reader can still land here and be told what it is. */
+.btn[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
+.btn[aria-disabled="true"]:hover{border-color:var(--border);transform:none;box-shadow:none}
+.btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+/* target-size: .btn.small — min-width:24px (WCAG 2.2 SC 2.5.8). MEASURED 25.6
+   wide at the default density, which clears 24 by 1.6px — and its horizontal
+   padding is `--sp-1`, which `layout.density` scales. Under `compact` that
+   becomes 22.3 and the rule stops holding, without a line of CSS changing. It
+   was the ONLY shape of nine that crosses the floor; the others move and stay
+   above it. The floor is pinned here rather than left to the scale, the same way
+   `.uhmarrow` does it, so the density is free to move the padding. */
+.btn.small{font-size:.75rem;padding:var(--sp-0) var(--sp-1);min-width:24px}
+.badge{font-size:.68rem;font-weight:700;padding:var(--sp-0) .5em;border-radius:var(--pill);
+ background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+.badge.run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border-color:transparent}
+/* A lock whose holder is gone is not green: nothing is running, and nothing is
+   wrong yet either — it is the state the human has to resolve. */
+.badge.held{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
+.badge.claim{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);border-color:transparent}
+.badge.area{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent;text-transform:uppercase;letter-spacing:.03em}
+.chip{display:inline-flex;align-items:center;gap:.3em;font-size:.76rem;padding:var(--sp-0) .5em;border-radius:var(--pill);
+ background:var(--surface-2);border:1px solid var(--field-border);color:var(--text)}
+.chip button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:.9em;padding:0}
+/* WCAG 2.2 SC 2.5.8 Target Size (Minimum) — the hit-area rule, written once for
+   the three hand-styled glyph buttons that need it.
+     .chip button    the × that drops a path or a skill   MEASURED 6.4 x 12
+     .hint           the ⓘ that opens the help drawer     MEASURED 16.3 x 16.3
+     .savenote .notex  the × that dismisses a save note   MEASURED 9.4 x 16
+   None of the five exceptions covers them. The size is the AUTHOR'S, not the user
+   agent's; they are affordances, not words in a sentence; each is the only route
+   to what it does; and the Spacing exception fails on the first two — a neighbour
+   sits inside their 24px circle at 390px AND at 1200px (the ⓘ beside a field
+   label; the .pill-in input after the last chip).
+   So the HIT AREA grows and the glyph does not. Settings draws 27 chips on one
+   card and Composition nine more: a real 24px button would add ~18px of width to
+   every chip and 8px to every label row, turning two dense lists into paragraphs.
+   That is the trade this pseudo-element exists to refuse. */
+.chip button,.savenote .notex{position:relative}
+.chip button::after,.hint::after,.savenote .notex::after{content:"";position:absolute;
+ left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%)}
+/* v0.37 B1 — the explicit skills opt-out. `.optout` is the STATE (skills:
+   null): muted and italic so an answered "none" never reads like a value, but
+   never like an empty unconsidered row either. `.optnone` is the AFFORDANCE, a
+   button offered only while the list is empty; ghosted (dashed, transparent)
+   because it proposes a value the file does not hold yet. */
+.chip.optout{color:var(--muted);background:transparent;font-style:italic}
+button.chip.optnone{cursor:pointer;font:inherit;font-size:.76rem;color:var(--muted)}
+.tag{display:inline-block;font-size:.66rem;padding:var(--sp-0) .45em;border-radius:var(--pill);
+ border:1px solid var(--border);color:var(--muted);margin-left:var(--sp-0)}
+.listwrap{display:flex;flex-direction:column;gap:var(--sp-0)}
+.pill-in{display:flex;gap:var(--sp-0);flex-wrap:wrap;align-items:center;
+ /* This box IS the field -- the <input> inside it draws no border of its own
+    (see the rule below), so this edge is the whole affordance. SC 1.4.11. */
+ border:1px solid var(--field-border);
+ border-radius:var(--radius);padding:var(--sp-0) var(--sp-1);background:var(--bg)}
+.pill-in input{border:none;background:none;box-shadow:none;flex:1 1 6rem;padding:var(--sp-0) var(--sp-0)}
+.mut{color:var(--muted);font-size:.82rem}
+.bar{height:.5rem;border-radius:var(--pill);background:var(--surface-2);overflow:hidden;flex:1 1 8rem;min-width:6rem}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr;gap:var(--sp-1)}

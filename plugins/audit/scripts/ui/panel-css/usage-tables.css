@@ -1,0 +1,29 @@
+.utbl th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:500;
+ padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
+.utbl td{padding:var(--sp-0) var(--sp-1);border-bottom:1px solid var(--border)}
+.utbl tr:last-child td{border-bottom:0}
+/* The one recommendation in the tab — marked so it reads as advice, not as
+   another measurement. */
+.advice{border-left:3px solid var(--warn);background:var(--surface-2);
+ border-radius:var(--radius);padding:var(--sp-1) var(--sp-2);margin:var(--sp-1) 0;
+ font-size:.82rem}
+.advice code{font-size:.95em}
+/* Budget burn-down. Shares the ranked-row grid so the two read as one family. */
+.bud{display:grid;grid-template-columns:minmax(8rem,20rem) minmax(4rem,1fr) 3rem auto;
+ align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0;font-size:.8rem}
+.bud .bar{height:.5rem;background:var(--surface-2);border-radius:var(--pill);
+ overflow:hidden}
+.bud .bar i{display:block;height:100%;border-radius:var(--pill);background:var(--ok)}
+.bud.over .bar i{background:var(--err)}
+.bud .bpct{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.bud.over .bpct{color:var(--err);font-weight:640}
+.bud.total{border-top:1px solid var(--border);padding-top:var(--sp-1);
+ margin-top:var(--sp-1)}
+/* The total has no bar; an empty track would paint a grey rail that reads as a
+   phase sitting at zero, which is the one thing this block must never imply. */
+.bud.total .bar{background:none}
+@media (max-width:34rem){.bud{grid-template-columns:1fr auto}.bud .bar{display:none}}
+/* Controls under each ranked list. Expanding costs one click; collapsing must too. */
+.uctl{display:flex;align-items:center;gap:var(--sp-1);margin:var(--sp-0) 0 var(--sp-2);
+ font-size:.76rem}

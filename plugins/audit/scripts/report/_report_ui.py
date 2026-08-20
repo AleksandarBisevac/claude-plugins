@@ -20,8 +20,8 @@ that wrap a block live in the Python that assembles it, never in the asset):
   * `ui/report.js`  — everything that sat BETWEEN `<script>` and `</script>`
     in the old `_SCRIPT` r-string. The tags themselves are not in the file;
     `SCRIPT` below adds them back, the same way `_panel_ui.raw_template()`
-    keeps `<style>`/`<script>` in the skeleton rather than in `panel.css`/
-    `panel.js`. That is what makes the reassembled `SCRIPT` byte-identical to
+    keeps `<style>`/`<script>` in the skeleton rather than in the panel's own
+    assets. That is what makes the reassembled `SCRIPT` byte-identical to
     the old literal, tag for tag.
 
 `CSS` and `SCRIPT` are read once at import (module-global) — the same "read

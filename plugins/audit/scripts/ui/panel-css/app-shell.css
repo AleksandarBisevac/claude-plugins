@@ -1,0 +1,67 @@
+/* ---- app shell -----------------------------------------------------------
+   Same split as the report — navigation at the side, actions on top — but the
+   two are not the same kind of thing, and the nav reflects that. The report's
+   sidebar points INTO one long document and marks where you are. This one
+   switches between five exclusive views, so it is real navigation: `aria-current`
+   on the active view, no scroll-spy, and the five remain five wherever they are
+   drawn.
+
+   Deliberately NOT collapsible to an icon rail. The rail pattern exists to stop a
+   long nav competing with content for width; with five items it would add a
+   control and a persisted preference to save 230px on screens that have it to
+   spare, and five hand-drawn icons that mean less than the words they replace. */
+.top{position:sticky;top:0;z-index:var(--z-topbar);display:flex;align-items:center;gap:var(--sp-2) var(--sp-3);
+ flex-wrap:nowrap;padding:.6rem 1.25rem;
+ background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);
+ border-bottom:1px solid var(--border)}
+.top>div:first-child{min-width:0;margin-right:auto;max-width:min(52%,34rem)}
+.shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
+ max-width:92rem;margin:0 auto;padding:1.25rem 1.25rem 4rem;align-items:start}
+.view{min-width:0}
+.tabs{position:sticky;top:calc(var(--topbar-h) + var(--sp-1))}
+.tabs .navttl{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
+ color:var(--muted);font-weight:700;margin:0 0 .4rem .6rem}
+@media(max-width:70rem){
+ /* One information architecture, two presentations: the same five buttons become
+    a horizontal strip. Never a second menu. */
+ .shell{grid-template-columns:minmax(0,1fr);gap:var(--sp-2);padding-top:var(--sp-1)}
+ .tabs{position:sticky;top:var(--topbar-h);z-index:var(--z-strip);margin:0 -1.25rem;padding:.4rem 1.25rem;
+  background:var(--bg);border-bottom:1px solid var(--border);
+  overflow-x:auto;overflow-y:hidden}
+ .tabs .navttl{display:none}
+ /* Only when it really does not fit — see tabsOverflow(). A row that scrolls
+    with no edge to say so reads as a row with four items in it, which is what a
+    phone showed the day a fifth was added. The class is set from the measured
+    width rather than from this breakpoint: whether five buttons fit depends on
+    their words, not on the viewport this rule happens to start at. */
+ .tabs.scrolls{mask-image:linear-gradient(to right,#000 calc(100% - 2.5rem),transparent);
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 2.5rem),transparent)}
+}
+h1{font-size:1.35rem;font-weight:680;letter-spacing:-.02em;margin:0}
+h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+ font-weight:700;margin:var(--sp-4) 0 var(--sp-1)}
+/* The JSON key beside a human heading. `text-transform:none` is the whole point:
+   it sits inside an uppercased h2, and a config key is case-sensitive — uppercased
+   it would be a string you cannot paste back into the file. */
+.k2{font-family:var(--mono);font-size:.72rem;text-transform:none;letter-spacing:0;
+ font-weight:500;color:var(--muted);opacity:.8;margin-left:.45rem;
+ background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:.02rem .3rem}
+/* One line, middle-elided, full path in the tooltip. `word-break:break-all` wrapped
+   a long project path across two lines and pushed the header controls down — and it
+   broke at an arbitrary character, so neither the root nor the project name stayed
+   readable. A path's two ends are the informative parts; the middle is what to drop. */
+.sub{color:var(--muted);font-family:var(--mono);font-size:.78rem;margin:var(--sp-0) 0 0;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(56ch,100%)}
+.tabs{display:flex;flex-direction:column;gap:.15rem;margin:0}
+.tab{cursor:pointer;font:inherit;font-size:.87rem;text-align:left;padding:.42rem .65rem;
+ border-radius:var(--radius);border:1px solid transparent;border-left:2px solid transparent;
+ background:transparent;color:var(--muted);transition:all var(--dur) var(--ease)}
+@media(max-width:70rem){
+ .tabs{flex-direction:row;gap:var(--sp-0);white-space:nowrap}
+ .tab{border-left:none;border-bottom:2px solid transparent;
+  border-radius:var(--radius) var(--radius) 0 0}
+}
+.tab:hover{border-color:var(--field-border-hover)}
+.tab.on{background:var(--surface-2);color:var(--text);font-weight:600;
+ border-left-color:var(--accent)}
+@media(max-width:70rem){.tab.on{border-left-color:transparent;border-bottom-color:var(--accent)}}

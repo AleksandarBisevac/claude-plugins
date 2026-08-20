@@ -1,0 +1,77 @@
+/* Browse dialog. Native <dialog>, so the focus trap, the backdrop and Esc are the
+   platform's rather than ours. */
+dialog.browse{width:min(56rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
+ padding:0;border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden}
+dialog.browse::backdrop{background:rgb(0 0 0 / .45)}
+/* px (F-P-3): the capability table with the screen to itself. Wider and taller
+   than .browse on purpose — this one is read ACROSS (a verdict column per area),
+   which is the reading the 34rem frame makes hardest. The table inside scrolls;
+   the dialog is the frame, so .poltblwrap.full drops its own height cap. */
+dialog.polfull{width:calc(100vw - 2rem);height:calc(100vh - 2rem);
+ padding:0 var(--sp-3) var(--sp-3);border:1px solid var(--border-strong);
+ border-radius:var(--radius-lg);background:var(--surface);color:var(--text);
+ box-shadow:var(--shadow-md)}
+/* [open], and this is not a flourish: the UA hides a closed dialog with
+   `dialog:not([open]){display:none}`, which an unqualified `display:flex` here
+   OUTRANKS — the closed dialog then stays laid out over the page, invisible in
+   a screenshot and swallowing every click on the tab underneath. Caught by the
+   step that runs after this one, not by this one. */
+dialog.polfull[open]{display:flex;flex-direction:column;gap:var(--sp-1)}
+dialog.polfull::backdrop{background:rgb(0 0 0 / .45)}
+/* Shrink to the table, cap at the dialog: `flex:1 1 auto` stretched a six-row
+   inventory into a screen-tall empty box. Long lists still scroll inside it. */
+.poltblwrap.full{max-height:none;flex:0 1 auto;min-height:0;overflow:auto}
+dialog.browse>*{padding:0 var(--sp-3)}
+.bhead{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);
+ padding-top:var(--sp-2)}
+.bhead h2,.bhead h3{margin:0;font-size:1rem;font-weight:640}
+/* min-width because the × is one narrow glyph: 17.3px across against 24px of
+   height, so only one dimension was short of WCAG 2.2 SC 2.5.8. It sits alone in
+   the dialog header, so the 6.7px goes into empty space. */
+.bx{border:none;background:none;color:var(--muted);cursor:pointer;font-size:1rem;
+ line-height:1;padding:var(--sp-0);min-width:24px}
+.bx:hover{color:var(--text)}
+.btblwrap{max-height:min(60vh,28rem);overflow:auto;border-top:1px solid var(--border);
+ padding:0}
+table.btbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.btbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.btbl th.pick{cursor:pointer;user-select:none}
+table.btbl th.pick:hover{color:var(--text)}
+table.btbl th.on{color:var(--text)}
+.sarrow{margin-left:.25em}
+table.btbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);
+ vertical-align:middle}
+/* A wrapping title turns a scannable table into a wall: one long task name pushes
+   every other row four lines tall. Truncate, and keep the full text on hover. */
+table.btbl td.t{max-width:20rem;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+table.btbl .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Model mix: a stack the eye reads for proportion, and the dominant model in text
+   so identity never rests on colour alone. */
+.mcell{display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap}
+.mstack{display:inline-flex;width:3.4rem;height:.5rem;border-radius:var(--pill);
+ overflow:hidden;flex:0 0 auto;background:var(--surface-2)}
+.mstack i{display:block;height:100%}
+.mstack i+i{box-shadow:-1px 0 0 var(--surface)}
+.mdom{color:var(--muted);font-size:.92em}
+/* Cost band. Status colours are reserved and never travel alone, so the pill
+   carries the word — and the task's own status sits in the next column wearing
+   the same palette, which makes the label load-bearing rather than decorative. */
+.bandpill{display:inline-block;padding:.05rem .45rem;border-radius:var(--pill);
+ font-size:.72rem;font-weight:600;white-space:nowrap;border:1px solid transparent}
+.b-typical{color:var(--ok);background:color-mix(in srgb,var(--ok) 13%,transparent)}
+.b-high{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.b-outlier{color:var(--err);background:color-mix(in srgb,var(--err) 14%,transparent)}
+table.btbl tbody tr.pick{cursor:pointer}
+table.btbl tbody tr.pick:hover td{background:var(--surface-2)}
+table.btbl tbody tr.on td{background:color-mix(in srgb,var(--accent-solid) 12%,transparent)}
+.bfoot{padding-top:var(--sp-1);padding-bottom:var(--sp-2)}
+@media (max-width:34rem){
+ dialog.browse{width:calc(100vw - 1rem)}
+ .btblwrap{overflow-x:auto}
+}

@@ -1,0 +1,128 @@
+/* usage tab */
+.uctx{font-size:.74rem;color:var(--muted);margin:0 0 var(--sp-2)}
+.ufil{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;gap:var(--sp-1);
+ align-items:center;margin:0 0 var(--sp-1);padding:var(--sp-1) 0;
+ background:var(--surface);border-bottom:1px solid var(--border)}
+/* Two rows, not one wrapping heap. Nine controls on one line wrap wherever the
+   viewport happens to break, which puts "to" above its date input as often as
+   beside it. The split is by JOB - who and what on top, when and how far down -
+   so the pairs that read together cannot be separated by a reflow. */
+.ufrow{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;flex:1 1 100%}
+.ufil .combo{flex:1 1 9rem;min-width:7.5rem}
+.ufil input,.ufil select{font:inherit;font-size:.78rem;width:100%;
+ padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
+ border:1px solid var(--field-border);background:var(--bg);color:var(--text)}
+.ufil select{flex:0 0 auto;width:auto}
+.ufil .usearch{flex:2 1 12rem;min-width:9rem}
+.ufil input[type=date]{flex:0 0 auto;width:auto}
+/* The four of them are ONE control and wrap as one: a bare "from" stranded at the
+   end of the row above its own input is a label for nothing. */
+.udates{display:flex;align-items:center;gap:var(--sp-1);flex:0 1 auto}
+.ufil input:focus-visible,.ufil select:focus-visible{outline:2px solid var(--ring);
+ outline-offset:1px}
+.ufil .filtlbl{font-size:.72rem;color:var(--muted)}
+.ufil .push{margin-left:auto}
+/* active filters: what is scoping the view, and a way out of each */
+.uchips{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;
+ margin:0 0 var(--sp-2)}
+.uchip{display:inline-flex;align-items:center;gap:var(--sp-0);font:inherit;
+ font-size:.72rem;padding:var(--sp-0) var(--sp-1);border-radius:var(--pill);
+ border:1px solid var(--field-border);background:var(--surface-2);
+ color:var(--text);cursor:pointer}
+.uchip:hover{border-color:var(--accent)}
+.uchip .ck{color:var(--muted)}
+.uchip .cx{color:var(--muted);font-weight:600}
+/* An empty view explains itself, and offers the narrowest way out beside the
+   widest one. Two buttons rather than one: "clear filters" throws away the seven
+   that were fine in order to lift the one that was not. */
+.uempty{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;
+ margin-top:var(--sp-1)}
+.utiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));
+ gap:var(--sp-1);margin:0 0 var(--sp-3)}
+.utile{border:1px solid var(--border);border-radius:var(--radius);
+ padding:var(--sp-1) var(--sp-2);background:var(--bg)}
+.utile .k{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.07em;
+ color:var(--muted)}
+.utile .v{font-size:1.25rem;font-weight:660;letter-spacing:-.02em;
+ margin-top:var(--sp-0);display:flex;align-items:baseline;gap:var(--sp-0)}
+/* The sparkline sits under the number at its own intrinsic size, and the row keeps
+   its height whether or not there is one to draw - so a tile without a daily series
+   does not shorten its card and knock the grid out of line. */
+.utrend{height:20px;margin-top:var(--sp-0);display:flex;align-items:center;
+ color:var(--muted);font-size:.7rem}
+.dl{font-size:.68rem;font-weight:600;padding:0 .3rem;border-radius:var(--pill);
+ letter-spacing:0;font-variant-numeric:tabular-nums;
+ color:var(--muted);background:var(--surface-2)}
+/* Direction is stated by a glyph before it is stated by a hue: an arrow survives
+   greyscale, forced-colours and paper, and the sign alone is easy to miss at
+   .68rem. Colour is reserved for the ONE metric that has a direction worth
+   judging - attribution coverage. Tokens and dollars going up is not good news or
+   bad news, it is just news, and painting it green said otherwise for four
+   releases. */
+.dl.up::before{content:"\25b2\a0";font-size:.62em;vertical-align:.1em}
+.dl.down::before{content:"\25bc\a0";font-size:.62em;vertical-align:.1em}
+.dl.good{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.dl.bad{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+/* A word-sized graphic: shape only, no axis and no labels. Everything it would
+   need to be read precisely is in the chart directly below it. */
+.uspark{display:block;overflow:visible}
+.uspark .sa{fill:color-mix(in srgb,var(--accent-solid) 16%,transparent);stroke:none}
+.uspark .sl{fill:none;stroke:var(--accent-solid);stroke-width:1.4;
+ stroke-linejoin:round;stroke-linecap:round}
+.uspark .sd{fill:var(--accent-solid)}
+.ucrumb{font-size:.74rem;margin:0 0 var(--sp-1)}
+/* target-size: .lnk — exception=inline (WCAG 2.2 SC 2.5.8). Measured 88.4x19.4
+   and 208.5x19.4: 4.6px under in height, and left alone. These are the "not
+   recorded" / "set usage.pricing" links that sit INSIDE a sentence of muted prose,
+   which is the Inline exception word for word — the box is the line-height of the
+   text around it, and giving one 24px would open a gap in the middle of a
+   paragraph. The Spacing exception holds too (76.6px of clearance at the tightest,
+   at 1200px), so this one is covered twice. */
+.lnk{background:none;border:0;color:var(--accent);font:inherit;font-size:.76rem;
+ cursor:pointer;padding:0}
+.lnk:hover{text-decoration:underline}
+/* The slot reserves the chart's height so the card does not jump between the first
+   paint and the measured redraw one frame later. */
+.chartslot{display:block;width:100%;height:190px;margin:var(--sp-0) 0 var(--sp-1)}
+.uchart{width:100%;height:190px;display:block}
+.uchart.pick{cursor:crosshair}
+.uchart .g{stroke:var(--border);stroke-width:1;fill:none}
+/* 10px, not 8px: the viewBox is now 1:1 with device pixels, so this is the real
+   rendered size. The old 8px only looked bigger because it was being stretched. */
+.uchart .ax{fill:var(--muted);font-size:10px;font-family:var(--sans)}
+.uchart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;
+ pointer-events:none}
+.uchart .lnhit{fill:none;stroke:transparent;stroke-width:12;
+ stroke-linejoin:round;stroke-linecap:round;cursor:pointer}
+.uchart .dot{stroke:var(--surface);stroke-width:2}
+.uchart .cross{stroke:var(--border-strong);stroke-width:1;stroke-dasharray:none}
+.uchart .cross.hidden{display:none}
+.ulegend{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-3);font-size:.75rem;
+ margin:0 0 var(--sp-2)}
+.ulegend b{display:inline-flex;align-items:center;gap:var(--sp-0);font-weight:500}
+.ulegend b.pick{cursor:pointer}
+.ulegend b.pick:hover{text-decoration:underline}
+.ulegend i{width:.6rem;height:.6rem;border-radius:3px;display:inline-block}
+.urow{display:grid;grid-template-columns:minmax(8rem,20rem) minmax(4rem,1fr) auto;
+ gap:var(--sp-2);align-items:center;margin:var(--sp-0) 0;font-size:.8rem;
+ padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);
+ border:1px solid transparent}
+.urow.pick{cursor:pointer}
+.urow.pick:hover{background:var(--surface-2)}
+.urow.on{border-color:var(--accent);background:var(--surface-2)}
+.urow.tail .unm{font-style:italic}
+.unm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uamt{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;
+ font-size:.75rem}
+.ufact{font-size:.82rem;margin:var(--sp-0) 0}
+.small{font-size:.75rem}
+.utbl{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:var(--sp-1)}
+/* The Monthly card's 8 columns outgrow a phone; the table scrolls inside its
+   own frame, never the document sideways - the rule every wide surface here
+   already follows (.btblwrap, .dtblwrap, .poltblwrap). */
+.umwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* Scoped to the MONTHLY table by the hook it already carries. `.umwrap` is now
+   worn by two tables, and only that one has twelve columns to keep legible; the
+   risk/model table is 332px intrinsic, so an unscoped 34rem would make it scroll
+   at every width to fix an overflow that only exists below 369px. */
+.umwrap .utbl[data-umonthly]{min-width:34rem}

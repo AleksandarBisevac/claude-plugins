@@ -1,0 +1,51 @@
+/* composition: filter toolbar + one compact collapsible table */
+.comptools{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;margin:var(--sp-0) 0 var(--sp-1)}
+.comptools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:var(--sp-0) var(--sp-2)}
+.filtlbl{font-size:.72rem;color:var(--muted)}
+.filt{cursor:pointer;font:inherit;font-size:.75rem;padding:var(--sp-0) var(--sp-2);border-radius:var(--pill);
+ border:1px solid var(--field-border);background:var(--bg);color:var(--muted);transition:all var(--dur) var(--ease)}
+.filt:hover{border-color:var(--field-border-hover)}
+.filt.on{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+/* State carried by more than hue, as in the report. */
+.filt.on::before{content:"\2713\a0";font-weight:700}
+.count{font-size:.73rem;color:var(--muted);font-variant-numeric:tabular-nums}
+/* The "why is this still in progress" note beside a phase whose rows all read
+   done: italic so it reads as an aside, not another status. */
+.count.whynote{font-style:italic}
+/* A wide data table scrolls inside its own box at EVERY width, not only on a
+   phone. The old rule was scoped to 48rem because the page was a 64rem column
+   that the table happened to fit; widening the shell exposed that the guard was
+   tied to the viewport rather than to the table being wider than its container.
+   Same rule the report follows: text wraps to the reader, data tables scroll. */
+.comptblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.comp{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
+table.comp th,table.comp td{padding:var(--sp-1) var(--sp-1);border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+table.comp thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);color:var(--muted);
+ font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}
+table.comp tbody tr:last-child td{border-bottom:none}
+tr.phase{cursor:pointer}
+tr.phase>td{background:var(--surface-2);border-top:1px solid var(--border-strong);
+ border-left:3px solid var(--st,var(--muted))}
+.phtd{display:flex;align-items:center;gap:var(--sp-1)}
+tr.phase:hover>td{filter:brightness(1.05)}
+.tri{display:inline-block;width:.9em;color:var(--muted);transition:transform var(--dur) var(--ease)}
+.tri::before{content:"\25B6";font-size:.68em}
+tr.phase.open .tri{transform:rotate(90deg)}
+tr.task>td{background:var(--surface)}
+tr.task:hover>td{background:var(--surface-2)}
+tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding-left:var(--sp-4);
+ border-left:3px solid var(--st,var(--border))}
+td.ttitle{max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td.tmodel input{width:6.5rem;padding:var(--sp-0) var(--sp-1);font-size:.8rem}
+td.tskills{min-width:15rem}
+.comp-review{display:flex;align-items:center;gap:var(--sp-0);margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
+.comp-review input{width:8rem;padding:var(--sp-0) var(--sp-1);font-size:.78rem}
+/* The model combos (mc) size to their hosts, not to the .combo default of
+   18rem — a phase header row and a 6.5rem table cell both hold one. */
+.comp-review .combo{flex:0 1 auto;min-width:0}
+td.tmodel .combo{min-width:6.5rem}
+.comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:var(--sp-0)}
+.comp .chips{gap:var(--sp-0)}
+.topbtns{display:flex;gap:var(--sp-1);align-items:center;flex-shrink:0}
+.comp .combo{flex:1 1 8rem;min-width:7rem}

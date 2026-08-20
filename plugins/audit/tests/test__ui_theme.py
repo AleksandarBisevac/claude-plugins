@@ -338,10 +338,10 @@ def _cases(check):
           and all(a["grounds"] == ["--bg", "--surface", "--surface-2"]
                   for _n, a in _audits))
     check("ct3 the token layer really is in front of each sheet - the panel's "
-          "marker is in the asset and gone from the assembled string, so ct2's "
-          "pair count is over resolved colours rather than over var() names "
-          "nothing declares",
-          "/*__THEME_TOKENS__*/" in M.read_asset("panel.css")
+          "marker is in its first part and gone from the assembled string, so "
+          "ct2's pair count is over resolved colours rather than over var() "
+          "names nothing declares",
+          "/*__THEME_TOKENS__*/" in M.read_asset(M.PANEL_CSS_PARTS[0])
           and all("/*__THEME_TOKENS__*/" not in css for _n, css in _sheets)
           and all(":root{" in css for _n, css in _sheets))
     check("ct4 no text pair is under 4.5:1 and no control boundary under 3:1, "
@@ -680,6 +680,32 @@ def _cases(check):
           "byte for byte - auditing a differently-ordered join would clear a "
           "palette nobody serves",
           dict(M.themed_stylesheets())["report"] == _shipped)
+
+    # The panel's sheet, same three claims. It is a SEPARATE tuple with a
+    # separate failure: the report's parts could be perfectly declared while the
+    # panel joined its own alphabetically, and no case above would notice.
+    _pc = M.PANEL_CSS_PARTS
+    check("cs4 the panel's cascade order is declared ONCE and is not "
+          "alphabetical - the reset has to be read before the shell and the "
+          "narrow-screen blocks after what they override, so sorting these %d "
+          "names would change what ships" % (len(_pc),),
+          len(_pc) >= 5 and list(_pc) != sorted(_pc)
+          and _pc[0].endswith("tokens-and-reset.css"))
+    check("cs5 every declared panel part exists and every panel-css asset is "
+          "declared - a part on disk that the sheet does not join is a feature "
+          "that silently never ships",
+          set(_pc) == set(n for n in M.UI_ASSETS if n.startswith("panel-css/")))
+    _panel_join = "".join(M.read_asset(_n) for _n in _pc)
+    check("cs6 the token marker sits in the join EXACTLY once (got %d) - a "
+          "second copy in another part would splice the whole token layer in "
+          "twice, and every var() would still resolve, so nothing else here "
+          "would go red" % (_panel_join.count("/*__THEME_TOKENS__*/"),),
+          _panel_join.count("/*__THEME_TOKENS__*/") == 1)
+    check("cs7 the panel sheet the theme lints audit IS the one the browser "
+          "receives, byte for byte - the marker replaced, the parts in "
+          "declared order",
+          dict(M.themed_stylesheets())["panel"]
+          == _panel_join.replace("/*__THEME_TOKENS__*/", M.TOKEN_CSS))
 
 
 

@@ -1,0 +1,21 @@
+/* one shared tooltip element, moved on hover */
+.utip{position:fixed;z-index:60;pointer-events:none;background:var(--surface);
+ border:1px solid var(--border-strong);border-radius:var(--radius);
+ box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-2);font-size:.74rem;
+ max-width:18rem;color:var(--text)}
+.utip.hidden{display:none}
+/* uc (F-P-2): the one row in a usage table that has no plan behind it. Text
+   colour, not a badge — it is a normal row of the table, not a warning about
+   the row; the eye should find it without the table shouting. The warn role is
+   the panel's own (see the top of this sheet), and text-on-surface at both
+   themes is the contrast pair it was chosen for. */
+.uncat{color:var(--warn)}
+.utip-h{font-weight:600;margin-bottom:var(--sp-0);word-break:break-word}
+.utip-r{display:flex;align-items:center;gap:var(--sp-0);
+ font-variant-numeric:tabular-nums;line-height:1.5}
+.utip-r i{width:.55rem;height:.55rem;border-radius:2px;flex:0 0 auto}
+.utip-k{color:var(--muted);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap}
+.utip-v{font-weight:600}
+.utip-f{color:var(--muted);font-size:.68rem;margin-top:var(--sp-0);
+ border-top:1px solid var(--border);padding-top:var(--sp-0)}

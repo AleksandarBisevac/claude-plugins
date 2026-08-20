@@ -1,0 +1,34 @@
+/* Confirm-before-write. Same native <dialog> the browse table uses, for the same
+   reasons — focus trap, backdrop and Esc are the platform's — and deliberately the
+   same visual object, because both are "here is the data, decide". */
+dialog.confirm{width:min(42rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
+ padding:0;border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+ background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
+ overflow:hidden}
+dialog.confirm::backdrop{background:rgb(0 0 0 / .45)}
+dialog.confirm>*{padding:0 var(--sp-3)}
+.cflist{max-height:min(50vh,22rem);overflow:auto;border-top:1px solid var(--border);
+ padding:0}
+table.cftbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.cftbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ color:var(--muted);text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;padding:var(--sp-1) var(--sp-2);white-space:nowrap;
+ border-bottom:1px solid var(--border)}
+table.cftbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.cftbl td.tgt{font-family:var(--mono);white-space:nowrap}
+table.cftbl td.fld{color:var(--muted);white-space:nowrap}
+/* Old on the left, new on the right, and the arrow between them is text — a glyph
+   drawn in CSS would vanish in the copy of this dialog nobody can take. */
+.cfv{font-family:var(--mono);font-size:.76rem;word-break:break-word}
+.cfv.was{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+.cfv.unset{font-style:italic;text-decoration:none}
+.cfarr{color:var(--muted);padding:0 .35rem}
+.cffoot{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;
+ padding-top:var(--sp-2);padding-bottom:var(--sp-2)}
+.cffoot .push{margin-left:auto}
+/* A lock is a live fact about somebody else's run, so it is stated inside the
+   dialog rather than only guessed at from the last page load. */
+.cflock{margin:var(--sp-1) 0 0;font-size:.76rem}
+@media (max-width:34rem){dialog.confirm{width:calc(100vw - 1rem)}
+ .cflist{overflow-x:auto}}

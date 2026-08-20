@@ -1,0 +1,83 @@
+/* ---- policy switchboard ---------------------------------------------------
+   A wide table by construction: one column per area, and an area can be added
+   without asking this stylesheet. So it scrolls INSIDE its own frame — the
+   document never scrolls sideways, which on a phone is the difference between a
+   table you can read and a page that slides out from under you. */
+.poltblwrap{border:1px solid var(--border);border-radius:var(--radius);
+ overflow:auto;max-height:34rem;margin:.4rem 0}
+table.poltbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}
+table.poltbl th{position:sticky;top:0;z-index:1;background:var(--surface-2);
+ text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;
+ color:var(--muted);font-weight:700;padding:.35rem var(--sp-1);
+ border-bottom:1px solid var(--border);white-space:nowrap}
+table.poltbl th.ar{color:var(--accent)}
+table.poltbl th.ar .mut{display:block;font-size:.62rem;letter-spacing:.02em;
+ text-transform:none;font-weight:600}
+table.poltbl th.ar.dormant{color:var(--muted)}
+table.poltbl td{padding:.3rem var(--sp-1);border-bottom:1px solid var(--border);
+ vertical-align:top}
+table.poltbl tbody tr:last-child td{border-bottom:none}
+table.poltbl td.nm{font-family:var(--mono);font-size:.76rem;
+ max-width:22rem;overflow-wrap:anywhere}
+/* A NAME may break anywhere — some of them are long and this column has a width.
+   A badge is a word, and `overflow-wrap:anywhere` inherits, so `required` was
+   being drawn as "req" over "uired" beside audit's own row. */
+table.poltbl td.nm .badge{white-space:nowrap;overflow-wrap:normal}
+table.poltbl td.pend{background:color-mix(in srgb,var(--accent-solid) 10%,transparent)}
+/* WCAG 2.2 SC 2.5.8: the box was 60.6x21.8 and three of the 550 had a neighbour
+   inside their 24px circle at 1200px, so the Spacing exception did not cover all
+   of them. `min-height` costs NOTHING here — the row it sits in measures 54.4px,
+   so the select grows 2.2px inside a cell with 32px to spare and no table row
+   moves. Measured before and after. */
+select.prule{font:inherit;font-size:.74rem;padding:.15rem .3rem;min-height:24px;
+ border:1px solid var(--field-border);border-radius:var(--radius);
+ background:var(--surface);color:var(--text)}
+select.prule:disabled{opacity:.55;cursor:not-allowed}
+select.prule[data-set=deny]{border-color:var(--err);color:var(--err)}
+select.prule[data-set=allow]{border-color:var(--ok);color:var(--ok)}
+/* The verdict is a claim, and the basis under it is what makes the claim
+   checkable — the same rule the report's routing advice and the lock verdict
+   follow. It is never colour alone: the word says it too. */
+.pv{display:inline-flex;align-items:center;gap:.3em;font-size:.72rem;font-weight:700;
+ padding:.15rem .5em;border-radius:var(--pill);white-space:nowrap;
+ background:color-mix(in srgb,var(--pvc) 14%,transparent);color:var(--pvc);
+ border:1px solid color-mix(in srgb,var(--pvc) 30%,transparent)}
+.pv.allow{--pvc:var(--ok)}
+.pv.violation{--pvc:var(--err)}
+.pbasis{display:block;color:var(--muted);font-size:.7rem;line-height:1.45;
+ max-width:44ch;margin-top:.15rem}
+.badge.req{background:color-mix(in srgb,var(--accent) 16%,transparent);
+ color:var(--accent);border-color:transparent}
+.badge.stand{background:color-mix(in srgb,var(--warn) 16%,transparent);
+ color:var(--warn);border-color:transparent}
+.badge.pend{background:color-mix(in srgb,var(--accent-solid) 18%,transparent);
+ color:var(--accent);border-color:transparent}
+table.polrules{width:100%;border-collapse:separate;border-spacing:0;font-size:.78rem}
+table.polrules th{text-align:left;font-size:.66rem;text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);font-weight:700;padding:.3rem var(--sp-1);
+ border-bottom:1px solid var(--border)}
+table.polrules td{padding:.28rem var(--sp-1);border-bottom:1px solid var(--border)}
+table.polrules tbody tr:last-child td{border-bottom:none}
+table.polrules td.pat{font-family:var(--mono);font-size:.76rem}
+table.polrules td.lst{font-weight:700;font-size:.7rem;text-transform:uppercase;
+ letter-spacing:.04em}
+table.polrules td.lst[data-list=deny]{color:var(--err)}
+table.polrules td.lst[data-list=allow]{color:var(--ok)}
+.poladd{display:flex;gap:var(--sp-1);flex-wrap:wrap;align-items:center;margin:var(--sp-1) 0 0}
+.poladd input{flex:1 1 14rem;min-width:8rem;padding:var(--sp-0) var(--sp-1)}
+.poladd select{font-size:.8rem;padding:var(--sp-0) var(--sp-1)}
+/* The four limits. Shut by default because they are read once and remembered,
+   open-able because a switchboard that never states them is selling enforcement
+   it does not have. */
+.polhonest{margin:.6rem 0 0;font-size:.82rem}
+/* Its 24px target floor is the shared :where(summary) rule beside the base input
+   styles, not a copy here — this one only sets colour and size. */
+.polhonest summary{cursor:pointer;color:var(--muted);font-size:.78rem}
+.polhonest ol{margin:var(--sp-1) 0 0;padding-left:1.2rem;color:var(--muted);
+ font-size:.78rem;line-height:1.55;max-width:76ch}
+.polhonest b{color:var(--text)}
+@media(max-width:48rem){
+ .pbasis{max-width:none}
+ .poltblwrap{max-height:none}
+}
+
