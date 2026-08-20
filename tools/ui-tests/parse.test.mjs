@@ -11,6 +11,8 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   PANEL_STRING_PLACEHOLDERS,
+  panelParts,
+  assemblePanelBody,
   reportParts,
   reportTags,
   assembleReportBody,
@@ -29,16 +31,18 @@ describe('every ui/ part parses', () => {
   // Counted, not merely iterated. `for (const p of [])` is a green test over
   // nothing, and a directory read that returned an empty list would look
   // exactly like a tree in which every part is fine.
-  it('finds the panel and every report part, including nested ones', () => {
-    // The report's script lives one directory down. A flat listing would find
-    // panel.js alone and report a clean syntax check over a tenth of the tree,
-    // which is the failure this count exists to make impossible.
+  it('finds every report and panel part, all of them nested', () => {
+    // Both scripts now live one directory down, so `ui/*.js` matches NOTHING —
+    // a flat listing would exit 0 having parsed none of the tree, which is the
+    // failure this count exists to make impossible. It used to match panel.js
+    // alone and grade a tenth of the tree as clean; the hazard did not change
+    // when the last flat file left, it got total.
     expect(parts.length).toBeGreaterThanOrEqual(2);
-    expect(parts).toContain('panel.js');
     const nested = parts.filter((n) => n.includes('/'));
-    expect(nested.length).toBeGreaterThan(0);
-    // Every part the page is BUILT from must be a part this walk can see.
+    expect(nested.length).toBe(parts.length);
+    // Every part either page is BUILT from must be a part this walk can see.
     for (const name of reportParts()) expect(parts).toContain(name);
+    for (const name of panelParts()) expect(parts).toContain(name);
   });
 
   it.each(parts)('node --check %s', (name) => {
@@ -71,8 +75,8 @@ describe('the sandbox reads what it thinks it reads', () => {
     expect(() => new vm.Script("'use strict';\n" + body)).not.toThrow();
   });
 
-  it('panel.js still carries the request-time placeholders', () => {
-    const prepared = substitutePanelPlaceholders(readPart('panel.js'));
+  it('the panel parts still carry the request-time placeholders', () => {
+    const prepared = substitutePanelPlaceholders(assemblePanelBody());
     for (const name of PANEL_STRING_PLACEHOLDERS) {
       expect(prepared.placeholders).toContain(name);
     }
@@ -99,15 +103,16 @@ describe('the sandbox reads what it thinks it reads', () => {
     expect(reach(ctx, ['DMAX']).DMAX).toBe('');
   });
 
-  it('panel.js runs to the end and its formatters are reachable', () => {
+  it('the panel parts run to the end and its formatters are reachable', () => {
     const { ctx } = loadPanel();
     const fns = reach(ctx, ['uTok', 'uCost', 'uPct', 'uShare', 'uCsvText', 'isDark', 'F']);
     for (const name of ['uTok', 'uCost', 'uPct', 'uShare', 'uCsvText', 'isDark']) {
       expect(typeof fns[name], name + ' is not a function').toBe('function');
     }
     // Top-level `const` is in TDZ until its own line runs, so reaching one
-    // declared past panel.js's three-thousandth line does prove execution got
-    // that far — unlike a hoisted function declaration.
+    // declared in a LATE part does prove execution got through every earlier
+    // part — unlike a hoisted function declaration. `F` is declared in
+    // usage-model.js, late in `_panel_ui._JS_PARTS`.
     expect(fns.F.tokens).toBe(7);
   });
 });

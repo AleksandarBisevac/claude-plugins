@@ -534,9 +534,10 @@ jobs:
           # this loop catches the per-file half.
           npm ci
           npx vitest run
-          # find, not a glob: the report's script lives in a feature directory,
-          # and `ui/*.js` matches panel.js alone — a syntax check that exits 0
-          # over a tenth of the tree while the rest goes unparsed.
+          # find, not a glob: both scripts now live in feature directories, so
+          # `ui/*.js` matches NOTHING — a syntax check that exits 0 having parsed
+          # none of the tree. It used to match panel.js alone and grade a tenth of
+          # the tree as clean; when the last flat file left, the hazard went total.
           n=0
           for f in $(find plugins/audit/scripts/ui -name '*.js' | sort); do
             node --check "$f" || { echo "FAIL: $f is not parseable"; exit 1; }

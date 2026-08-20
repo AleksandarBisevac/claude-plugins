@@ -594,7 +594,7 @@ def _cases(check):
     # cannot tell a working check apart from `return []`.
     _mixed = [("panel.html", "<html>\n</html>\n"),
               ("panel.css", ":root{--a:1px}\r\n"),
-              ("panel.js", "boot();\n")]
+              ("panel/boot.js", "boot();\n")]
     check("ua6 cr_violations names exactly the asset carrying a \\r, and only "
           "it (got %r)" % (M.cr_violations(_mixed),),
           M.cr_violations(_mixed) == ["panel.css"])

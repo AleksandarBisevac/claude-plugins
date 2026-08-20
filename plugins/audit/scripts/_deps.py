@@ -1454,7 +1454,7 @@ def navigability_violations(script_dir=None, hooks_dir=None):
 #
 # Markers are the comment syntax each language already uses here:
 #   report.css   /* ---- base ---------- */
-#   panel.js     // ---------- Settings ----------
+#   panel/settings.js   // ---------- Settings ----------
 # Up to two leading spaces count, because report.js wraps its whole body in an
 # IIFE and column 0 is therefore unavailable to it. A marker indented deeper
 # than that sits inside a function and is not a landmark the left margin gives

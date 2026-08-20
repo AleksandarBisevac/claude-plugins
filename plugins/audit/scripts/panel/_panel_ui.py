@@ -13,14 +13,18 @@ The three layers now live as real, editor-highlightable files under `ui/`:
   * `ui/panel.css` — everything between `<style>` and `</style>` (the
     `/*__THEME_TOKENS__*/` placeholder included; panel-server.py's substitution
     chain fills it in after this module hands back the assembled string).
-  * `ui/panel.js`  — everything between `<script>` and `</script>` (every
-    `__*__` placeholder included, same reason).
+  * `ui/panel/*.js` — everything between `<script>` and `</script>` (every
+    `__*__` placeholder included, same reason), cut into the ordered feature parts
+    `_JS_PARTS` below lists. It was one 5,141-line file until that cut; the parts
+    are contiguous runs of it in its original sequence, so the assembled page is
+    byte-for-byte what the single file produced. `ui/panel/README.md` says what
+    each part is responsible for.
   * `ui/panel.html` — the rest of the original literal (the `<!doctype ...>` head
     and the body markup), with the CSS and JS block replaced by two insertion
     markers, `/*@CSS@*/` and `/*@JS@*/`, sitting exactly where those blocks sat,
     still inside their own `<style>`/`<script>` tags.
 
-`raw_template()` reads the three files and splices css/js back into the markers,
+`raw_template()` reads those assets and splices css/js back into the markers,
 returning the EXACT string the old literal held before panel-server.py's own
 `.replace()` chain (THEME_TOKENS, LABELS, SETTINGS, FIELD_HELP, COMP_HELP,
 CFG_ENUMS) runs on it — that chain is untouched and still lives in panel-server.py.
@@ -72,6 +76,50 @@ import _ui_theme as _theme   # noqa: E402  (reached by bare basename: the preamb
 CSS_MARK = "/*@CSS@*/"
 JS_MARK = "/*@JS@*/"
 
+# THE ORDER OF THIS TUPLE IS THE LOAD ORDER, and it is not alphabetical. The page
+# receives ONE script, so every part shares one scope and every top-level
+# `const`/`let` in it is in TDZ until its own line runs: `panel/core.js` declares
+# `$`, `el`, `api` and `TOKEN`, which executable statements further down read, and
+# `panel/boot.js` ends with the `boot()` call. Sorting this tuple leaves every
+# Python suite green while the page dies on the first read of an undeclared name.
+#
+# It is a CUT and not a filing: each name is one contiguous run of the old
+# `panel.js` in its original sequence, which is what makes the assembled page
+# byte-for-byte what it was. `boot()` is DEFINED in `write-confirmation.js` and
+# CALLED in `boot.js` because that is where the two sat; moving either would be a
+# regrouping, and 680 substring assertions plus 26 index-bounded slices over
+# `UI_HTML` are pinned to the order that ships.
+#
+# `import`/`export` between these files is not what joins them, and that is now a
+# measured statement rather than an inherited one: real cross-file ES modules DO
+# work over this panel's `http://127.0.0.1` origin (unlike the report's `file://`
+# one), but reaching them needs a static route serving `text/javascript` and a new
+# home for the eight `__*__` placeholders substituted into this text. Until that
+# is decided, Python joins the parts.
+_JS_PARTS = (
+    "panel/core.js",
+    "panel/write-confirmation.js",
+    "panel/hints.js",
+    "panel/help-drawer.js",
+    "panel/settings.js",
+    "panel/composition.js",
+    "panel/ado-connector.js",
+    "panel/theme-state.js",
+    "panel/appearance-view.js",
+    "panel/run-status.js",
+    "panel/overview.js",
+    "panel/policy-state.js",
+    "panel/policy-view.js",
+    "panel/usage-model.js",
+    "panel/usage-filtering.js",
+    "panel/usage-charts.js",
+    "panel/usage-metrics.js",
+    "panel/usage-cards.js",
+    "panel/browse-dialog.js",
+    "panel/usage-view.js",
+    "panel/boot.js",
+)
+
 _cache = None
 
 
@@ -86,7 +134,7 @@ def raw_template(cache=True):
         return _cache
     skeleton = _theme.read_asset("panel.html")
     css = _theme.read_asset("panel.css")
-    js = _theme.read_asset("panel.js")
+    js = "".join(_theme.read_asset(n) for n in _JS_PARTS)
     out = skeleton.replace(CSS_MARK, css, 1).replace(JS_MARK, js, 1)
     if cache:
         _cache = out

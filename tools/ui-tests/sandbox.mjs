@@ -72,6 +72,8 @@ export function uiParts() {
 // the list this returns is the list the page is really built from, so the gap
 // shows up as a part nobody parses rather than as two files agreeing with each
 // other and neither with the product.
+const PANEL_UI_PY = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts', 'panel',
+                              '_panel_ui.py');
 const REPORT_UI_PY = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts', 'report',
   '_report_ui.py');
 
@@ -116,6 +118,34 @@ export function assembleReportBody() {
 
 export function readPart(name) {
   return fs.readFileSync(path.join(UI_DIR, name), 'utf8');
+}
+
+// The panel's parts, read the same way and for the same reason: the ORDER is
+// declared once, in the module that assembles the page, and a harness that kept
+// its own copy would go on loading a stale list after a part was added.
+function readPanelUiPy() {
+  return fs.readFileSync(PANEL_UI_PY, 'utf8');
+}
+
+export function panelParts() {
+  const block = readPanelUiPy().match(/_JS_PARTS = \(([\s\S]*?)\)/);
+  if (!block) {
+    throw new Error('_JS_PARTS is not in ' + PANEL_UI_PY
+      + ' \u2014 the assembly moved and this harness would otherwise read a stale list');
+  }
+  const names = [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (!names.length) {
+    throw new Error('_JS_PARTS is empty; joining nothing would load a blank '
+      + 'script and every case below would pass over it');
+  }
+  return names;
+}
+
+// The panel's script exactly as the page receives it: the parts joined in load
+// order. There is no wrapper on this surface at all - the page gets one classic
+// <script>, so the concatenation IS the scope.
+export function assemblePanelBody() {
+  return panelParts().map((n) => readPart(n)).join('');
 }
 
 // --- the shim -------------------------------------------------------------
@@ -258,14 +288,14 @@ export function substitutePanelPlaceholders(src) {
   });
   if (!seen.size) {
     throw new Error(
-      'panel.js carries no __PLACEHOLDER__ at all. Either the substitution '
+      'the panel parts carry no __PLACEHOLDER__ at all. Either the substitution '
       + 'contract changed or this harness read the wrong file — both are '
       + 'reasons to stop, not to load a file that may no longer be the panel.');
   }
   for (const name of PANEL_STRING_PLACEHOLDERS) {
     if (!seen.has(name)) {
       throw new Error(
-        'panel.js no longer carries ' + name + '. It is substituted as a STRING '
+        'the panel parts no longer carry ' + name + '. It is substituted as a STRING '
         + 'literal here; a placeholder that has become something else needs a '
         + 'deliberate update to PANEL_STRING_PLACEHOLDERS.');
     }
@@ -310,8 +340,8 @@ export function loadReport(options) {
 
 export function loadPanel(options) {
   const opts = options || {};
-  const prepared = substitutePanelPlaceholders(mutated(readPart('panel.js'), opts));
-  const loaded = loadInto(prepared.source, 'panel.js', opts);
+  const prepared = substitutePanelPlaceholders(mutated(assemblePanelBody(), opts));
+  const loaded = loadInto(prepared.source, 'panel parts', opts);
   loaded.placeholders = prepared.placeholders;
   return loaded;
 }

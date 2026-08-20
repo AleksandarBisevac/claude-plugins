@@ -29,15 +29,15 @@ import _panel_ui as M                              # noqa: E402
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    # --- the three asset files exist and decode as utf-8 ------------------------
-    names = ("panel.html", "panel.css", "panel.js")
+    # --- every asset file exists and decodes as utf-8 ---------------------------
+    names = ("panel.html", "panel.css") + M._JS_PARTS
     unreadable = _theme.unreadable_assets(names)
     for name in names:
         check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
     skeleton = _theme.read_asset("panel.html")
     css = _theme.read_asset("panel.css")
-    js = _theme.read_asset("panel.js")
+    js = "".join(_theme.read_asset(n) for n in M._JS_PARTS)
     template = M.raw_template(cache=False)
 
     # --- each insertion marker appears exactly once in the skeleton -------------
@@ -68,7 +68,36 @@ def _cases(check):
     check("the CSS lives inside the <style> block, not beside it", style_span == css)
     script_span = template[template.index("<script>") + len("<script>"):
                            template.index("</script>")]
-    check("the JS lives inside the <script> block, not beside it", script_span == js)
+    check("the JS between the tags is the ordered parts joined and nothing "
+          "else - the splice adds no separator, which is what keeps the "
+          "assembled page byte-for-byte what the single file produced",
+          script_span == js)
+    check("the parts carry no <script> tags - those live in panel.html",
+          "<script" not in js and "</script>" not in js)
+    # A part on disk that nothing LOADS is the expensive failure: the page
+    # assembles without it, every substring pin keeps passing, and the feature
+    # simply never ships. `declared_asset_drift()` compares the declared list
+    # against the DIRECTORY; this compares it against what the page is BUILT
+    # from, which is the half that catches a part declared and never joined.
+    _declared_js = set(n for n in _theme.UI_ASSETS
+                       if n.startswith("panel/") and n.endswith(".js"))
+    check("every panel part on disk is loaded, and every loaded part is on disk "
+          "- declared %d, assembled %d, difference %r"
+          % (len(_declared_js), len(M._JS_PARTS),
+             sorted(_declared_js.symmetric_difference(M._JS_PARTS))),
+          _declared_js and _declared_js == set(M._JS_PARTS))
+    check("the first part declares the primitives and the last one boots, which "
+          "is what makes the order load-bearing rather than alphabetical - "
+          "sorting the tuple would leave this suite green and the page dead on "
+          "the first read of a name still in TDZ",
+          M._JS_PARTS[0] == "panel/core.js"
+          and M._JS_PARTS[-1] == "panel/boot.js"
+          and list(M._JS_PARTS) != sorted(M._JS_PARTS))
+    check("core.js really does declare what later parts read at load time, and "
+          "boot.js really does end with the call - the names, not just the "
+          "positions, so a rename cannot leave the ordering case green",
+          "const $=" in _theme.read_asset(M._JS_PARTS[0])
+          and _theme.read_asset(M._JS_PARTS[-1]).rstrip().endswith("boot().catch(e=>toast('load failed: '+e,'err'));"))
 
     # --- CSS brace balance, via _ui_theme's existing lints -----------------------
     check("panel.css braces balance", css.count("{") == css.count("}"))
@@ -86,8 +115,9 @@ def _cases(check):
     # --- LF contract: none of the loaded ui/ assets (nor the assembled ------
     # template) carry a "\r" — a CRLF checkout (e.g. windows-latest CI without
     # a .gitattributes eol=lf pin) would shift every cross-line selftest pin.
-    real_assets = [("panel.html", skeleton), ("panel.css", css), ("panel.js", js),
-                   ("raw_template()", template)]
+    real_assets = ([("panel.html", skeleton), ("panel.css", css)]
+                   + [(n, _theme.read_asset(n)) for n in M._JS_PARTS]
+                   + [("raw_template()", template)])
     real_cr = _theme.cr_violations(real_assets)
     check("no \\r (CRLF) in any loaded ui/ asset or the assembled template "
           "(found in: %r)" % (real_cr,), not real_cr)
@@ -95,7 +125,7 @@ def _cases(check):
     # --- fixture red-proof: a CRLF asset IS named by the same helper ------------
     fixture_assets = [("panel.html", "<html>\r\n<body></body>\r\n</html>"),
                       ("panel.css", "body { color: red; }\n"),
-                      ("panel.js", "console.log(1);\n")]
+                      ("panel/core.js", "console.log(1);\n")]
     fixture_cr = _theme.cr_violations(fixture_assets)
     check("fixture proof: a CRLF panel.html is named by the CR check "
           "(got %r, want ['panel.html'])" % (fixture_cr,),

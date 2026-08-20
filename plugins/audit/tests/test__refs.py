@@ -590,15 +590,20 @@ def _cases(check):
     # --- the domain name is gone from the tools --------------------------------------
     _mjs = _tool_src(_MJS_TOOL)
     _joins = re.findall(r"path\.join\(SCRIPTS,[^)]*\)", _mjs)
-    check("d1 exactly ONE join of the SCRIPTS constant is left in the capture tool, and "
-          "it is the ui/ ASSET, not a script - the eight script sites all go through "
-          "the resolver now, and this is the case that goes red when a ninth join "
-          "creeps back: %r" % (_joins,),
-          len(_joins) == 1 and "panel.js" in _joins[0])
-    check("d2 ...and the eight are really there, resolving by BASENAME with no folder "
-          "argument. Reads vacuous beside d1 and is the half that fails if the call "
-          "sites were deleted rather than converted",
-          _mjs.count("resolveScript('") == 8
+    check("d1 NO join of the SCRIPTS constant is left in the capture tool - the eight "
+          "script sites go through the resolver, and the one exempt site (a read of "
+          "ui/panel.js, argued safe because a UI asset cannot be relabelled) died "
+          "when panel.js was cut into parts and the path stopped existing. It asks "
+          "Python for the ASSEMBLED page now. This is the case that goes red when a "
+          "join creeps back: %r" % (_joins,),
+          not _joins)
+    check("d2 ...and the NINE resolver calls are really there, resolving by BASENAME "
+          "with no folder argument. Reads vacuous beside d1 and is the half that fails "
+          "if the call sites were deleted rather than converted - the ninth arrived "
+          "when the polled-state guard stopped reading ui/panel.js by path and started "
+          "asking _panel_ui.py for the assembled page (got %d)"
+          % (_mjs.count("resolveScript('"),),
+          _mjs.count("resolveScript('") == 9
           and not re.search(r"resolveScript\('[^']*[/\\]", _mjs))
     _gif = _tool_src(_GIF_TOOL)
     check("d3 the Python tool carries no join of the SCRIPTS constant at all - it can "

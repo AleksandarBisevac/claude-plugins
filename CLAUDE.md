@@ -137,9 +137,11 @@ its idea of an expression.
 The tool separates **822 literal** left-hand sides (the text pins) from **12 computed** ones, and
 that separation is the point: a number is only as good as the scope attached to it.
 
-**Read the `refactoring-the-assembled-ui` skill before editing `report.{css,js}`,
-`panel.{css,js}` or `_ui_theme.py`.** Assets of 400+ lines also owe one section marker per 400
-lines, enforced by `_deps.ui_navigability_violations()`.
+**Read the `refactoring-the-assembled-ui` skill before editing anything under `scripts/ui/`, or
+`_ui_theme.py`.** Neither surface is a single file any more — the report's script and stylesheet
+and the panel's script are each a directory of ordered parts, and `ui/*/README.md` says what each
+part is for. Assets of 400+ lines also owe one section marker per 400 lines, enforced by
+`_deps.ui_navigability_violations()`.
 
 ## Tests
 

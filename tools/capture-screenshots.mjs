@@ -183,9 +183,14 @@ let scriptIndexMemo = null;
  * no consumer should have to know which one a script was filed under. Seven more
  * domains are due to move.
  *
- * Exactly ONE join of the SCRIPTS constant survives in this file, and it is not a
- * script — see `assertNoHandAssignedPolledState`, where the reason is written down.
- * `test__refs.py` asserts that count, so a tenth join cannot creep back in quietly.
+ * NO join of the SCRIPTS constant survives in this file any more. One did until
+ * recently — a read of `ui/panel.js`, argued at its site as safe because a UI asset
+ * is not a script and so could not be relabelled. Then panel.js was cut into parts
+ * and the path stopped existing, which is the answer to the argument: the exemption
+ * was sound about relabelling and silent about the file simply not being there.
+ * `assertNoHandAssignedPolledState` now asks Python for the assembled page instead,
+ * which is what its subject was all along. `test__refs.py` asserts the count, so a
+ * join cannot creep back in quietly.
  *
  * WHY IT IS A COPY. This is the fourth statement of one resolution rule (`_loader.py`,
  * `_config.py`'s find_script, `_output.py`'s script_files are the other three) and the
@@ -3056,20 +3061,26 @@ async function captureConfirmDialog(page) {
  * coverage check derives its expected paths from validate-config's own key sets.
  */
 function assertNoHandAssignedPolledState() {
-  // NOT resolveScript(). This is a UI ASSET, not a script: the index that function
-  // reads is `.py`-only, because it mirrors `_loader.script_index()`, which is built
-  // from `_output.script_files()`. scripts/ui/ holds no `.py` at all — which is also
-  // why `_output.install_path()` leaves it off sys.path, mechanically rather than by
-  // an editorial rule — so it is not part of the migration and this join cannot go
-  // stale the way a domain join can. The files under ui/ are ordered parts of one
-  // assembled artifact whose position is pinned by ~70 substring assertions, not
-  // scripts filed under a label that may be relabelled.
-  const src = readFileSync(path.join(SCRIPTS, 'ui', 'panel.js'), 'utf8');
+  // The ASSEMBLED page, not a file. This used to read `ui/panel.js` by literal
+  // path, with a long argument for why that join could not go stale — and then
+  // panel.js was cut into twenty-one parts and the path stopped existing. The
+  // lesson is not "pick a better path": the subject of this guard is what the
+  // POLL OWNS IN THE PAGE, so the page is what it should have been reading. Which
+  // part `pollRunStatus` happens to sit in is not a fact this check needs, and
+  // asking for it is how a check comes to depend on a filing decision.
+  //
+  // Reached through the resolver rather than by joining the SCRIPTS constant, so no
+  // directory under scripts/ is spelled here either; `_panel_ui.py` carries its
+  // own path preamble, so putting the directory it lives in on sys.path is enough
+  // for it to find the anchor and assemble.
+  const panelUiDir = path.dirname(resolveScript('_panel_ui.py'));
+  const src = py(['-c', 'import sys; sys.path.insert(0, sys.argv[1]); import _panel_ui; '
+                      + 'sys.stdout.write(_panel_ui.raw_template())', panelUiDir]);
   const at = src.indexOf('async function pollRunStatus');
   if (at < 0) {
-    fail('panel: pollRunStatus is gone from panel.js — the polled-state guard is '
-       + 'reading a function that no longer exists and can no longer protect '
-       + 'anything');
+    fail('panel: pollRunStatus is gone from the assembled panel page — the '
+       + 'polled-state guard is reading a function that no longer exists and can '
+       + 'no longer protect anything');
     return;
   }
   const body = src.slice(at, src.indexOf('\n}', at));

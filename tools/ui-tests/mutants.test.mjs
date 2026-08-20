@@ -217,7 +217,7 @@ describe('the sandbox pins would catch a source that moved', () => {
     // and the load would die on a ReferenceError somewhere unrelated. Named
     // here instead.
     expect(() => loadPanel({ mutate: (src) => src.replace('__AUDIT_TOKEN__', '"x"') }))
-      .toThrow(/no longer carries __AUDIT_TOKEN__/);
+      .toThrow(/no longer carry __AUDIT_TOKEN__/);
   });
 
   it('refuses a mutation whose target is not in the source', () => {
