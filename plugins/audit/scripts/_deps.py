@@ -1624,6 +1624,16 @@ SHARED_CONCERNS = (
      "'ONE rule, and two places that need it' while four views spelled it - the "
      "comment was written when it was true and nothing counted it afterwards, "
      "which is the whole case for a row here rather than a note there."),
+    ("heatmap calendar", "shared/calendar.js", r"re:function (startOf|endOf)\(", 0,
+     "EXTRACTED, and the oldest duplication in this tree: five functions - a "
+     "Monday-first weekday, startOf, endOf, shift and seek - written twice under "
+     "the same names, once inside the report's IIFE and once inside the panel's "
+     "uHeatmap. The sandbox harness carried a note the whole time saying neither "
+     "copy could be tested because both closed over locals, and that reaching "
+     "them was a source change. This is that change; the calendar closes over "
+     "nothing, so hoisting cost no state. Only the DATA half stayed behind, as a "
+     "predicate, because one surface holds its days as a sorted array and the "
+     "other as an object and each has a reason."),
     ("day <-> milliseconds", "shared/dates.js", r"re:864e5|86400000", 0,
      "EXTRACTED as DAY_MS. The needle is the CONSTANT rather than one spelling "
      "of the arithmetic - a narrower pattern found five of the nine and a shell "

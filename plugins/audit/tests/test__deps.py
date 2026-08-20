@@ -1021,6 +1021,8 @@ def _cases(check):
                                       "tableHead(['a','b'])"),
         "day <-> milliseconds": ("const d=ms/864e5;", "const d=ms/DAY_MS;"),
         "save confirmation": ("toast('nothing to save - x')", "confirmSave({})"),
+        "heatmap calendar": ("function startOf(g, d) { return d; }",
+                             "periodStart(g, d)"),
         "caret restore": ("n.setSelectionRange(caret,caret)",
                           "restoreCaret(n,caret,back)"),
     }

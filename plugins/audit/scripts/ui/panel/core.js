@@ -409,33 +409,6 @@ function runContained(steps){
 const tableHead=cols=>el('thead',{},el('tr',{},cols.map(c=>
  (c==null||typeof c==='string')?el('th',{},c)
  :el('th',c.attrs||{},c.label,c.extra))));
-/**
- * A UTC day number — days since the epoch — from a `YYYY-MM-DD` string.
- *
- * The panel's whole date vocabulary is this integer: a span is a subtraction, a
- * week is `+7`, a bin lookup is a binary search over it. `Date.UTC` and not
- * `new Date(str)`, because the second parses `'2026-08-20'` as UTC midnight and
- * `'2026-8-20'` as LOCAL midnight, and the ledger's days are UTC dates.
- *
- * It lived in `usage-charts.js` and was already read by five parts, which is a
- * primitive filed under a feature. Here now, with its inverse beside it.
- *
- * @param {string} d - a `YYYY-MM-DD` date
- * @returns {number} whole days since 1970-01-01, UTC
- */
-const dnum=d=>Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))/DAY_MS;
-/**
- * The inverse: a `YYYY-MM-DD` string from a UTC day number.
- *
- * Spelled identically as a local `const iso` inside three separate functions —
- * `usage-charts`, `usage-cards` and `usage-metrics` — which is the shape a
- * one-line helper takes when it has no home: small enough to retype, and then
- * three things to fix when one of them is wrong.
- *
- * @param {number} n - whole days since 1970-01-01, UTC
- * @returns {string} the date as `YYYY-MM-DD`
- */
-const dayIso=n=>new Date(n*DAY_MS).toISOString().slice(0,10);
 /** How long a plain success stays in a savebar's note slot before it dissolves. */
 const SAVE_NOTE_MS=5000;
 /**

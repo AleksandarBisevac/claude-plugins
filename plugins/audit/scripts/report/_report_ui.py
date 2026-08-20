@@ -114,6 +114,7 @@ _SCRIPT_PARTS = (
     "shared/plural.js",
     "shared/clipboard.js",
     "shared/dates.js",
+    "shared/calendar.js",
     "shared/download.js",
     "shared/storage.js",
     "report/page-state.js",

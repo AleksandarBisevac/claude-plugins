@@ -105,6 +105,7 @@ _JS_PARTS = (
     "shared/plural.js",
     "shared/clipboard.js",
     "shared/dates.js",
+    "shared/calendar.js",
     "shared/download.js",
     "shared/storage.js",
     "panel/core.js",

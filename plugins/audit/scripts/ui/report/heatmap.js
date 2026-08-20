@@ -40,27 +40,6 @@
     let anchor = '';
 
     /**
-     * Parse an ISO day as midnight UTC.
-     * @param {string} d ISO day, `YYYY-MM-DD`.
-     * @returns {number} Milliseconds since the epoch.
-     */
-    function dParse(d) { return Date.parse(d + 'T00:00:00Z'); }
-
-    /**
-     * Format an explicit instant back as an ISO day in UTC.
-     * @param {number} ms Milliseconds since the epoch.
-     * @returns {string} `YYYY-MM-DD`.
-     */
-    function dIso(ms) { return new Date(ms).toISOString().slice(0, 10); }
-
-    /**
-     * Weekday index of an ISO day, Monday first, to match the grid's rows.
-     * @param {string} d ISO day.
-     * @returns {number} 0 for Monday through 6 for Sunday.
-     */
-    function wdayOf(d) { return (new Date(dParse(d)).getUTCDay() + 6) % 7; }
-
-    /**
      * The window the heatmap may show: the ledger's own span, narrowed by the
      * global date range whenever one is active.
      * @returns {{lo: string, hi: string}|null} null when the range and the
@@ -80,12 +59,6 @@
      * @param {string} day ISO day.
      * @returns {string} ISO day the period starts on.
      */
-    function startOf(g, day) {
-      if (g === 'week') return dIso(dParse(day) - wdayOf(day) * DAY_MS);
-      if (g === 'month') return day.slice(0, 7) + '-01';
-      if (g === 'year') return day.slice(0, 4) + '-01-01';
-      return day;
-    }
 
     /**
      * Last ISO day of the period starting at `s`.
@@ -93,16 +66,6 @@
      * @param {string} s ISO day the period starts on.
      * @returns {string} ISO day the period ends on.
      */
-    function endOf(g, s) {
-      if (g === 'week') return dIso(dParse(s) + 6 * DAY_MS);
-      if (g === 'month') {
-        // Day zero of the FOLLOWING month is the last day of this one, which is
-        // the only spelling that gets February right without a leap-year rule.
-        return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7), 0));
-      }
-      if (g === 'year') return s.slice(0, 4) + '-12-31';
-      return s;
-    }
 
     /**
      * The period one step away, whether or not it holds any data.
@@ -111,15 +74,6 @@
      * @param {number} dir -1 for earlier, 1 for later.
      * @returns {string} ISO day the neighbouring period starts on.
      */
-    function shift(g, s, dir) {
-      if (g === 'day') return dIso(dParse(s) + dir * DAY_MS);
-      if (g === 'week') return dIso(dParse(s) + dir * 7 * DAY_MS);
-      if (g === 'month') {
-        return dIso(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1 + dir, 1));
-      }
-      if (g === 'year') return (+s.slice(0, 4) + dir) + '-01-01';
-      return s;
-    }
 
     /**
      * Whether any recorded day falls inside a closed ISO-day range.
@@ -127,6 +81,18 @@
      * @param {string} to Last ISO day.
      * @returns {boolean}
      */
+    /**
+     * The calendar is in shared/calendar.js — the panel's heatmap spelled the
+     * same five functions under the same names inside its own closure. Only the
+     * DATA half stays here, and this is it plus the wrapper that hands it over.
+     * @param {'day'|'week'|'month'|'year'} g Granularity.
+     * @param {string} s ISO day the current period starts on.
+     * @param {number} dir -1 for earlier, 1 for later.
+     * @param {{lo: string, hi: string}} b Active bounds.
+     * @returns {string|null} Start of the next populated period, or null.
+     */
+    function seek(g, s, dir, b) { return seekPeriod(g, s, dir, b, hasData); }
+
     function hasData(from, to) {
       // A plain loop, not `Object.keys(...).some(...)`: this runs inside seek()'s
       // bounded walk, which steps up to four thousand periods looking for the
@@ -151,21 +117,6 @@
      * @returns {string|null} Start of the next populated period, or null when
      *   the walk leaves the bounds first.
      */
-    function seek(g, s, dir, b) {
-      let cur = s;
-      // Bounded rather than `while (true)`: leaving the bounds is what normally
-      // stops this walk, and a granularity whose shift failed to advance would
-      // otherwise spin forever with the tab frozen.
-      for (let i = 0; i < 4000; i++) {
-        cur = shift(g, cur, dir);
-        const en = endOf(g, cur);
-        if (en < b.lo || cur > b.hi) return null;
-        const lo = cur < b.lo ? b.lo : cur;
-        const hi = en > b.hi ? b.hi : en;
-        if (hasData(lo, hi)) return cur;
-      }
-      return null;
-    }
 
     /**
      * The name of the period on display, so the grid never shows an unlabelled
@@ -176,8 +127,8 @@
      * @returns {string} Human-readable period name.
      */
     function labelOf(g, s, b) {
-      if (g === 'day') return WD[wdayOf(s)] + ' ' + s;
-      if (g === 'week') return 'Week of ' + s + ' to ' + endOf('week', s);
+      if (g === 'day') return WD[weekdayIndex(s)] + ' ' + s;
+      if (g === 'week') return 'Week of ' + s + ' to ' + periodEnd('week', s);
       if (g === 'month') return MON[+s.slice(5, 7) - 1] + ' ' + s.slice(0, 4);
       if (g === 'year') return s.slice(0, 4);
       return ((dFrom || dTo) ? 'Custom range' : 'All data')
@@ -197,9 +148,9 @@
      * @returns {HeatRow[]}
      */
     function dayRows(day) {
-      return [{ label: WD[wdayOf(day)] + ' ' + day.slice(5),
+      return [{ label: WD[weekdayIndex(day)] + ' ' + day.slice(5),
                 cells: hoursOf(day).slice(),
-                head: WD[wdayOf(day)] + ' ' + day }];
+                head: WD[weekdayIndex(day)] + ' ' + day }];
     }
 
     /**
@@ -213,12 +164,12 @@
      */
     function weekRows(s, en, lo, hi) {
       const rows = [];
-      for (let ms = dParse(s); ms <= dParse(en); ms += DAY_MS) {
-        const d = dIso(ms);
+      for (let n = dnum(s); n <= dnum(en); n++) {
+        const d = dayIso(n);
         const inRange = d >= lo && d <= hi;
-        rows.push({ label: WD[wdayOf(d)] + ' ' + d.slice(5),
+        rows.push({ label: WD[weekdayIndex(d)] + ' ' + d.slice(5),
                     cells: inRange ? hoursOf(d).slice() : null,
-                    head: WD[wdayOf(d)] + ' ' + d });
+                    head: WD[weekdayIndex(d)] + ' ' + d });
       }
       return rows;
     }
@@ -236,7 +187,7 @@
       for (const d of Object.keys(U.days)) {
         if (d < lo || d > hi) continue;
         const vec = hoursOf(d);
-        const tgt = agg[wdayOf(d)];
+        const tgt = agg[weekdayIndex(d)];
         for (let h = 0; h < HOURS; h++) tgt[h] = (tgt[h] || 0) + (vec[h] || 0);
       }
       return agg.map((cells, wd) => ({ label: WD[wd], cells: cells, head: WD[wd] }));
@@ -256,12 +207,12 @@
       const b = bounds();
       if (!b) return null;
       if (gran !== 'all') {
-        if (!anchor) anchor = startOf(gran, b.hi);
-        const anchorEnd = endOf(gran, anchor);
-        if (anchorEnd < b.lo || anchor > b.hi) anchor = startOf(gran, b.hi);
+        if (!anchor) anchor = periodStart(gran, b.hi);
+        const anchorEnd = periodEnd(gran, anchor);
+        if (anchorEnd < b.lo || anchor > b.hi) anchor = periodStart(gran, b.hi);
       }
       const s = gran === 'all' ? b.lo : anchor;
-      const en = gran === 'all' ? b.hi : endOf(gran, s);
+      const en = gran === 'all' ? b.hi : periodEnd(gran, s);
       const lo = s < b.lo ? b.lo : s;
       const hi = en > b.hi ? b.hi : en;
       const rows = gran === 'day' ? dayRows(lo)
@@ -379,7 +330,7 @@
       if (val === gran) return;
       gran = val;
       const b = bounds();
-      anchor = (val === 'all' || !b) ? '' : startOf(val, b.hi);
+      anchor = (val === 'all' || !b) ? '' : periodStart(val, b.hi);
       highlight(granBar, 'data-g', gran);
       render();
     }

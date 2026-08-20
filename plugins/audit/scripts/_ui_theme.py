@@ -1014,6 +1014,7 @@ UI_ASSETS = (
     "report/usage-range.js",
     "shared/clipboard.js",
     "shared/dates.js",
+    "shared/calendar.js",
     "shared/download.js",
     "shared/plural.js",
     "shared/storage.js",

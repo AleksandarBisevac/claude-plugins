@@ -456,12 +456,15 @@ def _cases(check):
           "string - `new Date('2026-8-20')` is LOCAL midnight while the ledger's "
           "days are UTC dates, and the two differ by an offset that turns a day "
           "number into a fraction",
-          "const dnum=d=>Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))"
-          "/DAY_MS;" in M.UI_HTML
+          # In shared/dates.js since the two heatmap calendars were factored -
+          # a shared calendar cannot reach back into a surface for its own
+          # primitives - which is why this reads the shared file's spacing.
+          "const dnum = (d) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1,"
+          in M.UI_HTML
           # ...and the inverse formats through toISOString, which is UTC by
           # definition, so the round trip cannot drift.
-          and "const dayIso=n=>new Date(n*DAY_MS).toISOString().slice(0,10);"
-              in M.UI_HTML
+          and "const dayIso = (n) => new Date(n * DAY_MS).toISOString()"
+              ".slice(0, 10);" in M.UI_HTML
           # One constant, shared with the report rather than spelled again.
           and "const DAY_MS = 86400000;" in M.UI_HTML)
     check("composition's filter state is hoisted too, so it survives a re-render",

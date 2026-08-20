@@ -24,13 +24,20 @@
 //
 // WHAT THIS CANNOT REACH, said plainly rather than discovered later:
 //
-//   Anything declared inside a nested function. Both heatmap calendars
-//   (startOf / endOf / shift / seek / hasData / the weekday helper, written
-//   twice under the same names) live inside an inner scope and close over
-//   locals — report.js's inside a nested IIFE, panel.js's inside uHeatmap.
-//   Neither is reachable without changing the source, so neither is tested
-//   here. Reaching them is a source change, and a source change is a separate
-//   decision from adding a test.
+//   Anything declared inside a nested function. This note used to name both
+//   heatmap calendars as the example — startOf / endOf / shift / seek and a
+//   weekday helper, written twice under the same names, one copy inside the
+//   report's IIFE and one inside the panel's uHeatmap — and said that reaching
+//   them was a source change, and a source change a separate decision from
+//   adding a test. That decision was taken: they are one `shared/calendar.js`
+//   now, they close over nothing, and tools/ui-tests/calendar.test.mjs is the
+//   test this note was waiting for. The DATA half stayed behind in each surface
+//   and is still out of reach from here, which is why the calendar takes it as a
+//   predicate rather than closing over it.
+//
+//   The limit itself stands: a name declared inside a function is not reachable
+//   from this harness, and the answer is to hoist what deserves hoisting rather
+//   than to reach further.
 //
 //   Anything whose behaviour IS the DOM. The shim below is a stub, not a
 //   browser: it stores attributes and returns stub elements, and it says

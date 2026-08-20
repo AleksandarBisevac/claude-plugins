@@ -138,7 +138,7 @@ function uMonthly(facts){
  * @type {{g: string, a: string}}
  */
 let UHM={g:'all',a:''};
-/** @type {string[]} Row labels, Monday first, matching wday()'s own ordering. */
+/** @type {string[]} Row labels, Monday first, matching weekdayIndex()'s own ordering. */
 const UHM_WD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 /** @type {string[]} Month names for the period label, January at index 0. */
 const UHM_MON=['January','February','March','April','May','June','July',
@@ -164,52 +164,37 @@ function uHeatmap(facts){
  if(!perDay.size)return[];
  const ds=[...perDay.keys()].sort();
  const b={lo:ds[0],hi:ds[ds.length-1]};
- const wday=d=>(new Date(d+'T00:00:00Z').getUTCDay()+6)%7;   // Monday-first
- const startOf=(g,d)=>g==='week'?dayIso(dnum(d)-wday(d))
-  :g==='month'?d.slice(0,7)+'-01':g==='year'?d.slice(0,4)+'-01-01':d;
- const endOf=(g,s)=>g==='week'?dayIso(dnum(s)+6)
-  :g==='month'?s.slice(0,7)+'-'
-    +p2(new Date(Date.UTC(+s.slice(0,4),+s.slice(5,7),0)).getUTCDate())
-  :g==='year'?s.slice(0,4)+'-12-31':s;
- const shift=(g,s,dir)=>g==='day'?dayIso(dnum(s)+dir)
-  :g==='week'?dayIso(dnum(s)+7*dir)
-  :g==='month'?dayIso(Date.UTC(+s.slice(0,4),+s.slice(5,7)-1+dir,1)/DAY_MS)
-  :(+s.slice(0,4)+dir)+'-01-01';
+ // The calendar itself is in shared/calendar.js — the report's heatmap spelled
+ // the same five functions under the same names inside its own closure. Only the
+ // DATA half stays here: this surface holds its recorded days as a sorted array,
+ // and a plain loop is what keeps seek's bounded walk from allocating per step.
  const hasData=(a,z)=>{for(const d of ds)if(d>=a&&d<=z)return true;return false;};
- // The next period in `dir` that is inside the bounds AND records anything —
- // "never navigate into empty periods" is a rule about data, not the
- // calendar, so gap days between two worked weeks are stepped over.
- const seek=(g,s,dir)=>{for(let i=0;i<4000;i++){s=shift(g,s,dir);
-   const en=endOf(g,s);
-   if(en<b.lo||s>b.hi)return null;
-   const lo=s<b.lo?b.lo:s,hi=en>b.hi?b.hi:en;
-   if(hasData(lo,hi))return s;}
-  return null;};
+ const seek=(g,s,dir)=>seekPeriod(g,s,dir,b,hasData);
  // Clamp the anchor into the CURRENT bounds: a filter change can move the
  // universe out from under a period picked against the old one.
  if(UHM.g!=='all'){
-  if(!UHM.a)UHM.a=startOf(UHM.g,b.hi);
-  if(endOf(UHM.g,UHM.a)<b.lo||UHM.a>b.hi)UHM.a=startOf(UHM.g,b.hi);}
- const s=UHM.g==='all'?b.lo:UHM.a, en=UHM.g==='all'?b.hi:endOf(UHM.g,s);
+  if(!UHM.a)UHM.a=periodStart(UHM.g,b.hi);
+  if(periodEnd(UHM.g,UHM.a)<b.lo||UHM.a>b.hi)UHM.a=periodStart(UHM.g,b.hi);}
+ const s=UHM.g==='all'?b.lo:UHM.a, en=UHM.g==='all'?b.hi:periodEnd(UHM.g,s);
  const lo=s<b.lo?b.lo:s, hi=en>b.hi?b.hi:en;
  // rows: day/week keep the calendar (one row per date); coarser grains
  // aggregate by weekday, like the report's all-data view.
  const rows=[];
  if(UHM.g==='day'){
-  rows.push({label:UHM_WD[wday(lo)]+' '+lo,
+  rows.push({label:UHM_WD[weekdayIndex(lo)]+' '+lo,
     cells:perDay.get(lo)||new Array(24).fill(0)});}
  else if(UHM.g==='week'){
   for(let n=dnum(s);n<=dnum(en);n++){const d=dayIso(n);
-   rows.push({label:UHM_WD[wday(d)]+' '+d.slice(5),head:UHM_WD[wday(d)]+' '+d,
+   rows.push({label:UHM_WD[weekdayIndex(d)]+' '+d.slice(5),head:UHM_WD[weekdayIndex(d)]+' '+d,
      cells:(d>=lo&&d<=hi)?(perDay.get(d)||new Array(24).fill(0)):null});}}
  else{
   const agg=[...Array(7)].map(()=>new Array(24).fill(0));
   for(const[d,v]of perDay){if(d<lo||d>hi)continue;
-   const t=agg[wday(d)];for(let h=0;h<24;h++)t[h]+=v[h];}
+   const t=agg[weekdayIndex(d)];for(let h=0;h<24;h++)t[h]+=v[h];}
   for(let w=0;w<7;w++)rows.push({label:UHM_WD[w],cells:agg[w]});}
  let peak=0;rows.forEach(r=>(r.cells||[]).forEach(v=>{if(v>peak)peak=v;}));
- const label=UHM.g==='day'?UHM_WD[wday(lo)]+' '+lo
-  :UHM.g==='week'?'Week of '+s+' to '+endOf('week',s)
+ const label=UHM.g==='day'?UHM_WD[weekdayIndex(lo)]+' '+lo
+  :UHM.g==='week'?'Week of '+s+' to '+periodEnd('week',s)
   :UHM.g==='month'?UHM_MON[+s.slice(5,7)-1]+' '+s.slice(0,4)
   :UHM.g==='year'?s.slice(0,4)
   :((UF.day||UF.range!=='all')?'Custom range':'All data')
