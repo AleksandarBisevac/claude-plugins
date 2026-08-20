@@ -51,9 +51,12 @@ async function refreshFromDisk(){
  // form against STATE, and a swapped STATE would misjudge every open form.
  // The ADO card lives inside #comp, so its unsaved edits keep that view dirty
  // too — a disk refresh must not eat them any more than the form's own.
- const dirty={guards:editRows('guards').length>0,
-   comp:editRows('comp').length>0||editRows('ado').length>0,
-   policy:editRows('policy').length>0};
+ // surfaceDirty, not `.length>0`: a surface that could not be read is treated as
+ // dirty, so it keeps its edits and gets the notice instead of being re-rendered
+ // out from under whoever was typing in it.
+ const dirty={guards:surfaceDirty('guards'),
+   comp:surfaceDirty('comp')||surfaceDirty('ado'),
+   policy:surfaceDirty('policy')};
  const y=window.scrollY;
  try{
   STATE=await api('GET','/api/state');

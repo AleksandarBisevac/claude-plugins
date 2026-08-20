@@ -85,7 +85,11 @@ function interacting(){
  // rest of the session — which is exactly what the first version of this did,
  // caught by the out-of-band write test one step later.
  const v=a.closest('#comp,#guards,#policy');
- return !!v&&editRows(v.id).length===0;}
+ // A CLEAN form defers the refresh; a dirty one does not, because the refresh
+ // never rebuilds a dirty view. `surfaceDirty` also answers true when the rows
+ // could not be read, which lands on "do not defer" — correct, because the
+ // refresh will then leave the view alone anyway.
+ return !!v&&!surfaceDirty(v.id);}
 /**
  * One tick: fetch the narrow payload, hand a moved disk stamp off, and repaint
  * Overview if — and only if — something a badge shows actually changed.

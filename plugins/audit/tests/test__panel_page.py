@@ -471,9 +471,31 @@ def _cases(check):
           and "EDITS.guards=()=>configChanges(cfg);" in M.UI_HTML
           and "EDITS.policy=()=>policyChanges();" in M.UI_HTML
           and "EDITS.ado=()=>adoRows(saved,ADRAFT);" in M.UI_HTML)
-    check("beforeunload interrupts a close only when there is something to lose",
+    # `some(surfaceDirty)`, not `dirtyRows().length`. A surface whose change
+    # computation THROWS used to answer `[]` - the same answer as a clean one - so
+    # the close was not interrupted and the reader lost everything typed since the
+    # last save. `surfaceDirty` answers true for "cannot tell", and the behaviour
+    # is asserted in tools/ui-tests/dirty-surface.test.mjs, which a substring pin
+    # cannot do: the difference is what happens when a callback raises.
+    # The guide card's badge used to print "read-only:" as FIXED TEXT while
+    # `_help.guide_card` computed a `readOnly` verdict the page never read - a
+    # claim with no basis, on the surface that exists to tell a reader what an
+    # agent may do, and nothing asserted the badge's text at all. The wording is
+    # decided by `hToolClaim` now; its three answers are asserted in
+    # tools/ui-tests/claims.test.mjs and what belongs here is the WIRING.
+    check("hg1 the guide card's tool badge reads the payload's own readOnly "
+          "verdict, and the fixed claim it used to print is gone",
+          "hToolClaim(a.readOnly)+(a.tools||[]).join(' · ')" in M.UI_HTML
+          and "'read-only: '+(a.tools" not in M.UI_HTML
+          and "if(readOnly===true)return 'read-only: ';" in M.UI_HTML
+          and "if(readOnly===false)return 'NOT read-only: ';" in M.UI_HTML)
+
+    check("beforeunload interrupts a close when there is something to lose OR "
+          "when the panel cannot tell whether there is",
           "addEventListener('beforeunload',ev=>{" in M.UI_HTML
-          and "if(!dirtyRows().length)return;" in M.UI_HTML)
+          and "if(!Object.keys(EDITS).some(surfaceDirty))return;" in M.UI_HTML
+          and "function surfaceDirty(k){const r=editRows(k);return r===null"
+              "||r.length>0;}" in M.UI_HTML)
     check("a re-render does not stack up one more delegated listener per save",
           "if(VIEWAC[id])VIEWAC[id].abort();" in M.UI_HTML
           and M.UI_HTML.count("onViewEdit('") == 2)
@@ -1783,7 +1805,7 @@ def _cases(check):
           and "const v=a.closest('#comp,#guards,#policy');" in M.UI_HTML
           # ...and ONLY there: a caret in Overview's or Usage's search box is a
           # filter, whose state the refresh preserves, so it defers nothing.
-          and "return !!v&&editRows(v.id).length===0;}" in M.UI_HTML
+          and "return !!v&&!surfaceDirty(v.id);}" in M.UI_HTML
           and "&&!interacting()){FP=fp;refreshFromDisk();}" in M.UI_HTML)
 
     # --- v0.34 C2 (mc): the model combo, three sources -------------------------
@@ -1916,7 +1938,7 @@ def _cases(check):
     check("lv: dirtiness is judged BEFORE the state swap and only clean views "
           "re-render - a dirty one keeps its edits and gets the persistent "
           "notice instead",
-          "const dirty={guards:editRows('guards').length>0" in _rfd
+          "const dirty={guards:surfaceDirty('guards')" in _rfd
           and "if(!dirty.guards)reRender('guards',renderSettings);"
               "else staleNote('guards');" in _rfd
           and "if(!dirty.comp)reRender('comp',renderComp);"

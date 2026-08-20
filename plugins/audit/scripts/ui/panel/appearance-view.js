@@ -467,18 +467,39 @@ function tImport(input){
     ?data.tokens:data;
   if(!tokens||typeof tokens!=='object'){toast('no tokens in that file','err');return;}
   const known=new Set(((THEME&&THEME.groups)||[]).flatMap(g=>g.tokens));
-  const refused=[];
+  const refused=[],unusable=[];
+  let applied=0;
   Object.keys(tokens).forEach(name=>{
    // The file's own metadata, skipped rather than refused: `$description`, the
    // name, and the undo history a save writes back into the theme file.
    if(name.charAt(0)==='$'||name==='name'||name==='history')return;
    if(!known.has(name)){refused.push(name);return;}
-   const e=tokens[name]||{};
-   if(e.$value!==undefined)tSet(name,'light',String(e.$value));
-   if(!tSingle(name)&&e.$dark!==undefined)tSet(name,'dark',String(e.$dark));});
+   // A BARE STRING is a value, and this is what the comment above always
+   // promised. A hand-written map is `{"--accent":"#abc"}`, not
+   // `{"--accent":{"$value":"#abc"}}` - and on the string form `e.$value` was
+   // undefined, so the token was neither applied nor refused and the toast still
+   // said "loaded as a draft". Silent success on a file that changed nothing.
+   const raw=tokens[name];
+   const e=(typeof raw==='string')?{$value:raw}
+     :((raw&&typeof raw==='object')?raw:null);
+   if(!e){unusable.push(name);return;}
+   let touched=false;
+   if(e.$value!==undefined){tSet(name,'light',String(e.$value));touched=true;}
+   if(!tSingle(name)&&e.$dark!==undefined){
+    tSet(name,'dark',String(e.$dark));touched=true;}
+   // A known name whose entry carries no value sets nothing. Counted, so it
+   // cannot hide inside a success message.
+   if(touched)applied+=1;else unusable.push(name);});
   renderAppearance();
-  toast(refused.length
-    ? ('loaded as a draft; '+refused.length+' unknown token(s) refused: '
-       +refused.slice(0,3).join(', '))
-    : 'loaded as a draft — nothing is written until you Save');};
+  // NOTHING APPLIED IS NOT A SUCCESS. Every branch below names what happened,
+  // and the count of what landed comes first, because that is the thing the
+  // reader is about to Save.
+  const notes=[];
+  if(refused.length)notes.push(refused.length+' unknown: '+refused.slice(0,3).join(', '));
+  if(unusable.length)notes.push(unusable.length+' with no usable value: '
+    +unusable.slice(0,3).join(', '));
+  const tail=notes.length?(' ('+notes.join('; ')+')'):'';
+  if(!applied)toast('nothing in that file could be applied'+tail,'err');
+  else toast(applied+' token(s) loaded as a draft'+tail
+    +' — nothing is written until you Save');};
  rd.readAsText(f);}

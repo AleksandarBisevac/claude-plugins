@@ -98,7 +98,31 @@ const EDITS={guards:null,comp:null,policy:null};
  *   direction this must not be wrong in, since it is what decides whether a close
  *   is interrupted
  */
-function editRows(k){try{return (EDITS[k]?EDITS[k]():[])||[];}catch(e){return[];}}
+function editRows(k){try{return (EDITS[k]?EDITS[k]():[])||[];}
+ catch(cause){
+  // NULL, not []. Every caller of this asks "is this surface clean", and an
+  // empty list is the answer for CLEAN — so a throw used to make a surface with
+  // unsaved edits indistinguishable from one with none. Three things then went
+  // wrong at once and all three lose the reader's work: beforeunload declined to
+  // interrupt the close, the 5s poll decided nobody was typing and tore the form
+  // down, and Overview's refresh re-rendered a view it thought was clean.
+  // `null` means "could not tell", and `surfaceDirty` treats it as dirty.
+  console.error('editRows failed for '+k+'; treating it as dirty',cause);
+  return null;}}
+
+/**
+ * Whether a surface has anything to lose — including "cannot tell".
+ *
+ * FAIL-SAFE, and the direction is the whole point: interrupting a close that did
+ * not need interrupting costs one click, and not interrupting one that did costs
+ * everything typed since the last save. `SECURITY.md`'s table says fail-open for
+ * advisory paths and fail-loud for guards; this is a guard over the reader's own
+ * work, so it errs toward keeping it.
+ *
+ * @param {string} k a key of EDITS
+ * @returns {boolean} true when there are unsaved rows, or when reading failed
+ */
+function surfaceDirty(k){const r=editRows(k);return r===null||r.length>0;}
 /**
  * Every unsaved row on every registered surface, in one list.
  *
@@ -107,7 +131,9 @@ function editRows(k){try{return (EDITS[k]?EDITS[k]():[])||[];}catch(e){return[];
  */
 function dirtyRows(){return Object.keys(EDITS).reduce((a,k)=>a.concat(editRows(k)),[]);}
 addEventListener('beforeunload',ev=>{
- if(!dirtyRows().length)return;              // never interrupt a clean close
+ // `some(surfaceDirty)` rather than `dirtyRows().length`: a surface whose rows
+ // could not be computed counts as dirty, and its rows cannot appear in a list.
+ if(!Object.keys(EDITS).some(surfaceDirty))return;   // never interrupt a clean close
  ev.preventDefault();ev.returnValue='';return '';});
 
 // --- change rows: {target, field, from, to} -------------------------------------

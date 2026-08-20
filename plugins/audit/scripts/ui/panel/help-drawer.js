@@ -119,10 +119,29 @@ function helpDrawer(){
  *   the help payload
  * @returns {HTMLDetailsElement|null} the card, or null on an install with no guide
  *   agent — nothing at all rather than a hint pointing at something absent.
- *   The badge's "read-only" wording is fixed text: the payload's own `readOnly`
- *   flag is computed and NOT read here, so the tools it lists are the agent's while
- *   the claim about them is this file's
+ *   The badge reads the payload's own `readOnly` verdict and says only what it
+ *   supports: read-only when true, NOT read-only when false, and neither when the
+ *   payload did not declare it. It used to print "read-only" as fixed text while
+ *   ignoring that flag, so an agent that gained an Edit tool stayed advertised as
+ *   read-only
  */
+/**
+ * How to introduce an agent's tool list, given what the server said about it.
+ *
+ * Named `h*` like everything else in the drawer: `t*` is the theme code's prefix,
+ * and every top-level name in this page shares one scope.
+ *
+ * @param {boolean|undefined} readOnly `_help.guide_card`'s own verdict
+ * @returns {string} the prefix, including its separator
+ */
+function hToolClaim(readOnly){
+ if(readOnly===true)return 'read-only: ';
+ // Not "writes": a tool beyond the read-only set might be Bash or WebFetch, and
+ // naming an effect the list does not prove would be the same mistake in the
+ // other direction. What IS known is that the set is not the read-only one.
+ if(readOnly===false)return 'NOT read-only: ';
+ return 'tools: ';}
+
 function hAgentCard(doc){const a=doc&&doc.agent;if(!a)return null;
  // Shut, for the same reason the policy tab's four limits are: it is read once and
  // remembered, and left open it is a permanent 250px footer over the page someone
@@ -135,8 +154,19 @@ function hAgentCard(doc){const a=doc&&doc.agent;if(!a)return null;
    el('b',{},'This panel will not start it for you'),
    ' — everything above is already written down, and spending a model on it would '
    +'be paying for a page you are looking at.'));
+ // THE CLAIM CARRIES ITS BASIS, which is this repo's own rule and this badge
+ // used to break it. The word "read-only" was fixed text and `a.readOnly` — which
+ // `_help.guide_card` computes as `sorted(tools) == READ_ONLY_TOOLS` — was never
+ // read. An agent that gained an `Edit` tool would still have been advertised as
+ // read-only, with every gate green, on the surface whose entire job is telling
+ // a reader what an agent may do.
+ //
+ // Three answers, because there are three states. `true` earns the claim.
+ // `false` is a fact worth saying loudly on this surface. `undefined` means the
+ // payload did not declare it, and then the tools are listed with NO claim
+ // attached — a basis with no claim is noise, but a claim with no basis is worse.
  box.append(el('div',{class:'dtools'},
-   el('span',{class:'badge'},'read-only: '+(a.tools||[]).join(' · ')),
+   el('span',{class:'badge'},hToolClaim(a.readOnly)+(a.tools||[]).join(' · ')),
    a.model?el('span',{class:'badge'},'model '+a.model):null,
    a.effort?el('span',{class:'badge'},'effort '+a.effort):null));
  return box;}
