@@ -131,7 +131,7 @@ function mdNear(a,b){if(a===b)return false;
   for(let i=0;i<x.length;i++)if(x[i]!==y[i])d.push(i);
   if(d.length===1)return true;
   return d.length===2&&d[1]===d[0]+1&&x[d[0]]===y[d[1]]&&x[d[1]]===y[d[0]];}
- const s=x.length<y.length?x:y,l=x.length<y.length?y:x;
+ const shorter=x.length<y.length,s=shorter?x:y,l=shorter?y:x;
  let i=0,j=0,used=false;
  while(i<s.length){if(s[i]===l[j]){i++;j++;continue;}
   if(used)return false;used=true;j++;}

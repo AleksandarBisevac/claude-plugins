@@ -489,7 +489,6 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
   const mh=Math.min(menu.scrollHeight,240);
   menu.style.top=(r.bottom+4+mh>vh-gut&&r.top-4-mh>gut
     ?r.top-4-mh:r.bottom+4)+'px';};
- me.place=place;
  const render=()=>{const q=inp.value.trim().toLowerCase();
   const menu=comboMenu();
   if(CMOWNER&&CMOWNER!==me)CMOWNER.close();

@@ -585,7 +585,6 @@ def theme_state(project):
                  if info.get("path") else None),
         "name": info["name"],
         "error": info["error"],
-        "presets": _theme.PRESETS,
         "warnings": _theme.contrast_warnings(stored) if stored else [],
         "layout": _theme.theme_layout(stored),
         "densities": sorted(_theme.DENSITIES),
