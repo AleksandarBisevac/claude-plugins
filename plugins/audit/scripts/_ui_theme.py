@@ -698,7 +698,13 @@ def contrast_ratio(fg, bg):
 # The pairs a reader actually reads: body text and muted text on each of the
 # three grounds. Not a full audit — a warning that names the pair it measured
 # is worth more than a score nobody can act on.
-_CONTRAST_PAIRS = (("--text", "--bg", 4.5), ("--text", "--surface", 4.5),
+# PUBLIC, because the panel's live preview reads this table rather than
+# restating it: `_panel_page.py` JSON-dumps it into the page as
+# `__CONTRAST_PAIRS__`. It used to be private and the panel carried its own copy
+# of FOUR of these six, so a reader editing a theme could be told "no warnings"
+# by the draft check while the server would have warned on two pairs - and both
+# lists are concatenated into one the reader cannot split.
+CONTRAST_PAIRS = (("--text", "--bg", 4.5), ("--text", "--surface", 4.5),
                    ("--text", "--surface-2", 4.5), ("--muted", "--surface", 4.5),
                    ("--muted", "--bg", 4.5), ("--accent", "--surface", 3.0))
 
@@ -717,7 +723,7 @@ def contrast_warnings(theme, base=None):
         return entry.get("$value") if mode == "light" else \
             entry.get("$dark", entry.get("$value"))
 
-    for fg, bg, floor in _CONTRAST_PAIRS:
+    for fg, bg, floor in CONTRAST_PAIRS:
         for mode in ("light", "dark"):
             ratio = contrast_ratio(val(fg, mode), val(bg, mode))
             if ratio is not None and ratio < floor:

@@ -376,15 +376,21 @@ function tLum(hex){const m=tHex(hex);if(!m)return null;
 function tRatio(a,b){const la=tLum(a),lb=tLum(b);
  if(la===null||lb===null)return null;
  const hi=Math.max(la,lb),lo=Math.min(la,lb);
- return (hi+0.05)/(lo+0.05);}
+ // ROUNDED TO 2dp BEFORE ANY COMPARISON, because `_ui_theme.contrast_ratio`
+ // returns `round(x, 2)` and the floor is checked against that. Comparing the
+ // raw quotient made the two sides disagree for a true ratio anywhere in
+ // [4.495, 4.5): Python saw 4.5 and stayed quiet, this saw 4.497 and warned.
+ return Math.round(((hi+0.05)/(lo+0.05))*100)/100;}
 /**
  * @type {Array<[string, string, number]>} the pairs worth checking, as
  * [foreground token, background token, the ratio below which it is reported].
  * 4.5 is the AA floor for body text; 3 is the large-text and non-text floor the
  * accent only has to clear.
  */
-const TPAIRS=[['--text','--bg',4.5],['--text','--surface',4.5],
-  ['--muted','--surface',4.5],['--accent','--surface',3]];
+// _ui_theme.CONTRAST_PAIRS itself, JSON-dumped into the page by _panel_page.py -
+// NOT a copy of its rows. This carried four of the six, so a draft could report
+// no warnings where the server reported two, and the reader sees one merged list.
+const TPAIRS=__CONTRAST_PAIRS__;
 /**
  * Every TPAIRS combination the DRAFT fails, in both modes, as sentences.
  *
@@ -398,9 +404,13 @@ function tLocalWarnings(){
  const out=[];
  TPAIRS.forEach(([fg,bg,floor])=>TMODES.forEach(mode=>{
   const r=tRatio(tVal(fg,mode),tVal(bg,mode));
+  // The floor is rendered at ONE decimal because Python's message uses `%.1f`,
+  // so an accent floor of 3 reads '3.0:1' on both sides. These two lists are
+  // concatenated for the reader; a difference in wording between the halves is a
+  // difference the reader would have to attribute, and cannot.
   if(r!==null&&r<floor)out.push(fg+' on '+bg+' in '+mode+' mode is '
-    +r.toFixed(2)+':1 — below '+floor+':1. A warning, not a refusal: your '
-    +'theme, your readers.');}));
+    +r.toFixed(2)+':1 — below '+floor.toFixed(1)+':1. A warning, not a refusal: '
+    +'your theme, your readers.');}));
  return out;}
 
 // --- taking a theme out of the panel, and bringing one back ----------------

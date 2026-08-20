@@ -278,10 +278,18 @@ export const PANEL_STRING_PLACEHOLDERS = ['__AUDIT_TOKEN__', '__AUDIT_PROJECT__'
 
 const PLACEHOLDER_RE = /__[A-Z0-9_]+__/g;
 
-export function substitutePanelPlaceholders(src) {
+export function substitutePanelPlaceholders(src, overrides) {
   const seen = new Set();
+  const given = overrides || {};
   const out = src.replace(PLACEHOLDER_RE, (m) => {
     seen.add(m);
+    // An override is the REAL value, and it exists because five of these
+    // placeholders are the cross-language channel: the server substitutes a
+    // Python constant into them. Stubbing them all as `{}` means a sandbox case
+    // about `TPAIRS` or `COST_BAND_PARAMS` runs against an empty object and
+    // proves nothing about the table that actually ships. A case that needs the
+    // real one asks for it; the default stays a stub so nothing else pays.
+    if (Object.prototype.hasOwnProperty.call(given, m)) return given[m];
     return PANEL_STRING_PLACEHOLDERS.indexOf(m) >= 0
       ? JSON.stringify(m === '__AUDIT_TOKEN__' ? 'ui-test-token' : '/tmp/ui-test-project')
       : '{}';
@@ -340,7 +348,8 @@ export function loadReport(options) {
 
 export function loadPanel(options) {
   const opts = options || {};
-  const prepared = substitutePanelPlaceholders(mutated(assemblePanelBody(), opts));
+  const prepared = substitutePanelPlaceholders(mutated(assemblePanelBody(), opts),
+                                              opts.placeholders);
   const loaded = loadInto(prepared.source, 'panel parts', opts);
   loaded.placeholders = prepared.placeholders;
   return loaded;

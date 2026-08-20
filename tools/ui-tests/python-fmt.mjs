@@ -41,17 +41,21 @@ export function pythonInterpreter() {
     + 'are NOT being silently skipped. Tried:\n  ' + tried.join('\n  '));
 }
 
+// The module is an ARGUMENT, so a second cross-language claim does not need a
+// second copy of this protocol. It began as `_fmt` only; `_ui_theme` joined it
+// when the contrast checker turned out to grade four pairs against Python's six,
+// and the fix was to stop having two tables rather than to align them by hand.
 const BRIDGE = [
-  'import json, os, sys',
+  'import importlib, json, os, sys',
   'sys.path.insert(0, sys.argv[1])',
-  'import _fmt',
+  'mod = importlib.import_module(sys.argv[2])',
   'calls = json.load(sys.stdin)',
   'out = []',
   'for name, args in calls:',
-  '    fn = getattr(_fmt, name, None)',
+  '    fn = getattr(mod, name, None)',
   '    if fn is None:',
-  '        sys.exit("_fmt has no attribute %r" % (name,))',
-  '    out.append(fn(*args))',
+  '        sys.exit("%s has no attribute %r" % (sys.argv[2], name))',
+  '    out.append(fn(*args) if callable(fn) else fn)',
   'json.dump(out, sys.stdout)',
 ].join('\n');
 
@@ -60,14 +64,29 @@ const BRIDGE = [
  * @param {Array<[string, Array<unknown>]>} calls e.g. [['fmt_tokens', [2.6]], ...]
  */
 export function pyFmt(calls) {
+  return pyCall('_fmt', calls);
+}
+
+/**
+ * The same, against any module under `scripts/`.
+ *
+ * A non-callable attribute is returned as its VALUE, so a table can be compared
+ * as directly as a function result — which is the point for `CONTRAST_PAIRS`
+ * and its like: the claim is that the JavaScript reads Python's table, and the
+ * only way to check that is to fetch the table.
+ *
+ * @param {string} moduleName e.g. `'_ui_theme'`
+ * @param {Array<[string, Array<unknown>]>} calls
+ */
+export function pyCall(moduleName, calls) {
   if (!Array.isArray(calls) || !calls.length) {
-    throw new Error('pyFmt called with no cases — an empty batch would return an '
+    throw new Error('pyCall called with no cases — an empty batch would return an '
       + 'empty list and every comparison over it would vacuously pass');
   }
   const exe = pythonInterpreter();
   let stdout;
   try {
-    stdout = execFileSync(exe, ['-c', BRIDGE, SCRIPTS_DIR], {
+    stdout = execFileSync(exe, ['-c', BRIDGE, SCRIPTS_DIR, moduleName], {
       input: JSON.stringify(calls),
       encoding: 'utf8',
       // stdout is the ANSWER even on a non-zero exit here, so both streams are
@@ -75,13 +94,13 @@ export function pyFmt(calls) {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
   } catch (cause) {
-    throw new Error('the _fmt bridge failed (' + exe + '): '
+    throw new Error('the ' + moduleName + ' bridge failed (' + exe + '): '
       + String(cause.stderr || cause.message).trim()
       + '\nstdout was: ' + String(cause.stdout || '').trim());
   }
   const out = JSON.parse(stdout);
   if (out.length !== calls.length) {
-    throw new Error('the _fmt bridge returned ' + out.length + ' results for '
+    throw new Error('the ' + moduleName + ' bridge returned ' + out.length + ' results for '
       + calls.length + ' calls');
   }
   return out;

@@ -111,6 +111,12 @@ _ulmod_for_ui = _loader.load_script("usage_ledger.py",
                                     modname="audit_usage_ledger")
 UI_HTML = UI_HTML.replace("__COST_BAND_PARAMS__",
                           json.dumps(_ulmod_for_ui.COST_BAND_PARAMS, sort_keys=True))
+# The contrast pairs the Appearance tab's live preview grades, from _ui_theme's OWN
+# table rather than a copy of it. The panel used to carry four of these six, so a
+# draft could report no warnings where the server reported two - and the two lists
+# are concatenated for the reader, who cannot tell which half produced which.
+UI_HTML = UI_HTML.replace("__CONTRAST_PAIRS__",
+                          json.dumps([list(p) for p in _theme.CONTRAST_PAIRS]))
 # th (F-P-6): the token block is substituted LAST, and into two copies.
 # UI_TEMPLATE keeps the marker so do_GET can dress the page in THIS project's
 # theme per request — a theme is a file on disk, and the reader who just saved

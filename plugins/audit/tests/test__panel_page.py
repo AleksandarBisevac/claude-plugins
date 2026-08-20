@@ -1181,6 +1181,33 @@ def _cases(check):
     check("no advice renders nothing at all",
           "if(adv.length){" in M.UI_HTML)
 
+    # --- contrast pairs, substituted rather than restated -------------------------
+    # The Appearance tab's live preview graded FOUR pairs while _ui_theme graded
+    # six, and the two result lists are concatenated for the reader - so a draft
+    # could report no warnings where the server reported two, in one list nobody
+    # can attribute. The panel reads _ui_theme.CONTRAST_PAIRS now, substituted by
+    # _panel_page.py the way __COST_BAND_PARAMS__ already was.
+    #
+    # Asserted against the module's OWN table rather than against six literals
+    # written here: a pin that restated the pairs would be a third copy of them.
+    _cp = _theme.CONTRAST_PAIRS
+    check("cp1 every contrast pair _ui_theme declares reaches the page, and the "
+          "placeholder is gone - %d pair(s)" % (len(_cp),),
+          len(_cp) >= 5
+          and "__CONTRAST_PAIRS__" not in M.UI_HTML
+          and all(('"%s", "%s"' % (fg, bg)) in M.UI_HTML for fg, bg, _f in _cp))
+    check("cp2 ...and the panel no longer carries a table of its own: the "
+          "literal it used to open with is gone, so a fifth copy cannot hide "
+          "behind a passing cp1",
+          "const TPAIRS=[['--text','--bg'" not in M.UI_HTML
+          and "const TPAIRS=[[" in M.UI_HTML)
+    # The two the panel was blind to, by name. cp1 would pass if _ui_theme itself
+    # lost them, and losing them is the regression that matters most: it is the
+    # accessibility check quietly measuring less.
+    check("cp3 the two pairs the panel used to miss are still in the table",
+          any(fg == "--text" and bg == "--surface-2" for fg, bg, _f in _cp)
+          and any(fg == "--muted" and bg == "--bg" for fg, bg, _f in _cp))
+
     # --- cost bands ---------------------------------------------------------------
     # cost_bands() and panel.js's uBandInfo() used to be held together only by a
     # comment ("Mirrors cost_bands() in usage_ledger.py") asserted present in the

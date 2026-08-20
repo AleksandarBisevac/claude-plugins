@@ -1555,6 +1555,16 @@ def ui_asset_names(ui_dir):
 #
 # The live count is printed on every run, so the number in this table is never
 # what a reader trusts - the same reason `count-ui-pins.py` exists.
+#
+# WHAT THIS REGISTRY CANNOT REACH, said rather than implied: it scans `ui/*.js`
+# only, so a concern whose second copy lives in PYTHON is invisible to it. Those
+# are held by differential tests instead - the JavaScript is run in a VM and
+# compared against the live Python through `tools/ui-tests/python-fmt.mjs`, which
+# is how `uTok`'s truncation and the Appearance tab's contrast pairs were both
+# caught. The two mechanisms answer different questions and neither substitutes
+# for the other: this one asks "is there a second implementation", a differential
+# test asks "do the two agree". A concern can pass one and fail the other, and
+# the contrast pairs did exactly that for as long as they existed.
 SHARED_CONCERNS = (
     ("blob download", "shared/download.js", "URL.createObjectURL", 0,
      "one revoke policy. Four sites had drifted to three, one of them revoking "
