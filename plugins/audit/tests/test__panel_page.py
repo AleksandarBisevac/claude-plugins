@@ -860,11 +860,39 @@ def _cases(check):
           "true of every place the draft is set, not merely somewhere",
           _pdraft == ["POLICY&&POLICY.stored"] * 4
           and "pRuleOf(POLICY.stored,kind,r.name,tag)" in M.UI_HTML)
-    check("a switch moves an EXACT name only, so a glob covering ten rows is not "
-          "silently dropped by pressing Default on one of them",
-          "for(const l of ['deny','allow'])if((src[l]||[]).indexOf(name)>=0)"
-          in M.UI_HTML
+    # THE PIN THAT USED TO BE HERE ASSERTED A SPELLING, AND THE SPELLING DID NOT
+    # DELIVER ITS OWN CLAIM. It read
+    #   "for(const l of ['deny','allow'])if((src[l]||[]).indexOf(name)>=0)"
+    # and its label promised "an EXACT name only". On a LIST that holds; on a
+    # string it does not, because `indexOf` is then a substring search - a
+    # hand-written `"deny": "nope"` made pRuleOf answer 'deny' for the capability
+    # `op`, which is a rule reported for something nothing had denied, in the view
+    # that decides whether a skill may run at all. The pin could not see it: it
+    # checked the characters, not the behaviour, and the characters were exactly
+    # what it wanted.
+    #
+    # The property is checked where it can be observed instead —
+    # tools/ui-tests/policy-shape.test.mjs calls pRuleOf against a real list and
+    # asserts that a name which is a PREFIX of a stored entry does not match, and
+    # against a malformed one and asserts no rule is reported. Three of the four
+    # walkers additionally THREW on that shape, and a throw inside renderPolicy
+    # blanks the tab while every `'…' in UI_HTML` pin here keeps passing.
+    #
+    # What stays here is what source text can carry: the walkers exist and the
+    # rows are addressable.
+    check("the rule walkers are all present and the rows are addressable - the "
+          "EXACT-match property itself is asserted by behaviour in "
+          "tools/ui-tests/policy-shape.test.mjs, because a pin on the body "
+          "claimed it and did not have it",
+          "function pRuleOf(" in M.UI_HTML
           and "function pDraftRules(" in M.UI_HTML and "'data-prule'" in M.UI_HTML)
+    check("...and neither walker reads a rule list without checking it IS a list "
+          "- the two named helpers are the only way in, so a fifth walker cannot "
+          "reintroduce the shape that blanked the tab",
+          "const pList=(src,list)=>Array.isArray(src&&src[list])?src[list]:[];"
+          in M.UI_HTML
+          and "if(!Array.isArray(src[list]))src[list]=[];" in M.UI_HTML
+          and "(src[l]||[]).indexOf(name)" not in M.UI_HTML)
     check("...and every pattern in the block is therefore listed and removable, "
           "with what the server says it matches today",
           "'not saved yet'" in M.UI_HTML and "'nothing installed matches it today'"

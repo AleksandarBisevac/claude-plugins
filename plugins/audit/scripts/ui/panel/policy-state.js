@@ -228,10 +228,50 @@ const PVIOL={deny:'refuse the call',ask:'ask for approval, per call',
  * @param {string|null} tag - an area tag, or null for the project scope
  * @returns {''|'allow'|'deny'} '' when no list in that scope names it
  */
+/**
+ * One rule list, as a list — `[]` when what is stored there is not one.
+ *
+ * A person can hand-write `"deny": "nope"` into `.claude/audit.config.json`.
+ * `_policy.validate_policy` calls that a finding and `_panel_policy._policy_rules`
+ * guards it with `isinstance(patterns, list)`, so the server has always known the
+ * shape exists; four walkers here did not. Three of them threw, and a throw
+ * inside `renderPolicy` blanks the Policy tab — which no substring pin can see,
+ * because the page still serves its whole static shell.
+ *
+ * READ-ONLY. It never repairs the stored value: the malformed list is the
+ * reader's config and the server already reports it. Use `pListFor` where a write
+ * genuinely needs an array.
+ *
+ * @param {Object} src the scope object — a kind block, or one of its areas
+ * @param {string} list `'deny'` or `'allow'`
+ * @returns {string[]} the patterns, or empty when the value is not a list
+ */
+const pList=(src,list)=>Array.isArray(src&&src[list])?src[list]:[];
+
+/**
+ * The same list, ready to be written to, replacing a non-list with a fresh one.
+ *
+ * Replacing is the reader's own act here: they are moving a rule, so the list
+ * they are moving it into has to be a list. A malformed value is not silently
+ * preserved and not silently merged — it is discarded by the edit that needed it
+ * to be an array, and the server's finding is what named it in the first place.
+ *
+ * @param {Object} src the scope object
+ * @param {string} list `'deny'` or `'allow'`
+ * @returns {string[]} the array now stored at `src[list]`
+ */
+const pListFor=(src,list)=>{
+ if(!Array.isArray(src[list]))src[list]=[];
+ return src[list];};
+
 function pRuleOf(block,kind,name,tag){
  const k=pKindCfg(block,kind);
  const src=tag?((k.areas||{})[tag]||{}):k;
- for(const l of ['deny','allow'])if((src[l]||[]).indexOf(name)>=0)return l;
+ // MEMBERSHIP, not indexOf on whatever is there. `indexOf` on a STRING is a
+ // substring search, so a hand-written `"deny": "nope"` answered 'deny' for the
+ // capability `op` — a rule reported for something nothing had denied, in the
+ // view that decides whether a skill may run.
+ for(const l of ['deny','allow'])if(pList(src,l).includes(name))return l;
  return '';}
 /**
  * Move one capability's rule in one scope: into allow, into deny, or out of
@@ -257,7 +297,9 @@ function pSetRule(kind,name,tag,val){
  if(tag){const a=k.areas=k.areas||{};src=a[tag]=a[tag]||{};}
  ['allow','deny'].forEach(l=>{if(!Array.isArray(src[l]))return;
   const i=src[l].indexOf(name);if(i>=0)src[l].splice(i,1);});
- if(val){src[val]=src[val]||[];src[val].push(name);}
+ // pListFor, not `||[]`: a string is truthy, so `src[val]||[]` kept it and the
+ // push threw. The remove loop above already guarded; this half did not.
+ if(val)pListFor(src,val).push(name);
  pPrune();}
 /**
  * Add one glob to one list in one scope, if it is not already there.
@@ -281,8 +323,8 @@ function pAddPattern(kind,list,tag,pattern){
  const b=pBlock(),k=b[kind]=b[kind]||{};
  let src=k;
  if(tag){const a=k.areas=k.areas||{};src=a[tag]=a[tag]||{};}
- src[list]=src[list]||[];
- if(src[list].indexOf(pattern)<0)src[list].push(pattern);}
+ const arr=pListFor(src,list);
+ if(!arr.includes(pattern))arr.push(pattern);}
 /**
  * Remove one glob from one list in one scope, then prune whatever that emptied.
  *
@@ -381,7 +423,7 @@ function policyChanges(){
 function pDraftRules(kind){
  const out=[],k=pKindCfg(PDRAFT,kind);
  const push=(scope,list)=>{const src=scope?((k.areas||{})[scope]||{}):k;
-  (src[list]||[]).forEach(p=>out.push({scope:scope||null,list:list,pattern:p}));};
+  pList(src,list).forEach(p=>out.push({scope:scope||null,list:list,pattern:p}));};
  push(null,'deny');push(null,'allow');
  Object.keys(k.areas||{}).sort().forEach(tag=>{push(tag,'deny');push(tag,'allow');});
  return out;}
