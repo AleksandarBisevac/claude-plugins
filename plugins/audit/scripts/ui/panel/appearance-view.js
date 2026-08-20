@@ -317,9 +317,7 @@ function renderAppearance(){closeCombo();
    el('div',{class:'findings-slot'}));
  c.append(chg);
 
- if(keepId){const n=document.getElementById(keepId);
-  if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
- else focusBack(keepBack);
+ restoreCaret(keepId?document.getElementById(keepId):null,caret,keepBack);
  tPaint();tPaintLayout();}
 
 /**

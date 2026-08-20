@@ -322,9 +322,7 @@ function renderPolicy(){closeCombo();
  // The expanded copy is refilled from the same state, in the same pass — before
  // focus is restored, since the box the caret belongs in may be inside it.
  polFullFill();
- if(keepId){const n=document.getElementById(keepId);
-  if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
- else focusBack(keepBack);
+ restoreCaret(keepId?document.getElementById(keepId):null,caret,keepBack);
  if(scrolled){const w=$('#poltbl');if(w)w.scrollTop=scrolled;}}
 
 // How long ago, in words. The panel never decides whether that is TOO long: how

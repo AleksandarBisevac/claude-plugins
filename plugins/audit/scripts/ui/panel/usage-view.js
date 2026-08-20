@@ -35,8 +35,7 @@ function renderUsage(){closeCombo();const c=$('#usage');
  c.textContent='';tipHide();
  const card=el('div',{class:'card'});
  const done=()=>{c.append(card);
-  if(keepQ){const n=$('#uq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
-  else focusBack(keepBack);};
+  restoreCaret(keepQ?$('#uq'):null,caret,keepBack);};
  // `USAGE.facts` and not just `USAGE`: `api()` returns `r.json()` whatever the
  // status, so a server error that is valid JSON arrives here as a truthy object
  // with no `facts` - and `USAGE.facts.length` threw, blanking the tab with a

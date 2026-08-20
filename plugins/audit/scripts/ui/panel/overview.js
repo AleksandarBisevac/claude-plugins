@@ -550,5 +550,4 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
 
  // The theme's card order, applied to what was just drawn.
  applyCardOrder('over');
- if(keepQ){const n=$('#ovq');if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
- else focusBack(keepBack);}
+ restoreCaret(keepQ?$('#ovq'):null,caret,keepBack);}

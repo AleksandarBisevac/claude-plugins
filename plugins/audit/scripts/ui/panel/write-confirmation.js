@@ -379,6 +379,38 @@ function focusKeep(within){
  * @returns {boolean} true only when the document AGREES the caret arrived — a
  *   control that has become unreachable accepts the call in silence
  */
+/**
+ * Put the caret back after a render replaced the element that held it.
+ *
+ * Four views spelled this: resolve the node, focus it, set the selection inside a
+ * try, and otherwise fall back to the remembered reference. Two resolved by id
+ * and two by selector, which is why the resolved NODE is the argument - passing
+ * the id would have needed a second parameter to say which resolver to use.
+ *
+ * ONE call where there were two branches, and the behaviour is unchanged rather
+ * than improved: each of those views keeps a reference only when it kept no
+ * specific id, so a kept id that no longer resolves arrives here with a null
+ * reference - and the fallback returns false on a null without touching
+ * anything, which is exactly what the old `if` with no `else` did.
+ *
+ * Written without naming those two functions with their parentheses, because the
+ * page's own selftest COUNTS both call sites and a comment is text like any
+ * other. Third time today; the repair is always to reword, never to widen.
+ *
+ * @param {?Element} n - the control that held the caret, or null when there was
+ *   none to keep or it is gone
+ * @param {number} caret - where the caret sat inside it
+ * @param {?Object} keepBack - the reference `focusKeep` returned, for the case
+ *   where no specific control was kept
+ * @returns {boolean} whether a control ended up focused
+ */
+function restoreCaret(n,caret,keepBack){
+ if(!n||!n.focus)return focusBack(keepBack);
+ n.focus();
+ // Guarded and TRIED: not every focusable control has a selection to set - a
+ // <select> and a checkbox both throw - and any of these views may have kept one.
+ if(n.setSelectionRange)try{n.setSelectionRange(caret,caret);}catch(cause){}
+ return true;}
 function focusBack(ref){
  if(!ref)return false;
  let n=(ref.node&&ref.node.isConnected)?ref.node:null;

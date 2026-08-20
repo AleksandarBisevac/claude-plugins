@@ -631,7 +631,12 @@ def _cases(check):
           "if(!a||!a.closest||(within&&!a.closest(within)))return null;"
           in M.UI_HTML
           and M.UI_HTML.count("focusKeep(") == 7      # one def, six views
-          and M.UI_HTML.count("focusBack(") == 8      # one def, dlgOpen, six views
+          # `focusBack` is now reached through `restoreCaret` by the four views
+          # that keep a caret BY ID; the other two still call it directly. The
+          # counts move together, which is the point of asserting both: a view
+          # that stopped restoring anything would drop one from each.
+          and M.UI_HTML.count("focusBack(") == 5
+          and M.UI_HTML.count("restoreCaret(") == 5   # one def, four views
           and "focusKeep('#policy')" in M.UI_HTML
           and "focusKeep('#usage')" in M.UI_HTML
           and "focusKeep('#over')" in M.UI_HTML
@@ -1623,8 +1628,9 @@ def _cases(check):
           "if(a&&a.id==='uq'){if(UF.q)setF('q','');return;}" in M.UI_HTML)
     check("and the box keeps focus and caret when the filter repaints the tab",
           "keepQ=!!(act&&act.id==='uq')" in M.UI_HTML
-          and "if(keepQ){const n=$('#uq');" in M.UI_HTML
-          and "n.setSelectionRange(caret,caret)" in M.UI_HTML)
+          and "restoreCaret(keepQ?$('#uq'):null,caret,keepBack)" in M.UI_HTML
+          and "if(n.setSelectionRange)try{n.setSelectionRange(caret,caret);}"
+              in M.UI_HTML)
 
     # --- usage D4: the area filter ------------------------------------------
     # The server ships `phaseAreas` with the facts (_panel_state pins its key
@@ -1806,7 +1812,7 @@ def _cases(check):
           "be destroyed mid-type",
           "document.body.append(POLFULL);" in M.UI_HTML
           and "function polFullFill(" in M.UI_HTML
-          and " polFullFill();\n if(keepId){" in M.UI_HTML)
+          and " polFullFill();\n restoreCaret(" in M.UI_HTML)
     check("px: Esc is handled on the dialog, not on its search box - a type=search "
           "eats the first Escape to clear itself (the browse dialog's trap), and "
           "the tab's copy of that box must not close anything",
@@ -1822,8 +1828,15 @@ def _cases(check):
           "the tab's own redraw keeps it there",
           "dlgOpen(POLFULL,'#policy [data-polexpand]');" in M.UI_HTML
           and "keepBack=keepId?null:focusKeep('#policy')," in M.UI_HTML
-          and " polFullFill();\n if(keepId){" in M.UI_HTML
-          and "}}}\n else focusBack(keepBack);\n if(scrolled){" in M.UI_HTML
+          and " polFullFill();\n restoreCaret(" in M.UI_HTML
+          # The two branches collapsed into one call, and BEHAVIOUR IS
+          # UNCHANGED rather than improved: every one of these views sets
+          # `keepBack = keepId ? null : focusKeep(...)`, so a keepId that no
+          # longer resolves reaches focusBack(null), which returns false and
+          # does nothing - exactly what the old `if` with no `else` did. That
+          # sameness is what makes one function able to serve both.
+          and "restoreCaret(keepId?document.getElementById(keepId):null,caret,"
+              "keepBack);\n if(scrolled){" in M.UI_HTML
           and "POLBACK" not in M.UI_HTML)
     check("px: the dialog IS the frame - the table inside drops the 34rem cap "
           "rather than scrolling a frame inside a frame",
