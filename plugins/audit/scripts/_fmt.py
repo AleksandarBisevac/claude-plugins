@@ -207,7 +207,14 @@ def share_pct(part, whole):
     footnote saying so; clamping here would silently delete that fact. Clamping
     belongs to `bar_cells`, which has a box to fit inside."""
     whole = float(whole or 0.0)
-    if not whole:
+    # `whole != whole` is the NaN test, spelled without importing math for it.
+    # NaN is TRUTHY, so `not whole` let it through and the quotient came back NaN
+    # -- which `fmt_share` then rendered "nan%", the same class of answer as the
+    # "500%" the docstring above rejects. The panel's `uShare` reads `whole?`,
+    # where NaN is falsy, so it already answered None here; these agreed on
+    # every value JSON can carry between them and disagreed on the one it cannot,
+    # which is why each side pins this case on its own.
+    if not whole or whole != whole:
         return None
     return 100.0 * float(part or 0.0) / whole
 

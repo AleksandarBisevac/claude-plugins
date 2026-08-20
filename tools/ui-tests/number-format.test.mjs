@@ -259,8 +259,16 @@ describe('countables keep their separators', () => {
 // Every branch of share_pct/fmt_share: a real slice, a sub-one-percent slice
 // that must not read 0%, an exact zero that must NOT read <1% (the mirror-image
 // lie), an unmeasurable share, and an overlap past 100 that must not be clamped.
+//
+// AND THE NEGATIVES, which this corpus had none of. `fmt_share` takes its <1%
+// branch on magnitude; `uPct` took it on a positive fraction only, and a comment
+// argued that no caller meets the difference. It was right about the callers and
+// it meant these cases could not fail, so the two sides were free to disagree
+// where nobody was looking. A share is non-negative by construction today; the
+// point is that the agreement is now checked rather than reasoned about.
 const SHARES = [[25, 100], [4, 1000], [0, 100], [5, 0], [0, 0],
-  [1499, 100000], [999, 100000], [3, 2]];
+  [1499, 100000], [999, 100000], [3, 2],
+  [-4, 1000], [-999, 100000], [-25, 100], [-3, 2], [4, -1000], [-0.4, 100]];
 
 describe('shares', () => {
   it('panel.js uShare matches _fmt.share_pct, None and all', () => {
@@ -270,6 +278,19 @@ describe('shares', () => {
     // reason share_pct exists, and a JS `0` there would be the invented answer
     // it was written to stop.
     expect(labelled(SHARES, got)).toEqual(labelled(SHARES, want));
+  });
+
+  it('a NaN whole is unmeasurable on this side too', () => {
+    // THE ONE CASE THE BRIDGE CANNOT CARRY. Everything else in this file is
+    // answered by live Python, but the calls cross as JSON and JSON has no NaN -
+    // so the two sides state the same answer separately, and the Python half is
+    // `share_pct: a NaN whole is unmeasurable` in plugins/audit/tests/test__fmt.py.
+    // They disagreed here until that case was written: NaN is TRUTHY in Python,
+    // so `not whole` let it through and fmt_share rendered a percentage of NaN.
+    expect(panel.uShare(5, NaN)).toBe(null);
+    expect(panel.uPct(panel.uShare(5, NaN))).toBe('—');
+    // ...and a real whole still divides, so this is not "always null".
+    expect(panel.uShare(5, 200)).toBe(2.5);
   });
 
   it('panel.js uPct(uShare(..)) matches _fmt.fmt_share', () => {

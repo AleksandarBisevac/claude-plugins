@@ -124,6 +124,19 @@ def _cases(check):
           M.fmt_share(0, 0, unknown="n/a") == "n/a")
     check("share_pct: no whole -> None, not a number",
           M.share_pct(0, 0) is None and M.share_pct(1, 2) == 50.0)
+    # Pinned HERE and mirrored in tools/ui-tests/number-format.test.mjs, because
+    # the bridge that holds the two sides equal passes values as JSON and JSON
+    # has no NaN. Each side states the same answer for the value neither can
+    # send the other.
+    _nan = float("inf") - float("inf")
+    check("share_pct: a NaN whole is unmeasurable, not a NaN percentage - "
+          "fmt_share rendered it 'nan' with a percent sign, since NaN is truthy "
+          "and `not whole` "
+          "let it through",
+          M.share_pct(5, _nan) is None
+          and M.fmt_share(5, _nan, "-") == "-"
+          # ...and a real whole still divides, so the guard is not "always None".
+          and M.share_pct(5, 200) == 2.5)
 
     # --- fmt_bar / bar_cells -----------------------------------------------------
     # Golden values frozen from audit-usage.bar(fraction, width) run verbatim,

@@ -168,7 +168,11 @@ describe('the money and share cases would catch either failure of the sub-unit r
 
   it('uPct rounds a real slice away to 0% without its sub-percent branch', () => {
     const { ctx } = loadPanel({
-      mutate: mutateOnce("const uPct=x=>x==null?'—':x<1&&x>0?'<1%':uFixedHalfEven(x,0)+'%';",
+      // The branch moved from `x<1&&x>0` to `x&&Math.abs(x)<1` when uPct was
+      // made to mirror fmt_share on MAGNITUDE. This target refused rather than
+      // passing over a needle that no longer occurred, which is the whole point
+      // of mutateOnce counting.
+      mutate: mutateOnce("const uPct=x=>x==null?'—':(x&&Math.abs(x)<1)?'<1%':uFixedHalfEven(x,0)+'%';",
         "const uPct=x=>x==null?'—':uFixedHalfEven(x,0)+'%';"),
     });
     const { uPct, uShare } = reach(ctx, ['uPct', 'uShare']);

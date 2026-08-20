@@ -246,15 +246,20 @@ const uCost=x=>!x?'$0.00':(Math.abs(x)<0.01?'<$0.01':'$'+uFixedHalfEven(x,2));
  * and an em dash for a share that could not be computed. It takes the number
  * `uShare` returns, so null arrives here rather than being invented upstream.
  *
- * `fmt_share` reaches its `<1%` branch on magnitude, this one only on a
- * POSITIVE fraction — a difference no caller meets, because a share of tokens
- * is non-negative by construction, and one this tab could not render honestly
- * either way.
+ * ON MAGNITUDE, like `fmt_share` and like `uCost` beside it. This tested `x>0`
+ * instead, and the note here argued the difference was unreachable because a
+ * share of tokens is non-negative by construction. The argument was true and it
+ * was still the wrong shape: two implementations of one number that differ
+ * anywhere leave a reader to re-derive the reachability every time they touch
+ * either, and a corpus without a negative in it could not tell them apart. They
+ * agree now, and the cases include negatives so that stays checked rather than
+ * argued. An exact zero still renders '0%' on both sides — a slice of nothing
+ * does not exist, and '<1%' would invent a presence.
  *
  * @param {number|null} x - a percentage from `uShare`, not a fraction
  * @returns {string} 'NN%', '<1%', or '—' when there was nothing to take a share of
  */
-const uPct=x=>x==null?'—':x<1&&x>0?'<1%':uFixedHalfEven(x,0)+'%';
+const uPct=x=>x==null?'—':(x&&Math.abs(x)<1)?'<1%':uFixedHalfEven(x,0)+'%';
 // A share of nothing is not 0% and it is certainly not 100% — it is undefined, and
 // the honest rendering of undefined is the same em dash a tile with no series
 // already draws. EVERY printed percentage in this tab is computed here, because
@@ -271,6 +276,12 @@ const uPct=x=>x==null?'—':x<1&&x>0?'<1%':uFixedHalfEven(x,0)+'%';
  * tagged with several areas counts under each, so by-area columns genuinely sum
  * past the total and every by-area rendering says so. Clamping belongs to
  * whatever has a box to fit inside.
+ *
+ * Zero, NaN and missing all mean "unmeasurable" here, and that agreement with
+ * `share_pct` is pinned on EACH SIDE SEPARATELY for NaN: the bridge that holds
+ * the two equal passes values as JSON, and JSON has no NaN. It is the one value
+ * they had actually drifted on - NaN is truthy in Python, so `not whole` let it
+ * through and `fmt_share` rendered a percentage of NaN.
  *
  * @param {number} part
  * @param {number} whole - zero, NaN or missing all mean "unmeasurable"
