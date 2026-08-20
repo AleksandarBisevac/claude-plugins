@@ -636,17 +636,19 @@ function appliedDiff(rows,res){
  *   sentence ('the manifest', 'the config', 'the theme')
  * @param {Element|null} slot - where a drift note may be appended; null from a
  *   caller that has no slot yet, and the note is then simply not shown
- * @returns {{missing: number, extra: number, shown: number, applied: number}|null}
- *   the drift, when there was any. Null covers three different outcomes — refused,
- *   unchanged, and saved exactly as shown — so it says nothing on its own; no
- *   caller reads it today, and one that starts to must ask `res` as well
+ * @returns {void} It REPORTS; it does not answer. It used to hand back the drift,
+ *   with `null` covering three unrelated outcomes — refused, unchanged, and saved
+ *   exactly as shown — which no caller could tell apart and none of the seven
+ *   read. A value that cannot be interpreted is a trap whose only guard is a
+ *   comment saying so, and `appliedDiff` is right there for a caller that
+ *   genuinely wants the drift.
  */
 function saveOutcome(res,rows,what,slot){
  if(!res||!res.ok){
   toast(res&&res.locked?(what+' is locked — nothing was written')
     :('rejected — nothing was written'),'err');
-  return null;}
- if(res.unchanged){toast('nothing to save — no values changed');return null;}
+  return;}
+ if(res.unchanged){toast('nothing to save — no values changed');return;}
  const n=(res.applied||[]).length;
  const diff=appliedDiff(rows,res);
  const log=res.journaled?' · logged'
@@ -657,8 +659,7 @@ function saveOutcome(res,rows,what,slot){
    +diff.shown+' change(s) shown were applied'
    +(diff.extra?(', and '+diff.extra+' other change(s) were'):'')
    +'. The file moved between opening this view and saving — reload the panel to '
-   +'see what it holds now.'));
- return diff;}
+   +'see what it holds now.'));}
 
 /**
  * The panel's whole start-up: fetch everything, render every view, put the reader
