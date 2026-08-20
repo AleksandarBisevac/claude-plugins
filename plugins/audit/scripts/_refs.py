@@ -513,6 +513,90 @@ def tool_basename_drift(repo_root=None):
     return {"unknown": unknown, "checked": checked, "files": len(files)}
 
 
+# --- absolute paths used to REACH a file ----------------------------------------
+# The rule is narrower than "no absolute path anywhere", and the narrowness is the
+# whole design. An absolute path is legitimate as DATA - `validate_registry` is
+# handed `{"root": "/Users/me/proj"}` precisely to check that it warns, and the
+# guard suites classify bash strings full of `/tmp/...` - and it is legitimate as a
+# SYSTEM location, which is why `capture-demo-gif.py` carries a list of font paths
+# under `/usr/share/fonts`. What is never legitimate is reaching a file with one:
+# it encodes one machine's layout into a repository other people check out.
+#
+# So the check is SYNTACTIC POSITION, not the literal. A path that appears as a
+# module specifier or as the first argument of a read/write call is a reach; the
+# same string inside a list, a dict or a test fixture is not. That distinction is
+# what gives this rule zero false positives on the fixtures above, and it is also
+# its limit: a reach through a VARIABLE is invisible here, exactly as
+# `tool_basename_drift` cannot see a move. Said rather than implied.
+#
+# This repo already forbids the Python half of the problem by a stronger rule -
+# `_output.depth_sensitive_paths()` lets no `.py` under `scripts/` read `__file__`
+# outside the pinned preamble, so no module may derive its own location at all.
+# There was no equivalent for JavaScript, and that gap is what this closes.
+# The examples below deliberately write the forbidden shape as `<ABS>` rather than
+# spelling a leading slash inside quotes. This function reads TEXT, comments
+# included - as `tool_basename_drift` does and for its reason - so a comment that
+# showed the real literal would be reported by the rule it documents. That is the
+# same trap `test__refs.py` avoids by BUILDING every fixture path from
+# `M.PLUGIN_REL` instead of writing it, and it caught this file on its first run.
+_REACH_RES = (
+    # `import x from '<ABS>'`, `export … from "<ABS>"`, `import('<ABS>')`
+    re.compile(r"""\bfrom\s+(['"])(?P<p>[^'"]+)\1"""),
+    re.compile(r"""\bimport\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
+    re.compile(r"""\brequire\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
+    # Node's file API and Python's, first argument only.
+    re.compile(r"""\b(?:readFileSync|writeFileSync|readFile|writeFile|createReadStream|"""
+               r"""createWriteStream)\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
+    re.compile(r"""\b(?:io\.)?open\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
+)
+
+# A reach may be absolute only with a reason recorded here, the way EXCLUDED does
+# it. Empty today, and an entry is a decision rather than a convenience.
+REACH_ALLOWED = ()
+
+_REACH_SURFACES = ("tools", "plugins/audit/scripts", "plugins/audit/hooks",
+                   "plugins/audit/tests")
+
+
+def absolute_reach_violations(repo_root=None):
+    """{"violations": [(rel, lineno, path)], "checked": n, "files": n}.
+
+    A reach is a module specifier or the first argument of a read/write call. An
+    absolute one hard-codes one machine's layout into a checkout, so it fails here
+    unless `REACH_ALLOWED` records a reason.
+
+    `checked` counts EVERY reach found, relative ones included, and that is the
+    check on the check rather than a statistic: an empty `violations` list means one
+    thing when hundreds of reaches were examined and something entirely different
+    when the regexes matched nothing at all - which is what a typo in one of them
+    would look like, and it would look exactly like a clean tree.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    allowed = set(REACH_ALLOWED)
+    violations = []
+    checked = 0
+    files = 0
+    for surface in _REACH_SURFACES:
+        for rel_file in _surface_files(root, surface, BARE):
+            path = os.path.join(root, rel_file.replace("/", os.sep))
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    lines = fh.readlines()
+            except (IOError, OSError):
+                # Naming it beats skipping it: an unreadable file is not a clean one.
+                violations.append((rel_file, 0, "<unreadable>"))
+                continue
+            files += 1
+            for lineno, line in enumerate(lines, 1):
+                for rex in _REACH_RES:
+                    for match in rex.finditer(line):
+                        spec = match.group("p")
+                        checked += 1
+                        if spec.startswith("/") and spec not in allowed:
+                            violations.append((rel_file, lineno, spec))
+    return {"violations": violations, "checked": checked, "files": files}
+
+
 # --- what a command declares vs what the README says it takes -------------------
 # The args cell ends at an UNESCAPED pipe. Half these rows carry `\\|` inside
 # them (`push [bugs\\|tasks\\|all] ...`), and a lazy `.*?` up to the first `|`

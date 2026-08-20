@@ -622,6 +622,62 @@ def _cases(check):
           and _gif_mod.resolve_script("render-report.py")
           == _loader.script_path("render-report.py"))
 
+    # --- absolute paths used to reach a file -----------------------------------------
+    _reach = M.absolute_reach_violations()
+    check("ar1 nothing in this tree reaches a file by absolute path: %r"
+          % (_reach["violations"],), _reach["violations"] == [])
+    # The check on the check. An empty violations list is only meaningful if the
+    # regexes matched anything at all; a typo in one of them reports a clean tree.
+    check("ar2 ...and that verdict is over real observations - %d reach(es) across "
+          "%d file(s), floors held so a regex that stopped matching cannot read as "
+          "agreement" % (_reach["checked"], _reach["files"]),
+          _reach["checked"] >= 40 and _reach["files"] >= 100)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        # A module specifier is a reach. The absolute specifier is BUILT rather
+        # than spelled, for the reason this module's docstring already gives about
+        # anchored fixtures: `tests/` is one of the surfaces this very lint scans,
+        # so a literal here would be a real violation in the live tree - and it
+        # was, on the first run of these cases. `/nowhere/` rather than a
+        # plausible repo path for the same reason, one layer out.
+        _abs_spec = "/" + "nowhere/sandbox.mjs"
+        _write(tmp, "tools/bad.mjs",
+               "import { x } from '%s';\n" % (_abs_spec,))
+        _bad = M.absolute_reach_violations(repo_root=tmp)
+        check("ar3 an absolute module specifier is caught, and named with its line: "
+              "%r" % (_bad["violations"],),
+              [(r, n) for r, n, _p in _bad["violations"]] == [("tools/bad.mjs", 1)])
+
+        # THE REPAIR MUST PASS, or the lint forbids its own remedy.
+        _write(tmp, "tools/bad.mjs", "import { x } from './sandbox.mjs';\n")
+        _ok = M.absolute_reach_violations(repo_root=tmp)
+        check("ar4 the repair passes: the same import written relatively is clean, "
+              "and still COUNTED (%d) so the file was really read"
+              % (_ok["checked"],),
+              _ok["violations"] == [] and _ok["checked"] == 1)
+
+        # The narrowness IS the design: an absolute path is legitimate as data.
+        _write(tmp, "tools/bad.mjs",
+               "const FONTS = ['/usr/share/fonts/x.ttf'];\n"
+               "validate({ root: '/Users/me/proj' });\n")
+        _data = M.absolute_reach_violations(repo_root=tmp)
+        check("ar5 an absolute path that is DATA rather than a reach is not a "
+              "violation - a font list and a fixture the code under test is asked "
+              "to classify both stay clean (%r)" % (_data["violations"],),
+              _data["violations"] == [])
+
+        # The limit, in the direction it errs: this rule UNDER-reports.
+        _write(tmp, "tools/bad.mjs",
+               "const p = '/nowhere/sandbox.mjs';\nconst s = readFileSync(p);\n")
+        _var = M.absolute_reach_violations(repo_root=tmp)
+        check("ar6 a reach through a VARIABLE is invisible here, and that is stated "
+              "rather than implied: this lint under-reports, the same way "
+              "tool_basename_drift cannot see a move (%r)" % (_var["violations"],),
+              _var["violations"] == [])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     # --- the sweep -------------------------------------------------------------------
     drift = M.sweep_glob_drift()
     check("s1 every document that shows the selftest sweep shows the recursive form: "

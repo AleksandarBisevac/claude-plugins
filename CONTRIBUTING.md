@@ -104,6 +104,22 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   `scripts/`, so they resolve a scripts file by basename through
   `hooks/_config.find_script()`, and `tests/test__config.py` pins that third copy
   against `_output.script_files()` by reading both rather than merging them.
+- **Never reach a file by absolute path.** A module specifier, or the first
+  argument of a read/write call, must be relative — an absolute one encodes one
+  machine's layout into a repository other people check out.
+  `_refs.absolute_reach_violations()` fails the build on it, and the rule is
+  deliberately about SYNTACTIC POSITION rather than about the literal: an absolute
+  path is legitimate as *data* (`validate_registry` is handed
+  `{"root": "/Users/me/proj"}` precisely to check that it warns) and as a *system*
+  location (the demo tool's `/usr/share/fonts` fallbacks), and neither is a reach.
+  Its stated limit is that a reach through a variable is invisible, so it
+  under-reports rather than over-reports. Python already had the stronger half of
+  this: `depth_sensitive_paths()` lets no `.py` under `scripts/` read `__file__`
+  outside the pinned preamble, so no module may derive its own location at all.
+  Throwaway probes are where this rule actually gets broken, because a script in a
+  scratch directory cannot reach the repo relatively — run those as
+  `node --input-type=module -e '…'` from the repo root, where a relative specifier
+  resolves against the working directory.
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
 - Every command that mutates the manifest must revalidate

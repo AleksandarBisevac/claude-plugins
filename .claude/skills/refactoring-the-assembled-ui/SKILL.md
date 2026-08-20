@@ -67,8 +67,18 @@ ordering claim and it fails differently: move either endpoint and the window sil
 size, so the assertion can keep passing while asserting something else entirely.
 
 Several slice *between a function and a section-marker comment*, which makes those comment lines
-load-bearing source. Seven do this today — they are the reason a marker cannot be reworded
-casually.
+load-bearing source — they are the reason a marker cannot be reworded casually. **Print the list
+rather than trusting a count**, and use this query rather than writing your own:
+
+```bash
+grep -rn '\.index("//' plugins/audit/tests/
+```
+
+An AST scan written for this was worse than the grep and under-reported, because it filtered on
+`UI_HTML[...]` and one slice is taken over an INTERMEDIATE VARIABLE
+(`_rep = _rep[:_rep.index("// tabs")]`). That undercount then travelled into five agent briefs as
+fact. The lesson is not "prefer grep": it is that a derivation is only as good as its assumption
+about the shape of the thing, and this one has two shapes.
 
 All of them survive an order-preserving split. **All of them die under any "logical" regrouping.**
 So: cut at existing seams, keep the sequence, change nothing else in the same commit.
