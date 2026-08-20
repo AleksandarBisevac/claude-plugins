@@ -33,11 +33,13 @@
  * all, which is the only kind of detection a committed PNG supports.
  *
  * "ON ONE MACHINE" IS THE WHOLE OF THE CLAIM, and it is load-bearing rather than
- * cautious (F18). That fixed path is fixed per HOST — a Linux runner writes
- * /tmp/audit-shots-<uid> where a Mac writes /var/folders/…/T/audit-shots-<uid> — and
- * the host's font rasterisation moves the pixels again on top of that. So the
- * committed PNGs are byte-comparable against a fresh capture from the machine that
- * made them and against nothing else. That limit is not papered over: it is printed,
+ * cautious (F18). The path is now a LITERAL root — /tmp/audit-shots-<uid> on every
+ * POSIX host, the platform root on Windows — because it used to come from
+ * `tmpdir()`, which reads TMPDIR: one host under two environments produced two
+ * paths, and thirteen panel PNGs "changed" for that reason alone. What remains
+ * genuinely per-host is the font rasterisation, which moves the pixels and which
+ * no environment variable pins. So the committed PNGs are byte-comparable against
+ * a fresh capture from the machine that made them and against nothing else. That limit is not papered over: it is printed,
  * with the machine, by --repro. The three repairs that would each fake a wider claim
  * are named and declined in claimScratch(), including why SOURCE_DATE_EPOCH — which
  * solved exactly this class for the HTML report — does not transfer.
@@ -6326,12 +6328,26 @@ const SCRATCH_LOCK = 'capture.lock';
  * of it would let the report name a directory the capture did not use, which is the
  * one thing a provenance line must never do.
  *
- * Per-uid where uids exist, because on Linux `tmpdir()` is one shared /tmp and two
- * users capturing at once would meet on a directory neither may write into. macOS
- * and Windows already hand out a per-user temp directory, so this is a no-op there.
+ * Per-uid where uids exist, because /tmp is one shared directory and two users
+ * capturing at once would meet on a tree neither may write into.
+ *
+ * NOT `tmpdir()`, and that is the fix rather than a preference: `tmpdir()` reads
+ * TMPDIR, so the SAME host under a different environment paints a different path
+ * into the topbar and every panel PNG moves. Thirteen of them did exactly that
+ * once, and the difference read as product drift until it was chased down — the
+ * header above claimed the path was "fixed per HOST", which was nearly true and
+ * therefore worse than either alternative. A literal root makes it true as
+ * written.
+ *
+ * `/tmp` and not the home directory, because the panel PAINTS this path: a scratch
+ * tree under $HOME carries a username into every committed PNG, which is the same
+ * class of leak the fixture-homes section exists to stop. Windows has no /tmp and
+ * keeps the platform root; its temp directory is already per-user, and a shell
+ * exporting TMPDIR for one command is a POSIX habit rather than a Windows one.
  */
 function scratchPath() {
-  return path.join(tmpdir(),
+  const root = process.platform === 'win32' ? tmpdir() : '/tmp';
+  return path.join(root,
     `audit-shots${process.getuid ? `-${process.getuid()}` : ''}`);
 }
 
