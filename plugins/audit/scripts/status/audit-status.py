@@ -694,8 +694,7 @@ def _proposal_lines(manifest, summary, pt=None):
         tasks = ph.get("tasks") if isinstance(ph.get("tasks"), list) else []
         reserved = "-"
         if ph.get("id"):
-            reserved = "%s (%d task%s)" % (ph["id"], len(tasks),
-                                           "" if len(tasks) == 1 else "s")
+            reserved = "%s (%s)" % (ph["id"], _fmt.plural(len(tasks), "task"))
         row = "    %-16s %-14s %s" % (
             x.get("id") or "?", reserved,
             _clip(_one_line(x.get("name") or x.get("id")), 40))

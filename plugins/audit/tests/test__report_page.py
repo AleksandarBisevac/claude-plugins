@@ -39,6 +39,7 @@ import _harness                                    # sets sys.path for scripts/ 
 import _output                                     # noqa: E402  (PATH_PREAMBLE, for pg2c)
 from _output import safe_stdio                     # noqa: E402
 import _report_page as M                           # noqa: E402
+import _fmt                                        # noqa: E402  (where the plural rule lives now)
 import _report_md                                  # noqa: E402  (as _report_page imports it)
 
 
@@ -194,11 +195,16 @@ def _cases(check):
           M._held_by(_m["phases"][1], {"P1"}) == ["P3"]
           and M._held_by(_m["phases"][1], {"P1", "P3"}) == []
           and M._held_by({}, set()) == [])
-    check("pg5 counts are worded, and the irregular plural is the caller's to "
-          "give (`1 phase` / `2 phases`, `1 open bug` / `0 open bugs`)",
-          M._plural(1, "phase") == "1 phase" and M._plural(2, "phase") == "2 phases"
-          and M._plural(0, "open bug") == "0 open bugs"
-          and M._plural(2, "entry", "entries") == "2 entries")
+    check("pg5 this module states the pluralisation rule NOWHERE - it was one of "
+          "four copies of `n == 1` and it calls `_fmt.plural` now, so the case "
+          "that matters here is that a fifth cannot quietly reappear under the "
+          "old name",
+          not hasattr(M, "_plural") and M._fmt.plural is _fmt.plural)
+    check("pg6 ...and the wording the page actually renders comes through it: "
+          "`1 phase` singular, `2 phases` plural, from the shared rule rather "
+          "than from a local one",
+          _fmt.plural(1, "phase") == "1 phase"
+          and _fmt.plural(2, "phase") == "2 phases")
 
     # --- one page, three surfaces ---------------------------------------------
     # `fragment=True` is the Artifact mode. The document-level pins live with

@@ -89,7 +89,7 @@ def _usage_context(u):
                          (c.get("models"), "model", "models"),
                          (c.get("sessions"), "session", "sessions")):
         if n:
-            bits.append("%d %s" % (n, one if n == 1 else many))
+            bits.append(_fmt.plural(n, one, many))
     if c.get("from") and c.get("to"):
         bits.append(c["from"] if c["from"] == c["to"]
                     else "%s to %s" % (c["from"], c["to"]))

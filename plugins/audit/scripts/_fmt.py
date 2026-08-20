@@ -168,6 +168,27 @@ def fmt_int(n):
     return "{:,}".format(int(n or 0))
 
 
+def plural(n, one, many=None):
+    """`n` and its noun, agreeing — `1 task`, `3 tasks`, `2 people`.
+
+    `many` exists for the irregular case and is not decoration: the usage
+    overview counts `person`/`people`, which no suffix rule produces. Default
+    `one + "s"` covers every other caller here.
+
+    Trivial arithmetic, four copies. It was spelled out as this exact expression
+    in `_report_page`, again inline in `_usage_overview`, and twice more as the
+    bare suffix (`"" if n == 1 else "s"`) in `audit-status` and in
+    `hooks/journal-writes`, plus about twenty times in the panel's JavaScript.
+    The reason it spread is that each copy is small enough to look cheaper than
+    an import — which is how a rule with no home ends up with no owner either.
+
+    `hooks/journal-writes.py` keeps its copy and cannot stop: hooks may import
+    nothing from `scripts/`. That copy is held to this one by a case that
+    exercises both, the same way `find_script()`'s third copy is — read, not
+    merged."""
+    return "%d %s" % (n, one if n == 1 else (many or one + "s"))
+
+
 # --- shares and bars ------------------------------------------------------------
 def share_pct(part, whole):
     """`part` as a percentage of `whole` — or `None` when there is no whole.

@@ -68,6 +68,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _fmt                  # noqa: E402  (the no-domain number/text formatters, incl. plural)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the panel)
 
@@ -155,7 +156,7 @@ load_usage = _report_usage.load_usage
 # reads what `main()` writes. Aliased so the cases below, which are about
 # the RENDERED DOCUMENT and can therefore live nowhere else, keep asking for
 # these names unchanged.
-_plural = _report_page._plural
+_plural = _fmt.plural
 PRIMARY_COLS = _report_page.PRIMARY_COLS
 _OPTIONAL_COLS = _report_page._OPTIONAL_COLS
 _present_columns = _report_page._present_columns

@@ -282,7 +282,7 @@ L5:
 
 L6:
   _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _ui_theme
-  _report_page -> _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
+  _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
   audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output
@@ -296,7 +296,7 @@ L7:
   gen-demo-usage -> _demo_cast, _loader, _output
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
-  render-report -> _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output
 ```

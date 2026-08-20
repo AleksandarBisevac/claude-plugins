@@ -42,6 +42,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _config                                     # noqa: E402
+import _fmt                                        # noqa: E402  (the plural rule this hook must copy)
 
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
                  modname="journal_writes")
@@ -129,6 +130,21 @@ def _cases(check):
               "(1 edit)" in M.decide(
                   payload("MultiEdit", "docs/audit/audit-plan.json",
                           edits=[{}]), cfg=cfg, root=tmp)[1]["summary"])
+        # The one copy of the pluralisation rule that cannot be removed: hooks
+        # may import nothing from `scripts/`, so `_how` spells `n == 1` itself
+        # while `_fmt.plural` owns it for everyone else. Held by EXERCISING both
+        # over a range that crosses the boundary in both directions - the same
+        # shape as `find_script()`'s third copy, which is read rather than
+        # merged. A single value would agree by luck: 1 agrees with a
+        # never-suffix rule and 3 agrees with an always-suffix one.
+        _dis = [(n, M._how("MultiEdit", {"edits": [{}] * n}),
+                 "MultiEdit (%s)" % _fmt.plural(n, "edit"))
+                for n in (0, 1, 2, 3, 11)]
+        check("c2b the hook's forced COPY of the plural rule still agrees with "
+              "`_fmt.plural` at every n it was checked at, 0 and 1 included "
+              "(disagreements: %r)"
+              % ([(n, a, b) for n, a, b in _dis if a != b],),
+              len(_dis) == 5 and all(a == b for _n, a, b in _dis))
         check("c3 the row carries only the news, never the chain fields that "
               "audit-journal.py owns",
               set(e) == {"action", "target", "summary", "actor"}, repr(sorted(e)))

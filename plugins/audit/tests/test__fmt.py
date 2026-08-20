@@ -168,6 +168,29 @@ def _cases(check):
           M.bar_cells(0, 100_000, 18, min_fill=True) == 0)
     check("bar_cells: golden trend(50000, 100000, 18)",
           M.bar_cells(50_000, 100_000, 18, min_fill=True) == 9)
+    check("plural: agreement in both directions, and 0 takes the plural - "
+          "`1 task` / `2 tasks` / `0 tasks`",
+          M.plural(1, "task") == "1 task" and M.plural(2, "task") == "2 tasks"
+          and M.plural(0, "task") == "0 tasks")
+    check("plural: the irregular form is the CALLER's to give, because no suffix "
+          "rule produces it - the usage overview counts people, not persons",
+          M.plural(1, "person", "people") == "1 person"
+          and M.plural(2, "person", "people") == "2 people"
+          and M.plural(2, "entry", "entries") == "2 entries")
+    check("plural: a multi-word noun pluralises its LAST word, which is what the "
+          "report's gate wording depends on (`0 open bugs`, not `0 open bugss`)",
+          M.plural(0, "open bug") == "0 open bugs"
+          and M.plural(1, "high-severity bug") == "1 high-severity bug")
+    # Both directions, because one of them is the bug that would actually ship:
+    # a rule that always adds the suffix is wrong at n == 1, and a rule that
+    # never adds it is wrong everywhere else. A single fixture value cannot tell
+    # a working implementation from either.
+    check("mutation proof (plural, always suffixes): dropping the n == 1 branch "
+          "renders `1 tasks`, which the cases above catch",
+          "%d %s" % (1, "task" + "s") != M.plural(1, "task"))
+    check("mutation proof (plural, never suffixes): dropping the suffix renders "
+          "`2 task`, which the cases above also catch",
+          "%d %s" % (2, "task") != M.plural(2, "task"))
     check("bar_cells: min_fill still cannot exceed a zero-width box",
           M.bar_cells(1, 2, 0, min_fill=True) == 0)
 

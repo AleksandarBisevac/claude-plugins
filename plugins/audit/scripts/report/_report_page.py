@@ -66,6 +66,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _fmt          # noqa: E402  (the no-domain number/text formatters, incl. plural)
 import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 import _report_ui    # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
 import _report_html  # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
@@ -139,10 +140,6 @@ def _plugin_version():
 
 
 # --- report vocab ---------------------------------------------------------------
-def _plural(n, one, many=None):
-    return "%d %s" % (n, one if n == 1 else (many or one + "s"))
-
-
 # The conditions in the reader's words. `open-high-bugs` is a flag name; printing it
 # raw makes the basis look like a config dump and quietly assumes the reader knows
 # the CLI. The flag names still appear in the title attribute for whoever is going
@@ -502,9 +499,9 @@ def _gate_block(meta, summary, verdict):
             "Spend is deliberately not one of them.</span>"
             % (e(",".join(conds)),
                e(", ".join(_GATE_LABELS.get(c, c) for c in conds)))) if conds else "",
-           nxt, _bar(tdone, ttotal), _plural(tdone, "task") + " done",
+           nxt, _bar(tdone, ttotal), _fmt.plural(tdone, "task") + " done",
            phdone, len(summary["phases"]),
-           _plural(summary["bugs"]["open"], "open bug")))
+           _fmt.plural(summary["bugs"]["open"], "open bug")))
 
     # AI-authored narrative summary (written by /audit:report into
     # meta.reportSummary); the quantitative "Overall" line above is the
@@ -679,7 +676,7 @@ def _segment_rows(manifest, summary, ncol, cols, done_ids, owners):
         # would be a second, contradictory gate.
         head = ('<span class="segname">%s</span>'
                 '<span class="segn">%s</span>'
-                % (_report_html.SEG_LABEL[seg], _plural(sn, "phase")))
+                % (_report_html.SEG_LABEL[seg], _fmt.plural(sn, "phase")))
         out.append('<tr class="seghead" data-seg="%s"><td colspan="%d">%s%s'
                    "</td></tr>" % (seg, ncol, head, exports))
         for ph, psum in by_seg[seg]:
