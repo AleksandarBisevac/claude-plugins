@@ -459,7 +459,10 @@ function planGateField(cfg){
  * @returns {HTMLDivElement} the editor above its notice
  */
 function tokenVarsField(cfg,d){
- const defs=d.guardEdits.tokenVars;
+ // Guarded for the reason above, and stated rather than assumed: this renderer
+ // needs the shipped defaults, and an install that did not serve them gets an
+ // empty ghost row instead of a thrown render that takes the whole tab with it.
+ const defs=((d&&d.guardEdits)||{}).tokenVars||[];
  const box=el('div',{id:fieldId('guardEdits.tokenVars'),tabindex:'-1'});
  const note=el('div');
  const cur=()=>{const v=getPath(cfg,'guardEdits.tokenVars');return Array.isArray(v)?v:[];};
@@ -653,13 +656,19 @@ function pricingField(cfg,d){
    ['cacheW1h','cache w 1h'],['cacheR','cache read']];
  const cur=()=>{const v=getPath(cfg,'usage.pricing');
   return (v&&typeof v==='object'&&!Array.isArray(v))?v:{};};
+ // The shipped rate table, guarded ONCE. It used to be read as
+ // `d.usage.pricing` on the models line and as `(d.usage.pricing||{})` two lines
+ // below - and the second guard could never fire, because the first read would
+ // already have thrown. Two spellings of one assumption is how a reader comes to
+ // believe the guarded one is the careful one.
+ const shipped=((d&&d.usage)||{}).pricing||{};
  const draw=()=>{wrap.textContent='';
-  const over=cur(),models=[...new Set([...Object.keys(d.usage.pricing),...Object.keys(over)])].sort();
+  const over=cur(),models=[...new Set([...Object.keys(shipped),...Object.keys(over)])].sort();
   const tbl=el('table',{class:'ptbl'},el('thead',{},el('tr',{},
     el('th',{},'model'),COLS.map(([,l])=>el('th',{class:'n'},l)),el('th',{}))));
   const tb=el('tbody');
   models.forEach(m=>{
-   const def=(d.usage.pricing||{})[m]||{},row=over[m]||{};
+   const def=shipped[m]||{},row=over[m]||{};
    const tds=COLS.map(([k])=>{
     const inp=el('input',{type:'number',min:'0',step:'0.01',value:row[k]??'',
       placeholder:def[k]==null?'—':String(def[k]),'aria-label':m+' '+k});
