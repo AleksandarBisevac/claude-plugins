@@ -140,8 +140,14 @@ const FEATURE_ABSENT = [
   { note: 'no status chips in this report',
     covers: ['searching', '...and names how many', '...and the one press shows them',
              '...with the search still applied'] },
+  // The heatmap's absence is reported by the calendar block's own else, and it
+  // stands for the whole usage payload: without a ledger the report renders no
+  // heatmap, no range-scoped charts and no daily CSV. Its scope is a REGION
+  // rather than a list of labels — twenty-one of them — because a list that long
+  // is a list that rots, and the marked regions move with the code they wrap.
   { note: 'no heatmap in this report',
-    covers: [] },
+    covers: [],
+    region: 'needs-usage-payload' },
   // Not a missing feature but a plan whose DEFAULT VIEW is not "active" - every
   // phase shares one status, so the renderer opens on all of them. The checks
   // that ride that fragment and the archived-vs-active search cannot run, and
@@ -937,6 +943,9 @@ if (await page.$('#audit-gfrom')) {
     // The usage views follow the same range (only on a report with the
     // per-day payload — without a ledger there is nothing to scope).
     if (range.hasU) {
+      // @needs-usage-payload — every assertion to the matching end marker reads
+      // window.AUDIT_USAGE, so on a report rendered without a ledger they cannot
+      // run and their silence is not a skipped check. See the verdict block.
       const usage = await page.evaluate(() => {
         const cols = [...document.querySelectorAll('.cols .col')];
         const dim = cols.filter((c) => /\bdimout\b/.test(c.getAttribute('class') || ''));
@@ -985,6 +994,7 @@ if (await page.$('#audit-gfrom')) {
       expect('the active range prints as a line naming it', paperRange.shown
         && paperRange.text.includes(range.lo) && paperRange.text.includes(range.mid), true);
       expect('...while the picker row itself never reaches paper', paperRange.barGone, true);
+      // @end-needs-usage-payload
     } else notes.push('ok   (no usage payload — the range scopes only the task table here)');
 
     // Clearing returns to all-time: one press, every scoped view back. The
@@ -1096,6 +1106,7 @@ await page.waitForTimeout(200);
 if (await page.$('.hm') && !(await page.$('#audit-hm-gran'))) {
   failures.push('FAIL the report draws the tokens heatmap but no calendar navigation for it');
 } else if (await page.$('#audit-hm-gran') && await page.evaluate(() => !!window.AUDIT_USAGE)) {
+  // @needs-usage-payload — the whole calendar rides the per-day payload.
   const hmDays = await page.evaluate(() => Object.keys(window.AUDIT_USAGE.days).sort());
   const hm0 = await page.evaluate(() => ({
     period: document.getElementById('audit-hm-period').textContent,
@@ -1212,6 +1223,7 @@ if (await page.$('.hm') && !(await page.$('#audit-hm-gran'))) {
       document.getElementById('audit-hm-period').textContent)), true);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
+  // @end-needs-usage-payload
 } else if (await page.$('#audit-hm-gran')) {
   notes.push('ok   (heatmap nav present but no payload — nothing to navigate)');
 } else notes.push('ok   (no heatmap in this report — calendar navigation skipped)');
@@ -1420,7 +1432,9 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
         .replace(/^\uFEFF/, '').trim().split('\r\n');
       const want = await page.evaluate(() =>
         Object.keys(window.AUDIT_USAGE.days).length);
+      // @needs-usage-payload — one site, for the same reason.
       expect('the usage CSV carries one row per recorded day', lines.length - 1, want);
+      // @end-needs-usage-payload
       // Raw numbers, checked structurally rather than by the panel's substring
       // regex — which read a legitimate 3-digit token count after the date
       // ("…-10,167,…") as a thousands separator. No field in this CSV is ever
@@ -1853,13 +1867,59 @@ else notes.push('ok   no page errors');
         + `expect() call site declares any more — the exemption outlived its check`);
     }
   }
-  // A feature that reported itself absent excuses the sites that ask about it.
+  // Regions, parsed from this file's own source the way `declared` is. A marker
+  // pair names a span whose assertions all depend on one thing being present, so
+  // the exemption travels with the code instead of with a list of labels.
+  const regions = {};
+  const openAt = {};
+  src.forEach((line, i) => {
+    const start = line.match(/@needs-([a-z-]+)\b/);
+    const end = line.match(/@end-needs-([a-z-]+)\b/);
+    if (end) {
+      const key = 'needs-' + end[1];
+      if (openAt[key] === undefined) {
+        failures.push(`FAIL line ${i + 1} closes the "${key}" region and none was open `
+          + '— an unbalanced marker would exempt whatever follows it');
+      } else {
+        (regions[key] = regions[key] || []).push([openAt[key], i + 1]);
+        delete openAt[key];
+      }
+    } else if (start) {
+      const key = 'needs-' + start[1];
+      if (openAt[key] !== undefined) {
+        failures.push(`FAIL line ${i + 1} opens the "${key}" region while one is `
+          + `already open at line ${openAt[key]} — nested markers have no meaning here`);
+      }
+      openAt[key] = i + 1;
+    }
+  });
+  for (const [key, at] of Object.entries(openAt)) {
+    failures.push(`FAIL the "${key}" region opened at line ${at} is never closed, so it `
+      + 'would exempt every site below it');
+  }
+  // A region with no sites in it is a marker that excuses nothing and hides the
+  // fact — the same shape as a conditional exemption whose check has gone.
+  for (const [key, spans] of Object.entries(regions)) {
+    for (const [from, to] of spans) {
+      if (!declared.some((d) => d.line > from && d.line < to)) {
+        failures.push(`FAIL the "${key}" region at lines ${from}-${to} contains no `
+          + 'expect() call site — the marker outlived what it wrapped');
+      }
+    }
+  }
+  const inRegion = (key, line) =>
+    (regions[key] || []).some(([from, to]) => line > from && line < to);
+
+  // A feature that reported itself absent excuses the sites that ask about it —
+  // by label, by region, or both. The note is required either way: with the
+  // feature PRESENT, a marked site that never ran is still a skipped check.
   const absent = FEATURE_ABSENT.filter((f) => said.indexOf(f.note) >= 0);
-  const excusedByAbsence = (label) => absent.some((f) =>
-    f.covers.some((c) => c === label || c.startsWith(label) || label.startsWith(c)));
+  const excusedByAbsence = (label, line) => absent.some((f) =>
+    (f.covers || []).some((c) => c === label || c.startsWith(label) || label.startsWith(c))
+    || (f.region !== undefined && line !== undefined && inRegion(f.region, line)));
   const unexplained = missed.filter((d) => !d.label
     || (!CONDITIONAL_EXPECTS.some((c) => c.label.startsWith(d.label))
-        && !excusedByAbsence(d.label)));
+        && !excusedByAbsence(d.label, d.line)));
   if (unexplained.length) {
     failures.push(`FAIL ${unexplained.length} of ${declared.length} expect() call site(s) `
       + `never ran, so this report was graded on work that did not happen: `
@@ -1872,7 +1932,8 @@ else notes.push('ok   no page errors');
     // A pair whose whole FEATURE is absent has no halves to run. Demanding one
     // of them there turns a report that simply does not use areas into a
     // failure, which is the overreach that gets a gate switched off.
-    if (skipped && !excusedByAbsence(c.label) && said.indexOf(c.instead) < 0) {
+    const at = (missed.find((d) => d.label && c.label.startsWith(d.label)) || {}).line;
+    if (skipped && !excusedByAbsence(c.label, at) && said.indexOf(c.instead) < 0) {
       failures.push(`FAIL "${c.label}" was skipped and so was its counterpart `
         + `"${c.instead}" — the exemption says one of the two always runs, and `
         + `neither did, which is a skipped leg rather than a branch not taken`);
