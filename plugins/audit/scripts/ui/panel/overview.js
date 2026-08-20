@@ -187,7 +187,7 @@ function ovCopy(btn,text){
   ta.value=text;document.body.append(ta);ta.select();
   let ok=false;try{ok=document.execCommand('copy');}catch(e){ok=false;}
   ta.remove();if(ok)done();else toast('could not copy — the command is '+text,'err');};
- try{navigator.clipboard.writeText(text).then(done,manual);}catch(e){manual();}}
+ copyText(text,done,manual);}
 /**
  * An ISO stamp as 'YYYY-MM-DD HH:MM', to the minute.
  *

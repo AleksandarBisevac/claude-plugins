@@ -438,10 +438,7 @@
    */
   function copyRun(btn) {
     const text = btn.getAttribute('data-copy') || '';
-    try {
-      navigator.clipboard.writeText(text)
-        .then(() => markCopied(btn), () => selectRun(btn));
-    } catch (e) { selectRun(btn); }
+    copyText(text, () => markCopied(btn), () => selectRun(btn));
   }
 
   Array.from(document.querySelectorAll('.btn-copy')).forEach((b) => {

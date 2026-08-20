@@ -1590,10 +1590,15 @@ SHARED_CONCERNS = (
      "own row rather than folded into the suffix one, because one needle cannot "
      "see both and a row that silently covers half its concern is worse than "
      "two rows that each say what they check."),
-    ("clipboard copy", None, "navigator.clipboard", 2,
-     "NOT EXTRACTED. Both sites guard correctly, but their FALLBACKS differ on "
-     "purpose (the report selects the text, the panel uses execCommand and a "
-     "toast), so the shared part is thin and needs the fallback injected."),
+    ("clipboard copy", "shared/clipboard.js", "navigator.clipboard", 0,
+     "EXTRACTED as copyText once the RULE was separated from the remedy. The "
+     "earlier note was right that the part is thin and the fallback has to be "
+     "injected, and wrong to read that as a reason to leave it: what is shared is "
+     "not the line, it is that BOTH failure paths must fall back - over file:// "
+     "some browsers throw and others reject, and an implementation handling one "
+     "is broken exactly where a report is opened from disk. The fallbacks stay "
+     "the callers': the panel copies through a hidden textarea and toasts, the "
+     "report selects the text in place, and both are right for their surface."),
     ("table header construction", "panel/core.js", "el('thead'", 1,
      "EXTRACTED into headRow/tableHead, and the row this registry gained from "
      "the SCOUT rather than from reading - five agents read the whole panel and "
