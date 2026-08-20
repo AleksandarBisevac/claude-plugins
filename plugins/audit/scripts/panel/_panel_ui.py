@@ -99,6 +99,10 @@ JS_MARK = "/*@JS@*/"
 # home for the eight `__*__` placeholders substituted into this text. Until that
 # is decided, Python joins the parts.
 _JS_PARTS = (
+    # The shared layer first, for the reason `ui/shared/README.md` gives: the
+    # order is the dependency direction, so a shared part cannot reach back into
+    # a surface helper.
+    "shared/download.js",
     "panel/core.js",
     "panel/write-confirmation.js",
     "panel/hints.js",

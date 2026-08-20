@@ -1412,13 +1412,19 @@ def _cases(check):
           "'usage-'+(C.from||'start')+'_'+(C.to||'end')+'-'" in _csv
           and "(USAGE.rolled?'daily':'hourly')" in _csv
           and "(uAnyFilter()?'-filtered':'')+'.csv'" in _csv)
-    check("the blob URL outlives the click, and an export that cannot run says so "
-          "rather than being a button that does nothing",
-          "setTimeout(()=>URL.revokeObjectURL(url),4000)" in _csv
-          and "toast('export failed: '+e,'err')" in _csv
+    check("the blob URL outlives the click, stated EXACTLY ONCE for the whole "
+          "page - it used to be restated at every download site, and the four "
+          "sites had drifted to three different delays with one revoking "
+          "synchronously (got %d)"
+          % (M.UI_HTML.count("URL.revokeObjectURL(url), 4000"),),
+          M.UI_HTML.count("URL.revokeObjectURL") == 1
+          and "setTimeout(() => URL.revokeObjectURL(url), 4000)" in M.UI_HTML)
+    check("...and the export still says so when it cannot run, rather than being "
+          "a button that does nothing",
+          "toast('export failed: '+e,'err')" in _csv
           and "nothing to export" in _csv)
     check("the BOM is an escape, not an invisible character in the source",
-          "['\\ufeff'+uCsvText(facts)]" in _csv
+          "'\\ufeff'+uCsvText(facts)" in _csv
           and "﻿" not in M.UI_HTML)
     # <input type=search> clears itself on Escape - the trap the browse dialog
     # already hit once. One key, one effect.
@@ -1972,9 +1978,16 @@ def _cases(check):
             _cls = re.search(r"class:'([^']*)'", _body)
             _typ = re.search(r"type:'([^']*)'", _body)
             # Never laid out, so never a target: the theme file picker sits behind
-            # a real button at display:none, and the CSV/PDF anchors are created,
-            # clicked and dropped without ever being painted. Counted rather than
-            # dropped, so losing the exclusion is visible.
+            # a real button at display:none. Counted rather than dropped, so
+            # losing the exclusion is visible.
+            #
+            # The download anchor used to land here too, via `download:` in an
+            # `el()` call. It is built in `shared/download.js` now, with raw
+            # `createElement` - because a shared part ships into the report as
+            # well and the report has no `el()`. So this census, which reads
+            # `el()` calls, cannot see it any more. Nothing is lost: it was in
+            # the excluded bucket, never in `seen`, so no target-size verdict
+            # ever depended on it.
             _where = unpainted if ("display:none" in _body
                                    or "download:" in _body) else seen
             for _t in _tags:
@@ -2002,7 +2015,7 @@ def _cases(check):
           "date - %d shapes found, %d never painted (%r)"
           % (len(_ts_seen), len(_ts_unpainted), sorted(_ts_unpainted)),
           _ts_script is not None and len(_ts_seen) >= 25
-          and sorted(_ts_unpainted) == ["a", "input[type=file]"])
+          and sorted(_ts_unpainted) == ["input[type=file]"])
     _ts_missing = sorted([k for k in _ts_seen if k not in _TARGET_SIZE])
     _ts_stale = sorted([k for k in _TARGET_SIZE if k not in _ts_seen])
     check("ts1 every interactive shape the page can create carries a target-size "
@@ -2451,13 +2464,20 @@ def _cases(check):
     _fw_html = _ts_js.count("html:")                       # el()'s innerHTML hatch
     _fw_calc = re.findall(r"\bel\((?!')([^,)]{1,40})", _ts_js)
     _fw_calc_label = [_t for _t in _fw_calc if "'label'" in _t]
+    # el()'s own call passes a variable tag, so a LITERAL-tag createElement is by
+    # construction one of the routes this census cannot see. Naming the tags is
+    # what keeps "one route exists" from weakening the claim: the route is only a
+    # blind spot for <label> if it can build one.
+    _fw_ce_tags = sorted(re.findall(r"document\.createElement\('([a-z]+)'\)", _ts_js))
     check("fw3 the blind spot is measured, not assumed - and it under-counts, "
           "which is the direction that reads as \"nothing wrong\": %d "
           "createElement outside el()'s own, %d html:/innerHTML attribute(s), %d "
           "el() call(s) with a computed tag, %d of those able to yield 'label' "
-          "(the one is hint()'s `ref?'button':'span'`)"
-          % (_fw_ce, _fw_html, len(_fw_calc), len(_fw_calc_label)),
-          _fw_ce == 0 and _fw_html == 0
+          "(the one is hint()'s `ref?'button':'span'`). The createElement is "
+          "shared/download.js building %r, which cannot be a <label>: a shared "
+          "part ships into the report too, and the report has no el()."
+          % (_fw_ce, _fw_html, len(_fw_calc), len(_fw_calc_label), _fw_ce_tags),
+          _fw_ce == 1 and _fw_ce_tags == ["a"] and _fw_html == 0
           and len(_fw_calc) == 1 and not _fw_calc_label)
 
     # The rule that is easy to read as cosmetic and is not. MEASURED: without it

@@ -108,6 +108,10 @@ def _css(cache=True):
 # the page dies: `chips.js` runs `phaseRows.forEach(...)` at load, and under
 # alphabetical order `phaseRows` has not been declared yet.
 _SCRIPT_PARTS = (
+    # The shared layer first, and that order IS the dependency direction: a
+    # shared part cannot call a surface helper because the surface has not been
+    # declared yet. See `ui/shared/README.md`.
+    "shared/download.js",
     "report/page-state.js",
     "report/filters.js",
     "report/sorting.js",

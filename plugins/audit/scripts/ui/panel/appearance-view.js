@@ -419,7 +419,7 @@ function tExport(kind){
  if(kind==='json'){
   const body=JSON.stringify({$description:'audit panel/report theme',
     name:name,tokens:tPayload()},null,2);
-  tDownload(name+'.theme.json',body,'application/json');return;}
+  downloadText(name+'.theme.json',body,'application/json');return;}
  // The compiled tokens, for reading or pasting elsewhere. One-way on purpose:
  // what comes BACK in is JSON, so the importer never has to parse CSS.
  const lines=[':root{'];
@@ -429,23 +429,7 @@ function tExport(kind){
  tChanges().filter(ch=>ch.mode==='dark').forEach(ch=>
    lines.push('  '+ch.token+':'+ch.to+';'));
  lines.push('}');
- tDownload(name+'.theme.css',lines.join('\n'),'text/css');}
-/**
- * Hand the reader a file, without a server round trip or a stored artifact.
- *
- * The anchor has to be in the document to be clickable, and the object URL has
- * to outlive the click, which is why both are cleaned up afterwards rather than
- * immediately — revoking in the same tick cancels the download in some browsers.
- * @param {string} fname - the filename to suggest
- * @param {string} body - the file's whole text
- * @param {string} mime - the media type; ';charset=utf-8' is appended here, so
- *   callers pass the bare type
- * @returns {void}
- */
-function tDownload(fname,body,mime){
- const url=URL.createObjectURL(new Blob([body],{type:mime+';charset=utf-8'}));
- const a=el('a',{href:url,download:fname});document.body.append(a);a.click();
- a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ downloadText(name+'.theme.css',lines.join('\n'),'text/css');}
 /**
  * Load a theme file somebody sent, as a DRAFT — nothing is written until Save.
  *

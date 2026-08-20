@@ -1365,6 +1365,47 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
     }
   } else notes.push('ok   (no bugs table in this plan — bugs CSV skipped)');
 
+  // The Markdown twin, and it is here because of what it USED to do. Every other
+  // download on this page went through one helper that revokes the object URL
+  // late; this one built its own anchor and revoked SYNCHRONOUSLY right after
+  // click(), defended by a comment, while a comment in the sibling part argued
+  // the opposite. It now goes through the shared helper — and this check exists
+  // because it was the only download site the gate did not drive, which is how
+  // the two policies stayed contradictory without anything going red.
+  //
+  // WHAT THIS CANNOT SEE, MEASURED RATHER THAN ASSUMED. Putting the synchronous
+  // revoke back and re-rendering leaves this check GREEN on this machine: the
+  // failure it guards is a race, so it is machine- and timing-dependent, and a
+  // pass here is not evidence that the timing is right. That is the whole reason
+  // the timing rule is enforced STATICALLY instead — test__panel_page.py pins
+  // `URL.revokeObjectURL` as occurring exactly once in the page, with the late
+  // spelling. This check's job is narrower and still worth having: it proves the
+  // path RUNS at all, and would catch an exception, a missing control, a wrong
+  // filename or a decode that produced nothing.
+  const mdBtn = await page.$('#audit-dl-md');
+  const hasTwin = await page.evaluate(() => !!window.AUDIT_MD_B64);
+  if (hasTwin && !mdBtn) {
+    failures.push('FAIL the report carries a Markdown twin but no control to save it');
+  } else if (mdBtn) {
+    try {
+      const wait = page.waitForEvent('download', { timeout: 15000 });
+      await mdBtn.click();
+      const dl = await wait;
+      const text = readFileSync(await dl.path(), 'utf8');
+      // Decoded, not merely non-empty: a revoke that lands too early yields a
+      // download event and a truncated or empty file, which is exactly the
+      // failure the late revoke prevents and the one a size check would miss.
+      const heading = text.split('\n').find((l) => l.startsWith('# '));
+      expect('the Markdown twin downloads and its first heading survives the decode',
+             typeof heading === 'string' && heading.length > 2, true);
+      expect('the Markdown twin is offered under the name the page carries',
+             await dl.suggestedFilename(),
+             await page.evaluate(() => window.AUDIT_MD_NAME || 'audit-report.md'));
+    } catch (e) {
+      failures.push(`FAIL the Markdown twin produced no download (${String(e).split('\n')[0]})`);
+    }
+  } else notes.push('ok   (no Markdown twin in this report — twin download skipped)');
+
   // Usage daily CSV + the chart PNGs — paired with the payload they read.
   const hasU = await page.evaluate(() => !!window.AUDIT_USAGE);
   const usageBtn = await page.$('[data-csv="usage"]');

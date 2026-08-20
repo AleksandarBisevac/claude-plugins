@@ -459,17 +459,11 @@
       // so a per-character charCodeAt is the whole decode.
       const bin = atob(window.AUDIT_MD_B64 || '');
       const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
-      const url = URL.createObjectURL(
-        new Blob([bytes], { type: 'text/markdown;charset=utf-8' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = (window.AUDIT_MD_NAME || 'audit-report.md');
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // Revoked once the click is dispatched; without this the page holds the
-      // decoded document for the rest of its lifetime.
-      URL.revokeObjectURL(url);
+      // Through the shared helper, which revokes LATE. This site used to revoke
+      // synchronously after click() - defended by a comment here, and argued
+      // against by a comment in exports.js, in the same surface.
+      download((window.AUDIT_MD_NAME || 'audit-report.md'),
+               new Blob([bytes], { type: 'text/markdown;charset=utf-8' }));
     } catch (e) {}
   }
 

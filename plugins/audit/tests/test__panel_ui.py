@@ -83,24 +83,33 @@ def _cases(check):
     # simply never ships. `declared_asset_drift()` compares the declared list
     # against the DIRECTORY; this compares it against what the page is BUILT
     # from, which is the half that catches a part declared and never joined.
+    # `shared/` counts, for the reason above: it is part of what this page is
+    # BUILT from, so a shared part nobody joined fails here too.
     _declared_js = set(n for n in _theme.UI_ASSETS
-                       if n.startswith("panel/") and n.endswith(".js"))
+                       if n.endswith(".js")
+                       and (n.startswith("panel/") or n.startswith("shared/")))
     check("every panel part on disk is loaded, and every loaded part is on disk "
           "- declared %d, assembled %d, difference %r"
           % (len(_declared_js), len(M._JS_PARTS),
              sorted(_declared_js.symmetric_difference(M._JS_PARTS))),
           _declared_js and _declared_js == set(M._JS_PARTS))
-    check("the first part declares the primitives and the last one boots, which "
-          "is what makes the order load-bearing rather than alphabetical - "
+    _shared_at = [i for i, n in enumerate(M._JS_PARTS) if n.startswith("shared/")]
+    _panel_at = [i for i, n in enumerate(M._JS_PARTS) if n.startswith("panel/")]
+    check("every shared part precedes every panel part, so the dependency "
+          "direction is enforced by load order rather than by review (shared at "
+          "%r, panel at %r)" % (_shared_at, _panel_at),
+          _shared_at and _panel_at and max(_shared_at) < min(_panel_at))
+    check("the first panel part declares the primitives and the last one boots, "
+          "which is what makes the order load-bearing rather than alphabetical - "
           "sorting the tuple would leave this suite green and the page dead on "
           "the first read of a name still in TDZ",
-          M._JS_PARTS[0] == "panel/core.js"
+          M._JS_PARTS[_panel_at[0]] == "panel/core.js"
           and M._JS_PARTS[-1] == "panel/boot.js"
           and list(M._JS_PARTS) != sorted(M._JS_PARTS))
     check("core.js really does declare what later parts read at load time, and "
           "boot.js really does end with the call - the names, not just the "
           "positions, so a rename cannot leave the ordering case green",
-          "const $=" in _theme.read_asset(M._JS_PARTS[0])
+          "const $=" in _theme.read_asset(M._JS_PARTS[_panel_at[0]])
           and _theme.read_asset(M._JS_PARTS[-1]).rstrip().endswith("boot().catch(e=>toast('load failed: '+e,'err'));"))
 
     # --- CSS brace balance, via _ui_theme's existing lints -----------------------

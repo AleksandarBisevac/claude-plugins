@@ -71,17 +71,30 @@ def _cases(check):
     # assembles without it, every substring pin keeps passing, and the feature
     # simply never ships. The declared-asset list is compared against the
     # directory elsewhere; this compares it against what the page is BUILT from.
+    # `shared/` counts: it is part of what this page is BUILT from, and a shared
+    # part nobody joined would be the same silent failure as a report part nobody
+    # joined - the page assembles, the pins pass, the helper never ships.
     _declared_js = set(n for n in _theme.UI_ASSETS
-                       if n.startswith("report/") and n.endswith(".js"))
+                       if n.endswith(".js")
+                       and (n.startswith("report/") or n.startswith("shared/")))
     check("every report part on disk is loaded, and every loaded part is on "
           "disk - declared %d, assembled %d, difference %r"
           % (len(_declared_js), len(M._SCRIPT_PARTS),
              sorted(_declared_js.symmetric_difference(M._SCRIPT_PARTS))),
           _declared_js and _declared_js == set(M._SCRIPT_PARTS))
-    check("the first part declares and the last one boots, which is what makes "
-          "the order load-bearing rather than alphabetical - sorting the tuple "
-          "would leave this suite green and the page dead",
-          M._SCRIPT_PARTS[0] == "report/page-state.js"
+    # THE ORDER IS THE DEPENDENCY DIRECTION. Every `shared/` part precedes every
+    # `report/` one, which is what makes "a shared part may not call a surface
+    # helper" mechanical rather than remembered: the surface is not declared yet.
+    _shared_at = [i for i, n in enumerate(M._SCRIPT_PARTS) if n.startswith("shared/")]
+    _report_at = [i for i, n in enumerate(M._SCRIPT_PARTS) if n.startswith("report/")]
+    check("every shared part precedes every report part, so the dependency "
+          "direction is enforced by load order rather than by review (shared at "
+          "%r, report at %r)" % (_shared_at, _report_at),
+          _shared_at and _report_at and max(_shared_at) < min(_report_at))
+    check("the first report part declares and the last one boots, which is what "
+          "makes the order load-bearing rather than alphabetical - sorting the "
+          "tuple would leave this suite green and the page dead",
+          M._SCRIPT_PARTS[_report_at[0]] == "report/page-state.js"
           and M._SCRIPT_PARTS[-1] == "report/exports.js"
           and list(M._SCRIPT_PARTS) != sorted(M._SCRIPT_PARTS))
     check("the parts carry no <script> tags — those live in this module",

@@ -288,14 +288,7 @@ function uExport(facts){
   // codepage and turns every non-ASCII author name into mojibake on open. Written
   // as an escape, never as the character itself — an invisible literal in the
   // source is unreviewable and ungreppable.
-  const url=URL.createObjectURL(new Blob(['\ufeff'+uCsvText(facts)],
-    {type:'text/csv;charset=utf-8'}));
-  const a=el('a',{href:url,download:name});
-  document.body.append(a);a.click();a.remove();
-  // Revoked late, not immediately: some browsers have not started reading the blob
-  // by the time click() returns, and a revoked URL there is a download that fails
-  // with no error anywhere.
-  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  downloadText(name,'\ufeff'+uCsvText(facts),'text/csv');
   toast(facts.length+' row(s) exported to '+name);
  }catch(e){toast('export failed: '+e,'err');}}
 

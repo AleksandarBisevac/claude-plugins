@@ -19,27 +19,6 @@
   }
 
   /**
-   * Hand a blob to the browser as a file download.
-   * @param {string} name Filename offered to the reader.
-   * @param {Blob} blob Payload to save.
-   * @returns {void}
-   */
-  function download(name, blob) {
-    // The object URL must be revoked or the page holds the blob for its whole
-    // lifetime, and it must be revoked LATE: some engines have not started
-    // reading when click() returns, and a URL revoked at that point is a
-    // download that fails with no error anywhere.
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-  }
-
-  /**
    * Serialise rows to CSV text and download them.
    * @param {string} name Filename offered to the reader.
    * @param {(string|number|null)[][]} rows Header row first, then data rows.
