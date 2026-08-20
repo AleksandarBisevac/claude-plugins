@@ -25,7 +25,10 @@ const isDark=()=>{const t=root.getAttribute('data-theme');return t?t==='dark':ma
 const paint=()=>$('#theme').textContent=isDark()?'☀':'☾';paint();
 $('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data-theme',n);
  // th: the live preview is per-mode — repaint it for the mode just chosen.
- if(typeof tPaint==='function')tPaint();
+ // Unguarded: `tPaint` is a top-level `function`, and hoisting is per SCRIPT
+ // rather than per part, so it is defined before this line can run — measured,
+ // not assumed. The `typeof` guard that stood here could not be taken.
+ tPaint();
  try{localStorage.setItem(TK,n);}catch(e){}paint();};
 // Render the standalone report and open it. Opened through THIS origin (/report):
 // a browser will not follow a file:// link from an http:// page, so handing over a

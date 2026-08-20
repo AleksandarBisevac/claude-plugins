@@ -133,7 +133,7 @@ function applyCardOrder(view){
  // the same three-layer answer the colours get. An order you can only see after
  // saving is not a preview, and this is the one part of the look that is judged
  // by looking at another tab.
- const lay=(typeof tLayout==='function')?tLayout():(THEME.layout||{});
+ const lay=tLayout();
  const want=(lay.order||{})[view];
  if(!Array.isArray(want)||!want.length)return;
  const named={};

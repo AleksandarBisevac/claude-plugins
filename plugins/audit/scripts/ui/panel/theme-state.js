@@ -64,11 +64,11 @@ function tCaptureBase(){
  TSPACING.concat(TTYPE).forEach(n=>{
   if(!TBASE[n])TBASE[n]=cs.getPropertyValue(n).trim();});}
 const TMODES=['light','dark'];
-const tKey=(name,mode)=>mode==='dark'?'$dark':'$value';
+const tKey=mode=>mode==='dark'?'$dark':'$value';
 // The value a token HAS right now: the draft first, then the stored theme, then
 // the default. Three layers, one answer, so nothing on screen is ever blank.
 function tVal(name,mode){
- const from=o=>o&&o[name]?o[name][tKey(name,mode)]:undefined;
+ const from=o=>o&&o[name]?o[name][tKey(mode)]:undefined;
  const d=from(TDRAFT);if(d!==undefined&&d!==null)return d;
  const s=from(THEME&&THEME.theme);if(s!==undefined&&s!==null)return s;
  const f=from(THEME&&THEME.default);
@@ -76,7 +76,7 @@ function tVal(name,mode){
 const tSingle=name=>((THEME&&THEME.single)||[]).includes(name);
 function tDefault(name,mode){
  const e=(THEME&&THEME.default||{})[name]||{};
- const v=e[tKey(name,mode)];return v===undefined?e['$value']:v;}
+ const v=e[tKey(mode)];return v===undefined?e['$value']:v;}
 // Every token whose draft differs from the DEFAULT — computed, never
 // remembered, so it is answerable for a theme somebody sent you as a file.
 function tChanges(){
@@ -134,7 +134,7 @@ function tSet(name,mode,value,record){
  TDRAFT=TDRAFT||{};
  const e=TDRAFT[name]||(TDRAFT[name]={$value:tVal(name,'light')});
  if(!tSingle(name)&&e.$dark===undefined)e.$dark=tVal(name,'dark');
- e[tKey(name,mode)]=value;
+ e[tKey(mode)]=value;
  if(record!==false){TUNDO.push({token:name,mode:mode,from:was,to:value});TREDO=[];}
  tPaint();}
 function tUndo(stack,other){

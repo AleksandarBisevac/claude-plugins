@@ -34,7 +34,7 @@ function setPath(o,p,v){const ks=p.split('.');let cur=o;
 // by storing an empty string — a config listing every default is a config nobody can
 // read, and it also freezes today's defaults into the file.
 function delPath(o,p){const ks=p.split('.');let cur=o;
- for(const k of ks.slice(0,-1)){if(cur==null||typeof cur[k]!=='object')return;cur=cur[k];}
+ for(const k of ks.slice(0,-1)){if(cur==null||typeof cur[k]!=='object'||cur[k]===null)return;cur=cur[k];}
  delete cur[ks[ks.length-1]];
  // Drop the container too if this emptied it, so removing the last usage override
  // does not leave `"usage": {}` behind.

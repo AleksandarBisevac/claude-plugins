@@ -69,7 +69,7 @@ function uUnit(facts){const M=USAGE.taskMeta||{},cost={};
  if(done.length)out.perTask=done.reduce((a,b)=>a+b,0)/done.length;
  // Same gate as the report: a forecast off fewer than 5 samples is noise, so it is
  // suppressed rather than shown with false confidence.
- if(done.length>=5){const s=[...done].sort((a,b)=>a-b),q=p=>s[Math.max(0,
+ if(done.length>=out.gate){const s=[...done].sort((a,b)=>a-b),q=p=>s[Math.max(0,
    Math.min(s.length-1,Math.round(p*(s.length-1))))];
   out.proj={low:q(.25)*remaining,high:q(.75)*remaining};}
  return out;}
