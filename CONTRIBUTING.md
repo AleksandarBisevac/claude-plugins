@@ -525,9 +525,10 @@ shapes and they are not equivalent:
   no dist target, nothing generated — `tsc --noEmit` reads the `.js` that already
   ships and fails CI on a type error. **Measured, not assumed (2026-08-19):**
   `npx -p typescript@5 tsc --noEmit --allowJs --checkJs --target es2022 --lib
-  es2022,dom plugins/audit/scripts/ui/report.js` runs against the tree as it is
-  today and immediately reports real things — `report.js:257` compares a `number`
-  with a `string | number` using `>=`, `window.AUDIT_USAGE` is undeclared, the
+  es2022,dom plugins/audit/scripts/ui/report/*.js` runs against the tree as it is
+  today and immediately reports real things (the path was `ui/report.js` when this was
+  measured, one file before the cut) — one comparison of a `number`
+  with a `string | number` using `>=`, `window.AUDIT_USAGE` undeclared, the
   expando pattern this codebase relies on (`__tip`, `__detail`) is unmodelled, and
   several `HTMLElement` reads want a cast. A run needs `skipLibCheck` and
   node_modules excluded, or it picks up `@types/chai` from the dev tree and reports

@@ -138,7 +138,7 @@ claude-plugins/                           # this repo (personal, public)
           _doctor_hygiene.py              # what is HELD (locks) and what is LEAKING (local artifacts in git)
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
-          _report_ui.py                   # reads scripts/ui/report.{css,js} at import, assembles _CSS/_SCRIPT
+          _report_ui.py                   # reads the ordered parts under scripts/ui/report{,-css}/, assembles _CSS/_SCRIPT
           _report_html.py                 # HTML fragment builders for the report: escaping, chips, table cells
           _report_usage.py                # the Usage section's ORDER: assembly + the shared data payload
           _usage_viz.py                   # how the section formats a number and draws a bar
@@ -150,7 +150,7 @@ claude-plugins/                           # this repo (personal, public)
           _report_md.py                   # the report's Markdown twin (render_md), embedded in the page
         panel/                            # the panel domain: the server, the page it assembles, the read and write sides
           panel-server.py                 # localhost control-panel web UI (config + composition)
-          _panel_ui.py                    # reads scripts/ui/panel.{html,css,js} at import, assembles UI_HTML
+          _panel_ui.py                    # reads panel.html + the ordered parts under scripts/ui/panel{,-css}/, assembles UI_HTML
           _panel_page.py                  # the assembled page: the substitution chain -> UI_HTML + UI_TEMPLATE
           _panel_discovery.py             # discovers skills/agents/MCP servers this project can reach
           _panel_settings.py              # the Settings form's schema + the write-path key allow-lists
@@ -166,7 +166,7 @@ claude-plugins/                           # this repo (personal, public)
           _demo_cast.py                   # the identities both fixtures attribute to, so the owner join matches
           gen-demo-manifest.py            # synthetic LARGE manifest fixture for demos/screenshots/CI
           gen-demo-usage.py               # synthetic usage ledger fixture, consistent with a real manifest
-        ui/                               # panel/report HTML+CSS+JS as real editor-highlightable files, no .py
+        ui/                               # four directories of ordered parts (report/, report-css/, panel/, panel-css/) + panel.html, no .py
       tests/                              # selftest blocks moved OUT of the modules they test (all of them)
         _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
         test__cli_fmt.py                  # pilot 1: an importable helper
@@ -1166,8 +1166,8 @@ Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero networ
 phase progress bars, task tables, bug rollup, ADO links. Consumes audit-status's rollup
 (single source of truth). Every manifest string is HTML-escaped — manifest content is
 untrusted — and only http(s) URLs render as links (`javascript:` degrades to text).
-The report's CSS/JS live as real files under `scripts/ui/report.{css,js}`; `_report_ui.py`
-reads them at import with explicit utf-8 and assembles the same `_CSS`/`_SCRIPT` constants
+The report's CSS/JS live as ordered feature parts under `scripts/ui/report-css/` and
+`scripts/ui/report/`; `_report_ui.py` reads them at import with explicit utf-8 and assembles the same `_CSS`/`_SCRIPT` constants
 byte-identically — the rendered report page stays a single self-contained file regardless.
 What is left in this file after the split is `main()` — argument parsing, the manifest
 read, the theme resolve, the files it writes — plus `_verdict`, and the cases that
@@ -1202,8 +1202,10 @@ order, where the HTML segments and re-words: this table is read by GitHub and by
 reordering it would change every diff against an earlier render for a presentational reason.
 
 ### `plugins/audit/scripts/report/_report_ui.py`
-The report's CSS and inline JS, off disk as real files under `scripts/ui/report.{css,js}`,
-mirroring `_panel_ui.py`'s split so both surfaces follow one convention. `render-report.py`
+The report's CSS and inline JS, off disk as the ordered feature parts under
+`scripts/ui/report-css/` and `scripts/ui/report/`, mirroring `_panel_ui.py`'s split so both
+surfaces follow one convention. Each `_PARTS` tuple IS the load/cascade order, and a part
+nothing joins is a feature that silently never ships. `render-report.py`
 used to carry `_CSS`/`_SCRIPT` as raw-string literals (plain CSS plus `_ui_theme.TOKEN_CSS`,
 and a whole `<script>...</script>` block) that no editor highlighted and no linter looked at;
 this module reads the real files at import with explicit utf-8 and reassembles the same two
@@ -1289,7 +1291,8 @@ report's Markdown renderer strictly below the Usage section's assembly instead o
 `/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
 `panel.md` dispatches on its argument — bare = open (launched detached via `nohup … &`), `stop`,
 `status`, `--port <n>` — and `panel-server.py` is a single dependency-free Python-stdlib HTTP
-server (the UI's HTML/CSS/JS lives as real files under `scripts/ui/panel.{html,css,js}`;
+server (the UI's HTML/CSS/JS lives as `scripts/ui/panel.html` plus the ordered parts under
+`scripts/ui/panel-css/` and `scripts/ui/panel/`;
 `_panel_ui.py` reads them at import with explicit utf-8 and assembles the same `UI_HTML` constant
 byte-identically — the served page is still one self-contained HTML file, the source just is not.
 It reuses the plugin's pure cores — `validate-manifest.py`, `validate-config.py`,
@@ -1307,7 +1310,9 @@ structural manifest CRUD, and never while a `/audit` run holds `<manifestPath>.l
 before each atomic save. `--selftest` covers the front-matter parser, discovery, and the server.
 
 ### `plugins/audit/scripts/panel/_panel_ui.py`
-The panel's markup/CSS/JS, off disk as real files under `scripts/ui/panel.{html,css,js}`.
+The panel's markup/CSS/JS, off disk: `scripts/ui/panel.html` plus the ordered feature parts
+under `scripts/ui/panel-css/` and `scripts/ui/panel/`, whose cascade and load order are
+declared once as `_ui_theme.PANEL_CSS_PARTS` and `_panel_ui._JS_PARTS`.
 `panel-server.py` used to carry the whole page as one raw-string literal (~820 lines of CSS,
 ~28 of body markup, ~2,913 of JS, none of it Python — no editor highlighted it, no linter
 looked at it). `raw_template()` reads the three files and splices css/js back into two
@@ -1324,7 +1329,8 @@ reads) and `UI_TEMPLATE` (the same page with the `/*__THEME_TOKENS__*/` marker i
 and stated where it happens: the snapshot `UI_TEMPLATE = UI_HTML` sits *after* the last
 substitution and *before* the theme one, and case `pg1` is what goes red if it moves. It also
 holds the selftest cases that assert about the CSS and JavaScript in
-`scripts/ui/panel.{css,js}` — three quarters of `panel-server.py` before the split, and claims
+`scripts/ui/panel-css/` and `scripts/ui/panel/` — three quarters of `panel-server.py` before
+the split, and claims
 about the front end rather than about an HTTP server. Layer 4: it reaches `usage_ledger` (L3,
 for `COST_BAND_PARAMS`), `_help` (L3, selftest only), `_panel_ui`/`_panel_settings` (L2) and
 `_ui_theme`/`_loader` (L1), and never `_panel_state`, `_panel_write`, `_panel_discovery` or
