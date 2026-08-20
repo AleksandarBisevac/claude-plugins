@@ -270,14 +270,32 @@ function tDefault(name,mode){
  *   skipped for a single-valued token. Empty means the draft IS the default,
  *   which the tab says out loud rather than showing an empty list.
  */
-function tChanges(){
+/**
+ * Every token and mode whose CURRENT value differs from `baseline`.
+ *
+ * The walk is the same for both questions this tab asks — groups, then tokens,
+ * then modes, skipping the dark column of a single-valued token, comparing as
+ * strings so `'0'` and `0` are one value — and the only thing that ever differed
+ * between them is which baseline the draft is measured against. It was spelled
+ * twice, so the skip rule and the comparison were each two places to fix, and the
+ * second copy arrived the same afternoon the first was documented as the meaning
+ * of "differs".
+ *
+ * @param {function(string, string): *} baseline - the value to measure against,
+ *   given a token name and a mode: `tDefault` for the shipped look, `tSavedVal`
+ *   for what is on disk
+ * @returns {ThemeChange[]} one row per differing pair, in group then token then
+ *   mode order
+ */
+function tDiff(baseline){
  const out=[];
  ((THEME&&THEME.groups)||[]).forEach(g=>g.tokens.forEach(name=>{
   TMODES.forEach(mode=>{
    if(mode==='dark'&&tSingle(name))return;
-   const now=tVal(name,mode),was=tDefault(name,mode);
+   const now=tVal(name,mode),was=baseline(name,mode);
    if(String(now)!==String(was))out.push({token:name,mode:mode,from:was,to:now});});}));
  return out;}
+function tChanges(){return tDiff(tDefault);}
 // What differs from the shipped defaults on the layout side, in the same
 // {token,mode,from,to} shape the token diff uses, so one list shows both.
 /**
@@ -302,14 +320,7 @@ function tChanges(){
  * @returns {ThemeChange[]} one row per token and mode whose draft value differs
  *   from the value on disk, in group then token then mode order
  */
-function tUnsaved(){
- const out=[];
- ((THEME&&THEME.groups)||[]).forEach(g=>g.tokens.forEach(name=>{
-  TMODES.forEach(mode=>{
-   if(mode==='dark'&&tSingle(name))return;
-   const now=tVal(name,mode),was=tSavedVal(name,mode);
-   if(String(now)!==String(was))out.push({token:name,mode:mode,from:was,to:now});});}));
- return out;}
+function tUnsaved(){return tDiff(tSavedVal);}
 /**
  * The theme's unsaved work as CHANGE ROWS, in the shape every other surface
  * reports and every reader of a row expects.

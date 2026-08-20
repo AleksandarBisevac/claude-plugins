@@ -127,8 +127,7 @@ function renderUsage(){closeCombo();const c=$('#usage');
   sel.append(el('option',{value:''},none+' ('+vals.length+')'));
   // The option VALUE stays the ledger's key (it is what setF filters on);
   // only the words a reader picks from are named.
-  vals.forEach(v=>{const o=el('option',{value:v},uKey(v));
-   if(UF[dim]===v)o.selected=true;sel.append(o);});
+  fillOptions(sel,vals.map(v=>[v,uKey(v)]),UF[dim]);
   r2.append(sel);});
  // Area - the plan's partition of the work, joined from row.phaseId at read time
  // (uAreas). Options are the tags that actually attribute spend in THIS ledger,

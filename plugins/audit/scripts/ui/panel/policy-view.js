@@ -166,9 +166,8 @@ function renderPolicy(){closeCombo();
  enb.onchange=()=>pEdit(()=>{const b=pBlock();
    if(enb.checked)delete b.enabled;else b.enabled=false;pPrune();});
  const ovSel=el('select',{id:'polonviol','aria-label':'On a violation - what the hook does'});
- (POLICY.onViolationChoices||['deny']).forEach(v=>{
-   const o=el('option',{value:v},v+' — '+(PVIOL[v]||''));
-   if(pOnViolation()===v)o.selected=true;ovSel.append(o);});
+ fillOptions(ovSel,(POLICY.onViolationChoices||['deny'])
+   .map(v=>[v,v+' — '+(PVIOL[v]||'')]),pOnViolation());
  // Back to the shipped default is written by REMOVING the key, unless the file
  // states it — a block that spells out every default is a block nobody can read,
  // and this one is meant to be read in a pull request.
@@ -374,8 +373,7 @@ function pCell(kind,r,tag){
  const sel=el('select',{class:'prule','data-set':cur||null,
    'data-prule':r.name+(tag?('@'+tag):''),
    'aria-label':(tag?('rule for area '+tag+', '):'project rule for ')+r.name});
- [['','—'],['allow','allow'],['deny','deny']].forEach(([v,t])=>{
-  const o=el('option',{value:v},t);if(cur===v)o.selected=true;sel.append(o);});
+ fillOptions(sel,[['','—'],['allow','allow'],['deny','deny']],cur);
  if(r.required){
   // The one promise this panel makes about its own components, kept mechanically:
   // the control cannot be moved at all. The server refuses such a policy too — the

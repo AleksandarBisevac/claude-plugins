@@ -1624,6 +1624,26 @@ SHARED_CONCERNS = (
      "'ONE rule, and two places that need it' while four views spelled it - the "
      "comment was written when it was true and nothing counted it afterwards, "
      "which is the whole case for a row here rather than a note there."),
+    ("theme token walk", "panel/theme-state.js",
+     "const now=tVal(name,mode),was=", 0,
+     "EXTRACTED as tDiff. The needle is the COMPARISON, not `TMODES.forEach` - "
+     "that first spelling matched two walks in the Appearance editor which are "
+     "not this concern at all (one builds a cell per mode, the other walks "
+     "contrast pairs), and a row that fires on innocent code is a row someone "
+     "switches off. Two functions asked what differs and walked groups, "
+     "then tokens, then modes identically - skipping the dark column of a "
+     "single-valued token, comparing as strings - and disagreed on nothing but "
+     "WHICH baseline. Both copies were mine, hours apart: the second arrived the "
+     "same afternoon the first was documented as the meaning of 'differs', which "
+     "is how quickly a walk gets retyped when the difference is one argument."),
+    ("select option loop", "panel/core.js", "o.selected=true;", 3,
+     "EXTRACTED as fillOptions, which now serves five sites: build the option, "
+     "mark it when its value is the chosen one, append. The residual THREE are "
+     "deliberate and named - two decorate individual options (a title naming an "
+     "area's owner, a disabled state over the chart's point cap) and one decides "
+     "`selected` through a path normalisation. A per-option callback would have "
+     "carried every caller's private business into the helper, which is the "
+     "duplication back with extra steps."),
     ("heatmap calendar", "shared/calendar.js", r"re:function (startOf|endOf)\(", 0,
      "EXTRACTED, and the oldest duplication in this tree: five functions - a "
      "Monday-first weekday, startOf, endOf, shift and seek - written twice under "

@@ -816,7 +816,10 @@ def _cases(check):
           "p.desiredOutcome?el('span',{class:'ovout'" in M.UI_HTML
           and ".ovout{" in M.UI_HTML)
     check("overview: sort and group-by-area consume the rollup's own areas registry",
-          "['plan','plan order'],['progress','progress'],['status','status']" in M.UI_HTML
+          # Through fillOptions since the five plain option loops became one; the
+          # pair list is what identifies THIS select.
+          "[['plan','plan order'],['progress','progress'],\n   ['status','status']]"
+          in M.UI_HTML
           and "OVF.byArea=cb.checked" in M.UI_HTML and "r.areas[tag]" in M.UI_HTML)
     check("overview: an empty result says so and offers the way back",
           "No phase matches this filter." in M.UI_HTML
@@ -1879,7 +1882,10 @@ def _cases(check):
           and "}),uKey(e.key)))));" in M.UI_HTML                      # legend
           and "tipRow(uCol(e.key),uKey(e.key)" in M.UI_HTML           # crosshair
           and ":uKey(UF[d]);" in M.UI_HTML                            # filter chips
-          and "el('option',{value:v},uKey(v))" in M.UI_HTML)          # the attr select
+          # The attr select: the option's VALUE stays the ledger's key because
+          # that is what the filter matches on, and only the words are renamed -
+          # which is why fillOptions takes [value, label] pairs at all.
+          and "vals.map(v=>[v,uKey(v)])" in M.UI_HTML)
     check("uc: the label wears the warn role, as text and not as a badge",
           ".uncat{color:var(--warn)" in M.UI_HTML)
     # --- F-P-1 (co): the combo menu is ONE overlay on <body> ------------------

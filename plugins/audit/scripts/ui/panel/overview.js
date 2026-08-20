@@ -333,8 +333,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  qIn.addEventListener('input',()=>{OVF.q=qIn.value;renderOver();});
  const sortSel=el('select',{'aria-label':'sort phases',
    onchange:e=>{OVF.sort=e.target.value;renderOver();}});
- [['plan','plan order'],['progress','progress'],['status','status']].forEach(([v,t])=>{
-  const o=el('option',{value:v},t);if(OVF.sort===v)o.selected=true;sortSel.append(o);});
+ fillOptions(sortSel,[['plan','plan order'],['progress','progress'],
+   ['status','status']],OVF.sort);
  const tools=el('div',{class:'ovtools'},qIn,el('span',{class:'filtlbl'},'sort:'),sortSel);
  const areaTags=Object.keys(r.areas||{});
  if(areaTags.length){
@@ -349,9 +349,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   OVF.view=(segs.has('active')||segs.has('pending'))?'active':'all';}
  const viewSel=el('select',{'aria-label':'which phases to show','data-ovview':'1',
    onchange:e=>{OVF.view=e.target.value;renderOver();}});
- [['active','Active & pending'],['archived','Archived (done & cancelled)'],
-  ['all','All phases']].forEach(([v,t])=>{
-   const o=el('option',{value:v},t);if(OVF.view===v)o.selected=true;viewSel.append(o);});
+ fillOptions(viewSel,[['active','Active & pending'],
+   ['archived','Archived (done & cancelled)'],['all','All phases']],OVF.view);
  tools.append(el('span',{class:'filtlbl'},'view:'),viewSel);
  const count=el('span',{class:'count',style:'margin-left:auto'});
  tools.append(count);

@@ -409,6 +409,31 @@ function runContained(steps){
 const tableHead=cols=>el('thead',{},el('tr',{},cols.map(c=>
  (c==null||typeof c==='string')?el('th',{},c)
  :el('th',c.attrs||{},c.label,c.extra))));
+/**
+ * Fill a `<select>` with options, marking the one currently chosen.
+ *
+ * Five sites spelled this out: build the option, set `selected` when its value is
+ * the current one, append. `[value, label]` pairs rather than bare values because
+ * the value is what a change handler reads while the label is only words, and one
+ * caller has them deliberately different - the option's value stays the ledger's
+ * own key because that is what the filter matches on, and only the words a reader
+ * picks from are renamed.
+ *
+ * Three other option loops are NOT here and should not be: two decorate
+ * individual options (a title naming an area's owner, a disabled state over the
+ * chart's point cap) and one decides `selected` through a path normalisation. A
+ * per-option callback would have made this carry every caller's private business,
+ * which is the duplication back with extra steps.
+ *
+ * @param {HTMLSelectElement} sel - appended to; options already there stay
+ * @param {Array<[*, string]>} pairs - [value, label], in the order to show
+ * @param {*} cur - the chosen value, compared strictly, as each site compared it
+ * @returns {HTMLSelectElement} `sel`, so a builder can return the call
+ */
+const fillOptions=(sel,pairs,cur)=>{
+ pairs.forEach(([v,t])=>{const o=el('option',{value:v},t);
+  if(cur===v)o.selected=true;sel.append(o);});
+ return sel;};
 /** How long a plain success stays in a savebar's note slot before it dissolves. */
 const SAVE_NOTE_MS=5000;
 /**

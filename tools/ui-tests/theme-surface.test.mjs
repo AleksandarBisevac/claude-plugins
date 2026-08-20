@@ -187,6 +187,28 @@ describe('the token rows agree with _theme_changes', () => {
     });
   }
 
+  it('a single-valued token yields ONE row, not two — the dark-column skip', () => {
+    // THE CASE THE SWEEP ABOVE CANNOT MAKE. It compares `tUnsaved`, whose
+    // baseline is `tSavedVal`, and neither side falls back from `$dark` to
+    // `$value` — so dropping the skip changes nothing there and the mutation
+    // passed. `tChanges` measures against `tDefault`, which DOES fall back, so
+    // without the skip a single-valued token reports a phantom dark row against
+    // its own light value. That diff is what `tPayload` writes into the theme
+    // file, which makes it the more consequential of the two and the one nothing
+    // was comparing.
+    const { ctx } = loadPanel({ placeholders: { __CONTRAST_PAIRS__: '[]' } });
+    vm.runInContext('THEME = ' + JSON.stringify({
+      theme: {}, default: state.default, single: single, groups: groups,
+      layout: {}, warnings: [],
+    }) + '; TDRAFT = ' + JSON.stringify({ [S]: { $value: '4px' } })
+      + '; TLAY = null;', ctx);
+    const { tChanges, tRowField } = reach(ctx, ['tChanges', 'tRowField']);
+    const rows = tChanges().filter((ch) => ch.token === S);
+    expect(rows.length, 'rows for ' + S + ': '
+      + JSON.stringify(rows.map((r) => tRowField(r)))).toBe(1);
+    expect(rows[0].mode).toBe('light');
+  });
+
   it('and a saved token with no draft is NOT a change [was: every token in a '
      + 'worn theme]', () => {
     expect(jsRows({ [A]: { $value: '#111111', $dark: '#222222' } }, {})).toEqual([]);

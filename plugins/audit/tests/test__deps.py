@@ -986,7 +986,7 @@ def _cases(check):
     # helper for this lint's sake would be the tail wagging the dog. So a residual
     # is allowed and must be DECLARED here, which is what stops "extracted, with
     # an exception" from quietly becoming "extracted, with several".
-    _RESIDUAL = {"table header construction"}
+    _RESIDUAL = {"table header construction", "select option loop"}
     _homed = [(c, a) for c, home, _n, a, _w in M.SHARED_CONCERNS if home is not None]
     _undeclared = sorted(c for c, a in _homed if a > 0 and c not in _RESIDUAL)
     _stale = sorted(c for c, a in _homed if a == 0 and c in _RESIDUAL)
@@ -1021,6 +1021,10 @@ def _cases(check):
                                       "tableHead(['a','b'])"),
         "day <-> milliseconds": ("const d=ms/864e5;", "const d=ms/DAY_MS;"),
         "save confirmation": ("toast('nothing to save - x')", "confirmSave({})"),
+        "theme token walk": ("const now=tVal(name,mode),was=b(name,mode);",
+                             "TMODES.forEach(mode=>{ drawCell(mode); });"),
+        "select option loop": ("if(cur===v)o.selected=true;",
+                               "fillOptions(sel, pairs, cur)"),
         "heatmap calendar": ("function startOf(g, d) { return d; }",
                              "periodStart(g, d)"),
         "caret restore": ("n.setSelectionRange(caret,caret)",
