@@ -9,8 +9,12 @@ built once at import and re-substituted per request for the session token.
 old single-file `panel.js` in its original sequence, which is what makes the
 assembled page byte-for-byte what it was — the whole safety argument for the split.
 680 substring assertions and 26 index-bounded slices over `UI_HTML` are pinned to
-that order (`python3 tools/count-ui-pins.py`), and four of the slices use a section
-marker comment as an endpoint, so those comment lines are load-bearing source.
+that order (`python3 tools/count-ui-pins.py`). Some of those slices use a COMMENT as
+an endpoint, which makes those comment lines load-bearing source — print the live
+list rather than trusting one, because a slice can be taken over an intermediate
+variable and a scan that looks only for `UI_HTML[...]` misses it:
+
+    grep -rn '\.index("//' plugins/audit/tests/
 
 **Order is behaviour.** `core.js` declares `$`, `el`, `api` and `TOKEN`, which
 statements further down read at load time; every top-level `const`/`let` is in TDZ
@@ -28,7 +32,7 @@ views, the CSV export after the usage metrics). Moving either would be a regroup
 |---|---|
 | `core.js` | The primitives every later part reads — `$`, `el`, `api`, the token-bearing `url()` — plus shared state, the light/dark paint, label lookup, tab routing and `toast`. |
 | `write-confirmation.js` | Who is writing, what exactly, and whether it was recorded: the change viewer, the row-level diff of a form against the file, the caret hand-back rule, the confirm dialog, and what the server echoed back. Defines `boot()`. |
-| `hints.js` | The `ⓘ` hint text and autocomplete sources that arrive from Python, and the single body-level tip element they open into. |
+| `hints.js` | The form's shape, microcopy and enum choices as Python substitutes them; the `ⓘ` hint, the one body-level tip element it opens into, and the label builders that carry it. The autocomplete's DATA is here; its widget is in `help-drawer.js`. |
 | `help-drawer.js` | The help drawer: field descriptions and concept pages from `GET /api/help`, its three views, and the combo menu widget. |
 | `settings.js` | The Settings tab: the config form, its field renderers, and deep links to one setting. |
 | `composition.js` | The Composition tab: model suggestions unioned from the manifest, the rate table and the ledger, plus the skill pickers. |

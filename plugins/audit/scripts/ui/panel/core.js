@@ -1,33 +1,159 @@
 
+// ---------- the primitives every later part reads ----------
+/**
+ * The session token every request to this origin must carry, and the absolute
+ * path of the project this panel was started in.
+ *
+ * Both are substituted into the script text by `panel-server.py` — the token per
+ * request, JSON-encoded — rather than fetched, because the first fetch would
+ * already need the token.
+ */
 const TOKEN=__AUDIT_TOKEN__, PROJECT=__AUDIT_PROJECT__;
+/**
+ * `$` — the first element matching a CSS selector.
+ *
+ * A caller naming an id from `panel.html`'s static skeleton dereferences the
+ * result straight away, so a null there means the id was renamed rather than a
+ * state to handle. A caller reaching into a rendered view has to expect null:
+ * every render function rebuilds its subtree wholesale, so the node it is
+ * looking for may not exist yet, or any more.
+ *
+ * @param {string} s - any CSS selector
+ * @param {ParentNode} [r] - subtree to search; the whole document when omitted
+ * @returns {Element|null} the first match, or null when nothing matches
+ */
+/**
+ * `el` — the element builder every part of this panel builds DOM with, at
+ * several hundred call sites. Three of its rules are not guessable from a call:
+ *
+ *   `class` sets className, `html` hands its value to innerHTML, and a key
+ *   beginning `on` becomes a listener for the event named by the rest of it
+ *   (`onclick` listens for 'click'), so a handler is passed as a function and
+ *   never as a string. Every other key is an attribute.
+ *
+ *   An ATTRIBUTE whose value is null or undefined is skipped entirely, which is
+ *   what lets a conditional attribute be written inline as `cond?'1':null`
+ *   instead of as a second statement. The class, the innerHTML key and the
+ *   handlers are not attributes and get no such treatment — a null class is
+ *   written through and becomes the class name "null".
+ *
+ *   Children are flattened ONE level. An array of nodes may therefore be passed
+ *   as a single argument, but an array of arrays may not — the inner array would
+ *   reach the text-node branch and be stringified. Only null and undefined
+ *   children are dropped: `0` and `false` arrive as the text "0" and "false".
+ *
+ * The innerHTML key takes markup, so nothing derived from the manifest, the
+ * config or an API answer may go through it. Pass such a value as a child
+ * instead, where it becomes a text node.
+ *
+ * @param {string} t - tag name
+ * @param {Object<string, string|number|boolean|null|((ev: Event) => void)>} [a] -
+ *   attributes, the class and innerHTML keys, and `on*` handlers, in one bag
+ * @param {...(Node|string|number|Array<Node|string|number|null>|null)} k -
+ *   children, flattened one level; a string becomes a text node
+ * @returns {HTMLElement} the new element, already populated
+ */
 const $=(s,r=document)=>r.querySelector(s), el=(t,a={},...k)=>{const e=document.createElement(t);
  for(const[n,v]of Object.entries(a)){if(n==='class')e.className=v;else if(n==='html')e.innerHTML=v;
  else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else if(v!=null)e.setAttribute(n,v);}
  for(const c of k.flat()){if(c!=null)e.append(c.nodeType?c:document.createTextNode(c));}return e;};
+/**
+ * One call to the panel's own API, carrying the session token.
+ *
+ * Every request goes through here, so the token header is written once. The
+ * answer is parsed as JSON unconditionally: an HTTP error status still RESOLVES,
+ * with whatever JSON the server sent, which is why callers decide on the
+ * payload's own `ok` and `findings` fields and never on a status code. It
+ * rejects only when the network fails or the body is not JSON at all: the boot
+ * sequence catches that for the payloads a view can do without, and deliberately
+ * lets it through for the two nothing can be drawn without.
+ *
+ * @param {string} m - HTTP method
+ * @param {string} p - path on this origin, e.g. /api/state
+ * @param {Object<string, *>} [b] - payload, serialized as JSON; omit for a GET
+ * @returns {Promise<Object<string, *>>} the parsed answer
+ */
 const api=async(m,p,b)=>{const r=await fetch(p,{method:m,headers:{'X-Audit-Token':TOKEN,
  'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();};
-// For navigations rather than fetches: window.open cannot set a header, so the
-// token has to ride in the query string (the guard accepts either).
+/**
+ * The same path, signed for a NAVIGATION rather than a fetch.
+ *
+ * A navigation cannot set a header, so the token has to ride in the query
+ * string; the server's guard accepts either.
+ *
+ * @param {string} p - path on this origin
+ * @returns {string} the path with the session token appended as a query
+ */
 const url=p=>p+'?t='+encodeURIComponent(TOKEN);
+/**
+ * The two payloads every view reads.
+ *
+ * `STATE` is the whole answer of GET /api/state — the config, the manifest's
+ * composition view, findings, the rollup, who is viewing and what is running.
+ * `REG` is what discovery found in this repo and globally, and starts as the
+ * empty shape rather than null so a render that runs before boot's fetch iterates
+ * nothing instead of throwing. `STATE` has no such shape, which is why nothing
+ * is rendered until it lands.
+ */
 let STATE=null, REG={skills:[],agents:[],mcp:[]};
-// Middle ellipsis, not a tail cut: the head says which machine/checkout this is
-// and the tail says which project, and a plain truncation throws away whichever
-// end the CSS happens to reach first. The full path stays in the tooltip, so
-// nothing is lost — it is just no longer allowed to set the header's height.
+/**
+ * Shorten a path from the MIDDLE, keeping both of its ends.
+ *
+ * Not a tail cut: the head says which machine or checkout this is and the tail
+ * says which project, so a plain truncation throws away whichever end the CSS
+ * happens to reach first. The whole path stays in the tooltip beside every call,
+ * so nothing is lost — it is only no longer allowed to set the header's height.
+ *
+ * @param {string} s - the path to shorten
+ * @param {number} max - widest result allowed, the ellipsis counted
+ * @returns {string} `s` when it already fits, '' when there is nothing to
+ *   shorten, otherwise head + ellipsis + tail at exactly `max` characters
+ */
 function midElide(s,max){if(!s||s.length<=max)return s||'';
  const keep=max-1,head=Math.ceil(keep*0.38);return s.slice(0,head)+'…'+s.slice(s.length-(keep-head));}
 $('#proj').textContent=midElide(PROJECT,56);
 $('#proj').title=PROJECT;
-// theme
+// ---------- the light/dark choice, and the two topbar buttons ----------
+/**
+ * The element the chosen mode is written on, and the key it is remembered under.
+ * One attribute is the whole authority: the CSS themes off it and `isDark` reads
+ * it, so the stored value is copied onto the element rather than consulted twice.
+ */
 const root=document.documentElement, TK='audit-panel-theme';
+// Applied before anything paints, and inside a try because reading storage can
+// throw outright where it is blocked: a panel that cannot remember the choice
+// must still open in the default one.
 try{const s=localStorage.getItem(TK);if(s)root.setAttribute('data-theme',s);}catch(e){}
+/**
+ * Whether the panel is painting dark right now.
+ *
+ * An explicit choice on the root element wins; with no choice at all the OS
+ * preference decides. Only 'dark' counts as an explicit dark — any other value
+ * present means light, so a stray or future value cannot read as dark by
+ * accident.
+ *
+ * @returns {boolean} true when the dark palette is in force
+ */
 const isDark=()=>{const t=root.getAttribute('data-theme');return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches;};
+/**
+ * Put the mode the button would switch TO on its face — a sun while dark is on,
+ * a moon while it is not — because a control should say what pressing it does.
+ *
+ * @returns {string} the glyph it wrote; that is the assignment's value, and no
+ *   caller reads it
+ */
 const paint=()=>$('#theme').textContent=isDark()?'☀':'☾';paint();
+// The choice is written on the root element first, so everything reading the
+// attribute agrees before anything repaints.
 $('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data-theme',n);
- // th: the live preview is per-mode — repaint it for the mode just chosen.
- // Unguarded: `tPaint` is a top-level `function`, and hoisting is per SCRIPT
- // rather than per part, so it is defined before this line can run — measured,
- // not assumed. The `typeof` guard that stood here could not be taken.
+ // The Appearance tab's live preview is per-mode, so it has to be redrawn for
+ // the mode just chosen. Called unguarded: `tPaint` is a top-level `function` in
+ // theme-state.js, and hoisting is per SCRIPT rather than per part, so it is
+ // defined before this line can run — measured, not assumed. The `typeof` guard
+ // that used to stand here read as a safety measure and was a branch that could
+ // not be taken; the failure it named (a part missing from the join) is caught
+ // loudly by test__panel_ui.py instead, which is the better place for it — a
+ // silent skip here would come up unthemed with nothing saying why.
  tPaint();
  try{localStorage.setItem(TK,n);}catch(e){}paint();};
 // Render the standalone report and open it. Opened through THIS origin (/report):
@@ -55,39 +181,110 @@ $('#report').onclick=async e=>{const b=e.currentTarget;
  }catch(err){if(win)win.close();toast('render failed: '+err,'err');}
  finally{b.disabled=false;b.textContent=was;}};
 // tabs
-// Views are addressable, and each remembers where you were in it. Every switch
-// used to slam the page back to the top and the URL never changed: a 50-phase
-// Composition table lost your place the moment you glanced at Usage, and there
-// was no way to link anyone to a tab — a reload always landed on Guards.
-// The manifest's vocabulary is machine-facing: `in_progress` sorts, compares and
-// survives serialization. It is not a thing to show anyone, and it was leaking
-// into every status pill, every filter button and every phase row. The machine
-// value stays in data-status (the CSS themes off it, the filters compare it);
-// only the text changes.
+/**
+ * The manifest's machine vocabulary in the words a reader gets, keyed by the
+ * stored value.
+ *
+ * Substituted at import from `_ui_theme.LABELS`, which the report and the CLI
+ * read too, so the three surfaces cannot drift into naming one state three ways.
+ */
 const LABELS=__LABELS__;
+/**
+ * The reader's word for a stored value.
+ *
+ * The manifest's vocabulary is machine-facing: `in_progress` sorts, compares and
+ * survives serialization. It is not a thing to show anyone, and it was leaking
+ * into every status pill, every filter button and every phase row. The machine
+ * value stays in data-status — the CSS themes off it, the filters compare it —
+ * and only the text changes here.
+ *
+ * A value the shared table does not name is humanised in place rather than shown
+ * raw, so a state added to the manifest before it is added to the table still
+ * reads as words.
+ *
+ * @param {string|null|undefined} v - a stored value, e.g. 'in_progress'
+ * @returns {string} the shared label, the humanised value, or the em dash every
+ *   other empty cell uses when there is no value at all
+ */
 const label=v=>LABELS[v]||(v?String(v).replace(/[_-]+/g,' ').replace(/^./,c=>c.toUpperCase()):'—');
-// uc (F-P-2): "--" is the ledger's storage key for spend with no phase or task
-// behind it — ad-hoc edits, `#no-plan`, work outside the plan. That is an
-// answer, and it used to reach the screen as those two characters. LABELS
-// names it (shared with the report and the CLI, so the three cannot drift),
-// and uKeyEl paints it in the warn role: not a gate, not a finding, just the
-// one row in the table a reader should be able to find without hunting.
+/**
+ * The ledger's storage key for spend with no phase or task behind it — ad-hoc
+ * edits, `#no-plan`, sessions outside the plan.
+ *
+ * That is an answer, and it used to reach the screen as those two characters.
+ * The shared label table names it, and the element builder below paints it in the
+ * warn role: not a gate, not a finding, just the one row in a table a reader
+ * should be able to find without hunting.
+ */
 const UNCAT='--';
-// TWO storage keys, one fact: the group dimensions (phase/task/branch) write
-// "--" for a row with none, and the attr dimension writes "unattributed" for
-// the same spend seen from the other side. A reader meets one thing, so they
-// get one word. Deliberately a two-key predicate rather than label() over any
-// key: label() humanises whatever it does not know, and "claude-opus-5" is not
-// something to prettify.
+/**
+ * Whether a usage key is the uncategorised bucket, under either of its names.
+ *
+ * TWO storage keys, one fact: the group dimensions (phase/task/branch) write
+ * "--" for a row with none, and the attr dimension writes "unattributed" for the
+ * same spend seen from the other side. A reader meets one thing, so they get one
+ * word.
+ *
+ * Deliberately a two-key predicate rather than the label table over any key: that
+ * table humanises whatever it does not know, and "claude-opus-5" is not something
+ * to prettify.
+ *
+ * @param {string} k - a storage key from a usage row
+ * @returns {boolean} true for either spelling of "no phase, no task"
+ */
 const isUncat=k=>k===UNCAT||k==='unattributed';
+/** Why that row exists, for the tooltip wherever its label is shown. */
 const UNCAT_WHY='spend with no phase or task behind it - ad-hoc edits, #no-plan, '
  +'or sessions outside the plan. Counted, never hidden.';
+/**
+ * A usage key as text, with the empty bucket named instead of printed as its
+ * storage key.
+ *
+ * @param {string} k - a storage key from a usage row
+ * @returns {string} the shared label for the empty bucket, otherwise `k` itself
+ */
 const uKey=k=>isUncat(k)?label(UNCAT):k;
+/**
+ * The same key as something to put in a cell: the empty bucket carries its own
+ * class and the explanatory tooltip, every other key stays plain text.
+ *
+ * The two branches return different KINDS on purpose — an ordinary key needs no
+ * element unless a class was asked for, and the builder takes a string child as
+ * readily as a node.
+ *
+ * @param {string} k - a storage key from a usage row
+ * @param {string} [cls] - an extra class for the wrapper
+ * @returns {HTMLSpanElement|string} a span for the empty bucket, or when `cls`
+ *   asks for one; otherwise the key as text
+ */
 const uKeyEl=(k,cls)=>isUncat(k)
  ?el('span',{class:'uncat'+(cls?' '+cls:''),title:UNCAT_WHY},label(UNCAT))
  :(cls?el('span',{class:cls},String(k)):String(k));
+/**
+ * Every view, where the reader last was in each, and which one is showing.
+ *
+ * These ids are three things at once: the element ids in `panel.html`, the
+ * `data-t` values on the tab buttons, and the names a `#/<tab>` link uses — so
+ * renaming one breaks a link somebody saved.
+ */
 const TABS=['guards','comp','over','usage','policy','look'],SCROLL={};
 let CURTAB=null;
+/**
+ * Show one view, hide the rest, and put the reader back where they were in it.
+ *
+ * Views are addressable and each remembers its own offset. Every switch used to
+ * slam the page back to the top while the URL never changed: a long Composition
+ * table lost your place the moment you glanced at Usage, there was no way to link
+ * anyone to a tab, and a reload always landed on Guards.
+ *
+ * An unrecognised name falls back to the first view rather than hiding all of
+ * them, so a hand-typed or stale fragment cannot leave a blank page.
+ *
+ * @param {string} t - a view id; anything else becomes 'guards'
+ * @param {boolean} [push] - false to route WITHOUT rewriting the fragment, which
+ *   is what the hashchange listener passes so it cannot answer itself
+ * @returns {void}
+ */
 function showTab(t,push){
  if(!TABS.includes(t))t='guards';
  closeCombo();   // the menu is on <body>, not in the view being hidden
@@ -95,10 +292,10 @@ function showTab(t,push){
  CURTAB=t;
  document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.t===t;x.classList.toggle('on',on);
   // Colour alone does not say which view you are in — a screen reader gets nothing
-  // from a background change, and these four are exclusive views, not filters.
+  // from a background change, and these are exclusive views, not filters.
   if(on)x.setAttribute('aria-current','true');else x.removeAttribute('aria-current');});
  for(const id of TABS)$('#'+id).classList.toggle('hidden',id!==t);
- // fp: the tab writer carries the usage-filter fragment, so switching views
+ // The tab writer carries the usage-filter fragment with it, so switching views
  // does not throw away a filtered link somebody is about to copy.
  if(push!==false){const uf=uFragment();const h='#/'+t+(uf?'!'+uf:'');
   if(location.hash!==h)history.replaceState(null,'',h);}
@@ -106,9 +303,17 @@ function showTab(t,push){
  // After the browser has laid the view out, not before it.
  requestAnimationFrame(()=>window.scrollTo({top:SCROLL[t]||0,behavior:'auto'}));}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.t));
-// Measured, not assumed. Below the shell breakpoint the five views become one
-// horizontal strip, and on a phone the last of them is off the right-hand edge
-// with nothing to suggest it exists.
+/**
+ * Mark the tab strip while it is really scrolling, so the CSS can show that
+ * there is more of it than fits.
+ *
+ * Measured, not assumed. Below the shell breakpoint the views become one
+ * horizontal strip, and on a phone the last of them sits off the right-hand edge
+ * with nothing to suggest it exists. A media query cannot say whether the strip
+ * overflowed; comparing the two widths can.
+ *
+ * @returns {void}
+ */
 function tabsOverflow(){const n=document.querySelector('.tabs');
  if(n)n.classList.toggle('scrolls',n.scrollWidth>n.clientWidth+1);}
 addEventListener('resize',tabsOverflow);tabsOverflow();
@@ -116,17 +321,45 @@ addEventListener('resize',tabsOverflow);tabsOverflow();
 // filters' (fp), and `#/usage!m=opus` has to route like `#/usage` did.
 addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(t)&&t!==CURTAB)showTab(t,false);});
+/**
+ * Which view to open on: the fragment first, because a link somebody sent is an
+ * instruction; then the view this browser was last on; then Guards.
+ *
+ * @returns {string} one of the view ids, never anything else
+ */
 function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(h))return h;
  try{const s=localStorage.getItem('audit-panel-tab');if(TABS.includes(s))return s;}catch(e){}
  return 'guards';}
+/**
+ * The one transient banner, for an outcome nobody has to act on.
+ *
+ * Anything a reader may need to read twice — a refusal, a list of findings —
+ * belongs in the save-note card below instead, which has no timer. This one's
+ * lifetime is pinned: the screenshot gate's no-toast budget and its content
+ * checks are calibrated against the value written here.
+ *
+ * @param {string} msg - the sentence to show
+ * @param {'ok'|'err'|'warn'} [kind] - the role colour; neutral when omitted
+ * @returns {void}
+ */
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'');
  setTimeout(()=>t.className=t.className.replace('show','').trim(),2600);}
-// The save-result card's lifecycle (sv): success dissolves after SAVE_NOTE_MS,
-// a refusal stays until dismissed or until the next Save/Discard replaces the
-// slot, warnings persist. "✓ saved" used to sit in the slot for the rest of
-// the session — indistinguishable from a save that just landed.
+/** How long a plain success stays in a savebar's note slot before it dissolves. */
 const SAVE_NOTE_MS=5000;
+/**
+ * The card that says what happened to a save, for the note slot above a savebar.
+ *
+ * Three outcomes and three lifetimes, and the difference between them is the
+ * point: a refusal stays until it is dismissed or until the next Save or Discard
+ * replaces the slot, warnings persist the same way, and a plain success dissolves
+ * on its own. "✓ saved" used to sit in the slot for the rest of the session,
+ * indistinguishable from a save that had just landed.
+ *
+ * @param {{ok: boolean, locked: (boolean|undefined), findings: (string[]|undefined), warnings: (string[]|undefined)}} res -
+ *   what a write endpoint answered
+ * @returns {HTMLDivElement} the card, which is empty when there is nothing to say
+ */
 function findingsBox(res){const box=el('div',{class:'savenote'});
  if(res.findings&&res.findings.length){
   // No timer on a refusal: a reader who glanced away must find the list still

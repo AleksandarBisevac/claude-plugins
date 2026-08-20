@@ -4,7 +4,20 @@
 // This is the other half - search and sort over the whole dimension - and it reads
 // from the SAME filtered facts the bars do, so it can never disagree with the page
 // behind it. A native <dialog> brings the focus trap, the backdrop and Esc for free.
+/**
+ * The one dialog element, built on first open and reused for the rest of the
+ * session - a singleton, which is why its backdrop and close listeners are
+ * wired once here rather than per opening.
+ * @type {HTMLDialogElement|null}
+ */
 let BROWSE=null;
+/**
+ * The columns each dimension shows, as `[heading, key]` pairs: the heading is
+ * words for the reader, the key is what a browseRows() row carries and what the
+ * sort and the cell renderer both look up. A dimension with no entry falls back
+ * to the model columns.
+ * @type {Object<string, Array<[string, string]>>}
+ */
 // `models` is omitted for the model dimension, where it would restate the row.
 const BCOL={
  phase:[['id','id'],['title','title'],['models','models'],['tokens','tokens'],
@@ -18,8 +31,27 @@ const BCOL={
         ['messages','msgs']],
  author:[['author','id'],['models','models'],['tokens','tokens'],['share','share'],
          ['cost','cost'],['messages','msgs']]};
+/**
+ * Which row keys hold numbers. A numeric column right-aligns, sorts by
+ * subtraction rather than by locale compare, and opens on its largest value
+ * where a text column opens on its first.
+ * @type {Object<string, number>}
+ */
 const BNUM={tokens:1,share:1,cost:1,msgs:1};
 
+/**
+ * One row per value of the dimension, carrying everything the dialog can show,
+ * sort or search on.
+ * @param {string} dim Field name to group by.
+ * @param {UsageFact[]} facts The filtered rows the ranked bars were built from.
+ * @returns {Array<{id: string, title: string, status: string, risk: string,
+ *   band: string, models: Array<{model: string, tokens: number,
+ *   pct: number|null}>, dominant: string, tokens: number, share: number|null,
+ *   cost: number, msgs: number}>} Ordered by tokens, biggest first. Every text
+ *   field is a string and never null, so a cell renders without a per-field
+ *   absence check; `share` is the one that can be null, because a share of
+ *   nothing has no value to print.
+ */
 function browseRows(dim,facts){
  const g=uAgg(facts,dim),grand=g.reduce((a,x)=>a+x[1][0],0);
  // Which models did this phase/task/person actually use? The aggregate throws
@@ -44,8 +76,19 @@ function browseRows(dim,facts){
     models:models,dominant:top?top.model:'',
     tokens:v[0],share:uShare(v[0],grand),cost:v[1],msgs:v[2]};});}
 
-// A mini stack plus the dominant model NAMED. Identity is never colour alone, and
-// at this size the segments are far too small to carry inline labels.
+/**
+ * The model-mix cell: a proportional stack of the models this row used, plus the
+ * dominant one NAMED.
+ *
+ * Named because identity is never colour alone, and at this size the segments
+ * are far too small to carry inline labels. The segment order is the one
+ * browseRows() fixed - slot order, since the palette was validated on that
+ * adjacency - so this must not re-sort them by size.
+ * @param {{models: Array<{model: string, tokens: number, pct: number|null}>,
+ *   dominant: string}} r One row from browseRows().
+ * @returns {HTMLSpanElement} The cell, or a muted em dash when the row used no
+ *   model at all.
+ */
 function modelCell(r){
  if(!r.models.length)return el('span',{class:'mut'},'—');
  const bar=el('span',{class:'mstack'});
@@ -57,6 +100,16 @@ function modelCell(r){
    .join('\n');
  return cell;}
 
+/**
+ * Open the browse dialog for one dimension.
+ * @param {string} dim Field name being browsed; a row click filters on it.
+ * @param {string} title Heading, the same words the ranked list that opened this
+ *   was headed with.
+ * @param {UsageFact[]} facts The filtered rows those bars were built from.
+ * @returns {void} The dialog's own state - the search needle, the sort key and
+ *   its direction - lives in this call's closure and nowhere else, so opening it
+ *   again starts clean and closing it leaves nothing behind on the page.
+ */
 function openBrowse(dim,title,facts){
  if(!BROWSE){BROWSE=el('dialog',{class:'browse'});
   // Clicking the backdrop is the same intent as Esc. The dialog element itself
@@ -136,7 +189,8 @@ function openBrowse(dim,title,facts){
         :(r.share<1?r.share.toFixed(2):r.share.toFixed(1))+'%')
       :key==='cost'?uCost(r.cost)
       :key==='msgs'?r.msgs.toLocaleString()
-      // uc: the id column is where the empty bucket lands in this table.
+      // The id column is where the empty bucket lands, so this is the cell
+      // that has to name it rather than print the ledger's storage key.
       :key==='id'?uKeyEl(r.id)
       :String(r[key]||'—'))));}));
   if(!shown.length)tb.replaceChildren(el('tr',{},

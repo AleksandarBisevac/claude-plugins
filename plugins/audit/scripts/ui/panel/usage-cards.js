@@ -6,6 +6,14 @@
 // question about the rows you are looking at, and a budget row that ignored an
 // author filter while the bar above it obeyed one would be two truths on one
 // screen. The caption says which rows it counted.
+/**
+ * Spend against each phase's declared budget.
+ * @param {UsageFact[]} facts Rows the filter bar has already narrowed.
+ * @returns {Array<HTMLElement>} Nodes for the caller to append, empty when no
+ *   phase declares a `budgetUSD` at all. A declared budget is always positive:
+ *   the server treats 0, a negative and a non-number alike as "no budget" and
+ *   never ships one, which is what makes the percentage here safe to divide.
+ */
 function uBudgets(facts){
  const B=USAGE.phaseBudgets||{};
  const ids=Object.keys(B);
@@ -51,6 +59,17 @@ function uBudgets(facts){
 // ledger plus the plan, never from the filtered rows: an axis that collapsed
 // under the filter it feeds would drop the row that was just clicked, taking
 // the way back out with it.
+/**
+ * The 12-month card: ledger columns beside plan columns.
+ * @param {UsageFact[]} facts Rows the filter bar has already narrowed. The
+ *   ledger half is recomputed from these; the plan half arrives server-shipped
+ *   and is project-wide, which the crumb says out loud.
+ * @returns {Array<HTMLElement>} Nodes for the caller to append, empty while the
+ *   ledger spans a single month - one month would only restate the tiles. A
+ *   month with no activity is still a row: the axis is walked from the first key
+ *   to the last, so a quiet month reads as quiet instead of vanishing and
+ *   closing the gap around itself.
+ */
 function uMonthly(facts){
  const allMonths=new Set(USAGE.facts.map(f=>f[F.ts].slice(0,7)));
  const plan=USAGE.monthlyPlan||{};
@@ -97,12 +116,12 @@ function uMonthly(facts){
  out.push(el('div',{class:'umwrap'},tbl));
  return out;}
 
-// --- tokens heatmap (D3, v0.36) ---------------------------------------------
+// --- tokens heatmap -----------------------------------------------------------
 // Day-of-week x hour, derived at render time from the HOURLY fact timestamps
 // (ts is "YYYY-MM-DDTHH" until the server rolls a huge ledger up to daily —
 // then there is no hour left to draw and the section stays away, the same
 // silence the report keeps for a ledger with no hourly grid). Semantics
-// inherit the report's C3 heatmap: granularity all/year/month/week/day,
+// inherit the report's activity heatmap: granularity all/year/month/week/day,
 // prev/next strictly bounded by the data (disabled AND muted at an edge,
 // stepping OVER gap days), and the period on display NAMED. The custom range
 // is deliberately NOT a new control: uFiltered() has already applied UF.day
@@ -110,10 +129,30 @@ function uMonthly(facts){
 // localStorage and rides the #/<tab>!from=..&to=.. hash — IS the range, and
 // the label reads "Custom range" while any of it is on. Granularity and
 // anchor are session furniture like SHOWN: deliberately not persisted.
+/**
+ * The heatmap's own navigation state: `g` is the granularity ('all', 'year',
+ * 'month', 'week' or 'day') and `a` is the ISO day the shown period starts on,
+ * empty while `g` is 'all'. `a` is CLAMPED back into the current bounds on every
+ * render, because a filter change can move the ledger out from under a period
+ * that was picked against the old one.
+ * @type {{g: string, a: string}}
+ */
 let UHM={g:'all',a:''};
+/** @type {string[]} Row labels, Monday first, matching wday()'s own ordering. */
 const UHM_WD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+/** @type {string[]} Month names for the period label, January at index 0. */
 const UHM_MON=['January','February','March','April','May','June','July',
  'August','September','October','November','December'];
+/**
+ * The day-of-week by hour grid, derived at render time from the hourly fact
+ * timestamps.
+ * @param {UsageFact[]} facts Rows the filter bar has already narrowed.
+ * @returns {Array<HTMLElement>} Nodes for the caller to append, and an EMPTY
+ *   array in two cases that are not the same thing: the server has rolled the
+ *   ledger to daily, so there is no hour left to file spend under; or nothing in
+ *   the selection carries a usable hour. Both keep the same silence the report
+ *   keeps for a ledger with no hourly grid.
+ */
 function uHeatmap(facts){
  if(USAGE.rolled)return[];
  const perDay=new Map();
@@ -233,6 +272,15 @@ function uHeatmap(facts){
 // recomputed inline from USAGE.facts on each render, zero new state.
 // All-time on purpose: the tiles below already answer the filtered question,
 // and a header that moved with the date range would only restate them.
+/**
+ * The header for the author drill-down: who this is, their all-time footprint,
+ * and what they touched.
+ * @returns {Array<HTMLElement>} Nodes for the caller to append, empty unless an
+ *   author filter is on - and empty too when that author has no rows at all,
+ *   which is what makes the empty state below the one thing that explains it.
+ *   Everything here is recomputed from the whole ledger per render, so it holds
+ *   no state of its own.
+ */
 function uPerson(){
  if(!UF.author)return[];
  const who=UF.author;
@@ -275,7 +323,7 @@ function uPerson(){
    .map(k=>split[k]+' '+k.replace('_',' '));
  if(parts.length)out.push(el('div',{class:'mut small'},
    'Their touched tasks: '+parts.join(' - ')+'.'));
- // Advisory ownership (v0.34 D3): the areas whose meta.areas owner IS this
+ // Advisory ownership: the areas whose meta.areas owner IS this
  // person, joined against the VALUES of the server-shipped areaOwners map.
  // A label, not an assignment - the same claim the manifest makes, no more.
  const owned=Object.entries(USAGE.areaOwners||{})
@@ -295,9 +343,47 @@ function uPerson(){
 // Computed from the WHOLE ledger, never from the filtered view: a task is an
 // outlier relative to the project, not relative to whatever slice you are looking
 // at. Recalibrating per filter would make one of any three tasks an "outlier".
+/**
+ * The band boundaries as usage_ledger.py declares them, substituted into this
+ * text at serve time. Read rather than restated: a gate and a percentile pair
+ * typed a second time here would be free to drift from the Python that bands the
+ * same tasks on every other surface.
+ * @type {{gate: number, percentileHigh: number, percentileOutlier: number}}
+ */
 const COST_BAND_PARAMS=__COST_BAND_PARAMS__;
+/**
+ * `BAND_GATE` is how many completed tasks the relative basis needs before it
+ * will band anything at all; `BAND_ORDER` is the bands from cheapest to
+ * dearest, which is the order any list of them is shown in.
+ */
 const BAND_GATE=COST_BAND_PARAMS.gate, BAND_ORDER=['typical','high','outlier'];
+/**
+ * The computed bands, memoised for as long as this ledger is the current one,
+ * and null before the first call.
+ *
+ * Cleared wherever USAGE is replaced - the out-of-band refresh and the poll that
+ * found the file changed both do it - because a band is a statement ABOUT a
+ * ledger, and a memo that outlived its ledger would go on labelling tasks from
+ * one that is gone.
+ * @type {{basis: string|null, sufficient: boolean,
+ *   byTask: Object<string, string>, sample: number, gate: number,
+ *   high: (number|undefined), outlier: (number|undefined),
+ *   counts: (Object<string, number>|undefined)}|null}
+ */
 let BANDS=null;
+/**
+ * Which tasks are typical, high or outlier by cost, and on what basis.
+ *
+ * Computed from the WHOLE ledger and never from the filtered view: a task is an
+ * outlier relative to the project, not relative to whatever slice is on screen.
+ * Recalibrating per filter would make one of any three tasks an outlier.
+ * @returns {{basis: string|null, sufficient: boolean,
+ *   byTask: Object<string, string>, sample: number, gate: number}} `basis` is
+ *   'absolute' for a configured threshold pair, 'relative' for percentiles over
+ *   this project's own completed tasks, and null when neither was possible - in
+ *   which case `sufficient` is false and `sample` and `gate` are what the caller
+ *   prints instead of a classification no reader could check.
+ */
 function uBandInfo(){
  if(BANDS)return BANDS;
  const cfg=USAGE.bands||{},M=USAGE.taskMeta||{},cost={};
@@ -319,6 +405,14 @@ function uBandInfo(){
   byTask[t]=b;counts[b]++;}
  return (BANDS={basis,sufficient:true,high:hi,outlier:ou,byTask,counts,sample,
    gate:BAND_GATE});}
+/**
+ * One task's cost band.
+ * @param {string} id Task id.
+ * @returns {string|null} A member of BAND_ORDER, or null both for a task with no
+ *   recorded cost and for every task while the sample is below the gate. The
+ *   caller draws an em dash either way, and says beside the table which of the
+ *   two it is.
+ */
 function bandOf(id){const b=uBandInfo();
  return b.sufficient?(b.byTask[id]||null):null;}
 

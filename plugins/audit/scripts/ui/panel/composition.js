@@ -1,13 +1,79 @@
 // ---------- Composition ----------
+/**
+ * One phase row of the composition payload, flattened by `_composition_view`.
+ *
+ * @typedef {object} CompPhase
+ * @property {string|null} id
+ * @property {string|null} title
+ * @property {string|null} status - a manifest phase status: pending, in_progress,
+ *   blocked or done
+ * @property {string|null} reviewModel - lifted out of the phase's review object,
+ *   which is the only part of it this tab edits
+ * @property {string[]} area - the phase's area tags
+ * @property {string|null} reviewSkill
+ */
+
+/**
+ * One task row of the composition payload, in document order and carrying the id
+ * of the phase that owns it.
+ *
+ * Four of these fields — risk, commit, startedAt and completedAt — are here for
+ * the Overview rollup rather than for this tab, which ignores what it does not
+ * edit. They ride this payload because it is the same manifest read either way.
+ *
+ * @typedef {object} CompTask
+ * @property {string|null} id
+ * @property {string|null} title
+ * @property {string|null} phaseId
+ * @property {string|null} status
+ * @property {string|null} model
+ * @property {string[]|null} skills - null is an ANSWER ("none applies"), not an
+ *   absence, and it has to survive every accessor that touches it
+ * @property {string|null} risk
+ * @property {string|null} commit
+ * @property {string|null} startedAt
+ * @property {string|null} completedAt
+ */
+
 // ---------- model suggestions (mc) ----------
-// One union, three sources, each named: the models the MANIFEST already routes
-// to, the ids the RATE TABLE prices, and what the LEDGER has actually metered.
-// The badge is the point — a model only one source spells is usually one slip
-// from its cousins, and the validator cannot arbitrate that (it is an offline
-// shape-checker with no ledger and no config), so the cross-source view lives
-// here. A name in several sources keeps its most local badge: manifest first,
-// then rates, then ledger.
+/**
+ * A model id offered by the completion menus, and where it was seen.
+ *
+ * @typedef {object} ModelItem
+ * @property {string} name - the model id, exactly as its source spells it
+ * @property {'manifest'|'rates'|'ledger'} source - the most local source that
+ *   knows it, which is what its badge shows
+ * @property {string} description - what that source knows: how many rows route to
+ *   it, what it costs, or how much it has metered
+ */
+
+/**
+ * Memo for `modelItems`. Null means "not built yet", never "no models found" —
+ * an empty union would be cached as an empty array.
+ * @type {ModelItem[]|null}
+ */
 let MITEMS=null;
+/**
+ * Every model id worth offering, unioned from three sources and badged by which.
+ *
+ * One union, three sources, each named: the models the MANIFEST already routes
+ * to, the ids the RATE TABLE prices, and what the LEDGER has actually metered.
+ * The badge is the point — a model only one source spells is usually one slip
+ * from its cousins, and the validator cannot arbitrate that, being an offline
+ * shape-checker with no ledger and no config. So the cross-source view lives
+ * here, on the one surface that can see all three.
+ *
+ * A name in several sources keeps its most local badge: manifest first, then
+ * rates, then ledger. `_default` is not offered — it is the fallback price, not
+ * a model anyone should route to by name.
+ *
+ * Cached, because a menu opens on a keystroke. The cache is dropped by hand
+ * wherever STATE or USAGE may have moved under it — a save re-render, a disk
+ * refresh — rather than expiring on a timer.
+ *
+ * @returns {ModelItem[]} manifest names first, then rate names, then ledger
+ *   names, each group sorted and each name appearing once
+ */
 function modelItems(){
  if(MITEMS)return MITEMS;
  const out=new Map();
@@ -34,10 +100,29 @@ function modelItems(){
   [...tot.keys()].sort().forEach(m=>{
    if(m)add(m,'ledger',uTok(tot.get(m))+' tokens in this ledger');});}
  return (MITEMS=[...out.values()]);}
-// One slip apart: case-insensitively equal but spelled differently, or one
-// substitution / insertion / deletion / adjacent transposition away — the same
-// four typo shapes validate-manifest's md warning reads, spelled here a second
-// time only because this half runs in a browser and that one runs offline.
+/**
+ * Are two model ids one slip apart?
+ *
+ * One slip means case-insensitively equal but spelled differently, or one
+ * substitution, insertion, deletion or ADJACENT transposition away — the four
+ * classic typo shapes. The cap at one slip is a false-positive discipline: at two
+ * edits one real name reaches another real name, and every hit would be noise.
+ *
+ * Identical strings are NOT a near miss. The caller is looking for a spelling
+ * that disagrees with another spelling, and agreement is the normal case.
+ *
+ * Symmetric in its arguments, which the caller relies on by comparing each pair
+ * in one direction only.
+ *
+ * The same predicate is `_model_near_miss` in `_manifest_typos.py`, which the
+ * offline validator uses. It is spelled a second time here only because this half
+ * runs in a browser — the two have to keep agreeing, or the panel and the
+ * validator will reach different verdicts about one pair of names.
+ *
+ * @param {string} a - one model id
+ * @param {string} b - the other model id
+ * @returns {boolean} true when they are one slip apart
+ */
 function mdNear(a,b){if(a===b)return false;
  const x=a.toLowerCase(),y=b.toLowerCase();
  if(x===y)return true;
@@ -51,10 +136,21 @@ function mdNear(a,b){if(a===b)return false;
  while(i<s.length){if(s[i]===l[j]){i++;j++;continue;}
   if(used)return false;used=true;j++;}
  return true;}
-// The three-source half of the typo check: a model the manifest spells that NO
-// other source knows, one slip from a name the rates or the ledger do know.
-// Non-blocking by design — the panel cannot know which spelling is intended,
-// only that two sources disagree by one slip.
+/**
+ * Models the manifest spells that nothing else knows, each with the name it is
+ * one slip from.
+ *
+ * The three-source half of the typo check: a model the manifest routes to that
+ * NO other source knows, sitting one slip from a name the rates or the ledger do
+ * know. A name the rate table already prices is never flagged, however odd it
+ * looks — being priced is the evidence that it is meant.
+ *
+ * Non-blocking by design. The panel cannot know which spelling was intended, only
+ * that two sources disagree by one character, so this is a note and never a gate.
+ *
+ * @returns {{model: string, near: string}[]} sorted by the manifest spelling;
+ *   `near` is the alphabetically first neighbour when a name is close to several
+ */
 function modelHints(){
  const manifest=new Set(),other=new Set();
  const comp=(STATE&&STATE.composition)||{phases:[],tasks:[]};
@@ -70,15 +166,26 @@ function modelHints(){
   const near=[...other].filter(o=>mdNear(m,o)).sort();
   if(near.length)out.push({model:m,near:near[0]});});
  return out;}
-// The inventory half of the skills story (v0.37 B3): a name the manifest
-// spells — in task.skills or in an area's defaults (comp.areaSkills, shipped
-// by _composition_view) — that the DISCOVERY scan does not know. modelHints'
-// shape on purpose: same .mut note, same cap, a hint and never a gate. No
-// near-miss requirement here — the validator already runs the intra-manifest
-// typo check offline; what only the panel can see is the inventory. Silent
-// when discovery found nothing at all: against an empty inventory every name
-// would read "unknown", and the note would be noise about the scan, not the
-// manifest.
+/**
+ * Skill names the manifest spells that the discovery scan has never seen.
+ *
+ * The inventory half of the skills story: a name the manifest spells — in a
+ * task's skills, or in an area's defaults, which ride the composition payload for
+ * exactly this — that the DISCOVERY scan does not know. Shaped like modelHints on
+ * purpose: the same muted note, the same cap, a hint and never a gate.
+ *
+ * No near-miss requirement here, because the validator already runs the
+ * intra-manifest typo check offline. What only the panel can see is the
+ * INVENTORY — which names actually resolve on this machine.
+ *
+ * Silent when discovery found nothing at all. Against an empty inventory every
+ * name would read as unknown, and the note would then be reporting a failed scan
+ * while looking like a report about the manifest.
+ *
+ * @returns {string[]} sorted, and empty both when every spelled name resolves and
+ *   when there was no inventory to judge against — the two are indistinguishable
+ *   here on purpose, because neither is something to act on
+ */
 function skillHints(){
  if(!REG.skills||!REG.skills.length)return[];
  const known=new Set(REG.skills.map(s=>s.name));
@@ -87,16 +194,55 @@ function skillHints(){
  (comp.tasks||[]).forEach(t=>{(Array.isArray(t.skills)?t.skills:[]).forEach(s=>spelled.add(s));});
  (comp.areaSkills||[]).forEach(s=>spelled.add(s));
  return [...spelled].sort().filter(n=>!known.has(n));}
+/**
+ * A one-skill box with a completion menu, for the settings that take a single
+ * skill rather than a list.
+ *
+ * Reports every keystroke and not only a menu choice, because discovery is an
+ * inventory rather than a whitelist: a name typed by hand is as legitimate as one
+ * picked from the list, and a skill can be installed after this page was served.
+ *
+ * An empty box reports null rather than an empty string, so "no skill here" is
+ * written as an absence and the key comes out of the manifest.
+ *
+ * @param {string|null|undefined} current - the saved value to start from
+ * @param {(name: string|null) => void} onChange - handed the trimmed name, or
+ *   null the moment the box is empty
+ * @param {string} [ariaName] - accessible name for the box; the visible words
+ *   beside it name a whole row, not this control
+ * @returns {HTMLElement} the box inside its menu wrapper
+ */
 function skillPicker(current,onChange,ariaName){
  const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)',
    'aria-label':ariaName||'search a skill'});
  inp.addEventListener('input',()=>onChange(inp.value.trim()||null));
  return comboWrap(inp,()=>REG.skills,(name,close)=>{inp.value=name;onChange(name);close();});}
-// Three states in one control (v0.37 B1): a list of chips, an EMPTY row (with
-// the "none applies" affordance that writes the explicit null), and the
-// opted-out state itself — a muted chip saying so, never an empty row that
-// looks unconsidered. Adding a skill from the opted-out state replaces the
-// null (changed my mind); the × on the opt-out chip clears it back to [].
+/**
+ * The three-state skill list for one task.
+ *
+ * A task's skills say one of three different things, and all three have to be
+ * writable and to look different from each other: a list of chips; an EMPTY row,
+ * carrying the "none applies" affordance that writes the explicit null; and the
+ * opted-out state itself, which gets a muted chip saying so rather than an empty
+ * row that looks merely unconsidered.
+ *
+ * Adding a skill while opted out replaces the null — that is "changed my mind".
+ * Clearing the opt-out chip goes back to the empty list, which is unconsidered
+ * again and not "no skills apply".
+ *
+ * The chip buttons prevent the default on mousedown, which stops the press from
+ * pulling focus out of the add box; a focus change there closes the completion
+ * menu, so the click would land on a box that had already moved.
+ *
+ * @param {() => string[]|null} getArr - reads the current value; null has to
+ *   arrive intact, since it is the opt-out and not an absence
+ * @param {(next: string[]|null) => void} setArr - hands back a new array, or null
+ *   to opt out
+ * @param {string} [ariaName] - accessible name for the add box; the callers fold
+ *   the task id into it, because the column header names every one of these
+ *   identically
+ * @returns {HTMLDivElement} the chips above the add box
+ */
 function skillChips(getArr,setArr,ariaName){
  const box=el('div',{class:'chipwrap'}),chips=el('div',{class:'chips'});
  const inp=el('input',{placeholder:'search a skill to add…',
@@ -116,16 +262,60 @@ function skillChips(getArr,setArr,ariaName){
    inp.value='';if(close)close();};
  const combo=comboWrap(inp,()=>REG.skills.filter(s=>!(getArr()||[]).includes(s.name)),add,add);
  draw();box.append(chips,combo);return box;}
-// Composition's filter state lives OUT here, not in renderComp's closure. Two
-// reasons, and the second is the one that made it necessary: a re-render (after a
-// save, or a poll) used to drop you back to the unfiltered table, and Overview
-// needs to hand this tab a phase to open. `apply` is published by renderComp so a
-// caller can change the state without re-rendering — re-rendering would throw away
-// whatever is half-typed in the composition form, which is the same mistake the
-// run-status poll was fixed for.
+/**
+ * Composition's filter state, held OUT here rather than in renderComp's closure.
+ *
+ * Two reasons, and the second is the one that made it necessary: a re-render —
+ * after a save, or a poll — used to drop you back to the unfiltered table; and
+ * Overview needs to be able to hand this tab a phase to open.
+ *
+ * `apply` is published by renderComp so that a caller can change this state and
+ * have the view on screen act on it WITHOUT being rebuilt. Rebuilding would throw
+ * away whatever is half-typed in the composition form, which is the same mistake
+ * the run-status poll was fixed for. It is null until renderComp has run once.
+ *
+ * @type {{q: string, status: string, needs: boolean,
+ *   open: Object<string, boolean>, apply: (() => void)|null}}
+ */
 const COMPF={q:'',status:'',needs:false,open:{},apply:null};
+/**
+ * Open the Composition tab scoped to one phase.
+ *
+ * Overview's way in. The other filters are cleared rather than left alone,
+ * because a status filter or a "needs skills" filter still standing from earlier
+ * could hide the very phase this was asked to show — arriving at an empty table
+ * is worse than arriving at an unfiltered one.
+ *
+ * The view is asked to act on the new state rather than being rebuilt, which is
+ * what keeps a half-typed form alive across the jump.
+ *
+ * @param {string} pid - the phase id to search for and expand
+ * @returns {void}
+ */
 function openInComp(pid){COMPF.q=pid;COMPF.status='';COMPF.needs=false;COMPF.open[pid]=true;
  if(COMPF.apply)COMPF.apply();showTab('comp');}
+/**
+ * Build the Composition tab: the manifest's routing levers, as one table.
+ *
+ * What this tab collects is a PATCH and never a document. Only the values that
+ * were actually touched go into it, so a save sends the edits rather than a
+ * rewritten manifest — which is what stops a field nobody opened from being
+ * reformatted, reordered or normalised by a round trip through this form.
+ *
+ * The phases and their tasks share one collapsible table rather than a card each,
+ * because everything here has to stay readable on a manifest with dozens of
+ * phases. The filter state lives in COMPF so that it survives the re-render, and
+ * this function republishes COMPF.apply on every build — the previous closure
+ * refers to elements that have just been thrown away.
+ *
+ * A successful save re-renders from the state the server hands back rather than
+ * from the patch. Without that the form kept showing the values that were typed
+ * rather than the values on disk: indistinguishable while they agree, and
+ * silently wrong the moment the server normalises one or refuses part of a patch.
+ *
+ * @returns {void} written into the #comp view. The manifest is untouched until
+ *   Save is pressed and its confirm dialog is answered
+ */
 function renderComp(){closeCombo();
  // Rebuilt from FOUR places, which is one more than any other view: its own Save,
  // its Discard, the ADO card's Save and Discard, and the 5s disk poll. MEASURED:

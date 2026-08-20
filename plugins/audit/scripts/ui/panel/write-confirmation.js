@@ -5,11 +5,26 @@
 // exact rows before it writes anything, the server echoes back what it really
 // applied, and the journal (when this install has one) keeps the record.
 
-// The name comes from the server, resolved by usage_ledger.resolve_author — the
-// same function and the same usage.authorMode that decide the `author` column in
-// the token ledger. That is what makes the Usage tab's "my spend" chip able to
-// filter on it: two ways of naming the same person would produce a filter that
-// silently matches nothing.
+/**
+ * Name whoever is driving this panel, in the topbar.
+ *
+ * The name comes from the server, resolved by `usage_ledger.resolve_author` — the
+ * same function and the same `usage.authorMode` that decide the `author` column
+ * in the token ledger. That is what makes the Usage tab's "my spend" chip able to
+ * filter on it: two ways of naming the same person would produce a filter that
+ * silently matches nothing.
+ *
+ * Three answers, not two. A resolved name is shown as itself; `mode: none` is a
+ * decision this project made, so it is stated as one and linked to the setting
+ * that made it; anything else means the resolver could not answer, which earns
+ * the same link and a different sentence. None of the three is a default
+ * standing in for a missing basis.
+ *
+ * @returns {void} nothing; and nothing is drawn at all when the topbar slot is
+ *   missing from the page, which is the defensive case rather than the narrow
+ *   viewport — there the pill is still built and hidden by the CSS, which is why
+ *   the confirm dialog repeats the name at the moment of the write
+ */
 function renderViewer(){
  const v=(STATE&&STATE.viewer)||{},w=$('#who');
  if(!w)return;
@@ -29,10 +44,28 @@ function renderViewer(){
    +'token ledger.'
   :'Could not resolve a name from git config or the environment.';}
 
-// A re-render replaces a view's children but never the view element itself, so a
-// delegated listener added per render would stack up one more copy on every save.
-// One controller per view, aborted at the top of that view's own wiring.
+/**
+ * One abort controller per view id, so its edit listeners can be replaced rather
+ * than added to.
+ *
+ * A re-render replaces a view's children but never the view element itself, so a
+ * delegated listener added per render would stack up one more copy on every save.
+ */
 const VIEWAC={};
+/**
+ * Run `fn` now, and again after anything inside a view is edited.
+ *
+ * The listeners are delegated on the view element and registered under that
+ * view's controller, which is aborted first — so wiring a view twice leaves one
+ * set of listeners, not two. The callback is deferred to the next frame rather
+ * than run inline: it reads the whole form, so it has to run after every handler
+ * the edit itself triggers has finished writing to the draft.
+ *
+ * @param {string} id - id of the view element, which must exist
+ * @param {() => void} fn - recomputes whatever depends on the form; called once
+ *   immediately so the view is correct before anyone types
+ * @returns {void}
+ */
 function onViewEdit(id,fn){
  if(VIEWAC[id])VIEWAC[id].abort();
  VIEWAC[id]=new AbortController();
@@ -40,12 +73,38 @@ function onViewEdit(id,fn){
  ['input','change','click'].forEach(e=>$('#'+id).addEventListener(e,run,opt));
  fn();}
 
-// Unsaved edits, registered per surface rather than tracked with a boolean. A
-// boolean answers "is something dirty"; three callers need the ROWS — the confirm
-// dialog lists them, Discard says how many are about to be lost, and beforeunload
-// only earns the right to interrupt a close if there really are some.
+/**
+ * Where each writable surface registers a way to ask it what is unsaved.
+ *
+ * Rows, not a boolean. A boolean answers "is something dirty"; three callers need
+ * the ROWS — the confirm dialog lists them, Discard says how many are about to be
+ * lost, and beforeunload only earns the right to interrupt a close when there
+ * really are some.
+ *
+ * A surface registers when its view is wired, so the ADO connector's entry joins
+ * this object at render time rather than appearing in the literal: the keys are
+ * read off the object, never off the text below.
+ *
+ * @type {Object<string, (() => Array<{target: string, field: string, from: *, to: *}>)|null>}
+ */
 const EDITS={guards:null,comp:null,policy:null};
+/**
+ * What one surface has unsaved, asked of the surface itself.
+ *
+ * @param {string} k - a key of the registry above
+ * @returns {Array<{target: string, field: string, from: *, to: *}>} the rows; an
+ *   empty list for a surface that has not registered yet, and also for a surface
+ *   whose own computation THREW — which reads as "nothing unsaved", the one
+ *   direction this must not be wrong in, since it is what decides whether a close
+ *   is interrupted
+ */
 function editRows(k){try{return (EDITS[k]?EDITS[k]():[])||[];}catch(e){return[];}}
+/**
+ * Every unsaved row on every registered surface, in one list.
+ *
+ * @returns {Array<{target: string, field: string, from: *, to: *}>} the rows;
+ *   empty when the panel is clean
+ */
 function dirtyRows(){return Object.keys(EDITS).reduce((a,k)=>a.concat(editRows(k)),[]);}
 addEventListener('beforeunload',ev=>{
  if(!dirtyRows().length)return;              // never interrupt a clean close
@@ -56,14 +115,56 @@ addEventListener('beforeunload',ev=>{
 // and there from the file. Values are compared through JSON so a skills list is
 // compared by content, and undefined and null are the one thing they mean here:
 // "no value".
+
+/**
+ * One value in the form both sides compare in: absent becomes null.
+ *
+ * @param {*} v - a value read off the form or off the state snapshot
+ * @returns {*} `v`, or null when it was undefined
+ */
 const cfNorm=v=>v===undefined?null:v;
+/**
+ * Whether two values are the same CHANGE-wise.
+ *
+ * Compared through JSON, so a skills list is compared by content rather than by
+ * identity — two arrays with the same members are not a change.
+ *
+ * @param {*} a - the value the file holds
+ * @param {*} b - the value the form holds
+ * @returns {boolean} true when there is nothing to write
+ */
 const cfSame=(a,b)=>JSON.stringify(cfNorm(a))===JSON.stringify(cfNorm(b));
+/**
+ * Build one change row.
+ *
+ * @param {string} target - what is being changed: 'meta', 'config', a phase id or
+ *   a task id, and it is what the lock notice reads to name the phases at risk
+ * @param {string} field - the field within that target, as the reader sees it
+ * @param {*} from - the value the file holds
+ * @param {*} to - the value about to be written
+ * @returns {{target: string, field: string, from: *, to: *}} the row, with both
+ *   values normalized so the dialog and the server's echo can be compared key for
+ *   key
+ */
 const cfRow=(target,field,from,to)=>({target,field,from:cfNorm(from),to:cfNorm(to)});
-// Field order matches the server's (_META_FORM_KEYS, then phases, then tasks by
-// _TASK_KEYS) so the dialog and the echo read as the same list, not two lists.
-// FORM keys, not every writable meta key: `meta.areas` is writable through
-// /api/areas and has no control here, so computing a row for it would be the
-// dialog describing an edit this form cannot make.
+/**
+ * What a composition patch would change, read against the state snapshot.
+ *
+ * Field order matches the server's — `_META_FORM_KEYS`, then phases, then tasks
+ * by `_TASK_KEYS` — so the dialog and the echo read as the same list rather than
+ * as two lists.
+ *
+ * FORM keys, not every writable meta key: `meta.areas` and the ADO connector are
+ * writable through their own endpoints and have no control on this form, so
+ * computing a row for either would be the dialog describing an edit this form
+ * cannot make. A phase or task the snapshot does not know is skipped for the same
+ * reason — there is no "from" to show, so there is no honest row.
+ *
+ * @param {{meta: (Object<string, *>|undefined), phases: (Object<string, {reviewModel: *}>|undefined), tasks: (Object<string, {model: *, skills: *}>|undefined)}} patch -
+ *   the patch this form would send
+ * @returns {Array<{target: string, field: string, from: *, to: *}>} one row per
+ *   real difference, in the server's field order; empty when nothing changed
+ */
 function compChanges(patch){
  const comp=STATE.composition||{meta:{},phases:[],tasks:[]},rows=[];
  for(const k of ['reviewSkill','buildCommands'])
@@ -82,15 +183,36 @@ function compChanges(patch){
   ['model','skills'].forEach(k=>{if(!(k in tv))return;
    if(!cfSame(t[k],tv[k]))rows.push(cfRow(tid,k,t[k],tv[k]));});});
  return rows;}
-// Dotted leaf paths, matching _flat_paths in this file: a non-empty object is a
-// branch, everything else is a leaf. "usage.bands.highUSD changed" is a sentence
-// somebody can check; "usage changed" is not.
+/**
+ * Dotted leaf paths of a config object.
+ *
+ * A non-empty plain object is a branch; a list, an empty object and every scalar
+ * are leaves. One row per PATH rather than per block, because "usage.bands.highUSD
+ * changed" is a sentence somebody can check and "usage changed" is not.
+ *
+ * This mirrors `_flat_paths` in `_panel_write.py`, which is what the server
+ * flattens with — the two have to agree on what a leaf is, or the dialog and the
+ * echo would disagree about how many changes there were.
+ *
+ * @param {*} o - the object to flatten; anything that is not a plain object
+ *   flattens to no leaves at all
+ * @param {string} [pre] - path prefix for the recursion
+ * @param {Object<string, *>} [out] - accumulator for the recursion
+ * @returns {Object<string, *>} leaf value by dotted path
+ */
 function cfFlat(o,pre,out){out=out||{};
  if(o&&typeof o==='object'&&!Array.isArray(o))for(const k of Object.keys(o)){
   const p=pre?pre+'.'+k:k,v=o[k];
   if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)cfFlat(v,p,out);
   else out[p]=v;}
  return out;}
+/**
+ * What saving this config would change, path by path.
+ *
+ * @param {Object<string, *>} cfg - the config document the Guards form would write
+ * @returns {Array<{target: 'config', field: string, from: *, to: *}>} one row per
+ *   changed leaf, sorted by path; empty when nothing changed
+ */
 function configChanges(cfg){
  const a=cfFlat(STATE.config||{}),b=cfFlat(cfg||{}),rows=[];
  [...new Set([...Object.keys(a),...Object.keys(b)])].sort().forEach(p=>{
@@ -120,13 +242,39 @@ function configChanges(cfg){
 //
 // So an element is remembered twice: as the node (exact, and correct whenever it
 // survived) and as a selector that resolves again in the rebuilt view (durable).
+/**
+ * What each dialog owes the caret when it closes.
+ *
+ * A WeakMap keyed by the dialog element, so a dialog that is dropped takes its
+ * entry with it. The entry is set to null on close rather than deleted, because
+ * whether the map HAS the key is also what keeps the close listener single.
+ *
+ * @type {WeakMap<HTMLDialogElement, {node: Element, sel: (string|null)}|null>}
+ */
 const DLGBACK=new WeakMap();
-// Name an element so the rebuilt view can be searched for it: the id when it has
-// one, otherwise every data- hook it carries. A hook's VALUE joins the selector
-// only when it is safe to write into one — most are short identifiers, but the ⓘ
-// carries a whole help sentence in data-tip, and quoting free text into a
-// selector is a syntax error waiting for its first apostrophe.
+/**
+ * Whether an attribute value is safe to write into a selector as a literal.
+ *
+ * A hook's VALUE joins the selector only when it can be quoted: most are short
+ * identifiers, but the ⓘ carries a whole help sentence in its tip attribute, and
+ * quoting free text into a selector is a syntax error waiting for its first
+ * apostrophe.
+ *
+ * @param {string} v - the attribute value
+ * @returns {boolean} true when it is short enough and holds no quote, backslash or
+ *   closing bracket
+ */
 const selSafe=v=>v.length<=64&&!/["\\\]]/.test(v);
+/**
+ * Name an element so a rebuilt view can be searched for it again.
+ *
+ * The id when it has one, otherwise every data- hook it carries — which is why
+ * behaviour reaches for those hooks rather than for styling classes.
+ *
+ * @param {Element|null} n - the element that holds the caret
+ * @returns {string|null} a selector, or null when there is nothing nameable about
+ *   it — an element with no id and no data- hook cannot be found again
+ */
 function focusSel(n){
  if(!n||!n.attributes)return null;
  // CSS.escape, because Settings names its fields after DOTTED config paths —
@@ -140,9 +288,18 @@ function focusSel(n){
  const hooks=[...n.attributes].filter(a=>a.name.slice(0,5)==='data-')
    .map(a=>'['+a.name+(selSafe(a.value)?'="'+a.value+'"':'')+']').join('');
  return hooks||null;}
-// Remember the caret before a rebuild. `within` scopes it both ways: a redraw of
-// one view must not take the caret out of another, and must not put it back into
-// something that now belongs elsewhere.
+/**
+ * Remember where the caret is, so a rebuild can hand it back.
+ *
+ * `within` scopes it both ways: a redraw of one view must not take the caret out
+ * of another, and must not put it back into something that now belongs elsewhere.
+ *
+ * @param {string} [within] - selector for the view about to be rebuilt; when it is
+ *   given, a caret outside that view is left alone
+ * @returns {{node: Element, sel: (string|null), at: (number[]|null)}|null} what to
+ *   restore — the node, a selector that survives the rebuild, and the caret offset
+ *   inside the control — or null when there is nothing here to restore
+ */
 function focusKeep(within){
  const a=document.activeElement;
  if(!a||!a.closest||(within&&!a.closest(within)))return null;
@@ -157,6 +314,19 @@ function focusKeep(within){
  try{at=a.selectionStart==null?null:[a.selectionStart,a.selectionEnd];}
  catch(e){at=null;}
  return {node:a,sel:s?((within?within+' ':'')+s):null,at:at};}
+/**
+ * Put the caret back where it was, and say whether it really got there.
+ *
+ * The surviving node is preferred; failing that, the remembered selector is
+ * resolved against the rebuilt view. The caret offset is restored too, because
+ * focus alone drops a reader who was mid-path back at offset 0.
+ *
+ * @param {{node: Element, sel: (string|null), at: (number[]|null|undefined)}|null} ref -
+ *   what was remembered; a null ref is a no-op, not a failure to report, and an
+ *   absent offset just means the opener had no caret to place
+ * @returns {boolean} true only when the document AGREES the caret arrived — a
+ *   control that has become unreachable accepts the call in silence
+ */
 function focusBack(ref){
  if(!ref)return false;
  let n=(ref.node&&ref.node.isConnected)?ref.node:null;
@@ -177,12 +347,23 @@ function focusBack(ref){
  // every OTHER control that can go unreachable between keep and restore fails the
  // same way, and this is the only place that can notice.
  return document.activeElement===n;}
-// UNAVAILABLE MUST NOT MEAN UNREACHABLE (WCAG 2.2 SC 2.4.3).
-// `disabled` removes the tab stop, so a reader who tabs to a Discard, presses it,
-// and lands on the rebuilt one has the caret taken to <body> and the next Tab
-// restarts at the top of the document. WAI-ARIA APG uses aria-disabled precisely
-// so the control keeps its place and its name and refuses the ACTIVATION instead.
-// It costs one extra tab stop per savebar; that is the trade, not an oversight.
+/**
+ * Mark a control unavailable without taking it out of the tab order.
+ *
+ * UNAVAILABLE MUST NOT MEAN UNREACHABLE (WCAG 2.2 SC 2.4.3). `disabled` removes
+ * the tab stop, so a reader who tabs to a Discard, presses it, and lands on the
+ * rebuilt one has the caret taken to <body> and the next Tab restarts at the top
+ * of the document. WAI-ARIA APG uses aria-disabled precisely so the control keeps
+ * its place and its name and refuses the ACTIVATION instead. It costs one extra
+ * tab stop per savebar; that is the trade, not an oversight.
+ *
+ * The refusal itself is not here — the platform enforces nothing about
+ * aria-disabled, so it is enforced once, below, in the capture phase.
+ *
+ * @param {Element} n - the control
+ * @param {boolean} off - true to mark it unavailable
+ * @returns {Element} `n`, so the call can sit inside the expression that built it
+ */
 function offState(n,off){
  n.setAttribute('aria-disabled',off?'true':'false');
  return n;}
@@ -194,11 +375,21 @@ function offState(n,off){
 document.addEventListener('click',e=>{
  const n=e.target&&e.target.closest&&e.target.closest('[aria-disabled="true"]');
  if(n){e.preventDefault();e.stopPropagation();}},true);
-// showModal(), plus the close that hands the caret back. EVERY dialog on this
-// page opens through here — `.showModal()` is written exactly once in this file
-// and a selftest counts it, so a fifth dialog cannot be added that quietly skips
-// the restore. The close listener is wired once per element; these are
-// singletons, reused for every opening.
+/**
+ * Open a modal dialog, and record what the caret is owed when it closes.
+ *
+ * EVERY dialog on this page opens through here — `.showModal()` is written exactly
+ * once in this file and a selftest counts it, so a further dialog cannot be added
+ * that quietly skips the restore.
+ *
+ * The close listener is wired once per element, not once per opening: these
+ * dialogs are singletons, reused every time they are shown.
+ *
+ * @param {HTMLDialogElement} d - the dialog to show
+ * @param {string} [sel] - a selector for the opener, when the caller knows a
+ *   better one than the opener can name for itself
+ * @returns {void}
+ */
 function dlgOpen(d,sel){
  if(!DLGBACK.has(d))d.addEventListener('close',()=>{
    const r=DLGBACK.get(d);DLGBACK.set(d,null);focusBack(r);});
@@ -207,12 +398,24 @@ function dlgOpen(d,sel){
  d.showModal();}
 
 // --- the confirm dialog ---------------------------------------------------------
+/** The one confirm dialog: built on first use, reused for every opening. */
 let CFDLG=null;
-// Absent, empty-list and empty-string are three different values and the dialog
-// says so. Collapsing them into one "not set" made a real change read as a no-op —
-// "not set → not set" — which is precisely the row a reader would skim past.
-// On a `skills` row null is not "not set" either: it is the explicit opt-out
-// (v0.37 B1), the one deliberate answer, and it renders as one.
+/**
+ * One side of a change row, as something a reader can check.
+ *
+ * Absent, empty-list and empty-string are three different values and the dialog
+ * says so. Collapsing them into one "not set" made a real change read as a no-op —
+ * "not set → not set" — which is precisely the row a reader would skim past.
+ *
+ * On a `skills` row null is not "not set" either: it is the explicit opt-out, the
+ * one deliberate answer that value carries there, and it renders as one.
+ *
+ * @param {*} v - the value, already normalized so undefined cannot reach here
+ * @param {'was'|'now'} cls - which side of the arrow this is
+ * @param {string} field - the field name, because a null means something different
+ *   on a `skills` row than anywhere else
+ * @returns {HTMLSpanElement} the value, wearing the empty look where it is empty
+ */
 function cfVal(v,cls,field){
  const none=v===null||v===undefined;
  if(none&&field==='skills')
@@ -223,19 +426,43 @@ function cfVal(v,cls,field){
     :(Array.isArray(v)&&!v.length?'(empty list)'
       :(v===''?'(empty text)'
         :(typeof v==='object'?JSON.stringify(v):String(v)))));}
-// Which phases a change list touches, so the lock notice can be about the phases
-// you are actually writing rather than about the manifest in general. A task id is
-// mapped through the composition view rather than sliced out of the string: task
-// ids are the plan's to shape, not this file's to parse.
+/**
+ * Which phases a change list touches, so a lock notice can be about the phases
+ * you are actually writing rather than about the manifest in general.
+ *
+ * A task id is mapped to its phase through the composition view rather than sliced
+ * out of the string: task ids are the plan's to shape, not this file's to parse.
+ *
+ * @param {Array<{target: string}>} rows - the changes about to be written
+ * @returns {string[]} the phase ids involved, each once; 'meta' and 'config' rows
+ *   belong to no phase and are left out
+ */
 function cfTouched(rows){
  const byT={};((STATE.composition||{}).tasks||[]).forEach(t=>{byT[t.id]=t.phaseId;});
  const s=new Set();
  rows.forEach(r=>{if(r.target==='meta'||r.target==='config')return;
   s.add(byT[r.target]||r.target);});
  return [...s];}
-// Live, from the 5s poll — not from the page-load snapshot. A dialog that opens to
-// say "nothing is running" because nothing was running when the tab loaded is
-// exactly the reassurance this flow must not give.
+/**
+ * What the dialog can say about locks and runs elsewhere, and on what basis.
+ *
+ * Read from the live poll, not from the page-load snapshot: a dialog that says
+ * "nothing is running" because nothing was running when the tab loaded is exactly
+ * the reassurance this flow must not give. When the poll has never answered, the
+ * snapshot is the fallback.
+ *
+ * Only a lock the server has positively reported dead is ignored. Anything else
+ * counts as held, so an unconfirmed lock warns rather than reassures — the wrong
+ * warning costs a reader one paragraph, and the wrong reassurance costs them the
+ * write they were promised.
+ *
+ * @param {Array<{target: string}>} rows - the changes about to be written
+ * @param {string} [scope] - the surface saving; only 'comp' has rows that name
+ *   phases, so only it can compare them against what is running
+ * @returns {{kind: 'warn'|'ok', text: string}|null} a warning when this write is
+ *   going to be refused, a reassurance when something is running that these rows do
+ *   not touch, and null when there is nothing to report
+ */
 function cfLock(rows,scope){
  const rs=RUNSTATUS||(STATE||{}).runStatus||{index:null,phases:{}};
  const idx=rs.index&&rs.index.live!==false;
@@ -252,10 +479,23 @@ function cfLock(rows,scope){
   +' — none of them touched by these changes.'};
  return null;}
 /**
- * Show the exact rows and wait for an answer. Resolves true only on the primary
- * button; Esc, the backdrop, the × and Cancel all resolve false, which is the
- * point of using a native <dialog> — the focus trap, the backdrop and Esc are the
- * platform's rather than three hand-written listeners that each forget one case.
+ * Show the exact rows and wait for an answer.
+ *
+ * Resolves true only on the primary button; Esc, the backdrop, the × and Cancel all
+ * resolve false, which is the point of using a native <dialog> — the focus trap,
+ * the backdrop and Esc are the platform's rather than three hand-written listeners
+ * that each forget one case.
+ *
+ * The promise settles exactly once whichever way the dialog leaves, so a caller
+ * can await it and treat false as "do not write".
+ *
+ * @param {{title: string, rows: Array<{target: string, field: string, from: *, to: *}>, verb: string, scope: (string|undefined), note: (string|undefined), danger: (boolean|number|undefined), lock: (boolean|undefined)}} o -
+ *   `verb` is the primary button's own words, and `note` the sentence under the
+ *   list saying what will be written. A truthy `danger` puts the caret on Cancel
+ *   and drops the author line, because a Discard writes nothing and naming an
+ *   author would answer a question nobody asked. `lock:false` suppresses the lock
+ *   notice for a write that cannot be refused by one.
+ * @returns {Promise<boolean>} true only when the primary button was pressed
  */
 function confirmChanges(o){
  return new Promise(resolve=>{
@@ -307,6 +547,17 @@ function confirmChanges(o){
 // manifest that is no longer the one you were reading" — a second tab, or an
 // /audit run, having moved it in between. Without the comparison a confirm dialog
 // makes that case WORSE: it adds a screenful of reassurance about stale values.
+/**
+ * Whether what the server applied is what the dialog showed.
+ *
+ * @param {Array<{target: string, field: string, from: *, to: *}>} rows - what was
+ *   shown before the write
+ * @param {{ok: (boolean|undefined), applied: (Array<{target: string, field: string, from: *, to: *}>|undefined)}} res -
+ *   the write endpoint's answer
+ * @returns {{missing: number, extra: number, shown: number, applied: number}|null}
+ *   the drift, or null in the two cases that are not drift: the two lists agree, or
+ *   there is nothing to compare (a refusal, or a server that echoed no list)
+ */
 function appliedDiff(rows,res){
  if(!res||!res.ok||!Array.isArray(res.applied))return null;
  const key=r=>JSON.stringify([r.target,r.field,cfNorm(r.from),cfNorm(r.to)]);
@@ -315,10 +566,29 @@ function appliedDiff(rows,res){
  const extra=[...theirs].filter(k=>!mine.has(k)).length;
  return (missing||extra)?{missing,extra,shown:rows.length,
    applied:res.applied.length}:null;}
-// One sentence for what happened to your changes: how many landed, and whether
-// there is a record of it. "not logged" is said only when a journal exists and
-// refused the row — on an install with no journal at all the clause is left off
-// rather than reporting the absence of a feature as a failure of a save.
+/**
+ * Say what happened to a save: how many changes landed, and whether there is a
+ * record of it.
+ *
+ * "not logged" is said only when a journal exists and refused the row — on an
+ * install with no journal at all the clause is left off, rather than reporting the
+ * absence of a feature as a failure of a save. A refusal and an unchanged save each
+ * get their own sentence, because "nothing was written" and "nothing needed
+ * writing" are not the same news.
+ *
+ * @param {{ok: (boolean|undefined), locked: (boolean|undefined), unchanged: (boolean|undefined), applied: (Array<Object>|undefined), journaled: (boolean|undefined), journaledWhy: (string|undefined)}} res -
+ *   the write endpoint's answer
+ * @param {Array<{target: string, field: string, from: *, to: *}>} rows - what the
+ *   dialog showed, so the echo can be compared against it
+ * @param {string} what - the thing that was being written, named for the refusal
+ *   sentence ('the manifest', 'the config', 'the theme')
+ * @param {Element|null} slot - where a drift note may be appended; null from a
+ *   caller that has no slot yet, and the note is then simply not shown
+ * @returns {{missing: number, extra: number, shown: number, applied: number}|null}
+ *   the drift, when there was any. Null covers three different outcomes — refused,
+ *   unchanged, and saved exactly as shown — so it says nothing on its own; no
+ *   caller reads it today, and one that starts to must ask `res` as well
+ */
 function saveOutcome(res,rows,what,slot){
  if(!res||!res.ok){
   toast(res&&res.locked?(what+' is locked — nothing was written')
@@ -338,10 +608,32 @@ function saveOutcome(res,rows,what,slot){
    +'see what it holds now.'));
  return diff;}
 
+/**
+ * The panel's whole start-up: fetch everything, render every view, put the reader
+ * where they asked to be, and start the polls.
+ *
+ * Defined here because this is where the statement sat, and CALLED from the last
+ * part — which is not a filing accident. It assigns state that later parts DECLARE,
+ * and a top-level `let` is in TDZ until its own line has run, so calling this any
+ * earlier would throw on the first of them.
+ *
+ * The order inside is load-bearing three times: the usage filters are restored
+ * before the first Usage render, the theme baseline is captured before the
+ * Appearance tab is drawn, and the tab is restored last, once every view has
+ * content to scroll to.
+ *
+ * Two payloads are fetched WITHOUT a catch — the state and the registry — so a
+ * server that cannot answer them leaves no views rather than half-populated ones.
+ * Usage, policy and theme are each caught into null, because a view that can say
+ * "no data" is better than a panel that will not open.
+ *
+ * @returns {Promise<void>} resolves once every view is drawn and the polls are
+ *   running; it rejects when the state or registry request fails
+ */
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;MITEMS=null;
  POLICY=await api('GET','/api/policy').catch(()=>null);PDRAFT=pClone(POLICY&&POLICY.stored);
- // fp: restore the usage filters BEFORE the first renderUsage — the hash first
+ // The usage filters are restored BEFORE the first Usage render: the hash first
  // (a share link is an instruction somebody sent), this repo's stored filters
  // second, defaults last.
  {const h=location.hash||'',bang=h.indexOf('!');

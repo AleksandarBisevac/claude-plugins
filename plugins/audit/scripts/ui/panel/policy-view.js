@@ -1,3 +1,29 @@
+/**
+ * The capability table for one kind: its toolbar and its body, built once and
+ * used by both the Policy tab and the expanded dialog.
+ *
+ * ONE builder on purpose. A "full screen" copy of a table that disagrees with
+ * the table is worse than the scrolling it was meant to relieve, and two
+ * builders would drift. Both copies read the same `PF` filter, so the search box
+ * in either one narrows both.
+ *
+ * The rows are the SERVER's verdicts, rendered and never recomputed: a second
+ * matcher in the browser would eventually disagree with the guard, and
+ * disagreeing about a denial is the one thing a preview must not do.
+ *
+ * @param {string} kind - a kind from `PKINDS`
+ * @param {PolicyRow[]} rows - the server's resolved rows for that kind
+ * @param {boolean} full - true for the dialog's copy. It decides only the
+ *   element ids, since a document may hold one element per id and both copies
+ *   carry a search box, and whether the frame caps its own height — in the
+ *   dialog the dialog is the frame. It also drops the Expand button, because an
+ *   expand control in an expanded view says nothing
+ * @returns {{tools: HTMLElement, body: HTMLElement}} the toolbar and the table,
+ *   separately, so a caller can put them in different containers. `body` is the
+ *   empty-state note when nothing matches, and that note distinguishes "nothing
+ *   matches this filter" from "nothing of this kind was discovered" — the second
+ *   is not a filter problem and offers no Clear
+ */
 function pCapTable(kind,rows,full){
  const q=PF.q.trim().toLowerCase();
  const shown=rows.filter(r=>(!q||(r.name+' '+(r.source||'')).toLowerCase().includes(q))
@@ -61,6 +87,24 @@ function pCapTable(kind,rows,full){
    el('table',{class:'poltbl'},el('thead',{},head2),tb));
  return {tools:tools,body:body};}
 
+/**
+ * Draw the whole Policy tab from `POLICY` and `PDRAFT`.
+ *
+ * Called on every keystroke in the search box as well as on every edit, which
+ * is why it is a full redraw with two things explicitly put back: the caret in
+ * whichever box was being typed in, and how far down the capability table the
+ * reader had scrolled.
+ *
+ * Reads a lot and returns nothing, in five parts, in this order: what is in
+ * force and whether anything is enforcing it; the kind switch and the default;
+ * the capability table; the block as written; the savebar. That order is the
+ * argument the page is making — a verdict, then the rule behind it, then the way
+ * to change it — so a section moved is a different page.
+ *
+ * @returns {void} the effect IS the DOM. With no policy readable it draws the
+ *   refusal-to-edit note and returns early, rather than rendering an empty
+ *   policy that a reader could then save over the unreadable one
+ */
 function renderPolicy(){closeCombo();
  const c=$('#policy');
  // The whole view redraws on every switch, so put back the two things a redraw
@@ -190,7 +234,7 @@ function renderPolicy(){closeCombo();
    +'not move it, which is true and better said than quietly averaged.'));
 
  // --- the capability table ----------------------------------------------------
- // Built by pCapTable so the tab and the expanded dialog (px) are ONE view: same
+ // Built by pCapTable so the tab and the expanded dialog are ONE view: same
  // rows, same filter state, same verdicts. Two builders would drift, and a
  // "full screen" copy of a table that disagrees with the table is worse than
  // the scrolling it was meant to relieve.
@@ -201,7 +245,7 @@ function renderPolicy(){closeCombo();
    'The block for this kind, in the order the guard reads it: deny before allow, '
    +'project before area. The switches above write exact names here; a pattern can '
    +'only be written and removed here.')));
- // v0.38: dead patterns — the server's own "names nothing" verdict (rules[].dead,
+ // Dead patterns — the server's own "names nothing" verdict (rules[].dead,
  // computed by _policy.dead_patterns beside the guard's matcher; this client only
  // renders it). Shaped like the composition tab's skillHints: a capped .mut note,
  // data- attributed for the browser checks, and silent while discovery saw nothing
@@ -279,8 +323,8 @@ function renderPolicy(){closeCombo();
  c.append(el('div',{class:'savebar'},save,discard,
    el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));
 
- // px: the expanded copy is refilled from the same state, in the same pass —
- // before focus is restored, since the box the caret belongs in may be inside it.
+ // The expanded copy is refilled from the same state, in the same pass — before
+ // focus is restored, since the box the caret belongs in may be inside it.
  polFullFill();
  if(keepId){const n=document.getElementById(keepId);
   if(n){n.focus();try{n.setSelectionRange(caret,caret);}catch(e){}}}
@@ -290,6 +334,18 @@ function renderPolicy(){closeCombo();
 // How long ago, in words. The panel never decides whether that is TOO long: how
 // stale a marker may be is /audit:doctor's judgement, and a second threshold here
 // is a threshold that can disagree with it.
+/**
+ * How long ago, in words.
+ *
+ * Deliberately never says whether that is TOO long: how stale the enforcement
+ * marker may be is /audit:doctor's judgement, and a second threshold here is a
+ * threshold that can disagree with it.
+ *
+ * @param {number|null} days - age in days, fractional; null when the marker was
+ *   found but its age could not be read
+ * @returns {string} a phrase that fits after "last seen", including for null —
+ *   which says the time is unknown rather than defaulting to a number
+ */
 function pAgo(days){
  if(days==null)return 'at an unknown time';
  if(days<1/24)return 'within the hour';
@@ -297,6 +353,26 @@ function pAgo(days){
  return Math.round(days)+' day(s) ago';}
 
 // One switch, for one capability, in one scope.
+
+/**
+ * One cell of the capability table: the allow/deny/none select for this row in
+ * this scope, plus an "unsaved" badge when the draft and the saved block
+ * disagree about it.
+ *
+ * Both sides of that comparison go through `pRuleOf`, so the badge means "this
+ * control would change the file" and not "this control looks different".
+ *
+ * A row the plugin ships is DISABLED here and says why. That is the one promise
+ * this panel makes about its own components, kept mechanically: the server
+ * refuses such a policy too — its validator calls it a finding — so this is the
+ * friendly half of a rule enforced somewhere it cannot be edited around.
+ *
+ * @param {string} kind - a kind from `PKINDS`
+ * @param {PolicyRow} r - the row this cell belongs to
+ * @param {string|null} tag - an area tag, or null for the project column
+ * @returns {HTMLTableCellElement} the cell; the change is written through
+ *   `pEdit` on the select's own event, so this returns no handle to it
+ */
 function pCell(kind,r,tag){
  const cur=pRuleOf(PDRAFT,kind,r.name,tag),
    was=pRuleOf(POLICY.stored,kind,r.name,tag),
@@ -319,6 +395,20 @@ function pCell(kind,r,tag){
      +(was?('was '+was):'no rule')+' → '+(cur||'no rule')},'unsaved'):null);}
 
 // Writing a pattern, which is the half the per-row switches cannot do.
+
+/**
+ * The add-a-rule row: a pattern box, which list, which scope, and the note that
+ * says how a glob is matched.
+ *
+ * The per-row switches can only ever write EXACT names, so without this the form
+ * could not express a rule like `code-*` — and a form that cannot express a rule
+ * cannot be trusted to save one, because the PUT replaces the block wholesale.
+ *
+ * @param {string} kind - a kind from `PKINDS`
+ * @returns {HTMLElement} the controls and the note. An empty or blank pattern is
+ *   refused in silence rather than added: there is nothing to report about a
+ *   press on an empty box
+ */
 function pAddRow(kind){
  const pat=el('input',{id:'poladdpat',placeholder:'pattern…  e.g.  code-*',
    'aria-label':'pattern to add'});
@@ -344,6 +434,18 @@ function pAddRow(kind){
 // believe the opposite: a page full of verdicts looks like enforcement. Shut by
 // default — read once, remembered — and never removed, because a switchboard that
 // does not state them is selling something it cannot deliver.
+/**
+ * The four limits this policy cannot hold, from SECURITY.md, put on the surface
+ * that most invites believing the opposite — a page full of verdicts looks like
+ * enforcement.
+ *
+ * Shut by default, so it costs a reader nothing once they have read it, and
+ * never removable: a switchboard that does not state these is selling something
+ * it cannot deliver.
+ *
+ * @returns {HTMLDetailsElement} the disclosure. Native `<details>`, so opening
+ *   and closing it needs no handler of ours
+ */
 function pHonesty(){
  const d=el('details',{class:'polhonest','data-polhonest':'1'});
  d.append(el('summary',{},'What this cannot hold — four limits'));

@@ -1,5 +1,28 @@
+// --- the Usage tab, assembled ---------------------------------------------------
+/**
+ * Rebuild the whole Usage tab from USAGE and the current filter state.
+ *
+ * One function for the whole tab, and that is a decision rather than drift: every
+ * control here writes a filter, and every filter moves every number on the page,
+ * so a partial repaint would leave a set of panels each answering a slightly
+ * different question. Nothing on this tab caches a rendered number - the cards
+ * below are all recomputed from the facts on each pass.
+ *
+ * Three things it must not do. It must not drop the caret: a repaint replaces
+ * every control, including the search box being typed into and the browse button
+ * the dialog just handed focus back to, so focus is captured before the teardown
+ * and restored in `done()` - which is the only place the card is appended, on all
+ * three exit paths, so an exit that skipped it would leave a blank tab. It must
+ * not mutate a filter as a side effect of drawing; the single exception is the
+ * bin select, which drops back to auto when the reader's saved choice would
+ * exceed the chart's point cap, because the alternative is a control set to a
+ * value the chart refuses to honour. And it must not compute a number a helper
+ * already owns - the metrics, the series and the bands each have one home.
+ * @returns {void}
+ */
 function renderUsage(){closeCombo();const c=$('#usage');
- persistUF();  // fp: every filter change repaints this tab, so this one call is the write-through
+ persistUF();  // every filter change repaints this tab, so this one call is the
+               // write-through for every path that can mutate a filter
  // Every filter change repaints this whole tab — and a filter change is exactly
  // what typing in the search box IS. Without this, the third letter of a five
  // letter search goes into a box that no longer exists, and the caret with it.
@@ -99,7 +122,7 @@ function renderUsage(){closeCombo();const c=$('#usage');
   const sel=el('select',{'aria-label':'filter by '+fName(dim),'data-uf':dim,
     onchange:e=>setF(dim,e.target.value)});
   sel.append(el('option',{value:''},none+' ('+vals.length+')'));
-  // uc: the option VALUE stays the ledger's key (it is what setF filters on);
+  // The option VALUE stays the ledger's key (it is what setF filters on);
   // only the words a reader picks from are named.
   vals.forEach(v=>{const o=el('option',{value:v},uKey(v));
    if(UF[dim]===v)o.selected=true;sel.append(o);});
@@ -326,8 +349,10 @@ function renderUsage(){closeCombo();const c=$('#usage');
 
  done();}
 
-// Esc pops the most recently applied filter -- the fastest way back out of a scope
-// you clicked into by accident.
+// --- Esc pops the last filter ---------------------------------------------------
+// The fastest way back out of a scope you clicked into by accident. Bound on the
+// document, so it has to stand aside for every other Esc consumer on the page --
+// each guard below is one of them.
 document.addEventListener('keydown',e=>{
  if(e.key!=='Escape'||$('#usage').classList.contains('hidden'))return;
  if(document.querySelector('.combo-menu:not(.hidden)'))return;

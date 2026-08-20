@@ -14,6 +14,24 @@
 // touch the fixed `.combo-menu` at all, which is 13 of the 85. Measuring what is
 // actually on top and moving the control clear covers every source at once, and
 // needs no list of nested scrollers to keep up to date.
+/**
+ * Move a control that has just taken focus out from under any chrome pinned over
+ * it, so no part of it is left entirely hidden (WCAG 2.2 SC 2.4.11).
+ *
+ * THE RULE THAT DECIDES HOW IT IS CALLED: this is registered at the foot of this
+ * file inside its own try/catch, and that is a rule rather than caution - an
+ * accessibility repair must never be the reason the panel fails to come up.
+ * Nothing else on the page reads anything it produces, so a throw here costs
+ * this one behaviour and the console line that names it, and boot() still runs.
+ *
+ * Every correction it makes is a scroll, or the closing of a stale dropdown. It
+ * never moves, hides or re-parents the control that took focus, which is what
+ * bounds a wrong correction to "still under the chrome" rather than to a control
+ * the reader can no longer find.
+ * @returns {void} It installs one `focusin` listener for the life of the page.
+ *   Nothing removes it: there is no state to tear down, and a reader who has
+ *   started tabbing does not stop.
+ */
 function keepFocusClear(){
  const GAP=8;
  // What is painted over this control at a point, when that thing is chrome
@@ -94,8 +112,8 @@ function keepFocusClear(){
     // scrolling one, and pretending otherwise would hide it.
     if(now===was)return;}}));});}
 
-// Registered inside its own guard: an accessibility repair must never be the
-// reason a panel fails to come up.
+// Guarded, by the rule stated above keepFocusClear: the failure is logged and
+// boot() runs anyway.
 try{keepFocusClear();}
 catch(cause){console.error('keepFocusClear failed',cause);}
 

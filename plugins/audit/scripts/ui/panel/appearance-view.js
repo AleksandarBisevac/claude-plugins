@@ -1,3 +1,22 @@
+/**
+ * Draw the whole Appearance tab from THEME and the draft, and put the caret back
+ * where it was.
+ *
+ * Called on every change that alters more than one value on screen — a save, a
+ * theme switch, an undo, a colour committed with `change` — and by tSoon shortly
+ * after typing stops. It reads state and rebuilds; it never fetches. The two
+ * exceptions are the handlers it wires INTO the tab, which is where every write
+ * to /api/theme in this file lives.
+ *
+ * A rebuild mid-sentence is invisible only because focus is restored: the id of
+ * the focused `th-*` input and its caret offset are read before the tab is
+ * emptied and reapplied at the end. Anything else focused falls back to
+ * focusKeep/focusBack, the panel's generic restore.
+ *
+ * With no THEME it draws one warning card and stops — an empty editor would
+ * invite somebody to type values into a theme that could not be read.
+ * @returns {void}
+ */
 function renderAppearance(){closeCombo();
  const c=$('#look');
  const act=document.activeElement,
@@ -45,6 +64,11 @@ function renderAppearance(){closeCombo();
  (THEME.saved||[]).forEach(t=>{
   const v=t.builtin?'slate-teal':(t.path||t.name);
   const o=el('option',{value:v},t.name+(t.builtin?' (built-in)':''));
+  // Only 'config' and 'default' can be MARKED here, and that is not an
+  // oversight: the project and user themes are a fixed filename, and the list
+  // is .claude/themes/*.json plus the built-in, so a worn project theme is not
+  // one of the options to select. Compared with slashes normalised, because the
+  // path arrives from the server the way that platform spells it.
   const worn=THEME.source==='config'?THEME.path:(THEME.source==='default'?'slate-teal':null);
   if(worn&&(v===worn||v===String(worn).replace(/\\/g,'/')))o.selected=true;
   sel.append(o);});
@@ -121,6 +145,9 @@ function renderAppearance(){closeCombo();
      const val=String(tVal(name,mode));
      const cell=el('td',{class:'thcell'});
      const hex=tHex(val);
+     // The id is what renderAppearance restores focus by, so it has to be
+     // stable across a rebuild: token plus mode, with the leading '--' cut
+     // because it is the same two characters on every row.
      const text=el('input',{type:'text',id:'th-'+name.slice(2)+'-'+mode,
        value:val,'data-thval':name+'|'+mode,'aria-label':name+' '+mode,
        class:'thtext'});
@@ -132,6 +159,9 @@ function renderAppearance(){closeCombo();
      text.addEventListener('input',()=>{tSet(name,mode,text.value.trim());
        tRepaintBar();tSoon();});
      text.addEventListener('change',()=>renderAppearance());
+     // A picker appears for a value that IS a colour, and also for one that
+     // merely opens with '#': a half-typed '#ab' still wants the picker beside
+     // it, and the picker falls back to black rather than refusing to render.
      if(hex!==null||/^#/.test(val)){
       const pick=el('input',{type:'color',value:hex||'#000000',
         'aria-label':name+' '+mode+' colour picker',class:'thpick'});
@@ -171,12 +201,22 @@ function renderAppearance(){closeCombo();
   // Card order, per view. Up/down rather than drag: a keyboard reader gets the
   // same control, and there is nothing to discover.
   Object.keys(THEME.cards||{}).forEach(view=>{
+   // The union, in this order: what the theme asks for, minus cards that no
+   // longer exist, then every known card the theme never named. So a theme
+   // written today lists a card added next year at the end rather than hiding
+   // it, and an order naming a deleted card does not leave a gap.
    const known=(THEME.cards||{})[view]||[];
    const cur=(lay.order||{})[view]||known.slice();
    const list=cur.filter(x=>known.includes(x))
      .concat(known.filter(x=>!cur.includes(x)));
    card.append(el('h3',{class:'sub2'},'Order — '+(LABELS[view]||view)));
    list.forEach((name,i)=>{
+    /**
+     * Move this card to another index and redraw.
+     * @param {number} to - the index to splice it back in at; the two buttons
+     *   are disabled at the ends, so this is never out of range
+     * @returns {void}
+     */
     const move=(to)=>{const a=list.slice();const t=a.splice(i,1)[0];a.splice(to,0,t);
       const order=Object.assign({},lay.order);order[view]=a;
       tLaySet({order:order});renderAppearance();};
@@ -204,6 +244,10 @@ function renderAppearance(){closeCombo();
    el('span',{},String(ch.to)),
    el('button',{class:'btn small',type:'button',
      onclick:()=>{
+      // A layout row is reverted by DELETING the draft field, not by writing
+      // the old value back: writing it would leave a theme file saying what the
+      // default already says, which is the one thing tLayChanges refuses to
+      // offer in the first place.
       if(ch.layout){
        if(ch.token==='layout · density')tLaySet({density:'comfortable'});
        else{const view=ch.token.split(' · ').pop();
@@ -211,6 +255,8 @@ function renderAppearance(){closeCombo();
         tLaySet({order:order});}
       }else tSet(ch.token,ch.mode,ch.from);
       renderAppearance();}},'Revert'))));
+ // Capped at six: the server's verdict and the browser's draft warnings share
+ // one list, and a palette in mid-edit can fail every pair at once.
  (THEME.warnings||[]).concat(tLocalWarnings()).slice(0,6).forEach(w=>
    chg.append(el('div',{class:'mut small','data-thwarn':'1'},w)));
  const save=el('button',{class:'btn primary','data-thsave':'1',onclick:async()=>{
@@ -228,6 +274,10 @@ function renderAppearance(){closeCombo();
    if(lay.order&&Object.keys(lay.order).length)layPayload.order=lay.order;
    const res=await api('PUT','/api/theme',{theme:tPayload(),layout:layPayload,
      history:TUNDO.slice(-100)});
+   // The findings are shown BEFORE the re-render and again after it: a refusal
+   // must be readable even though the failure path returns without redrawing,
+   // and the second slot is a different node because renderAppearance rebuilt
+   // the card the first one lived in.
    const slot=$('#look .findings-slot');
    if(slot)slot.replaceChildren(findingsBox(res));
    if(!res.ok){saveOutcome(res,rows,'the theme',slot);return;}
@@ -239,6 +289,10 @@ function renderAppearance(){closeCombo();
    toast('theme saved — reload to see the report wear it too');}},'Save theme');
  const reset=el('button',{class:'btn small','data-threset':'1',type:'button',
    onclick:async()=>{
+   // The confirm rows are the change list REVERSED — from and to swapped —
+   // because the dialog has to describe what reset is about to do, not what the
+   // draft did. `lock:false` because deleting the theme file is not a write the
+   // gate holds; `danger` because the file goes, not just its values.
    if(!await confirmChanges({title:'Reset the theme',danger:1,lock:false,
      rows:changes.map(ch=>({scope:'theme',
        field:ch.token+(tSingle(ch.token)?'':' · '+ch.mode),from:ch.to,to:ch.from})),
@@ -260,14 +314,34 @@ function renderAppearance(){closeCombo();
  else focusBack(keepBack);
  tPaint();tPaintLayout();}
 
-// Rebuild the tab shortly after the typing stops. renderAppearance puts the
-// caret back by id, so a rebuild mid-sentence is invisible; what it buys is a
-// Changes list, a revert control and a contrast warning that are never stale.
+/**
+ * @type {number|null} the pending tSoon timer, so a second keystroke replaces
+ * the rebuild the first one scheduled instead of queueing another
+ */
 let TSOON=null;
+/**
+ * Rebuild the tab shortly after the typing stops.
+ *
+ * renderAppearance puts the caret back by id, so a rebuild mid-sentence is
+ * invisible; what it buys is a Changes list, a revert control and a contrast
+ * warning that are never stale. Every call pushes the rebuild further out, so a
+ * colour-picker drag firing per pixel rebuilds once, at the end.
+ * @returns {void}
+ */
 function tSoon(){if(TSOON)clearTimeout(TSOON);
  TSOON=setTimeout(()=>{TSOON=null;renderAppearance();},350);}
-// The count pill without a full redraw: a colour picker fires per pixel dragged,
-// and rebuilding the tab on each of those would fight the drag.
+/**
+ * Repaint the unsaved-change pill in place, without redrawing the tab.
+ *
+ * This is the immediate half of the pair tSoon completes: a colour picker fires
+ * an event per pixel dragged, and rebuilding the tab on each of those would
+ * fight the drag — but a counter that only caught up 350ms later would read as
+ * a stuck control.
+ *
+ * Counts tChanges() only, so the pill it repaints can disagree with the one
+ * renderAppearance drew, which counts the layout rows too.
+ * @returns {void}
+ */
 function tRepaintBar(){
  const pill=$('#look [data-thcount]');if(!pill)return;
  const n=tChanges().length;
@@ -275,18 +349,51 @@ function tRepaintBar(){
  pill.setAttribute('data-thcount',String(n));
  pill.className='pill'+(n?' unsaved':'');}
 
-// Contrast, judged in the browser on the DRAFT — the server judges what is
-// saved, and a reader dragging a picker deserves the answer before they commit.
+// --- contrast, judged in the browser on the DRAFT --------------------------
+// The server judges what is SAVED, and a reader dragging a picker deserves the
+// answer before they commit. So this is a second implementation of the same
+// arithmetic on purpose, and it answers about a value that does not exist on
+// disk yet.
+/**
+ * Relative luminance, per WCAG 2.x: sRGB channels linearised, then weighted.
+ *
+ * @param {string} hex - a #rrggbb colour; anything else yields null
+ * @returns {number|null} luminance in 0..1, or null when the value is not a
+ *   colour this can judge — a token holding a var() reference or a font stack
+ */
 function tLum(hex){const m=tHex(hex);if(!m)return null;
  const v=[1,3,5].map(i=>parseInt(m.slice(i,i+2),16)/255)
    .map(x=>x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4));
  return 0.2126*v[0]+0.7152*v[1]+0.0722*v[2];}
+/**
+ * The contrast ratio between two colours, order-independent.
+ *
+ * @param {string} a - one #rrggbb colour
+ * @param {string} b - the other
+ * @returns {number|null} the ratio, 1 to 21, or null when EITHER side is not a
+ *   colour — a null is "cannot judge this pair", never "this pair is fine"
+ */
 function tRatio(a,b){const la=tLum(a),lb=tLum(b);
  if(la===null||lb===null)return null;
  const hi=Math.max(la,lb),lo=Math.min(la,lb);
  return (hi+0.05)/(lo+0.05);}
+/**
+ * @type {Array<[string, string, number]>} the pairs worth checking, as
+ * [foreground token, background token, the ratio below which it is reported].
+ * 4.5 is the AA floor for body text; 3 is the large-text and non-text floor the
+ * accent only has to clear.
+ */
 const TPAIRS=[['--text','--bg',4.5],['--text','--surface',4.5],
   ['--muted','--surface',4.5],['--accent','--surface',3]];
+/**
+ * Every TPAIRS combination the DRAFT fails, in both modes, as sentences.
+ *
+ * A pair this cannot judge — either side not a colour — produces no line at all
+ * rather than a passing one, so an empty list means "nothing measurable failed"
+ * and not "everything was measured and passed".
+ * @returns {string[]} one warning per failing pair and mode; empty when none
+ *   failed or none could be measured
+ */
 function tLocalWarnings(){
  const out=[];
  TPAIRS.forEach(([fg,bg,floor])=>TMODES.forEach(mode=>{
@@ -296,6 +403,17 @@ function tLocalWarnings(){
     +'theme, your readers.');}));
  return out;}
 
+// --- taking a theme out of the panel, and bringing one back ----------------
+/**
+ * Download the draft as a file.
+ *
+ * Only what differs from the default is exported, which is the same rule
+ * tPayload writes by: a theme file says what its author decided, and a later
+ * change to a default reaches everyone who never overrode it.
+ * @param {'json'|'css'} kind - 'json' is the round-trippable DTCG file tImport
+ *   reads back; 'css' is the compiled tokens, one-way on purpose
+ * @returns {void}
+ */
 function tExport(kind){
  const name=(THEME&&THEME.name)||'audit-theme';
  if(kind==='json'){
@@ -312,10 +430,35 @@ function tExport(kind){
    lines.push('  '+ch.token+':'+ch.to+';'));
  lines.push('}');
  tDownload(name+'.theme.css',lines.join('\n'),'text/css');}
+/**
+ * Hand the reader a file, without a server round trip or a stored artifact.
+ *
+ * The anchor has to be in the document to be clickable, and the object URL has
+ * to outlive the click, which is why both are cleaned up afterwards rather than
+ * immediately — revoking in the same tick cancels the download in some browsers.
+ * @param {string} fname - the filename to suggest
+ * @param {string} body - the file's whole text
+ * @param {string} mime - the media type; ';charset=utf-8' is appended here, so
+ *   callers pass the bare type
+ * @returns {void}
+ */
 function tDownload(fname,body,mime){
  const url=URL.createObjectURL(new Blob([body],{type:mime+';charset=utf-8'}));
  const a=el('a',{href:url,download:fname});document.body.append(a);a.click();
  a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+/**
+ * Load a theme file somebody sent, as a DRAFT — nothing is written until Save.
+ *
+ * Every token is checked against the groups the server declared, and an unknown
+ * one is REFUSED and named rather than dropped: a file half-applied in silence
+ * is how somebody comes to believe a token exists. The input's value is cleared
+ * first so that picking the same file twice fires again.
+ *
+ * Reads asynchronously and returns before the file is parsed; everything the
+ * import does happens in the reader's onload, including the toast.
+ * @param {HTMLInputElement} input - the hidden file input the button clicks
+ * @returns {void}
+ */
 function tImport(input){
  const f=input.files&&input.files[0];input.value='';
  if(!f)return;
@@ -324,12 +467,16 @@ function tImport(input){
   let data=null;
   try{data=JSON.parse(String(rd.result||''));}
   catch(e){toast('that file is not JSON — a theme is exported as .json','err');return;}
+  // Both shapes are accepted: the file tExport writes, which nests the map under
+  // `tokens`, and a bare map somebody hand-wrote.
   const tokens=(data&&typeof data==='object'&&data.tokens&&typeof data.tokens==='object')
     ?data.tokens:data;
   if(!tokens||typeof tokens!=='object'){toast('no tokens in that file','err');return;}
   const known=new Set(((THEME&&THEME.groups)||[]).flatMap(g=>g.tokens));
   const refused=[];
   Object.keys(tokens).forEach(name=>{
+   // The file's own metadata, skipped rather than refused: `$description`, the
+   // name, and the undo history a save writes back into the theme file.
    if(name.charAt(0)==='$'||name==='name'||name==='history')return;
    if(!known.has(name)){refused.push(name);return;}
    const e=tokens[name]||{};
@@ -341,4 +488,3 @@ function tImport(input){
        +refused.slice(0,3).join(', '))
     : 'loaded as a draft — nothing is written until you Save');};
  rd.readAsText(f);}
-
