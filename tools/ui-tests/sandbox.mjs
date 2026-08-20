@@ -221,8 +221,21 @@ function stubDocument() {
 function stubWindow(options) {
   const doc = stubDocument();
   const prefersDark = options.prefersDark === true;
+  // RECORDED, not printed, and reachable as `loaded.consoleErrors`.
+  //
+  // The page's own last line is `boot().catch(...)`, so loading it here RUNS a
+  // boot - and the stub DOM cannot render most views, so several renderers throw.
+  // They used to be invisible because boot died at the first one; now that each
+  // failure is contained, every one of them reported, on every load, in every
+  // suite. Hundreds of identical lines is not more honest than none: it teaches a
+  // reader to scroll past console output, which is precisely where a REAL failure
+  // would appear. Kept, and assertable, rather than discarded or shouted.
+  const consoleErrors = [];
+  const rec = (level) => (...args) => { consoleErrors.push([level, ...args]); };
   const win = {
-    console,
+    console: { error: rec('error'), warn: rec('warn'), log: rec('log'),
+      info: rec('info'), debug: rec('debug') },
+    __consoleErrors: consoleErrors,
     document: doc,
     location: {
       hash: options.hash || '',
@@ -348,7 +361,9 @@ export function reach(ctx, names) {
 
 export function loadReport(options) {
   const opts = options || {};
-  return loadInto(mutated(assembleReportBody(), opts), 'report parts', opts);
+  const loaded = loadInto(mutated(assembleReportBody(), opts), 'report parts', opts);
+  loaded.consoleErrors = loaded.ctx.__consoleErrors;
+  return loaded;
 }
 
 export function loadPanel(options) {
@@ -357,5 +372,6 @@ export function loadPanel(options) {
                                               opts.placeholders);
   const loaded = loadInto(prepared.source, 'panel parts', opts);
   loaded.placeholders = prepared.placeholders;
+  loaded.consoleErrors = loaded.ctx.__consoleErrors;
   return loaded;
 }

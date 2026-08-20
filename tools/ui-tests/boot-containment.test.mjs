@@ -21,12 +21,16 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { loadPanel, reach } from './sandbox.mjs';
 
-/** A panel whose console is captured rather than printed. */
+/**
+ * A panel, and the console the sandbox already records for it.
+ *
+ * Not a second recorder: `loadPanel` captures the context's console because the
+ * page's own last line boots on load and the stub DOM cannot render every view.
+ * Each entry is `[level, ...args]`.
+ */
 function quietPanel() {
-  const { ctx } = loadPanel();
-  const errors = [];
-  ctx.console = { error: (...a) => errors.push(a), warn() {}, log() {}, info() {} };
-  return { ctx, errors };
+  const loaded = loadPanel();
+  return { ctx: loaded.ctx, errors: loaded.consoleErrors };
 }
 
 describe('runContained', () => {
@@ -64,8 +68,10 @@ describe('runContained', () => {
     const boom = () => { throw new Error('the actual cause'); };
     runContained([boom]);
     expect(errors.length).toBe(1);
-    expect(String(errors[0][0])).toContain('boom');
-    expect(String(errors[0][1] && errors[0][1].message)).toBe('the actual cause');
+    // [level, message, cause] - the level is the recorder's, the rest is ours.
+    expect(errors[0][0]).toBe('error');
+    expect(String(errors[0][1])).toContain('boom');
+    expect(String(errors[0][2] && errors[0][2].message)).toBe('the actual cause');
   });
 
   it('calls an unnamed step what it is, rather than leaving a blank in the list', () => {
@@ -173,5 +179,33 @@ describe('boot() survives a view that throws', () => {
         .toContain(reportedName(step));
       expect(r.ran, step + ' stopped a later step').toEqual(STEPS);
     }
+  });
+});
+
+describe('the load-time boot reports where a test can see it', () => {
+  // The recorder replaced hundreds of printed lines, so it owes proof that it
+  // captures rather than discards. Without this case, silencing the console and
+  // breaking the console would look identical from here.
+  it('loadPanel keeps the contained failures, and they are the real ones', async () => {
+    const loaded = loadPanel();
+    // The page's last line is `boot().catch(...)`, parked on the stubbed fetches;
+    // nothing is recorded until it resumes.
+    expect(loaded.consoleErrors).toEqual([]);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    await new Promise((resolve) => { setImmediate(resolve); });
+    const contained = loaded.consoleErrors.filter(
+      (e) => String(e[1]).startsWith('panel step failed'));
+    expect(contained.length, 'nothing was recorded: either the stub DOM now '
+      + 'renders every view - say so here if it does - or the recording broke')
+      .toBeGreaterThan(0);
+    // A cause, not just a message: an entry with nothing attached would name a
+    // failure while losing the only thing that explains it.
+    //
+    // Not `instanceof Error`. The throw happens inside the vm's own realm, whose
+    // Error is a different constructor from this file's, so the check would be
+    // false for a perfectly good error - a harness fact, and one that would have
+    // read as "the cause is missing".
+    expect(contained.every((e) => e[2] && typeof e[2].message === 'string'
+      && typeof e[2].stack === 'string')).toBe(true);
   });
 });
