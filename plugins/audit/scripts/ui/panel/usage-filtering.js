@@ -117,8 +117,8 @@ function syncUFHash(frag){
  */
 function persistUF(){
  const frag=uFragment();
- try{if(frag)localStorage.setItem(UFSTORE,frag);
-  else localStorage.removeItem(UFSTORE);}catch(e){}
+ if(frag)storageSet(UFSTORE,frag);
+ else storageDrop(UFSTORE);
  syncUFHash(frag);}
 
 // Chart dimension is DERIVED: scoping to one author makes the interesting split

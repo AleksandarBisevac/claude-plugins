@@ -216,9 +216,28 @@ Rules going forward:
 
 - **One dialect for anything shared**, chosen once and written into the decision record with the
   Baseline justification. A shared part may use only what passes both gates above.
-- **Extract the helper rather than retyping it.** Anything both surfaces need — DOM building,
-  escaping, number and date formatting, theme state, tooltip placement, chip toggling, blob
-  download, CSV quoting — belongs in `shared/`, defined once.
+- **Extract the helper rather than retyping it**, into
+  `plugins/audit/scripts/ui/shared/`, which now EXISTS. That sentence used to name a
+  directory that did not, and it lost: complying meant inventing the folder and wiring it,
+  none of which was written down, while retyping ten lines was one edit. Fifteen rules were
+  retyped under that instruction. The rule to apply is a promotion rule — **one reader stays
+  put, two readers move up** — and the wiring is four steps, so it is no longer the expensive
+  option:
+
+  1. add the part to `plugins/audit/scripts/ui/shared/`, at column 0;
+  2. list it in `_ui_theme.UI_ASSETS` (sorted) — `declared_asset_drift()` checks both ways;
+  3. add it to **both** `_report_ui._SCRIPT_PARTS` and `_panel_ui._JS_PARTS`, before every
+     surface part — a case in each assembly suite asserts that precedence, which is what
+     makes "a shared part may not call a surface helper" mechanical;
+  4. give it a row in `ui/shared/README.md`.
+
+  Check the name is free on **both** surfaces first — one scope per page, and the report's
+  block is a module, so a duplicate top-level declaration is a `SyntaxError`, not a shadowing
+  bug you find later:
+  `grep -rnE '^\s{0,2}(function|const|let) NAME\b' plugins/audit/scripts/ui/`.
+  A shared part may use only what passes BOTH gates above, and `ui/shared/README.md` lists the
+  `file://` consequences — including that the four letters `http` may not appear even in a
+  comment, because `x5` reads text.
 - **A number rendered by more than one surface has one implementation**, and its cases pin it
   against the Python that renders the same number elsewhere. That agreement is a claim; test it.
 - **Wrap each independent feature in its own `try`/`catch`** at the registration point, so one

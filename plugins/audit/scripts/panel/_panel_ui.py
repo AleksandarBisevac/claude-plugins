@@ -103,6 +103,7 @@ _JS_PARTS = (
     # order is the dependency direction, so a shared part cannot reach back into
     # a surface helper.
     "shared/download.js",
+    "shared/storage.js",
     "panel/core.js",
     "panel/write-confirmation.js",
     "panel/hints.js",

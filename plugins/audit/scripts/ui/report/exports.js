@@ -428,12 +428,8 @@
   // rearranging itself. A link WINS over the local copy: somebody sent it on
   // purpose. With no link, the local copy is what this reader last had on screen.
   if (!Object.keys(HASH).length) {
-    // Storage is unavailable or refused on a file:// document in some engines,
-    // and the report has to stay readable there.
-    try {
-      const stored = localStorage.getItem(STORE_KEY);
-      if (stored) stored.split('&').forEach(restoreStoredPair);
-    } catch (e) {}
+    const stored = storageGet(STORE_KEY);
+    if (stored) stored.split('&').forEach(restoreStoredPair);
   }
   if (HASH.v && VIEWS[HASH.v]) {
     viewMode = HASH.v;

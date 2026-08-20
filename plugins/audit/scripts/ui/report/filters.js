@@ -20,10 +20,8 @@
    * @returns {void}
    */
   function saveState(parts) {
-    try {
-      if (parts.length) localStorage.setItem(STORE_KEY, parts.join('&'));
-      else localStorage.removeItem(STORE_KEY);
-    } catch (e) {}
+    if (parts.length) storageSet(STORE_KEY, parts.join('&'));
+    else storageDrop(STORE_KEY);
   }
 
   /**

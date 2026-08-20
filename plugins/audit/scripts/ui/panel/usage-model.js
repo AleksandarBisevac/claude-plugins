@@ -402,7 +402,7 @@ function clearAll(){DIMS.forEach(d=>UF[d]='');UF.range='all';UF.bin='auto';UORDE
  // Cleared HERE and not left to the render's persist pass: a pin that vouches
  // for this behaviour has to sit inside this function's own slice, and a pin
  // outside the function it vouches for vouches for nothing.
- try{localStorage.removeItem(UFSTORE);}catch(e){}
+ storageDrop(UFSTORE);
  syncUFHash('');
  DIMS.forEach(d=>{if(d in SHOWN)SHOWN[d]=TOP;});renderUsage();}
 

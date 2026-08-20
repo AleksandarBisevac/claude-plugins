@@ -1802,18 +1802,18 @@ def _cases(check):
     check("fp: restore runs in boot() BEFORE the first renderUsage - hash "
           "over storage over defaults",
           "uApplyFragment(h.slice(bang+1))" in _boot
-          and "localStorage.getItem(UFSTORE)" in _boot
+          and "storageGet(UFSTORE)" in _boot
           and _boot.index("uApplyFragment") < _boot.index("renderUsage()"))
     check("fp: clearAll clears the store AND the fragment INSIDE its own "
           "slice (the F-D1 lesson: a pin outside the function it vouches for "
           "vouches for nothing)",
-          "localStorage.removeItem(UFSTORE)" in
+          "storageDrop(UFSTORE)" in
           M.UI_HTML.split("function clearAll()")[1][:400]
           and "syncUFHash('')" in M.UI_HTML.split("function clearAll()")[1][:400])
     check("fp: empty filters take the fragment OFF (the report's syncHash "
           "rule), and the write-through lives in renderUsage so every "
           "mutation path persists",
-          "else localStorage.removeItem(UFSTORE)" in M.UI_HTML
+          "else storageDrop(UFSTORE)" in M.UI_HTML
           and "persistUF();" in M.UI_HTML.split("function renderUsage()")[1][:250])
     _ufrag = M.UI_HTML[M.UI_HTML.index("function uFragment()"):]
     _ufrag = _ufrag[:_ufrag.index("function uApplyFragment")]

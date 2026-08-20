@@ -123,7 +123,7 @@ const root=document.documentElement, TK='audit-panel-theme';
 // Applied before anything paints, and inside a try because reading storage can
 // throw outright where it is blocked: a panel that cannot remember the choice
 // must still open in the default one.
-try{const s=localStorage.getItem(TK);if(s)root.setAttribute('data-theme',s);}catch(e){}
+const s=storageGet(TK);if(s)root.setAttribute('data-theme',s);
 /**
  * Whether the panel is painting dark right now.
  *
@@ -155,7 +155,7 @@ $('#theme').onclick=()=>{const n=isDark()?'light':'dark';root.setAttribute('data
  // loudly by test__panel_ui.py instead, which is the better place for it — a
  // silent skip here would come up unthemed with nothing saying why.
  tPaint();
- try{localStorage.setItem(TK,n);}catch(e){}paint();};
+ storageSet(TK,n);paint();};
 // Render the standalone report and open it. Opened through THIS origin (/report):
 // a browser will not follow a file:// link from an http:// page, so handing over a
 // filesystem path would give you a button that silently does nothing. The report
@@ -299,7 +299,7 @@ function showTab(t,push){
  // does not throw away a filtered link somebody is about to copy.
  if(push!==false){const uf=uFragment();const h='#/'+t+(uf?'!'+uf:'');
   if(location.hash!==h)history.replaceState(null,'',h);}
- try{localStorage.setItem('audit-panel-tab',t);}catch(e){}
+ storageSet('audit-panel-tab',t);
  // After the browser has laid the view out, not before it.
  requestAnimationFrame(()=>window.scrollTo({top:SCROLL[t]||0,behavior:'auto'}));}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.t));
@@ -329,7 +329,7 @@ addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'
  */
 function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(h))return h;
- try{const s=localStorage.getItem('audit-panel-tab');if(TABS.includes(s))return s;}catch(e){}
+ const s=storageGet('audit-panel-tab');if(TABS.includes(s))return s;
  return 'guards';}
 /**
  * The one transient banner, for an outcome nobody has to act on.

@@ -1,6 +1,6 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-08-20 09:15 UTC
+repo: acme-store · generated 2026-08-20 09:33 UTC
 
 > Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
 

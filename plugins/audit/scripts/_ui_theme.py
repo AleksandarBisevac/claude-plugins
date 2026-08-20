@@ -1007,6 +1007,7 @@ UI_ASSETS = (
     "report/sorting.js",
     "report/usage-range.js",
     "shared/download.js",
+    "shared/storage.js",
 )
 
 

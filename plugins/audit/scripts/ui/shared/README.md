@@ -50,6 +50,11 @@ practice that means, for anything written here:
   context.** The panel has an origin and the report does not.
 - **Storage is best-effort.** Wrap it; a page opened from disk may refuse.
 - **No external resource** — no CDN, font, image URL or stylesheet link.
+- **Not even the four letters `http`, in code OR in a comment.** `x5` in
+  `test_render_report.py` asserts the rendered report contains no `http` at all,
+  excluding only the ADO link and the embedded Markdown blob. It reads text, so a
+  comment mentioning a URL scheme fails it — which is how this line came to be
+  written. Say "a real origin" rather than naming the scheme.
 
 ## Naming, because the scope is shared and so are the collisions
 
@@ -72,3 +77,4 @@ of an IIFE that no longer wraps them; new code does not inherit it.
 | part | one responsibility |
 |---|---|
 | `download.js` | Handing the viewer a file: one object-URL revoke policy, and the text wrapper so no caller picks a charset. |
+| `storage.js` | Remembering something across reloads when the page is allowed to. Fourteen sites carried their own `try`/`catch`; the report may be opened from disk, where storage is refused. |

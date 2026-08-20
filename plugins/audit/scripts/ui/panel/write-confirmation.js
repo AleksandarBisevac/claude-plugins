@@ -638,7 +638,7 @@ async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/
  // second, defaults last.
  {const h=location.hash||'',bang=h.indexOf('!');
   const got=bang>=0&&uApplyFragment(h.slice(bang+1));
-  if(!got){let s=null;try{s=localStorage.getItem(UFSTORE);}catch(e){}
+  if(!got){const s=storageGet(UFSTORE);
    if(s)uApplyFragment(s);}}
  THEME=await api('GET','/api/theme').catch(()=>null);
  tCaptureBase();

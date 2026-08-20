@@ -80,11 +80,8 @@
   // the theme the viewer is actually looking at. A page that does not offer the
   // control has no business reinstating its state.
   if (themeBtn) {
-    // Storage is best-effort: a document opened over file:// may refuse it.
-    try {
-      const savedTheme = localStorage.getItem(THEME_KEY);
-      if (savedTheme) root.setAttribute('data-theme', savedTheme);
-    } catch (e) {}
+    const savedTheme = storageGet(THEME_KEY);
+    if (savedTheme) root.setAttribute('data-theme', savedTheme);
     // A theme carried in the link beats one saved on an earlier visit: whoever
     // sent this URL chose how it should be read, and they chose more recently.
     if (HASH.th === 'dark' || HASH.th === 'light') root.setAttribute('data-theme', HASH.th);
@@ -96,7 +93,7 @@
     themeBtn.addEventListener('click', () => {
       const next = isDark() ? 'light' : 'dark';
       root.setAttribute('data-theme', next);
-      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      storageSet(THEME_KEY, next);
       paintTheme();
       syncHash();
     });
@@ -250,18 +247,19 @@
   const phaseRows = grouped ? Array.from(grouped.querySelectorAll('tbody tr.phase')) : [];
   const bugRows = bugsTable ? Array.from(bugsTable.querySelectorAll('tbody tr')) : [];
 
-  // Which phases are expanded survives filtering AND a page reload. Best-effort:
-  // localStorage may be unavailable on a document opened over file://.
+  // Which phases are expanded survives filtering AND a page reload.
   const STORE = 'audit-report-expanded:' + (document.title || 'report');
   let expanded = {};
-  try { expanded = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) {}
+  // The `try` is for the PARSE, not for storage: storageGet cannot throw, so a
+  // refused read and a corrupt stored value no longer share one handler.
+  try { expanded = JSON.parse(storageGet(STORE)) || {}; } catch (e) {}
 
   /**
    * Write the expand state back to storage, ignoring a refusal.
    * @returns {void}
    */
   const persist = () => {
-    try { localStorage.setItem(STORE, JSON.stringify(expanded)); } catch (e) {}
+    storageSet(STORE, JSON.stringify(expanded));
   };
 
   // --- filter state, and the controls that write it ----------------------------

@@ -79,10 +79,20 @@ leaks around 302 names. The advice "module scope encapsulates" is false here.
   config save.
 - **Group by feature, not by artifact.** `report.* / panel.*` is a split by output file, which is
   exactly why the same feature exists twice.
-- **Anything both surfaces need goes in the shared layer, once.** Today the duplication is real
-  and measured: two `isDark()`, two tooltip placers, two CSV quoters, two blob downloaders, two
-  heatmap calendars — roughly 430 lines of the same logic retyped into the other dialect, with
-  the comments copied verbatim.
+- **Anything both surfaces need goes in `ui/shared/`, once — and before writing a helper, ask
+  whether it is already there.** Two commands, the same two that answer "does this exist?":
+
+  ```bash
+  ls plugins/audit/scripts/ui/shared/
+  grep -rnE '^\s{0,2}(function|const|let) NAME\b' plugins/audit/scripts/ui/
+  ```
+
+  Nobody ran them at any of the sites below, and the reason is worth knowing: the instruction
+  named a directory that did not exist until now, so there was nothing to find and no cheap way
+  to comply. The duplication it allowed is real and measured — two `isDark()`, two tooltip
+  placers, two CSV quoters, four blob downloaders with three revoke policies, two heatmap
+  calendars, fourteen hand-written storage guards. `refactoring-the-assembled-ui` has the
+  four-step wiring; the promotion rule is one reader stays put, two readers move up.
 - **Reach elements through dedicated `data-` attributes, not styling classes.** The hook is then
   explicit and greppable, and renaming a CSS class cannot silently break behaviour.
 - **Wrap each independent feature so its failure is contained.** A report is opened from a CI
