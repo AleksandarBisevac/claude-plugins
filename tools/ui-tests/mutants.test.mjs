@@ -43,20 +43,41 @@ describe('the token cases would catch a truncation change', () => {
     expect(got[0]).toBe('3');       // and it is wrong in the way we said
   });
 
-  // The one that matters, now pointing the other way. Before the fix this read
-  // "uTok AGREES once Math.round becomes Math.trunc", because Math.round was
-  // what shipped; the fix made Math.trunc the source, so the mutation that
-  // reproduces the defect is the reverse one. Same single line, same two
-  // directions — if this stops failing, panel.js has quietly gone back to
-  // rounding a magnitude nothing else rounds.
-  it('panel.js uTok goes wrong when Math.trunc becomes Math.round', () => {
+  // The one that matters, and it MOVED with the code it guards. It used to target
+  // `return String(Math.trunc(n))` — a truncation on the fallthrough path only.
+  // That line is gone: uTok truncates at entry now, matching _fmt.fmt_tokens and
+  // report.js, so the tail truncation was redundant. Had it been left in place the
+  // mutation would still have applied and proved NOTHING, because a value already
+  // truncated cannot tell Math.trunc from Math.round. Removing it turned the
+  // mutation into a loud refusal instead — "target occurs 0 times ... this proof
+  // is no longer proving anything" — which is the outcome to want.
+  it('panel.js uTok goes wrong when the entry truncation becomes a rounding', () => {
     const { ctx } = loadPanel({
-      mutate: mutateOnce('return String(Math.trunc(n));', 'return String(Math.round(n));'),
+      mutate: mutateOnce('n=Math.trunc(n||0);', 'n=Math.round(n||0);'),
     });
     const { uTok } = reach(ctx, ['uTok']);
     const got = [2.6, 2.4, -2.6, 999.9].map((n) => uTok(n, 1));
     expect(got).not.toEqual(pythonFractions());
     expect(got[0]).toBe('3');       // and it is wrong in the way we said
+  });
+
+  // The SECOND direction, and it is the one the old single mutation could not
+  // express: not "how does it round" but "WHERE does it truncate". Removing the
+  // entry truncation restores the shipped defect exactly — the fraction is
+  // divided into the magnitude instead of being dropped before it — and that is
+  // invisible below 1000 and invisible at one decimal place, which is how it
+  // survived a green suite.
+  it('panel.js uTok divides a fraction in when the entry truncation is removed', () => {
+    const { ctx } = loadPanel({
+      mutate: mutateOnce('n=Math.trunc(n||0);', 'n=(n||0);'),
+    });
+    const { uTok } = reach(ctx, ['uTok']);
+    expect(uTok(1005.5, 2)).toBe('1.01K');          // the defect
+    expect(pyFmt([['fmt_tokens', [1005.5, 2]]])[0]).toBe('1.00K');   // the truth
+    // ...and unmutated, they agree. Stated here so this case cannot pass because
+    // Python changed rather than because the mutation worked.
+    const { uTok: clean } = reach(loadPanel().ctx, ['uTok']);
+    expect(clean(1005.5, 2)).toBe('1.00K');
   });
 
   it('...and unmutated it agrees, which is the repair', () => {

@@ -1067,12 +1067,15 @@ def _cases(check):
     # helper actually computes is compared against `_fmt.py` itself, on both
     # surfaces, in tools/ui-tests/half-even.test.mjs — a substring can only say
     # that the call is spelled right.
-    check("the three _fmt.py mirrors round a tie the way Python does, and the "
-          "helper that does it truncates uTok's sub-1000 path like int(n)",
+    check("the three _fmt.py mirrors round a tie the way Python does, and uTok "
+          "truncates at ENTRY like int(n) - it used to truncate only on the "
+          "sub-1000 path, so a fraction at or above a magnitude was divided in "
+          "and disagreed with Python; the pin moved with the code because entry "
+          "truncation covers every path rather than one",
           "function uFixedHalfEven(x,dp){" in M.UI_HTML
           and "'$'+uFixedHalfEven(x,2)" in M.UI_HTML
           and "uFixedHalfEven(x,0)+'%'" in M.UI_HTML
-          and "return String(Math.trunc(n));};" in M.UI_HTML
+          and "const uTok=(n,dp=1)=>{n=Math.trunc(n||0);" in M.UI_HTML
           and "String(Math.round(n))" not in M.UI_HTML)
 
     # --- reversible tail + browse dialog -----------------------------------------

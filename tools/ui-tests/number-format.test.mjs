@@ -35,6 +35,32 @@ const TOKEN_INTEGERS = [0, 1, 942, 999, 1000, 1001, 3230, 214300, 999999,
 // the defect through.
 const TOKEN_FRACTIONS = [2.6, 2.4, -2.6, 999.9, 0.6, 1500.7];
 
+// A SWEEP, not a table, and it exists because the table above was green over a
+// real divergence for as long as this file has existed.
+//
+// The defect was WHERE the truncation happened, not how it rounded: uTok dropped
+// the fraction only on its sub-1000 path, so at or above a magnitude it divided
+// the fraction into the quotient while Python and report.js dropped it first.
+// `1500.7` is in the table and IS above the boundary — and it still cannot see
+// this, because at one or two decimals 1.5007 and 1.5 render the same. Only a
+// fraction whose effect survives to the third decimal of the quotient shows it,
+// which is why a hand-picked table kept missing it: you have to already know the
+// answer to pick the value.
+//
+// So every magnitude boundary is crossed from just below and just above, with
+// fractions chosen to land on and around the rounding step, at both precisions
+// the product asks for.
+const TOKEN_BOUNDARY_FRACTIONS = (() => {
+  const out = [];
+  for (const base of [0, 1, 999, 1000, 1005, 1250, 1500, 999999,
+                      1000000, 1000500, 1000000000, 1000000500]) {
+    for (const frac of [0.005, 0.05, 0.1, 0.4, 0.5, 0.6, 0.9]) {
+      out.push(base + frac, -(base + frac));
+    }
+  }
+  return out;
+})();
+
 const DPS = [1, 2];   // the two the product asks for: labels, then hover.
 
 function tokenCases(values) {
@@ -45,6 +71,24 @@ function tokenCases(values) {
 
 function pythonTokens(cases) {
   return pyFmt(cases.map((c) => ['fmt_tokens', [c.n, c.dp]]));
+}
+
+/**
+ * Which cases each formatter got wrong, rather than a boolean.
+ *
+ * A sweep this size fails as two unreadable 300-element arrays otherwise, and the
+ * first thing anyone needs from a divergence is the input that produced it.
+ * @returns {{panel: string[], report: string[]}}
+ */
+function panelAndReport(cases, want) {
+  const bad = { panel: [], report: [] };
+  cases.forEach((c, i) => {
+    const p = panel.uTok(c.n, c.dp);
+    const r = report.fmtTokens(c.n, c.dp);
+    if (p !== want[i]) bad.panel.push('n=' + c.n + ' dp=' + c.dp + ' py=' + want[i] + ' panel=' + p);
+    if (r !== want[i]) bad.report.push('n=' + c.n + ' dp=' + c.dp + ' py=' + want[i] + ' report=' + r);
+  });
+  return bad;
 }
 
 describe('token magnitudes', () => {
@@ -97,6 +141,20 @@ describe('token magnitudes', () => {
     const want = pythonTokens(cases);
     const got = cases.map((c) => panel.uTok(c.n, c.dp));
     expect(labelled(cases, got)).toEqual(labelled(cases, want));
+  });
+
+  // The case that would have caught DEFECT 3, and the reason it is a sweep: both
+  // JavaScript formatters are compared against live Python across every magnitude
+  // boundary, so "where does it truncate" is checked rather than assumed. Before
+  // the fix this was red at 28 of these cases for the panel and 0 for the report.
+  it('both formatters match _fmt.fmt_tokens across every magnitude boundary '
+     + '[was DEFECT 3]', () => {
+    const cases = tokenCases(TOKEN_BOUNDARY_FRACTIONS);
+    // The vacuity guard: a sweep that generated nothing would pass silently, and
+    // this is the case that is meant to be broad.
+    expect(cases.length).toBeGreaterThan(150);
+    const want = pythonTokens(cases);
+    expect(panelAndReport(cases, want)).toEqual({ panel: [], report: [] });
   });
 
   it('the two dialects agree with each other on integers', () => {

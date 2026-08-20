@@ -197,20 +197,20 @@ function uFixedHalfEven(x,dp){
  * magnitude the value is TRUNCATED toward zero, matching Python's `int(n)`; it
  * used to round, so uTok(2.6) said '3' where every other surface said '2'.
  *
- * WHERE THE TRUNCATION HAPPENS IS NOT WHERE PYTHON'S DOES, and this comment
- * used to claim otherwise. `_fmt.fmt_tokens` truncates at ENTRY, before the
- * magnitude divide, and so does report.js's `fmtTokens`; this truncates only on
- * the path below the smallest magnitude. The two therefore part company on a
- * FRACTIONAL input at or above 1000, where Python drops the fraction before
- * dividing and this divides it in: measured, uTok(1005.9, 2) is '1.01K' against
- * fmt_tokens' '1.00K'. Integers — which is what a ledger row carries — are
- * unaffected. The live fractional caller is the trend chart's y-axis tick in
- * usage-charts.js.
+ * THE TRUNCATION HAPPENS AT ENTRY, which is where Python's does. It used to
+ * happen only on the path below the smallest magnitude, so a FRACTIONAL input at
+ * or above 1000 had its fraction divided into the quotient while
+ * `_fmt.fmt_tokens` and report.js's `fmtTokens` dropped it first — measured, 28
+ * disagreements across a sweep of every magnitude boundary, against 0 for the
+ * report. The live fractional caller is the trend chart's y-axis tick in
+ * usage-charts.js; a ledger row carries integers and was never affected.
  *
- * Closing that gap is a paired change, not a one-liner: entry truncation makes
- * the mutation in tools/ui-tests/mutants.test.mjs inert, because a value already
- * truncated cannot tell Math.trunc from Math.round, so the mutation has to move
- * to the new line in the same commit.
+ * Closing it was a paired change rather than a one-liner. Entry truncation makes
+ * the old tail `String(Math.trunc(n))` redundant, and leaving it would have left
+ * the mutation in tools/ui-tests/mutants.test.mjs applying and proving nothing —
+ * a value already truncated cannot tell Math.trunc from Math.round. So the tail
+ * went, the mutation moved to this line, and a second mutation was added for the
+ * direction the first cannot express: not how it rounds, but WHERE it truncates.
  *
  * What agreement there is, is held by tools/ui-tests/number-format.test.mjs and
  * not by this comment.
@@ -220,8 +220,9 @@ function uFixedHalfEven(x,dp){
  *   hover precision
  * @returns {string} e.g. '3.2M', or the truncated integer below a thousand
  */
-const uTok=(n,dp=1)=>{n=n||0;for(const[l,s]of[[1e9,'B'],[1e6,'M'],[1e3,'K']])
- if(Math.abs(n)>=l)return uFixedHalfEven(n/l,dp)+s;return String(Math.trunc(n));};
+const uTok=(n,dp=1)=>{n=Math.trunc(n||0);
+ for(const[l,s]of[[1e9,'B'],[1e6,'M'],[1e3,'K']])
+ if(Math.abs(n)>=l)return uFixedHalfEven(n/l,dp)+s;return String(n);};
 
 /**
  * A dollar amount, mirroring `_fmt.fmt_cost`: half-to-even at two places, and
