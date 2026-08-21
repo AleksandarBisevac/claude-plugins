@@ -291,7 +291,7 @@ def _cases(check):
           "the harness): %d hits over %d hooks"
           % (len(hook_test_hits),
              len(set(h[0] for h in hook_test_hits))),
-          len(set(h[0] for h in hook_test_hits)) == 10
+          len(set(h[0] for h in hook_test_hits)) == 11
           and all(h[3] in (_FX_TESTS + "_harness.py", _own_suite(h[0]))
                   for h in hook_test_hits), repr(hook_test_hits))
     # The two consumer-repo glob fixtures moved WITH `_config.py`'s suite, from

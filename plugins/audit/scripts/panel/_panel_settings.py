@@ -64,7 +64,7 @@ import _config_rules  # noqa: E402  (the rules that decide what this form may of
 # takes the lock, validates, journals and patches only the index (meta lives on the
 # index; a registry save must never rewrite a phase shard). /api/areas is a thin
 # front door onto it rather than a second writer.
-_META_KEYS = ("reviewSkill", "buildCommands", "areas", "ado")
+_META_KEYS = ("reviewSkill", "buildCommands", "branch", "areas", "ado")
 # ...of which these have no control on the Composition form: they are written by
 # their own endpoint, so the confirm dialog's client-side change list must NOT
 # enumerate them or it would compute a row for a field nobody can edit there. The
@@ -226,6 +226,23 @@ COMPOSITION_HELP = {
                    " are the only signer.",
     "buildCommands": "Named shell commands (typecheck / test / lint …) the pipeline "
                      "runs as gates.",
+    # The branch-naming card (meta.branch, saved on the Composition form):
+    "branchConvention": "How a phase's branch is named. Empty = the meta.branchPrefix "
+                        "shape, `audit/<phase>-<slug>`, which is what every existing "
+                        "plan already produces.",
+    "branchTemplate": "Placeholders: {type} {initials} {phase} {slug}. One that "
+                      "resolves to nothing disappears together with the separator "
+                      "behind it, so an absent {initials} gives feature/p2-x, never "
+                      "feature//p2-x.",
+    "branchDefaultType": "The {type} for a phase that neither sets branchType nor "
+                         "derives one. A phase from bugs[] derives 'bugfix' regardless.",
+    "branchTypes": "The types a phase may name. This list is ALSO where the "
+                   "pre-approved git globs come from, so a type missing here costs a "
+                   "confirmation prompt on every branch operation that uses it.",
+    "branchInitials": "Overrides the initials taken from your git user.name. Set it "
+                      "when that name does not initial usefully; leave it empty to use "
+                      "git's.",
+    "branchSlugMax": "Cap on the slug taken from the phase title.",
     "phaseReviewModel": "Model used for this phase's sign-off review.",
     "taskModel": "Model the executor uses to implement this task.",
     "taskSkills": "Skills the executor loads (via the Skill tool) before writing code "

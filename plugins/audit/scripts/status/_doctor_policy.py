@@ -25,6 +25,7 @@ This module carries no `--selftest` of its own; its cases live in
 import os
 import pathlib
 import shutil
+import subprocess
 import sys
 import time
 
@@ -51,6 +52,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
+import _branch  # noqa: E402  (the naming convention, one expansion path)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -276,6 +278,73 @@ def check_policy(rep, project, cfg, cfg_mod, manifest, _discover=None):
 
 
 # --- checks: build runners ------------------------------------------------------
+def check_branch_naming(rep, project, manifest, git_root):
+    """Which naming convention is in force, and whether a parent is still open.
+
+    Says WHICH shape produced the names even when nothing is wrong, because
+    `meta.branch` and `meta.branchPrefix` give different branches from the same
+    manifest and a reader looking at `audit/p2-x` cannot tell which was in force.
+    That is this repo's rule about a claim carrying its basis, applied to a name.
+
+    The unmerged-parent line is the one that bites later rather than now: a phase
+    whose `parentBranch` is another branch has NOT reached the development branch
+    when it signs off, and `git branch -d` on it is unsafe until that parent is
+    itself merged.
+    """
+    if not manifest:
+        rep.ok("branch naming",
+               "no manifest, so no convention to read - a fresh plan would use "
+               "the default `audit/<phase>-<slug>`")
+        return
+    meta = manifest.get("meta") or {}
+    cfg = _branch.config(meta)
+    rep.ok("branch naming",
+           "%s -> %s" % (cfg["basis"], cfg["template"]))
+
+    parents = {}
+    for phase in (manifest.get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        own = phase.get("parentBranch")
+        if own and phase.get("status") != "done":
+            parents.setdefault(str(own), []).append(str(phase.get("id")))
+    if not parents:
+        return
+    dev = meta.get("developmentBranch") or "main"
+    for parent, phase_ids in sorted(parents.items()):
+        merged = None
+        if git_root and shutil.which("git"):
+            try:
+                out = subprocess.run(
+                    ["git", "-C", git_root, "merge-base", "--is-ancestor",
+                     parent, dev],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=15)
+                merged = (out.returncode == 0)
+            except Exception:
+                merged = None
+        if merged is False:
+            rep.warn("branch naming",
+                     "%s merge%s into %r, which is NOT yet merged into %r - "
+                     "signing off there does not put the work on the "
+                     "development branch"
+                     % (", ".join(phase_ids),
+                        "s" if len(phase_ids) == 1 else "",
+                        parent, dev),
+                     "merge %r into %r when its phases are done, and do not "
+                     "`git branch -d` the phase branches until then"
+                     % (parent, dev))
+        elif merged is None:
+            # Named rather than silent: "could not check" and "checked, clean"
+            # are different answers, and a reader cannot tell them apart from
+            # nothing at all.
+            rep.warn("branch naming",
+                     "%s target %r; git could not say whether it is merged into "
+                     "%r" % (", ".join(phase_ids), parent, dev),
+                     "check by hand: git merge-base --is-ancestor %s %s"
+                     % (parent, dev))
+
+
 def check_build_commands(rep, project, manifest):
     """Do the runners named in meta.buildCommands exist?
 

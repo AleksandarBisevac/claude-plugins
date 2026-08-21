@@ -59,6 +59,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_rules.py` — see `plugins/audit/tests/_harness.py`.
 """
 import os
+import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -89,6 +90,7 @@ import _manifest_phases as _phases  # noqa: E402  (the one walk, and what a phas
 import _manifest_ado as _ado  # noqa: E402  (meta.ado: the connector config, one front door)
 import _manifest_typos as _typos  # noqa: E402  (the did-you-mean detectors)
 import _manifest_crossrefs as _crossrefs  # noqa: E402  (ids, refs, cycles, fileIndex, bugs)
+import _branch as _branch  # noqa: E402  (where a phase branches from, and its name)
 
 # --- the re-exported surface ------------------------------------------------------
 # ALIASES, NOT COPIES. Each name below is the SAME object the module beside it
@@ -107,6 +109,7 @@ PROPOSAL_STATUS = _vocab.PROPOSAL_STATUS
 PROP_ID_RE = _vocab.PROP_ID_RE
 KNOWN_ROOT = _vocab.KNOWN_ROOT
 KNOWN_META = _vocab.KNOWN_META
+KNOWN_BRANCH = _vocab.KNOWN_BRANCH
 KNOWN_ADO = _vocab.KNOWN_ADO
 KNOWN_PHASE = _vocab.KNOWN_PHASE
 CLAIM_KEYS = _vocab.CLAIM_KEYS
@@ -182,6 +185,67 @@ def _check_meta(manifest):
     return (f, w)
 
 
+# --- the branch convention ---------------------------------------------------------
+def _check_branch(manifest):
+    """Would this manifest's own convention produce branches git accepts?
+
+    The interesting failure is not a malformed config — it is a WELL-FORMED one
+    that yields an illegal ref for a particular phase title, which surfaces at
+    `git switch -c` in the middle of a run rather than here. So the check does not
+    inspect the template in the abstract: it composes the name for EVERY phase and
+    asks `_branch.ref_violations` about the result.
+
+    A `branchType` outside `meta.branch.types` is a WARNING, not a finding: the
+    branch is still legal and the run still works. What it costs is the
+    pre-approval glob (`reference/orchestrator.md` -> Branch operations), so the
+    consequence is a permission prompt on every branch operation — worth saying,
+    not worth refusing a manifest over.
+    """
+    f, w = [], []
+    meta = manifest.get("meta")
+    if not isinstance(meta, dict):
+        return (f, w)                      # _check_meta already said so
+
+    blk = meta.get("branch")
+    if blk is not None and not isinstance(blk, dict):
+        f.append("meta.branch: not an object")
+        return (f, w)
+    if isinstance(blk, dict):
+        _vocab._unknown_keys(blk, KNOWN_BRANCH, "meta.branch", w)
+        tmpl = blk.get("template")
+        if tmpl is not None and not isinstance(tmpl, str):
+            f.append("meta.branch.template: not a string")
+            return (f, w)
+        # A placeholder nobody substitutes expands to nothing and takes a
+        # separator with it — a shorter name than the author meant, and silent.
+        for ph in re.findall(r"\{([a-zA-Z]+)\}", str(tmpl or "")):
+            if ph not in _branch.PLACEHOLDERS:
+                w.append("meta.branch.template: unknown placeholder '{%s}' - it "
+                         "expands to nothing and collapses the separator with it; "
+                         "known: %s"
+                         % (ph, ", ".join("{%s}" % k for k in _branch.PLACEHOLDERS)))
+
+    cfg = _branch.config(meta)
+    for phase in (manifest.get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        pid = phase.get("id")
+        kind = phase.get("branchType")
+        if kind and str(kind) not in cfg["types"]:
+            w.append("phases[%s].branchType %r is not in meta.branch.types - the "
+                     "branch still works, but it is outside the pre-approved "
+                     "globs, so every branch operation on it asks for "
+                     "confirmation" % (pid, str(kind)))
+        # The composed name, which is the thing git will actually be handed.
+        name = _branch.compose(meta, phase, initials="x y")["name"]
+        bad = _branch.ref_violations(name)
+        if bad:
+            f.append("phases[%s]: the branch name this manifest would produce "
+                     "(%r) is not a legal git ref: %s"
+                     % (pid, name, "; ".join(bad)))
+    return (f, w)
+
+
 # --- validate: one walk, then one question per piece ------------------------------
 # `validate()` was 354 lines, and its size was never the reason it was hard to
 # cut. The reason was the INDEX: seven accumulating locals built by one pass over
@@ -214,6 +278,7 @@ def validate(manifest):
         w.extend(pair[1])
 
     add(_check_meta(manifest))
+    add(_check_branch(manifest))
     add(_check_areas(manifest))
 
     phases = manifest.get("phases")

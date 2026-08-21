@@ -91,6 +91,10 @@ KNOWN_ROOT = {"$schema", "meta", "phases", "fileIndex", "bugs", "deferred",
               "proposals"}
 KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               "developmentBranch", "branchPrefix", "gitRoot", "reviewSkill",
+              # v0.44: branch-naming convention. Supersedes branchPrefix, which
+              # stays valid — an existing manifest must keep producing the same
+              # names. _check_branch_naming reads meta.branch first.
+              "branch",
               "runtimeBoot", "nodePreamble", "commit", "buildCommands", "ado",
               # report rendering (render-report.py): narrative summary box +
               # custom output-file basename. Neither affects orchestration.
@@ -129,9 +133,18 @@ KNOWN_ADO = {"organization", "project", "areaPath", "iterationPath", "types",
              # U4: the EXISTING work item audit phases hang under, so the work
              # lands inside a team's backlog rather than beside it.
              "parentWorkItem"}
+# Keys inside meta.branch (the naming convention). Enumerated for the same reason
+# meta.ado is: a typo like `slugMaxLen` or `defaulttype` would otherwise be a
+# convention that silently never applies.
+KNOWN_BRANCH = {"template", "defaultType", "types", "initials", "slugMaxLength"}
+
 KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "description", "desiredOutcome", "testGate", "baseRef", "branch",
                "mergedAt", "review", "reviewFindings", "summary", "tasks",
+               # v0.44: this phase's own fork/merge target and branch type.
+               # parentBranch resolves phase -> meta.developmentBranch, the same
+               # chain reviewSkill uses; branchType names the {type} segment.
+               "parentBranch", "branchType",
                # v0.16: per-phase review skill override + app/team area tag
                "reviewSkill", "area",
                # connector v2: phase-level work item link, written by /audit:sync
@@ -225,6 +238,7 @@ SCHEMA_ANCHORS = (
     ("KNOWN_ROOT", ""),
     ("KNOWN_META", "meta"),
     ("KNOWN_ADO", "meta.ado"),
+    ("KNOWN_BRANCH", "meta.branch"),
     ("KNOWN_PHASE", "phases[]"),
     ("KNOWN_TASK", "phases[].tasks[]"),
     ("KNOWN_BUG", "bugs[]"),

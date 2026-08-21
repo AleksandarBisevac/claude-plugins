@@ -647,6 +647,25 @@ SCHEMA_EXEMPTIONS = {
         "hand-typed copy of the schema URL (there is no shared constant) or file "
         "I/O inside a generate() documented as pure; CI validates the generated "
         "manifest against the schema BY PATH instead.",
+    "meta.branch":
+        "the branch-naming convention. It decides what `git switch -c` is handed "
+        "and NOTHING the demo renders: the report and the panel show a phase's "
+        "`branch` string, which this fixture already carries verbatim, not the "
+        "template that produced it. Carrying a template here would exercise "
+        "`_branch.compose` against a fixture nobody branches from - the real "
+        "coverage is `tests/test__branch.py`, which composes names, and "
+        "`test_resolve_branch.py`, which runs the door. REVISIT when the panel "
+        "grows a meta.branch card: the demo is where its screenshot comes from.",
+    "phase.parentBranch":
+        "which branch THIS phase forks from and merges into. Absent means "
+        "`meta.developmentBranch`, which is the answer for every phase in this "
+        "fixture and for most phases anywhere. Setting it on a demo phase would "
+        "name a story branch that does not exist in a generated manifest nobody "
+        "clones, so the field would be decoration rather than a demonstration.",
+    "phase.branchType":
+        "the `{type}` segment. Same reason as `meta.branch`: it is an input to a "
+        "name, and the name itself is what the fixture carries and the report "
+        "renders.",
     "phase.shard":
         "written by `_manifest_io.split_manifest` onto the INDEX stub, never by "
         "this generator. `generate()` returns the ASSEMBLED manifest, in which a "

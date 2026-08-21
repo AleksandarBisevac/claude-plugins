@@ -14,16 +14,22 @@ other phases (best on a **sharded** manifest — run `/audit:migrate` first — 
 only their own shard and merge back without conflict). This only touches git worktrees/branches — it
 **never edits the manifest**.
 
-**Resolve first (read-only):** `manifestPath` + `gitRoot` from `.claude/audit.config.json`; read the
-manifest and find `<phaseId>`. Derive the branch exactly as phase entry would (orchestrator →
-Branch-per-phase): if `phase.branch` is already set, use it; otherwise
-`<meta.branchPrefix|"audit">/<phaseId-lowercased>-<slug>` where `slug` is `phase.title` lowercased,
-spaces→hyphens, alphanumeric+hyphens, ≤30 chars. Worktree path: `../<repo>-<phaseId>` (repo = the
-git-root directory's basename). `<developmentBranch>` = `meta.developmentBranch` (default `main`).
+**Resolve first (read-only):** `manifestPath` + `gitRoot` from `.claude/audit.config.json`. If
+`phase.branch` is already set (the phase was started), use it. Otherwise ask — do NOT compose the
+name here, because `meta.branch.template` has cases prose gets wrong:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/resolve-branch.py" <manifestPath> --phase <phaseId>
+```
+
+It prints the branch name AND `<parent>` — the phase's resolved parent branch,
+`phase.parentBranch ?? meta.developmentBranch` — which is what the worktree must be cut from and
+merged back into. Exit 1 means the composed name is not a legal git ref; stop and report.
+Worktree path: `../<repo>-<phaseId>` (repo = the git-root directory's basename).
 
 **Create (default):**
 ```bash
-git -C <gitRoot> worktree add "../<repo>-<phaseId>" -b <branch> <developmentBranch>
+git -C <gitRoot> worktree add "../<repo>-<phaseId>" -b <branch> <parent>
 ```
 (If `<branch>` already exists — the phase was started — drop `-b`: `git -C <gitRoot> worktree add "../<repo>-<phaseId>" <branch>`.)
 Then print the next step for the user, e.g.:
@@ -34,7 +40,9 @@ Open a session there and run the phase:
     /audit:phase <phaseId>
 ```
 Remind them: run each phase in its **own** session/worktree; when done, merge the branch back into
-`<developmentBranch>` (ff, else `--no-ff`) and remove the worktree (below).
+`<parent>` (ff, else `--no-ff`) and remove the worktree (below). **When `<parent>` is not the
+development branch, say so** — the work has not reached the development branch until that parent is
+itself merged, and `resolve-branch.py` prints that sentence for you.
 
 **Remove (`--remove`):**
 ```bash

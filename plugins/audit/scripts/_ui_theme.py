@@ -971,6 +971,7 @@ UI_ASSETS = (
     "panel-css/usage-tables.css",
     "panel.html",
     "panel/ado-connector.js",
+    "panel/branch-convention.js",
     "panel/appearance-view.js",
     "panel/boot.js",
     "panel/browse-dialog.js",

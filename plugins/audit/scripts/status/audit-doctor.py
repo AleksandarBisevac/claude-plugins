@@ -128,6 +128,7 @@ check_submodules = _setup.check_submodules
 check_areas = _policy_checks.check_areas
 check_policy = _policy_checks.check_policy
 check_build_commands = _policy_checks.check_build_commands
+check_branch_naming = _policy_checks.check_branch_naming
 _leading_executable = _policy_checks._leading_executable
 
 check_ado = _ado.check_ado
@@ -158,6 +159,7 @@ def diagnose(project, deep=False):
     check_areas(rep, project, cfg, manifest, manifest_rel)
     check_policy(rep, project, cfg, cfg_mod, manifest)
     check_build_commands(rep, project, manifest)
+    check_branch_naming(rep, project, manifest, git_root)
     check_ado(rep, project, manifest)
     check_hooks_fired(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)

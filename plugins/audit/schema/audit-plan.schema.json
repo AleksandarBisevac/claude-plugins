@@ -95,7 +95,40 @@
         },
         "branchPrefix": {
           "type": "string",
-          "description": "Prefix for per-phase branches, e.g. 'audit' -> audit/<phaseId>-<slug>. Default 'audit'."
+          "description": "Prefix for per-phase branches, e.g. 'audit' -> audit/<phaseId>-<slug>. Default 'audit'. SUPERSEDED by meta.branch, which is read first; this key stays valid and keeps working so existing manifests are unaffected. When both are present meta.branch wins and /audit:doctor says which shape produced the name."
+        },
+        "branch": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Branch-naming convention. Absent => the meta.branchPrefix shape, i.e. '{branchPrefix}/{phase}-{slug}' with the default prefix 'audit'. A template rather than a set of flags, so a team expresses its own convention without the plugin growing a setting per variation.",
+          "properties": {
+            "template": {
+              "type": "string",
+              "description": "Branch name template. Placeholders: {type} {initials} {phase} {slug}. Example '{type}/{initials}/{phase}-{slug}' -> feature/jd/p2-chart-export. A placeholder that resolves to nothing collapses together with the separator that follows it, so an absent {initials} yields feature/p2-chart-export and never feature//p2-chart-export. The result must be a legal git ref; validate-manifest.py rejects one that is not."
+            },
+            "defaultType": {
+              "type": "string",
+              "description": "The {type} used when a phase neither sets branchType nor derives one. Default 'feature'."
+            },
+            "types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The types phase.branchType may name. Default: feature, bugfix, hotfix, release, docs, refactor, test, chore. This list is ALSO what the orchestrator's pre-approved branch globs are derived from (reference/orchestrator.md -> Branch operations), so a type missing here means a permission prompt on every branch operation that uses it."
+            },
+            "initials": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Value for {initials}. null/absent => derive from the git identity the usage ledger already resolves (git user.name -> initials). Set it explicitly when the git name does not initial usefully. Not an identity of record: the audit trail's author is the usage ledger's, not this."
+            },
+            "slugMaxLength": {
+              "type": "integer",
+              "description": "Cap on the {slug} segment derived from phase.title. Default 30."
+            }
+          }
         },
         "gitRoot": {
           "type": "string",
@@ -658,12 +691,26 @@
             "type": "string"
           }
         },
+        "parentBranch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Branch THIS phase forks from and merges back into, overriding meta.developmentBranch (the default/fallback). Lets a phase integrate into a story branch, a release line, or another phase's branch instead of the repo's development branch. null/absent => use meta.developmentBranch. Resolution is the same chain reviewSkill uses. A phase whose parent is not meta.developmentBranch has NOT reached the development branch when it signs off, and the sign-off report says so."
+        },
+        "branchType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The {type} segment of this phase's branch name, overriding the derived default. Must be one of meta.branch.types. null/absent => derive: a phase materialized from a bugs[] entry gives 'bugfix', anything else meta.branch.defaultType."
+        },
         "baseRef": {
           "type": [
             "string",
             "null"
           ],
-          "description": "HEAD SHA at phase start; set by the orchestrator."
+          "description": "HEAD SHA at phase start; set by the orchestrator. Records WHICH COMMIT the phase started from; parentBranch records which branch that commit came from."
         },
         "branch": {
           "type": [

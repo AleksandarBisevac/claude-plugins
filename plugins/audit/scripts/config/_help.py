@@ -107,6 +107,13 @@ SCHEMAS = {
 COMPOSITION_PATHS = {
     "reviewSkill": "meta.reviewSkill",
     "buildCommands": "meta.buildCommands",
+    # The branch-naming card (a Composition FORM key, saved with the form):
+    "branchConvention": "meta.branch",
+    "branchTemplate": "meta.branch.template",
+    "branchDefaultType": "meta.branch.defaultType",
+    "branchTypes": "meta.branch.types",
+    "branchInitials": "meta.branch.initials",
+    "branchSlugMax": "meta.branch.slugMaxLength",
     "phaseReviewModel": "phases[].review.model",
     "taskModel": "phases[].tasks[].model",
     "taskSkills": "phases[].tasks[].skills",

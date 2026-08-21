@@ -140,8 +140,13 @@ never hardcode branch names, package ids, skills, or build tools here:
 - **Git: read / pull / commit allowed.** Commit after each successful task and after phase sign-off.
   **NEVER `git push` or force-push.** All other `git reset`/`rebase`/`clean` require explicit human confirmation.
   If `meta.commit.coauthor` is set, end every commit message with it.
-- **Branch operations pre-approved:** `git switch -c <prefix>/*`, `git switch <prefix>/*`,
-  `git merge --ff-only <prefix>/*`, `git branch -d <prefix>/*`. All other branch/checkout ops need confirmation.
+- **Branch operations pre-approved:** `git switch -c <glob>`, `git switch <glob>`,
+  `git merge --ff-only <glob>`, `git branch -d <glob>` for every glob
+  `resolve-branch.py <manifestPath> --globs` prints. All other branch/checkout ops need confirmation.
+  **Derive the globs, do not assume them** — a manifest using `meta.branch` has one per type
+  (`feature/*`, `bugfix/*`, …) while a `meta.branchPrefix` manifest has exactly one. Guessing
+  costs a confirmation prompt on every branch operation, which reads as a harness fault rather
+  than a config one.
 - **Never read secrets** and **never log tokens** — enforced by the plugin's guard hooks; do not work around them.
 - If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command.
 - Every manifest write goes through `Edit` and must keep the JSON valid — after each mutation run
@@ -235,15 +240,29 @@ The lock directory is inside the git dir — it is NEVER committed or shown by `
 
 Each phase gets a **local** branch so work is isolated, reviewable, and resumable.
 
-**Parent branch rule:** audit branches fork from `meta.developmentBranch` (default `main`) and merge back into it.
+**Parent branch rule:** a phase forks from, and merges back into, its **resolved parent** —
+`phase.parentBranch ?? meta.developmentBranch` (default `main`). The same precedence chain
+`reviewSkill` uses. Most phases set nothing and fork from the development branch; a phase that
+sets it integrates into a story branch, a release line, or another phase's branch instead.
+
+**Do not compose the branch name yourself.** Ask:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/resolve-branch.py" <manifestPath> --phase <phaseId>
+```
+
+It prints the parent branch, the name, and the type, each with the key that decided it. This is a
+command and not a formula here because `meta.branch.template` has cases prose gets wrong: an
+absent `{initials}` has to collapse **together with the separator behind it**, or the name is
+`feature//p2-…` and git refuses it. Exit 1 means the composed name is not a legal ref — stop and
+report, because `git switch -c` is about to fail anyway.
 
 **Phase entry** happens on EVERY execution path (`phase`, `next`, `run`) via **Execute the task** step 1:
 - **If `phase.branch` is already set** (resume/continue): `git switch <phase.branch>` if not already on it.
 - **If `phase.branch` is null** (first task of the phase):
-  1. **Verify the current branch is `meta.developmentBranch`; if it isn't, STOP and ask the human before branching.**
-  2. Derive a short slug from `phase.title` (lowercase, spaces → hyphens, max 30 chars, alphanumeric + hyphens).
-  3. Compose the branch name: `<meta.branchPrefix>/<phaseId-lowercase>-<slug>` (default prefix `audit`).
-  4. `git switch -c <branch>`, then write the branch name into `phase.branch` (Edit).
+  1. Run `resolve-branch.py … --phase <phaseId>` for the parent branch and the name.
+  2. **Verify the current branch is that RESOLVED PARENT; if it isn't, STOP and ask the human before branching.**
+  3. `git switch -c <branch>`, then write the branch name into `phase.branch` (Edit).
 
 **During task execution:** all edits and commits happen on the phase branch. **Push remains FORBIDDEN** — local only.
 
@@ -380,7 +399,15 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       the run is finishing, release the claim. (All these are shard writes in the sharded layout.)
    b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor).
       Stage the journal directory here too, for the same reason as the task commits.
-   c. **Merge into `meta.developmentBranch`**: `git switch <developmentBranch>`; `git merge --ff-only <branch>`.
+   c. **Merge into the phase's RESOLVED PARENT** (`resolve-branch.py … --phase <phaseId>` prints
+      it; `phase.parentBranch ?? meta.developmentBranch`): `git switch <parent>`;
+      `git merge --ff-only <branch>`.
+      **When that parent is not the development branch, the sign-off report must say so** — name
+      the branch the work merged into and state that it has NOT reached the development branch
+      until that parent is itself merged. `resolve-branch.py` prints exactly that sentence; a
+      report that stays quiet reads as "landed", which is the one thing it must not do. For the
+      same reason `git branch -d <branch>` is NOT safe here while the parent is unmerged: say it
+      rather than running it.
       **If ff-merge fails** (the development branch advanced during the phase — the normal case on team
       repos), ask the human (AskUserQuestion) to choose:
       1. **`git merge --no-ff <branch>`** (recommended) — preserves the phase branch history and keeps every

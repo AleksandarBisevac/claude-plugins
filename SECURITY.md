@@ -34,6 +34,7 @@ what it counts.
 |---|---|---|---|
 | `guard-secrets-read` | PreToolUse Read/Grep/Bash | **ask** (manual approval prompt, loud) | allow (fail-open) |
 | `guard-edits` | PreToolUse edits | **ask** | allow |
+| `guard-history-rewrite` | PreToolUse Bash | **ask** | allow |
 | `require-plan` | PreToolUse edits | **ask** | allow |
 | `guard-capabilities` | PreToolUse Skill/Task/Agent/MCP | **ask** | allow |
 | `require-plan` (state commit) | PostToolUse edits | silent | no-op |

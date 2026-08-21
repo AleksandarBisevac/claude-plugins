@@ -1169,6 +1169,43 @@ def _cases(check):
                if ("{comp:'%s'" % k) not in M.UI_HTML]
           and "(doc.composition||{})[ref.comp]" in M.UI_HTML
           and set(M.COMPOSITION_HELP) == set(_help.COMPOSITION_PATHS))
+    # --- the branch-naming card (meta.branch) ---------------------------------
+    # SOURCE PROPERTIES, and the labels say so. Each of these is a claim about how
+    # the page is WRITTEN that no browser gate can make: the browser can prove the
+    # card paints, and does (capture-screenshots --check boots the panel), but it
+    # cannot prove the expansion rule was not quietly reimplemented beside it.
+    _bcard = M.UI_HTML[M.UI_HTML.index("function branchCard("):
+                       M.UI_HTML.index("// --- grouped manifest findings")]
+    check("bn1 the branch card is WIRED: the composition view calls it, so a part "
+          "that assembles but is never invoked cannot pass. Assembly alone would "
+          "- both sides of the byte-identity check are built from the same tuple",
+          "c.append(branchCard(comp,patch));" in M.UI_HTML)
+    check("bn2 the card writes patch.meta.branch and NOTHING else on the form's "
+          "draft - it rides the Composition save, so a stray write to another "
+          "meta key would be saved under a confirm dialog that never listed it",
+          _bcard.count("patch.meta.") == 1
+          and "patch.meta.branch=draft" in _bcard,
+          repr([l for l in _bcard.splitlines() if "patch.meta." in l]))
+    check("bn3 THE LOAD-BEARING ONE: the worked example is READ from the payload, "
+          "never composed here. `_branch.expand`'s separator rule has cases - an "
+          "empty placeholder takes the separator behind it - and a second copy in "
+          "JS would be a second answer, with the branch git actually gets being "
+          "the one nobody previewed. So the card may read info.example and must "
+          "carry no substitution of its own",
+          "info.example" in _bcard
+          and ".replace('{" not in _bcard and '.replace("{' not in _bcard
+          and "split('{" not in _bcard, repr(_bcard[:0]))
+    check("bn4 every branch type the card offers carries what it is FOR. The "
+          "types list doubles as the pre-approved git globs, so it is read by "
+          "people deciding policy, and eight bare words teach none of them "
+          "anything",
+          "id:'branchtypehelp'" in _bcard and "info.typeHelp" in _bcard)
+    check("bn5 the banner describes the FILE as saved, not the draft - the ADO "
+          "card's rule, and the reason is the same: a banner that followed the "
+          "draft would report a convention that is not the one running",
+          "'data-branchstate':bstate" in _bcard
+          and "info.basis" in _bcard)
+
     check("backticks are the topics' only markup, and an unbalanced pair renders "
           "verbatim rather than guessing which half was code",
           "if(parts.length%2===0)return [String(s)];" in M.UI_HTML)
@@ -2963,7 +3000,7 @@ def _cases(check):
           "named from inside the helper and cannot be named by the <label> around "
           "it either - one chip and the chip's remove button takes that label: "
           "%d call site(s), %d passing nothing" % (len(_fl_le), len(_fl_unnamed)),
-          len(_fl_le) == 5 and not _fl_unnamed)
+          len(_fl_le) == 6 and not _fl_unnamed)
 
     check("fl5 listEditor takes the name rather than inventing one, and the two "
           "Guards editors that are not inside a <label> pass it - the tokenVars "

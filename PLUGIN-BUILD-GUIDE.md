@@ -72,6 +72,7 @@ claude-plugins/                           # this repo (personal, public)
         detect-plan-skip.py               # arms the plan-first bypass + config-error warning + state GC
         guard-secrets-read.py             # blocks secret reads (direct+indirect) + shell source writes
         guard-edits.py                    # token-logging ban, custom rules, self-edit/forgery block
+        guard-history-rewrite.py          # refuse a git command that would orphan a recorded task.commit
         guard-capabilities.py             # capability policy: which skills/subagents/MCP tools may run here
         guard-bash-writes.py              # PostToolUse git-status diff check (unplanned shell writes)
         remind-tdd.py                     # non-blocking TDD nudge (PostToolUse)
@@ -89,9 +90,13 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
           _ado_conventions.py             # meta.ado.conventions: what an item must look like to belong
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
+          resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
+          repair-commits.py               # put the manifest back to the truth after a history rewrite
           _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate
           materialize-proposal.py         # the command door onto it: arguments, printing, exit codes
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
+          _branch.py                      # where a phase's branch forks from, and what it is called
+          _commit_trail.py                # is a recorded task.commit still reachable from any ref?
           _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
           _manifest_phases.py             # the one walk over phases/tasks, and what a phase carries
@@ -219,7 +224,9 @@ L0:
 L1:
   _ado_conventions -> _output
   _areas -> _output
+  _branch -> _output
   _cli_fmt -> _output
+  _commit_trail -> _output
   _demo_cast -> _output
   _deps -> _output
   _fmt -> _output
@@ -253,7 +260,7 @@ L2:
 L3:
   _doctor_ado -> _doctor_report, _output
   _doctor_hygiene -> _locks, _output
-  _manifest_rules -> _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
+  _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
@@ -262,11 +269,11 @@ L3:
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L4:
-  _doctor_completions -> _doctor_report, _journal_io, _output
-  _doctor_policy -> _doctor_report, _output
+  _doctor_completions -> _commit_trail, _doctor_report, _journal_io, _output
+  _doctor_policy -> _branch, _doctor_report, _output
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts
   _doctor_trail -> _doctor_report, _journal_io, _output
-  _panel_composition -> _areas, _manifest_io, _output, _panel_paths
+  _panel_composition -> _areas, _branch, _manifest_io, _output, _panel_paths
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _locks, _output, _panel_paths
@@ -301,6 +308,8 @@ L7:
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
+  resolve-branch -> _branch, _manifest_io, _output
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output
 ```
@@ -373,6 +382,7 @@ short forms may collide with built-ins like `/init`). All three read
 Maps events → scripts, every entry running through
 `sh "${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh" <script> <ask|open>` with a 10 s timeout:
 - PreToolUse `Read|Grep|Bash` → `guard-secrets-read.py` (fail mode **ask**)
+- PreToolUse `Bash` → `guard-history-rewrite.py` (fail mode **ask**)
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
 - PreToolUse `Skill|Task|Agent|mcp__.*` → `guard-capabilities.py` (fail mode **ask**)
 - PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
@@ -485,6 +495,33 @@ non-exempt source files not covered by an `in_progress` task (source extensions 
 `tddReminder.sourceGlobs`). Listing NAMES stays allowed. `secretPatterns.extra` (config) adds
 patterns. `--selftest` uses fictional paths only.
 
+### `plugins/audit/hooks/guard-history-rewrite.py`
+Refuses a git command that would orphan a commit the manifest records. `task.commit` holds each
+task's SHA and `bug.fixedIn` is derived from it, which is why `reference/orchestrator.md` names
+force-push and rebase as invariants. Those bind the ORCHESTRATOR; a human at the same terminal is
+not the orchestrator, and the damage is the same — `/audit:doctor` then reports "the manifest
+names a commit git does not have" and the trail is a list of ghosts.
+
+**It binds to the effect, not the command name, and that is the whole design.** `git reset
+--hard` is not one operation: with no ref it discards uncommitted work and moves no branch
+pointer, which is exactly what abandoning a botched task attempt looks like and is **allowed**;
+with a ref it is decided by asking git — `merge-base --is-ancestor` for each recorded SHA — and
+refused only when one of them would stop being reachable. Force-push, `--orphan` and
+`filter-branch` have no ancestry question to ask and are refused outright while any SHA is
+recorded.
+
+A guard that refused every `reset --hard` would fire on correct work, and a guard that fires on
+correct work gets switched off, after which it protects nothing. That failure mode is already in
+this project's history (F-P-24, and the read-vs-write class `guard-secrets-read` was fixed for
+before it), so the ancestry check is not an optimisation — it is the reason the guard is allowed
+to exist. `tests/test_guard_history_rewrite.py` is written the same way round: its ALLOW cases
+are the load-bearing ones, and each is proven red by a mutation chosen to tell the two versions
+apart rather than merely to break something.
+
+Undecidable resolves to allow: an unreadable manifest, an unresolvable ref, or a git that will
+not answer all pass. A manifest with no recorded SHAs makes the guard inert — nothing to orphan
+is nothing to refuse, and a guard that warned anyway would be teaching people to ignore it.
+
 ### `plugins/audit/hooks/guard-edits.py`
 Edit/Write/MultiEdit/NotebookEdit content guard. (1) Path-based protection first: denies edits
 of the INSTALLED plugin's own files (self-edit; dev-checkout exempt) and writes to
@@ -535,6 +572,76 @@ to a phase/task, and appends aggregated rows — never blocking, and driven by f
 it stays correct regardless of which of the three events fired. Config lives under
 `.claude/audit.config.json` -> `usage` (enabled/ledgerDir/authorMode/backfillOnFirstRun/
 maxScanBytes/pricing); the mechanics (dedup, attribution precedence) live in `usage_ledger.py`.
+
+### `plugins/audit/scripts/manifest/_branch.py`
+Where a phase's branch comes from and what it is called — the two questions that used to have
+one hard-coded answer each. `parent_branch()` resolves `phase.parentBranch ?? meta
+.developmentBranch`, the same chain `_areas` uses for the review skill, so a phase can integrate
+into a story branch, a release line, or another phase's branch instead of always into the
+repository's development branch. `compose()` expands `meta.branch.template` — `{type}`,
+`{initials}`, `{phase}`, `{slug}` — into the name.
+
+**It is Python because a template cannot be followed from prose.** `reference/orchestrator.md`
+could say "compose `<prefix>/<phaseId>-<slug>`" while the shape was fixed, and a reader would get
+it right every time. A template has cases: an absent `{initials}` must collapse together with the
+separator behind it, or the result is `feature//p2-…`, which git rejects. `expand()` is that rule
+with the separator walk written once, and `ref_violations()` is the subset of `git
+check-ref-format` a template can actually violate, reported as a list because a bad template
+usually breaks more than one rule at a time.
+
+`meta.branchPrefix` is not deprecated by any of this. `config()` reproduces the pre-0.44 shape
+*as a template*, so there is one expansion path rather than two that must be kept agreeing, and
+it returns a `basis` naming which key decided the convention — the two produce different names
+from the same manifest, and a reader looking at a branch could not otherwise tell which was in
+force. Every other answer here carries its basis for the same reason: `parent_branch()` reports
+`is_development`, because a phase that merged into a story branch has **not** reached the
+development branch, and a sign-off report that stays quiet about that reads as "landed".
+
+`approved_globs()` derives the `<type>/*` patterns `reference/orchestrator.md` pre-approves for
+`git switch` / `merge --ff-only` / `branch -d`. Derived rather than listed, because a stale list
+fails as a permission prompt on every branch operation — loud enough to notice, confusing enough
+to be blamed on the harness instead of on the config.
+
+### `plugins/audit/scripts/manifest/resolve-branch.py`
+The door onto `_branch`. `resolve-branch.py <manifest> --phase P2` prints the parent branch, the
+branch name and the type, each with the key that decided it; `--globs` prints the pre-approved
+branch patterns; `--json` gives the same answers as an object.
+
+It is a command and not a paragraph in `reference/orchestrator.md` for the reason the module
+exists — a template has cases prose cannot carry — and a command rather than a `python3 -c`
+one-liner for the reason `check-ado-item.py` gives: a one-liner naming a source path is the shape
+`guard-secrets-read` refuses, so it would be blocked on the machines that most need it.
+
+**Advisory, not a gate**, per `SECURITY.md`'s split — with one exception. A composed name git
+would reject exits 1, because the very next command (`git switch -c`) fails anyway and failing
+here is the version that says why. Everything else reports and returns 0: a type outside
+`meta.branch.types` warns that branch operations on it will prompt, and a phase whose parent is
+not the development branch prints the note the sign-off report must repeat — that the work has
+**not** reached the development branch until that parent is itself merged.
+
+### `plugins/audit/scripts/manifest/_commit_trail.py` + `repair-commits.py`
+Is every recorded `task.commit` still reachable, and what to write when one is not. The manifest
+names a SHA per finished task and derives `bug.fixedIn` from it; that is the audit trail, and it
+is a trail only while git still reaches every commit it names.
+
+**Existence is not reachability, and the gap between them was a real hole.** `/audit:doctor`
+asked `git rev-parse --verify` alone — which answers *is this object in the store* — so a
+`git reset --hard` that orphaned three task commits left all three reporting green until a
+`gc` ran, at which point they turned from recoverable into gone with no event in between for
+anyone to notice. `dangling()` therefore returns **three** classes: `missing` (git has no such
+object — fabricated, or collected), `unreachable` (the object is there and no ref reaches it —
+a rewrite, still recoverable), and `unchecked` (git could not be asked, which is an unasked
+question and not a clean trail). The reachability test costs one call per commit, so an ancestor
+check against HEAD runs first and settles the overwhelming majority.
+
+`repair-commits.py` is the door, and what it refuses to do is the point. It does **not**
+re-anchor: no search for a commit with the same message or the same tree, because the commit the
+task was verified against is gone and a plausible substitute makes the trail read as intact when
+it is not. It nulls the unreachable SHA and writes a journal row carrying what was there, so the
+manifest says *this commit is no longer reachable* — which is true. Report mode is the default
+and writes nothing; `--apply` takes the index lock, revalidates before saving, and refuses rather
+than leave a half-repaired manifest. Where a commit is merely unreachable, the report says so and
+points at **restoring a branch onto it** first — clearing is the fallback, not the first move.
 
 ### `plugins/audit/scripts/manifest/_areas.py`
 The `meta.areas` registry and everything that resolves against it. A phase's `area` tag (free

@@ -12,6 +12,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" guard-history-rewrite.py ask",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Skill|Task|Agent|mcp__.*",
         "hooks": [
           {

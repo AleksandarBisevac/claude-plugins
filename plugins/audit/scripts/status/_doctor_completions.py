@@ -52,6 +52,7 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
+import _commit_trail  # noqa: E402  (is a recorded SHA still reachable?)
 
 # A thin module-level alias, not a copy: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same name
@@ -74,6 +75,49 @@ def _hours_between(a, b):
         return None
 
 
+def _check_commit_trail(rep, manifest, git_root):
+    """Is every recorded `task.commit` still reachable? Independent of the journal.
+
+    Split out so it can run before the journal-shaped early returns above, and
+    because `repair-commits.py` asks `_commit_trail` the same question: one
+    implementation, two readers.
+    """
+    trail = _commit_trail.dangling(manifest, git_root)
+    if trail["missing"]:
+        rep.finding("commit trail",
+                    "the manifest names a commit git does not have: %s"
+                    % ", ".join("%s (%s)" % (t, s[:12])
+                                for _p, t, s in trail["missing"][:3]),
+                    "a task.commit that resolves nowhere is a fabricated SHA, or "
+                    "one orphaned long enough ago for gc to collect it -- "
+                    "`repair-commits.py <manifest>` reports them, and --apply "
+                    "clears them with a journal row naming what was lost")
+    if trail["unreachable"]:
+        rep.finding("commit trail",
+                    "%d recorded commit(s) exist but NO ref reaches them: %s"
+                    % (len(trail["unreachable"]),
+                       ", ".join("%s (%s)" % (t, s[:12])
+                                 for _p, t, s in trail["unreachable"][:3])),
+                    "history was rewritten. The objects are still here until git "
+                    "gc runs, so RESTORING A BRANCH onto them puts the trail back "
+                    "-- do that before `repair-commits.py --apply`, which only "
+                    "records the loss")
+    if trail["unchecked"]:
+        # Not folded into silence: "git could not be asked" and "every commit is
+        # present" are different states, and the second is what a reader assumes
+        # from nothing at all.
+        rep.warn("commit trail",
+                 "%d recorded commit(s) could not be verified"
+                 % (len(trail["unchecked"]),),
+                 "no git on PATH, or git would not answer -- this is an unasked "
+                 "question, not a clean trail")
+    if not (trail["missing"] or trail["unreachable"] or trail["unchecked"]):
+        n = len(_commit_trail.recorded(manifest))
+        rep.ok("commit trail",
+               "all %d recorded task commit(s) are reachable" % (n,)
+               if n else "no task commit recorded yet - nothing to reach")
+
+
 def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=False):
     """Completion records against the manifest (workstream B). Read-only.
@@ -88,6 +132,14 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     history, and that is a single ok line, not a nag."""
     if not manifest:
         return
+    # The trail check runs FIRST and unconditionally, because it does not depend
+    # on the journal at all: `task.commit` is in the manifest, and git either
+    # reaches it or does not. It used to sit below the two early returns, so a
+    # repo whose journal was fresh or disabled got no SHA verification whatever -
+    # and reported `completion records not in use` as an OK line while the
+    # manifest named commits no ref could reach. A check that cannot run in a
+    # common configuration is not a check.
+    _check_commit_trail(rep, manifest, git_root)
     try:
         jr = _journal_io  # layer 1: imported, not loaded (KNOWN_LAYER_DEBT)
         rows = jr.read_all(project)
@@ -143,31 +195,14 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                     "repair the trail, reopen the task and re-run it via "
                     "/audit:run")
 
-    bad_sha, no_sha = [], []
-    for t in done:
-        sha = t.get("commit")
-        if not sha:
-            no_sha.append(str(t.get("id")))
-            continue
-        if not (git_root and shutil.which("git")):
-            could_not.append("commit SHAs (no git)")
-            break
-        try:
-            out = subprocess.run(["git", "-C", git_root, "rev-parse", "-q",
-                                  "--verify", "%s^{commit}" % sha],
-                                 stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, timeout=15)
-            if out.returncode != 0:
-                bad_sha.append("%s (%s)" % (t.get("id"), str(sha)[:12]))
-        except Exception:
-            could_not.append("commit %s" % str(sha)[:12])
-    if bad_sha:
-        rep.finding("completions",
-                    "the manifest names a commit git does not have: %s"
-                    % ", ".join(bad_sha[:3]),
-                    "a task.commit that resolves nowhere is a fabricated or "
-                    "rewritten SHA -- check `git log` against the journal's "
-                    "task.commit rows")
+    # The reachability question belongs to `_commit_trail`, which the repair
+    # command asks too. It used to be a `rev-parse --verify` loop right here, and
+    # that answered the WRONG QUESTION: verify says "is this object in the store",
+    # so a `git reset --hard` that orphaned three task commits left all three
+    # green until a `gc` ran, at which point they turned from recoverable into
+    # gone with no event in between. Existence is not reachability.
+    no_sha = [str(t.get("id")) for t in done if not t.get("commit")]
+    trail = {"missing": [], "unreachable": []}
     if no_sha:
         rep.warn("completions",
                  "%d done task(s) carry no commit SHA: %s"
@@ -250,7 +285,8 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     if could_not:
         rep.warn("completions",
                  "could not check: %s" % "; ".join(sorted(set(could_not))[:3]))
-    if not (missing or bad_sha or no_sha or drift or unspent or unstaged
+    if not (missing or trail["missing"] or trail["unreachable"] or no_sha
+            or drift or unspent or unstaged
             or could_not):
         rep.ok("completions",
                "%d done task(s) in the completion-record era all carry chained "

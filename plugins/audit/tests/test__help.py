@@ -370,6 +370,7 @@ def _cases(check):
           "them, so v9 has something to catch",
           M.vocab_sets(_vocab) == dict((n, getattr(_vocab, n)) for n in
                                        ("KNOWN_ROOT", "KNOWN_META", "KNOWN_ADO",
+                                        "KNOWN_BRANCH",
                                         "KNOWN_PHASE", "KNOWN_TASK", "KNOWN_BUG",
                                         "KNOWN_PROPOSAL")),
           repr(sorted(M.vocab_sets(_vocab))))

@@ -1178,10 +1178,15 @@ def _cases(check):
             cplan([ctask("P1.1", completed=now, commit=sha),
                    ctask("P1.2", completed=now, commit="deadbeef" * 5)])
             repc = M.diagnose(tmp)
-            check("completions: a commit git does not have is a FINDING",
-                  "FINDING" in levels(repc, "completions")
-                  and "git does not have" in detail(repc, "completions"),
-                  detail(repc, "completions"))
+            check("commit trail: a commit git does not have is a FINDING, on "
+                  "its OWN check rather than under completions. It moved because "
+                  "it does not depend on the journal - and used to sit below two "
+                  "journal-shaped early returns, so a repo with a fresh journal "
+                  "got no commit verification at all while completions printed "
+                  "an OK line",
+                  "FINDING" in levels(repc, "commit trail")
+                  and "git does not have" in detail(repc, "commit trail"),
+                  detail(repc, "commit trail"))
 
             # pre-watermark done tasks -> out of scope, OK
             cplan([ctask("P1.1", completed=now, commit=sha),

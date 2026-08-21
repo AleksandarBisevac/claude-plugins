@@ -342,6 +342,10 @@ function renderComp(){closeCombo();
    bcBad=false;bc.style.borderColor='';}
   catch(e){bcBad=true;bc.style.borderColor='var(--err)';}};
  meta.append(bc);c.append(meta);
+ // meta.branch rides this same form and this same save, so its card is appended
+ // as a sibling of the meta card rather than owning an endpoint the way the ADO
+ // connector does. It writes patch.meta.branch and nothing else.
+ c.append(branchCard(comp,patch));
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
  const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills,
    {comp:'taskSkills',label:'Task skills'}));

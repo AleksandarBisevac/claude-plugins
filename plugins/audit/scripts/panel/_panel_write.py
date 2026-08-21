@@ -381,22 +381,33 @@ def _flat_paths(obj, prefix=""):
     return out
 
 
-def _ado_rows(was, now):
-    """Dotted, presence-aware rows for a meta.ado save. null/absent flattens to
+def _nested_meta_rows(key, was, now):
+    """Dotted, presence-aware rows for a NESTED meta key. null/absent flattens to
     no leaves, so configuring rows every leaf in and null-ing rows each one
     away; a transition both sides of which flatten empty (e.g. null -> {})
-    still gets one whole-key row rather than silence."""
+    still gets one whole-key row rather than silence.
+
+    Takes the key rather than hard-coding it: `meta.ado` and `meta.branch` are the
+    same shape of edit, and a second copy differing only in a string prefix is the
+    shape that drifts. `_ado_rows` stays as the name `ado-connector.js` documents
+    itself against.
+    """
     a = _flat_paths(was) if isinstance(was, dict) else {}
     b = _flat_paths(now) if isinstance(now, dict) else {}
     rows = []
     for p in sorted(set(a) | set(b)):
         if (p in a) == (p in b) and a.get(p) == b.get(p):
             continue
-        rows.append({"target": "meta", "field": "ado." + p,
+        rows.append({"target": "meta", "field": key + "." + p,
                      "from": a.get(p), "to": b.get(p)})
     if not rows:
-        rows.append({"target": "meta", "field": "ado", "from": was, "to": now})
+        rows.append({"target": "meta", "field": key, "from": was, "to": now})
     return rows
+
+
+def _ado_rows(was, now):
+    """`_nested_meta_rows` for `meta.ado` — the name `ado-connector.js` mirrors."""
+    return _nested_meta_rows("ado", was, now)
 
 
 def _config_changes(before, after):
@@ -434,11 +445,11 @@ def _composition_changes(manifest, patch):
             was, now = meta.get(k), patch["meta"][k]
             if was == now:
                 continue
-            if k == "ado":
-                # The one NESTED meta key: dotted, presence-aware rows
+            if k in ("ado", "branch"):
+                # The NESTED meta keys: dotted, presence-aware rows
                 # (_config_changes' rule), so the confirm dialog prints
                 # `ado.enabled true -> false` instead of two whole objects.
-                rows.extend(_ado_rows(was, now))
+                rows.extend(_nested_meta_rows(k, was, now))
                 continue
             rows.append({"target": "meta", "field": k, "from": was, "to": now})
     by_pid = {p.get("id"): p for p in (manifest.get("phases") or [])

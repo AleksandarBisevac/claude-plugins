@@ -114,6 +114,7 @@ _JS_PARTS = (
     "panel/help-drawer.js",
     "panel/settings.js",
     "panel/composition.js",
+    "panel/branch-convention.js",
     "panel/ado-connector.js",
     "panel/theme-state.js",
     "panel/appearance-view.js",

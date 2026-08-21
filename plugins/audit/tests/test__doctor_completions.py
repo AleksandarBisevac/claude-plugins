@@ -157,11 +157,23 @@ def _cases(check):
                               commit="0" * 40)])
         rep = base.Report()
         M.check_completions(rep, tmp, {}, mf, mrel, None)
-        check("dc10 with NO git root the SHA arm reports 'could not check' "
-              "rather than passing - an unverifiable claim is not a verified "
-              "one: %r" % (_detail(rep, "completions"),),
-              "could not check" in _detail(rep, "completions")
-              and "no git" in _detail(rep, "completions"))
+        # The SHA arm now reports under its OWN check name. It moved out of
+        # `completions` because it does not depend on the journal at all - and it
+        # used to sit BELOW two journal-shaped early returns, so a repo with a
+        # fresh or disabled journal got no commit verification whatever while
+        # `completions` printed an OK line. The behaviour is the same claim; the
+        # surface it is made on is different, so these cases follow it rather
+        # than being deleted.
+        check("dc10 with NO git root the trail arm reports that it could not "
+              "verify, rather than passing - an unverifiable claim is not a "
+              "verified one, and the WARNING carries the fix that names why "
+              "(the detail is the claim; the fix is where 'no git' lives): %r"
+              % (_detail(rep, "commit trail"),),
+              "could not be verified" in _detail(rep, "commit trail")
+              and "WARNING" in _levels(rep, "commit trail")
+              and any("no git" in (r.get("fix") or "")
+                      for r in rep.rows if r["check"] == "commit trail"),
+              repr([r for r in rep.rows if r["check"] == "commit trail"]))
         check("dc11 ...and the all-clear line is suppressed while anything is "
               "unanswered. A filter that narrowed to nothing must never read as "
               "'everything checked out'",
@@ -210,10 +222,10 @@ def _cases(check):
             rep = base.Report()
             M.check_completions(rep, tmp, {}, mf, mrel, tmp)
             check("dc13 ...and a SHA git has never heard of is a FINDING naming "
-                  "the task and the first 12 characters: %r"
-                  % (_detail(rep, "completions"),),
-                  "FINDING" in _levels(rep, "completions")
-                  and "P1.1 (dddddddddddd)" in _detail(rep, "completions"))
+                  "the task and the first 12 characters, on the trail check: %r"
+                  % (_detail(rep, "commit trail"),),
+                  "FINDING" in _levels(rep, "commit trail")
+                  and "P1.1 (dddddddddddd)" in _detail(rep, "commit trail"))
 
             mf = _manifest([_task("P1.1", completedAt="2026-03-01T00:00:00Z")])
             rep = base.Report()

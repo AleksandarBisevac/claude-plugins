@@ -12,6 +12,10 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 **If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section instead —
 read-only preflight, print the plan (branch, ready tasks, parallel groups, merge target), and STOP.
+The branch and the merge target both come from
+`resolve-branch.py <manifestPath> --phase <phaseId>` — never composed here — and when the
+merge target is not `meta.developmentBranch`, the plan says so: signing off there does not put
+the work on the development branch.
 
 Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go:
 

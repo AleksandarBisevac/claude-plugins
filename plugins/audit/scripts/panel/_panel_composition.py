@@ -39,6 +39,7 @@ _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
+import _branch                # noqa: E402  (the naming convention, one expansion path)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -234,6 +235,49 @@ def _ado_status(manifest):
             "linked": linked, "lastSyncedAt": last[0]}
 
 
+# --- the branch-naming convention, as the Composition card shows it -------------
+def _branch_info(manifest):
+    """The naming convention as it CURRENTLY resolves, plus a worked example.
+
+    The example is computed HERE, in Python, from the value on disk — not in the
+    browser as the operator types. A live preview would mean a second
+    implementation of `_branch.expand`, whose whole point is a separator rule with
+    cases; two copies of that is two answers, and the first time they disagree the
+    branch git actually gets is the one nobody previewed. So the card shows what
+    the SAVED settings produce, and the save re-renders it.
+
+    `basis` rides along because `meta.branch` and `meta.branchPrefix` give
+    different names from the same manifest, and a card that showed the template
+    without saying which key was in force would be describing a convention that
+    might not be the one running.
+    """
+    meta = manifest.get("meta") or {}
+    cfg = _branch.config(meta)
+    # A phase from the plan when there is one, so the example is THIS repo's, not
+    # a stranger's. The fallback is labelled as an example rather than dressed up
+    # as real - naming a phase that does not exist would be the more confusing half.
+    sample = None
+    for ph in (manifest.get("phases") or []):
+        if isinstance(ph, dict) and ph.get("id") and ph.get("title"):
+            sample = ph
+            break
+    made = _branch.compose(meta, sample or {"id": "P2", "title": "Chart export"},
+                           initials="Jane Doe")
+    return {
+        "template": cfg["template"],
+        "defaultType": cfg["defaultType"],
+        "types": cfg["types"],
+        "initials": cfg["initials"],
+        "slugMaxLength": cfg["slugMaxLength"],
+        "basis": cfg["basis"],
+        "typeHelp": dict(_branch.TYPE_HELP),
+        "example": made["name"],
+        "exampleFrom": (sample or {}).get("id") or "P2 (no phase in the plan yet)",
+        "exampleInitials": "Jane Doe",
+        "violations": made["violations"],
+    }
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     phases_out, tasks_out = [], []
@@ -277,9 +321,11 @@ def _composition_view(manifest):
     return {
         "meta": {"reviewSkill": meta.get("reviewSkill"),
                  "buildCommands": meta.get("buildCommands"),
+                 "branch": meta.get("branch"),
                  "ado": meta.get("ado")},
         "areaSkills": area_skills,
         "adoStatus": _ado_status(manifest),
+        "branchInfo": _branch_info(manifest),
         "phases": phases_out, "tasks": tasks_out,
     }
 

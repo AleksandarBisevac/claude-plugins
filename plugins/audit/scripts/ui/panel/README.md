@@ -36,6 +36,7 @@ views, the CSV export after the usage metrics). Moving either would be a regroup
 | `help-drawer.js` | The help drawer: field descriptions and concept pages from `GET /api/help`, its three views, and the combo menu widget. |
 | `settings.js` | The Settings tab: the config form, its field renderers, and deep links to one setting. |
 | `composition.js` | The Composition tab: model suggestions unioned from the manifest, the rate table and the ledger, plus the skill pickers. |
+| `branch-convention.js` | The branch-naming card inside Composition — `meta.branch`, a FORM key, so it rides the Composition save rather than owning an endpoint. The worked example comes from Python; the expansion rule is not reimplemented here. |
 | `ado-connector.js` | The Azure DevOps connector card inside Composition — API-only `meta.ado`, saved through `PUT /api/ado`. |
 | `theme-state.js` | The theme draft: token values, layout and density, the undo stack, and what a save sends. |
 | `appearance-view.js` | The Appearance tab: rendering the theme editor, contrast warnings, and theme export/import. |

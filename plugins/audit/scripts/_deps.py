@@ -129,6 +129,18 @@ LAYERS = (
     # other member of this layer - so it belongs beside them, not in a layer of its own.
     ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
      "_usage_core", "_deps", "_refs",
+     # `_branch` answers where a phase's branch forks from and what it is called.
+     # It reaches nothing but `_output` - it is arithmetic over the manifest dict
+     # plus a git-ref regex - and it sits at L1 because the validator (L2), the
+     # doctor (L5) and the naming guard all need the SAME answer. A second
+     # expansion of the template would be a second set of branch names.
+     "_branch",
+     # `_commit_trail` answers "is this recorded task.commit still reachable?".
+     # L1 because BOTH the doctor (L5) and `repair-commits` (an entry point) ask
+     # it, and a second walk over the same tasks putting the same question to git
+     # is a second answer waiting to disagree with the first. It reaches nothing
+     # but `_output` and git.
+     "_commit_trail",
      # `_locks` is `audit-lock.py`'s read side: where a lock lives, what it may be
      # called, and whether its holder is alive. It reaches nothing but `_output`,
      # and it had to land at L1 rather than beside its command because
@@ -366,6 +378,17 @@ LAYERS = (
      # `guard-secrets-read` refuses (F20/F22), so the check would be blocked
      # exactly where it matters. It reads `_ado_conventions` at L1 and nothing else.
      "check-ado-item",
+     # `resolve-branch` is the door onto `_branch`: which branch a phase forks
+     # from, and what it is called. A command rather than a prose instruction
+     # because a TEMPLATE has cases prose cannot carry, and rather than a
+     # `python3 -c` one-liner for check-ado-item's reason - a one-liner naming a
+     # source path is the shape `guard-secrets-read` refuses.
+     "resolve-branch",
+     # `repair-commits` is the third case around a rewritten history: the guard
+     # refuses it, the doctor reports it, and this puts the manifest back to the
+     # truth afterwards - by nulling what is unreachable and journaling what was
+     # lost, never by guessing a substitute.
+     "repair-commits",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 
