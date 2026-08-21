@@ -413,6 +413,55 @@ def _cases(check):
     finally:
         _sh.rmtree(tmp_i, ignore_errors=True)
 
+    # (rw) F-P-24: a command that cannot write is not the author of new dirt.
+    #
+    # Reported twice in one session, both times for a pure `git ls-files` + `grep`
+    # over a file a SECOND session had just created. The guard was diffing the tree
+    # against its own last snapshot, so "new" meant "new to me", not "written by
+    # this call" - and with two agents in one checkout that is a guaranteed false
+    # accusation rather than an edge case.
+    s = "bw-rw"
+    seed(s)
+    _expect("rw1 a read-only command is not blamed for a file that appeared "
+            "beside it (the reported bug: git ls-files + grep)", "silent",
+            payload("Bash", sid=s,
+                    command="git ls-files --others | grep -n foo"),
+            dirty=["src/other-session.ts"])
+    # THE HALF THAT MATTERS. Without it, deleting the whole guard would pass rw1.
+    s = "bw-rw2"
+    seed(s)
+    _expect("rw2 ...while the SAME new file still warns when the command could "
+            "have written it - the fix removes an excuse, not the guard", "warn",
+            payload("Bash", sid=s, command="python3 tools/gen.py"),
+            dirty=["src/other-session.ts"])
+    # And the sed spelling from the second report, which reads by default and
+    # writes only with -i.
+    s = "bw-rw3"
+    seed(s)
+    _expect("rw3 `sed -n` reads and is not blamed", "silent",
+            payload("Bash", sid=s, command="sed -n '1,20p' tools/where.py"),
+            dirty=["src/other-session.ts"])
+    s = "bw-rw4"
+    seed(s)
+    _expect("rw4 ...but `sed -i` writes, so it is", "warn",
+            payload("Bash", sid=s, command="sed -i 's/a/b/' src/other-session.ts"),
+            dirty=["src/other-session.ts"])
+
+    # (rwp) the predicate itself, so a spelling cannot quietly join either side.
+    for _cmd, _want in (("git status --porcelain", True),
+                        ("grep -rn x plugins | head -5", True),
+                        ("cat a.py | wc -l", True),
+                        ("git add .", False),
+                        ("echo hi > f.txt", False),
+                        ("cat a | tee b", False),
+                        ("find . -name x -delete", False),
+                        ("npm install", False),
+                        ("", False)):
+        check("rwp %r is %s" % (_cmd or "(empty)",
+                               "provably read-only" if _want else "watched"),
+              M._command_is_read_only(_cmd) == _want)
+
+
 
 def _selftest():
     return _harness.run(_cases)

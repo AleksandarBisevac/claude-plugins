@@ -8,9 +8,13 @@ heredocs piped into interpreters, obfuscated redirects, etc.).
 Two branches by tool_name:
   Edit/Write/MultiEdit/NotebookEdit → RECORD the file as tool-edited (those
       files went through guard-edits + require-plan already).
-  Bash → diff `git status --porcelain` (run in the configured `gitRoot`, so it
-      works when the git repo lives in a subdirectory) against the session's
-      last-seen dirty set. Dirty paths are translated back to project-relative
+  Bash → if the command is PROVABLY READ-ONLY, absorb whatever appeared and
+      attribute nothing (F-P-24: with a second agent in the same checkout, "new
+      to me" stopped meaning "written by this call", and a `git ls-files | grep`
+      was blamed twice in one session for a file another session had just
+      created). Otherwise diff `git status --porcelain` (run in the configured
+      `gitRoot`, so it works when the git repo lives in a subdirectory) against
+      the session's last-seen dirty set. Dirty paths are translated back to project-relative
       (gitRoot-prefixed) to match task files and exempt globs. NEW dirty files
       that are SOURCE files, not exempt, not the manifest/lock, not tool-edited,
       and not covered by an in_progress task → inject a NON-blocking
@@ -95,6 +99,82 @@ LOCKED_TEMPLATE = (
 )
 
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+# Commands that cannot change a file, whatever their arguments. An ALLOWLIST, not a
+# list of writers: a writer this file has never heard of must keep being watched, so
+# anything unrecognised stays attributable. `sed` and `find` are here because they
+# are overwhelmingly used to read, and the flag check below removes the spellings
+# that write.
+_READ_ONLY_CMDS = frozenset((
+    "git", "grep", "rg", "ag", "cat", "head", "tail", "sed", "awk", "cut", "sort",
+    "uniq", "wc", "tr", "jq", "find", "ls", "stat", "file", "basename", "dirname",
+    "echo", "printf", "pwd", "true", "false", "test", "which", "type", "env",
+    "date", "du", "df", "nl", "column", "comm", "diff", "cmp", "shasum", "md5sum",
+    "xxd", "od", "realpath", "readlink", "seq", "yes", "tee",
+))
+# Sub-commands of `git` that write. `git` itself is on the list above because
+# `git status`/`log`/`diff` are the most common reads in any session.
+_GIT_WRITES = frozenset((
+    "add", "am", "apply", "branch", "checkout", "cherry-pick", "clean", "clone",
+    "commit", "fetch", "gc", "init", "merge", "mv", "pull", "push", "rebase",
+    "remote", "reset", "restore", "rm", "stash", "submodule", "switch", "tag",
+    "worktree", "config", "update-index", "update-ref", "notes", "replace",
+))
+# Flags that turn a reader into a writer.
+_WRITE_FLAGS = frozenset(("-i", "--in-place", "-delete", "-exec", "-execdir", "-ok"))
+
+
+def _command_is_read_only(command):
+    """Can this shell command be proven unable to write? Default: NO.
+
+    F-P-24. The guard used to decide from the TREE alone - it diffed
+    `git status --porcelain` against its own last snapshot and attributed anything
+    new to whatever Bash command ran next. With a second session working in the
+    same checkout, "new" routinely means "somebody else wrote it", and the blame
+    landed on a command that only read. Reported twice in one session, both times
+    for a pure `git ls-files` + `grep`, and both times about a file another session
+    had just created.
+    
+    The evidence has to be bound to the OPERATION, and this hook already had the
+    operation in hand: `tool_input.command` was being read for the Edit branch and
+    ignored for the Bash one. So this only ever REMOVES an attribution, and only
+    when the command provably cannot write - an unrecognised command is still
+    watched exactly as before.
+    """
+    text = (command or "").strip()
+    if not text:
+        return False
+    # Anything that can name a destination, spawn a shell, or substitute another
+    # command is out of scope for a proof. `>` covers redirection wherever it
+    # appears, including inside a quoted awk program.
+    for hostile in (">", "<<", "`", "$(", "${", "&"):
+        if hostile in text:
+            return False
+    segments = [seg for seg in re.split(r"&&|\|\||[|;]|\n", text)
+                if seg.strip()]
+    if not segments:
+        return False
+    for seg in segments:
+        words = seg.split()
+        # Leading VAR=value assignments are not the command.
+        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+            words = words[1:]
+        if not words:
+            return False
+        name = os.path.basename(words[0])
+        if name not in _READ_ONLY_CMDS:
+            return False
+        rest = words[1:]
+        if name == "git":
+            subs = [w for w in rest if not w.startswith("-")]
+            if not subs or subs[0] in _GIT_WRITES:
+                return False
+        if name == "tee":
+            return False          # tee's whole purpose is a destination
+        for flag in rest:
+            if flag in _WRITE_FLAGS or flag.startswith("--output"):
+                return False
+    return True
 
 
 # --- state --------------------------------------------------------------------
@@ -225,6 +305,25 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
         _save_state(sd, session_id, state)
         return ("silent", "baseline seeded: %d pre-existing dirty path(s)"
                 % len(dirty))
+
+    # F-P-24: a command that cannot write is not the author of anything new.
+    #
+    # The new dirt is still ABSORBED into seenDirty rather than left pending: it
+    # came from outside this session (another agent in the same checkout, an editor,
+    # a build), and holding it back would only move the false accusation onto the
+    # next command that happens to be a writer. Blaming nobody is the correct
+    # answer, and it is the same reasoning the plugin already applies to its own
+    # journal appends through the `pluginWrote` sidecar.
+    #
+    # This only ever REMOVES an attribution, and only where the command is provably
+    # read-only. Anything unrecognised is watched exactly as before, so the guard
+    # cannot be talked out of a real write by a spelling it has not seen.
+    if _command_is_read_only((data.get("tool_input", {}) or {}).get("command")):
+        absorbed = [f for f in dirty if f not in state["seenDirty"]]
+        state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))
+        _save_state(sd, session_id, state)
+        return ("silent", "read-only command: %d path(s) appeared but not from "
+                          "this call" % (len(absorbed),))
 
     new = [f for f in dirty if f not in state["seenDirty"]]
     state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))
