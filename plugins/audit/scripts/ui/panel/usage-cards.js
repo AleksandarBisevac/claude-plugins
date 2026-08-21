@@ -193,6 +193,20 @@ function uHeatmap(facts){
    const t=agg[weekdayIndex(d)];for(let h=0;h<24;h++)t[h]+=v[h];}
   for(let w=0;w<7;w++)rows.push({label:UHM_WD[w],cells:agg[w]});}
  let peak=0;rows.forEach(r=>(r.cells||[]).forEach(v=>{if(v>peak)peak=v;}));
+ // WHEN A GRANULARITY CANNOT DIFFER FROM "All", SAY SO.
+ //
+ // A ledger that fits inside one calendar year draws the same grid at Year as at
+ // All; one that fits inside a month does the same at Month. The arithmetic is
+ // right and the screen is a lie by omission: three buttons paint an identical
+ // picture, both arrows go dead, and nothing says why — so the control reads as
+ // broken. It was reported as exactly that ("ne rade ni filteri, ako stavim
+ // godinu umesto meseca, vidim isti grafik"), and the reader was right about what
+ // the panel showed them.
+ //
+ // Measured against the DATA's own span, not the calendar: `b` is [first, last]
+ // recorded day, so this is the same question `seekPeriod` answers for the arrows.
+ const wholeLedgerIn=g=>g!=='all'&&periodStart(g,b.lo)===periodStart(g,b.hi);
+ const degenerate=wholeLedgerIn(UHM.g);
  const label=UHM.g==='day'?UHM_WD[weekdayIndex(lo)]+' '+lo
   :UHM.g==='week'?'Week of '+s+' to '+periodEnd('week',s)
   :UHM.g==='month'?UHM_MON[+s.slice(5,7)-1]+' '+s.slice(0,4)
@@ -207,23 +221,39 @@ function uHeatmap(facts){
  [['all','All'],['year','Year'],['month','Month'],['week','Week'],
   ['day','Day']].forEach(([g,l])=>{
   const on=UHM.g===g;
-  nav.append(el('button',{class:'filt'+(on?' on':''),type:'button',
-    'data-uhg':g,'aria-pressed':on?'true':'false',
+  // A granularity whose window swallows the whole ledger still WORKS — it is just
+  // the same picture as All, and saying that is cheaper than letting a reader
+  // discover it by clicking. Marked, never disabled: the label is still worth
+  // reading ("April 2026" says something "All data" does not).
+  const same=wholeLedgerIn(g);
+  nav.append(el('button',{class:'filt'+(on?' on':'')+(same?' uhmsame':''),
+    type:'button','data-uhg':g,'aria-pressed':on?'true':'false',
+    'data-tip':same?('the whole ledger falls inside one '+g
+      +', so this draws the same grid as All'):null,
     onclick:()=>{if(UHM.g!==g){UHM.g=g;UHM.a='';renderUsage();}}},l));});
  const canPrev=UHM.g!=='all'&&seek(UHM.g,s,-1)!==null;
  const canNext=UHM.g!=='all'&&seek(UHM.g,s,1)!==null;
+ // A dead arrow that says nothing reads as a broken arrow. Every disabled state
+ // here has a reason and the reason is short, so it is on the control.
+ const why=dir=>UHM.g==='all'
+   ? 'pick a granularity to step through periods'
+   : ('no '+(dir==='prev'?'earlier':'later')+' '+UHM.g+' has any recorded tokens');
  const arrow=(dir,glyph,ok)=>{
   const a=el('button',{class:'btn small uhmarrow',type:'button',
     'data-uhm':dir,'aria-label':(dir==='prev'?'Previous':'Next')+' period',
+    'data-tip':ok?null:why(dir),
     onclick:()=>{const s2=seek(UHM.g,UHM.a||s,dir==='prev'?-1:1);
       if(s2){UHM.a=s2;renderUsage();}}},glyph);
   if(!ok)a.disabled=true;
   return a;};
  nav.append(arrow('prev','‹',canPrev),
-  el('span',{class:'uhmperiod','data-uhmperiod':'1'},label),
+  el('span',{class:'uhmperiod','data-uhmperiod':'1'},label
+    +(degenerate?' · the whole ledger falls in this '+UHM.g:'')),
   arrow('next','›',canNext));
  out.push(nav);
- const tbl=el('table',{class:'uhm','data-hmpeak':String(peak)});
+ // ONE tip group: the first cell waits, the rest open on contact until the
+ // pointer leaves the grid. 500ms is the reader's own number.
+ const tbl=el('table',{class:'uhm','data-hmpeak':String(peak),'data-tipgroup':'500'});
  // The corner cell, then one per hour with a label every sixth.
  tbl.append(tableHead([{attrs:{class:'uhmc'}}].concat(
    Array.from({length:24},(_x,h)=>h%6===0?p2(h):''))));
@@ -235,8 +265,13 @@ function uHeatmap(facts){
    const lv=(!v||!peak)?0:Math.min(6,1+Math.floor(5*v/peak));
    // A native title, the area-owner precedent: 168 cells x a bindTip pair
    // each would be listener spam for one hover at a time.
+   // `data-tip`, not `title`: the panel's own tip layer reads this attribute and
+   // draws the same box every other hint uses. It used to be a native title, on
+   // the argument that 168 cells x a listener each would be spam — true, and
+   // answered by delegation, which is what the tip layer already does and what
+   // the report's heatmap has always done for the same marks.
    tr.append(el('td',{},el('i',{'data-l':String(lv),
-     title:r.cells?(r.head||r.label)+' '+p2(h)+':00 - '+uTok(v,2)+' tokens'
+     'data-tip':r.cells?(r.head||r.label)+' '+p2(h)+':00 - '+uTok(v,2)+' tokens'
        :(r.head||r.label)+' - outside the selected range'})));}
   tb.append(tr);});
  tbl.append(tb);

@@ -431,6 +431,59 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   expect('after a reload the report comes back in the view it was left in',
     back.view, 'archived');
   expect('...showing that view\'s rows and no others', back.archivedOnly, true);
+  // F-P-10: and the STATUS CHIPS follow the view, because the two gates are
+  // ANDed. With Archived selected the bar used to keep offering Pending, and
+  // pressing it produced "0 / 9 phases" — a control whose every use is empty by
+  // construction. The segment each status files under is read off the rows, so
+  // this asserts the coupling rather than a hard-coded vocabulary.
+  {
+    const chips = await page.evaluate(() => {
+      const segOf = {};
+      document.querySelectorAll('table.phases tbody tr.phase').forEach((r) => {
+        const st = r.getAttribute('data-status');
+        if (st && !(st in segOf)) segOf[st] = r.getAttribute('data-seg');
+      });
+      const bar = document.getElementById('audit-phase-status');
+      return { segOf, offered: bar
+        ? [...bar.querySelectorAll('[data-ps]')].filter((c) => !c.hidden)
+            .map((c) => c.getAttribute('data-ps')) : [] };
+    });
+    const wrong = chips.offered.filter((st) => chips.segOf[st] !== 'archived');
+    expect('in the Archived view only archived statuses are offered as chips '
+      + '(' + JSON.stringify(chips.offered) + ')', wrong.length, 0);
+    // The half that stops this passing by offering NOTHING: an archived plan has
+    // at least one archived status, and its chip must be there.
+    const wantedSome = Object.keys(chips.segOf).some((st) => chips.segOf[st] === 'archived');
+    expect('...and the archived statuses that exist ARE offered, so the rule is '
+      + 'not satisfiable by hiding everything', !wantedSome || chips.offered.length > 0, true);
+  }
+  // F-P-14: the AREA select is the same fault one control over. Area and view
+  // are ANDed too, so in the Archived view an area whose only phase is active
+  // could still be picked, and picking it gave "0 / 4 phases". Found by
+  // sweeping every control instead of waiting for a second report.
+  {
+    const areas = await page.evaluate(() => {
+      const segs = {};
+      document.querySelectorAll('table.phases tbody tr.phase').forEach((r) => {
+        (r.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
+          (segs[a] || (segs[a] = [])).push(r.getAttribute('data-seg'));
+        });
+      });
+      const sel = document.getElementById('audit-area-select');
+      return { segs, offered: sel
+        ? [...sel.options].filter((o) => o.value && !o.hasAttribute('data-multi'))
+            .map((o) => o.value) : [] };
+    });
+    const unreachable = areas.offered.filter((a) => !(areas.segs[a] || []).includes('archived'));
+    expect('in the Archived view only areas with an archived phase are offered '
+      + '(' + JSON.stringify(areas.offered) + ')', unreachable.length, 0);
+    // Same vacuity guard as the chips: an area that IS archived must survive.
+    const anyArchived = Object.keys(areas.segs)
+      .some((a) => areas.segs[a].includes('archived'));
+    expect('...and an area that does have an archived phase is still offered, so '
+      + 'the rule is not satisfiable by emptying the select',
+      !anyArchived || areas.offered.length > 0, true);
+  }
   // A reload is the one mutation that legitimately throws the armed nodes away,
   // so this re-arms rather than reporting. It is here so that everything below
   // is measured against a baseline taken AFTER the navigation, instead of being

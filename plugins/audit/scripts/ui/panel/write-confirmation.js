@@ -561,6 +561,40 @@ function refreshDiscard(b,n){
  offState(b,!n);
  b.textContent=n?('Discard '+plural(n,'change')):'Discard';
  return b;}
+/**
+ * Say WHICH fields are unsaved, not just how many.
+ *
+ * F-P-15: the savebar counted ("Discard 1 change") and nothing on the form said
+ * which of twenty-odd settings it meant. The count's basis existed - Discard
+ * lists every row before anything is thrown away - but it was a click away, and
+ * the Policy tab next door already marks its pending cells inline. Two surfaces
+ * disagreeing about whether a claim shows its basis is the thing to fix.
+ *
+ * A CLASS and a WORD, not a colour alone: `pend` is the same name Policy uses
+ * (`td.pend`, `.badge.pend`), and the badge means the mark survives forced
+ * colours and does not ask the reader to distinguish two tints.
+ *
+ * Idempotent, because `onViewEdit` runs this on every keystroke that reaches the
+ * view: the previous marks come off before the current ones go on.
+ *
+ * @param {string} viewId - the tab's element id, e.g. `guards`
+ * @param {Array<{field: string}>} rows - what the surface reports as unsaved
+ * @param {function(string): string} idOf - a row's field to its control's id
+ * @returns {void}
+ */
+function markPending(viewId,rows,idOf){
+ const root=$('#'+viewId);
+ if(!root)return;
+ [...root.querySelectorAll('.f.pend')].forEach(n=>n.classList.remove('pend'));
+ [...root.querySelectorAll('[data-pendbadge]')].forEach(n=>n.remove());
+ rows.forEach(r=>{
+  const c=document.getElementById(idOf(r.field));
+  const wrap=c&&c.closest?c.closest('.f'):null;
+  if(!wrap||wrap.classList.contains('pend'))return;
+  wrap.classList.add('pend');
+  (wrap.firstElementChild||wrap).append(
+    el('span',{class:'badge pend','data-pendbadge':'1'},'unsaved'));});}
+
 // aria-disabled is a promise to assistive technology and the platform enforces
 // none of it — unlike `disabled`, the browser still dispatches the click (and
 // Enter/Space arrive as one). Kept here, once, in the capture phase: four handlers

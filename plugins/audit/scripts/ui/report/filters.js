@@ -94,6 +94,15 @@
    * @returns {void}
    */
   function refresh() {
+    // FIRST, because it can clear a selection this pass then has to honour. The
+    // chip set follows the view, and this is the only place every path that
+    // changes the view arrives at: `setView` calls it, and so does the restore
+    // that runs after a reload — which reads the view out of the fragment or
+    // localStorage and never touches setView. Wiring it to setView alone left
+    // the chips correct until the reader refreshed the page, which the report
+    // gate caught by asserting after exactly that reload.
+    syncStatusChips();
+    syncAreaOptions();
     const term = (q ? q.value : '').trim().toLowerCase();
     // Filters that narrow the TASKS inside a phase, rather than the phase list.
     // A phase none of whose tasks survive is not a phase that matches: keeping it

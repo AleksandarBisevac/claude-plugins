@@ -455,13 +455,43 @@
     if (!VIEWS[v]) return;
     viewMode = v;
     if (viewSel && viewSel.value !== v) viewSel.value = v;
-    refresh();
+    refresh();                       // which syncs the chips, for every caller
+
+  }
+
+  /**
+   * Offer only the status chips the current view can actually show.
+   *
+   * Reported: with View on "Archived (done & cancelled)" the bar still offered
+   * Pending, and pressing it gave "0 / 9 phases" — a control whose every use is
+   * empty by construction. The two gates are ANDed in the filter, so a chip
+   * outside the view can never match anything; showing it is offering a choice
+   * the page cannot honour.
+   *
+   * HIDDEN, not disabled, and the set is small enough that the bar simply says
+   * what this view sorts by. A selection that the new view has just made
+   * impossible is CLEARED rather than left pressed-but-inert — a pressed chip
+   * filtering nothing is the same lie one step later.
+   *
+   * @returns {void}
+   */
+  function syncStatusChips() {
+    if (!phaseStatusBar) return;
+    let cleared = false;
+    Array.from(phaseStatusBar.querySelectorAll('[data-ps]')).forEach((chip) => {
+      const st = chip.getAttribute('data-ps');
+      const ok = statusInView(st);
+      chip.hidden = !ok;
+      if (!ok && phaseStatus === st) { phaseStatus = ''; cleared = true; }
+    });
+    if (cleared) highlight(phaseStatusBar, 'data-ps', '');
   }
 
   if (viewSel) {
     viewSel.value = viewMode;
     viewSel.addEventListener('change', () => setView(viewSel.value));
   }
+
   Array.from(document.querySelectorAll('[data-viewall]')).forEach((b) => {
     b.addEventListener('click', () => setView('all'));
   });

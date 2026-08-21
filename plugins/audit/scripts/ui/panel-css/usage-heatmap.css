@@ -23,8 +23,13 @@
 .uhm .uhmc{width:6.2rem}
 .uhm thead th{text-align:left}
 .uhm td{padding:0}
+/* NOT `cursor:help`. That renders as an arrow-with-a-question-mark on macOS, on
+   every cell, whether or not the cell holds anything — which is exactly how it was
+   reported: "shows a question mark icon regardless of whether there is data".
+   `help` promises an explanation of a CONTROL; a heatmap cell hands over a
+   DATUM, and the outline on hover is already the affordance saying so. */
 .uhm td i{display:block;height:20px;border-radius:2px;
- background:color-mix(in srgb,var(--text) 6%,transparent);cursor:help}
+ background:color-mix(in srgb,var(--text) 6%,transparent);cursor:default}
 .uhm td i:hover{outline:2px solid var(--text);outline-offset:1px}
 .uhm i[data-l="1"]{background:color-mix(in srgb,var(--accent-solid) 18%,transparent)}
 .uhm i[data-l="2"]{background:color-mix(in srgb,var(--accent-solid) 32%,transparent)}
@@ -41,3 +46,9 @@
 .uhmkey i[data-l="4"]{background:color-mix(in srgb,var(--accent-solid) 63%,transparent)}
 .uhmkey i[data-l="5"]{background:color-mix(in srgb,var(--accent-solid) 80%,transparent)}
 .uhmkey i[data-l="6"]{background:var(--accent-solid)}
+/* A granularity that cannot differ from All is MARKED, not disabled: it still
+   draws, its label still says something ("April 2026" against "All data"), and
+   the mark plus its tip explain why the grid does not change. Dimming alone
+   would read as "broken"; this is the same weight as a muted label. */
+.uhmnav .filt.uhmsame{opacity:.62}
+.uhmnav .filt.uhmsame.on{opacity:1}

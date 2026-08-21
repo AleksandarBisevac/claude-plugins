@@ -468,6 +468,48 @@
   const inView = (seg) => (VIEWS[viewMode] || VIEWS.all).includes(seg);
 
   /**
+   * Which segment each phase STATUS files under, read off the rows themselves.
+   *
+   * Python decides this in `_report_html._seg_of` — done and cancelled are the
+   * archive, in_progress and blocked are active, everything else is pending — and
+   * writing that rule again here would be a second copy of it, which is the defect
+   * this report has spent a release removing. Every row already carries BOTH its
+   * status and the segment Python filed it under, so the mapping is derived rather
+   * than restated: a status the plan does not use has no row, no chip, and no
+   * entry, which is the right answer for all three.
+   *
+   * @type {Object<string, string>}
+   */
+  const STATUS_SEG = {};
+  phaseRows.forEach((pr) => {
+    const st = pr.getAttribute('data-status');
+    if (st && !(st in STATUS_SEG)) STATUS_SEG[st] = pr.__seg;
+  });
+  /** Can a phase of this status appear in the current view at all? */
+  const statusInView = (st) => !st || inView(STATUS_SEG[st]);
+
+  /**
+   * Which segments each area tag actually occurs in.
+   *
+   * An area is not one segment the way a status is: `storefront` can tag an
+   * active phase AND an archived one, so this keeps the whole set and asks
+   * whether ANY of it survives the view. Derived from the rendered rows for the
+   * same reason `STATUS_SEG` is - the alternative is a second copy of Python's
+   * segment rule, and two copies of a rule is one copy and one lie.
+   *
+   * @type {Object<string, string[]>}
+   */
+  const AREA_SEGS = {};
+  phaseRows.forEach((pr) => {
+    (pr.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
+      if (!(a in AREA_SEGS)) AREA_SEGS[a] = [];
+      if (AREA_SEGS[a].indexOf(pr.__seg) === -1) AREA_SEGS[a].push(pr.__seg);
+    });
+  });
+  /** Can a phase tagged with this area appear in the current view at all? */
+  const areaInView = (a) => !a || (AREA_SEGS[a] || []).some((seg) => inView(seg));
+
+  /**
    * @param {string} pid a phase id
    * @returns {HTMLTableRowElement[]} that phase's task rows; empty when unknown
    */

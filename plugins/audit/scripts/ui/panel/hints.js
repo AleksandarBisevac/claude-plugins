@@ -105,6 +105,16 @@ const TIPW=272, TIPGUT=12;
  */
 let TIPFOR=null,TIPVIA='mouse';
 /**
+ * The tip group the pointer is currently inside, and the pending open.
+ *
+ * `TIPWARM` is what makes the delay a GROUP property: once one tip in a group has
+ * opened, the group is warm and the rest open on contact until the pointer leaves
+ * it. `TIPWAIT` is the timer for the first one, cleared by anything that moves the
+ * pointer off before it fires — otherwise a tip opens for a cell the reader has
+ * already left.
+ */
+let TIPWARM=null,TIPWAIT=0;
+/**
  * The one tip element, created on first use.
  *
  * @returns {HTMLElement} the body-level tip node, reused for every hint
@@ -169,9 +179,33 @@ function hideTip(){const b=document.getElementById('hinttip');
  */
 function startTipPlacement(){
  document.addEventListener('mouseover',e=>{
-  const h=e.target&&e.target.closest?e.target.closest('.hint'):null;
-  if(h){if(h!==TIPFOR)showTip(h,'mouse');}
-  else if(TIPFOR&&TIPVIA==='mouse')hideTip();});
+  // `.hint` OR anything carrying `data-tip`. The class is the ⓘ icon and brings
+  // its own italic-bold styling with it, so a surface that wants the tip without
+  // the icon — the usage heatmap's 168 cells — opts in by the attribute
+  // `showTip` already reads. One delegated listener either way.
+  const h=e.target&&e.target.closest?e.target.closest('.hint,[data-tip]'):null;
+  if(!h){clearTimeout(TIPWAIT);if(TIPFOR&&TIPVIA==='mouse')hideTip();return;}
+  if(h===TIPFOR)return;
+  // A GROUP DELAY, not a per-tip one. Sweeping a pointer across a grid of cells
+  // should not strobe a tooltip, and waiting again on every cell makes reading
+  // the grid slower than reading nothing. So the first tip inside a group waits,
+  // and while the pointer stays in that group every later one is immediate —
+  // the behaviour a reader already knows from a spreadsheet.
+  const grp=h.closest('[data-tipgroup]');
+  const wait=(grp&&grp!==TIPWARM)?(+grp.getAttribute('data-tipgroup')||0):0;
+  clearTimeout(TIPWAIT);
+  // No wait means the group is ALREADY warm (or the tip belongs to no group), so
+  // there is nothing to record here - the timer below is the only thing that ever
+  // warms one. An earlier version reassigned TIPWARM on this branch too; removing
+  // it changed no behaviour, which is how it was found.
+  if(!wait){showTip(h,'mouse');return;}
+  TIPWAIT=setTimeout(()=>{TIPWARM=grp;showTip(h,'mouse');},wait);});
+ // Leaving the group cools it, so the next visit waits again. `relatedTarget` is
+ // null when the pointer leaves the window entirely, which counts as leaving.
+ document.addEventListener('mouseout',e=>{
+  if(!TIPWARM)return;
+  const to=e.relatedTarget;
+  if(!to||!TIPWARM.contains(to)){TIPWARM=null;clearTimeout(TIPWAIT);}});
  document.addEventListener('focusin',e=>{
   const h=e.target&&e.target.closest?e.target.closest('.hint'):null;
   if(h)showTip(h,'focus');else if(TIPFOR)hideTip();});

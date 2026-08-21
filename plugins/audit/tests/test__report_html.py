@@ -270,10 +270,27 @@ def _cases(check):
     check("_global_filter_row offers the way back from a range (the All time "
           "reset, hidden until a range is on)",
           'id="audit-gclear" hidden' in _grow)
+    _one = M._global_filter_row(["only@x.io"], ["api"], None, None)
     check("_global_filter_row renders no author select for a single author "
           "(a set of one has nothing to filter)",
-          'id="audit-au-select"' not in
-          M._global_filter_row(["only@x.io"], ["api"], None, None))
+          'id="audit-au-select"' not in _one)
+    # ...but the header still ANSWERS "who worked on this". Reported by a reader
+    # who wanted Author beside Area/From/To and, on a solo project, found the
+    # whole control missing. A one-option dropdown would be a control whose every
+    # use is a no-op - the same defect as a status chip the view can never
+    # satisfy - so the bar states the name instead of offering to filter by it.
+    check("_global_filter_row STATES the single author rather than offering a "
+          "dropdown that could only pick the value it already shows",
+          'id="audit-au-only"' in _one and "only@x.io" in _one
+          and "Author" in _one
+          and "nothing to filter between" in _one)
+    check("...and that value is escaped like every other identifier here",
+          "&lt;b&gt;" in M._global_filter_row(["<b>"], [], None, None)
+          and "<b>" not in M._global_filter_row(["<b>"], [], None, None)
+             .replace("&lt;b&gt;", ""))
+    check("...and no authors at all still renders nothing, because there is no "
+          "fact to state either",
+          'id="audit-au-only"' not in M._global_filter_row([], ["api"], None, None))
     check("_global_filter_row is '' with nothing to filter by",
           M._global_filter_row([], [], None, None) == "")
     check("_global_filter_row escapes a hostile tag before it reaches an "

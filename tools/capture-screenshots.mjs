@@ -2195,6 +2195,76 @@ async function assertUsageWorks(page) {
            + `the facts, period "${rest.period}", arrows parked`);
       }
 
+      // F-P-9: a cell hands over its DATUM through the panel's own tip layer.
+      // It used to carry a native `title` and `cursor:help`, which macOS draws as
+      // an arrow-with-a-question-mark on every cell whether or not it holds
+      // anything — reported as "a question mark regardless of whether there is
+      // data". The cursor was the whole of what the reader saw.
+      {
+        const cell = page.locator('#usage table.uhm tbody i').first();
+        const cur = await cell.evaluate((n) => ({
+          cursor: getComputedStyle(n).cursor,
+          title: n.getAttribute('title'),
+          tip: n.getAttribute('data-tip'),
+        }));
+        if (cur.cursor === 'help') {
+          fail('usage: a heatmap cell still asks for `cursor:help` — that is an '
+             + 'arrow-with-a-question-mark on macOS, on every cell, and it '
+             + 'promises an explanation where the cell hands over a value');
+        } else if (cur.title) {
+          fail(`usage: a heatmap cell still carries a native title (${cur.title}) — `
+             + 'the OS tooltip competes with the panel\'s own tip and arrives a '
+             + 'second later, in a different language');
+        } else if (!cur.tip || !/\d/.test(cur.tip)) {
+          fail(`usage: a heatmap cell carries no readable data-tip (${cur.tip})`);
+        } else {
+          // ...and it OPENS, in the panel's own box, with that text.
+          await page.mouse.move(4, 4);
+          await page.waitForTimeout(200);
+          await cell.hover();
+          await page.waitForTimeout(900);              // past the group's grace
+          const tip = await page.evaluate(() => {
+            const b = document.getElementById('hinttip');
+            return { up: !!b && b.style.display !== 'none',
+                     text: b ? b.textContent.trim() : null };
+          });
+          if (!tip.up || tip.text !== cur.tip) {
+            fail(`usage: hovering a heatmap cell did not open the panel tip — `
+               + `up=${tip.up} text=${JSON.stringify(tip.text)} `
+               + `wanted ${JSON.stringify(cur.tip)}`);
+          } else {
+            // The GROUP delay: the first cell waits, the next opens on contact.
+            // Measured rather than assumed, because "immediate" is the half a
+            // reader notices and a fixed sleep would pass either way.
+            const second = page.locator('#usage table.uhm tbody i').nth(9);
+            await second.hover();
+            const t0 = Date.now();
+            let ms = null;
+            while (Date.now() - t0 < 900) {
+              const t = await page.evaluate(() => {
+                const b = document.getElementById('hinttip');
+                return b && b.style.display !== 'none' ? b.textContent.trim() : null;
+              });
+              if (t && t !== tip.text) { ms = Date.now() - t0; break; }
+              await page.waitForTimeout(20);
+            }
+            if (ms === null) {
+              fail('usage: moving to a second heatmap cell never opened its tip — '
+                 + 'inside one grid the tip is meant to follow the pointer');
+            } else if (ms > 250) {
+              fail(`usage: the second cell's tip took ${ms}ms — inside a warm grid `
+                 + 'it must open on contact, or reading the grid is slower than '
+                 + 'not reading it');
+            } else {
+              note(`usage: heatmap tips are the panel's own — first opens after the `
+                 + `grace, the next in ${ms}ms, cursor "${cur.cursor}", no native title`);
+            }
+          }
+          await page.mouse.move(4, 4);
+          await page.waitForTimeout(150);
+        }
+      }
+
       // Day granularity: opens on the LAST recorded day; next is disabled AND
       // muted at the edge; prev steps to the previous day WITH data.
       await page.click('#usage [data-uhg=day]');
@@ -2279,6 +2349,66 @@ async function assertUsageWorks(page) {
 
       // The custom range IS the panel's day filter: scope to a mid..end
       // window and the heatmap's whole universe becomes that window.
+      // F-P-13: a granularity that CANNOT differ from All says so, and a dead
+      // arrow says why it is dead.
+      //
+      // Reported as "the filters do not work — Year instead of Month shows the
+      // same chart". It did, and correctly: a ledger inside one calendar year
+      // draws the same grid at Year as at All, and there is no neighbouring year
+      // holding tokens, so both arrows park. Every part of that was true and none
+      // of it was on the screen, which is the whole defect.
+      {
+        const g = await page.evaluate(async () => {
+          const out = {};
+          const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
+          out.span = [days[0], days[days.length - 1]];
+          out.oneYear = days[0].slice(0, 4) === days[days.length - 1].slice(0, 4);
+          out.oneMonth = days[0].slice(0, 7) === days[days.length - 1].slice(0, 7);
+          return out;
+        });
+        const readNav = () => page.evaluate(() => ({
+          period: document.querySelector('#usage [data-uhmperiod]').textContent,
+          marked: [...document.querySelectorAll('#usage [data-uhg]')]
+            .filter((b) => b.classList.contains('uhmsame'))
+            .map((b) => b.getAttribute('data-uhg')),
+          armReasons: ['prev', 'next'].map((d) => {
+            const a = document.querySelector(`#usage [data-uhm=${d}]`);
+            return { d, off: !!a.disabled, why: a.getAttribute('data-tip') };
+          }),
+        }));
+        await page.click('#usage [data-uhg=year]');
+        await page.waitForTimeout(250);
+        const y = await readNav();
+        if (g.oneYear && !/falls in this year/.test(y.period)) {
+          fail(`usage: the ledger (${g.span[0]}..${g.span[1]}) is inside one year, so `
+             + `Year draws the same grid as All — the period line must say so and `
+             + `reads "${y.period}"`);
+        } else if (g.oneYear && !y.marked.includes('year')) {
+          fail('usage: the Year button is indistinguishable from one that changes '
+             + 'the grid, on a ledger where it cannot');
+        } else if (g.oneYear && y.armReasons.some((a) => a.off && !a.why)) {
+          fail('usage: an arrow is disabled with no reason on it — a dead control '
+             + 'that says nothing reads as a broken one: '
+             + JSON.stringify(y.armReasons));
+        } else {
+          note(`usage: Year states its basis — "${y.period}", marked ${JSON.stringify(y.marked)}, `
+             + `arrows ${y.armReasons.map((a) => a.d + (a.off ? ':' + a.why : ':live')).join(' ')}`);
+        }
+        // ...and a granularity that CAN differ is NOT marked, or the mark means
+        // nothing. This fixture spans more than one month, so Month must be live.
+        await page.click('#usage [data-uhg=month]');
+        await page.waitForTimeout(250);
+        const m = await readNav();
+        if (!g.oneMonth && m.marked.includes('month')) {
+          fail(`usage: Month is marked as "same as All" on a ledger spanning `
+             + `${g.span[0]}..${g.span[1]}, where it genuinely narrows`);
+        } else if (!g.oneMonth && /falls in this month/.test(m.period)) {
+          fail(`usage: the period line claims the ledger falls in one month: "${m.period}"`);
+        } else {
+          note(`usage: Month is not marked on a multi-month ledger — "${m.period}"`);
+        }
+      }
+
       await page.click('#usage [data-uhg=all]');
       await page.waitForTimeout(200);
       const win = await page.evaluate(() => {
@@ -3467,6 +3597,27 @@ async function assertConfirmFlowWorks(page) {
   const path = await box.getAttribute('id');
   await box.click();
   await page.waitForTimeout(200);
+  // F-P-15: the savebar counts ("Discard 1 change") and the form must say WHICH
+  // field that is. The count's basis existed - Discard lists the rows - but a
+  // click away, while the Policy tab next door marks its pending cells inline.
+  {
+    const pend = await page.evaluate((id) => {
+      const marked = [...document.querySelectorAll('#guards .f.pend')];
+      const mine = document.getElementById(id);
+      const wrap = mine && mine.closest ? mine.closest('.f') : null;
+      return { n: marked.length,
+        isTheEditedOne: marked.length === 1 && wrap !== null && marked[0] === wrap,
+        badge: marked.length ? [...marked[0].querySelectorAll('[data-pendbadge]')]
+          .map((b) => b.textContent.trim()).join(',') : '' };
+    }, path);
+    if (!pend.isTheEditedOne || pend.badge !== 'unsaved') {
+      fail(`settings: one edit marked ${pend.n} field(s), edited-one=${pend.isTheEditedOne}, `
+         + `badge="${pend.badge}" - the savebar's count has no basis on the form`);
+    } else {
+      note('settings: the edited field alone is marked unsaved, so the savebar\'s '
+         + 'count says which field it means');
+    }
+  }
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
   await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
   const cfgRows = await page.evaluate(() =>
@@ -3493,6 +3644,17 @@ async function assertConfirmFlowWorks(page) {
   } else {
     note(`settings: ${wantPath} -> ${JSON.stringify(cfgSaved.value)}, `
        + `"${cfgSaved.toast.trim()}"`);
+  }
+  // The clearing half, free from the save above: a marker that outlives the
+  // change it describes is the same lie one step later.
+  {
+    const left = await page.evaluate(() =>
+      document.querySelectorAll('#guards .f.pend, #guards [data-pendbadge]').length);
+    if (left !== 0) {
+      fail(`settings: ${left} unsaved marker(s) survived the save`);
+    } else {
+      note('settings: ...and the marks come off once it is saved');
+    }
   }
 
   // --- and every one of those saves is now in the journal (v0.29) ------------
@@ -6690,7 +6852,13 @@ async function main() {
       await shot(page, 'expanded');
 
       // Filter to one phase status, which is what the chip row is for.
-      const chip = page.locator('#audit-phase-status button').first();
+      //
+      // `:not([hidden])`, because the chip set now FOLLOWS the view: with the
+      // default `active` view a plan's `done` chip is hidden, and it is usually
+      // first in DOM order. Clicking blind picked it and timed out on an element
+      // the page had deliberately taken away — which is the change working, and
+      // this harness assuming otherwise.
+      const chip = page.locator('#audit-phase-status button:not([hidden])').first();
       if (await chip.count()) { await chip.click(); await page.waitForTimeout(120); }
       await shot(page, 'filtered');
 

@@ -247,3 +247,10 @@ details.more>summary:hover{color:var(--text)}
   .mm .spark{grid-column:1/-1}
 }
 
+/* The one-author header value: the same weight as a select's text, without the
+   affordance of one. It is a FACT in the filter bar, not a control — see
+   `_report_html._gfilters`, which declines to render a dropdown that could only
+   ever pick the value it already shows. */
+.gfilters .gfone .gfval{font:inherit;color:var(--text);
+  padding:.1rem .35rem;border-radius:var(--radius);
+  background:color-mix(in srgb,var(--text) 6%,transparent)}

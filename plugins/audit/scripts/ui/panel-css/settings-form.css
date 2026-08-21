@@ -12,6 +12,13 @@
  color:var(--muted);font-weight:700;margin:1.25rem 0 .4rem}
 .sub2 .lbl{gap:.35rem}
 .f.wide{flex:1 1 100%}
+/* F-P-15: an unsaved field says so WHERE IT IS, not only as a count in the
+   savebar. `box-shadow` rather than a border or padding on purpose - the bar has
+   to appear and disappear on every keystroke that reaches the view, and anything
+   affecting layout would make the form twitch under the caret. The `.badge.pend`
+   word beside the label carries the meaning; this bar only makes the field
+   findable when several are pending at once. */
+.f.pend{box-shadow:-3px 0 0 0 var(--accent-solid)}
 /* A checkbox and its words are one line, and the words are not a column header —
    until the line is wider than the phone holding it. `flex:0 0 auto` said the row
    may never shrink, so on a 390px screen "Always deny edits outside the plan" plus

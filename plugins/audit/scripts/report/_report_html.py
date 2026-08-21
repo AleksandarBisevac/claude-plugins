@@ -595,6 +595,18 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
                     '<select id="audit-au-select" aria-label="Scope the Usage '
                     'section&#39;s per-author views to one author">%s</select>'
                     "</label>" % opts)
+    elif authors:
+        # ONE author: the question "who worked on this" still deserves an answer
+        # in the header, and a one-option dropdown is not it -- a control whose
+        # every use is a no-op is the same defect as a status chip the view can
+        # never satisfy. So the bar STATES the author instead of offering to
+        # filter by them, and the reader learns the fact without being handed a
+        # dead control. Asked for by a reader who wanted Author beside Area/From/
+        # To and, on a solo project, found nothing there at all.
+        bits.append('<span class="gf gfone"><span class="tbl">Author</span>'
+                    '<span class="gfval" id="audit-au-only" '
+                    'title="the only author in this ledger - nothing to filter '
+                    'between">%s</span></span>' % e(authors[0]))
     if tags:
         # Each option titles its advisory owner (D4) — exactly the panel's
         # area-select behaviour, so a habit learned there reads here too.

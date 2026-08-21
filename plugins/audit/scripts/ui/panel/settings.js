@@ -226,7 +226,8 @@ function renderSettings(){closeCombo();
    const res=await api('PUT','/api/config',cfg);
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the config',findings);
-   if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));}}},'Save settings');
+   if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));syncGuardsDirty();}}},
+   'Save settings');
  const discard=discardButton({key:'guards',rows:()=>configChanges(cfg),
    title:'Discard unsaved settings',
    note:'nothing is written; the form goes back to the saved file',
@@ -235,7 +236,16 @@ function renderSettings(){closeCombo();
  // Every control in this form mutates `cfg` and none of them announces it, so the
  // counter is refreshed from the events that reach the view rather than from a
  // hook added to each of the twenty-odd field builders.
- onViewEdit('guards',()=>refreshDiscard(discard,configChanges(cfg).length));
+ // Both the count and the per-field marks come from ONE read of the form, and
+ // the save path needs the same read: `onViewEdit` fires on the Save CLICK, which
+ // is before the PUT resolves, so the last thing it ever computes is the state
+ // just before the write. Without a second call after `STATE.config` moves, the
+ // savebar keeps offering to discard a change that is already on disk.
+ const syncGuardsDirty=()=>{
+   const rows=configChanges(cfg);
+   refreshDiscard(discard,rows.length);
+   markPending('guards',rows,fieldId);};
+ onViewEdit('guards',syncGuardsDirty);
  const CUSTOM={
   'planGate':()=>planGateField(cfg),
   'guardEdits.tokenVars':()=>tokenVarsField(cfg,d),
