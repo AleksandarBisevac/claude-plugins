@@ -38,11 +38,27 @@ an in-flight run, and hold it through write + validate (released in step 8).
 ## 2. Interview (BEFORE any exploration)
 
 Merge `$ARGUMENTS` with answers to (ask only what `$ARGUMENTS` doesn't cover):
-1. **Dimensions** (multi-select): security · correctness · test coverage · performance · architecture · DX/build health.
+1. **Dimensions** (multi-select, and ALL SIX are offered): security · correctness ·
+   test coverage · performance · architecture · DX/build health.
+
+   **Ask them as TWO questions inside ONE `AskUserQuestion` call** — that tool takes at most
+   four options per question, and six do not fit. This is not cosmetic. Asked as one question
+   the last two are cut, and the only route left to them is typing their exact name into the
+   automatic "Other" field, so a reader who has never opened this file cannot know they exist.
+   That is the silent cap this command forbids for areas further down — *"a silent cap would
+   read as 'that is all of them'"* — applied to its own list first.
 2. **Scope**: directories to include/exclude (default: whole repo minus vendored/generated code).
 3. **Development branch** (default `main`) → `meta.developmentBranch`.
-4. **Size appetite**: S (1–2 phases, quick wins) / M (3–4) / L (5+, thorough).
-5. **Known pain points** — free text; explorers get these as priority hints.
+4. **Known pain points** — **free text. Never a list you synthesize.**
+
+   This is asked BEFORE recon, so the only material options could come from is documentation
+   already in context — and documentation is the thing most likely to describe a state the code
+   has left. Observed on a real repo: the docs still named a `pages/` layout a refactor had
+   replaced outright, so every option offered pointed at files that no longer existed, and the
+   wrong labels then travelled into six explorers as priority hints.
+
+   Whatever the user types is a **hint, not a fact**. An explorer that cannot confirm a hint
+   says so, and never restates it as a finding.
 
 **Areas (only if step 3.5 detected a workspace).** Ask this AFTER recon, not here — you cannot
 propose areas you have not found yet. See step 3.5.
@@ -126,10 +142,29 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 2. **Group into phases**: `P0` = build/test health + safety blockers (anything that gates
    verification of later work), then thematic phases by dimension/subsystem. Give every
    phase a one-line `desiredOutcome` (what success looks like — `/audit:status` displays it and
-   sign-off must address it). Respect the
-   size appetite; overflow goes to `deferred.items` (with reasons) or is parked
-   directly in `proposals[]` as a full payload (step 6's park format) so it stays
-   materializable.
+   sign-off must address it).
+
+   **Gate coverage is a hard requirement, not a splitting rule.** Every phase's `testGate`
+   must be able to prove THAT PHASE done: a phase tagged with two areas carries one entry per
+   area, or states why a single command covers both. A gate that can be green while half the
+   phase is unverified is decoration.
+
+   **The gate never forces a merge.** It is a LOWER bound on splitting - it tells you when you
+   must split, never that you must join. Several distinct concerns can share one gate and stay
+   separate phases: all Python work may be proven by the same `pytest -q`, while token flow,
+   test coverage and a hand-maintained SQL whitelist remain three phases with three risks and
+   three reviewers.
+
+   **What decides the boundary is the `desiredOutcome`.** If two pieces of work cannot share one
+   honest one-line outcome that sign-off can address, they are two phases - and a phase whose
+   outcome cannot be written in a line is already too big.
+
+   There is deliberately NO target number: the count follows the material (how many distinct
+   outcomes it carries, with gate coverage as the floor), not a preference. Asking for a size up
+   front turned that into a quota the plan was squeezed to fit. Two phases whose gate AND
+   `desiredOutcome` are indistinguishable are one phase. Overflow is parked at the gate in
+   step 6, recorded in `deferred.items` with its reason, or placed in `proposals[]` as a full
+   payload (step 6's park format) so it stays materializable.
    **Tag each phase** with the `area` tag(s) whose root(s) its tasks' files fall under — a list when
    the phase spans two, in the order you want them to resolve (written order decides the reviewer
    and the skill order). Skip entirely when step 3.5 found no workspace.
@@ -166,11 +201,13 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 Nothing synthesized has touched disk yet. Print the proposed plan, plain ASCII:
 
 ```
-Proposed plan — 4 phases, 23 tasks (size appetite: M)
+Proposed plan — 4 phases, 23 tasks
 
-  id  title                 goal (desiredOutcome)               tasks  key tasks
-  P0  Build & test health   CI green; test gate runnable        5      fix tsconfig; un-skip auth suite
-  P1  Security hardening    no high-risk injection paths        7      parameterize SQL in orders
+  id  title                 goal (desiredOutcome)         gate                    tasks
+  P0  Build & test health   CI green; gate runnable        pnpm test --run         5
+                                                          tsc --noEmit
+  P1  Security hardening    no injection paths left        pytest -q               7
+                                                          ! deploy.yml: no gate
   ...
   deferred: 3 item(s) (reasons below) - open questions: 2
 ```
