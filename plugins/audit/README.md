@@ -129,6 +129,22 @@ not paper over.
 |---|
 | [![the policy switchboard](../../docs/screenshots/panel-policy.png)](../../docs/screenshots/panel-policy.png) |
 
+The **Proposals** tab is where parked phases live. `/audit:init` can synthesize a plan and
+park all of it — nothing starts until you say so — and this is the surface that shows what is
+waiting. Each proposal opens to what it would add: the phase, its tasks, the benefit, and any
+open questions it left behind. **Materialize** writes that phase and its tasks into the plan
+after showing you exactly what the write pulls in, including any proposal it depends on.
+**Drop** archives one with a reason, and the reason is required: a dropped proposal is history
+rather than a deletion, so a later reader can find why the work was declined — and **Revive**
+puts it back with that history intact.
+
+Every action here runs the same script `/audit:propose` runs, so the dependency closure, the
+index lock and the revalidation happen in one place rather than twice.
+
+| Proposals (parked phases, and what happens to them) |
+|---|
+| [![parked proposals](../../docs/screenshots/panel-proposals.png)](../../docs/screenshots/panel-proposals.png) |
+
 The **Appearance** tab edits the look — of the panel *and* of every report rendered afterwards,
 because the two share one token layer. A theme is that layer as **data**: token values in a
 [DTCG](https://www.designtokens.org/tr/drafts/format/)-shaped JSON file, compiled into the
@@ -346,6 +362,58 @@ Commands appear as `/audit:status`, `/audit:doctor`, `/audit:next`, `/audit:run`
 `/audit:resume`, `/audit:report`, `/audit:panel`, `/audit:init`, `/audit:propose`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
 action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up immediately,
 run `/reload-plugins` (or restart the session).
+
+## Making it travel with the repo
+
+`/plugin install ... --scope project` does **not** travel. It writes a row into
+`~/.claude/plugins/installed_plugins.json` keyed by the project's absolute path — a
+file on *your* machine. A teammate who clones the repo gets none of it. The scope
+means "while I am working in this folder", not "ships with this folder".
+
+What actually travels is a committed `.claude/settings.json`, and it needs **two**
+keys, not one:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "quality-gates": {
+      "source": { "source": "github", "repo": "AleksandarBisevac/claude-plugins" }
+    }
+  },
+  "enabledPlugins": {
+    "audit@quality-gates": true
+  }
+}
+```
+
+The key under `extraKnownMarketplaces` must be the marketplace's own name
+(`quality-gates`) — that match is enforced.
+
+**Committing only `enabledPlugins` is the trap**, and it is a quiet one: everyone who
+clones gets a flag enabling a plugin from a marketplace their machine has never heard
+of. It keeps working for whoever added it, because their machine already registered
+the marketplace by hand, so the mistake is invisible from the inside. Found in a real
+repository doing exactly this.
+
+Two things to check before rolling this out to a team:
+
+- **Enterprise policy can refuse the source.** If the organisation sets
+  `strictKnownMarketplaces` in managed settings, the source is rejected *before*
+  anything downloads. Ask first; a committed settings file cannot override it.
+- **Do not commit `permissions` entries for this plugin's scripts.** Its commands run
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/..."`, which expands to a path containing
+  both a home directory (different for every teammate) and the installed version
+  (different after every upgrade). Such an allowlist rots silently: a dead entry does
+  not fail, it just prompts again. Two repositories were found carrying entries
+  pinned to a long-gone version and to a directory layout that has since changed, and
+  nobody had noticed. Let each person accept the prompt once — it lands in their
+  gitignored `settings.local.json`.
+
+**Hooks do not wait for permissions.** The guard hooks are registered as
+`PreToolUse`/`PostToolUse` commands and run as hooks, not through the permission
+system. So the plan gate and the TDD reminder are live the moment the plugin is
+enabled, before anyone approves anything. That is intended — see the next section —
+but it surprises teams who expect a prompt first.
 
 ## Installing arms global hooks
 
@@ -1034,6 +1102,18 @@ an untracked file moves by plain rename (it has no committed history for git to 
 > (Scrum, sprints, shared-sprint pull, identity mapping), the echo contract and
 > troubleshooting — lives in [`docs/ado-connector.md`](../../docs/ado-connector.md).
 > This section is the summary.
+
+**First, check whether the board already has an owner.** If the project has its own
+Azure DevOps integration — a script under `.claude/scripts/`, a pipeline task, anything
+that already updates work items — then enabling this connector puts **two writers on the
+same cards**: board state, sprint stamp, Remaining Work and comments are all written by
+both. Nothing detects that for you.
+
+The connector is built to sit beside such a tool rather than fight it: keep
+`meta.ado.enabled: false`, which stops every write, and use `/audit:sync status` — it is
+read-only and gives you the drift table, which is the part you actually want when
+somebody else owns the writing. Turn writes on only once you have decided this plugin
+owns the link.
 
 Add `meta.ado` to the manifest — or fill in the **ADO connector card** on the panel's
 Composition tab, which edits the same block — and `/audit:sync` links the tracker to
