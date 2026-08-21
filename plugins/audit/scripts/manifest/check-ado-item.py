@@ -103,6 +103,14 @@ def main(argv):
         sys.stderr.write("ERROR: cannot read/parse item %s: %s\n" % (item_path, exc))
         return 2
 
+    # Shape before substance. Exit 2, never 1: a 1 means "this item does not
+    # belong on the board", and saying that about a payload we could not read
+    # properly is the confident-wrong-answer this guard exists to stop.
+    reason = _conv.rest_payload_reason(item)
+    if reason:
+        sys.stderr.write("ERROR: %s\n" % (reason,))
+        return 2
+
     conventions = conventions_of(manifest)
     violations = _conv.conformance_violations(item, conventions)
 

@@ -207,6 +207,75 @@ def _tag_violations(tags, vocabulary):
     return out
 
 
+# The keys only a FETCHED work item carries. `az boards work-item show` and the
+# REST API both return these; a payload the connector is about to send has no
+# revision, no url and no links, because it does not exist yet.
+_FETCHED_ONLY = ("rev", "url", "_links", "relations")
+
+
+def rest_payload_reason(item):
+    """Why this looks like a work item READ BACK, not one about to be sent.
+
+    `None` when the payload is the shape this module grades. Otherwise a
+    sentence naming what gave it away, for a caller to print before refusing.
+
+    This exists because the two shapes OVERLAP, which is worse than being
+    unrelated. `az boards work-item show` output carries `fields`, so the tag
+    rules really do read the tags - but `type` and `parent` live somewhere else
+    in that shape, so `requireParent` fires on an item that HAS a parent and
+    `requiredFields` grades a work item type it never learned. The result was a
+    confident "DOES NOT CONFORM: do NOT create this item" about a correct,
+    long-existing item. A checker whose every message is precise, aimed at the
+    wrong shape, is worse than one that says nothing.
+
+    The tell is deliberately structural rather than a guess: the payload must
+    look fetched (a revision, a url, links, relations - none of which a
+    not-yet-created item can have) AND be missing the `type` this module needs.
+    An item that merely omits `type` is left alone; that is a conformance
+    question, not a shape one.
+    """
+    if not isinstance(item, dict):
+        return None
+    if item.get("type"):
+        return None
+    if not isinstance(item.get("fields"), dict):
+        return None
+    seen = [k for k in _FETCHED_ONLY if k in item]
+    if not seen:
+        return None
+    return ("this payload carries %s and no top-level `type`, so it looks like "
+            "a work item read back from ADO rather than one about to be sent. "
+            "The expected shape is {\"type\": \"Task\", \"fields\": {...}, "
+            "\"parent\": 123} - `type` and `parent` sit beside `fields`, not "
+            "inside it. Graded as-is, `requireParent` would fire on an item "
+            "that HAS a parent." % (", ".join("`" + k + "`" for k in seen),))
+
+
+def provenance_tag_violations(tag, conventions):
+    """Would this board's vocabulary refuse the tag the connector itself writes?
+
+    `[]` when it is admitted, when there is no vocabulary, or when there is no
+    tag. Otherwise the same sentences `conformance_violations` would produce -
+    because it is the SAME function underneath. That is the whole point of this
+    door existing: `_manifest_ado` needs to ask the question at authoring time,
+    and a second copy of the tag rule there would be a second answer the first
+    time either one learned a prefix.
+
+    F-P-18: `meta.ado.tag` defaults to `audit-plugin`, which has no prefix, so a
+    board whose `tagVocabulary` admits only prefixed tags refuses every item the
+    connector creates - and the manifest still validated clean, because each
+    block was graded alone. Nothing was wrong with either block; they disagreed.
+    """
+    if not isinstance(conventions, dict) or not conventions:
+        return []
+    vocabulary = conventions.get("tagVocabulary")
+    if not isinstance(vocabulary, dict) or not vocabulary:
+        return []
+    if not isinstance(tag, str) or not tag.strip():
+        return []
+    return _tag_violations(split_tags(tag), vocabulary)
+
+
 def conformance_violations(item, conventions):
     """What stops `item` from belonging on this board. `[]` means it conforms.
 

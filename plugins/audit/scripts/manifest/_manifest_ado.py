@@ -60,6 +60,13 @@ BUG_STATUS = _vocab.BUG_STATUS
 KNOWN_ADO = _vocab.KNOWN_ADO
 _unknown_keys = _vocab._unknown_keys
 
+# The tag the connector stamps when `meta.ado.tag` is ABSENT. Named once because
+# two places need it and they must not drift: the message that explains the key,
+# and the cross-check that has to grade the tag a push would really write.
+# Explicit null is a third thing again - no tag at all - so `.get("tag")` alone
+# cannot tell "unset" from "off".
+DEFAULT_ADO_TAG = "audit-plugin"
+
 
 # --- identityMap -----------------------------------------------------------------
 def _check_identity_map(meta, findings, warnings):
@@ -119,6 +126,56 @@ def _check_identity_map(meta, findings, warnings):
 
 
 # --- the connector config --------------------------------------------------------
+def _conventions_contradictions(ado):
+    """Where `conventions` and the rest of `meta.ado` disagree. Returns warnings.
+
+    F-P-18. Both blocks were graded alone and both were valid, so a standard that
+    refused every item the connector writes validated clean; the operator found
+    out at push time, when the conformance gate refused each CREATE and the push
+    created nothing.
+
+    WARNINGS, not findings, and the reason is a case that works: once every item
+    is linked, a push does UPDATES, the gate runs on CREATE only, and the
+    contradiction lies dormant. A finding would call that setup invalid and fail
+    its CI on upgrade, which would be a false statement about a working config.
+    So this names the hazard at authoring time and leaves the gate to refuse at
+    push time - the loud stop already exists, what was missing was the warning
+    before anyone drove into it.
+
+    Scope is deliberately what `sync.md` actually promises: with
+    `parentWorkItem` set the created phase item gets it as its parent, and tasks
+    do when `phaseWorkItems` is false. It says nothing about bugs, so neither
+    does this - a rule invented here would be a rule nothing implements.
+    """
+    out = []
+    if not isinstance(ado, dict):
+        return out
+    conventions = ado.get("conventions")
+    if not isinstance(conventions, dict) or not conventions:
+        return out
+
+    # Absent means the connector still stamps its default tag, so the default is
+    # what has to be graded; explicit null means no tag is written at all.
+    tag = ado.get("tag", DEFAULT_ADO_TAG)
+    for line in _conv.provenance_tag_violations(tag, conventions):
+        out.append("meta.ado: the provenance tag this connector writes would be "
+                   "refused by its own board standard - %s. Every CREATE would "
+                   "be gated out and a push would create nothing. Either prefix "
+                   "meta.ado.tag to something tagVocabulary admits, add \"*\" to "
+                   "tagVocabulary, or set meta.ado.tag to null." % (line,))
+
+    pwi = ado.get("parentWorkItem")
+    if conventions.get("requireParent") is True and pwi is None:
+        top = ("phase work item" if ado.get("phaseWorkItems") is not False
+               else "task")
+        out.append("meta.ado.conventions.requireParent is true but "
+                   "meta.ado.parentWorkItem is not set, so the created %s has "
+                   "nothing to hang under and the conformance gate would refuse "
+                   "it. Set meta.ado.parentWorkItem to the Feature/Epic this "
+                   "audit belongs under, or drop requireParent." % (top,))
+    return out
+
+
 def check_ado_meta(ado):
     """The full meta.ado connector-config check. Returns (findings, warnings).
 
@@ -160,7 +217,8 @@ def check_ado_meta(ado):
     if "tag" in ado and tag is not None and (
             not isinstance(tag, str) or not tag.strip()):
         f.append("meta.ado.tag: must be a non-empty string or null (null = "
-                 "no provenance tag; absent = 'audit-plugin'), got %r" % (tag,))
+                 "no provenance tag; absent = %r), got %r"
+                 % (DEFAULT_ADO_TAG, tag))
 
     types = ado.get("types")
     if "types" in ado and types is not None:
@@ -299,6 +357,7 @@ def check_ado_meta(ado):
     cf, cw = _conv.check_conventions_config(ado.get("conventions"))
     f.extend(cf)
     w.extend(cw)
+    w.extend(_conventions_contradictions(ado))
     return f, w
 
 # --- cli ------------------------------------------------------------------------

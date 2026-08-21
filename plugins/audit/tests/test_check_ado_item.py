@@ -99,6 +99,16 @@ def _cases(check):
               "was measured against: %r" % (out.strip()[:70],),
               code == 0 and "conforms" in out)
 
+        # F-P-16: exit 2, and specifically NOT 1. A 1 says "this item does not
+        # belong on the board"; saying that about a payload we could not read
+        # is the confident wrong answer the guard exists to stop.
+        item_fetched = _write(tmp, "fetched.json", {
+            "id": 31, "rev": 3, "url": "https://dev.azure.com/o/_apis/wit/workItems/31",
+            "fields": {"System.WorkItemType": "Task", "System.Tags": "audit-plugin"}})
+        check("ci14 a work item fetched from ADO is refused as the wrong SHAPE "
+              "(2), not accused of breaking the board's rules (1)",
+              M.main([m_std, "--item", item_fetched]) == 2)
+
         code, out = _run([m_std, "--item", item_bad])
         check("ci4 a non-conforming item exits 1 and REFUSES rather than warning "
               "- a created work item cannot be un-created: %r"

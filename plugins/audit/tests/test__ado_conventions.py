@@ -219,6 +219,76 @@ def _cases(check):
     check("ac30 `parentWorkItem` is a known meta.ado key",
           "parentWorkItem" in _ado.KNOWN_ADO)
 
+    # F-P-16: the two payload shapes OVERLAP, which is why this needed a guard
+    # rather than documentation. A fetched item carries `fields`, so the tag
+    # rules really do read its tags - and then `requireParent` fires on an item
+    # that HAS a parent, because the parent lives elsewhere in that shape.
+    _fetched = {"id": 31, "rev": 3, "url": "https://dev.azure.com/o/_apis/wit/workItems/31",
+                "relations": [{"rel": "System.LinkTypes.Hierarchy-Reverse"}],
+                "fields": {"System.WorkItemType": "Task", "System.Tags": "audit-plugin"}}
+    check("ac31 a work item read back from ADO is recognised as the wrong shape "
+          "rather than graded: %r" % ((M.rest_payload_reason(_fetched) or "")[:48],),
+          M.rest_payload_reason(_fetched) is not None)
+    check("ac32 ...and the reason NAMES what gave it away, so the caller can fix "
+          "the call instead of guessing",
+          "`rev`" in (M.rest_payload_reason(_fetched) or ""))
+    # The half that stops the guard refusing everything.
+    check("ac33 ...while the shape the connector actually sends is left alone - "
+          "a guard that refused both shapes would just be off",
+          M.rest_payload_reason(_task()) is None)
+    check("ac34 ...and a payload merely MISSING `type` is a conformance question, "
+          "not a shape one: no fetch marker, no refusal",
+          M.rest_payload_reason({"fields": {"System.Tags": "x"}}) is None)
+    # Without this, the guard could be satisfied by a rule that never runs.
+    check("ac35 ...proven by the fetched item still being graded when the guard "
+          "is not consulted, which is exactly the false accusation F-P-16 names",
+          any("parent" in v for v in M.conformance_violations(_fetched, BOARD)))
+
+    # F-P-18: the two blocks were each valid and disagreed with each other, so a
+    # standard that refused every item the connector writes validated clean.
+    _BASE = {"organization": "https://dev.azure.com/o", "project": "p"}
+    _prefix_only = {"tagVocabulary": {"audit": ["plugin"]}}
+
+    def _meta(**kw):
+        d = dict(_BASE)
+        d.update(kw)
+        return _ado.check_ado_meta(d)
+
+    _f, _w = _meta(conventions=_prefix_only)
+    check("ac36 a board that admits only prefixed tags is warned that the "
+          "connector's own tag would be refused: %r" % (_w[:1],),
+          any("provenance tag" in x for x in _w))
+    # The subtle half: absent does NOT mean no tag, it means the default one.
+    check("ac37 ...and that holds with `tag` ABSENT, because absent means the "
+          "DEFAULT tag is written, not that none is",
+          "tag" not in _BASE and any("audit-plugin" in x for x in _w))
+    # The decision, pinned: a fully-linked plan does updates only, the gate runs
+    # on CREATE, so calling this invalid would fail a setup that works.
+    check("ac38 ...as a WARNING and never a finding, so an already-linked plan "
+          "that only ever updates is not called invalid: %r" % (_f,),
+          _f == [])
+    _f, _w = _meta(conventions={"tagVocabulary": {"*": []}, "requireParent": True})
+    check("ac39 requireParent with no parentWorkItem is warned - the created "
+          "phase item would have nothing to hang under",
+          any("requireParent" in x and "parentWorkItem" in x for x in _w))
+    _f, _w = _meta(parentWorkItem=101,
+                   conventions={"tagVocabulary": {"*": []}, "requireParent": True})
+    check("ac40 ...and is silent once parentWorkItem names one: %r" % (_w,),
+          not any("requireParent" in x for x in _w))
+    # Every legitimate spelling stays silent, or the warning is noise people
+    # learn to skip - which is how a real refusal gets missed later.
+    for _label, _kw in (("free-form vocabulary",
+                         {"conventions": {"tagVocabulary": {"*": [],
+                                                            "audit": ["plugin"]}}}),
+                        ("a tag the vocabulary admits",
+                         {"tag": "audit:plugin", "conventions": _prefix_only}),
+                        ("tag explicitly null (no tag written)",
+                         {"tag": None, "conventions": _prefix_only}),
+                        ("no conventions block at all", {})):
+        _f, _w = _meta(**_kw)
+        check("ac41 no contradiction warning for %s" % (_label,),
+              not any("provenance tag" in x for x in _w), _w)
+
     check("ac24 ...and `conventions` is a known meta.ado key, so it does not "
           "arrive as a did-you-mean warning about itself",
           "conventions" in _ado.KNOWN_ADO)
