@@ -13,8 +13,10 @@ Offline on purpose - a doctor that phoned ADO would be a doctor that needs
 credentials - which is why the state-map row says "advisory" out loud: real
 states live in ADO.
 
-Layer 3: it runtime-loads `_manifest_io` (layer 1) for the task walk and reads
-`_doctor_report` (layer 2) for the collector, and reaches nothing else.
+Layer 3: it reads `_doctor_report` (layer 2) for the collector and `_ado_drift`
+(layer 2) for the link walk, and reaches nothing else. The walk used to be a
+second copy here - including the `id: true` trap - and one walk is why the
+doctor's count and the sync command's table cannot disagree about what is linked.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_ado.py` - see
@@ -49,6 +51,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
+import _ado_drift as _drift  # noqa: E402  (the one link walk, and origins)
 
 # A thin module-level alias, not a copy: the body below was moved out of
 # `audit-doctor.py` unchanged, and an alias keeps it reading the same name
@@ -147,41 +150,38 @@ def check_ado(rep, project, manifest):
                  "map. Advisory only: real states live in ADO",
                  "set meta.ado.stateMap in the panel's ADO card")
 
-    # What the links prove - int ids only, the validator's shape.
+    # What the links prove. The WALK is not here: `_ado_drift.link_inventory`
+    # owns it, including the int-id shape (`True` would otherwise pass for a
+    # work-item id), and this row used to be its second copy. One walk means the
+    # doctor's count and the sync command's table cannot disagree about what is
+    # linked - which they could, silently, while both looked right.
+    inventory = _drift.link_inventory(manifest)
     linked = {"task": 0, "bug": 0, "phase": 0}
-    newest = [None]
-
-    def _note(item, kind):
-        link = item.get("ado") if isinstance(item, dict) else None
-        if isinstance(link, dict) and isinstance(link.get("id"), int) \
-                and not isinstance(link.get("id"), bool):
-            linked[kind] += 1
-            ts = link.get("lastSyncedAt")
-            if isinstance(ts, str) and (newest[0] is None or ts > newest[0]):
-                newest[0] = ts
-
-    mio = _load("_manifest_io", "_manifest_io.py")
-    for ph in (manifest.get("phases") or []):
-        if isinstance(ph, dict):
-            _note(ph, "phase")
-    # Two passes rather than a nested loop, because only ONE of them is a task
-    # traversal: the phase pass must reach a phase that holds no tasks (its own
-    # `ado` link is what is being counted), and `iter_tasks` yields nothing for
-    # one. `_note` only ever increments a counter and takes a max, so the order
-    # the three kinds are visited in cannot change the answer.
-    for _, t in mio.iter_tasks(manifest):
-        _note(t, "task")
-    for b in (manifest.get("bugs") or []):
-        _note(b, "bug")
+    newest = None
+    for row in inventory:
+        linked[row["kind"]] += 1
+        ts = row["link"].get("lastSyncedAt")
+        if isinstance(ts, str) and (newest is None or ts > newest):
+            newest = ts
+    origins = _drift.origin_breakdown(inventory)
     if not sum(linked.values()):
         rep.ok("ado links",
                "no item linked yet - configuration, not evidence; "
                "/audit:sync push writes the first links")
     else:
+        # The origin split is here rather than in the sync command because it is
+        # answerable OFFLINE - it reads the manifest's own links - and because the
+        # `unknown` figure is the one nobody would otherwise see: it counts links
+        # written before `origin` existed, and it shrinks only as those items are
+        # pushed again. A reader shown just the other two reads them as the whole.
         rep.ok("ado links",
-               "%d task(s), %d bug(s), %d phase(s) linked%s"
+               "%d task(s), %d bug(s), %d phase(s) linked%s - %d created here, "
+               "%d imported, %d of unknown origin (link written before the "
+               "field existed, or by hand)"
                % (linked["task"], linked["bug"], linked["phase"],
-                  (" - newest sync %s" % newest[0]) if newest[0] else ""))
+                  (" - newest sync %s" % newest) if newest else "",
+                  origins[_drift.ORIGIN_CREATED], origins[_drift.ORIGIN_IMPORTED],
+                  origins[_drift.UNKNOWN]))
 
 
 # --- cli ------------------------------------------------------------------------

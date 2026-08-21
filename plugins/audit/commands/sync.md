@@ -125,6 +125,23 @@ failed echo.
    - `item.ado.id` set → fetch current (`az boards work-item show --id <id> --output json`),
      **diff the mapped fields**, and only when something differs → UPDATE
      (`az boards work-item update`). No-op items are skipped.
+
+   The fetch above already returns `System.ChangedBy` and `System.ChangedDate`;
+   keep them, they are what step 2c reads.
+2c. **Whose card is this, and who moved it last — every UPDATE, before the confirm.**
+   Write the items you fetched as a JSON list (each `{id, fields, mapped}`, where
+   `mapped` is the `stateMap`-translated status from the table above) and run:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/explain-ado-drift.py" \
+     <manifest> --items <fetched.json>
+   ```
+
+   Exit 0 = answered; **exit 2 = could not read the input, so stop rather than
+   push blind**. There is no exit 1: "somebody else moved this card" is the normal
+   state of a board several teams write to, and refusing over it would make this
+   command useless where it matters most. Do not reimplement the comparison here —
+   `_ado_drift` owns it, and a second copy in prose is a second answer.
 2b. **Conformance gate — every CREATE, before the confirm.** `meta.ado.conventions`
    says what an item must look like to BELONG on this board (skeleton, mandatory
    markers, tag vocabulary, parent). For each CREATE, write the payload you are about
@@ -151,6 +168,21 @@ failed echo.
    **confirm via AskUserQuestion before the first write** — ADO writes are
    outward-facing and visible to the whole team. A refused item is never offered for
    creation; fix the manifest (or the conventions) and re-run.
+
+   Carry step 2c's answer into that plan, because it is the part the confirm gate
+   exists for:
+   - the count line, **printed even when it is zero** — `K update(s) would
+     overwrite a change made after our last sync` — with the ids, the writer's name
+     and the moment for each. A number that appears only on bad news cannot be told
+     apart from a number nobody computed;
+   - per UPDATE row, whose card it is: `created here` / `imported from ADO` /
+     `origin unknown (link written before the field existed)`.
+
+   **This changes nothing about what the command may do.** No extra question, no
+   refusal, no new switch: several writers on one board is normal, and this plugin
+   does not arbitrate who owns a card. It just stops describing somebody else's
+   card as if it were ours, and stops reporting a difference as if only two
+   readings existed.
 4. **Assignment proposal** (only when `meta.ado.identityMap` has entries): for each
    CREATE in the plan, resolve the item's phase — a task's own phase; a bug reaches a
    phase only through its materialized `taskId` (an unmaterialized bug has no phase and
@@ -171,9 +203,14 @@ failed echo.
    in ADO since the create, and this command must not fight that — assignment is
    proposed at an item's birth only.
 5. Execute item by item, phases first. After each successful create, IMMEDIATELY Edit
-   the manifest: `item.ado = {id, url, lastSyncedAt: <ISO now>}` (then revalidate).
-   After each update, bump `lastSyncedAt`. On any failure: report it, keep what
-   succeeded, stop — a re-run continues where it left off. Per item:
+   the manifest: `item.ado = {id, url, lastSyncedAt: <ISO now>, origin: "created"}`
+   (then revalidate).
+   After each update, bump `lastSyncedAt` — and **never touch `origin` on an
+   update**: where a card came from does not change, and rewriting it on the first
+   push after an import would erase the only record that it was somebody else's.
+   A link that carries no `origin` (written before the field existed) stays without
+   one rather than being backfilled with a guess. On any failure: report it, keep
+   what succeeded, stop — a re-run continues where it left off. Per item:
    - **State** per `stateMap` (defaults above; `null` = skip State), applied as a
      SECOND call after the create (only the initial state is settable at creation);
      a rejected state degrades per tracker-sync.md and never aborts the batch.
@@ -214,7 +251,9 @@ re-pull imports nothing. Never modify ADO during `pull`.
    (AskUserQuestion, multi-select) which to import.
 4. Import each selected item as a manifest bug following `/audit:bug add`'s shape and the
    conventions doc: next `BUG-<n>`, `status: "open"`, title/description from the work
-   item, `repro` from its repro steps, `ado: {id, url, lastSyncedAt}`. `reportedBy`
+   item, `repro` from its repro steps,
+   `ado: {id, url, lastSyncedAt, origin: "imported"}` — the card was made by
+   somebody else and a later push has to be able to say so. `reportedBy`
    comes from the work item's assignee (creator when unassigned) via **reverse lookup**
    in `meta.ado.identityMap`: when some entry's VALUE matches that ADO identity
    (case-insensitively), write the LEDGER identity — the key — so the imported bug's
@@ -250,8 +289,11 @@ the live plan without `/audit:propose materialize`.
 5. Import each selected PBI as ONE parked proposal (conventions doc → Proposals):
    next `PROP-<n>`, `origin: "ado:sprint <iterationPath>"`, `payload.phase` = a
    synthesized phase with the next reserved `P<n>` id, title from the PBI,
-   `ado: {id, url, lastSyncedAt, iterationPath}` on the phase, child tasks from the
-   PBI's child work items (each carrying its own `ado` link, `files: []`), and a
+   `ado: {id, url, lastSyncedAt, iterationPath, origin: "imported"}` on the phase
+   (the proposal's own `origin` above says which SPRINT it came from; `ado.origin`
+   says who made the CARD, and both are needed once a push starts writing to it),
+   child tasks from the PBI's child work items (each carrying its own `ado` link
+   with `origin: "imported"`, `files: []`), and a
    description noting `imported from ADO — scope files/tests before running`. Orphan
    sprint tasks (no selected parent) group under one final proposal. Revalidate.
 6. Report + handoff: `/audit:propose list` → `materialize`.
@@ -265,9 +307,24 @@ Read-only, no ADO writes, no manifest writes.
 2. Count linked vs unlinked bugs/tasks/phases.
 3. For linked items, batch-fetch the ADO side (`az boards work-item show`) and print:
    `manifest id | title | manifest status | ado id | ado state | drift?` — drift = the
-   `stateMap`-mapped state differs from the ADO state (fix by running `push`, or by
-   updating the manifest if ADO is the truth). Add sprint drift where stamped:
+   `stateMap`-mapped state differs from the ADO state. Add sprint drift where stamped:
    `ado.iterationPath` ≠ the currently-resolved iteration → `sprint drift (push restamps)`.
+
+   **A difference has THREE readings, not two**, and the third is the common one on
+   a board several teams write to: somebody else moved this card after we last
+   touched it, and neither side is wrong. Do not decide that here — run the same
+   door push step 2c runs (`explain-ado-drift.py <manifest> --items <fetched.json>`,
+   `--json` when you want to compose the table yourself) and print what it answers
+   in the `drift?` cell:
+   - `local ahead — push is the fix` (nobody wrote after our `lastSyncedAt`);
+   - `external (<who>, <when>) — push would overwrite it`, naming the writer from
+     `System.ChangedBy` so the reader can go and ask that person;
+   - `unknown — never synced or unstamped`, which draws **no** suggested action:
+     the basis for one is missing, and saying so is the answer.
+
+   Append each row's card provenance from `ado.origin` — `created here` /
+   `imported from ADO` / `origin unknown` — because "we made this card" and "we
+   adopted somebody's card" are different things to be about to write to.
 4. **Identity mapping** (only when `meta.ado.identityMap` has entries): per item, append
    one compact `owner` column to the table above, resolving the item's phase-area owner
    exactly as push step 4 does — `<ledger id> → <mapped ADO identity>` when mapped,
@@ -287,7 +344,13 @@ Read-only, no ADO writes, no manifest writes.
    this line is where that shows up. Read-only as the rest of `status` is — it reports,
    it never fixes.
 
-6. Suggest the next action (`push` / `pull`) based on what drifted.
+6. Suggest the next action (`push` / `pull`) **per drift class, not per
+   difference** — that distinction is the whole point of step 3. `local ahead` →
+   `push`. `external` → say what each choice costs (`push` overwrites their change,
+   editing the manifest keeps it) and let the human pick; recommending `push` here
+   would be recommending that somebody's work be overwritten sight unseen.
+   `unknown` → suggest nothing and say why, then close with the origin split so a
+   reader knows how much of this board is even ours.
 
 ## Non-goals (say no when asked)
 

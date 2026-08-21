@@ -627,6 +627,14 @@
             "null"
           ],
           "description": "The iteration this item was last stamped into by /audit:sync (sprint mode 'current'). Recorded so status can report sprint drift after a rollover. Absent until a sprint-mode push."
+        },
+        "origin": {
+          "enum": [
+            "created",
+            "imported",
+            null
+          ],
+          "description": "Where this work item came from: 'created' = /audit:sync push created it, 'imported' = pull adopted a card somebody else made. ABSENT/null = unrecorded (a link written before this field existed, or by hand) and every surface says so rather than assuming 'created' — putting this plugin's name on somebody else's card is the one wrong answer available here. Two values because only two code paths write one; the provenance tag cannot answer this question, since meta.ado.tag is merged onto every item a push TOUCHES. Read by /audit:sync (the push plan says whether it is about to write to a card it did not create) and by /audit:doctor's 'ado links' row."
         }
       }
     },

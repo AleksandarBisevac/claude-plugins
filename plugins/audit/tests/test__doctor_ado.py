@@ -213,6 +213,28 @@ def _cases(check):
               run(_manifest(ado={"organization": "o", "project": "p"},
                             task_link={"id": "7"})), "ado links"))
 
+    # --- the origin split, which is answerable offline -------------------------
+    rep = run(_manifest(ado={"organization": "o", "project": "p"},
+                        task_link={"id": 1, "origin": "created"},
+                        phase_link={"id": 2, "origin": "imported"},
+                        bug_link={"id": 3}))
+    _links = _detail(rep, "ado links")
+    check("da21 the row splits the links by ORIGIN, so a reader can see how many "
+          "of these cards this plugin made and how many it adopted - the "
+          "provenance TAG cannot answer that, because a push merges it onto every "
+          "item it touches: %r" % (_links,),
+          "1 created here" in _links and "1 imported" in _links)
+    check("da22 ...and the UNRECORDED ones are counted out loud. A link written "
+          "before `origin` existed is not 'created' - defaulting it would put this "
+          "plugin's name on a card somebody else made, which is the one wrong "
+          "answer available here: %r" % (_links,),
+          "1 of unknown origin" in _links
+          and "link written before the field existed" in _links)
+    check("da23 the three figures account for every counted link, so none can be "
+          "quietly dropped into a category that is not printed",
+          "3 phase(s)" not in _links
+          and "1 task(s), 1 bug(s), 1 phase(s) linked" in _links)
+
 
 def _selftest():
     return _harness.run(_cases)

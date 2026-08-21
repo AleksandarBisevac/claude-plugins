@@ -82,6 +82,16 @@ BUG_ID_RE = re.compile(r"^BUG-\d+$")
 # (pre-0.33 wrote whatever it liked here) stay warnings-at-most.
 PROPOSAL_STATUS = ("proposed", "materialized", "dropped")
 PROP_ID_RE = re.compile(r"^PROP-\d+$")
+# v0.44 `ado.origin`: where a linked work item came from. TWO values, because only
+# two code paths write one — a push CREATE and a pull import — and a value nothing
+# writes is a value nothing tests. ABSENT is the third state and is deliberately
+# not spelled here: it means unrecorded, every surface says so, and defaulting it
+# to "created" would put this plugin's name on a card somebody else made. The
+# vocabulary lives at this layer because `_ado_drift` (L2) and this validator both
+# need it, and a second tuple over there would be a second answer.
+ADO_ORIGIN_CREATED = "created"
+ADO_ORIGIN_IMPORTED = "imported"
+ADO_ORIGIN = (ADO_ORIGIN_CREATED, ADO_ORIGIN_IMPORTED)
 
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.
@@ -445,6 +455,16 @@ def _check_ado(obj, where, findings):
                         or not isinstance(ado.get("id"), int)):
         findings.append("%s: ado.id must be an integer work-item id, got %r"
                         % (where, ado.get("id")))
+    # A FINDING rather than a warning, and not for symmetry: a misspelled origin
+    # reads as "unrecorded" everywhere downstream, which is the same silence a
+    # pre-0.44 link produces. So the one wrong value here is indistinguishable
+    # from the honest absence unless the validator refuses it. `null` and absent
+    # both mean unrecorded and are left alone.
+    if ado.get("origin") is not None and ado.get("origin") not in ADO_ORIGIN:
+        findings.append("%s: ado.origin must be one of %s (or absent/null for "
+                        "unrecorded), got %r"
+                        % (where, ", ".join(repr(v) for v in ADO_ORIGIN),
+                           ado.get("origin")))
 
 
 def _unknown_keys(obj, known, where, warnings):

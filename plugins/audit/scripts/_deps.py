@@ -205,6 +205,12 @@ LAYERS = (
      #   `_manifest_typos`      the did-you-mean detectors (model ids, skill names)
      #   `_manifest_crossrefs`  ids, references, cycles, fileIndex, bugs, proposals
      "_manifest_phases", "_manifest_ado", "_manifest_typos", "_manifest_crossrefs",
+     # `_ado_drift` answers who wrote a linked work item last, and whether pushing
+     # would overwrite them. It is L2 rather than L1 for one concrete reason: it
+     # reuses `_usage_core.parse_ts` (L1) instead of writing the tree's FOURTH ISO
+     # parser, and a same-layer edge is not a downward edge. Its consumers are the
+     # `explain-ado-drift` door and `_doctor_ado` (L3), both above it.
+     "_ado_drift",
      # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
      # readiness, the submodule preflight and the gate. Same reasoning and the same
      # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
@@ -378,6 +384,12 @@ LAYERS = (
      # `guard-secrets-read` refuses (F20/F22), so the check would be blocked
      # exactly where it matters. It reads `_ado_conventions` at L1 and nothing else.
      "check-ado-item",
+     # `explain-ado-drift` is the same shape one question over: it carries
+     # `_ado_drift` (L2) to `/audit:sync`'s status table and push plan. NOT a gate
+     # though - it exits 0 whatever the answer, because "somebody else moved this
+     # card" is the normal state of a board with several teams, and a non-zero exit
+     # would label it an error and be switched off within a day.
+     "explain-ado-drift",
      # `resolve-branch` is the door onto `_branch`: which branch a phase forks
      # from, and what it is called. A command rather than a prose instruction
      # because a TEMPLATE has cases prose cannot carry, and rather than a

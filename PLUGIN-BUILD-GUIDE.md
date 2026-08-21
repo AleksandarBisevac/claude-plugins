@@ -90,6 +90,8 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
           _ado_conventions.py             # meta.ado.conventions: what an item must look like to belong
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
+          _ado_drift.py                   # who wrote a linked work item last, and whether pushing overwrites them
+          explain-ado-drift.py            # the door onto it: the status table's third reading, and push's plan line
           resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
           repair-commits.py               # put the manifest back to the truth after a history rewrite
           _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate
@@ -241,6 +243,7 @@ L1:
   _usage_core -> _output
 
 L2:
+  _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _output, _policy
   _doctor_report -> _loader, _output
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
@@ -258,7 +261,7 @@ L2:
   _usage_spend -> _output, _usage_core
 
 L3:
-  _doctor_ado -> _doctor_report, _output
+  _doctor_ado -> _ado_drift, _doctor_report, _output
   _doctor_hygiene -> _locks, _output
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output
@@ -302,6 +305,7 @@ L7:
   audit-task -> _locks, _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _output
+  explain-ado-drift -> _ado_drift, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
   materialize-proposal -> _manifest_io, _output, _proposals
@@ -1094,6 +1098,44 @@ because there is no standard to meet, and it *says* so ("nothing was checked") r
 printing the clean message; `--json` carries the same distinction as `hasStandard`, so a
 script can tell them apart too. A caller that cannot would read an unconfigured board as a
 conforming one, which is the quiet failure the whole feature exists to prevent.
+
+### `plugins/audit/scripts/manifest/_ado_drift.py`
+Who wrote a linked work item **last**, and whether pushing would overwrite them (layer 2).
+`/audit:sync status` used to offer a difference two readings — our side is right (`push`), or
+ADO is right (edit the manifest). On a board with several teams and several legitimate sources
+of work items, the commonest reading is the third: somebody else moved this card after we last
+touched it, and neither side is wrong.
+
+**It needs no identity, and that is the design.** A push writes ADO first and the manifest's
+`lastSyncedAt` second, so for a write of our own `System.ChangedDate <= lastSyncedAt` always
+holds. The question is therefore not *who* wrote — the plugin does not know its own ADO
+identity — but *whether anyone wrote after us*. `System.ChangedBy` rides along as information
+for the reader, never as an input to the comparison. `DEFAULT_TOLERANCE_S` absorbs the skew
+between the local clock that stamped `lastSyncedAt` and ADO's server clock that stamped
+`ChangedDate`; without a margin our own write reads as somebody else's.
+
+**Two orthogonal answers, deliberately not one enum.** `class` is about time (`local_ahead`,
+`external_change`, `unknown`) and `drift` is about state. Collapsing them would let "in sync"
+hide the fact that somebody else moved the card into the state we happened to want. The
+manifest-status → ADO-state map is **not** reproduced here: it lives in `commands/sync.md`, so
+`mapped` is an input, and omitting it makes a row say the comparison was not supplied rather
+than imply agreement. `origin_of` answers the other half — a card this plugin created versus
+one adopted through `pull` — which the provenance tag cannot, since `meta.ado.tag` is merged
+onto every item a push touches.
+
+### `plugins/audit/scripts/manifest/explain-ado-drift.py`
+The door onto `_ado_drift` (layer 7), same shape as `check-ado-item.py` over
+`_ado_conventions`: a real command because the caller is orchestrator prose reaching Python
+through Bash, and a `python3 -c` one-liner naming a source path is what `guard-secrets-read`
+refuses.
+
+**Not a gate, and the exit codes say why.** `check-ado-item.py` exits 1 to mean "do not create
+this item". There is no refusal here: on a shared board "somebody else moved this card" is
+often the normal case, so a non-zero exit would label a healthy state an error and be switched
+off within a day. 0 means the question was answered, 2 means the input could not be read — a
+payload that is not a list is exit 2 rather than an empty table, because a table of zero rows
+reads as a clean board. The caller keeps its existing confirm gate; this only makes sure that
+gate is asked with the truth in hand.
 
 ### `plugins/audit/scripts/manifest/_ado_conventions.py`
 `meta.ado.conventions` — what a work item must look like to **belong** on a board (layer 1).

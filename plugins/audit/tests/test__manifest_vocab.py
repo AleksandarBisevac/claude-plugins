@@ -123,6 +123,42 @@ def _cases(check):
           f_ok == [] and any("integer work-item id" in x for x in f_false),
           (f_ok, f_false))
 
+    # `ado.origin` (v0.44): where the card came from. THREE states, and the third
+    # one is the reason this is a finding rather than a warning.
+    _origin_findings = {}
+    for _label, _link in (("created", {"id": 1, "origin": "created"}),
+                          ("imported", {"id": 1, "origin": "imported"}),
+                          ("absent", {"id": 1}),
+                          ("explicit null", {"id": 1, "origin": None}),
+                          ("typo", {"id": 1, "origin": "Created"}),
+                          ("wrong type", {"id": 1, "origin": 1})):
+        _f = []
+        M._check_ado({"ado": _link}, "task T", _f)
+        _origin_findings[_label] = _f
+    check("mv12c a MISSPELLED `ado.origin` is a finding, because downstream it "
+          "reads exactly like the honest absence - 'unrecorded' - so the one "
+          "wrong value here would be invisible unless the validator refuses it: "
+          "%r" % (_origin_findings["typo"],),
+          len(_origin_findings["typo"]) == 1
+          and "ado.origin" in _origin_findings["typo"][0]
+          and "'created'" in _origin_findings["typo"][0])
+    check("mv12d ...a non-string is refused the same way, so a number cannot "
+          "slip through the membership test",
+          len(_origin_findings["wrong type"]) == 1)
+    check("mv12e ...and BOTH real values plus absent plus explicit null pass - "
+          "the allow half, without which this check could be 'fixed' by refusing "
+          "everything: %r"
+          % ({k: _origin_findings[k] for k in ("created", "imported", "absent",
+                                               "explicit null")},),
+          _origin_findings["created"] == [] and _origin_findings["imported"] == []
+          and _origin_findings["absent"] == []
+          and _origin_findings["explicit null"] == [])
+    check("mv12f the vocabulary is a tuple of exactly the two values a code path "
+          "writes, and `null`/absent is NOT in it - absence is a state, not a "
+          "member: %r" % (M.ADO_ORIGIN,),
+          M.ADO_ORIGIN == ("created", "imported")
+          and None not in M.ADO_ORIGIN)
+
     # --- the vocabulary, and the agreement about it ---
     check("mv13 STATUS carries both terminal words: `cancelled` is an answer, "
           "not a synonym for done",

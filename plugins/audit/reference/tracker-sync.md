@@ -13,7 +13,14 @@ the ADO binding — the only place ADO-specific mechanics belong.
 
 The manifest side of every link is the item's per-tracker field — `ado` today —
 holding `{id, url, lastSyncedAt}` plus an optional `iterationPath` stamp (sprint
-mode). The **id type is per-tracker**: ADO ids are integers; a JIRA binding would
+mode) and an `origin` — `created` when the push made the item, `imported` when a
+pull adopted one somebody else made. `origin` is written once, at the link's birth,
+and never rewritten: where a card came from does not change. Absent means
+unrecorded (a link older than the field, or hand-written) and every surface **says
+so** rather than assuming `created` — claiming this tool made somebody else's card
+is the one wrong answer available here. The provenance tag cannot stand in for it:
+`tag` is merged onto every item a push TOUCHES, so it proves contact, not
+authorship. The **id type is per-tracker**: ADO ids are integers; a JIRA binding would
 carry string keys (`PROJ-123`) in its own `jira` field with its own `$def`. Links are
 written ONLY by the sync command (and `lastSyncedAt` bumps by the echo) — never by
 hand. Links are never deleted: disabling the connector freezes them.
@@ -48,6 +55,17 @@ Every binding honors all five, in this order of importance:
    (manifest-conventions.md) and revalidate after every mutation.
 5. **One direction per invocation** — no two-way merge in one run; conflicts stay
    human-visible.
+6. **Classify before you overwrite.** A tracker item that differs from the manifest
+   has three readings, not two: our side moved, their side moved, or there is no
+   basis to say. The third party is the normal case on a board with several teams,
+   so a push says — before its confirm — how many updates would overwrite a change
+   made after the link's own `lastSyncedAt`, and whose card each one is. This needs
+   no identity of ours: a push writes the tracker first and `lastSyncedAt` second,
+   so for our own write the tracker's change stamp is never the later of the two.
+   A binding must therefore keep whatever the tracker's "last changed at / by"
+   fields are called (ADO: `System.ChangedDate` / `System.ChangedBy`) when it
+   fetches for the diff — they cost nothing extra and they are the basis for the
+   only honest thing this step can say.
 
 ### The echo contract
 

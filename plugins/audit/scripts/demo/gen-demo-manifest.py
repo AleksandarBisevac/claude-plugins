@@ -530,11 +530,18 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         # can report sprint DRIFT after a rollover — which it cannot do from
         # `meta.ado.iterationPath`, because that is the mode, not the stamp.
         "iterationPath": "%s\\Sprint 12" % repo,
-        "lastSyncedAt": "2026-08-06T12:00:00Z"}
+        "lastSyncedAt": "2026-08-06T12:00:00Z",
+        # Where the card came from. BOTH values appear across the fixture's three
+        # links (this one and the task below were created by a push; the bug's was
+        # imported), because a state the fixture does not carry is a state no
+        # surface renders and no gate can assert — the reasoning that put a
+        # `dropped` proposal in here too.
+        "origin": "created"}
     phases[0]["tasks"][0]["ado"] = {
         "id": 4711,
         "url": "https://dev.azure.com/demo-org/%s/_workitems/edit/4711" % repo,
-        "lastSyncedAt": "2026-08-06T12:05:00Z"}
+        "lastSyncedAt": "2026-08-06T12:05:00Z",
+        "origin": "created"}
 
     # After the loop and outside it: the lease draws nothing from `rng`, so the
     # default run's bytes cannot move whichever way this flag is set.
@@ -987,7 +994,12 @@ def _bugs(phases):
             # /audit:sync writes for the tracker's own bug type.
             "ado": {"id": 4722,
                     "url": "https://dev.azure.com/demo-org/demo/_workitems/edit/4722",
-                    "lastSyncedAt": "2026-08-06T12:10:00Z"},
+                    "lastSyncedAt": "2026-08-06T12:10:00Z",
+                    # `imported`: a bug somebody else filed on the board, adopted
+                    # by `pull bugs`. The other two links say `created`, so the
+                    # fixture carries both origins and the doctor's split cannot
+                    # be asserted from a single-value fixture that proves nothing.
+                    "origin": "imported"},
         })
         running["bugId"] = "BUG-3"
     if closed is not None:
