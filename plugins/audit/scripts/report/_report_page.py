@@ -40,7 +40,6 @@ This module carries no `--selftest` of its own any more; its cases live in
 fails if it ever grows an `import _loader` or a `".py"` literal.
 """
 import base64
-import json
 import os
 import sys
 
@@ -120,23 +119,12 @@ _usage_section = _report_usage._usage_section
 render_md = _report_md.render_md
 
 
-def _plugin_version():
-    """The version of the plugin that rendered this file, or '' if unknown.
-
-    A report is a file that outlives the tree it came from: it gets mailed, put in
-    a CI artifact, opened next week. When someone says a control does not work,
-    the first thing worth knowing is which renderer wrote the page in front of
-    them — and until now nothing on the page could answer that. Best-effort by
-    construction: a missing or malformed plugin.json costs the stamp, never the
-    report.
-    """
-    try:
-        with open(os.path.join(_output.PLUGIN_ROOT, ".claude-plugin",
-                               "plugin.json"), encoding="utf-8") as fh:
-            v = json.load(fh).get("version")
-        return v if isinstance(v, str) and v.strip() else ""
-    except Exception:
-        return ""
+# The version of the plugin that rendered this file. A report outlives the tree it
+# came from - mailed, parked in a CI artifact, opened next week - so when someone
+# says a control does not work, the first thing worth knowing is which renderer
+# wrote the page in front of them. An ALIAS, not a copy: the panel stamps the same
+# fact and two implementations would be two answers the first time one was fixed.
+_plugin_version = _output.plugin_version
 
 
 # --- report vocab ---------------------------------------------------------------
@@ -222,7 +210,7 @@ def _held_by(ph, done_ids):
 
 
 # --- phase rows ----------------------------------------------------------------
-def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners):
+def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None):
     """One phase's rows — the group row, its task-filter row and its task rows.
 
     Extracted from render_html's former inline loop when segmentation (D1)
@@ -322,7 +310,7 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners):
                e(t.get("id")), e(t.get("title")),
                _chip(t.get("status")),
                "".join(cells[c]() for c in cols)))
-        out.append(_detail_row(t, ph, owners, ncol, seg, pid))
+        out.append(_detail_row(t, ph, owners, ncol, seg, pid, workers))
     return "\n".join(out)
 
 
@@ -587,7 +575,7 @@ def _table_tools(manifest, summary):
            _filter_panel(manifest)))
 
 
-def _phases_block(manifest, summary, owners):
+def _phases_block(manifest, summary, owners, workers=None):
     """One collapsible table: each phase is a group-row (click to expand its task
     rows). Default-collapsed via _SCRIPT; with JS off every row is visible."""
     record = ("phases", "Phases", len(summary["phases"]), False)
@@ -615,7 +603,8 @@ def _phases_block(manifest, summary, owners):
                     "".join('<th data-col="%s">%s</th>' % (e(c), colhead.get(c, e(c)))
                             for c in cols)))
     done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
-    parts += _segment_rows(manifest, summary, ncol, cols, done_ids, owners)
+    parts += _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
+                           workers)
     # Its own <tbody>, so `tbody tr:last-child` keeps meaning the last DATA row —
     # the table's rounded bottom corner and its missing final rule both hang off
     # that selector, and a permanently-present hidden row in the main body would
@@ -628,15 +617,12 @@ def _phases_block(manifest, summary, owners):
                  "No phase matches these filters."
                  '<button type="button" class="btn" data-clear>Clear filters'
                  "</button></td></tr>"
-                 '<tr class="outside" data-outside hidden><td colspan="%d">'
-                 '<span data-outside-n></span>'
-                 '<button type="button" class="btn" data-viewall>Show all phases'
-                 "</button></td></tr>"
-                 "</tbody></table></div></section>" % (ncol, ncol))
+                 "</tbody></table></div></section>" % (ncol,))
     return parts, [record]
 
 
-def _segment_rows(manifest, summary, ncol, cols, done_ids, owners):
+def _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
+                  workers=None):
     """The table body: one seghead per segment, then that segment's phase rows.
 
     D1: the table renders in SEGMENTS — active (in_progress/blocked) first, then
@@ -680,7 +666,8 @@ def _segment_rows(manifest, summary, ncol, cols, done_ids, owners):
         out.append('<tr class="seghead" data-seg="%s"><td colspan="%d">%s%s'
                    "</td></tr>" % (seg, ncol, head, exports))
         for ph, psum in by_seg[seg]:
-            out.append(_phase_rows(ph, psum, seg, ncol, cols, done_ids, owners))
+            out.append(_phase_rows(ph, psum, seg, ncol, cols, done_ids, owners,
+                                   workers))
     return out
 
 
@@ -834,7 +821,8 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
             _topbar_block(manifest, meta, summary, usage, owners),
             _invalid_block(summary),
             _gate_block(meta, summary, verdict),
-            _phases_block(manifest, summary, owners),
+            _phases_block(manifest, summary, owners,
+                          (usage or {}).get("taskAuthors")),
             _usage_block(usage),
             _bugs_block(manifest, summary),
             _ready_block(manifest, summary),

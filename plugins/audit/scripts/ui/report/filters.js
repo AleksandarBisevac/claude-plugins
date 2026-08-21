@@ -111,7 +111,7 @@
     const narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
     const anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
-    let visP = 0, visT = 0, totT = 0, hiddenByView = 0;
+    let visP = 0, visT = 0, totT = 0;
     const segVis = {};   // visible phases per segment, for the seghead painter
     phaseRows.forEach((pr) => {
       const pid = pr.getAttribute('data-phase');
@@ -145,7 +145,6 @@
                   && inView(pr.__seg);
       // Would this phase have shown in ALL? Counted before the view is applied,
       // so the note below can say what the reader is not seeing.
-      if (matchAll && !showP) hiddenByView++;
       pr.style.display = showP ? '' : 'none';
       if (showP) {
         visP++; visT += nMatch;
@@ -173,7 +172,12 @@
         // A detail row is visible only when its task is AND it was opened. Kept
         // open across a filter on purpose — a reader who opened a task and then
         // narrowed the table has not changed their mind about that task.
-        if (t.__detail) t.__detail.hidden = !(vis && t.__open);
+        if (t.__detail) {
+          t.__detail.hidden = !(vis && t.__open);
+          // A filter can reveal a detail row that was never toggled open by hand,
+          // and the trim control has to be decided there too.
+          if (!t.__detail.hidden) syncClamp(t.__detail);
+        }
       });
       // "3 of 12 match" on a row that is closed and hiding its own evidence. Not
       // shown at rest, and not shown when everything matched — "12 of 12" is a
@@ -202,23 +206,12 @@
     // Filtered down to nothing, the table was an empty frame with no explanation
     // and no way back except undoing each control by hand.
     if (norow) norow.style.display = (anyFilter && visP === 0) ? 'table-row' : 'none';
-    // What the view is keeping off screen, said plainly, with the way to see it.
-    // Silent when the view is already `all` — there is nothing outside it.
-    if (outsideRow) {
-      const show = hiddenByView > 0 && viewMode !== 'all';
-      outsideRow.hidden = !show;
-      outsideRow.style.display = show ? 'table-row' : 'none';
-      if (show && outsideN) {
-        // Through the shared `plural`, giving BOTH halves: the noun and the verb
-        // agree together here, which no suffix rule produces and which is the
-        // whole reason that helper takes a `many` at all. It was written to serve
-        // this clause and then left with no caller in the report — a promotion
-        // justified by a reader that did not exist yet.
-        outsideN.textContent = plural(hiddenByView,
-          'phase matches outside this view',
-          'phases match outside this view') + ' \u2014 ';
-      }
-    }
+    // There is deliberately NO "N phases match outside this view" row here.
+    // It was removed on the reader's second request: the View select already
+    // offers "All phases", so the row spent a table row telling someone who had
+    // just chosen a narrower view that the view was narrow. The counter above
+    // already says "N / M phases" whenever anything is filtering, which is the
+    // same fact without a control that undoes the reader's own choice.
     // The toolbar copy appears the moment anything is filtering, so there is a way
     // back that does not depend on the table having rows left to draw it in.
     clearBtns.forEach((b) => { b.hidden = !anyFilter; });

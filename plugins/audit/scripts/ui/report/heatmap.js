@@ -433,10 +433,47 @@
     if (!row || !row.__detail) return;
     row.__open = !row.__open;
     row.__detail.hidden = !row.__open;
+    syncClamp(row.__detail);
     btn.setAttribute('aria-expanded', row.__open ? 'true' : 'false');
     btn.setAttribute('aria-label', (row.__open ? 'Hide' : 'Show')
       + ' details for ' + (btn.getAttribute('data-dfor') || 'this task'));
   }
+
+  /**
+   * Show the trim control only when there is something trimmed.
+   *
+   * MEASURED, not guessed. Whether five lines cuts a given `technical` off
+   * depends on the width it is read at, so the server ships the button hidden
+   * and this decides. Once the box is open the button must stay - it is the only
+   * way back - which is why `open` short-circuits the overflow test instead of
+   * being folded into it.
+   *
+   * @param {HTMLElement} detail a task's detail row, or null
+   * @returns {void}
+   */
+  function syncClamp(detail) {
+    if (!detail) return;
+    Array.from(detail.querySelectorAll('[data-clamp]')).forEach((box) => {
+      const btn = box.parentNode.querySelector('[data-clampmore]');
+      if (!btn) return;
+      const open = box.classList.contains('open');
+      btn.hidden = !open && box.scrollHeight <= box.clientHeight + 2;
+      btn.textContent = open ? 'Show less' : 'Show more';
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
+  // One delegated listener rather than one per task: a plan with forty phases
+  // carries hundreds of these, and the report already made this choice for its
+  // heatmap marks.
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest && ev.target.closest('[data-clampmore]');
+    if (!btn) return;
+    const box = btn.parentNode.querySelector('[data-clamp]');
+    if (!box) return;
+    box.classList.toggle('open');
+    syncClamp(btn.closest('tr'));
+  });
 
   Array.from(document.querySelectorAll('.dtoggle')).forEach((b) => {
     b.addEventListener('click', (ev) => toggleTaskDetail(b, ev));
@@ -492,6 +529,3 @@
     viewSel.addEventListener('change', () => setView(viewSel.value));
   }
 
-  Array.from(document.querySelectorAll('[data-viewall]')).forEach((b) => {
-    b.addEventListener('click', () => setView('all'));
-  });

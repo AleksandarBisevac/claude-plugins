@@ -54,6 +54,7 @@ and is what CI's sweep skips by, so it keeps working with no suite here at all.
 """
 
 import ast
+import json
 import os
 import sys
 
@@ -190,6 +191,27 @@ def _py_dirs(root, refresh):
                for _rel, path in script_files(refresh=refresh, root=root))
     subs.discard(base)
     return [base] + sorted(subs)
+
+
+def plugin_version():
+    """The installed plugin's version, or "" when it cannot be read.
+
+    Lives here because BOTH surfaces stamp it and the promotion rule says two
+    readers move up: the report stamps the file it rendered, the panel stamps the
+    build serving the page. One reader would have stayed put.
+
+    Best-effort by construction: a missing or malformed plugin.json costs the
+    stamp and never the page. A version that cannot be read is reported as
+    absent rather than as a guess, and the callers omit the stamp entirely -
+    a claim with no basis is not worth printing.
+    """
+    try:
+        path = os.path.join(PLUGIN_ROOT, ".claude-plugin", "plugin.json")
+        with open(path, "r", encoding="utf-8") as fh:
+            version = json.load(fh).get("version")
+        return version if isinstance(version, str) and version.strip() else ""
+    except Exception:
+        return ""
 
 
 def install_path(refresh=False, root=None):

@@ -146,6 +146,31 @@ def load_usage(manifest, manifest_path, project_dir=None):
                         "msgs": v["msgs"]}
                     for k, v in agg.items()}
 
+        # Who the LEDGER recorded working on each task, strongest first.
+        #
+        # This is the only per-task identity the plugin actually has. The manifest
+        # carries no assignee, and `_report_html._detail_row` says why inventing
+        # one there would be wrong - it would be a claim the file does not make.
+        # A metered turn, though, records BOTH its author and its taskId, so this
+        # answers "who did this" with evidence instead of with a field somebody
+        # was supposed to remember to fill in.
+        #
+        # Ordered by spend rather than alphabetically: on a task two people
+        # touched, the one who did most of it is the one to ask first.
+        task_spend = {}
+        for r in rows:
+            tid = r.get("taskId")
+            who = r.get("author")
+            if not tid or not who:
+                continue
+            n = sum(int(r.get(k) or 0) for k in ul.TOKEN_KEYS)
+            task_spend.setdefault(tid, {})
+            task_spend[tid][who] = task_spend[tid].get(who, 0) + n
+        task_authors = {}
+        for tid, spend in task_spend.items():
+            ranked = sorted(spend.items(), key=lambda kv: (-kv[1], kv[0]))
+            task_authors[tid] = [who for who, _ in ranked]
+
         phase_model = {}
         for r in rows:
             pid = r.get("phaseId") or "--"
@@ -175,6 +200,7 @@ def load_usage(manifest, manifest_path, project_dir=None):
             "byAuthor": slim(by_author),
             "byAgent": slim(ul.aggregate(rows, "agent")),
             "phaseModel": phase_model,
+            "taskAuthors": task_authors,
             "phaseTitles": titles,
             # Through `_report_html._tasks_by_id`, which IS `_manifest_io`'s
             # index (aliased, not copied — a case in that file pins the identity).

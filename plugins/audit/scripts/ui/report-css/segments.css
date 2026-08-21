@@ -31,9 +31,6 @@ tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
    screen is the toolbar's View select now, and a segment that ALSO hid itself
    was a second gate saying something different. The row below is what replaced
    the one thing the toggle did well: it said the rows were there. */
-tr.outside td{background:var(--surface-2);color:var(--muted);font-size:.78rem;
-  padding:.5rem .75rem;text-align:center}
-tr.outside .btn{margin-left:.5rem}
 /* The advisory owner suffix on an area tag (D4): same chip, quieter voice —
    the tag is the identifier, the owner is a note about it. */
 .area-tag .aown{font-weight:400;letter-spacing:normal;text-transform:none;

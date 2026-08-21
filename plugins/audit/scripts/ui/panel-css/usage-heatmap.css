@@ -50,5 +50,7 @@
    draws, its label still says something ("April 2026" against "All data"), and
    the mark plus its tip explain why the grid does not change. Dimming alone
    would read as "broken"; this is the same weight as a muted label. */
-.uhmnav .filt.uhmsame{opacity:.62}
-.uhmnav .filt.uhmsame.on{opacity:1}
+/* Why the granularity ladder is short. A gap where Year and Month used to sit is
+   not an explanation, and the control that would have carried a tooltip is the very
+   thing that is absent — so the reason is plain text under the ladder. */
+.uhmwhy{font-size:.75rem;margin:calc(var(--sp-1) * -1) 0 var(--sp-2)}

@@ -164,7 +164,7 @@ def raw_template(cache=True):
 # some at import (baked once into the module-level UI_HTML), one per request.
 _IMPORT_TIME_PLACEHOLDERS = (
     "/*__THEME_TOKENS__*/", "__LABELS__", "__SETTINGS__", "__FIELD_HELP__",
-    "__COMP_HELP__", "__CFG_ENUMS__",
+    "__COMP_HELP__", "__CFG_ENUMS__", "__AUDIT_VERSION__",
 )
 _REQUEST_TIME_PLACEHOLDERS = ("__AUDIT_TOKEN__", "__AUDIT_PROJECT__")
 

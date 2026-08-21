@@ -138,7 +138,8 @@ const FEATURE_ABSENT = [
              'every term names its task id', 'every definition says why',
              'tasks of tagged phases wear the area chips'] },
   { note: 'no status chips in this report',
-    covers: ['searching', '...and names how many', '...and the one press shows them',
+    covers: ['no matches-outside-this-view row is emitted any more',
+             '...and choosing All phases from the View select reaches them instead',
              '...with the search still applied'] },
   // The heatmap's absence is reported by the calendar block's own else, and it
   // stands for the whole usage payload: without a ledger the report renders no
@@ -155,12 +156,28 @@ const FEATURE_ABSENT = [
   { note: 'a plan with nothing active opens on all phases',
     covers: ['on load the archived phases are off screen',
              '...and the view rides the shareable fragment',
-             'searching', '...and names how many',
-             '...and the one press shows them',
+             'no matches-outside-this-view row is emitted any more',
+             '...and choosing All phases from the View select reaches them instead',
              '...with the search still applied'] },
 ];
 
 const CONDITIONAL_EXPECTS = [
+  // The two halves of the ledger-attribution branch, each naming the other. NO
+  // DOUBLE QUOTES in any of these strings: the label extractor stops at one, which
+  // turned an earlier version of this label into the single word "every" - and a
+  // one-word label is a wildcard prefix that reported an unrelated pair as skipped.
+  { label: 'with no ledger authors for any task, no worked-by row is claimed',
+    why: 'runs only on a report whose ledger attributes no task to any author '
+       + '(metering off, or every metered row unattributed)',
+    instead: 'every worked-by name is one the ledger actually recorded' },
+  { label: 'every worked-by name is one the ledger actually recorded',
+    why: 'runs only where the ledger does attribute at least one task, which a '
+       + 'report rendered without a ledger never does',
+    instead: 'with no ledger authors for any task, no worked-by row is claimed' },
+  { label: '...and the check is not vacuous - the report really does list authors '
+         + 'to compare against',
+    why: 'rides the same branch as the name check above it',
+    instead: 'with no ledger authors for any task, no worked-by row is claimed' },
   { label: 'a plan with nothing active opens on all phases',
     why: 'the else-half of the default-view branch: it runs only on a plan whose '
        + 'default view is not "active"',
@@ -388,26 +405,27 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   if (archivedTerm) {
     await page.fill('#audit-q', archivedTerm.trim());
     await page.waitForTimeout(350);
-    const hidden = await page.evaluate(() => {
-      const row = document.querySelector('[data-outside]');
-      return {
-        shown: !!row && !row.hidden && row.style.display !== 'none',
-        text: row ? row.textContent.trim() : '',
-        visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
-          .filter((r) => r.style.display !== 'none').length,
-      };
-    });
-    expect(`searching "${archivedTerm.trim()}" from the Active view says its `
-      + 'matches are elsewhere rather than reporting nothing', hidden.shown, true);
-    expect('...and names how many', /\d+ phase/.test(hidden.text), true);
-    await page.click('[data-viewall]');
+    const hidden = await page.evaluate(() => ({
+      notice: !!document.querySelector('[data-outside]'),
+      visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((r) => r.style.display !== 'none').length,
+    }));
+    // The "N phases match outside this view — Show all phases" row is GONE, on
+    // the reader's second request: the View select already offers "All phases",
+    // so the row spent a table row arguing with a choice the reader had just
+    // made. This asserts its absence rather than trusting the deletion.
+    expect('no matches-outside-this-view row is emitted any more', hidden.notice, false);
+    // What it must NOT cost: the route to those matches. The select is that route,
+    // so the search has to survive switching to All and still find them.
+    await page.selectOption('#audit-view', 'all');
     await page.waitForTimeout(300);
     const after = await page.evaluate(() => ({
       view: document.getElementById('audit-view').value,
       visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
         .filter((r) => r.style.display !== 'none').length,
     }));
-    expect('...and the one press shows them', after.view, 'all');
+    expect('...and choosing All phases from the View select reaches them instead',
+      after.view, 'all');
     expect('...with the search still applied', after.visible > 0, true);
     await page.fill('#audit-q', '');
     await page.waitForTimeout(300);
@@ -483,6 +501,73 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     expect('...and an area that does have an archived phase is still offered, so '
       + 'the rule is not satisfiable by emptying the select',
       !anyArchived || areas.offered.length > 0, true);
+  }
+  // The `technical` trim. The invariant holds on ANY fixture, which is what keeps
+  // this out of the feature-absence table: a box that overflows five lines must
+  // offer the control, and a box that fits must not. Vacuity is impossible - if
+  // no box is trimmed the second half still asserts every button is hidden.
+  {
+    await page.evaluate(() => {
+      document.querySelectorAll('.dtoggle').forEach((b) => b.click());
+    });
+    await page.waitForTimeout(400);
+    const clamp = await page.evaluate(() => [...document.querySelectorAll('[data-clamp]')]
+      .map((box) => {
+        const btn = box.parentNode.querySelector('[data-clampmore]');
+        return { cut: box.scrollHeight > box.clientHeight + 2, shown: btn ? !btn.hidden : null };
+      }));
+    expect('every task detail carries a trim control for its technical prose',
+      clamp.length > 0 && clamp.every((c) => c.shown !== null), true);
+    expect('...offered only where the text is actually cut off, never on prose '
+      + 'that already fits (' + clamp.filter((c) => c.cut).length + ' of '
+      + clamp.length + ' trimmed)', clamp.every((c) => c.shown === c.cut), true);
+    await page.evaluate(() => {
+      document.querySelectorAll('.dtoggle').forEach((b) => b.click());
+    });
+    await page.waitForTimeout(300);
+  }
+  // "worked by" comes from the LEDGER, not the plan. The page carries no per-task
+  // author map for a client to check against - `window.AUDIT_USAGE` is a
+  // deliberately narrow per-day payload and widening it for a test would be the
+  // test changing the product. The oracle on the page is the AUTHOR FILTER, whose
+  // options are exactly the ledger's authors: a name in "worked by" that is not
+  // among them would be this row inventing an assignee, which is the one thing it
+  // exists not to do.
+  {
+    const who = await page.evaluate(() => {
+      const sel = document.getElementById('audit-au-select');
+      // TWO spellings, because the report drops the dropdown when there is only
+      // one author and names them in a line instead - reading only the select made
+      // every real name look invented on a single-author plan.
+      const only = document.getElementById('audit-au-only');
+      const oracle = [
+        sel ? [...sel.options].map((o) => o.value).filter(Boolean).join(' ') : '',
+        only ? only.textContent : '',
+      ].join(' ').trim();
+      const shown = [...document.querySelectorAll('tr.taskdetail')].map((d) => {
+        const cell = [...d.querySelectorAll('.dt-r')]
+          .find((r) => (r.querySelector('.dt-k') || {}).textContent === 'worked by');
+        return cell
+          ? cell.querySelector('.dt-v').textContent
+              .replace(/\(metered on this task\)/, '').trim()
+          : '';
+      }).filter(Boolean);
+      const names = [...new Set(shown.join(', ').split(',').map((x) => x.trim()).filter(Boolean))];
+      return { oracle, named: shown.length, names,
+               unknown: oracle ? names.filter((n) => oracle.indexOf(n) < 0) : [] };
+    });
+    if (!who.named) {
+      expect('with no ledger authors for any task, no worked-by row is claimed',
+        who.names.length, 0);
+    } else {
+      // Static label, detail in the VALUE: the label extractor keeps only the
+      // first literal, so a concatenated label and its entry in the table below
+      // can never agree - and the offending name is worth more than a count.
+      expect('every worked-by name is one the ledger actually recorded',
+        who.unknown.join(', '), '');
+      expect('...and the check is not vacuous - the report really does list '
+        + 'authors to compare against', who.oracle.length > 0, true);
+    }
   }
   // A reload is the one mutation that legitimately throws the armed nodes away,
   // so this re-arms rather than reporting. It is here so that everything below

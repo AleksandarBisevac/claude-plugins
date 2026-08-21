@@ -68,6 +68,21 @@ tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--borde
 .dt-r{display:flex;gap:.6rem;align-items:baseline;padding:.12rem 0;font-size:.86rem}
 .dt-k{flex:0 0 6.2rem;color:var(--muted);font-size:.76rem;text-align:right}
 .dt-v{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;white-space:pre-wrap}
+/* The `technical` trim. `max-height` and NOT line-clamp: the Baseline snapshot
+   lists `line-clamp` as Limited, and an unlisted prefixed spelling is Limited by
+   the same rule, so the supported spelling is the one used here. line-height is
+   pinned on the box so `7.5em` really is five lines rather than five lines at
+   whatever the cascade happens to inherit. */
+.clampbox{display:block;position:relative;overflow:hidden;
+  line-height:1.5;max-height:7.5em}
+.clampbox.open{max-height:none}
+/* The three dots the reader asked for. line-clamp would have supplied them; with
+   max-height the box just stops, so the ellipsis is drawn over the last line and
+   fades out of the detail row's own surface. */
+.clampbox:not(.open)::after{content:"\2026";position:absolute;right:0;bottom:0;
+  padding:0 .15rem 0 1.5rem;
+  background:linear-gradient(90deg,transparent,var(--surface-2) 62%)}
+.dtmore{margin-top:.35rem}
 /* The disclosure control. A chevron that rotates, in the id cell, sized to a
    comfortable target without pushing the column wider than its ids. */
 /* The id and its control are one unit and must not wrap apart — "BF1.1" under

@@ -372,7 +372,7 @@ def _commit_cell(task):
             % (e(sha[:9]), e(sha), e(sha)))
 
 
-def _detail_row(task, phase, owners, ncol, seg, pid):
+def _detail_row(task, phase, owners, ncol, seg, pid, workers=None):
     """The row under a task row: everything the compact row had to leave out.
 
     ex (F-P-4). The table is read at a glance and acted on in detail, and those
@@ -388,10 +388,34 @@ def _detail_row(task, phase, owners, ncol, seg, pid):
                 cut is what made this row necessary), the model, the skills,
                 what it waits on, and how it was tested
 
-    "Who" is the AREA's advisory owner, not an assignee: the manifest has no
-    per-task assignee and inventing one here would be a claim the file does not
-    make. It is labelled as what it is.
+    "Who" is answered twice, by two different kinds of evidence, and neither is
+    an assignee - the manifest has no such field and inventing one here would be
+    a claim the file does not make:
+
+      owner      - the AREA's advisory owner, from the plan
+      worked by  - who the USAGE LEDGER metered on this task, strongest spend
+                   first. Absent when there is no ledger, which is the honest
+                   answer rather than a guess: with metering off, nothing on
+                   this machine knows who ran the task.
+
+    Both are labelled as what they are.
     """
+    def clamped(html):
+        """Long prose, trimmed to a few lines, with the rest one press away.
+
+        `technical` is the longest thing in the report - the worked example runs
+        past twenty lines - and at full height it pushed `model`, `skills` and
+        `tests` off the reader's screen entirely. The control ships HIDDEN and the
+        client reveals it only when the text really is cut off: whether five lines
+        is a trim at all depends on the width it is read at, which is a question
+        the server cannot answer.
+        """
+        if not html:
+            return ""
+        return ('<span class="clampbox" data-clamp>%s</span>'
+                '<button type="button" class="btn tiny dtmore" data-clampmore '
+                'aria-expanded="false" hidden>Show more</button>' % (html,))
+
     def rows(pairs):
         out = []
         for k, v in pairs:
@@ -414,8 +438,13 @@ def _detail_row(task, phase, owners, ncol, seg, pid):
              + list(task.get("dependsOn") or []) if isinstance(w, str)]
     tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
     skills = task.get("skills")
+    # From the ledger, not from the plan - so it carries its source with it.
+    worked = [w for w in ((workers or {}).get(task.get("id")) or [])
+              if isinstance(w, str) and w]
     meta = rows([
         ("owner", " · ".join(owner_bits)),
+        ("worked by", ("%s <span class=\"muted\">(metered on this task)</span>"
+                       % (e(", ".join(worked)),)) if worked else ""),
         ("started", e(task.get("startedAt") or "")),
         ("completed", e(task.get("completedAt") or "")),
         ("commit", _commit_cell(task) if task.get("commit") else ""),
@@ -426,7 +455,7 @@ def _detail_row(task, phase, owners, ncol, seg, pid):
     details = rows([
         # Both voices, in the order a person reads them: what changed, then how.
         ("outcome", e(str(o.get("descriptive") or "").strip())),
-        ("technical", e(str(o.get("technical") or "").strip())),
+        ("technical", clamped(e(str(o.get("technical") or "").strip()))),
         ("model", e(task.get("model") or "")),
         ("skills", e(", ".join(s for s in (skills or []) if isinstance(s, str)))
          if isinstance(skills, list) and skills

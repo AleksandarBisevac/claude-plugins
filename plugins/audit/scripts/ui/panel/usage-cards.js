@@ -206,7 +206,10 @@ function uHeatmap(facts){
  // Measured against the DATA's own span, not the calendar: `b` is [first, last]
  // recorded day, so this is the same question `seekPeriod` answers for the arrows.
  const wholeLedgerIn=g=>g!=='all'&&periodStart(g,b.lo)===periodStart(g,b.hi);
- const degenerate=wholeLedgerIn(UHM.g);
+ // A selection the ledger has just made pointless is CLEARED, the same way the
+ // report clears a status chip its view can no longer show: the alternative is a
+ // pressed button whose own row is gone.
+ if(wholeLedgerIn(UHM.g)){UHM.g='all';UHM.a='';}
  const label=UHM.g==='day'?UHM_WD[weekdayIndex(lo)]+' '+lo
   :UHM.g==='week'?'Week of '+s+' to '+periodEnd('week',s)
   :UHM.g==='month'?UHM_MON[+s.slice(5,7)-1]+' '+s.slice(0,4)
@@ -218,18 +221,25 @@ function uHeatmap(facts){
   'Follows the filters above - the date filter is the custom range. '
   +'Hours are UTC.'));
  const nav=el('div',{class:'uhmnav'});
+ // A granularity whose window swallows the whole ledger is NOT OFFERED.
+ //
+ // It used to be offered and merely dimmed, on the argument that its label still
+ // said something ("April 2026" carries a fact "All data" does not). That was
+ // reported as broken twice by the same reader — "dimmed, but I can still pick
+ // them and the grid does not change" — and they are right: a button that
+ // repaints the identical grid has done nothing, and a dimmed control that still
+ // accepts a click teaches the reader that dimming means nothing here. So this
+ // now matches what the report already does to a status chip or an area its view
+ // cannot show: the impossible choice leaves the set, and a line of plain text
+ // carries the reason. Text, not a tooltip, because a control that is absent has
+ //  nothing left to hover.
+ const hidden=[];
  [['all','All'],['year','Year'],['month','Month'],['week','Week'],
   ['day','Day']].forEach(([g,l])=>{
+  if(wholeLedgerIn(g)){hidden.push(l);return;}
   const on=UHM.g===g;
-  // A granularity whose window swallows the whole ledger still WORKS — it is just
-  // the same picture as All, and saying that is cheaper than letting a reader
-  // discover it by clicking. Marked, never disabled: the label is still worth
-  // reading ("April 2026" says something "All data" does not).
-  const same=wholeLedgerIn(g);
-  nav.append(el('button',{class:'filt'+(on?' on':'')+(same?' uhmsame':''),
+  nav.append(el('button',{class:'filt'+(on?' on':''),
     type:'button','data-uhg':g,'aria-pressed':on?'true':'false',
-    'data-tip':same?('the whole ledger falls inside one '+g
-      +', so this draws the same grid as All'):null,
     onclick:()=>{if(UHM.g!==g){UHM.g=g;UHM.a='';renderUsage();}}},l));});
  const canPrev=UHM.g!=='all'&&seek(UHM.g,s,-1)!==null;
  const canNext=UHM.g!=='all'&&seek(UHM.g,s,1)!==null;
@@ -247,10 +257,16 @@ function uHeatmap(facts){
   if(!ok)a.disabled=true;
   return a;};
  nav.append(arrow('prev','‹',canPrev),
-  el('span',{class:'uhmperiod','data-uhmperiod':'1'},label
-    +(degenerate?' · the whole ledger falls in this '+UHM.g:'')),
+  el('span',{class:'uhmperiod','data-uhmperiod':'1'},label),
   arrow('next','›',canNext));
  out.push(nav);
+ // WHY the ladder is short, stated rather than left to be inferred from a gap.
+ // Named granularities, not a count: "Year and Month" tells the reader which
+ // question they cannot ask yet, and a number would not.
+ if(hidden.length)out.push(el('div',{class:'uhmwhy mut','data-uhmwhy':'1'},
+  hidden.join(' and ')+(hidden.length>1?' need':' needs')
+  +' a ledger spanning more than one '+hidden[hidden.length-1].toLowerCase()
+  +' — this one runs '+b.lo+' to '+b.hi+'.'));
  // ONE tip group: the first cell waits, the rest open on contact until the
  // pointer leaves the grid. 500ms is the reader's own number.
  const tbl=el('table',{class:'uhm','data-hmpeak':String(peak),'data-tipgroup':'500'});

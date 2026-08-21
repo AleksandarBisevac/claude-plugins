@@ -9,6 +9,9 @@
  * already need the token.
  */
 const TOKEN=__AUDIT_TOKEN__, PROJECT=__AUDIT_PROJECT__;
+// The build serving this page. Baked in at import, not fetched: it cannot change
+// while the process lives, so a state round-trip would be a promise that it can.
+const VERSION=__AUDIT_VERSION__;
 /**
  * `$` — the first element matching a CSS selector.
  *
@@ -113,6 +116,14 @@ function midElide(s,max){if(!s||s.length<=max)return s||'';
  const keep=max-1,head=Math.ceil(keep*0.38);return s.slice(0,head)+'…'+s.slice(s.length-(keep-head));}
 $('#proj').textContent=midElide(PROJECT,56);
 $('#proj').title=PROJECT;
+// Which installed plugin is serving this panel — same words and same place as the
+// report's stamp, because it answers the same question. The panel is where the
+// question actually gets asked: the plugin cache is keyed BY VERSION, so
+// `marketplace update` followed by a reload can leave you driving a build you did
+// not intend, with nothing on screen to say so. Omitted entirely when the version
+// cannot be read: a stamp with no basis is worse than no stamp.
+if(VERSION)$('#proj').append(el('span',{class:'mut',
+  title:'The plugin version serving this panel'},' · audit '+VERSION));
 // ---------- the light/dark choice, and the two topbar buttons ----------
 /**
  * The element the chosen mode is written on, and the key it is remembered under.

@@ -985,12 +985,14 @@ def _cases(check):
           "the export controls",
           _fhm.count('<tr class="seghead"') == 1)
     check("vw4 report.js gates on the view, and a search that matches rows the "
-          "view hides SAYS SO rather than reporting nothing - the old rule "
-          "silently lifted the gate, which made the toggle a lie during a search",
+          "view hides is reachable through the View select itself, which offers "
+          "\"All phases\" - the old rule silently lifted the gate during a "
+          "search, and the notice row that replaced it was removed on request "
+          "because the select already says this",
           "viewMode" in M._SCRIPT
           and "audit-view" in M._SCRIPT
           and "archOpen" not in M._SCRIPT
-          and "data-outside" in M._SCRIPT)
+          and "data-outside" not in M._SCRIPT)
     check("vw5 the view survives a reload - in the shareable fragment first, "
           "and in localStorage when History is refused (a report opened over "
           "file:// is the common case, and that is where filters vanished)",

@@ -288,8 +288,6 @@
   const fcount = document.getElementById('audit-fcount');
   const clearBtns = Array.from(document.querySelectorAll('[data-clear]'));
   const norow = grouped ? grouped.querySelector('tr.norows') : null;
-  const outsideRow = grouped ? grouped.querySelector('[data-outside]') : null;
-  const outsideN = outsideRow ? outsideRow.querySelector('[data-outside-n]') : null;
 
   // The author chips live in the Usage section and scope ONLY it: tasks record
   // no author, so these never enter refresh() or touch the task table.

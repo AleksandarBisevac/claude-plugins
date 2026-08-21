@@ -20,7 +20,6 @@
   .segx,.secx{display:none!important}
   /* Screen-only: on paper every row is already there, so a line offering to
      show more of them is a control that lies (the .tri rule's own argument). */
-  tr.outside{display:none!important}
 }
 
 /* ---- one segment on paper (D2) ---------------------------------------------

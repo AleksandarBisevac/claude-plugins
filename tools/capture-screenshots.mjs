@@ -2368,44 +2368,52 @@ async function assertUsageWorks(page) {
         });
         const readNav = () => page.evaluate(() => ({
           period: document.querySelector('#usage [data-uhmperiod]').textContent,
-          marked: [...document.querySelectorAll('#usage [data-uhg]')]
-            .filter((b) => b.classList.contains('uhmsame'))
+          offered: [...document.querySelectorAll('#usage [data-uhg]')]
             .map((b) => b.getAttribute('data-uhg')),
+          why: (document.querySelector('#usage [data-uhmwhy]') || {}).textContent || null,
           armReasons: ['prev', 'next'].map((d) => {
             const a = document.querySelector(`#usage [data-uhm=${d}]`);
             return { d, off: !!a.disabled, why: a.getAttribute('data-tip') };
           }),
         }));
-        await page.click('#usage [data-uhg=year]');
-        await page.waitForTimeout(250);
-        const y = await readNav();
-        if (g.oneYear && !/falls in this year/.test(y.period)) {
-          fail(`usage: the ledger (${g.span[0]}..${g.span[1]}) is inside one year, so `
-             + `Year draws the same grid as All — the period line must say so and `
-             + `reads "${y.period}"`);
-        } else if (g.oneYear && !y.marked.includes('year')) {
-          fail('usage: the Year button is indistinguishable from one that changes '
-             + 'the grid, on a ledger where it cannot');
-        } else if (g.oneYear && y.armReasons.some((a) => a.off && !a.why)) {
-          fail('usage: an arrow is disabled with no reason on it — a dead control '
-             + 'that says nothing reads as a broken one: '
-             + JSON.stringify(y.armReasons));
+        const nav = await readNav();
+        // A granularity that cannot differ from All is NOT OFFERED. It used to be
+        // offered-and-dimmed; the same reader reported that twice as broken ("I can
+        // still pick them and the grid does not change"), which is what a dimmed
+        // control that still accepts a click earns.
+        if (g.oneYear && nav.offered.includes('year')) {
+          fail(`usage: the ledger (${g.span[0]}..${g.span[1]}) is inside one year, so Year `
+             + `can only draw the grid All already draws — it must not be offered: `
+             + JSON.stringify(nav.offered));
+        } else if (g.oneYear && !/Year/.test(nav.why || '')) {
+          fail('usage: Year is missing from the ladder with nothing saying why — a gap '
+             + `is not an explanation: why=${JSON.stringify(nav.why)}`);
+        } else if (g.oneYear && !new RegExp(g.span[0]).test(nav.why || '')) {
+          fail(`usage: the reason omits the span that causes it: ${JSON.stringify(nav.why)}`);
         } else {
-          note(`usage: Year states its basis — "${y.period}", marked ${JSON.stringify(y.marked)}, `
-             + `arrows ${y.armReasons.map((a) => a.d + (a.off ? ':' + a.why : ':live')).join(' ')}`);
+          note(`usage: Year is not offered on a single-year ledger, and the reason says `
+             + `which question cannot be asked yet — "${(nav.why || '').trim()}"`);
         }
-        // ...and a granularity that CAN differ is NOT marked, or the mark means
-        // nothing. This fixture spans more than one month, so Month must be live.
-        await page.click('#usage [data-uhg=month]');
-        await page.waitForTimeout(250);
-        const m = await readNav();
-        if (!g.oneMonth && m.marked.includes('month')) {
-          fail(`usage: Month is marked as "same as All" on a ledger spanning `
-             + `${g.span[0]}..${g.span[1]}, where it genuinely narrows`);
-        } else if (!g.oneMonth && /falls in this month/.test(m.period)) {
-          fail(`usage: the period line claims the ledger falls in one month: "${m.period}"`);
-        } else {
-          note(`usage: Month is not marked on a multi-month ledger — "${m.period}"`);
+        // The half that stops all of this being satisfied by an empty ladder: a
+        // granularity that genuinely narrows MUST still be there. This fixture
+        // spans more than one month, so Month is live and clickable.
+        if (!g.oneMonth && !nav.offered.includes('month')) {
+          fail(`usage: Month is missing on a ledger spanning ${g.span[0]}..${g.span[1]}, `
+             + 'where it genuinely narrows — the rule cannot be satisfied by hiding '
+             + 'everything');
+        } else if (!g.oneMonth) {
+          await page.click('#usage [data-uhg=month]');
+          await page.waitForTimeout(250);
+          const m = await readNav();
+          if (/whole ledger/.test(m.period)) {
+            fail(`usage: the period line still claims a degenerate window: "${m.period}"`);
+          } else if (m.armReasons.some((a) => a.off && !a.why)) {
+            fail('usage: an arrow is disabled with no reason on it — a dead control that '
+               + `says nothing reads as a broken one: ${JSON.stringify(m.armReasons)}`);
+          } else {
+            note(`usage: Month is offered and narrows — "${m.period}", arrows `
+               + `${m.armReasons.map((a) => a.d + (a.off ? ':' + a.why : ':live')).join(' ')}`);
+          }
         }
       }
 
@@ -3587,6 +3595,28 @@ async function assertConfirmFlowWorks(page) {
        + `dialog says ${JSON.stringify(lockNote)}`);
   } else {
     note(`composition: the dialog states the live lock on ${target.phaseId}`);
+  }
+
+  // The panel stamps which build is serving it. The plugin cache is keyed BY
+  // VERSION, so `marketplace update` plus a reload can hand you a different build
+  // than you meant with nothing on screen to say so — this is the line that says
+  // so. Compared against plugin.json rather than a literal, because a literal
+  // here would be a second place to bump on every release.
+  {
+    const want = JSON.parse(
+      // NOT path.join: this function declares its own `path` const further down,
+      // which shadows the module import and puts it in TDZ up here.
+      readFileSync(REPO + '/plugins/audit/.claude-plugin/plugin.json', 'utf8')).version;
+    const shown = await page.evaluate(() => {
+      const p = document.getElementById('proj');
+      return p ? p.textContent : '';
+    });
+    if (!shown.includes('audit ' + want)) {
+      fail(`panel: the topbar does not name the build serving it — wanted `
+         + `"audit ${want}", topbar reads ${JSON.stringify(shown)}`);
+    } else {
+      note(`panel: the topbar names the build serving it (audit ${want})`);
+    }
   }
 
   // --- Settings writes through the same flow ---------------------------------

@@ -91,6 +91,11 @@ UI_HTML = _panel_ui.raw_template()
 # render. One substitution rather than a template engine, so every selftest that
 # asks `... in UI_HTML` still sees the whole finished stylesheet.
 UI_HTML = UI_HTML.replace("__LABELS__", json.dumps(_theme.LABELS, sort_keys=True))
+# The build serving this page. Baked at import rather than substituted per request
+# because it cannot change while the process lives, and a request-time placeholder
+# would promise that it can.
+UI_HTML = UI_HTML.replace("__AUDIT_VERSION__",
+                          json.dumps(_output.plugin_version()))
 # `ensure_ascii=False` because the page is served as UTF-8 and this prose contains
 # em dashes and curly apostrophes like the rest of it. \uXXXX escapes would render
 # identically but leave the copy unreadable in the source and ungreppable by the
