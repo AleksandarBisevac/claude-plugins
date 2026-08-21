@@ -283,6 +283,17 @@ def check_build_commands(rep, project, manifest):
     failure the orchestrator explicitly refuses to burn a retry on, and it is
     detectable without running anything."""
     if not manifest:
+        # NOT silent, and that was the defect. Every neighbour in this report names
+        # an absent basis instead of vanishing - `ado` says the connector is
+        # unconfigured, `journal` says no writes are recorded, `config` says the
+        # safe defaults are active - and a row that simply disappears reads as
+        # "checked, nothing to say". Reported from a repo carrying three plausible
+        # runners: a dozen lines of report, not one of them about build, and the
+        # reader reasonably concluded it was covered. The rule this broke is the
+        # house rule: when the basis is missing, that is the thing to say.
+        rep.ok("buildCommands",
+               "no manifest yet, so there is no phase test gate to feed - "
+               "meta.buildCommands is what it will read when there is one")
         return
     cmds = ((manifest.get("meta") or {}).get("buildCommands") or {})
     if not isinstance(cmds, dict) or not cmds:

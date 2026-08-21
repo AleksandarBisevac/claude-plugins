@@ -154,11 +154,23 @@ def _cases(check):
               build({"test": "pytest", "lint": "if x; then y; fi"},
                     which=present), "buildCommands"))
 
+    # dp10 REVERSED on purpose (F-P-28). It used to pin SILENCE here, on the
+    # argument that an ok line would be "a claim about a document that is not
+    # there". That conflated two different things: not claiming the manifest is
+    # fine, and saying nothing at all. Every neighbour in this report names an
+    # absent basis - `ado` reports an unconfigured connector, `journal` reports no
+    # writes, `config` reports defaults active - and the row that vanished was read
+    # as "checked, nothing to say" by a reader whose repo carried three plausible
+    # runners. The house rule decides it: when the basis is missing, that is the
+    # thing to say.
     rep = base.Report()
     M.check_build_commands(rep, "/nowhere", None)
-    check("dp10 no manifest is SILENCE - there is nothing to be wrong about, and "
-          "an ok line would be a claim about a document that is not there",
-          rep.rows == [])
+    check("dp10 no manifest NAMES the absent basis instead of vanishing - a row "
+          "that disappears reads as a row that passed",
+          len(rep.rows) == 1 and "no manifest yet" in _detail(rep, "buildCommands"))
+    check("dp10b ...and says what will supply it, so the reader knows where to "
+          "look rather than that something is missing",
+          "meta.buildCommands" in _detail(rep, "buildCommands"))
 
     # ------------------------------------------------------------ check_areas
     tmp = tempfile.mkdtemp(prefix="doctor-policy-")
