@@ -148,6 +148,7 @@ _viewer = _viewer_mod._viewer
 
 _areas_of = _composition._areas_of
 _bugs_view = _composition._bugs_view
+_proposals_view = _composition._proposals_view
 _skills_of = _composition._skills_of
 _ado_status = _composition._ado_status
 _composition_view = _composition._composition_view
@@ -392,6 +393,7 @@ def build_state(project):
                                             "phases": 0},
                                  "lastSyncedAt": None},
                    "phases": [], "tasks": []}
+    proposals = []
     bugs = []
     if exists:
         try:
@@ -403,6 +405,7 @@ def build_state(project):
             rollup = as_.rollup(manifest, m_findings, m_warn)
             composition = _composition_view(manifest)
             bugs = _bugs_view(manifest)
+            proposals = _proposals_view(manifest)
     return {
         "project": project,
         "manifestPath": os.path.relpath(mpath, project),
@@ -415,6 +418,7 @@ def build_state(project):
         "configWarnings": cfg_warnings,
         "manifestFindings": m_findings,
         "composition": composition,
+        "proposals": proposals,
         "bugs": bugs,
         "rollup": rollup,
         "runStatus": _run_status(project, config, manifest),

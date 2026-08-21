@@ -259,7 +259,7 @@
                 "null"
               ],
               "minimum": 1,
-              "description": "The EXISTING Azure DevOps work item that audit work hangs under \u2014 typically a Feature or Epic already on the team's backlog. Absent/null = the connector builds its own branch (phaseWorkItems creates a phase item with nothing above it), which is correct and puts audit work BESIDE the team's planning instead of inside it: nobody planning from that board sees it. Set it and created phase items become children of that id (and, with phaseWorkItems false, tasks do). An id and therefore an integer \u2014 a config carrying \"103205\" as a string is a typo worth naming rather than coercing, because coercing hides it."
+              "description": "The EXISTING Azure DevOps work item that audit work hangs under — typically a Feature or Epic already on the team's backlog. Absent/null = the connector builds its own branch (phaseWorkItems creates a phase item with nothing above it), which is correct and puts audit work BESIDE the team's planning instead of inside it: nobody planning from that board sees it. Set it and created phase items become children of that id (and, with phaseWorkItems false, tasks do). An id and therefore an integer — a config carrying \"103205\" as a string is a typo worth naming rather than coercing, because coercing hides it."
             },
             "conventions": {
               "type": [
@@ -267,31 +267,37 @@
                 "null"
               ],
               "additionalProperties": true,
-              "description": "What a work item must look like to BELONG on this board. A property of the BOARD, not of the plugin: absent/null means the board has no standard and every item conforms trivially \u2014 not 'could not check', but 'there is nothing to check'. Graded by scripts/manifest/_ado_conventions.py, which is also what the writing side runs an item through before creating it, so the rule is executed rather than remembered. Without this, the connector writes work items that are mechanically correct and visibly foreign on a governed board: no description skeleton, no mandatory 'Done when', tags outside the agreed vocabulary, and a hierarchy the connector built for itself beside the team's backlog instead of inside it.",
+              "description": "What a work item must look like to BELONG on this board. A property of the BOARD, not of the plugin: absent/null means the board has no standard and every item conforms trivially — not 'could not check', but 'there is nothing to check'. Graded by scripts/manifest/_ado_conventions.py, which is also what the writing side runs an item through before creating it, so the rule is executed rather than remembered. Without this, the connector writes work items that are mechanically correct and visibly foreign on a governed board: no description skeleton, no mandatory 'Done when', tags outside the agreed vocabulary, and a hierarchy the connector built for itself beside the team's backlog instead of inside it.",
               "properties": {
                 "requiredFields": {
                   "type": "object",
                   "additionalProperties": {
                     "type": "array",
-                    "items": { "type": "string" }
+                    "items": {
+                      "type": "string"
+                    }
                   },
-                  "description": "{work item type: [ADO field reference name, ...]} \u2014 fields that must be present and non-empty. Scoped BY TYPE because a story and a task do not owe the same fields; a checker that demanded acceptance criteria on a task would be switched off."
+                  "description": "{work item type: [ADO field reference name, ...]} — fields that must be present and non-empty. Scoped BY TYPE because a story and a task do not owe the same fields; a checker that demanded acceptance criteria on a task would be switched off."
                 },
                 "descriptionMustContain": {
                   "type": "object",
                   "additionalProperties": {
                     "type": "array",
-                    "items": { "type": "string" }
+                    "items": {
+                      "type": "string"
+                    }
                   },
-                  "description": "{work item type: [literal marker, ...]} \u2014 how a description skeleton is enforced. Matching is case-insensitive, so 'DONE WHEN:' is the same skeleton as 'Done when:'."
+                  "description": "{work item type: [literal marker, ...]} — how a description skeleton is enforced. Matching is case-insensitive, so 'DONE WHEN:' is the same skeleton as 'Done when:'."
                 },
                 "tagVocabulary": {
                   "type": "object",
                   "additionalProperties": {
                     "type": "array",
-                    "items": { "type": "string" }
+                    "items": {
+                      "type": "string"
+                    }
                   },
-                  "description": "{tag prefix: [allowed value, ...]} for tags shaped `prefix:value`. The key \"*\" is the explicit opt-in for bare, unprefixed tags \u2014 spelled rather than implied, so a board that forbids free-form tags gets a finding on the first one instead of silently accepting anything without a colon. An EMPTY object forbids every tag and is warned about, since that is almost never meant."
+                  "description": "{tag prefix: [allowed value, ...]} for tags shaped `prefix:value`. The key \"*\" is the explicit opt-in for bare, unprefixed tags — spelled rather than implied, so a board that forbids free-form tags gets a finding on the first one instead of silently accepting anything without a colon. An EMPTY object forbids every tag and is warned about, since that is almost never meant."
                 },
                 "requireParent": {
                   "type": "boolean",
@@ -1238,6 +1244,20 @@
             "null"
           ],
           "description": "ISO timestamp of materialization."
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why a proposal was declined - REQUIRED once status is 'dropped'. /audit:propose drop asks for it when not given, because a dropped proposal is history rather than a deletion and a later reader must find why the work was declined. Was tolerated off-schema for as long as only that command wrote it; it is declared here now that the panel can drop too."
+        },
+        "droppedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp of the drop, the counterpart of materializedAt. Set only when status is 'dropped'."
         }
       }
     }

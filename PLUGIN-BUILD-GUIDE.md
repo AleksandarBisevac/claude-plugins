@@ -89,6 +89,8 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
           _ado_conventions.py             # meta.ado.conventions: what an item must look like to belong
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
+          _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate
+          materialize-proposal.py         # the command door onto it: arguments, printing, exit codes
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
           _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
@@ -270,6 +272,7 @@ L4:
   _panel_runstate -> _locks, _output, _panel_paths
   _panel_usage -> _areas, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
+  _proposals -> _locks, _manifest_io, _manifest_rules, _output
   _usage_detail -> _output, _ui_theme, _usage_viz
   _usage_load -> _loader, _output, _report_html
   _usage_markdown -> _output, _ui_theme, _usage_viz
@@ -281,7 +284,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _ui_theme
+  _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _proposals, _ui_theme
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
@@ -294,6 +297,7 @@ L7:
   check-ado-item -> _ado_conventions, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
+  materialize-proposal -> _manifest_io, _output, _proposals
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
@@ -914,6 +918,57 @@ and would let two of them disagree about which objects were skipped as malformed
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
 over tasks that are not **finished** (done *or* cancelled).
+
+### `plugins/audit/scripts/manifest/_proposals.py`
+The proposal lifecycle itself (layer 4): the refusals in `commands/propose.md`'s own order,
+the id allocation that counts live AND still-parked ids, the collision remap, the dependency
+closure, `plan_for`, and `run()` — which takes the index lock, applies, revalidates and writes.
+
+**Why a module and not just the script.** It was one file until the panel became a second
+caller. The panel's write path sits BELOW the entry points, so a panel reaching up to a command
+is an edge pointing the wrong way, and `_deps.layer_violations()` said so by name rather than
+leaving it to taste. The split is the same one `check-ado-item.py` has over
+`_ado_conventions.py`: a door and a rule.
+
+**Orchestration is part of the rule.** `run()` locks, applies, revalidates and only then
+writes — a caller that had to remember to lock, or to refuse a result the validator would
+reject, is a second chance to get it wrong. Revalidation happens BEFORE the write, so a
+manifest that would be invalid never reaches disk and a refusal leaves nothing half-applied.
+
+**It never asks anything.** `plan_for` reports what a materialization would pull in and `run()`
+refuses while the answer is undecided, because a rule that stops to interview cannot be called
+from an HTTP endpoint, and a rule that guesses is worse than one that refuses.
+
+### `plugins/audit/scripts/manifest/materialize-proposal.py`
+The proposal lifecycle, as a script instead of as prose (layer 7). `commands/propose.md`
+specified all of it and executed it by reading itself, which was fine while that command was
+the only caller. The panel can materialize and drop now, and two readings of one rule are two
+answers the first time either is edited — so the rule lives here, with cases, and the command
+became a thin caller.
+
+**Plan, then execute.** `plan` writes nothing and reports exactly what would happen, including
+the dependency closure. That output is what the command's confirm and the panel's dialog both
+render, so a human sees what a materialization pulls in **before** anything is written. It is
+also why the dependency decision is a FLAG (`--with-deps` / `--drop-edges`) rather than a
+question asked inside the script: a script that stops to interview cannot be called from an
+HTTP endpoint, and a rule that guesses is worse than one that refuses. Undecided is refused
+and names what it is waiting on.
+
+**The closure is dependency-first**, because materializing a phase whose blocker is still
+parked writes a manifest the validator refuses. A cycle terminates rather than recursing — the
+validator reports the cycle, and a diagnostic must not hang on one.
+
+**The collision guard remaps inside the payload only.** A parked payload reserves its ids, so
+normally its phase id is free; when it is not, the next free `P<n>` is allocated counting live
+AND still-parked ids, and the payload's task ids and intra-payload refs move with it. An edge
+pointing at a live phase is left alone: rewriting it would silently repoint real work.
+
+**Drop needs a reason, revive keeps it.** `notes` is required once a proposal is dropped —
+the validator enforces it rather than trusting this command's prose to have asked — and
+`droppedAt` is its timestamp, the counterpart of `materializedAt`. Reviving flips `dropped`
+back to `proposed` and leaves the reason as history: a revived proposal that forgot it was
+ever declined has lost the only thing the archive was for. A materialized proposal cannot be
+dropped, because its phase is live and the record is the history trail.
 
 ### `plugins/audit/scripts/manifest/check-ado-item.py`
 The gate `/audit:sync push` runs an item through **before** it creates it (layer 7).

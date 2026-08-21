@@ -168,8 +168,12 @@ KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
 KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
                   "technicalNote", "openQuestions", "createdISO", "payload",
                   "materializedAs", "materializedAt",
-                  # not in the schema; reason in `OFF_SCHEMA` below:
-                  "notes"}
+                  # The drop pair, mirroring the materialize pair. `notes` was
+                  # tolerated OFF-SCHEMA for as long as `/audit:propose drop` was
+                  # its only writer; it is declared in the schema now that the
+                  # panel can drop too, and the validator requires it once a
+                  # proposal is dropped rather than trusting prose to ask.
+                  "notes", "droppedAt"}
 
 
 # --- the schema these sets answer to ---------------------------------------------
@@ -270,11 +274,6 @@ OFF_SCHEMA = {
     "KNOWN_TASK": {
         "details": "tolerated: pre-0.3 /audit:init wrote a free-form note here "
                    "(docs/audit/phases/P5.json); informational, never read",
-    },
-    "KNOWN_PROPOSAL": {
-        "notes": "tolerated on a dropped proposal: commands/propose.md records the "
-                 "one-line justification for a drop here, and the schema describes "
-                 "the proposal a /audit:init park writes, not what drop adds",
     },
 }
 

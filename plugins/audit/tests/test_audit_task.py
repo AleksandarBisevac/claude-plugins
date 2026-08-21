@@ -150,7 +150,15 @@ def _cases(check):
               code == 0 and task_in(mpath, "P2.6") is not None)
 
         def prop(status):
-            return {"id": "PROP-1", "name": "Parked phase", "status": status,
+            # `notes` only when dropped: the validator requires a justification on
+            # a dropped proposal (an archive that cannot say why is a tombstone)
+            # and refuses `droppedAt` on any other status, so a fixture that
+            # carried the pair unconditionally would be invalid three ways.
+            extra = ({"notes": "declined for this fixture",
+                      "droppedAt": "2026-01-02T00:00:00Z"}
+                     if status == "dropped" else {})
+            return dict(extra, **{
+                    "id": "PROP-1", "name": "Parked phase", "status": status,
                     "origin": "audit:init",
                     "createdISO": "2026-01-01T00:00:00Z",
                     "scope": "x", "benefit": "y", "openQuestions": [],
@@ -158,7 +166,7 @@ def _cases(check):
                     "payload": {"phase": {
                         "id": "P4", "title": "Parked", "status": "pending",
                         "tasks": [{"id": "P4.1", "title": "t",
-                                   "status": "pending"}]}}}
+                                   "status": "pending"}]}}})
 
         resv = base_manifest()
         resv["proposals"] = [prop("proposed")]

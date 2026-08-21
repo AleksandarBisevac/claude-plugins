@@ -314,7 +314,7 @@ LAYERS = (
     ("_panel_page", "_usage_load",
      "_usage_overview", "_usage_detail", "_usage_markdown",
      "_doctor_setup", "_doctor_trail", "_doctor_completions", "_doctor_policy",
-     "_panel_viewer", "_panel_composition", "_panel_policy", "_panel_runstate",
+     "_panel_viewer", "_proposals", "_panel_composition", "_panel_policy", "_panel_runstate",
      "_panel_usage"),
     # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
     # document) are the report's answer to the same question `_panel_page`
@@ -366,7 +366,7 @@ LAYERS = (
      # `guard-secrets-read` refuses (F20/F22), so the check would be blocked
      # exactly where it matters. It reads `_ado_conventions` at L1 and nothing else.
      "check-ado-item",
-     "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task"),
+     "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 
 # No allow-list. There was one, for exactly one import, and it is gone with the import (F11);

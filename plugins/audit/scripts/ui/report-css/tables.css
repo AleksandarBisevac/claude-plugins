@@ -83,6 +83,21 @@ tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--borde
   padding:0 .15rem 0 1.5rem;
   background:linear-gradient(90deg,transparent,var(--surface-2) 62%)}
 .dtmore{margin-top:.35rem}
+/* Parked proposals (F-P-32). `<details>` rather than a scripted row: disclosure is
+   something the platform already does, so the payload opens with scripting off and
+   in print, and report.js gains nothing to index. The meta rows reuse `.dt-*` from
+   the task detail above - same shape, same question ("what is this, in full"). */
+.prop{border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface-2);padding:.45rem .7rem;margin:.35rem 0}
+.prop>summary{cursor:pointer;display:flex;align-items:baseline;gap:.4rem;
+  flex-wrap:wrap}
+.prop[open]>summary{margin-bottom:.5rem}
+.propmeta{display:flex;flex-direction:column;gap:.15rem;margin-bottom:.4rem}
+/* Nothing here needs to force these open for print: `report/date-range.js` already
+   opens EVERY `<details>` on `beforeprint` and closes them again afterwards, which
+   is why `<details>` was the right mechanism rather than a scripted row. This rule
+   only keeps one proposal from being split across two pages. */
+@media print{.prop{break-inside:avoid}}
 /* The disclosure control. A chevron that rotates, in the id cell, sized to a
    comfortable target without pushing the column wider than its ids. */
 /* The id and its control are one unit and must not wrap apart — "BF1.1" under

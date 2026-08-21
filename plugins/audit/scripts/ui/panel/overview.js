@@ -78,7 +78,10 @@ async function refreshFromDisk(){
    fn();
    const s2=$('#'+id+' .findings-slot');
    if(s2&&keep.length)s2.append(...keep);};
-  if(!dirty.guards)reRender('guards',renderSettings);else staleNote('guards');
+  // Proposals first, and unconditionally: it holds no draft to protect, so
+ // `dirtyViews` has nothing to say about it and there is no edit to eat.
+ renderProposals();
+ if(!dirty.guards)reRender('guards',renderSettings);else staleNote('guards');
   if(!dirty.comp)reRender('comp',renderComp);else staleNote('comp');
   if(pol){POLICY=pol;
    if(!dirty.policy){PDRAFT=pClone(POLICY&&POLICY.stored);

@@ -877,8 +877,40 @@ def _cases(check):
     # its own HOME; these guard the constructs those checks depend on.
     check("the policy tab is registered, routable and has a view container",
           "data-t=policy>Policy<" in M.UI_HTML and "<div id=policy" in M.UI_HTML
-          and "const TABS=['guards','comp','over','usage','policy','look']"
-          in M.UI_HTML)
+          and "const TABS=['guards','comp','over','usage','policy','props',"
+              "'look']" in M.UI_HTML)
+    # --- pr (F-P-32): Proposals ------------------------------------------------
+    # Parked phases had no surface in the panel at all: /audit:init can park every
+    # synthesized phase, and the tab that shows the plan showed nothing. These pin
+    # the constructs the browser checks depend on; the behaviour itself is driven
+    # for real in tools/capture-screenshots.mjs.
+    check("pr1 the proposals tab is registered, routable and has a view container",
+          "data-t=props>Proposals<" in M.UI_HTML
+          and "<div id=props" in M.UI_HTML
+          and "function renderProposals()" in M.UI_HTML)
+    check("pr2 ...and it paints inside a `.card`, the panel's structural unit - "
+          "the responsive sweep waits for one before it measures, so a view "
+          "without it times out instead of being checked",
+          "class: 'card', 'data-propcard': '1'" in M.UI_HTML)
+    check("pr3 every action goes through ONE endpoint, so no rule lives in the "
+          "view: the closure, the lock and the revalidation stay in the script",
+          "api('POST', '/api/proposal', body)" in M.UI_HTML
+          and M.UI_HTML.count("propPost({") == 4)
+    check("pr4 materialize PLANS before it writes, so the dialog can show what "
+          "the write pulls in rather than reporting it afterwards",
+          "action: 'plan'" in M.UI_HTML
+          and M.UI_HTML.index("action: 'plan'")
+              < M.UI_HTML.index("action: 'materialize'"))
+    check("pr5 the drop reason is typed beside the button that uses it and the "
+          "field carries a NAME - a placeholder vanishes exactly while the field "
+          "is in use",
+          "'aria-label': 'Why ' + p.id + ' is being declined'" in M.UI_HTML)
+    check("pr6 an empty tab NAMES the absent basis instead of vanishing, the "
+          "same rule a disappearing row broke",
+          "data-propnone" in M.UI_HTML and "No parked proposals." in M.UI_HTML)
+    check("pr7 a dropped proposal shows why, and a materialized one what it "
+          "became - the two states that carry their own history",
+          "'why declined'" in M.UI_HTML and "'became'" in M.UI_HTML)
     # --- th (F-P-6): Appearance ------------------------------------------------
     # The panel and the report share ONE token layer, and every value in it is a
     # custom property — so "change the look" is "change those values", and the

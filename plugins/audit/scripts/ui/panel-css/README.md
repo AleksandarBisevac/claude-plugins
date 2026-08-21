@@ -45,6 +45,7 @@ another rule, which is a cascade change disguised as housekeeping.
 | `appearance-table.css` | The Appearance tab's token table: name, light and dark side by side, with the native swatch and the hex field. |
 | `overview-rows.css` | The Overview's expandable phase rows, task detail table, risk text, and the ready-now list. |
 | `policy.css` | The policy switchboard: the wide table that scrolls inside its own frame, the per-rule select, the verdict pill and its basis, and the honesty note. |
+| `proposals.css` | Parked phases: the disclosure card, its label/value fact stack, the action row and the drop-reason field. |
 
 ## Constraints that hold for every part
 

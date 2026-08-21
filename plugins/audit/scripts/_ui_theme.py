@@ -941,6 +941,7 @@ PANEL_CSS_PARTS = (
     "panel-css/appearance-table.css",
     "panel-css/overview-rows.css",
     "panel-css/policy.css",
+    "panel-css/proposals.css",
 )
 
 UI_ASSETS = (
@@ -958,6 +959,7 @@ UI_ASSETS = (
     "panel-css/overview-filters.css",
     "panel-css/overview-rows.css",
     "panel-css/policy.css",
+    "panel-css/proposals.css",
     "panel-css/save-result.css",
     "panel-css/settings-form.css",
     "panel-css/status-colours.css",
@@ -979,6 +981,7 @@ UI_ASSETS = (
     "panel/overview.js",
     "panel/policy-state.js",
     "panel/policy-view.js",
+    "panel/proposals-view.js",
     "panel/run-status.js",
     "panel/settings.js",
     "panel/theme-state.js",

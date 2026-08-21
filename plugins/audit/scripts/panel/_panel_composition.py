@@ -57,6 +57,79 @@ read_config = _paths.read_config
 # phases are in an area.
 _areas_of = _areas.areas_of
 
+def _proposals_view(manifest):
+    """`proposals[]` as the panel's Proposals tab reads it.
+
+    Its OWN state key rather than a corner of the composition view: that view is
+    the plan EDITOR, and a parked phase is not part of the plan yet. Mixing the two
+    is exactly the confusion F-P-32 was reported about.
+
+    The payload travels WHOLE (phase title, task ids, titles, risk) so the tab can
+    show what materializing would add without a second request, and `dropped`
+    carries its reason - an archive nobody can read is a tombstone.
+    """
+    out = []
+    for prop in (manifest.get("proposals") or []):
+        if not isinstance(prop, dict):
+            continue
+        payload = prop.get("payload")
+        phase = payload.get("phase") if isinstance(payload, dict) else None
+        tasks = [t for t in ((phase or {}).get("tasks") or [])
+                 if isinstance(t, dict)]
+        out.append({
+            "id": prop.get("id"),
+            "name": prop.get("name"),
+            "status": prop.get("status") or "proposed",
+            "scope": prop.get("scope"),
+            "benefit": prop.get("benefit"),
+            "technicalNote": prop.get("technicalNote"),
+            "openQuestions": [q for q in (prop.get("openQuestions") or [])
+                              if isinstance(q, str)],
+            "notes": prop.get("notes"),
+            "droppedAt": prop.get("droppedAt"),
+            "materializedAs": prop.get("materializedAs"),
+            "materializedAt": prop.get("materializedAt"),
+            "createdISO": prop.get("createdISO"),
+            "hasPayload": isinstance(phase, dict) and bool(phase.get("id")),
+            "phaseId": (phase or {}).get("id"),
+            "phaseTitle": (phase or {}).get("title"),
+            "tasks": [{"id": t.get("id"), "title": t.get("title"),
+                       "risk": t.get("risk")} for t in tasks],
+            # Which ids this payload waits on that only a PARKED payload owns.
+            # Computed here so the tab can warn before the confirm, rather than
+            # the reader discovering it from a refusal after the click.
+            "waitsOn": _parked_blockers(manifest, phase),
+        })
+    return out
+
+
+def _parked_blockers(manifest, phase):
+    """Refs in this payload that resolve to nothing live. `[]` when there are none."""
+    if not isinstance(phase, dict):
+        return []
+    live = set()
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        if ph.get("id"):
+            live.add(ph["id"])
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("id"):
+                live.add(t["id"])
+    own = set([phase.get("id")]) | set(
+        t.get("id") for t in (phase.get("tasks") or []) if isinstance(t, dict))
+    refs, out = [], []
+    for key in ("blockedBy", "dependsOn"):
+        refs += [r for r in (phase.get(key) or []) if isinstance(r, str)]
+        for t in (phase.get("tasks") or []):
+            if isinstance(t, dict):
+                refs += [r for r in (t.get(key) or []) if isinstance(r, str)]
+    for ref in refs:
+        if ref not in live and ref not in own and ref not in out:
+            out.append(ref)
+    return out
+
+
 def _bugs_view(manifest):
     """The bug rows the Overview lists, one per bug, already resolved.
 

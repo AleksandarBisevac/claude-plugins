@@ -192,6 +192,28 @@ def _cases(check):
           "is a finding: /audit:propose writes both together",
           any("must be 'materialized'" in x for x in f), f)
 
+    # The DROP pair. `propose.md` has always ASKED for the justification, but
+    # prose cannot enforce it and the panel can drop too now — an archive whose
+    # entries do not say why is a tombstone, and that command's own words are that
+    # a later reader must find why the work was declined.
+    _pay = {"phase": {"id": "PX", "title": "T", "tasks": []}}
+    prop = {"id": "PROP-1", "status": "dropped", "payload": _pay}
+    f, w = M._check_proposals({"proposals": [prop]}, _index())
+    check("mc27 a dropped proposal with no `notes` is a finding — dropping is "
+          "archiving, and an archive that does not say why cannot be read later",
+          any("no `notes` justification" in x for x in f), f)
+    prop = {"id": "PROP-1", "status": "dropped", "notes": "duplicate of PROP-4",
+            "payload": _pay}
+    f, w = M._check_proposals({"proposals": [prop]}, _index())
+    check("mc28 ...and with one it is clean, so the rule is about the REASON and "
+          "not about dropping", f == [], (f, w))
+    prop = {"id": "PROP-1", "status": "proposed", "droppedAt": "2026-08-21T10:00:00Z",
+            "payload": _pay}
+    f, w = M._check_proposals({"proposals": [prop]}, _index())
+    check("mc29 `droppedAt` set while status is not 'dropped' is a finding, the "
+          "same way `materializedAs` is — the pair is written together",
+          any("droppedAt is set but status" in x for x in f), f)
+
     # --- the aliases ---
     _names = ("_cycle_findings", "_index_bugs", "_live_ids",
               "_check_unique_ids", "_ref_findings", "_check_refs_and_cycles",

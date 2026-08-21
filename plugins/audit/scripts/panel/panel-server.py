@@ -348,6 +348,13 @@ def _make_handler(project, token):
                                  "manifest": st["manifestFindings"]}); return
             if path == "/api/report":
                 self._json(200, render_report(project)); return
+            if path == "/api/proposal":
+                try:
+                    body = self._body()
+                except Exception as exc:
+                    self._json(400, {"ok": False,
+                                     "findings": ["bad JSON: %s" % exc]}); return
+                self._json(200, _panel_write.proposal_action(project, body)); return
             self._json(404, {"error": "not found"})
 
     return Handler

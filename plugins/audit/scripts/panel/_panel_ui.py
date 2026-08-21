@@ -121,6 +121,7 @@ _JS_PARTS = (
     "panel/overview.js",
     "panel/policy-state.js",
     "panel/policy-view.js",
+    "panel/proposals-view.js",
     "panel/usage-model.js",
     "panel/usage-filtering.js",
     "panel/usage-charts.js",

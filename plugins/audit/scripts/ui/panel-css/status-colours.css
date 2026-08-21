@@ -1,10 +1,17 @@
 /* status -> --st (reuses the theme-aware ok/warn/err/muted tokens) */
-[data-status="done"],[data-status="fixed"]{--st:var(--ok)}
+/* `materialized` joins done/fixed: the proposal became real work. */
+[data-status="done"],[data-status="fixed"],
+[data-status="materialized"]{--st:var(--ok)}
 [data-status="in_progress"],[data-status="triaged"]{--st:var(--warn)}
 [data-status="blocked"],[data-status="open"]{--st:var(--err)}
-[data-status="pending"]{--st:var(--muted)}
+/* `proposed` joins pending: synthesized, not started. */
+[data-status="pending"],[data-status="proposed"]{--st:var(--muted)}
 /* ca: settled, not achieved — quieter than pending, never the ok green. */
-[data-status="cancelled"],[data-status="wontfix"]{--st:var(--st-cancelled)}
+/* `dropped` joins them for the reason the line above already gives: settled,
+   not achieved. Reusing the bucket rather than minting a fourth colour is what
+   keeps three proposal states distinguishable without a new vocabulary. */
+[data-status="cancelled"],[data-status="wontfix"],
+[data-status="dropped"]{--st:var(--st-cancelled)}
 .st{display:inline-block;font-size:.66rem;font-weight:600;padding:var(--sp-0) .5em;border-radius:var(--pill);
  background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
  border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}

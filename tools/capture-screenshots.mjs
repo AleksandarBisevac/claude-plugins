@@ -96,6 +96,18 @@ const OUT = path.resolve(REPO, arg('--out', 'docs/screenshots'));
  */
 const LEGS = ['report', 'panel'];
 const ONLY = arg('--only', 'all');
+// --fast: an ITERATION aid, never the gate. It drops the three systematic sweeps
+// that dominate the wall clock (measured: the width ladder ~48s of a 218s panel
+// leg, focus traversal 27s, the target-size census 6s) and keeps every functional
+// assertion. It exists because the full leg is nearly four minutes, which is long
+// enough that a person edits three things before running it once — and then cannot
+// tell which one broke.
+//
+// LOUD by construction: what it skipped is printed by name at the end, and the
+// closing line does not say the preconditions hold. A quiet fast mode would be a
+// gate that lies, which is the failure this whole tool is built against.
+const FAST = process.argv.includes('--fast');
+const FAST_SKIPPED = [];
 const wanted = (leg) => ONLY === 'all' || ONLY === leg;
 const legsRun = [];
 if (ONLY !== 'all' && !LEGS.includes(ONLY)) {
@@ -1106,6 +1118,11 @@ export const measureResponsiveFrame = (opts) => {
 export async function walkResponsiveLadder(page, label, tally,
                                            { report: reportOne, ok }) {
   const seen = [];
+  // In --fast mode only the rungs that BOUND a rule are walked: the narrowest
+  // viewport, both sides of the 768/769 and 1247/1248 breakpoints, and the widest.
+  // A regression that survives those four boundaries and dies at 961px exists, so
+  // this is a sampling, not an equivalent — which is why the skip is announced.
+  const ladder = FAST ? [320, 768, 769, 1247, 1248, 1512] : RESPONSIVE_LADDER;
   // The extremes are carried ACROSS the ladder rather than read off the last
   // rung. The tightest clip on the report is at 1153px and the widest viewport
   // has none at all, so a summary that reported the final width would have said
@@ -1113,7 +1130,7 @@ export async function walkResponsiveLadder(page, label, tally,
   // 42% one rung earlier. A number nobody can see drift is a threshold nobody
   // notices being approached.
   let tightest = null, smallest = null, dirty = 0, unpainted = 0, jsCarried = 0;
-  for (const width of RESPONSIVE_LADDER) {
+  for (const width of ladder) {
     await page.setViewportSize({ width, height: 900 });
     // A resize is answered on the next frame; reading the layout mid-reflow
     // reports the width it came from and calls that a defect.
@@ -1180,8 +1197,8 @@ export async function walkResponsiveLadder(page, label, tally,
   // the vacuity failure — a summary that says "clean" about nothing is the
   // sentence this whole file exists to stop being printed.
   if (!seen.length) return;
-  ok(`${label}: ${RESPONSIVE_LADDER.length} widths `
-    + `${RESPONSIVE_LADDER[0]}-${RESPONSIVE_LADDER[RESPONSIVE_LADDER.length - 1]}px, `
+  ok(`${label}: ${ladder.length} widths `
+    + `${ladder[0]}-${ladder[ladder.length - 1]}px, `
     + (dirty ? `${dirty} failure(s) above` : 'all clean')
     + `; ${Math.min(...seen)}-${Math.max(...seen)} controls hit-tested per width`
     + (smallest ? `; smallest control ${smallest.name} ${smallest.w}x${smallest.h} `
@@ -2977,7 +2994,7 @@ async function assertLabelInName(page, areas, surface) {
 }
 
 async function assertFocusNotObscured(page) {
-  const TABS = ['guards', 'comp', 'over', 'usage', 'policy', 'look'];
+  const TABS = ['guards', 'comp', 'over', 'usage', 'policy', 'props', 'look'];
   const STEPS = 30;
   // Measured after the browser's own scroll-into-view AND anything the page does
   // in response to focus have landed. Reading immediately measures the position
@@ -3158,7 +3175,7 @@ async function captureConfirmDialog(page) {
   }
   await page.waitForTimeout(200);
   await page.locator('#comp').getByRole('button', { name: 'Save composition' }).click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   const rows = await page.evaluate(() =>
     [...document.querySelectorAll('dialog.confirm tbody tr')].length);
   if (rows !== n) {
@@ -3177,7 +3194,7 @@ async function captureConfirmDialog(page) {
 
   // Discard is itself a confirm — a control that throws work away is not one click.
   await page.locator('#comp [data-discard=comp]').click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(400);
   const dirty = await page.evaluate(() => editRows('comp').length);
@@ -3258,6 +3275,62 @@ function assertNoHandAssignedPolledState() {
  * have written it. A confirm dialog that lists the wrong changes is worse than no
  * dialog: it is a screenful of reassurance about values nobody checked.
  */
+/**
+ * Wait for the confirm dialog — and when it never opens, say WHY.
+ *
+ * F-P-17. This wait timed out once in a full run and passed on every re-run. A
+ * bare timeout is the least useful failure a gate can produce: it says the dialog
+ * is absent and nothing about the panel that failed to open it, so the only way
+ * forward was guessing, and each guess costs a ~160s run.
+ *
+ * Two plausible causes were tested and DISPROVED before this was written: a poll
+ * redraw landing immediately before the Save click, and a redraw after the field
+ * was blurred. Both left the gate green, so the panel is robust to the redraw at
+ * that point and the cause is still unknown. Rather than "fix" a mechanism that
+ * was just ruled out, this makes the next occurrence diagnose itself in one shot:
+ * whether Save was disabled, whether anything was actually pending, which dialogs
+ * existed, and what the last toast said.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<void>} resolves when the dialog is open; throws with state
+ */
+async function awaitConfirmDialog(page) {
+  try {
+    // The ONE real wait. Written with the selector inline rather than reusing a
+    // constant: an earlier edit replaced this very line by a substring match and
+    // turned the helper into a call to itself, which blew the stack and reported
+    // "the dialog never opened" about a dialog the dump then showed as open.
+    await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+    return;
+  } catch (timedOut) {
+    let state;
+    try {
+      state = await page.evaluate(() => {
+        const save = [...document.querySelectorAll('button')]
+          .find((b) => /^Save\b/.test((b.textContent || '').trim()));
+        const discard = document.querySelector('[data-discard]');
+        return {
+          dialogs: [...document.querySelectorAll('dialog')]
+            .map((d) => (d.className || '(no class)') + (d.open ? ':open' : ':closed')),
+          saveButton: save
+            ? { text: save.textContent.trim(),
+                dead: !!save.disabled || save.getAttribute('aria-disabled') === 'true' }
+            : 'no Save button on screen',
+          discardLabel: discard ? discard.textContent.trim() : null,
+          toast: ((document.querySelector('#toast') || {}).textContent || '').trim() || null,
+          pending: typeof EDITS === 'object' && typeof editRows === 'function'
+            ? Object.keys(EDITS).map((k) => k + ':' + (editRows(k) || []).length).join(' ')
+            : 'EDITS/editRows not reachable',
+        };
+      });
+    } catch (dumpFailed) {
+      state = { dumpFailed: String(dumpFailed).split('\n')[0] };
+    }
+    throw new Error('the confirm dialog never opened within 5s (F-P-17). Panel '
+      + 'state at that moment: ' + JSON.stringify(state));
+  }
+}
+
 async function assertConfirmFlowWorks(page) {
   assertNoHandAssignedPolledState();
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -3344,7 +3417,7 @@ async function assertConfirmFlowWorks(page) {
 
   // --- the dialog lists that change, and Cancel writes nothing ---------------
   await saveBtn.click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   const listed = await page.evaluate(() =>
     [...document.querySelectorAll('dialog.confirm tbody tr')]
       .map((r) => [...r.children].map((c) => c.textContent.trim())));
@@ -3404,7 +3477,7 @@ async function assertConfirmFlowWorks(page) {
     await page.waitForTimeout(200);
   }
   await saveBtn.click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(900);
   const saved = await onDisk();
@@ -3480,7 +3553,7 @@ async function assertConfirmFlowWorks(page) {
     { meta: {}, phases: {}, tasks: { [o.id]: { model: o.v } } }), { id: target.id, v: OTHER });
   await page.waitForTimeout(300);
   await saveBtn.click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(900);
   const warned = await page.evaluate(() => ({
@@ -3507,7 +3580,7 @@ async function assertConfirmFlowWorks(page) {
   await modelInput.fill('discard-me');
   await page.waitForTimeout(200);
   await discardBtn.click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(500);
   const discarded = await page.evaluate((id) => ({
@@ -3573,7 +3646,7 @@ async function assertConfirmFlowWorks(page) {
        + `this is a test of the dialog`);
   }
   await saveBtn.click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   const lockNote = await page.evaluate(() => {
     const n = document.querySelector('dialog.confirm .cflock');
     return n ? n.textContent : null;
@@ -3649,7 +3722,7 @@ async function assertConfirmFlowWorks(page) {
     }
   }
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   const cfgRows = await page.evaluate(() =>
     [...document.querySelectorAll('dialog.confirm tbody tr')]
       .map((r) => [...r.children].map((c) => c.textContent.trim())));
@@ -3826,7 +3899,7 @@ async function assertSkillTriState(page) {
   // --- save: the dialog names the answer, the file holds a real null ----------
   const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save composition' });
   await saveBtn.click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   const dlg = await page.evaluate(() =>
     [...document.querySelectorAll('dialog.confirm tbody tr')]
       .map((r) => [...r.children].map((c) => c.textContent.trim())));
@@ -3861,7 +3934,7 @@ async function assertSkillTriState(page) {
   await rowOf(pick.optId).locator('.tskills .chip.optout button').click();
   await page.waitForTimeout(200);
   await saveBtn.click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(900);
   const back = await page.evaluate(async (id) => {
@@ -4388,7 +4461,7 @@ async function assertSaveNoteLifecycle(page) {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(200);
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(700);
   const err = await page.evaluate(() => {
@@ -4420,7 +4493,7 @@ async function assertSaveNoteLifecycle(page) {
   }
   // Throw the refused edit away through the panel's own Discard.
   await page.locator('#guards [data-discard=guards]').click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(400);
 
@@ -4430,7 +4503,7 @@ async function assertSaveNoteLifecycle(page) {
   await box.click();
   await page.waitForTimeout(200);
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(700);
   const okUp = await page.evaluate(() => {
@@ -4453,7 +4526,7 @@ async function assertSaveNoteLifecycle(page) {
   await box.click();
   await page.waitForTimeout(200);
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(400);
 }
@@ -5680,6 +5753,130 @@ function policyFixtureBlock(liveArea) {
  * and never from the renderer. A check that reads the verdict out of the same DOM
  * it is checking proves only that a string was copied.
  */
+/**
+ * The Proposals tab, driven for real: drop → revive → materialize.
+ *
+ * F-P-32. The panel could not see `proposals[]` at all, so an /audit:init that
+ * parked every phase left the tab that shows the plan showing nothing. Pins over
+ * UI_HTML can prove the constructs exist; only this can prove the round trip
+ * writes the manifest and comes back.
+ *
+ * The half that matters most is REVIVE: dropping is supposed to be an archive
+ * rather than a deletion, and the only way to tell those apart is to put one back
+ * and find the reason still attached.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<void>}
+ */
+async function assertProposalsWork(page) {
+  await tabTo(page, 'props');
+  await page.waitForSelector('#props .card', { timeout: 15000 });
+  const read = () => page.evaluate(() =>
+    [...document.querySelectorAll('#props details.prop')].map((d) => ({
+      id: d.getAttribute('data-prop'),
+      status: d.getAttribute('data-status'),
+      chip: (d.querySelector('.st') || {}).textContent || '',
+      text: (d.textContent || '').replace(/\s+/g, ' ').trim(),
+    })));
+  const before = await read();
+  if (!before.length) { fail('proposals: the fixture parks none to drive'); return; }
+  const states = [...new Set(before.map((p) => p.status))].sort();
+  if (states.length < 3) {
+    fail(`proposals: the fixture shows ${JSON.stringify(states)} — all three `
+       + 'states are needed, or two thirds of the tab is unchecked');
+  } else {
+    note(`proposals: ${before.length} shown, all three states (${states.join(', ')})`);
+  }
+  // A dropped one must carry its reason, or archiving is indistinguishable from
+  // deleting with extra steps.
+  const dropped = before.find((p) => p.status === 'dropped');
+  if (dropped && !/why declined/i.test(dropped.text)) {
+    fail(`proposals: ${dropped.id} is dropped and does not say why`);
+  } else if (dropped) {
+    note('proposals: a dropped proposal shows why it was declined');
+  }
+
+  const target = before.find((p) => p.status === 'proposed');
+  if (!target) { fail('proposals: nothing parked to drop'); return; }
+  // Its body is a disclosure, so everything below it is invisible until opened —
+  // which is the design (a long list stays readable) and a precondition here.
+  const open = async () => { await page.evaluate((pid) => {
+    const d = document.querySelector('#props details.prop[data-prop="' + pid + '"]');
+    if (d) d.open = true;
+  }, target.id); await page.waitForTimeout(150); };
+  await open();
+
+  // --- drop, with the reason typed where the button will read it -------------
+  const dropBtn = page.locator(`#props [data-propdrop="${target.id}"]`);
+  const dead = await dropBtn.getAttribute('aria-disabled');
+  if (dead !== 'true' && !(await dropBtn.isDisabled().catch(() => false))) {
+    fail('proposals: Drop is live with no reason typed — the affordance should '
+       + 'wait for one');
+  }
+  await page.fill(`#props [data-propreason="${target.id}"]`, 'declined by the gate');
+  await dropBtn.click();
+  await awaitConfirmDialog(page);
+  const shown = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog.confirm tbody tr')]
+      .map((r) => [...r.children].map((c) => c.textContent.trim()).join(' · ')));
+  if (!shown.some((r) => /declined by the gate/.test(r))) {
+    fail(`proposals: the drop dialog does not show the reason about to be written: `
+       + JSON.stringify(shown));
+  } else {
+    note('proposals: the drop dialog shows the reason before it is written');
+  }
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+  const afterDrop = (await read()).find((p) => p.id === target.id) || {};
+  if (afterDrop.status !== 'dropped' || !/declined by the gate/.test(afterDrop.text)) {
+    fail(`proposals: after dropping, ${target.id} reads `
+       + `${JSON.stringify(afterDrop.status)} and does not carry the reason`);
+  } else {
+    note(`proposals: ${target.id} dropped, and the reason is on the card`);
+  }
+
+  // --- revive: the half that makes it an archive -----------------------------
+  await open();
+  await page.locator(`#props [data-proprevive="${target.id}"]`).click();
+  await awaitConfirmDialog(page);
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(900);
+  const revived = (await read()).find((p) => p.id === target.id) || {};
+  if (revived.status !== 'proposed') {
+    fail(`proposals: revive left ${target.id} at ${JSON.stringify(revived.status)}`);
+  } else {
+    note(`proposals: ${target.id} revived — dropping archives rather than deletes`);
+  }
+
+  // --- materialize: the write that reaches the plan --------------------------
+  await open();
+  await page.locator(`#props [data-propmat="${target.id}"]`).click();
+  await awaitConfirmDialog(page);
+  await page.locator('dialog.confirm [data-cfgo]').click();
+  await page.waitForTimeout(1200);
+  const done = (await read()).find((p) => p.id === target.id) || {};
+  const inPlan = await page.evaluate((pid) => {
+    // Bare `STATE`, not `window.STATE`: a top-level `let` in the page's script
+    // lives in the global LEXICAL environment and never becomes a window
+    // property, so the window spelling reads undefined and this check would pass
+    // itself as a failure about the product.
+    const st = (typeof STATE === 'object' && STATE) || {};
+    const prop = ((st.proposals) || []).find((x) => x.id === pid) || {};
+    const phases = ((st.composition || {}).phases) || [];
+    return { became: prop.materializedAs || null,
+             live: phases.some((ph) => ph.id === prop.materializedAs) };
+  }, target.id);
+  if (done.status !== 'materialized' || !inPlan.became || !inPlan.live) {
+    fail(`proposals: materialize left ${target.id} at `
+       + `${JSON.stringify(done.status)}; became=${JSON.stringify(inPlan.became)} `
+       + `live=${inPlan.live} — the phase must be in the plan, not just flagged`);
+  } else {
+    note(`proposals: ${target.id} materialized as ${inPlan.became}, and that phase `
+       + 'is in the plan');
+  }
+}
+
+
 async function assertPolicyWorks(page, statePath) {
   await tabTo(page, 'policy');
   await page.waitForSelector('#policy .card', { timeout: 15000 });
@@ -5810,7 +6007,7 @@ async function assertPolicyWorks(page, statePath) {
        + `"${dirty.label}", close guarded`);
   }
   await page.locator('#policy [data-psave]').click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   const listed = await page.evaluate(() =>
     [...document.querySelectorAll('dialog.confirm tbody tr')]
       .map((r) => [...r.children].map((c) => c.textContent.trim())));
@@ -5857,7 +6054,7 @@ async function assertPolicyWorks(page, statePath) {
   await page.locator('#policy [data-poladd]').click();
   await page.waitForTimeout(200);
   await page.locator('#policy [data-psave]').click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(900);
   const refused = await page.evaluate(async () => {
@@ -5876,7 +6073,7 @@ async function assertPolicyWorks(page, statePath) {
   }
   // Put the form back to the file, through the control that does it.
   await page.locator('#policy [data-discard=policy]').click();
-  await page.waitForSelector('dialog.confirm[open]', { timeout: 5000 });
+  await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
   await page.waitForTimeout(400);
   const restored = await page.evaluate(() => editRows('policy').length);
@@ -6208,7 +6405,7 @@ async function assertTableHeaders(page) {
       cls: tb.className || '(none)',
       view: (() => {
         for (let n = tb; n; n = n.parentElement) {
-          if (['guards', 'comp', 'over', 'usage', 'policy', 'look'].includes(n.id)) return n.id;
+          if (['guards', 'comp', 'over', 'usage', 'policy', 'props', 'look'].includes(n.id)) return n.id;
         }
         return '(none)';
       })(),
@@ -6283,7 +6480,7 @@ async function assertSavebarCensus(page) {
       .filter((n) => n.startsWith('data-'));
     const viewOf = (el) => {
       for (let n = el; n; n = n.parentElement) {
-        if (n.id && ['guards', 'comp', 'over', 'usage', 'policy', 'look'].includes(n.id)) return n.id;
+        if (n.id && ['guards', 'comp', 'over', 'usage', 'policy', 'props', 'look'].includes(n.id)) return n.id;
       }
       return '(none)';
     };
@@ -7187,7 +7384,7 @@ async function main() {
 
       const tabs = await page.$$eval('.tab', (els) => els.map((e) => e.dataset.t));
       note(`panel tabs present: ${tabs.join(', ')}`);
-      for (const t of ['guards', 'comp', 'over', 'usage', 'policy']) {
+      for (const t of ['guards', 'comp', 'over', 'usage', 'policy', 'props']) {
         if (!tabs.includes(t)) {
           fail(`panel has no ${t} tab — the fixture or the UI is out of date`);
         }
@@ -7639,7 +7836,7 @@ async function main() {
         });
       };
       let hintsSeen = 0;
-      for (const t of ['guards', 'comp', 'over', 'usage', 'policy']) {
+      for (const t of ['guards', 'comp', 'over', 'usage', 'policy', 'props']) {
         const o = await overflowAt(t);
         hintsSeen += (await assertHintsFit(mob, `${t} at 390px`)).length;
         if (o.page > 1 || o.body > 1) {
@@ -7921,7 +8118,7 @@ async function main() {
       // 390px viewport, because it leaves the page at 1512px and at the top of
       // whichever view it finished on.
       const panelTally = newLadderTally();
-      for (const t of ['guards', 'comp', 'over', 'usage', 'policy']) {
+      for (const t of ['guards', 'comp', 'over', 'usage', 'policy', 'props']) {
         await mob.setViewportSize({ width: 390, height: 844 });
         await mob.mouse.move(0, 0);
         await tabTo(mob, t);
@@ -7957,8 +8154,15 @@ async function main() {
           show: async () => { await page.evaluate((x) => {
             if (typeof showTab === 'function') showTab(x); }, t);
             await page.waitForTimeout(250); } })), 'panel');
-      await assertFocusNotObscured(page);
-      await assertTargetSizeAcrossDensities(page);
+      if (FAST) {
+        FAST_SKIPPED.push('focus traversal (SC 2.4.11, every focus stop in both '
+          + 'directions across six tabs)');
+        FAST_SKIPPED.push('target-size census (SC 2.5.8, every control at three '
+          + 'densities)');
+      } else {
+        await assertFocusNotObscured(page);
+        await assertTargetSizeAcrossDensities(page);
+      }
       // Reads only, but it opens a modal over every tab it visits, so it runs
       // where no shutter follows it — the same rule the toast waiter enforces.
       await assertHelpDrawerWorks(page, declared);
@@ -8086,6 +8290,21 @@ async function main() {
         await shot(ppage, 'panel-policy');
         // Everything below writes to the fixture's config, so it runs after.
         await assertPolicyWorks(ppage, path.join(seen.dir, seen.file));
+        // The shot comes FIRST: assertProposalsWork below drops and materializes,
+        // so a capture taken after it would publish a tab mid-experiment. One card
+        // is opened so the payload is in frame — a page of collapsed summaries
+        // shows the list but not what a proposal actually is.
+        await tabTo(ppage, 'props');
+        await ppage.waitForSelector('#props .card', { timeout: 15000 });
+        await ppage.evaluate(() => {
+          const d = document.querySelector('#props details.prop');
+          if (d) d.open = true;
+        });
+        await ppage.waitForTimeout(250);
+        await shot(ppage, 'panel-proposals');
+        // Writes the fixture's MANIFEST (not its config), so it runs beside the
+        // other writers rather than before the shots above.
+        await assertProposalsWork(ppage);
         await assertPolicyExpand(ppage);
         // cs, second half: the description search, on the one registry whose
         // every description this file wrote.
@@ -8159,6 +8378,19 @@ async function main() {
       + `${legsRun.join(' + ') || 'no leg'}`);
     console.error(`capture-screenshots FAILED: ${problems.length} problem(s)`);
     process.exit(1);
+  }
+  if (FAST) {
+    // Deliberately NOT the word this prints on a full run. A fast run that ends
+    // with "preconditions hold" is a green light nobody earned, and the next
+    // person to trust it will be the author of whatever it skipped.
+    console.log(`\nFAST (exit 0): the functional checks passed on `
+      + `${legsRun.join(' + ')} — THIS IS NOT THE GATE.`);
+    for (const s2 of ['width ladder narrowed to 6 boundary rungs of '
+                      + `${RESPONSIVE_LADDER.length}`].concat(FAST_SKIPPED)) {
+      console.log(`  skipped: ${s2}`);
+    }
+    console.log('  run without --fast before trusting a change.');
+    return;
   }
   console.log(`\nOK (exit 0): ${CHECK ? 'capture preconditions hold'
     : 'screenshots captured'} — ${legsRun.join(' + ')}`);

@@ -1,0 +1,31 @@
+/* ---- proposals ------------------------------------------------------------
+   Parked phases: what /audit:init synthesized and nobody has started. Its own
+   tab, so its own part — a parked phase is not the plan, and the plan editor's
+   rules should not reach it.
+
+   `<details>` is the disclosure, which the platform already does: the summary is
+   the decision (id, name, state, size) and the body is why. That keeps a long
+   list readable at eight proposals without a scripted row to index. */
+.prop{border:1px solid var(--border);border-radius:var(--radius);
+ background:var(--surface-2);padding:var(--sp-1) var(--sp-2);margin:var(--sp-1) 0}
+.prop>summary{cursor:pointer;display:flex;align-items:baseline;gap:var(--sp-1);
+ flex-wrap:wrap}
+.prop[open]>summary{margin-bottom:var(--sp-2)}
+.propname{font-weight:600}
+/* A label/value stack rather than a table: these are four or five facts about one
+   thing, not rows to compare across proposals. */
+.propfacts{display:flex;flex-direction:column;gap:var(--sp-0);
+ margin-bottom:var(--sp-2)}
+.pf{display:flex;gap:var(--sp-1);align-items:baseline}
+.pfk{flex:0 0 8.5rem;text-align:right;color:var(--muted);font-size:.78rem}
+.pfv{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.propacts{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;
+ margin-top:var(--sp-2)}
+/* The drop reason is typed HERE, beside the button that will use it, so the
+   sentence that lands in the manifest is the one the reader was looking at. */
+.propreason{flex:1 1 16rem;min-width:0}
+@media (max-width:40rem){
+ /* The label column stops being a column when there is no room for two. */
+ .pf{flex-direction:column;gap:0}
+ .pfk{flex:0 0 auto;text-align:left}
+}

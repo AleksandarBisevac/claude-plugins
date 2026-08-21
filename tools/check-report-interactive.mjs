@@ -162,6 +162,23 @@ const FEATURE_ABSENT = [
 ];
 
 const CONDITIONAL_EXPECTS = [
+  // The two halves of the proposals branch. They are mutually exclusive per
+  // document: a plan either carries proposals or it does not, and CI renders both
+  // kinds. NO DOUBLE QUOTES in these labels - the extractor stops at one.
+  { label: 'no proposals in this plan, so no Proposals section is claimed',
+    why: 'runs only on a plan that carries no proposals at all',
+    instead: 'every parked proposal is listed with a state the vocabulary knows' },
+  { label: 'every parked proposal is listed with a state the vocabulary knows',
+    why: 'runs only on a plan that carries proposals',
+    instead: 'no proposals in this plan, so no Proposals section is claimed' },
+  { label: '...and a DROPPED proposal carries why it was declined, or the '
+         + 'archive is a tombstone',
+    why: 'rides the same branch as the listing above it',
+    instead: 'no proposals in this plan, so no Proposals section is claimed' },
+  { label: '...and print opens them, so a PDF carries the payload a reader '
+         + 'cannot click open',
+    why: 'rides the same branch as the listing above it',
+    instead: 'no proposals in this plan, so no Proposals section is claimed' },
   // The two halves of the ledger-attribution branch, each naming the other. NO
   // DOUBLE QUOTES in any of these strings: the label extractor stops at one, which
   // turned an earlier version of this label into the single word "every" - and a
@@ -568,6 +585,63 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
       expect('...and the check is not vacuous - the report really does list '
         + 'authors to compare against', who.oracle.length > 0, true);
     }
+  }
+  // F-P-32: parked proposals are ON the page. An /audit:init that parks everything
+  // used to render zero phases and no hint that any proposal existed, and a report
+  // that shows nothing does not read as "the proposals are elsewhere" - it reads as
+  // "there is nothing", on the one surface a team is likely to be shown.
+  {
+    const props = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('[data-prop]')].map((d) => ({
+        id: d.getAttribute('data-prop'),
+        status: d.getAttribute('data-status'),
+        open: d.tagName === 'DETAILS' ? d.open : null,
+        text: (d.textContent || '').replace(/\s+/g, ' ').trim(),
+      }));
+      return { rows, sectioned: !!document.getElementById('proposals'),
+               phaseRows: document.querySelectorAll('table.phases tbody tr.phase').length,
+               meta: (document.querySelector('.topbar .meta') || {}).textContent || '' };
+    });
+    if (!props.rows.length) {
+      expect('no proposals in this plan, so no Proposals section is claimed',
+        props.sectioned, false);
+    } else {
+      expect('every parked proposal is listed with a state the vocabulary knows '
+        + '(' + props.rows.length + ' shown)',
+        props.rows.every((r) => ['proposed', 'materialized', 'dropped']
+          .includes(r.status)), true);
+      // The half that makes archiving worth more than deleting.
+      const dropped = props.rows.filter((r) => r.status === 'dropped');
+      expect('...and a DROPPED proposal carries why it was declined, or the '
+        + 'archive is a tombstone',
+        !dropped.length || dropped.every((r) => /why declined/i.test(r.text)), true);
+      // The claim the stylesheet makes, checked rather than asserted in a comment:
+      // report/date-range.js opens every <details> for print, which is why
+      // <details> was the right mechanism.
+      await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+      await page.waitForTimeout(120);
+      const opened = await page.evaluate(() =>
+        [...document.querySelectorAll('details[data-prop]')].every((d) => d.open));
+      expect('...and print opens them, so a PDF carries the payload a reader '
+        + 'cannot click open', opened, true);
+      await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    }
+    // The other half of F-P-32, written as an IMPLICATION so it always runs: a
+    // plan with phases satisfies it vacuously, and one without phases has to carry
+    // the sentence. A conditional pair would have been wrong here - on a report
+    // with phases NEITHER half can run, which is a skipped leg rather than a
+    // branch not taken.
+    //
+    // Vacuous on every document THIS tool is pointed at, and deliberately so: a
+    // report with no plan has none of the elements this tool drives, so it exits 2
+    // ("cannot check") - the correct answer for it, not a gap. The all-parked case
+    // is proven in CI instead, by rendering that manifest and grepping for the
+    // sentence. This line is the cheap guard for the other direction: a report WITH
+    // phases must never start claiming proposals are parked.
+    expect('an empty plan names its parked proposals rather than reading as '
+      + 'nothing at all',
+      props.phaseRows > 0 || !props.rows.length
+        || /parked proposal/.test(props.meta), true);
   }
   // A reload is the one mutation that legitimately throws the armed nodes away,
   // so this re-arms rather than reporting. It is here so that everything below
@@ -1990,7 +2064,14 @@ else notes.push('ok   no page errors');
     // the site identifiable. A call whose label were a variable would be missed
     // -- under-counting, the quiet direction; there is none today, and this
     // comment is the record if one appears.
-    const m = line.match(/(?<![A-Za-z_.])expect\(\s*(['"`])([^'"`$]*)/);
+    //
+    // The capture runs to the OPENING delimiter (back-referenced), not to any
+    // quote character. Stopping at any quote cost a whole afternoon: a label
+    // reading `every "worked by" name is ...` truncated to `every`, and a
+    // one-word label is a wildcard prefix - `c.label.startsWith('every')` matched
+    // an unrelated conditional pair and reported it as a skipped leg. The bug was
+    // in this line and every symptom appeared somewhere else.
+    const m = line.match(/(?<![A-Za-z_.])expect\(\s*(['"`])((?:(?!\1)[^$])*)/);
     if (!m) return;
     declared.push({ line: i + 1, label: m[2].trim() });
   });

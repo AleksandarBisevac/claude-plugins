@@ -279,7 +279,7 @@ const uKeyEl=(k,cls)=>isUncat(k)
  * renaming one breaks a link somebody saved.
  */
 // ---------- tabs, the toast, and where the reader was ----------
-const TABS=['guards','comp','over','usage','policy','look'],SCROLL={};
+const TABS=['guards','comp','over','usage','policy','props','look'],SCROLL={};
 let CURTAB=null;
 /**
  * Show one view, hide the rest, and put the reader back where they were in it.

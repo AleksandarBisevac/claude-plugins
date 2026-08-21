@@ -87,6 +87,10 @@ import _policy                # noqa: E402  (the capability policy + its resolut
 import _ui_theme as _theme    # noqa: E402  (the token layer + the theme compiler)
 import _panel_settings        # noqa: E402  (settings-form schema + write allow-lists)
 import _panel_state           # noqa: E402  (the read side this write path reads through)
+# The RULE, not the command that wraps it. Loading `materialize-proposal.py`
+# here worked and was still wrong: this file sits below the entry points, so the
+# edge pointed upward and `_deps.layer_violations()` said so by name.
+import _proposals             # noqa: E402  (the proposal lifecycle + its lock)
 
 # The write allow-lists: what a composition patch may legally name.
 _META_KEYS = _panel_settings._META_KEYS
@@ -179,6 +183,49 @@ def write_areas(project, body):
     if res.get("ok"):
         res["warnings"] = list(res.get("warnings") or []) + warnings
     return res
+
+
+def proposal_action(project, body):
+    """`POST /api/proposal` - materialize, drop or revive a parked proposal.
+
+    Calls `materialize-proposal.py`'s own `main`, exactly as `render_report` calls
+    the renderer's: same code path the CLI and `/audit:propose` take, no
+    interpreter discovery, and identical behaviour on Windows. The panel therefore
+    adds NO rule of its own - the closure, the lock, the collision guard and the
+    revalidation all happen in the one place that has cases for them.
+
+    `plan` is the read-only half, and the tab calls it first so its confirm dialog
+    can show what a materialization would pull in BEFORE anything is written.
+    """
+    action = (body or {}).get("action")
+    pid = (body or {}).get("id")
+    if action not in ("plan", "materialize", "drop", "revive"):
+        return {"ok": False,
+                "findings": ["unknown proposal action %r" % (action,)]}
+    if not isinstance(pid, str) or not pid.strip():
+        return {"ok": False, "findings": ["no proposal id given"]}
+    mpath = _manifest_path(project, read_config(project))
+    if not mpath or not os.path.isfile(mpath):
+        return {"ok": False,
+                "findings": ["no manifest to act on - run /audit:init first"]}
+    ok, payload = _proposals.run(
+        mpath, action, [pid.strip()],
+        policy=(body or {}).get("policy"),
+        reason=(body or {}).get("reason"))
+    if action == "plan":
+        # A plan reports refusals IN THE PAYLOAD, so `ok` being false here is data
+        # rather than an error: the tab renders "PROP-3 was dropped: …" in its
+        # dialog instead of a generic failure. Every other action treats it as one.
+        return {"ok": True, "plan": (payload.get("plan")
+                                    or {"refused": [], "steps": []})}
+    if not ok:
+        # The rule's refusals are already worded for a reader (a dropped proposal
+        # quotes why it was dropped), so they pass straight through.
+        return {"ok": False, "findings": payload.get("findings") or ["refused"]}
+    message = payload.get("message")
+    lines = message if isinstance(message, list) else [message]
+    return {"ok": True, "message": " · ".join(str(x) for x in lines if x),
+            "warnings": payload.get("warnings") or []}
 
 
 def write_ado(project, body):

@@ -202,7 +202,7 @@ def _verdict(summary):
 
 # --- rendering ------------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
-                fragment=False, css=None):
+                fragment=False, css=None, show_proposals=True):
     """The HTML report, with this file's gate verdict wired into it.
 
     The document itself is `_report_page.render_html`; the only thing added here
@@ -213,7 +213,8 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     """
     return _report_page.render_html(manifest, summary, basename, usage,
                                     fragment=fragment, css=css,
-                                    verdict=_verdict)
+                                    verdict=_verdict,
+                                    show_proposals=show_proposals)
 
 
 # --- cli ------------------------------------------------------------------------
@@ -223,6 +224,11 @@ def main(argv):
     fmt = "both"
     summary_file = None
     cli_basename = None
+    # A boolean flag, popped before the positional check below counts arguments.
+    # Off by default: a parked proposal is part of the plan's story, and hiding it
+    # by default is what made an all-parked report read as an empty one (F-P-32).
+    show_proposals = "--no-proposals" not in args
+    args = [a for a in args if a != "--no-proposals"]
     for flag in ("--out-dir", "--format", "--summary-file", "--basename"):
         if flag in args:
             i = args.index(flag)
@@ -242,7 +248,7 @@ def main(argv):
     if fmt not in ("html", "md", "both", "artifact") or len(args) != 1:
         sys.stderr.write("usage: render-report.py <manifest> [--out-dir DIR] "
                          "[--format html|md|both|artifact] [--summary-file PATH] "
-                         "[--basename NAME]\n")
+                         "[--basename NAME] [--no-proposals]\n")
         return 2
 
     manifest_path = args[0]
@@ -306,7 +312,7 @@ def main(argv):
         p = os.path.join(out_dir, basename + ".html")
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_html(manifest, summary, basename, usage,
-                                 css=_css))
+                                 css=_css, show_proposals=show_proposals))
         written.append(p)
     if fmt == "artifact":
         # A separate name, never the .html one. The standalone file is what people
@@ -315,7 +321,8 @@ def main(argv):
         p = os.path.join(out_dir, basename + ".artifact.html")
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_html(manifest, summary, basename, usage,
-                                 fragment=True, css=_css))
+                                 fragment=True, css=_css,
+                                 show_proposals=show_proposals))
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")

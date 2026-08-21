@@ -817,12 +817,20 @@ def schema_coverage(manifest, schema=None):
 def _proposals(n_phases):
     """Parked phases: what /audit:init synthesized and the user did not approve.
 
-    Both halves of the lifecycle, because they are validated by DIFFERENT rules
-    and a fixture carrying one of them proves only half the feature. A still-
-    PROPOSED payload RESERVES its phase and task ids (allocation counts them
-    alongside live ids), so its phase sits one past the last live one; a
-    MATERIALIZED record has already become a live phase, so its payload id is the
-    live id on purpose and `materializedAs` has to name a phase that exists.
+    ALL THREE states, because each is validated by DIFFERENT rules and a fixture
+    carrying two of them proves two thirds of the feature. A still-PROPOSED
+    payload RESERVES its phase and task ids (allocation counts them alongside live
+    ids), so its phase sits one past the last live one; a MATERIALIZED record has
+    already become a live phase, so its payload id is the live id on purpose and
+    `materializedAs` has to name a phase that exists; a DROPPED record must carry
+    a `notes` justification, which the validator now requires rather than trusting
+    a command's prose to have asked for it.
+
+    The dropped one is here rather than exempted from the schema-coverage lint
+    because this fixture is what the panel screenshots and docs/demo-large.html
+    are rendered from: a state absent here is a state no rendered surface ever
+    shows and no browser gate can assert. An archive nobody can see is the defect
+    the drop pair exists to prevent.
     """
     parked = "P%d" % (n_phases + 1)
     props = [{
@@ -872,6 +880,25 @@ def _proposals(n_phases):
         "materializedAt": _iso(BASE + datetime.timedelta(days=2)),
         "payload": {"phase": {"id": "P2", "title": "Web pass 2",
                               "status": "pending", "area": "web", "tasks": []}},
+    })
+    props.append({
+        "id": "PROP-3",
+        "name": "Rewrite the importer in Rust",
+        "status": "dropped",
+        "origin": "audit:init",
+        "createdISO": _iso(BASE + datetime.timedelta(days=1)),
+        "scope": "src/import",
+        "benefit": "Faster imports.",
+        "technicalNote": "Parked, then declined.",
+        "openQuestions": [],
+        # The drop pair. `notes` is REQUIRED once status is dropped: a dropped
+        # proposal is history rather than a deletion, so it has to say why.
+        "notes": "declined - the importer is being replaced wholesale in Q4, so "
+                 "rewriting it first is work with no reader",
+        "droppedAt": _iso(BASE + datetime.timedelta(days=3)),
+        "payload": {"phase": {"id": "P%d" % (n_phases + 2),
+                              "title": "Importer rewrite",
+                              "status": "pending", "tasks": []}},
     })
     return props
 

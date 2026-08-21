@@ -631,6 +631,57 @@ jobs:
           python plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
             --out-dir /tmp/one-status --format html
           node tools/check-report-interactive.mjs /tmp/one-status/*.html
+          # ...and one none of them can stand in for: an ALL-PARKED plan. That is
+          # what /audit:init leaves when the user declines every synthesized
+          # phase, and it used to render zero phases with no hint that any
+          # proposal existed (F-P-32) — a report showing nothing does not read as
+          # "the proposals are elsewhere", it reads as "there is nothing", on the
+          # one surface a team is likely to be shown. Without this fixture the
+          # check for that sentence is an implication nothing ever makes true.
+          # Built the way /audit:init's "Park all as proposals" actually leaves a
+          # manifest: meta + phases[] + fileIndex{}, every proposal back to
+          # `proposed`, and no bugs — a bug whose taskId lives only inside a parked
+          # payload is a dangling ref, and emptying phases while leaving a
+          # materialized proposal points materializedAs at a phase that is gone.
+          # Both were findings on the first attempt at this fixture.
+          rm -rf /tmp/all-parked && mkdir -p /tmp/all-parked
+          python - <<'PYEOF'
+          import io, json
+          src = json.load(io.open("/tmp/dl/audit-plan.json", encoding="utf-8"))
+          src["phases"] = []
+          src["fileIndex"] = {}
+          src["bugs"] = []
+          for prop in src.get("proposals") or []:
+              prop["status"] = "proposed"
+              prop["materializedAs"] = None
+              prop["materializedAt"] = None
+              prop.pop("notes", None)
+              prop.pop("droppedAt", None)
+          io.open("/tmp/all-parked/audit-plan.json", "w", encoding="utf-8").write(
+              json.dumps(src, indent=2))
+          PYEOF
+          python plugins/audit/scripts/manifest/validate-manifest.py \
+            /tmp/all-parked/audit-plan.json
+          CLAUDE_PROJECT_DIR=/tmp/all-parked python \
+            plugins/audit/scripts/report/render-report.py \
+            /tmp/all-parked/audit-plan.json --out-dir /tmp/all-parked --format html
+          # NOT check-report-interactive here: a document with no plan has none of
+          # the elements that tool drives, so it exits 2 ("cannot check") — which is
+          # its correct answer, not a gap. What this fixture exists to prove is the
+          # SENTENCE, and that is a grep.
+          grep -q "parked proposal" /tmp/all-parked/*.html \
+            || { echo "an all-parked report does not name its proposals"; exit 1; }
+          # ...and --no-proposals drops the SECTION without dropping that sentence.
+          CLAUDE_PROJECT_DIR=/tmp/all-parked python \
+            plugins/audit/scripts/report/render-report.py \
+            /tmp/all-parked/audit-plan.json --out-dir /tmp/all-parked \
+            --format html --basename np --no-proposals
+          grep -q "parked proposal" /tmp/all-parked/np.html \
+            || { echo "--no-proposals swallowed the empty-plan sentence"; exit 1; }
+          if grep -q 'id="proposals"' /tmp/all-parked/np.html; then
+            echo "--no-proposals did not drop the section"; exit 1
+          fi
+
           # ...and one document none of the four above can stand in for either: a
           # report OLDER than the checks. Every artifact CI renders is by
           # definition current, so the path that meets a missing element ran

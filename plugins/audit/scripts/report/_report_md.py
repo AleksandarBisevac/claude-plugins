@@ -135,6 +135,28 @@ def render_md(manifest, summary, usage=None):
                 cell(b.get("severity") or "—"), cell(b.get("taskId") or "—"),
                 cell(bfixed[:9])))
         out.append("")
+    # Parked proposals (F-P-32). The twin carries them for the same reason the HTML
+    # does: an all-parked plan renders zero phases, and a document that shows
+    # nothing does not read as "the proposals are elsewhere". A dropped one keeps
+    # its reason, because that is what archiving instead of deleting is for.
+    props = [p for p in (manifest.get("proposals") or []) if isinstance(p, dict)]
+    if props:
+        out += ["## Proposals", "",
+                "| id | name | status | tasks | note |",
+                "|---|---|---|---|---|"]
+        for prop in props:
+            payload = prop.get("payload")
+            phase = payload.get("phase") if isinstance(payload, dict) else None
+            tasks = [t for t in ((phase or {}).get("tasks") or [])
+                     if isinstance(t, dict)]
+            status = prop.get("status") or "proposed"
+            note = (prop.get("notes") if status == "dropped"
+                    else prop.get("materializedAs") if status == "materialized"
+                    else prop.get("benefit"))
+            out.append("| %s | %s | %s | %s | %s |" % (
+                cell(prop.get("id")), cell(prop.get("name")), cell(status),
+                cell(len(tasks)), cell(note or "—")))
+        out.append("")
     if summary["ready"]:
         out += ["## Ready now", "", ", ".join(cell(r) for r in summary["ready"]), ""]
     usage_md = _usage_md(usage)

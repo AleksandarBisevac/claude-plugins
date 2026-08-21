@@ -390,6 +390,24 @@ def _nojs_block():
         "open this file in a real browser and it will work.</div>"], [])
 
 
+def _parked_suffix(manifest, summary):
+    """" · N parked proposal(s)" when the plan is empty and proposals exist.
+
+    F-P-32's other half, and it is deliberately NOT part of the Proposals section:
+    `--no-proposals` turns that section off, and a reader who asked for a report
+    without proposals still must not be shown "0 phases" as if it were the whole
+    truth. The count is stated where the other counts already are.
+    """
+    if summary["phases"]:
+        return ""
+    parked = len([p for p in (manifest.get("proposals") or [])
+                  if isinstance(p, dict) and p.get("status") == "proposed"])
+    if not parked:
+        return ""
+    return (" · %d parked proposal%s, not started"
+            % (parked, "" if parked == 1 else "s"))
+
+
 def _topbar_block(manifest, meta, summary, usage, owners):
     """The sticky top bar — identity, the global filters — and the shell it opens."""
     now = _report_html.stamp_time()
@@ -399,7 +417,8 @@ def _topbar_block(manifest, meta, summary, usage, owners):
              "generated %s%s</p></div>"
              % (e(meta.get("title") or "Audit report"),
                 e(meta.get("repo") or "?"), len(summary["phases"]),
-                summary["tasks"]["total"], summary["bugs"]["total"], now,
+                summary["tasks"]["total"], summary["bugs"]["total"],
+                now + _parked_suffix(manifest, summary),
                 (' · <span class="stampv" title="The plugin version that '
                  'rendered this file">audit %s</span>' % e(ver)) if ver else "")]
     # The global filter row (C1/C2): author, area and the date range, inside
@@ -697,6 +716,74 @@ def _usage_block(usage):
     return [html], records
 
 
+def _proposals_block(manifest, show=True):
+    """Parked phases: what was synthesized and not taken on. Nothing when empty.
+
+    F-P-32. An `/audit:init` that parks everything left this report showing zero
+    phases and no hint that eight proposals existed - and a report that renders
+    nothing does not read as "the proposals are not shown here", it reads as
+    "there is nothing". The whole content of the plan was invisible on the one
+    surface a team is likely to be shown.
+
+    `<details>` rather than a JS-driven detail row: this is disclosure, which the
+    platform already has, so the payload is readable with scripting off and in
+    print. It is also the cheaper half of "reuse existing components" - a second
+    expand mechanism would have to be indexed by report.js next to the task rows.
+
+    A DROPPED proposal shows its reason. That is the point of archiving instead of
+    deleting: an archive nobody can read is a tombstone.
+    """
+    props = [p for p in (manifest.get("proposals") or []) if isinstance(p, dict)]
+    if not props or not show:
+        return [], []
+    parked = len([p for p in props if p.get("status") == "proposed"])
+    record = ("proposals", "Proposals", parked or None, False)
+    parts = ['<h2 id="%s">Proposals</h2>' % _anchor(record),
+             '<p class="muted">Phases that were synthesized and parked rather '
+             "than started. Materialize one with "
+             "<code>/audit:propose materialize &lt;id&gt;</code>; a dropped one "
+             "keeps its reason as history.</p>"]
+    for prop in props:
+        payload = prop.get("payload")
+        phase = payload.get("phase") if isinstance(payload, dict) else None
+        tasks = [t for t in ((phase or {}).get("tasks") or []) if isinstance(t, dict)]
+        status = prop.get("status") or "proposed"
+        head = ('<summary><span class="mono">%s</span> %s %s'
+                '<span class="muted"> · %s</span></summary>'
+                % (e(prop.get("id")), e(prop.get("name") or ""), _chip(status),
+                   e("%d task(s)" % len(tasks)) if phase
+                   else "no payload — nothing to materialize"))
+        rows = []
+        for label, value in (("scope", prop.get("scope")),
+                             ("benefit", prop.get("benefit")),
+                             ("note", prop.get("technicalNote")),
+                             ("why declined", prop.get("notes")
+                              if status == "dropped" else None),
+                             ("became", prop.get("materializedAs"))):
+            if value:
+                rows.append('<div class="dt-r"><span class="dt-k">%s</span>'
+                            '<span class="dt-v">%s</span></div>'
+                            % (e(label), e(str(value))))
+        oq = [q for q in (prop.get("openQuestions") or []) if isinstance(q, str)]
+        if oq:
+            rows.append('<div class="dt-r"><span class="dt-k">open questions</span>'
+                        '<span class="dt-v">%s</span></div>'
+                        % e(" · ".join(oq)))
+        body = ['<div class="propmeta">%s</div>' % "".join(rows)]
+        if tasks:
+            trs = "".join(
+                '<tr><td class=mono>%s</td><td>%s</td><td class=mono>%s</td></tr>'
+                % (e(t.get("id")), e(t.get("title")), e(t.get("risk") or "—"))
+                for t in tasks)
+            body.append('<div class="tablewrap"><table class="data">'
+                        "<thead><tr><th>task</th><th>title</th><th>risk</th></tr>"
+                        "</thead><tbody>%s</tbody></table></div>" % trs)
+        parts.append('<details class="prop" data-prop="%s" data-status="%s">%s%s'
+                     "</details>"
+                     % (e(prop.get("id")), e(status), head, "".join(body)))
+    return parts, [record]
+
+
 def _bugs_block(manifest, summary):
     """The bugs table, or nothing at all when the plan tracks none."""
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
@@ -783,7 +870,7 @@ def _nav_html(sections):
 
 # --- the page -------------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
-                fragment=False, css=None, verdict=None):
+                fragment=False, css=None, verdict=None, show_proposals=True):
     """The HTML report. `fragment=True` emits it for an embedding host.
 
     A Claude Code Artifact wraps what it is given in its own
@@ -825,6 +912,7 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                           (usage or {}).get("taskAuthors")),
             _usage_block(usage),
             _bugs_block(manifest, summary),
+            _proposals_block(manifest, show_proposals),
             _ready_block(manifest, summary),
             _tail_block(manifest, summary, usage, basename, fragment)):
         out += parts

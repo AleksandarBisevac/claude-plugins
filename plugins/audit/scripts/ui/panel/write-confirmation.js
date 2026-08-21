@@ -876,7 +876,7 @@ async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/
  // restored once every view has content to scroll to, and RUNSTATUS is read by
  // the header the poller then keeps up to date.
  const broke=runContained([renderViewer,renderSettings,renderComp,renderOver,
-   renderUsage,renderPolicy,renderAppearance]);
+   renderUsage,renderPolicy,renderProposals,renderAppearance]);
  const showInitialTab=()=>showTab(initialTab());
  broke.push(...runContained([showInitialTab]));
  RUNSTATUS=STATE.runStatus||null;FP=(RUNSTATUS||{}).fingerprint||null;

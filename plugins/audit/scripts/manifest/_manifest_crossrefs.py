@@ -375,6 +375,21 @@ def _check_proposals(manifest, index):
                 f.append("%s: materializedAs is set but status is %r — must be "
                          "'materialized' (/audit:propose writes both together)"
                          % (xwhere, status))
+        # The DROP pair, mirroring the materialize pair above. `propose.md` has
+        # always asked for the justification, but prose cannot enforce it and the
+        # panel can drop too now — an archive whose entries do not say WHY is a
+        # tombstone, and the command's own words are that a later reader must
+        # find why the work was declined.
+        notes = prop.get("notes")
+        if status == "dropped" and not str(notes or "").strip():
+            f.append("%s: status is 'dropped' but there is no `notes` "
+                     "justification — a dropped proposal is history rather than a "
+                     "deletion, so it has to say why the work was declined"
+                     % (xwhere,))
+        dropped_at = prop.get("droppedAt")
+        if dropped_at is not None and status != "dropped":
+            f.append("%s: droppedAt is set but status is %r — must be 'dropped'"
+                     % (xwhere, status))
         pphase = payload.get("phase")
         if not isinstance(pphase, dict):
             f.append("%s: payload.phase must be an object (the parked phase), "
