@@ -4,6 +4,69 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.42.0] - 2026-08-21
+
+**A control that cannot honour a choice stops offering it.** Six reports this round turned out
+to be one fault wearing different clothes, and the shape is worth naming because it will
+recur: two filters ANDed together, one of them offering a value the other has already made
+impossible. The report's status chips offered `Pending` while the view was `Archived`, and
+pressing it gave `0 / 9 phases`. The area dropdown had the same bug one control over -- found
+by sweeping every control rather than by waiting for a second report -- offering an area whose
+only phase the current view hides. Both now follow the view: the impossible choice is gone from
+the set, and a selection the new view has just made impossible is CLEARED rather than left
+pressed-but-inert, because a pressed chip filtering nothing is the same lie one step later.
+Both derive their view mapping from the rendered rows rather than from a second copy of the
+Python that assigns segments.
+
+**The heatmap's granularity buttons were telling the truth and sounding like a lie.** When a
+ledger fits inside one calendar year, `Year` draws the same grid as `All` -- by definition,
+not by bug -- and the arrows are dead because no neighbouring period holds data. All correct,
+and none of it said out loud, so three buttons drew one picture and two arrows did nothing. The
+arithmetic is untouched; what changed is that a degenerate granularity is now dimmed and says
+why, a dead arrow gives its reason, and the period line adds `the whole ledger falls in this
+month`. A heatmap cell also stops handing its datum to the OS: `cursor:help` drew a question
+mark over every cell including the empty ones, and the number arrived a second later in a
+native tooltip. The cell now uses the panel's own tip layer through ONE delegated listener --
+the report had already settled this for a larger grid -- and the timing is a group warm-up:
+the first hover waits, every later one is immediate until the pointer leaves the heatmap.
+
+**An unsaved setting says which one it is.** The Guards savebar counted (`Discard 1 change`)
+while nothing on the form marked the field, so the count's basis was a click away in the
+confirm dialog -- and the Policy tab next door had been marking its pending cells inline all
+along. Two surfaces disagreeing about whether a claim shows its basis is the thing to fix, so
+the edited field now carries the same `pend` vocabulary Policy uses plus an `unsaved` badge (a
+word, not only a colour, so it survives forced colours). Writing that gate found an older bug
+behind it: `onViewEdit` fires on the Save *click*, before the write resolves, so the last thing
+it ever computed was the state just before the save -- which left **Discard offering to throw
+away a change already on disk**. Both are fixed by one named read that the save path also
+calls.
+
+**Author joins the report's filter bar**, with its limit stated rather than implied: it scopes
+the Usage section's per-author views and cannot filter phases, because tasks record no author
+to filter by. A plan with exactly one author gets a line naming them instead of an inert
+one-option dropdown.
+
+**The ADO conformance gate checks the shape before it grades the substance.** Handed the output
+of `az boards work-item show` -- the most available JSON anyone has, and the flag is called
+`--item` -- it used to half-read it: `fields` matched, so the tag rules really ran, while `type`
+and `parent` live elsewhere in that shape, so `requireParent` fired on an item that HAS a
+parent and the answer was a confident `DOES NOT CONFORM: do NOT create this item` about a
+correct, long-existing work item. A fetched payload is now refused as a usage error (exit 2)
+naming what gave it away, never exit 1 -- a 1 means the item does not belong on the board, and
+saying that about a payload we could not read is the confident wrong answer the gate exists to
+prevent.
+
+**And a board standard that contradicts the connector is named when it is written, not at
+push time.** `meta.ado.tag` defaults to `audit-plugin`, which carries no prefix, so a
+`tagVocabulary` admitting only prefixed tags refuses every item the connector creates -- and
+the manifest validated clean, because each block was graded alone. Same for `requireParent`
+with no `parentWorkItem`: the top of the created tree has nothing to hang under. Both are now
+warnings from the one front door every surface already shares, so the validator, the doctor and
+the panel's ADO card report them without three copies of the rule. Warnings rather than
+findings on purpose: once every item is linked a push does only updates, the gate runs on
+CREATE alone, and the contradiction lies dormant -- calling that setup invalid would fail a
+working config's CI on upgrade.
+
 ## [0.41.0] - 2026-08-20
 
 **The two surfaces stop being two codebases.** A `ui/shared/` layer now exists and holds
