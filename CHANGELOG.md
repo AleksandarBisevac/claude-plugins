@@ -4,6 +4,42 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [0.43.0] - 2026-08-21
+
+**A granularity that cannot differ from All is no longer offered.** The heatmap's Year and
+Month buttons were dimmed-but-clickable when the whole ledger fell inside one year or one
+month, which reads as broken and was reported as broken twice: pressing them repainted an
+identical grid. The arithmetic was never wrong -- on a ten-day ledger, "all data", "this year"
+and "this month" are the same set of hours -- so what changed is the control. The impossible
+choice leaves the ladder, a selection it just invalidated is cleared, and the reason sits under
+the buttons as plain text ("Year needs a ledger spanning more than one year -- this one runs
+2026-04-01 to 2026-05-23") rather than as a tooltip on a control that is no longer there. Proven
+against an 18-month ledger, where all five granularities draw five different grids and the
+arrows step between months.
+
+**The "N phases match outside this view" row is gone.** It offered to undo a choice the reader
+had just made, next to a View select that already says "All phases". The counter still reports
+`N / M phases` whenever anything is filtering, which is the same fact without the extra row; the
+browser gate now asserts the row's ABSENCE and that the select still reaches those phases.
+
+**A task's `technical` prose is trimmed to five lines**, with an ellipsis and a Show more /
+Show less control -- it was pushing `model`, `skills` and `tests` off the screen. `max-height`
+rather than `line-clamp`, which the Baseline snapshot lists as Limited. The control ships hidden
+and the page reveals it only where the text really is cut off, because whether five lines
+truncates depends on the width it is read at.
+
+**Task details now say who did the work.** The manifest records no assignee and inventing one
+would be a claim the file does not make -- but the usage ledger records an author against a
+taskId on every metered turn, so `worked by` reports that instead, strongest spend first, with
+`(metered on this task)` naming its basis. Rendered server-side, so it survives into the PDF and
+the Markdown twin, and absent entirely when there is no ledger.
+
+**The panel stamps the build serving it**, in the topbar beside the project path -- the same
+words and the same place the report already stamps the renderer that wrote it. The plugin cache
+is keyed by version, so `marketplace update` plus a reload can hand over a different build with
+nothing on screen to say so. `plugin_version()` moved into `_output.py` and the report now reads
+it as an alias: two surfaces stamping one fact, one implementation.
+
 ## [0.42.0] - 2026-08-21
 
 **A control that cannot honour a choice stops offering it.** Six reports this round turned out
