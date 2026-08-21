@@ -54,6 +54,20 @@ BACKUP=$(mktemp "${TMPDIR:-/tmp}/redfirst-XXXXXX")
 cp "$FILE" "$BACKUP"
 restore() {
   cp "$BACKUP" "$FILE"
+  # A BYTE-FOR-BYTE restore is not enough for Python. CPython validates a cached
+  # .pyc by the source's mtime and SIZE, and a restore that reproduces the bytes
+  # reproduces the size -- so the .pyc compiled from the MUTATED source stays
+  # valid and keeps being imported. The source reads clean, the tests run the
+  # mutation, and the next suite to import that module tests code nobody can see.
+  # This cost an hour: a repair whose journal row was fixed on disk kept writing
+  # the old key, and the file said otherwise.
+  case "$FILE" in
+    *.py)
+      _rf_dir=$(dirname "$FILE")
+      _rf_base=$(basename "$FILE" .py)
+      rm -f "$_rf_dir/__pycache__/$_rf_base."*.pyc 2>/dev/null || true
+      ;;
+  esac
   if [ "$RENDER" -eq 1 ]; then sh examples/report.sh >/dev/null 2>&1 || true; fi
 }
 trap 'restore' EXIT TERM INT
