@@ -21,6 +21,28 @@ its own hooks.
 
 ## Tests (run before every PR)
 
+**One command runs all of it:**
+
+```bash
+tools/verify.sh                 # every gate CI runs
+tools/verify.sh --fast          # iteration mode: narrower browser sweeps, NOT a gate
+tools/verify.sh --release       # the full set, plus what a version bump owes
+```
+
+It exists because typing these by hand cost two red CI runs in one day: once by
+skipping the `ajv` step, and once by bumping the version AFTER the sweep was green
+— a bump stales the README's runnable `curl` pins and the rendered artifacts, both
+of which are checked by name. `--release` is the guard for exactly that, and every
+step runs even after an earlier one fails, so the summary is the whole truth rather
+than the first thing that broke.
+
+`--fast` narrows the width ladder and skips the two systematic accessibility
+sweeps. It prints what it skipped and refuses to say the preconditions hold, and it
+is never what CI runs.
+
+The individual commands stay documented below, because they are the definition and
+the script is only a caller:
+
 ```bash
 # every selftest suite — stdlib only, no deps. Swept, never enumerated: a list
 # drifted three ways once and CI silently stopped running one suite entirely.

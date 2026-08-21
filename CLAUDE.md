@@ -131,6 +131,13 @@ part is for. Assets of 400+ lines also owe one section marker per 400 lines, enf
 
 ## Tests
 
+**`tools/verify.sh` runs every gate below in one command** — `--fast` for iteration
+(narrower browser sweeps, prints what it skipped, never a gate), `--release` to add
+the checks a version bump owes. Prefer it: running these by hand cost two red CI
+runs in one day, both from a forgotten step rather than a broken change.
+
+The commands it calls, which remain the definition:
+
 ```bash
 for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
 for f in $(find plugins/audit/tests -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
