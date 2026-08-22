@@ -67,8 +67,29 @@ import { tmpdir, release } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+// --- the extracted modules, re-exported ------------------------------------
+// Four concerns moved out of this file into tools/ui-checks/ and are re-exported
+// here so every existing importer keeps working while each symbol has ONE home.
+// The names below are the shared surface: check-report-interactive.mjs imports
+// seven of them, and red-first probes import the CSV readers.
+// IMPORTED, then re-exported. A bare `export ... from` is a facade and nothing
+// more: it does not bind the name in THIS module's scope, and this file still
+// calls several of them - which is how the first cut of this split failed with
+// 'newLivenessTally is not defined' on the very next import.
+import { csvFields, firstNonRawNumberLine } from './ui-checks/csv.mjs';
+import { scriptIndex, resolveScript } from './ui-checks/scripts.mjs';
+import { livenessAt, assertStillLive, newLivenessTally,
+         assertLivenessWasChecked } from './ui-checks/liveness.mjs';
+import { RESPONSIVE_LADDER, measureResponsiveFrame, walkResponsiveLadder,
+         assertLadderMeasuredSomething, newLadderTally } from './ui-checks/responsive.mjs';
+import { unwiredStages, stageSources } from './ui-checks/wiring.mjs';
+
+export { csvFields, firstNonRawNumberLine, scriptIndex, resolveScript,
+         livenessAt, assertStillLive, newLivenessTally, assertLivenessWasChecked,
+         RESPONSIVE_LADDER, measureResponsiveFrame, walkResponsiveLadder,
+         assertLadderMeasuredSomething, newLadderTally };
+
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SCRIPTS = path.join(REPO, 'plugins', 'audit', 'scripts');
 const PY = process.env.PYTHON || 'python3';
 
 const argv = process.argv.slice(2);
@@ -126,173 +147,9 @@ const problems = [];
 const note = (m) => console.log(`  ${m}`);
 const fail = (m) => { problems.push(m); console.log(`  FAIL ${m}`); };
 
-/**
- * One CSV record as fields, double-quote escaping respected (RFC 4180).
- *
- * F-D-1 (v0.37 A3): the borrowed substring regex this replaces
- * (`/"?\d+,\d{3}[,."]/`) read a legitimate 3-digit count after a date field
- * ("…-13,123,…" across a field boundary) as a thousands separator —
- * reproduced on a real ledger. Structure cannot be fooled that way: parse the
- * record into fields, then judge only the fields that claim to be numbers.
- * The report-side export check in tools/check-report-interactive.mjs is the
- * precedent. Exported so a probe can drive the assertion without a browser.
- */
-export const csvFields = (line) => {
-  const out = [];
-  let cur = '';
-  let q = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const c = line[i];
-    if (q) {
-      if (c === '"' && line[i + 1] === '"') { cur += '"'; i += 1; }
-      else if (c === '"') q = false;
-      else cur += c;
-    } else if (c === '"') q = true;
-    else if (c === ',') { out.push(cur); cur = ''; }
-    else cur += c;
-  }
-  out.push(cur);
-  return out;
-};
+// --- reading a CSV the report exported -----------------------------------------
+// --- child processes and the static server -------------------------------------
 
-/**
- * First data line whose named numeric columns carry anything but a raw
- * number (grouping separators included), or whose field count disagrees with
- * the header — a spreadsheet reads either as text and every sum over the
- * column is then silently wrong. `lines` is header-first, BOM/CRLF stripped.
- * Returns null when every line is clean.
- */
-export const firstNonRawNumberLine = (lines, numericCols) => {
-  const head = csvFields(lines[0] || '');
-  const idx = numericCols.map((c) => head.indexOf(c)).filter((i) => i >= 0);
-  for (const line of lines.slice(1)) {
-    const f = csvFields(line);
-    if (f.length !== head.length) return line;
-    if (idx.some((i) => !/^\d+(\.\d+)?$/.test(f[i]))) return line;
-  }
-  return null;
-};
-
-/**
- * Every spelling of a directory separator on this platform — the mirror of
- * `_loader._SEPARATORS`. `'/'` is always one; `path.sep` is the same character on
- * POSIX and a backslash on Windows, so the Set is one entry there and two here.
- */
-const SEPARATORS = [...new Set(['/', path.sep])];
-
-/** Memoised for the DEFAULT tree only. See scriptIndex(). */
-let scriptIndexMemo = null;
-
-/**
- * `Map` of basename -> [absolute path, ...] for every `.py` under scripts/, at ANY
- * DEPTH. The JavaScript half of `_loader.script_index()`.
- *
- * WHY THIS EXISTS AT ALL. This file used to build each script path by joining the
- * SCRIPTS constant with a filename, nine times over. Two things were wrong with that.
- * No lint could see those lines — `_refs.py` matched a directory-plus-name PATH per
- * line, and a join carries the name only — so they failed at RUN time, in a browser
- * gate, instead of at lint time. And when `render-report.py` moved into a subdirectory,
- * one join was patched by inserting the folder's name into it, which hard-codes a
- * DOMAIN NAME into a tool: the folders under scripts/ are labels, not namespaces, and
- * no consumer should have to know which one a script was filed under. Seven more
- * domains are due to move.
- *
- * NO join of the SCRIPTS constant survives in this file any more. One did until
- * recently — a read of `ui/panel.js`, argued at its site as safe because a UI asset
- * is not a script and so could not be relabelled. Then panel.js was cut into parts
- * and the path stopped existing, which is the answer to the argument: the exemption
- * was sound about relabelling and silent about the file simply not being there.
- * `assertNoHandAssignedPolledState` now asks Python for the assembled page instead,
- * which is what its subject was all along. `test__refs.py` asserts the count, so a
- * join cannot creep back in quietly.
- *
- * WHY IT IS A COPY. This is the fourth statement of one resolution rule (`_loader.py`,
- * `_config.py`'s find_script, `_output.py`'s script_files are the other three) and the
- * copy is not avoidable, because `.mjs` cannot import Python. It is held true by
- * READING rather than by merging: `test__refs.py` runs this function under node and
- * compares its answer with `_loader.script_index()`, basename by basename — the same
- * shape as the pricing table this repo holds equal between `_config.py` and
- * `_usage_core.py`.
- *
- * A LIST PER NAME, NEVER A PATH, for `_loader`'s reason: a Map of name -> path keeps
- * whichever file the walk saw last and leaves nothing to report about the other.
- *
- * `__pycache__` is deliberately NOT skipped, because `_output.py_files()` does not skip
- * it either and it holds `.pyc` and no `.py`. A filter here would be this walk and that
- * walk answering "what is in the tree" differently about a directory neither ever finds
- * a file in.
- *
- * `root` is a TEST SEAM and is deliberately NOT memoised — a fixture tree must neither
- * poison the real tree's answer nor read it. Same rule, same reason, as
- * `_output.script_files()`.
- */
-export function scriptIndex(root = null) {
-  if (root === null && scriptIndexMemo) return scriptIndexMemo;
-  const index = new Map();
-  const walk = (dir) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.name.endsWith('.py')) index.set(entry.name, [...(index.get(entry.name) || []), full]);
-    }
-  };
-  walk(root === null ? SCRIPTS : root);
-  // Sorted so a duplicate-name refusal names the two files in a stable order;
-  // readdirSync order is not stable across filesystems, os.walk's is not either.
-  for (const paths of index.values()) paths.sort();
-  if (root === null) scriptIndexMemo = index;
-  return index;
-}
-
-/**
- * The absolute path of `basename` WHEREVER it sits under scripts/.
- *
- * THROWS, NEVER GUESSES, and there is no fallback join behind any of the three
- * refusals — they are `_loader.script_path()`'s, restated where the resolution
- * actually happens:
- *
- *   * NOTHING WITH THAT NAME -> naming the basename AND how many files were searched.
- *     The count is not decoration: "not found among 39" is a typo in a filename, "not
- *     found among 0" is a tree that was never walked, and whoever is reading the
- *     failure has to be able to tell those two apart.
- *   * TWO FILES WITH THAT NAME -> naming BOTH paths. Picking the one the walk saw first
- *     is the only failure this shape can produce SILENTLY: the wrong script, run under
- *     the right name, behaving plausibly.
- *   * A VALUE CARRYING A PATH SEPARATOR -> naming the value. The index is keyed by
- *     basename, so 'report/render-report.py' would either miss and report a name nobody
- *     spelled, or be quietly reduced to the basename and resolved out of a different
- *     directory than the caller wrote down. Dropping a directory the caller spelled is
- *     how a caller comes to believe the directory mattered — which is the exact belief
- *     this function exists to remove.
- */
-export function resolveScript(basename, root = null) {
-  const name = String(basename);
-  const sep = SEPARATORS.find((s) => name.includes(s));
-  if (sep !== undefined) {
-    throw new Error(`resolveScript() takes a BASENAME and "${name}" carries the `
-      + `directory separator "${sep}". The index is keyed by basename — the folders `
-      + `under scripts/ are labels, not namespaces — so the directory you spelled `
-      + 'would be dropped rather than honoured.');
-  }
-  const index = scriptIndex(root);
-  const found = index.get(name) || [];
-  if (found.length === 0) {
-    let total = 0;
-    for (const paths of index.values()) total += paths.length;
-    throw new Error(`no script named "${name}" among the ${total} Python file(s) found `
-      + `under ${root === null ? SCRIPTS : root}. (0 searched means the walk found `
-      + 'nothing at all — a tree that is not there — which is a different problem from '
-      + 'a misspelled name)');
-  }
-  if (found.length > 1) {
-    throw new Error(`the basename "${name}" is claimed by ${found.length} files `
-      + `(${found.join(', ')}) — import and every resolver here go by basename, so `
-      + 'picking one would run the WRONG script under the RIGHT name. '
-      + '_deps.layer_violations() fails the build on this same rule; this is it '
-      + 'holding at capture time.');
-  }
-  return found[0];
-}
 
 function py(args, env = {}) {
   return execFileSync(PY, args, {
@@ -415,131 +272,7 @@ async function settle(page) {
  * removed one would be caught by RESPONSE rather than by CONTINUITY.
  */
 
-/** Written on the anchor element. Dies with an innerHTML rewrite AND with a load. */
-const LIVE_MARK = '__auditLiveMark';
-/** Written on `window`. Survives an innerHTML rewrite; dies with a load. */
-const LIVE_TOKENS = '__auditLiveTokens';
-
-/**
- * The liveness verdict at `anchorSel`, arming a baseline when there is none.
- *
- * Keyed BY SELECTOR on both sides, which is not decoration: two anchors on one page
- * (`.tab` here, `#audit-expand` in the report gate) would otherwise read each other's
- * token, and the second one asked would report `rebuilt` on a perfectly healthy page.
- * A liveness check that fires on a healthy run is the failure mode this file is most
- * careful about, so the shared state is per-anchor and never global.
- *
- * Verdicts: `live` (same nodes as when armed), `armed` (fresh document — baseline
- * taken, nothing claimed), `rebuilt` (the F23 shape), `no-anchor` (the selector
- * matches nothing, which is a fact about the document), `confused` (a mark with no
- * token, which neither a load nor a rewrite produces — reported, never swallowed).
- */
-export async function livenessAt(page, anchorSel) {
-  return page.evaluate((a) => {
-    const el = document.querySelector(a.sel);
-    if (!el) return { verdict: 'no-anchor', sel: a.sel };
-    const store = window[a.tokKey] || (window[a.tokKey] = {});
-    const marks = el[a.markKey] || (el[a.markKey] = {});
-    const token = store[a.sel];
-    const mark = marks[a.sel];
-    if (token === undefined && mark === undefined) {
-      const fresh = String(Date.now()) + ':' + Math.random().toString(16).slice(2);
-      store[a.sel] = fresh;
-      marks[a.sel] = fresh;
-      return { verdict: 'armed', sel: a.sel };
-    }
-    if (token !== undefined && mark === token) return { verdict: 'live', sel: a.sel };
-    if (token !== undefined) {
-      return { verdict: 'rebuilt', sel: a.sel,
-               mark: mark === undefined ? null : mark };
-    }
-    return { verdict: 'confused', sel: a.sel, mark };
-  }, { sel: anchorSel, markKey: LIVE_MARK, tokKey: LIVE_TOKENS });
-}
-
-/**
- * Assert CONTINUITY at `anchorSel`, and count the verdict.
- *
- * `report` is `fail`-shaped so the one rule serves this file and
- * check-report-interactive.mjs, which keep their failures in different places —
- * the same injection walkResponsiveLadder already uses. There is no `ok`: a green
- * line per call would be 40-odd lines of noise, and the green statement belongs to
- * assertLivenessWasChecked, which reports the tally once.
- *
- * Returns the verdict so a caller can decline to measure a page it has just been
- * told is inert. Measuring one anyway produces a second, louder failure that names
- * the product for the harness's fault, which is worse than a flake: the next person
- * to meet it on a real regression remembers it as noise.
- */
-export async function assertStillLive(page, anchorSel, where, { report, tally = null }) {
-  const s = await livenessAt(page, anchorSel);
-  if (tally) {
-    tally.checks += 1;
-    if (s.verdict === 'live') tally.live += 1;
-    if (s.verdict === 'armed') tally.armed += 1;
-  }
-  if (s.verdict === 'live' || s.verdict === 'armed') return s.verdict;
-  if (s.verdict === 'no-anchor') {
-    report(`${where}: nothing matches "${anchorSel}", so this run cannot say whether `
-      + 'the page is still the one it set up. That is a fact about the DOCUMENT — it '
-      + 'never rendered, or the anchor moved — and not a verdict about the product.');
-    return s.verdict;
-  }
-  if (s.verdict === 'rebuilt') {
-    report(`${where}: the "${anchorSel}" node is NOT the node this run armed, while `
-      + 'the script context that armed it IS still the same one. Only one thing '
-      + 'produces that pair: something in THIS HARNESS rewrote the DOM — restoring a '
-      + 'saved innerHTML string is the shape that did it in F23 — and every listener '
-      + 'the page had bound went with the nodes it replaced. Read this as a harness '
-      + 'fault, not a product defect; every measurement taken after it is a '
-      + 'measurement of an inert page.');
-    return s.verdict;
-  }
-  report(`${where}: liveness at "${anchorSel}" is unreadable (${JSON.stringify(s)}). `
-    + 'The element carries a mark the window has no token for, which neither a page '
-    + 'load nor a DOM rewrite produces — so this is a bug in the check, not in the '
-    + 'page, and it is said out loud rather than passed over.');
-  return s.verdict;
-}
-
-/** A fresh liveness tally, so the guard below can name what never happened. */
-export const newLivenessTally = () => ({ checks: 0, armed: 0, live: 0 });
-
-/**
- * The vacuity guard OVER the liveness guard — because the liveness guard is itself a
- * check that could quietly measure nothing.
- *
- * `armed` alone can never fail: it is the verdict for a fresh document, taken as a
- * baseline. A run whose every liveness call armed has therefore never compared
- * anything, and would report a clean page while asserting exactly nothing about it.
- * That is the same sentence assertLadderMeasuredSomething exists for, one layer in.
- */
-export function assertLivenessWasChecked(label, tally, { report, ok }) {
-  if (!tally.checks) {
-    report(`${label}: liveness was never checked at all, so nothing here can say the `
-      + 'page being measured is still the page that was set up — which is the one '
-      + 'failure a full, plausible result set does not reveal (F23)');
-    return;
-  }
-  if (!tally.live) {
-    // Both non-confirming outcomes are counted and named, because they mean
-    // different things and a summary that folded them together would describe
-    // one of the two runs wrongly: arming is a baseline being taken, an
-    // unreadable anchor is nothing being taken at all. Measured — the first
-    // spelling of this line said "all N ARMED" and printed it over a run in
-    // which nothing had armed.
-    const unreadable = tally.checks - tally.armed - tally.live;
-    report(`${label}: ${tally.checks} liveness check(s) ran and not one confirmed `
-      + `continuity against an earlier baseline — ${tally.armed} armed a fresh one, `
-      + `${unreadable} could not be read at all. Arming cannot fail and an anchor `
-      + 'that cannot be read asserts nothing, so this is the check reporting on '
-      + 'itself: the page is reloading between every step, or the anchor is not the '
-      + 'same node twice, or it is not in the document.');
-    return;
-  }
-  ok(`${label}: liveness — ${tally.live} of ${tally.checks} check(s) confirmed the DOM `
-    + `is still the one armed; ${tally.armed} armed a fresh baseline after a load`);
-}
+// --- liveness: is the page still the page we armed -----------------------------
 
 /** The anchor for every panel liveness check: a `.tab` is server-rendered in
  *  panel.html, is never re-created by panel.js, and is exactly where the product
@@ -563,6 +296,8 @@ const panelLiveness = newLivenessTally();
  */
 const TAB_WIRED_MS = 10000;
 const TAB_SWITCH_MS = 3000;
+
+// --- tab navigation, and whether a tab painted ---------------------------------
 
 /**
  * Switch the panel to tab `t` — and prove the page still answers being driven.
@@ -823,428 +558,7 @@ async function assertHintsFit(page, label) {
   return boxes;
 }
 
-/* ---- the responsive contract ------------------------------------------------
- *
- * ONE ladder for both surfaces, exported so tools/check-report-interactive.mjs
- * drives the identical widths. Two lists would drift the way `.shell` and the
- * nav breakpoint already have (92rem vs 96rem, 70rem vs 72rem \u2014 writing-css
- * names both), and a width that is only in one list is a width the other
- * surface is never asked about.
- *
- * WHY THESE WIDTHS. Every entry sits either side of a breakpoint one of the two
- * stylesheets DECLARES. A breakpoint is precisely where the layout changes, so
- * it is where it breaks; a ladder of round numbers tests whatever happens to
- * fall between them. `@media (max-width:Xrem)` matches AT X*16 px (the root
- * font-size is the UA's 16px \u2014 neither sheet sets one), so the pair that
- * brackets it is X*16 and X*16+1, and `min-width` brackets the other way.
- *
- *   320  / 390   not breakpoints \u2014 the narrowest screen this UI claims, and the
- *                phone. 320 is where Settings' unwrapped label put 16px back on
- *                the document (F8) and 390 is where the report's filter panel
- *                was found hanging off the left edge. Both are kept because a
- *                defect was measured at each.
- *   544  / 545   34rem. report: .colswrap ticks shrink, .bud drops its bars,
- *                the heatmap re-lays. panel: .who disappears, dialog.confirm
- *                and dialog.drawer go full-bleed, .savenote caps its body.
- *   640  / 641   40rem. report: body re-pads and re-sizes, #audit-q takes the
- *                first row, .uphase/.rank/.mm collapse to one column.
- *                panel: .rule goes to one column and .rulehead disappears.
- *   688          not a breakpoint: A4 portrait inside the sheet's 1.4cm margin,
- *                the width the print rules are actually read at \u2014 and it sits
- *                INSIDE 52rem, so the phone rules apply to paper there.
- *   768  / 769   48rem. report: .tb-id takes the whole row. panel: two blocks.
- *   832  / 833   52rem, the report's whole tablet block and the biggest single
- *                change either sheet makes \u2014 .tablewrap starts scrolling, the
- *                <thead> unsticks, .filterpanel comes back into flow and
- *                .sectools stops being sticky while that panel is open.
- *   960  / 961   60rem. panel: .who drops its second line.
- *   1120 / 1121  70rem, the panel's nav breakpoint: sidebar becomes a strip.
- *   1152 / 1153  72rem, the report's shell breakpoint: the SAME change, 32px
- *                later, because the two sheets disagree about where it is.
- *   1200         not a breakpoint: the viewport every committed screenshot is
- *                taken at, and the only state between the shell breakpoints
- *                and .topgrid's.
- *   1247 / 1248  78rem, the only min-width rule in either sheet: .topgrid goes
- *                to two columns.
- *   1512         a laptop, and the viewport check-report-interactive opens at.
- *
- * No width here depends on the host's scrollbar model \u2014 that is pinned at
- * launch with --disable-features=OverlayScrollbar, because it moved geometry by
- * 15px between hosts and decided a release gate once.
- */
-export const RESPONSIVE_LADDER = [
-  320, 390, 544, 545, 640, 641, 688, 768, 769, 832, 833,
-  960, 961, 1120, 1121, 1152, 1153, 1200, 1247, 1248, 1512,
-];
-
-/**
- * One width's worth of the contract, measured IN THE PAGE. Serialized into the
- * browser by Playwright, so it closes over nothing and takes everything it
- * needs in `opts`.
- *
- * `opts.atEnd` says which end of the document the caller has scrolled to. It
- * changes exactly one thing \u2014 which sticky chrome is allowed to sit on top of a
- * control \u2014 and the reason is in the comment on `escapable` below.
- *
- * The whole measurement is one synchronous pass on purpose. The panel re-renders
- * its forms from a 5s poll; a measurement split across two evaluates can read a
- * rect from before the re-render and hit-test after it, and then reports a
- * collision between a node and its own replacement.
- */
-export const measureResponsiveFrame = (opts) => {
-  const de = document.documentElement;
-  const vw = de.clientWidth, vh = de.clientHeight;
-  const nameOf = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '')
-    + (typeof n.className === 'string' && n.className.trim()
-      ? '.' + n.className.trim().split(/\s+/).slice(0, 3).join('.') : '');
-  // Not painted at all, so not this contract's business: display:none,
-  // visibility:hidden, and \u2014 the one that costs a day if you miss it \u2014 a
-  // subtree inside a closed <details>. Chromium skips that subtree with
-  // content-visibility rather than display:none, which leaves every descendant
-  // reporting a STALE rect and a non-null offsetParent while painting nothing.
-  // The report's More-filters panel is exactly that, and read through
-  // offsetParent it looks like an absolutely-positioned block lying across the
-  // phase table at eleven of the widths below.
-  const painted = (n) => n.checkVisibility({ contentVisibilityAuto: true,
-    visibilityProperty: true });
-  const opaque = (n) => n.checkVisibility({ contentVisibilityAuto: true,
-    visibilityProperty: true, opacityProperty: true });
-  const all = [...document.body.querySelectorAll('*')];
-
-  // (2) Nothing outside its own frame. Anything with a scrolling or clipping
-  // ancestor is excluded by asking its ancestors rather than by listing
-  // selectors: overflow-x anything but `visible` scrolls or clips its content
-  // and cannot push the document, which is the distinction being drawn.
-  // BOTH edges, because the two failures look nothing alike \u2014 past the right
-  // edge the document scrolls, past the left edge nothing scrolls at all and
-  // the content is simply gone (F9's signature, and the filter panel's).
-  const framed = (n) => {
-    for (let p = n.parentElement; p; p = p.parentElement) {
-      if (getComputedStyle(p).overflowX !== 'visible') return true;
-    }
-    return false;
-  };
-  const outside = [];
-  for (const n of all) {
-    const r = n.getBoundingClientRect();
-    if (r.width < 0.5 && r.height < 0.5) continue;
-    if (!painted(n) || framed(n)) continue;
-    if (r.right > vw + 1) outside.push(`${nameOf(n)} right@${Math.round(r.right)}`);
-    else if (r.left < -1) outside.push(`${nameOf(n)} left@${Math.round(r.left)}`);
-  }
-
-  // (3) and (4a): the controls.
-  const CONTROLS = 'a[href],button,input:not([type=hidden]),select,textarea,'
-    + 'summary,[role="button"]';
-  const controls = all.filter((n) => {
-    if (!n.matches(CONTROLS) || !opaque(n)) return false;
-    const r = n.getBoundingClientRect();
-    return r.width > 0.5 && r.height > 0.5;
-  });
-
-  // (3) No overlap between things that must not overlap, asked as a HIT TEST
-  // rather than as rectangle arithmetic: a control must be the topmost thing at
-  // its own centre. That is the question a reader actually asks \u2014 two controls
-  // stacked, a menu over its own input and a bar over a row all come out as the
-  // same answer \u2014 and it cannot accuse a deliberately layered thing of doing
-  // its job, because the thing on top IS what the click would reach.
-  //
-  // Sticky chrome is the one case that needs the scroll position. A bar pinned
-  // to an edge sits over whatever is beneath it at every scroll offset, and
-  // that is not a defect while the reader can still scroll the content out from
-  // under it. At the TOP of the document only a bottom-anchored bar is
-  // escapable (scroll down and the row rises past it); at the END only a
-  // top-anchored one is (scroll up). Anything else covering a control covers it
-  // for good. Anchoring is read off `top`/`bottom` being definite rather than
-  // off the box's position, because the panel's tab strip pins at 56px, not 0.
-  const escapable = (n) => {
-    for (let p = n; p && p !== document.body; p = p.parentElement) {
-      const cs = getComputedStyle(p);
-      if (cs.position !== 'fixed' && cs.position !== 'sticky') continue;
-      const edge = cs.top !== 'auto' ? 'top' : cs.bottom !== 'auto' ? 'bottom' : null;
-      if (edge === (opts.atEnd ? 'top' : 'bottom')) return true;
-    }
-    return false;
-  };
-  // A control scrolled out of its own frame is not on screen at all, and the
-  // point where its rect claims to be shows whatever the frame is painting
-  // there. Skipped rather than reported: the frame is doing its job, and the
-  // policy table is 577 controls wide.
-  const inFrames = (n, x, y) => {
-    for (let p = n.parentElement; p; p = p.parentElement) {
-      const cs = getComputedStyle(p);
-      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
-      const r = p.getBoundingClientRect();
-      if (x < r.left || x > r.right || y < r.top || y > r.bottom) return false;
-    }
-    return true;
-  };
-  let hitTested = 0;
-  const buried = [];
-  for (const n of controls) {
-    const r = n.getBoundingClientRect();
-    const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
-    if (cx < 0 || cx > vw - 1 || cy < 0 || cy > vh - 1) continue;
-    if (!inFrames(n, cx, cy)) continue;
-    hitTested += 1;
-    const hit = document.elementFromPoint(cx, cy);
-    if (hit === n || (hit && (n.contains(hit) || hit.contains(n)))) continue;
-    // A <label> over its own control still activates it.
-    if (hit && hit.tagName === 'LABEL' && hit.control === n) continue;
-    if (hit && escapable(hit)) continue;
-    buried.push(`${nameOf(n)} under ${hit ? nameOf(hit) : 'nothing paintable'}`);
-  }
-
-  // (4a) A control whose box has collapsed. The floor is 4px in either
-  // direction, which separates "the layout crushed it" \u2014 a flex or grid item
-  // squeezed to a line \u2014 from "small by design". It is deliberately NOT a tap
-  // target rule: Settings' 27 remove-a-path buttons measure 6.4x12 at every
-  // width on this ladder, which is a sizing decision to argue about and not a
-  // responsive failure, so the smallest control seen is REPORTED instead.
-  let smallest = null;
-  const collapsed = [];
-  for (const n of controls) {
-    const r = n.getBoundingClientRect();
-    if (n.tagName !== 'A' && (!smallest || r.width * r.height < smallest.area)) {
-      smallest = { name: nameOf(n), w: r.width, h: r.height, area: r.width * r.height };
-    }
-    if (n.tagName === 'A') continue;
-    if (r.width < 4 || r.height < 4) {
-      collapsed.push(`${nameOf(n)} ${r.width.toFixed(1)}x${r.height.toFixed(1)}`);
-    }
-  }
-
-  // (4b) Text clipped to unreadability WITH NO WAY TO REACH IT. Both halves are
-  // load-bearing. An ellipsis is a design decision, so the rule is not "clipped"
-  // \u2014 it is that less than a quarter of the string survives AND the whole of it
-  // is nowhere: no title, no aria-label, no data-tip, on the element or on
-  // anything containing it. The panel clips a great deal and hangs the full
-  // value off a tooltip every time; the report's ranked-list names carry none.
-  //
-  // TEXT THAT IS NEVER PAINTED IS NOT A READING FAILURE. `checkVisibility`
-  // answers display/visibility/content-visibility and knows nothing about
-  // clip-path, so the visually-hidden recipe — a ~1px box with the rest clipped
-  // away, which is how a <th> can be announced without being drawn — arrived
-  // here as "shows 1px of 84px" and failed the panel at all 21 widths. Nothing
-  // survives, so "less than a quarter survives" is not a claim about it.
-  //
-  // The exclusion is deliberately NOT "has class .vh": it asks for the recipe
-  // itself — a box too small to hold a glyph AND an explicit clip. A label the
-  // layout crushed to a line still carries no clip-path and still fails, which
-  // is the case this must not swallow. And it is COUNTED, so losing it, or
-  // widening it until it eats a real one, shows up in the summary rather than
-  // as a check that quietly got easier.
-  // F19: ask what a READER can reach, not which attribute is present. This
-  // codebase deliberately moves tooltip text into a JS property -- `report.js`
-  // sets `node.__tip` and its hover layer walks ancestors looking for it (the
-  // same walk mirrored here), promoting it to a real `title` only on demand. So
-  // an oracle that only reads attributes declared every tooltip-managed element
-  // in the Usage section unreachable: measured on the shipped report at 1153px,
-  // all 11 `.rank .nm` clipped to 49-78%, a `__tip` ancestor on every one of
-  // them holding the full string, and zero `title` ancestors.
-  //
-  // It OVER-reported, so it was noise rather than a hole -- and it still cost a
-  // real finding: the first record of what became F17 read "a truncated name
-  // with nothing carrying the whole of it", which was false. The string was
-  // carried; the actual fault was elsewhere and worse. A check that cries wolf
-  // gets skimmed, and the thing it was really pointing at gets written down
-  // wrong.
-  const tipCarrier = (n) => {
-    for (let p = n; p; p = p.parentElement) if (p.__tip) return p;
-    return null;
-  };
-  const clipped = [];
-  let unpainted = 0;
-  let jsCarried = 0;
-  for (const n of all) {
-    if (n.children.length || !(n.textContent || '').trim()) continue;
-    if (!opaque(n)) continue;
-    const ncs = getComputedStyle(n);
-    if (ncs.clipPath !== 'none' && n.clientWidth <= 2 && n.clientHeight <= 2) {
-      unpainted += 1;
-      continue;
-    }
-    if (!/hidden|clip/.test(ncs.overflowX)) continue;
-    if (n.scrollWidth - n.clientWidth <= 1) continue;
-    // Counted, so widening the oracle shows up in the summary instead of as a
-    // check that quietly got easier -- the rule the unpainted exclusion follows.
-    const byJs = tipCarrier(n);
-    if (byJs) jsCarried += 1;
-    clipped.push({
-      name: nameOf(n), cw: n.clientWidth, sw: n.scrollWidth,
-      shown: n.clientWidth / n.scrollWidth,
-      reachable: !!(n.title || n.getAttribute('aria-label')
-        || n.getAttribute('data-tip') || n.closest('[title],[data-tip],[aria-label]')
-        || byJs),
-    });
-  }
-  const stranded = clipped.filter((c) => !c.reachable && c.shown < 0.25);
-  const tightest = clipped.filter((c) => !c.reachable)
-    .sort((a, b) => a.shown - b.shown)[0] || null;
-
-  return {
-    vw, vh,
-    doc: de.scrollWidth - vw, body: document.body.scrollWidth - vw,
-    elements: all.length, controls: controls.length, hitTested,
-    clipExamined: clipped.length, clipUnpainted: unpainted, clipJsCarried: jsCarried,
-    outside: outside.slice(0, 3), outsideN: outside.length,
-    buried: buried.slice(0, 3), buriedN: buried.length,
-    collapsed: collapsed.slice(0, 3), collapsedN: collapsed.length,
-    stranded: stranded.slice(0, 3).map((c) =>
-      `${c.name} shows ${c.cw}px of ${c.sw}px`), strandedN: stranded.length,
-    smallest: smallest && { name: smallest.name, w: +smallest.w.toFixed(1),
-      h: +smallest.h.toFixed(1) },
-    tightest: tightest && { name: tightest.name, shown: +tightest.shown.toFixed(2),
-      cw: tightest.cw, sw: tightest.sw },
-  };
-};
-
-/**
- * Drive RESPONSIVE_LADDER over one view and assert the contract at every width.
- *
- * `report` is `fail`-shaped and `ok` is `note`-shaped, so the same walk serves
- * both this file and check-report-interactive.mjs, which keep their failures in
- * different places. `tally` accumulates what was MEASURED across every view a
- * caller drives, and the caller asserts it is non-zero afterwards \u2014 that is the
- * vacuity guard, and it is the whole reason this is written as a tally rather
- * than as twenty-one independent passes. The 390px overflow assertion this
- * generalises ran on one tab of five for its entire life and was green
- * throughout; a check that measured nothing has to fail, not pass.
- *
- * Every width is measured at BOTH ends of the document, because a bar pinned to
- * the bottom traps content only at the end and one pinned to the top only at
- * the start.
- */
-export async function walkResponsiveLadder(page, label, tally,
-                                           { report: reportOne, ok }) {
-  const seen = [];
-  // In --fast mode only the rungs that BOUND a rule are walked: the narrowest
-  // viewport, both sides of the 768/769 and 1247/1248 breakpoints, and the widest.
-  // A regression that survives those four boundaries and dies at 961px exists, so
-  // this is a sampling, not an equivalent — which is why the skip is announced.
-  const ladder = FAST ? [320, 768, 769, 1247, 1248, 1512] : RESPONSIVE_LADDER;
-  // The extremes are carried ACROSS the ladder rather than read off the last
-  // rung. The tightest clip on the report is at 1153px and the widest viewport
-  // has none at all, so a summary that reported the final width would have said
-  // "no unreachable clipping" about a document that clips a model name down to
-  // 42% one rung earlier. A number nobody can see drift is a threshold nobody
-  // notices being approached.
-  let tightest = null, smallest = null, dirty = 0, unpainted = 0, jsCarried = 0;
-  for (const width of ladder) {
-    await page.setViewportSize({ width, height: 900 });
-    // A resize is answered on the next frame; reading the layout mid-reflow
-    // reports the width it came from and calls that a defect.
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r())));
-    await page.waitForTimeout(120);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(90);
-    const top = await page.evaluate(measureResponsiveFrame, { atEnd: false });
-    await page.evaluate(() =>
-      window.scrollTo(0, document.documentElement.scrollHeight));
-    await page.waitForTimeout(90);
-    const end = await page.evaluate(measureResponsiveFrame, { atEnd: true });
-    await page.evaluate(() => window.scrollTo(0, 0));
-
-    tally.widths += 1;
-    tally.elements += top.elements;
-    tally.controls += top.controls;
-    tally.hitTested += top.hitTested + end.hitTested;
-    tally.clipExamined += top.clipExamined;
-    unpainted += top.clipUnpainted;
-    jsCarried += top.clipJsCarried;
-    seen.push(top.hitTested + end.hitTested);
-
-    const at = `${label} at ${width}px`;
-    // Every report also counts, so the summary below cannot call a view clean
-    // that had a width fail in it. That sentence was printed once, next to the
-    // failure it contradicted.
-    const report = (m) => { dirty += 1; reportOne(m); };
-    if (top.doc > 1 || top.body > 1) {
-      report(`${at}: the document scrolls sideways by ${top.doc}px (body `
-        + `${top.body}px) in a ${top.vw}px viewport \u2014 widest: `
-        + `${top.outside.join(', ') || 'nothing outside its own frame, so a '
-        + 'margin or a negative offset'}`);
-    } else if (top.outsideN) {
-      report(`${at}: ${top.outsideN} element(s) sit outside the viewport with no `
-        + `frame of their own to scroll in \u2014 ${top.outside.join(', ')}`);
-    }
-    for (const [where, m] of [['at rest', top], ['scrolled to the end', end]]) {
-      if (m.buriedN) {
-        report(`${at}, ${where}: ${m.buriedN} control(s) are not the topmost `
-          + `thing at their own centre \u2014 ${m.buried.join('; ')}`);
-      }
-    }
-    if (top.collapsedN) {
-      report(`${at}: ${top.collapsedN} control box(es) collapsed to a line \u2014 `
-        + `${top.collapsed.join(', ')}`);
-    }
-    if (top.strandedN) {
-      report(`${at}: ${top.strandedN} label(s) clipped past reading with nothing `
-        + `carrying the whole of them \u2014 ${top.stranded.join('; ')}`);
-    }
-    if (top.tightest && (!tightest || top.tightest.shown < tightest.shown)) {
-      tightest = { ...top.tightest, width };
-    }
-    if (top.smallest && (!smallest
-        || top.smallest.w * top.smallest.h < smallest.w * smallest.h)) {
-      smallest = { ...top.smallest, width };
-    }
-  }
-  // Printed green as well as red, so the two values the thresholds are drawn
-  // against are in the log at every run and a drift toward one is visible
-  // before it crosses it. Guarded on the walk having happened at all: with an
-  // empty ladder this line read "0 widths undefined-undefinedpx clean" beside
-  // the vacuity failure — a summary that says "clean" about nothing is the
-  // sentence this whole file exists to stop being printed.
-  if (!seen.length) return;
-  ok(`${label}: ${ladder.length} widths `
-    + `${ladder[0]}-${ladder[ladder.length - 1]}px, `
-    + (dirty ? `${dirty} failure(s) above` : 'all clean')
-    + `; ${Math.min(...seen)}-${Math.max(...seen)} controls hit-tested per width`
-    + (smallest ? `; smallest control ${smallest.name} ${smallest.w}x${smallest.h} `
-      + `at ${smallest.width}px` : '')
-    + (tightest ? `; tightest label with nothing carrying the whole of it, `
-      + `${tightest.name} showing ${Math.round(tightest.shown * 100)}% `
-      + `(${tightest.cw} of ${tightest.sw}px) at ${tightest.width}px`
-      : '; every clipped label reachable')
-    // Reported rather than dropped: the count is what makes the exclusion
-    // arguable. A view that suddenly hides forty labels this way is visible
-    // here before anyone has to go looking for why the ladder went quiet.
-    + (unpainted ? `; ${unpainted} visually-hidden node(s) excluded as never `
-      + `painted` : '')
-    // F19: reported for the same reason `unpainted` is. This oracle used to read
-    // only attributes and called every JS-carried tooltip unreachable; the count
-    // is what makes widening it arguable instead of invisible.
-    + (jsCarried ? `; ${jsCarried} clipped label(s) reachable through a JS tip `
-      + `carrier rather than an attribute` : ''));
-}
-
-/**
- * The vacuity guard for the ladder, asserted once per surface.
- *
- * Named separately from the walk because it is the assertion that the walk
- * HAPPENED. Each number is one of the four checks' oracles: zero widths means
- * the loop never ran, zero elements means the page never rendered, zero
- * hit-tests means every control was off screen or inside a frame and check (3)
- * looked at nothing, zero clip candidates means check (4b) had no input.
- */
-export function assertLadderMeasuredSomething(label, tally, { report, ok }) {
-  const empty = Object.entries(tally).filter(([, n]) => !n).map(([k]) => k);
-  if (empty.length) {
-    report(`${label}: the width ladder measured NOTHING for ${empty.join(', ')} `
-      + `\u2014 ${JSON.stringify(tally)}. A check with nothing to look at passes for `
-      + `free, which is how the 390px assertion stayed green while running on `
-      + `one tab of five`);
-  } else {
-    ok(`${label}: ladder vacuity guard \u2014 ${tally.widths} width-passes, `
-      + `${tally.elements} elements, ${tally.controls} controls, `
-      + `${tally.hitTested} hit tests, ${tally.clipExamined} clipped labels`);
-  }
-}
-
-/** A fresh tally, so `assertLadderMeasuredSomething` names every empty oracle. */
-export const newLadderTally = () =>
-  ({ widths: 0, elements: 0, controls: 0, hitTested: 0, clipExamined: 0 });
+// --- the responsive width ladder -----------------------------------------------
 
 /**
  * The theme toggle must move the NATIVE controls, not just our boxes.
@@ -1542,6 +856,8 @@ async function assertOverviewWorks(page) {
     await page.waitForTimeout(150);
   }
 }
+
+// --- the Usage tab -------------------------------------------------------------
 
 /**
  * Usage is a dashboard you interrogate, so interrogate it.
@@ -2544,6 +1860,8 @@ const shownMsgs = (page) => page.evaluate(() => {
  * a different path in the engine, and a probe in this repo has already reported
  * a confident wrong answer by taking it.
  */
+// --- accessibility: target size and the LIN census -----------------------------
+
 /**
  * SC 2.5.8 Target Size across DENSITIES (F30).
  *
@@ -2817,45 +2135,7 @@ async function linCensus(page, rootSel, pfx) {
   return rows;
 }
 
-/**
- * Every `assert*` stage this file declares must be WIRED to a call site.
- *
- * The run-level guard below catches a capture where no leg ran. It cannot catch
- * a stage that was written, reviewed and then never invoked — that one reports
- * nothing, fails nothing, and reads exactly like a stage that passed. Measured
- * when this was added: 30 declared, 30 called, so this is a guard against the
- * next one rather than a repair of a current defect.
- *
- * Static on purpose: a runtime tally would need 30 call-site edits and would
- * still only prove what THIS invocation reached, while the defect is a stage
- * nothing anywhere calls. What it therefore cannot see is a stage wired inside a
- * branch that never runs — that is the leg guard's job, and the direction here
- * is under-reporting, which is the quiet one.
- */
-function unwiredStages(source) {
-  const lines = source.split('\n');
-  const declared = new Map();
-  lines.forEach((line, i) => {
-    const m = line.match(/^(?:async )?function (assert\w+)/);
-    if (m) declared.set(m[1], i + 1);
-  });
-  const called = new Set();
-  lines.forEach((line) => {
-    const t = line.trim();
-    // Prose naming a stage is not a call. This lesson was paid for one file
-    // over, where a coverage check counted its own comments and reported five
-    // phantom findings on a clean run.
-    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
-    if (/^(?:async )?function assert/.test(t)) return;
-    for (const name of declared.keys()) {
-      if (new RegExp('(?<![A-Za-z_.])' + name + '\\s*\\(').test(line)) called.add(name);
-    }
-  });
-  return [...declared.entries()]
-    .filter(([name]) => !called.has(name))
-    .map(([name, line]) => `${name} (declared at line ${line})`)
-    .sort();
-}
+// --- accessibility: hints, names, focus, identity ------------------------------
 
 /**
  * Reading the help must not change the setting it explains.
@@ -3147,6 +2427,8 @@ async function assertViewerIdentity(page) {
     await page.waitForTimeout(200);
   }
 }
+
+// --- the write-confirmation flow -----------------------------------------------
 
 /**
  * The confirm dialog, with more than one row in it.
@@ -3805,6 +3087,8 @@ async function assertConfirmFlowWorks(page) {
   }
 }
 
+// --- skills tri-state and the combo box ----------------------------------------
+
 /* ---- (sk3) the three skill states — chips, filter, and the null round trip --
  *
  * v0.37 B1: `skills: null` is an explicit answer ("none applies") that stops
@@ -4175,6 +3459,8 @@ async function assertComboDescriptionSearch(page) {
   await page.evaluate(() => renderComp());
   await page.waitForTimeout(200);
 }
+
+// --- the model combo, notes, filters and live data -----------------------------
 
 /* ---- v0.34 C2 (mc): the model combo's three sources -------------------------
  *
@@ -4826,6 +4112,8 @@ async function assertUncategorizedNamed(page) {
  *      and closed the menu 150ms later. The menu swallows mousedown.
  */
 
+// --- combo overlay, the gate card and the ADO card -----------------------------
+
 /** The gutter place() keeps between the menu and the viewport edge. */
 const COMBO_GUT = 8;
 
@@ -5194,6 +4482,8 @@ async function assertAdoCardWorks(page) {
   }
 }
 
+// --- the help drawer -----------------------------------------------------------
+
 /* ---- the help drawer -------------------------------------------------------
  *
  * Every oracle here is `GET /api/help` — the payload itself, fetched inside the
@@ -5511,6 +4801,8 @@ async function assertHelpDrawerWorks(page, declared) {
  * the runner rather than at the next capture.
  */
 
+// --- discovery fixtures written into a temp HOME -------------------------------
+
 /**
  * Write the `.claude` tree discovery walks under `base` — a fixture HOME, or a
  * fixture PROJECT (`_scan_skills` reads `<base>/.claude/skills` for both, badging
@@ -5753,6 +5045,8 @@ function policyFixtureBlock(liveArea) {
  * and never from the renderer. A check that reads the verdict out of the same DOM
  * it is checking proves only that a string was copied.
  */
+// --- proposals and the capability policy ---------------------------------------
+
 /**
  * The Proposals tab, driven for real: drop → revive → materialize.
  *
@@ -6140,6 +5434,8 @@ async function assertDeadPatternNote(page, cfgPath) {
  * shot rather than tidied up per step, so the shot that WANTS one says so and
  * every other shot is guarded by default.
  */
+// --- appearance, tables and the save bar ---------------------------------------
+
 /* ---- F-P-6 (th): Appearance — the look, edited as tokens ---------------------
  *
  * The panel and the report are one visual system: a single token layer that the
@@ -6685,6 +5981,8 @@ async function assertPolicyExpand(page) {
   await page.evaluate(() => { PF.q = ''; PF.bad = false; renderPolicy(); });
   await page.waitForTimeout(200);
 }
+// --- the shutter, and claiming the fixed scratch path --------------------------
+
 
 async function noDialog(page, name) {
   const open = await page.evaluate(() =>
@@ -6898,6 +6196,8 @@ async function machineFingerprint() {
   };
 }
 
+// --- reproduce: two captures compared ------------------------------------------
+
 /**
  * `--repro`: are two consecutive captures ON THIS MACHINE byte-identical?
  *
@@ -7015,6 +6315,8 @@ async function reproduce() {
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
   }
 }
+// --- the run itself ------------------------------------------------------------
+
 
 async function main() {
   let chromium;
@@ -7328,7 +6630,7 @@ async function main() {
       await ladder.waitForTimeout(250);
       const reportTally = newLadderTally();
       await walkResponsiveLadder(ladder, 'report', reportTally,
-                                 { report: fail, ok: note });
+                                 { report: fail, ok: note, fast: FAST });
       assertLadderMeasuredSomething('report', reportTally, { report: fail, ok: note });
       if (ladderErrors.length) {
         fail(`the report logged ${ladderErrors.length} script error(s) while being `
@@ -8133,7 +7435,7 @@ async function main() {
         // the layout plus whatever the mouse happens to be touching.
         await mob.mouse.move(0, 0);
         await walkResponsiveLadder(mob, `panel ${t}`, panelTally,
-                                   { report: fail, ok: note });
+                                   { report: fail, ok: note, fast: FAST });
       }
       assertLadderMeasuredSomething('panel', panelTally, { report: fail, ok: note });
       await mobCtx.close();
@@ -8359,7 +7661,11 @@ async function main() {
 
   // A stage nobody calls reports nothing and fails nothing, which reads exactly
   // like a stage that passed.
-  const unwired = unwiredStages(readFileSync(fileURLToPath(import.meta.url), 'utf8'));
+  // THE ORCHESTRATOR PLUS ITS MODULES. Handing this its own source alone was
+  // correct while every stage lived in one file; after four concerns moved into
+  // tools/ui-checks/ it would have graded their stages as absent rather than as
+  // unwired — a guard narrowing itself, silently, as a side effect of a split.
+  const unwired = unwiredStages(stageSources());
   if (unwired.length) {
     fail(`${unwired.length} assert stage(s) are declared and never called, so `
        + `whatever they check went ungraded: ${unwired.join(', ')}`);
