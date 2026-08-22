@@ -342,7 +342,14 @@ addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'
 function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(h))return h;
  const s=storageGet('audit-panel-tab');if(TABS.includes(s))return s;
- return 'guards';}
+ // WITH NO PLAN YET, SETTINGS IS THE WRONG PLACE TO LAND. It is a wall of
+ // configuration for an audit that does not exist, and the one screen that says
+ // what to do next was two clicks away - measured on a fresh `git init` repo.
+ // Only the DEFAULT moves: an explicit fragment still wins above, and so does a
+ // remembered tab, so this fires exactly once, on the visit that has neither.
+ // STATE is loaded before boot() routes the first tab, so this is answerable
+ // here rather than after a repaint.
+ return (STATE&&STATE.rollup)?'guards':'over';}
 /**
  * The one transient banner, for an outcome nobody has to act on.
  *

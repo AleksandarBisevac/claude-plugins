@@ -45,10 +45,22 @@ function branchCard(comp,patch){
  // The worked example, from Python. Labelled with the phase it was built from, so
  // a reader can tell "this is your plan" from "this is a stand-in".
  const ex=el('div',{class:'row',id:'branchexample'});
- ex.append(el('span',{class:'filtlbl'},'example:'),
-   el('code',{},info.example||'—'),
-   el('span',{class:'muted'},' from phase '+(info.exampleFrom||'?')
-     +', initials from "'+(info.exampleInitials||'')+'"'));
+ // ALL THREE OR NONE. `_panel_composition.py` builds `example`, `exampleFrom`
+ // and `exampleInitials` in one return, and it already labels the stand-in phase
+ // as "(no phase in the plan yet)" rather than dressing it up. So the `||`
+ // fallbacks that used to sit here could only fire when there was no branchInfo
+ // AT ALL - and what they printed was `from phase ?, initials from ""`: a
+ // question mark and an empty string rendered as though they were an example.
+ // When the basis is missing that is the thing to say, not a gap to fill.
+ ex.append(el('span',{class:'filtlbl'},'example:'));
+ if(info.example){
+  ex.append(el('code',{},info.example),
+    el('span',{class:'muted'},' from phase '+info.exampleFrom
+      +', initials from "'+info.exampleInitials+'"'));
+ }else{
+  ex.append(el('span',{class:'muted'},
+    'none — a name is built from the plan, and there is no plan to read.'));
+ }
  card.append(ex);
 
  // --- draft plumbing. Deleting a key is how "use the default" is written; an

@@ -634,12 +634,16 @@ def _cases(check):
           "if(!a||!a.closest||(within&&!a.closest(within)))return null;"
           in M.UI_HTML
           and M.UI_HTML.count("focusKeep(") == 7      # one def, six views
-          # `focusBack` is now reached through `restoreCaret` by the four views
-          # that keep a caret BY ID; the other two still call it directly. The
-          # counts move together, which is the point of asserting both: a view
-          # that stopped restoring anything would drop one from each.
-          and M.UI_HTML.count("focusBack(") == 5
-          and M.UI_HTML.count("restoreCaret(") == 5   # one def, four views
+          # `focusBack` is reached through `restoreCaret` by the views that keep a
+          # caret BY ID; the others call it directly. CAPTURE IS ONCE PER VIEW,
+          # RESTORE IS ONCE PER EXIT, which is why these two no longer track
+          # `focusKeep` one-for-one: Overview and Composition each return early
+          # when there is no plan, and both of those empty states now carry a
+          # settings link - a control the 5s poll would otherwise take the focus
+          # off within five seconds. A view that stopped restoring anything still
+          # drops one from each, which is what asserting both is for.
+          and M.UI_HTML.count("focusBack(") == 6
+          and M.UI_HTML.count("restoreCaret(") == 6   # one def, four tails, one early return
           and "focusKeep('#policy')" in M.UI_HTML
           and "focusKeep('#usage')" in M.UI_HTML
           and "focusKeep('#over')" in M.UI_HTML

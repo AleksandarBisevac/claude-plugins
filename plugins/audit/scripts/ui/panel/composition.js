@@ -353,6 +353,20 @@ function renderComp(){closeCombo();
  // filter box was lost the same way on a refreshFromDisk, offset and all.
  const keepBack=focusKeep('#comp');
  const c=$('#comp');c.textContent='';const comp=STATE.composition;
+ // NOTHING TO COMPOSE WITHOUT A PLAN. Every control below edits a `meta.*` key
+ // of the manifest, so with none this view used to offer empty editors for an
+ // object that does not exist - and the branch card, reading a `branchInfo` the
+ // server never sent, printed a question mark and an empty string as its worked
+ // example. Say it instead, in the shape Overview and Usage use. Settings stays
+ // reachable and stays useful: `manifestPath` decides where the plan lands.
+ if(!STATE.rollup){
+  const none=el('div',{class:'card'});
+  none.append(el('div',{class:'mut'},'Nothing to compose yet — these are all keys '
+    +'of the plan, and there is no plan. "/audit:init" writes one.'),
+   el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
+     'it would be written to: '+(STATE.manifestPath||'-'),' · ',
+     settingsLink('change where it goes','manifestPath')));
+  c.append(none);focusBack(keepBack);return;}
  MITEMS=null;   // STATE may have moved under us (save re-render, disk refresh)
  const patch={meta:{},phases:{},tasks:{}};
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,

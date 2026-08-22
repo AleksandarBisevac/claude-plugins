@@ -290,7 +290,24 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // data-card names this card for the theme's layout.order. Stamped where the
  // card is BUILT, so a renamed card renames its ordering key with it.
  const card=el('div',{class:'card','data-card':'phases'});
- if(!r){card.append(el('div',{class:'mut'},'No manifest at '+STATE.manifestPath+'. Run /audit:init.'));c.append(card);return;}
+ // THIS IS THE FIRST SCREEN OF THE PRODUCT, not a footnote. With no plan yet
+ // `initialTab()` lands here, so it carries what Usage's empty state already
+ // carries and what this one did not: what is missing, what the command does,
+ // where the file will appear, and the way to move it BEFORE it is written -
+ // `manifestPath` is a Settings field, so choosing it afterwards means moving a
+ // file. Same shape as usage-view.js on purpose; a second empty-state dialect
+ // would be the inconsistency this replaces.
+ if(!r){card.append(
+   el('div',{class:'mut'},'No plan yet. "/audit:init" interviews you about scope, '
+     +'reads the codebase with read-only explorers, and proposes phases for your '
+     +'approval before it writes anything.'),
+   el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
+     'it would be written to: '+(STATE.manifestPath||'-'),' · ',
+     settingsLink('change where it goes','manifestPath')));
+  // The 5s poll repaints this view, and this card now HOLDS a control - without
+  // the same restore the tail does, a reader tabbing to that link loses it
+  // within five seconds. The old bare-sentence branch had nothing to focus.
+  c.append(card);restoreCaret(keepQ?$('#ovq'):null,caret,keepBack);return;}
  const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)')
    :manifestFindingsBox(r.findings,STATE.manifestFindings||[]);
  card.append(vstate);

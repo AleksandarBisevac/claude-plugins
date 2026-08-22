@@ -230,9 +230,16 @@ function renderProposals() {
     // The absent basis, named. A tab that vanished when empty would be the same
     // defect as a row that vanishes: the reader cannot tell "none" from "not
     // shown".
+    // ...and "none parked" is not the same fact as "nowhere to park them". Both
+    // render an empty list, so without this the reader is told the plan holds no
+    // proposals when there is no plan at all - the one distinction this card's
+    // own comment exists to make, missed one level up.
     card.append(el('p', { class: 'blurb', 'data-propnone': '1' },
-      'No parked proposals. /audit:init parks a synthesized phase here when you '
-      + 'decline it, so nothing is lost and nothing starts until you say so.'));
+      (STATE && STATE.rollup)
+        ? 'No parked proposals. /audit:init parks a synthesized phase here when you '
+          + 'decline it, so nothing is lost and nothing starts until you say so.'
+        : 'No plan yet, so nothing can be parked. /audit:init proposes phases and '
+          + 'parks the ones you decline here, rather than discarding them.'));
     return;
   }
   const parked = props.filter((p) => p.status === 'proposed').length;
