@@ -72,18 +72,18 @@ _matches_exempt = _config.matches_exempt
 _strip_line_suffix = _config.strip_line_suffix
 
 
-def _change_magnitude(tool: str, ti: dict) -> int:
+def _change_magnitude(tool, ti):
     """Effective size of a change, in 'lines'.
 
     max(added lines, added chars / 200, removed lines): line count alone lets a
     20k-char single-line blob or a 2000-line deletion pass as 'trivial'. The
     old content of a Write is unknowable from tool_input — documented residual.
     """
-    def lines(text) -> int:
+    def lines(text):
         s = str(text)
         return 0 if s == "" else len(s.splitlines())
 
-    def char_lines(text) -> int:
+    def char_lines(text):
         return (len(str(text)) + 199) // 200
 
     if tool == "Write":
@@ -106,13 +106,13 @@ def _change_magnitude(tool: str, ti: dict) -> int:
     return 0
 
 
-def _ensure_dir(p: Path) -> None:
+def _ensure_dir(p):
     # ensure_local_dir also drops the `*` .gitignore marker - every dir this
     # hook creates (state, logs) is local scratch that must not reach git.
     _config.ensure_local_dir(p)
 
 
-def _append_log(logs: Path, line: str) -> None:
+def _append_log(logs, line):
     try:
         _ensure_dir(logs)
         with open(logs / "plan-bypass.log", "a", encoding="utf-8") as fh:
@@ -121,7 +121,7 @@ def _append_log(logs: Path, line: str) -> None:
         pass
 
 
-def _now_iso() -> str:
+def _now_iso():
     return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
 
 
@@ -151,7 +151,7 @@ _LOCK_WARN = (
 )
 
 
-def _deny_payload(msg: str) -> dict:
+def _deny_payload(msg):
     """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
     return {
         "hookSpecificOutput": {
@@ -162,7 +162,7 @@ def _deny_payload(msg: str) -> dict:
     }
 
 
-def _ask_payload(msg: str) -> dict:
+def _ask_payload(msg):
     """Canonical PreToolUse ask payload — the planGate:"ask" channel (the same
     shape guard-edits' strict mode uses). Deliberately NOT deny: ask hands the
     decision to the human's own prompt, once per edit. The dialog itself cannot
@@ -176,7 +176,7 @@ def _ask_payload(msg: str) -> dict:
     }
 
 
-def _warn_payload(msg: str) -> dict:
+def _warn_payload(msg):
     """Non-blocking advisory, delivered on the PostToolUse pass.
 
     Deliberately NOT a PreToolUse decision. There is no `permissionDecision:
@@ -192,12 +192,12 @@ def _warn_payload(msg: str) -> dict:
     }
 
 
-def block(msg: str) -> None:
+def block(msg):
     print(json.dumps(_deny_payload(msg)))
     sys.exit(0)
 
 
-def _record_observed(state_dir: Path, session_id: str, rel: str, reason: str) -> None:
+def _record_observed(state_dir, session_id, rel, reason):
     """Append to the observe tally for this session.
 
     Named `plan-gate-observed-<sid>.json` so detect-plan-skip's existing GC sweeps
@@ -221,8 +221,8 @@ def _record_observed(state_dir: Path, session_id: str, rel: str, reason: str) ->
         pass
 
 
-def _owner_note(root, cfg, state_dir: Path, session_id: str, rel: str,
-                manifest_rel: str, entries) -> str:
+def _owner_note(root, cfg, state_dir, session_id, rel,
+                manifest_rel, entries):
     """The ownership advisory for a COVERED edit (v0.34 D2), or None — which is
     the answer almost always.
 
@@ -306,8 +306,8 @@ def _owner_note(root, cfg, state_dir: Path, session_id: str, rel: str,
 
 
 # --- core decision ------------------------------------------------------------
-def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = None,
-           event: str = None):
+def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
+           event=None):
     """Pure-ish decision core. Returns ("allow", reason) or ("block", message).
 
     `event` selects the transactional side: "PreToolUse" (default) is read-only
@@ -611,7 +611,7 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, logs_dir: Path = Non
     )
 
 
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:

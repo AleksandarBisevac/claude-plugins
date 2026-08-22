@@ -184,8 +184,20 @@ def _cases(check):
         with open(os.path.join(style, "dataclasses_from.py"), "w",
                   encoding="utf-8") as fh:
             fh.write("from dataclasses import dataclass\n")
+        with open(os.path.join(style, "ann_param.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("def f(value: str):\n    return value\n")
+        with open(os.path.join(style, "ann_return.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("def f(value) -> str:\n    return value\n")
+        with open(os.path.join(style, "ann_assign.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("count: int = 0\n")
+        with open(os.path.join(style, "ann_star.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("def f(*rest: str, **kw: int):\n    return rest, kw\n")
         with open(os.path.join(style, "clean.py"), "w", encoding="utf-8") as fh:
-            fh.write('def f(n):\n    return n + 1\n')
+            fh.write('def f(n, m=1):\n    return n + m\n')
         with open(os.path.join(style, "broken.py"), "w", encoding="utf-8") as fh:
             fh.write("def f(:\n")
 
@@ -214,6 +226,35 @@ def _cases(check):
         check("g8 a file that will not parse is reported, not silently skipped - "
               "same rule entries_missing_guard already follows",
               "broken.py" in by_file)
+        # ---- annotations: the half the rule claimed and nothing enforced -------
+        # `CLAUDE.md` named this function as the enforcer of "no annotations" the
+        # whole time and it read only walrus and two import shapes. The tree had
+        # 113 of them, all in hooks/, and the check stayed green under a mutation
+        # that added one. All THREE shapes are asserted separately, because a rule
+        # written as "no annotations" that reads one of three is the same defect
+        # one step smaller.
+        check("ga1 an annotated PARAMETER is caught, and named with the parameter "
+              "so a reader can find it: %r" % (by_file.get("ann_param.py"),),
+              any("annotated parameter" in w and "value" in w
+                  for w in by_file.get("ann_param.py", [])))
+        check("ga2 a RETURN annotation is caught, and named with the function: %r"
+              % (by_file.get("ann_return.py"),),
+              any("return annotation" in w and "f" in w
+                  for w in by_file.get("ann_return.py", [])))
+        check("ga3 an annotated ASSIGNMENT is caught - the shape with no function "
+              "around it at all: %r" % (by_file.get("ann_assign.py"),),
+              any("annotated assignment" in w
+                  for w in by_file.get("ann_assign.py", [])))
+        check("ga4 `*args` and `**kw` annotations are caught TOO, and that is what "
+              "one branch over `ast.arg` buys: a version walking each FunctionDef's "
+              "arg lists by hand looks complete and misses exactly these two: %r"
+              % (by_file.get("ann_star.py"),),
+              len([w for w in by_file.get("ann_star.py", [])
+                   if "annotated parameter" in w]) == 2)
+        check("ga5 ...while a clean signature WITH A DEFAULT is not named - the "
+              "rule is the annotation, not the `=`, and stripping 113 of them left "
+              "defaults behind everywhere",
+              "clean.py" not in by_file)
         check("g9 every violation names a line number, so a failure can point at "
               "its offender rather than just its file",
               all(isinstance(line, int) and line > 0 for _, line, _ in hits
@@ -221,11 +262,12 @@ def _cases(check):
     finally:
         shutil.rmtree(style, ignore_errors=True)
 
-    # The gate this half of the module exists for: scripts/ and hooks/, as they stand,
-    # carry none of the four bans.
+    # The gate this half of the module exists for: scripts/, hooks/ and tests/, as
+    # they stand, carry none of the bans - INCLUDING annotations, which is new and is
+    # why 113 of them came out of hooks/ in the same change that added the rule.
     real_style = M.house_style_violations()
-    check("g10 neither scripts/ nor hooks/ carries any of the four house-style bans: %r"
-          % (real_style,), not real_style)
+    check("g10 no scanned directory carries any house-style ban, annotations "
+          "included: %r" % (real_style,), not real_style)
 
     # ------------------------------------------------- the lints reach a subdirectory
     # The rule these replace said `.py` must stay one directory deep BECAUSE the

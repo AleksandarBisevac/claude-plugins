@@ -178,7 +178,17 @@ browser-level gates (`tools/capture-screenshots.mjs --check`,
 paints and stays interactive — a selftest can only assert what the CSS *says*.
 
 A check that has only ever been seen passing may be asserting nothing. Break the thing it guards
-and confirm it goes red before trusting it.
+and confirm it goes red before trusting it — `tools/redfirst.sh` does that for one check, and
+
+```bash
+python3 tools/prove-gates.py          # --list to see the table without running it
+```
+
+does it for every load-bearing lint at once, naming the case that must fail. It mutates the tree
+and restores each time, so it is minutes rather than seconds and is not a per-commit gate. Its
+table is derived from the three lint modules by name, so a lint added without a row fails the
+sweep — which is how the annotation half of `house_style_violations()` was found unenforced
+after the document had claimed it for a long time.
 
 ## Releasing
 

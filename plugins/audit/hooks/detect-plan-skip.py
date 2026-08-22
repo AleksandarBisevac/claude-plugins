@@ -43,7 +43,6 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
@@ -62,7 +61,7 @@ _GC_PREFIXES = ("plan-gate-", "tdd-reminder-", "bash-writes-",
 _GC_MAX_AGE = 7 * 86400  # seconds
 
 
-def _gc_state(state_dir: Path, now: float = None) -> int:
+def _gc_state(state_dir, now=None):
     """Delete session state files older than 7 days. Returns count removed.
     Best-effort — never raises."""
     removed = 0
@@ -83,8 +82,8 @@ def _gc_state(state_dir: Path, now: float = None) -> int:
 
 
 # --- arming the bypass ----------------------------------------------------------
-def _arm_bypass(state_dir: Path, logs_dir: Path, session_id: str,
-                keyword: str, prompt: str) -> str:
+def _arm_bypass(state_dir, logs_dir, session_id,
+                keyword, prompt):
     """Arm the single-use plan-first bypass; returns the systemMessage line.
 
     Extracted from main() so the TTL contract is testable (v0.34 B4). The slot
@@ -112,7 +111,7 @@ def _arm_bypass(state_dir: Path, logs_dir: Path, session_id: str,
 
 
 # --- detection ----------------------------------------------------------------
-def _prompt_text(data: dict) -> str:
+def _prompt_text(data):
     for key in ("prompt", "user_prompt", "message"):
         val = data.get(key)
         if isinstance(val, str) and val:
@@ -120,7 +119,7 @@ def _prompt_text(data: dict) -> str:
     return ""
 
 
-def _observed_message(state_dir: Path, session_id: str, cfg=None) -> list:
+def _observed_message(state_dir, session_id, cfg=None):
     """One line naming what the plan gate would have blocked, then never again.
 
     The tally is written by require-plan.py's observe tier. It is reported once and
@@ -167,7 +166,7 @@ def _observed_message(state_dir: Path, session_id: str, cfg=None) -> list:
 
 
 # --- cli ----------------------------------------------------------------------
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:

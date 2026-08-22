@@ -266,7 +266,7 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
 
 
 # --- cli ----------------------------------------------------------------------
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:

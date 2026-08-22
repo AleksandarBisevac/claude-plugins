@@ -240,7 +240,7 @@ ECHO_SECRET = re.compile(
 )
 
 
-def _deny_payload(msg: str) -> dict:
+def _deny_payload(msg):
     """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
     return {
         "hookSpecificOutput": {
@@ -251,7 +251,7 @@ def _deny_payload(msg: str) -> dict:
     }
 
 
-def _ask_payload(msg: str) -> dict:
+def _ask_payload(msg):
     """Canonical PreToolUse ask payload — planGate:"ask" parity with
     require-plan (v0.34 B1). Only the shell PLAN-gate branch can return ask;
     the secret guards are never graded and never ask."""
@@ -264,7 +264,7 @@ def _ask_payload(msg: str) -> dict:
     }
 
 
-def block(msg: str) -> None:
+def block(msg):
     print(json.dumps(_deny_payload(msg)))
     sys.exit(0)
 
@@ -296,7 +296,7 @@ _STDIN_INTERP = re.compile(
 )
 
 
-def _split_heredocs(cmd: str):
+def _split_heredocs(cmd):
     """(text without heredoc bodies, bodies that are CODE).
 
     F31, found while committing a fix to this file: the guard refused its own
@@ -345,7 +345,7 @@ def _split_heredocs(cmd: str):
     return "\n".join(kept), code
 
 
-def _clauses(cmd: str):
+def _clauses(cmd):
     """Split a shell command into clauses on `;`, `|`, `&` OUTSIDE quotes (F-B-1).
 
     The inline-eval heuristics must judge each clause on its own facts:
@@ -396,7 +396,7 @@ def _clauses(cmd: str):
     return parts or [cmd]
 
 
-def _shell_write_targets(cmd: str):
+def _shell_write_targets(cmd):
     """Best-effort extraction of file paths a shell command WRITES to."""
     targets = []
     for m in _SHELL_REDIRECT.finditer(cmd):
@@ -417,7 +417,7 @@ def _shell_write_targets(cmd: str):
 _source_exts = _config.source_exts
 
 
-def _source_write_hit(cmd: str, root, cfg):
+def _source_write_hit(cmd, root, cfg):
     """First non-exempt SOURCE file (not covered by an in_progress task) that
     `cmd` writes to via sed -i / tee / a >(>) redirect — or None."""
     targets = _shell_write_targets(cmd)
@@ -470,7 +470,7 @@ def _append_verdict_event(root, cfg, data, verdict, msg):
 
 
 # --- decision core (pure; returns ("allow"|"block", message) for testability) ---
-def decide(data: dict, *, cfg=None):
+def decide(data, *, cfg=None):
     """Resolve config, decide, and leave a gate event for deny/ask verdicts.
 
     The decision itself lives in _decide_core; this wrapper is the ONE choke
@@ -485,7 +485,7 @@ def decide(data: dict, *, cfg=None):
     return (verdict, msg)
 
 
-def _decide_core(data: dict, root, cfg):
+def _decide_core(data, root, cfg):
     tool = data.get("tool_name", "")
     ti = data.get("tool_input", {}) or {}
     extras = _extra_patterns(cfg)
@@ -619,7 +619,7 @@ def _decide_core(data: dict, root, cfg):
     return ("allow", "unhandled tool")
 
 
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:

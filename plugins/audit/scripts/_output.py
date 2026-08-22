@@ -579,6 +579,19 @@ def _house_style_violations_in_tree(tree, name):
     for node in ast.walk(tree):
         if isinstance(node, ast.NamedExpr):
             found.append((node.lineno, "walrus operator (:=)"))
+        elif isinstance(node, ast.arg) and node.annotation is not None:
+            # EVERY annotated parameter is an `ast.arg`, whichever list it came
+            # from - positional, keyword-only, positional-only, `*args`, `**kw` -
+            # so one branch covers all five. Written as a walk over each
+            # FunctionDef's arg lists first, which is how `*args: str` came to be
+            # missed by a version that looked complete.
+            found.append((node.lineno, "annotated parameter %r" % (node.arg,)))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                and node.returns is not None:
+            found.append((node.returns.lineno,
+                          "return annotation on %r" % (node.name,)))
+        elif isinstance(node, ast.AnnAssign):
+            found.append((node.lineno, "annotated assignment"))
         elif isinstance(node, ast.ImportFrom):
             if node.module == "__future__":
                 found.append((node.lineno, "from __future__ import"))
@@ -594,10 +607,18 @@ def _house_style_violations_in_tree(tree, name):
 def house_style_violations(dirs=None):
     """(filename, line, what) tuples for every banned construct under `dirs`.
 
-    House style, not the 3.8 floor: walrus, `from __future__ import ...`, `typing` and
-    `dataclasses` are all legal on Python 3.8, so vermin's version gate cannot see any
-    of them — they are banned by convention, and conventions drift unless something
-    reads the AST. Scans every `.py` under `scripts/`, `hooks/` AND `tests/`
+    House style, not the 3.8 floor: walrus, `from __future__ import ...`, `typing`,
+    `dataclasses` AND ANNOTATIONS are all legal on Python 3.8, so vermin's version
+    gate cannot see any of them — they are banned by convention, and conventions
+    drift unless something reads the AST.
+
+    ANNOTATIONS WERE THE HALF THAT WAS MISSING, and `CLAUDE.md` named this function
+    as their enforcer the whole time. Nothing detected them: not this (which read
+    walrus and two import shapes), not vermin (they are 3.8-legal), not ruff (E9+F).
+    The tree had accumulated 113 of them, every one in `hooks/`, before a mutation
+    asked whether the check went red and it did not. All three shapes are covered now
+    — parameter, return and assignment — because a rule stated as "no annotations"
+    that reads only one of the three is the same defect one step smaller. Scans every `.py` under `scripts/`, `hooks/` AND `tests/`
     RECURSIVELY through `py_files`, the same walk `entries_missing_guard` uses — and
     for the same reason a file that will not parse is reported as a violation rather
     than skipped, since a syntax error is a worse thing to pass over in silence than

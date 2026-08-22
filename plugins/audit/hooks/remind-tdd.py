@@ -46,7 +46,6 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
@@ -60,11 +59,11 @@ WARN_TEMPLATE = (
 
 
 # --- state ----------------------------------------------------------------------
-def _state_file(state_dir: Path, session_id: str) -> Path:
+def _state_file(state_dir, session_id):
     return state_dir / ("tdd-reminder-%s.json" % session_id)
 
 
-def _load_state(state_dir: Path, session_id: str) -> dict:
+def _load_state(state_dir, session_id):
     try:
         with open(_state_file(state_dir, session_id), "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -75,7 +74,7 @@ def _load_state(state_dir: Path, session_id: str) -> dict:
     return {"testTouched": False, "testFiles": [], "warned": {}, "lastWarnAt": 0}
 
 
-def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
+def _save_state(state_dir, session_id, state):
     try:
         # ensure_local_dir, never a bare mkdir: it also drops the `*` .gitignore
         # marker every other dir-creating writer leaves. Without it this hook was
@@ -90,7 +89,7 @@ def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
 
 
 # --- core decision ----------------------------------------------------------------
-def decide(data: dict, *, cfg=None, state_dir: Path = None, now: float = None):
+def decide(data, *, cfg=None, state_dir=None, now=None):
     """Returns ("record"|"warn"|"silent", detail). `cfg`/`state_dir`/`now` are
     injectable for --selftest; state reads/writes go through the state file."""
     tool = data.get("tool_name", "")
@@ -164,7 +163,7 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, now: float = None):
     return ("warn", WARN_TEMPLATE % rel)
 
 
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:

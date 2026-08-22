@@ -85,7 +85,7 @@ def _bearer_re(token_vars):
 
 
 # --- collection + deny helpers ------------------------------------------------
-def collect(tool: str, ti: dict):
+def collect(tool, ti):
     if tool == "NotebookEdit":
         path = str(ti.get("notebook_path", "") or ti.get("file_path", ""))
         return path.replace("\\", "/"), str(ti.get("new_source", ""))
@@ -101,7 +101,7 @@ def collect(tool: str, ti: dict):
     return path.replace("\\", "/"), "\n".join(chunks)
 
 
-def _self_edit_target(path: str, root) -> bool:
+def _self_edit_target(path, root):
     """True when `path` targets the installed plugin's own files while the plugin
     lives OUTSIDE the consuming repo. A plugin checkout inside the project
     (development) is exempt — there the plugin files ARE the project."""
@@ -117,7 +117,7 @@ def _self_edit_target(path: str, root) -> bool:
         return False
 
 
-def _deny_payload(msg: str) -> dict:
+def _deny_payload(msg):
     """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
     return {
         "hookSpecificOutput": {
@@ -128,7 +128,7 @@ def _deny_payload(msg: str) -> dict:
     }
 
 
-def _ask_payload(msg: str) -> dict:
+def _ask_payload(msg):
     """Canonical PreToolUse ask payload — the strict-mode channel. NEVER deny:
     the orchestrator completes tasks through these same tools, and a deny here
     would refuse the pipeline its own bookkeeping."""
@@ -141,12 +141,12 @@ def _ask_payload(msg: str) -> dict:
     }
 
 
-def block(msg: str) -> None:
+def block(msg):
     print(json.dumps(_deny_payload(msg)))
     sys.exit(0)
 
 
-def ask(msg: str) -> None:
+def ask(msg):
     print(json.dumps(_ask_payload(msg)))
     sys.exit(0)
 
@@ -195,7 +195,7 @@ def _state_map(obj):
     return out
 
 
-def _touches_state(tool: str, ti: dict, path: str, root) -> bool:
+def _touches_state(tool, ti, path, root):
     """Does this edit change task/phase STATE (status, completedAt, commit,
     attempts)? Write: a real diff against the on-disk file (every whole-manifest
     Write contains the word "status", so sniffing would ask on all of them).
@@ -231,7 +231,7 @@ def _touches_state(tool: str, ti: dict, path: str, root) -> bool:
 
 
 # --- decision -----------------------------------------------------------------
-def decide(data: dict, *, cfg=None):
+def decide(data, *, cfg=None):
     """Pure decision core. Returns ("allow", reason) or ("block", message)."""
     tool = data.get("tool_name", "")
     if tool not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
@@ -325,7 +325,7 @@ def decide(data: dict, *, cfg=None):
 
 
 # --- cli ----------------------------------------------------------------------
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:

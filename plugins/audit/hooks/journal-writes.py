@@ -551,7 +551,7 @@ def _journal_lib():
     return _config._load_journal_lib()
 
 
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:

@@ -47,7 +47,6 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
@@ -178,11 +177,11 @@ def _command_is_read_only(command):
 
 
 # --- state --------------------------------------------------------------------
-def _state_file(state_dir: Path, session_id: str) -> Path:
+def _state_file(state_dir, session_id):
     return state_dir / ("bash-writes-%s.json" % session_id)
 
 
-def _load_state(state_dir: Path, session_id: str) -> dict:
+def _load_state(state_dir, session_id):
     try:
         with open(_state_file(state_dir, session_id), "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -196,7 +195,7 @@ def _load_state(state_dir: Path, session_id: str) -> dict:
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False}
 
 
-def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
+def _save_state(state_dir, session_id, state):
     try:
         _config.ensure_local_dir(state_dir)
         with open(_state_file(state_dir, session_id), "w", encoding="utf-8") as fh:
@@ -205,7 +204,7 @@ def _save_state(state_dir: Path, session_id: str, state: dict) -> None:
         pass
 
 
-def _plugin_wrote(state_dir: Path, session_id: str) -> set:
+def _plugin_wrote(state_dir, session_id):
     """Journal files THIS session's own plugin hooks appended to (F-F3).
 
     Written by journal-writes.py after each successful append, as
@@ -226,7 +225,7 @@ def _plugin_wrote(state_dir: Path, session_id: str) -> set:
         return set()
 
 
-def _git_dirty(root) -> "list | None":
+def _git_dirty(root):
     """Repo-relative dirty/untracked paths, or None when git is unusable."""
     try:
         out = subprocess.run(
@@ -248,7 +247,7 @@ def _git_dirty(root) -> "list | None":
 
 
 # --- decision -----------------------------------------------------------------
-def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
+def decide(data, *, cfg=None, state_dir=None, dirty=None):
     """Returns ("record"|"warn"|"silent", detail). `dirty` is injectable for
     --selftest; real runs read `git status --porcelain`."""
     tool = data.get("tool_name", "")
@@ -401,7 +400,7 @@ def decide(data: dict, *, cfg=None, state_dir: Path = None, dirty=None):
 
 
 # --- cli ----------------------------------------------------------------------
-def main() -> None:
+def main():
     try:
         data = json.load(sys.stdin)
     except Exception:
