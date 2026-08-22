@@ -141,7 +141,7 @@ The commands it calls, which remain the definition:
 ```bash
 python3 tools/sweep-selftests.py           # hooks + scripts + tests, in parallel
 python3 tools/sweep-selftests.py --selftest
-python3 tools/gate-parity.py               # this list vs .github/workflows/ci.yml
+python3 tools/gate-parity.py               # this list, verify.sh and ci.yml, compared
 npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests

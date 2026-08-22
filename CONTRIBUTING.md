@@ -68,9 +68,11 @@ python3 tools/sweep-selftests.py
 python3 tools/sweep-selftests.py --selftest
 
 # the meta-gate: this list, verify.sh and ci.yml describe one gate set, and they had
-# drifted in both directions at once before anything compared them. This compares the
-# last two by name. THIS DOCUMENT IS NOT YET COMPARED TO THEM — see the Faults note
-# in the plan; adding a gate here is still a hand-kept act.
+# drifted in both directions at once before anything compared them. All THREE are
+# compared now, and this document was the last one added — while claiming to be the
+# definition, it carried seven of the thirteen gates. A gate named by one side and
+# not another fails by name; a legitimate absence needs a row in ABSENT_BY_DESIGN
+# with a reason, and a row that no longer describes the system fails too.
 python3 tools/gate-parity.py
 
 # the JavaScript unit tests. They ran only in CI for a long time, so a change under
@@ -86,6 +88,23 @@ npx --yes ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.s
 # plugin/marketplace structure
 claude plugin validate .
 claude plugin validate plugins/audit
+
+# the dialect and the 3.8 floor. `ruff` selects E9+F only (pyproject.toml); the AST
+# lint in `_output.house_style_violations()` is what enforces the bans vermin cannot
+# see — annotations, walrus, `typing`, `dataclasses`, `from __future__`.
+ruff check plugins/audit tools
+vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
+
+# the rendered artifacts, byte for byte against a fresh render, and the demo GIF's
+# preconditions — the plan gate still refusing an unplanned edit, in its own words.
+python3 tools/check-rendered-artifacts.py
+python3 tools/capture-demo-gif.py --check
+
+# the browser gates. NOTHING ELSE can prove the report paints and stays interactive,
+# or that the panel's controls do what their labels say: a selftest asserts what the
+# CSS SAYS. The panel leg is the long one.
+node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
+node tools/capture-screenshots.mjs --check
 ```
 
 CI (`.github/workflows/ci.yml`) runs the selftest suite on ubuntu + windows —

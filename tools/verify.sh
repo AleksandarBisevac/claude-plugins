@@ -156,9 +156,11 @@ run "selftests (hooks + scripts + tests + tools)" python3 tools/sweep-selftests.
 # directly, the exit code is read by this shell instead of by the thing under test.
 run "...and the runner's own cases, read directly" \
   python3 tools/sweep-selftests.py --selftest
-# The meta-gate. This file and ci.yml are two hand-maintained copies of one gate
-# set, and they had drifted three ways in both directions before anyone measured
-# it; a gate added to one and not the other now fails by name.
+# The meta-gate. This file, ci.yml and CONTRIBUTING.md are three hand-maintained
+# descriptions of one gate set, and they had drifted in both directions before
+# anyone measured it; a gate named by one and not another now fails by name. The
+# third side was itself a finding - it was omitted from the comparison while
+# claiming to be the definition, and carried seven of thirteen gates.
 run "gate parity (this file vs ci.yml)" python3 tools/gate-parity.py
 run "ruff" ruff check plugins/audit tools
 run "vermin (3.8 floor)" vermin -t=3.8- --no-tips --violations \

@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-The local gate set and the CI gate set must name the same gates.
+Every description of the gate set must name the same gates.
 
     tools/gate-parity.py            # the check
     tools/gate-parity.py --list     # what each side invokes, side by side
     tools/gate-parity.py --selftest # this file's own cases
 
-WHY. The gate set was described in three places by hand - `CLAUDE.md`,
-`tools/verify.sh` and `.github/workflows/ci.yml` - and by the time anyone measured
-it, the three had drifted IN BOTH DIRECTIONS at once:
+WHY. The gate set is described in more than one place by hand, and by the time
+anyone measured it the copies had drifted IN BOTH DIRECTIONS at once:
 
   * the selftest sweep existed twice with different strictness, so a file that
     exited 0 having asserted nothing was green locally and red in CI;
@@ -17,9 +16,15 @@ it, the three had drifted IN BOTH DIRECTIONS at once:
   * `vermin` covered three directories locally and two in CI, so a 3.9+ construct
     in a test file passed CI and failed locally.
 
-Three copies of one list is how that happens, and fixing each instance by hand is
-how it happens again. This makes the parity a CHECK: a gate added to one side and
-not the other fails the build by name.
+Copies of one list are how that happens, and fixing each instance by hand is how it
+happens again. This makes the parity a CHECK: a gate named by one side and not by
+another fails the build, naming both.
+
+IT COMPARES THREE SIDES, and the third was itself a finding. `verify.sh` and `ci.yml`
+were compared for a while and `CONTRIBUTING.md` was not - while saying of itself
+"the individual commands stay documented below, because they are the definition and
+the script is only a caller". A document that claims to be the definition owes every
+gate; it carried seven of thirteen when it was finally read.
 
 WHAT IT COMPARES, AND WHY THAT GRAIN. The set of REPO SCRIPTS and NAMED EXTERNAL
 GATES each side invokes - not the full command lines. Arguments legitimately differ
@@ -49,8 +54,17 @@ import _output  # noqa: E402
 
 _output.install_path()
 
+import _refs  # noqa: E402  (it owns "the runnable region of a document")
+
 VERIFY_REL = os.path.join("tools", "verify.sh")
 CI_REL = os.path.join(".github", "workflows", "ci.yml")
+DOC_REL = "CONTRIBUTING.md"
+
+# (label, path). The label is what a finding names and what a table row exempts, so
+# it is short on purpose - a reader should not have to know the path to read the
+# reason.
+SIDES = (("verify.sh", VERIFY_REL), ("ci.yml", CI_REL),
+         ("CONTRIBUTING.md", DOC_REL))
 
 # A repo script invoked as a command. Anchored on the two directories that hold
 # them, so a bare basename in prose is not mistaken for an invocation.
@@ -68,37 +82,47 @@ _EXTERNAL = (
     ("claude plugin validate", re.compile(r"\bclaude plugin validate\b")),
 )
 
-# CI runs it and `verify.sh` does not, on purpose. Each entry owes a reason a reader
-# can disagree with.
-CI_ONLY = (
-    ("plugins/audit/scripts/demo/gen-demo-manifest.py",
-     "builds a throwaway demo tree in /tmp to smoke the pipeline end to end; "
-     "verify.sh checks the COMMITTED artifacts instead"),
-    ("plugins/audit/scripts/demo/gen-demo-usage.py",
+# THREE SIDES, and one table that can express all of them. `CI_ONLY` and
+# `LOCAL_ONLY` were two tables for two sides, and adding CONTRIBUTING.md as a third
+# would have needed a third - with a gate absent from two sides needing an entry in
+# each. One row per gate, listing the sides it is legitimately absent FROM, and a
+# reason a reader can disagree with.
+#
+# CONTRIBUTING.md is here because it says of itself: "The individual commands stay
+# documented below, because they are the definition and the script is only a
+# caller." A document that claims to be the definition owes every gate, and it
+# carried seven of thirteen when somebody finally compared it.
+# `tools/prove-gates.py` is deliberately NOT a row here, and the staleness rule is
+# what said so: a gate no side names can never be reported missing, so a row
+# declaring it absent from all three asserts nothing. It is minutes rather than
+# seconds and mutates the tree while it runs; CLAUDE.md carries the command, and its
+# own cases run in the sweep like every other tool's.
+ABSENT_BY_DESIGN = (
+    ("plugins/audit/scripts/demo/gen-demo-manifest.py", ("verify.sh", "CONTRIBUTING.md"),
+     "builds a throwaway demo tree in /tmp to smoke the pipeline end to end; the "
+     "local set checks the COMMITTED artifacts instead"),
+    ("plugins/audit/scripts/demo/gen-demo-usage.py", ("verify.sh", "CONTRIBUTING.md"),
      "same throwaway demo tree"),
-    ("plugins/audit/scripts/report/render-report.py",
+    ("plugins/audit/scripts/report/render-report.py", ("verify.sh", "CONTRIBUTING.md"),
      "rendered into /tmp as a smoke test; locally the equivalent claim is "
      "check-rendered-artifacts.py, which is stronger because it compares bytes"),
-    ("plugins/audit/scripts/status/audit-doctor.py",
+    ("plugins/audit/scripts/status/audit-doctor.py", ("verify.sh", "CONTRIBUTING.md"),
      "an end-to-end CLI smoke test over a fixture project"),
-    ("plugins/audit/scripts/status/audit-status.py",
+    ("plugins/audit/scripts/status/audit-status.py", ("verify.sh", "CONTRIBUTING.md"),
      "exercises --gate's exit codes, which need a fixture manifest per case"),
-    ("plugins/audit/hooks/py-launch.sh",
-     "the launcher is driven directly with fixture projects and with PATH unset, "
-     "to prove the WIRING rather than decide(): the interpreter fallback, the stdin "
+    ("plugins/audit/hooks/py-launch.sh", ("verify.sh", "CONTRIBUTING.md"),
+     "the launcher is driven directly with fixture projects and with PATH unset, to "
+     "prove the WIRING rather than decide(): the interpreter fallback, the stdin "
      "contract and the emitted JSON. Neither unsetting PATH nor feeding three "
-     "fixture manifests is a thing to do to a developer's shell. The hooks it "
-     "drives - require-plan.py, guard-edits.py, guard-secrets-read.py - are "
-     "ARGUMENTS to it, not paths, so this one entry covers all of them"),
-)
-
-# `verify.sh` runs it and CI does not, on purpose.
-# `verify.sh` runs it and CI does not, on purpose.
-LOCAL_ONLY = (
-    ("tools/affected.py",
+     "fixture manifests is a thing to do to a developer's shell. The hooks it drives "
+     "are ARGUMENTS to it, not paths, so this one entry covers all of them"),
+    ("tools/affected.py", ("ci.yml", "CONTRIBUTING.md"),
      "a SELECTOR, not a gate: it narrows a local run and CI never narrows. Its own "
-     "cases DO run on both sides - inside the sweep, which covers tools/ - so what "
-     "is exempt here is the narrowing itself, not the checking of it"),
+     "cases DO run on every side - inside the sweep, which covers tools/ - so what "
+     "is exempt is the narrowing, not the checking of it"),
+    ("tools/verify.sh", ("verify.sh", "ci.yml"),
+     "the caller. CONTRIBUTING.md names it as the one command to run; it does not "
+     "invoke itself, and CI runs the gates rather than the wrapper"),
 )
 
 
@@ -153,6 +177,20 @@ def _yaml_run_lines(text):
     return out
 
 
+def _markdown_fence_lines(text):
+    """The fenced blocks of a Markdown document - what it tells a reader to RUN.
+
+    `_refs._runnable_text` already owns this question for the sweep-shape rule, and
+    a second definition of "the runnable region of a document" is how two rules come
+    to disagree about what a document says. Borrowed, not rewritten.
+    """
+    runnable, problem = _refs._runnable_text(DOC_REL, text)
+    if problem is not None or runnable is None:
+        return []
+    return [ln for ln in runnable.split("\n")
+            if ln.strip() and not ln.strip().startswith("#")]
+
+
 def gates_in(path):
     """The set of gate labels a file invokes, or None if it cannot be read.
 
@@ -165,8 +203,12 @@ def gates_in(path):
     except OSError:
         return None
     found = set()
-    reader = _yaml_run_lines if path.endswith((".yml", ".yaml")) else \
-        _shell_command_lines
+    if path.endswith((".yml", ".yaml")):
+        reader = _yaml_run_lines
+    elif path.endswith(".md"):
+        reader = _markdown_fence_lines
+    else:
+        reader = _shell_command_lines
     body = "\n".join(reader(text))
     for match in _SCRIPT_RE.finditer(body):
         found.add(match.group(0))
@@ -177,62 +219,77 @@ def gates_in(path):
 
 
 def parity(repo=None):
-    """{"missing_local": [...], "missing_ci": [...], "stale_exemptions": [...],
-    "local": n, "ci": n}.
+    """{"missing": [(gate, side, note)], "stale_exemptions": [...], "counts": {}}.
 
-    Every list is of `(gate, note)` pairs so a failure names the gate AND says which
-    table would have to change to make it legal.
+    A gate must be named by EVERY side unless a row in `ABSENT_BY_DESIGN` says which
+    sides it is legitimately absent from and why. Two tables for two sides became one
+    table for three, because a gate absent from two sides would otherwise need an
+    entry in each and the two could disagree.
     """
     repo = repo or REPO
-    local = gates_in(os.path.join(repo, VERIFY_REL))
-    ci = gates_in(os.path.join(repo, CI_REL))
-    if local is None or ci is None:
-        missing = VERIFY_REL if local is None else CI_REL
-        return {"missing_local": [], "missing_ci": [],
-                "stale_exemptions": [(missing, "could not be read at all")],
-                "local": 0, "ci": 0}
-    ci_only = dict(CI_ONLY)
-    local_only = dict(LOCAL_ONLY)
+    read = {}
+    unreadable = []
+    for label, rel in SIDES:
+        got = gates_in(os.path.join(repo, rel))
+        if got is None:
+            unreadable.append((rel, label, "could not be read at all"))
+        read[label] = got if got is not None else set()
+    if unreadable:
+        # NOT an empty verdict. A side nothing could read is not a side that agrees.
+        return {"missing": [], "stale_exemptions": unreadable,
+                "counts": dict((k, len(v)) for k, v in read.items())}
 
-    missing_local = sorted((g, "in CI only; add it to %s or declare it in CI_ONLY"
-                            % (VERIFY_REL,))
-                           for g in ci - local if g not in ci_only)
-    missing_ci = sorted((g, "local only; add it to %s or declare it in LOCAL_ONLY"
-                         % (CI_REL,))
-                        for g in local - ci if g not in local_only)
-    # TWO WAYS AN EXEMPTION STOPS DESCRIBING THE SYSTEM, and the second is the one
-    # a single-direction check cannot see: an entry naming a gate BOTH sides now run
-    # is not an exemption at all, it is a sentence about a state that has passed. It
-    # stays green forever under the first rule alone, and the table becomes a place
-    # where dead reasons accumulate.
-    stale = sorted([(g, "declared CI-only, but CI does not invoke it any more")
-                    for g in ci_only if g not in ci]
-                   + [(g, "declared local-only, but %s does not invoke it any more"
-                       % (VERIFY_REL,)) for g in local_only if g not in local]
-                   + [(g, "declared CI-only, but %s invokes it too - the exemption "
-                          "does nothing" % (VERIFY_REL,))
-                      for g in ci_only if g in ci and g in local]
-                   + [(g, "declared local-only, but CI invokes it too - the "
-                          "exemption does nothing")
-                      for g in local_only if g in local and g in ci])
-    return {"missing_local": missing_local, "missing_ci": missing_ci,
-            "stale_exemptions": stale, "local": len(local), "ci": len(ci)}
+    exempt = {}
+    for gate, sides, _why in ABSENT_BY_DESIGN:
+        exempt[gate] = set(sides)
+    every = set()
+    for names in read.values():
+        every |= names
+
+    missing = []
+    for gate in sorted(every):
+        for label, _rel in SIDES:
+            if gate in read[label]:
+                continue
+            if label in exempt.get(gate, ()):
+                continue
+            missing.append((gate, label,
+                            "named by another side and not by this one; add it or "
+                            "give it a row in ABSENT_BY_DESIGN"))
+
+    # THREE WAYS AN EXEMPTION STOPS DESCRIBING THE SYSTEM. The third is the one a
+    # single-direction check cannot see, and it is why this is checked at all: a row
+    # naming a side that DOES run the gate is not an exemption, it is a sentence
+    # about a state that has passed, and it stays green forever under the first two.
+    stale = []
+    for gate, sides, _why in ABSENT_BY_DESIGN:
+        if gate not in every:
+            stale.append((gate, "-", "declared absent by design, but no side "
+                                     "invokes it any more"))
+            continue
+        for label in sides:
+            if label not in dict(SIDES):
+                stale.append((gate, label, "names a side that does not exist"))
+            elif gate in read[label]:
+                stale.append((gate, label, "declared absent from this side, which "
+                                           "invokes it - the row does nothing"))
+    return {"missing": sorted(missing), "stale_exemptions": sorted(stale),
+            "counts": dict((k, len(v)) for k, v in read.items())}
 
 
 def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
-    bad = (result["missing_local"] + result["missing_ci"]
-           + result["stale_exemptions"])
-    out.write("gate parity: %d gate(s) in %s, %d in %s\n"
-              % (result["local"], VERIFY_REL, result["ci"], CI_REL))
-    for label, rows in (("missing from the LOCAL gate set", result["missing_local"]),
-                        ("missing from the CI gate set", result["missing_ci"]),
-                        ("stale exemption", result["stale_exemptions"])):
-        for gate, note in rows:
-            out.write("  %s: %s\n      %s\n" % (label, gate, note))
+    bad = result["missing"] + result["stale_exemptions"]
+    out.write("gate parity: %s\n"
+              % (", ".join("%d in %s" % (result["counts"].get(label, 0), label)
+                           for label, _rel in SIDES),))
+    for gate, side, note in result["missing"]:
+        out.write("  MISSING from %s: %s\n      %s\n" % (side, gate, note))
+    for gate, side, note in result["stale_exemptions"]:
+        out.write("  stale exemption (%s / %s): %s\n" % (gate, side, note))
     if not bad:
-        out.write("  the two sides name the same gates, and every declared "
+        out.write("  all three sides name the same gates, and every declared "
                   "exemption is still real\n")
     return 1 if bad else 0
 
@@ -256,25 +313,23 @@ def main(argv):
 def _cases():
     out = []
     real = parity()
-    out.append(("p0", real["missing_local"] == [] and real["missing_ci"] == []
-                and real["stale_exemptions"] == [],
-                "THE LIVE CLAIM: this repo's two gate sets name the same gates and "
-                "no exemption has gone stale (%d local, %d ci) - %r"
-                % (real["local"], real["ci"],
-                   real["missing_local"] + real["missing_ci"]
-                   + real["stale_exemptions"])))
+    out.append(("p0", real["missing"] == [] and real["stale_exemptions"] == [],
+                "THE LIVE CLAIM: all three descriptions of the gate set name the "
+                "same gates and no exemption has gone stale (%s) - %r"
+                % (", ".join("%s=%d" % (k, v)
+                             for k, v in sorted(real["counts"].items())),
+                   real["missing"] + real["stale_exemptions"])))
 
-    out.append(("p1", real["local"] > 5 and real["ci"] > 5,
-                "...and both sides were really READ, so p0 is not two empty sets "
-                "agreeing: %d gates locally, %d in CI"
-                % (real["local"], real["ci"])))
+    out.append(("p1", all(real["counts"].get(label, 0) > 5 for label, _r in SIDES),
+                "...and every side was really READ, so p0 is not three empty sets "
+                "agreeing: %r" % (real["counts"],)))
 
     body = _shell_command_lines(
         "# node tools/ghost.mjs\n  ruff check x  # ruff check y\n")
     out.append(("c0", body == ["ruff check x"],
                 "a commented invocation is NOT an invocation, and a trailing "
-                "comment is cut - both files discuss their own gates at length, so "
-                "without this every mention would register as a gate: %r" % (body,)))
+                "comment is cut - all three files discuss their own gates at "
+                "length, so without this every mention would register: %r" % (body,)))
 
     yml = _yaml_run_lines(
         "      - name: something about tools/ghost.mjs\n"
@@ -292,12 +347,25 @@ def _cases():
                 "mentioning verify.sh registered as an invocation of it: %r"
                 % (yml,)))
 
+    md = _markdown_fence_lines(
+        "Prose naming `node tools/ghost.mjs` at length.\n\n"
+        "```bash\n# a comment about tools/commented-fixture\n"
+        "node tools/real.mjs\n```\n\nMore prose about tools/after.mjs.\n")
+    out.append(("c2", md == ["node tools/real.mjs"],
+                "a Markdown document is mostly PROSE, and this one argues about its "
+                "own gates for pages: only fenced blocks are commands. The reader "
+                "comes from `_refs`, which already owns 'the runnable region of a "
+                "document' for the sweep-shape rule - a second definition of that is "
+                "how two rules come to disagree about what a document says: %r"
+                % (md,)))
+
     tmp = _output.REPO_ROOT  # any real directory; the point is the missing file
     res = parity(os.path.join(tmp, "no-such-repo-dir"))
-    out.append(("m0", len(res["stale_exemptions"]) == 1
-                and "could not be read" in res["stale_exemptions"][0][1],
-                "an unreadable gate file is a NAMED failure, not perfect parity - "
-                "returning empty sets for both would report two missing files as "
+    out.append(("m0", len(res["stale_exemptions"]) == len(SIDES)
+                and all("could not be read" in n
+                        for _g, _s, n in res["stale_exemptions"]),
+                "every unreadable side is a NAMED failure, not perfect parity - "
+                "empty sets for all three would report three missing files as "
                 "agreement: %r" % (res["stale_exemptions"],)))
 
     seen = gates_in(os.path.join(REPO, VERIFY_REL))
@@ -322,35 +390,42 @@ def _cases():
                 "the empty one alone would pass on a version that always returned "
                 "an empty set (%r vs %r)" % (seen_c, seen_r)))
 
-    ci_seen = gates_in(os.path.join(REPO, CI_REL))
-    for gate, _why in CI_ONLY:
-        if gate not in ci_seen:
-            out.append(("x-%s" % (gate,), False,
-                        "CI_ONLY names %s but CI does not invoke it" % (gate,)))
-    out.append(("e0", all(g in ci_seen for g, _w in CI_ONLY),
-                "every CI_ONLY entry is a gate CI really runs (%d entries) - an "
-                "exemption for something that no longer exists is how a table "
-                "stops describing the system" % (len(CI_ONLY),)))
+    labels = set(label for label, _r in SIDES)
+    bad_side = [(g, s) for g, sides, _w in ABSENT_BY_DESIGN for s in sides
+                if s not in labels]
+    out.append(("e0", bad_side == [],
+                "every exemption names a side that EXISTS - a row pointing at a "
+                "label nothing reads is a row that can never be wrong: %r"
+                % (bad_side,)))
 
-    both = parity()
-    out.append(("e1", not any("does nothing" in note
-                              for _g, note in both["stale_exemptions"]),
-                "no declared exemption names a gate BOTH sides run. An entry that "
-                "did would stay green under a check that only asks whether its own "
-                "side still runs it, which is how a table of reasons turns into a "
-                "table of history: %r" % (both["stale_exemptions"],)))
+    dead = [(g, s) for g, s, n in real["stale_exemptions"]
+            if "does nothing" in n or "any more" in n]
+    out.append(("e1", dead == [],
+                "no exemption names a side that RUNS the gate, and none names a "
+                "gate no side runs. The first stays green under a check that only "
+                "asks about its own side; the second is a row that cannot be "
+                "reported missing and therefore asserts nothing - which is why "
+                "`prove-gates.py` is deliberately not a row: %r" % (dead,)))
+
+    out.append(("e2", all(sides for _g, sides, _w in ABSENT_BY_DESIGN)
+                and all(why.strip() for _g, _s, why in ABSENT_BY_DESIGN),
+                "and every row carries at least one side and a REASON, because an "
+                "exemption without one is a decision nobody can disagree with "
+                "(%d rows)" % (len(ABSENT_BY_DESIGN),)))
 
     buf = io.StringIO()
-    code = render({"missing_local": [("tools/x.mjs", "why")], "missing_ci": [],
-                   "stale_exemptions": [], "local": 3, "ci": 4}, stream=buf)
+    code = render({"missing": [("tools/x.mjs", "ci.yml", "why")],
+                   "stale_exemptions": [], "counts": {"verify.sh": 3}}, stream=buf)
     out.append(("r0", code == 1 and "tools/x.mjs" in buf.getvalue()
-                and "why" in buf.getvalue(),
-                "a gap exits 1 and prints both the gate and what to do about it"))
+                and "ci.yml" in buf.getvalue() and "why" in buf.getvalue(),
+                "a gap exits 1 and names the gate, the SIDE it is missing from, and "
+                "what to do about it - two sides made 'missing' unambiguous and "
+                "three do not"))
 
     buf = io.StringIO()
-    code = render({"missing_local": [], "missing_ci": [], "stale_exemptions": [],
-                   "local": 9, "ci": 9}, stream=buf)
-    out.append(("r1", code == 0 and "same gates" in buf.getvalue(),
+    code = render({"missing": [], "stale_exemptions": [],
+                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
+    out.append(("r1", code == 0 and "all three sides" in buf.getvalue(),
                 "and parity exits 0 saying so - 'nothing to report' must not read "
                 "like 'nothing was compared'"))
     return out
