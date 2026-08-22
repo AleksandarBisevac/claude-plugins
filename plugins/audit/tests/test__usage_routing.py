@@ -27,6 +27,47 @@ import _usage_routing as M                         # noqa: E402
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
+    # --- a task whose attempts were zeroed while its spend stayed --------------
+    # `attempts: 0` is not hypothetical: `audit-task.py` writes it for every new
+    # task, and TWO documented paths reach it with ledger rows already attributed —
+    # `orchestrator.md` reverts the increment after a specific failure ("revert the
+    # attempts increment from step 2"), and `/audit:run` resets a blocked or
+    # re-opened task to 0. In both, the manifest says zero and the ledger keeps the
+    # tokens.
+    #
+    # `int(t.get("attempts") or 1)` therefore reports 1 for a task the manifest says
+    # has none, and the arithmetic below is measured, not assumed: over a cell of one
+    # zeroed task and one that ran twice, the mean is 1.5 where the recorded values
+    # average 1.0.
+    #
+    # IT IS PINNED RATHER THAN CHANGED, deliberately. Zeroing attempts while keeping
+    # spend is itself an inconsistency, and it inflates the COST side of the same
+    # cell in the same direction — so `or 1` partly compensates rather than simply
+    # lying, and `meanAttempts` feeds routing ADVICE. Flipping an advice number on a
+    # judgement call is worse than recording the decision. This case is what makes
+    # the next change to it deliberate: if somebody decides zero should read as
+    # zero, this is the case they will have to edit, and the reasoning is here.
+    _z_man = {"phases": [{"id": "PZ", "tasks": [
+        {"id": "PZ.1", "status": "pending", "risk": "high", "attempts": 0},
+        {"id": "PZ.2", "status": "done", "risk": "high", "attempts": 2}]}]}
+    _z_rows = [{"taskId": "PZ.1", "model": "m", "in": 10, "out": 100,
+                "cacheR": 1000, "cacheW5m": 100, "costUSD": 0.1},
+               {"taskId": "PZ.2", "model": "m", "in": 10, "out": 100,
+                "cacheR": 1000, "cacheW5m": 100, "costUSD": 0.1}]
+    _z_cell = M.routing(_z_man, _z_rows)["byRisk"]["high"]["m"]
+    check("za1 a zeroed task DOES reach the cell - it is joined by taskId from the "
+          "ledger, not by status - so its attempts count is in the mean: %d task(s)"
+          % (_z_cell["tasks"],), _z_cell["tasks"] == 2)
+    check("za2 ...and the mean reads 1.5, where the recorded 0 and 2 average 1.0: "
+          "`or 1` reports one attempt for a task the manifest says has none. Pinned, "
+          "not fixed - see the note above - so a change here is a decision and not "
+          "a drift (got %r)" % (_z_cell["meanAttempts"],),
+          _z_cell["meanAttempts"] == 1.5)
+    check("za3 THE PAIR: with only the spawned task in the ledger the mean is 2.0, "
+          "so za2 is reading the zeroed task's contribution and not a constant",
+          M.routing(_z_man, _z_rows[1:])["byRisk"]["high"]["m"]["meanAttempts"]
+          == 2.0)
+
     def mkrow(day, model, author, task, phase, attr, cost, out_tok=100,
               cr=1000, cw=100, fin=10):
         return {"ts": "2026-08-%02dT10" % day, "model": model, "author": author,
