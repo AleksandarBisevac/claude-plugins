@@ -279,7 +279,13 @@ const uKeyEl=(k,cls)=>isUncat(k)
  * renaming one breaks a link somebody saved.
  */
 // ---------- tabs, the toast, and where the reader was ----------
-const TABS=['guards','comp','over','usage','policy','props','look'],SCROLL={};
+// IN NAV ORDER, and that is now load-bearing rather than incidental: the first
+// entry IS the panel's landing view and the fallback for an unrecognised
+// fragment, so this tuple and the strip in panel.html are one order, not two
+// hand-kept ones. Overview leads because the common visit is "where are we",
+// not "I am changing config" - Settings was first only because it was built
+// first.
+const TABS=['over','comp','usage','policy','props','guards','look'],SCROLL={};
 let CURTAB=null;
 /**
  * Show one view, hide the rest, and put the reader back where they were in it.
@@ -298,7 +304,7 @@ let CURTAB=null;
  * @returns {void}
  */
 function showTab(t,push){
- if(!TABS.includes(t))t='guards';
+ if(!TABS.includes(t))t=TABS[0];
  closeCombo();   // the menu is on <body>, not in the view being hidden
  if(CURTAB)SCROLL[CURTAB]=window.scrollY;
  CURTAB=t;
@@ -342,14 +348,14 @@ addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'
 function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(h))return h;
  const s=storageGet('audit-panel-tab');if(TABS.includes(s))return s;
- // WITH NO PLAN YET, SETTINGS IS THE WRONG PLACE TO LAND. It is a wall of
- // configuration for an audit that does not exist, and the one screen that says
- // what to do next was two clicks away - measured on a fresh `git init` repo.
- // Only the DEFAULT moves: an explicit fragment still wins above, and so does a
- // remembered tab, so this fires exactly once, on the visit that has neither.
- // STATE is loaded before boot() routes the first tab, so this is answerable
- // here rather than after a repaint.
- return (STATE&&STATE.rollup)?'guards':'over';}
+ // The first view, whatever it is. This was briefly a conditional - Overview when
+ // no plan existed, Settings otherwise - and reordering the strip absorbed it: if
+ // Overview leads because "where are we" is the common visit, that is as true of a
+ // populated repo as of an empty one, and a landing that disagreed with the top of
+ // the list would be its own surprise. Only the DEFAULT is decided here; an
+ // explicit fragment is an instruction somebody sent and a remembered tab is this
+ // reader's own choice, and both are answered above.
+ return TABS[0];}
 /**
  * The one transient banner, for an outcome nobody has to act on.
  *

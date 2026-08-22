@@ -5674,6 +5674,14 @@ async function main() {
 
       const tabs = await page.$$eval('.tab', (els) => els.map((e) => e.dataset.t));
       note(`panel tabs present: ${tabs.join(', ')}`);
+      // NAME THE VIEW, do not inherit it. Everything from here to the help drawer
+      // photographs and drives Settings, and it used to arrive there by landing
+      // there: `guards` led the strip, so a fresh load opened it. It does not any
+      // more - Overview leads - and the failure that change produced is the reason
+      // this line exists: the drawer click found a control inside a hidden view and
+      // spent its whole timeout on it. The shot above it would have been the wrong
+      // tab entirely, and silently.
+      await tabTo(page, 'guards');
       for (const t of ['guards', 'comp', 'over', 'usage', 'policy', 'props']) {
         if (!tabs.includes(t)) {
           fail(`panel has no ${t} tab — the fixture or the UI is out of date`);

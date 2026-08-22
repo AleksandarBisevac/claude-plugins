@@ -208,8 +208,31 @@ def _cases(check):
           "if(par&&typeof par==='object'&&!Object.keys(par).length)" in M.UI_HTML)
     check("Settings keeps the route, the screenshot name and the pinned id it "
           "already had - an internal id is an address, not a description",
-          "data-t=guards aria-current=\"true\">Settings<" in M.UI_HTML
+          # `aria-current` used to be asserted here too, and it was never this
+          # pin's subject: it marks whichever tab LEADS the strip, which is now
+          # Overview. The claim this case is named for is that the route id stayed
+          # `guards` while the visible word is "Settings".
+          "data-t=guards>Settings<" in M.UI_HTML
           and "$('#guards')" in M.UI_HTML)
+
+    # ORDER BECAME LOAD-BEARING, so it gets a case that says so. It never had one
+    # because it never decided anything: the landing was the hard-coded string
+    # 'guards' and the strip was a separate hand-kept list, so the two could not
+    # disagree in a way anyone noticed. `initialTab()` returns TABS[0] now and
+    # `showTab` falls back to it, which makes the tuple the landing rule and the
+    # strip what a reader sees. Two orders that drifted apart would highlight one
+    # view and open another.
+    _tabs_src = M.UI_HTML[M.UI_HTML.index("const TABS=["):
+                          M.UI_HTML.index("],SCROLL={}")]
+    _tab_ids = re.findall(r"'([a-z]+)'", _tabs_src)
+    _strip_ids = re.findall(r'<button class="tab[^"]*" data-t=([a-z]+)', M.UI_HTML)
+    check("the nav strip and TABS are ONE order, and its first entry is where the "
+          "panel lands - Overview leads because \"where are we\" is the common "
+          "visit, and Settings led only because it was built first",
+          _tab_ids == _strip_ids and _tab_ids and _tab_ids[0] == "over"
+          and "return TABS[0];}" in M.UI_HTML
+          and "if(!TABS.includes(t))t=TABS[0];" in M.UI_HTML,
+          repr({"TABS": _tab_ids, "strip": _strip_ids}))
     check("one Save for four cards, and it is reachable from all of them",
           M.UI_HTML.count("'/api/config'") == 1 and ".savebar{position:sticky" in M.UI_HTML)
     # --- the three facts the form has to state out loud ------------------------
@@ -917,8 +940,8 @@ def _cases(check):
     # its own HOME; these guard the constructs those checks depend on.
     check("the policy tab is registered, routable and has a view container",
           "data-t=policy>Policy<" in M.UI_HTML and "<div id=policy" in M.UI_HTML
-          and "const TABS=['guards','comp','over','usage','policy','props',"
-              "'look']" in M.UI_HTML)
+          and "'policy'" in M.UI_HTML[M.UI_HTML.index("const TABS=["):
+                                       M.UI_HTML.index("],SCROLL={}")])
     # --- pr (F-P-32): Proposals ------------------------------------------------
     # Parked phases had no surface in the panel at all: /audit:init can park every
     # synthesized phase, and the tab that shows the plan showed nothing. These pin
@@ -2031,8 +2054,10 @@ def _cases(check):
           "tearing the view down no longer takes it along",
           "function closeCombo(" in M.UI_HTML
           and M.UI_HTML.count("closeCombo();") >= 5
-          and "function showTab(t,push){\n if(!TABS.includes(t))t='guards';\n closeCombo();"
-          in M.UI_HTML)
+          and "function showTab(t,push){" in M.UI_HTML
+          # The call WITH its own comment, which appears nowhere else - enough to
+          # place it inside showTab without pinning the lines around it.
+          and " closeCombo();   // the menu is on <body>," in M.UI_HTML)
     check("co: a mousedown anywhere in the menu keeps the input's focus, so a "
           "scrollbar drag or a click on the footer no longer closes it (F-P-1d)",
           "CMENU.addEventListener('mousedown',e=>e.preventDefault());" in M.UI_HTML)
