@@ -43,6 +43,35 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "meter-usage.py"),
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
+    # --- the first-sight scan ceiling: zero is a SETTING, not an absence --------
+    # `int(ucfg.get("maxScanBytes") or 33554432)` was here, and `_config_rules`
+    # accepts a non-negative integer - so `0` is legal and means "scan nothing on
+    # first sight", the strictest value the user can write. Through `or` it became
+    # 32 MiB, the most permissive one. The pair below is what tells the two versions
+    # apart: the old expression answers 33554432 to BOTH of the first two cases.
+    check("mc0 a configured 0 survives - the strictest setting is reachable",
+          M._scan_cap({"maxScanBytes": 0}) == 0,
+          repr(M._scan_cap({"maxScanBytes": 0})))
+    check("mc1 ...while an ABSENT key still takes the default, which is the answer "
+          "the old `or` gave to both and the reason zero was unreachable",
+          M._scan_cap({}) == _config.DEFAULTS["usage"]["maxScanBytes"],
+          repr(M._scan_cap({})))
+    check("mc2 an explicit null is an absence too - a config that spells the key "
+          "and leaves it empty is asking for the default, not for zero",
+          M._scan_cap({"maxScanBytes": None})
+          == _config.DEFAULTS["usage"]["maxScanBytes"])
+    check("mc3 a configured number is passed through unchanged",
+          M._scan_cap({"maxScanBytes": 1024}) == 1024)
+    # Written as `... or True` first, which is a tautology - a case that cannot
+    # fail, in a suite whose whole subject this week was checks that assert
+    # nothing. The assertion is the absence of the literal, and it has to be able
+    # to go red: putting `33554432` back into the hook is what fails it.
+    check("mc4 the default is READ from _config.DEFAULTS and not re-spelled in the "
+          "hook: the literal had three homes, and a second copy is how two of them "
+          "come to disagree",
+          "33554432" not in _harness.module_source(M),
+          "the hook spells the default itself again")
+
     ul = M._load_ledger_lib()
     tmp = Path(tempfile.mkdtemp(prefix="meter-usage-selftest-"))
     prev_env = os.environ.get("CLAUDE_PROJECT_DIR")

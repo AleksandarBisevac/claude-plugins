@@ -115,6 +115,24 @@ _lockmod = _panel_state._lockmod
 _lock_info = _panel_state._lock_info
 
 
+def _not_a_json_object():
+    """The refusal every write endpoint gives a body that is not an object.
+
+    A FUNCTION returning a fresh dict, not a module constant: a shared dict is
+    module state a caller could append a finding to, and the next endpoint would
+    return it. The same reason `findings` lists are built per call everywhere else
+    here.
+
+    It exists because the value was written out four times, byte for byte, at four
+    endpoints - and a refusal is a contract with the front end, which reads `ok` and
+    renders `findings`. Four copies of one contract is three chances to reword one
+    of them and not the others. (The dict KEYS around it are repeated far more often
+    and correctly so: `"findings"` at 39 sites is a key name, not a duplicated fact,
+    and `out[_FINDINGS]` would be worse to read at every one of them.)
+    """
+    return {"ok": False, "findings": ["body must be a JSON object"]}
+
+
 def _atomic_write_json(path, obj):
     """Thin delegation to the plugin's ONE atomic-JSON-write implementation
     (_manifest_io.atomic_write_json) — ensure_ascii=False keeps this module's
@@ -139,7 +157,7 @@ def write_policy(project, body):
     words before the file is even assembled.
     """
     if not isinstance(body, dict):
-        return {"ok": False, "findings": ["body must be a JSON object"]}
+        return _not_a_json_object()
     policy = body.get("policy") if "policy" in body else body
     if policy is None:
         policy = {}
@@ -170,7 +188,7 @@ def write_areas(project, body):
     on a branch nobody is on), echoes the change rows and journals them.
     """
     if not isinstance(body, dict):
-        return {"ok": False, "findings": ["body must be a JSON object"]}
+        return _not_a_json_object()
     # Accept either {"areas": {...}} or the bare registry, since both readings of
     # "PUT the areas" are reasonable and guessing wrong costs a confusing 400.
     areas = body.get("areas") if "areas" in body else body
@@ -197,7 +215,16 @@ def proposal_action(project, body):
     `plan` is the read-only half, and the tab calls it first so its confirm dialog
     can show what a materialization would pull in BEFORE anything is written.
     """
-    action = (body or {}).get("action")
+    # `isinstance`, not `body or {}`. That idiom covers `null`, `[]` and `""` -
+    # everything falsy - and lets a TRUTHY non-object straight through to `.get`,
+    # which is an AttributeError. `panel-server` wraps only the JSON PARSE in a
+    # try/except, so a POST of `"x"` - valid JSON, wrong type - reached this line
+    # and took the request handler down instead of being refused. The five sibling
+    # endpoints all check the type; this was the one that did not, which is what
+    # made the divergence worth a case over the whole set rather than a fix here.
+    if not isinstance(body, dict):
+        return _not_a_json_object()
+    action = body.get("action")
     pid = (body or {}).get("id")
     if action not in ("plan", "materialize", "drop", "revive"):
         return {"ok": False,
@@ -243,7 +270,7 @@ def write_ado(project, body):
     """
     vm, _, _, _ = _cores()
     if not isinstance(body, dict):
-        return {"ok": False, "findings": ["body must be a JSON object"]}
+        return _not_a_json_object()
     ado = body.get("ado") if "ado" in body else body
     findings, warnings = vm.check_ado_meta(ado)
     if findings:
@@ -749,7 +776,7 @@ def write_theme(project, body):
     "no project theme" and not "a theme that says nothing".
     """
     if not isinstance(body, dict):
-        return {"ok": False, "findings": ["body must be a JSON object"]}
+        return _not_a_json_object()
     path = os.path.join(project, ".claude", _theme.THEME_FILENAME)
     before = _theme.resolve_theme(project, read_config(project))["theme"] or {}
     if body.get("reset"):

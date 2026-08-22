@@ -57,6 +57,75 @@ import _panel_write as M                           # noqa: E402
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
+    # --- every POST endpoint refuses a body that is not an object --------------
+    # A CLASS-LEVEL case, and derived from the SERVER'S OWN ROUTE TABLE rather than
+    # from a list written here: a hand-list covers the endpoints somebody remembered
+    # and the next one added is silently out of scope. That is not hypothetical -
+    # `proposal_action` was the one endpoint of the seven that checked the type with
+    # `body or {}` instead of `isinstance`, so a POST of `"x"` (valid JSON, wrong
+    # type, truthy) reached `.get` and raised. `panel-server` wraps only the JSON
+    # PARSE in a try/except, so the AttributeError took the request handler down
+    # rather than being answered.
+    import re
+    import shutil as _sh0
+    import tempfile as _tf0
+    # Its OWN fixture, cleaned in its own `finally`. The suite builds a project
+    # further down, and borrowing it would make this block depend on running after
+    # it - the ordering trap a stray fixture already sprang once today.
+    _pb_tmp = _tf0.mkdtemp(prefix="panel-write-body-")
+    _pb_proj = os.path.join(_pb_tmp, "proj")
+    os.makedirs(os.path.join(_pb_proj, ".claude"), exist_ok=True)
+    _srv = os.path.join(_harness.SCRIPTS_DIR, "panel", "panel-server.py")
+    with open(_srv, "r", encoding="utf-8") as _fh:
+        _server_src = _fh.read()
+    # THE FUNCTION NAMES ONLY, and deliberately not a path -> name map. Two things
+    # were learned writing this:
+    #
+    #   * the optional `_panel_write.` prefix is not cosmetic. Six routes call the
+    #     aliased name and ONE calls it through the module - and that was the
+    #     endpoint with the defect. A pattern requiring a bare name found six and
+    #     read as complete; a derived list is only as derived as its pattern, and
+    #     the missing one is never the one you would have guessed.
+    #   * pairing each name with the path above it needs a gap that cannot cross
+    #     another route, and the lazy version silently paired `/api/state` with
+    #     `write_config`. The paths add nothing to what is asserted here, so the
+    #     honest fix is to stop capturing what cannot be paired correctly rather
+    #     than to print a map that is wrong.
+    _routes = re.findall(
+        r'self\._json\(200,\s*(?:_panel_write\.)?([A-Za-z_]\w*)'
+        r'\(project,\s*body\)\)', _server_src)
+    check("pb0 the route table was READ, not assumed - %d POST endpoint(s) take a "
+          "body. An empty list here would make every case below vacuous, which is "
+          "the shape a regex that stopped matching produces" % (len(_routes),),
+          len(_routes) >= 6, repr(_routes))
+    _unresolved = [n for n in _routes if not callable(getattr(M, n, None))]
+    check("pb1 ...and every one of them resolves in this module, so nothing the "
+          "server routes is quietly skipped: %r" % (_unresolved,),
+          _unresolved == [])
+    _broken = []
+    try:
+        for _name in _routes:
+            _fn = getattr(M, _name, None)
+            if not callable(_fn):
+                continue
+            for _bad in ("a string", 42, True):
+                try:
+                    _got = _fn(_pb_proj, _bad)
+                except Exception as _exc:
+                    _broken.append((_name, _bad, type(_exc).__name__))
+                    break
+                if not (isinstance(_got, dict) and _got.get("ok") is False
+                        and _got.get("findings")):
+                    _broken.append((_name, _bad, repr(_got)[:40]))
+                    break
+    finally:
+        _sh0.rmtree(_pb_tmp, ignore_errors=True)
+    check("pb2 a TRUTHY non-object body is refused by every one of them with the "
+          "same {ok:false, findings:[...]} shape the front end reads - a string, a "
+          "number and a bool, because `body or {}` catches only the falsy ones and "
+          "those three are exactly what it lets through: %r" % (_broken,),
+          _broken == [])
+
     import shutil as _shutil
     import tempfile
 

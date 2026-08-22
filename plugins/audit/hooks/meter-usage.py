@@ -179,6 +179,22 @@ def session_summary(ul, ledger, ucfg, session_id):
 
 
 # --- metering -----------------------------------------------------------------
+def _scan_cap(ucfg):
+    """The first-sight scan ceiling this run should use, in bytes.
+
+    A named function rather than an inline expression because it answers one
+    question with three possible answers, and only one of them is obvious: a
+    configured number (INCLUDING zero), or the default when nothing is configured.
+    `ucfg.get("maxScanBytes") or DEFAULT` collapsed the first two, which is why
+    `0` - the strictest setting the validator accepts - behaved as the most
+    permissive one.
+    """
+    configured = ucfg.get("maxScanBytes")
+    if configured is None:
+        return _config.DEFAULTS["usage"]["maxScanBytes"]
+    return configured
+
+
 def _compact(n):
     """Magnitudes are compact everywhere in this plugin — `3.2M`, never
     `3,230,000`. Mirrors _fmt_tokens in render-report.py and uTok in the panel."""
@@ -224,7 +240,18 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
             "repo": os.path.basename(str(root)) or "repo",
             "pricing": ucfg.get("pricing"),
             "backfillOnFirstRun": bool(ucfg.get("backfillOnFirstRun", True)),
-            "maxScanBytes": int(ucfg.get("maxScanBytes") or 33554432),
+            # `if is None`, NOT `or`, and the difference is a setting the user can
+            # write and this hook could not read. `_config_rules` accepts a
+            # NON-NEGATIVE integer here, so `0` is legal and means "scan nothing on
+            # first sight" - the strictest value. Through `or` it became 32 MiB, the
+            # most permissive one: the config said one thing and the hook did the
+            # opposite. This is the dialect's named silent-corruption shape, and it
+            # was found by scanning for it rather than by anyone hitting it.
+            #
+            # The default is READ from `_config.DEFAULTS` rather than re-spelled.
+            # The literal had three homes - there, here, and `usage_ledger`'s own
+            # fallback - and two of them are now one.
+            "maxScanBytes": int(_scan_cap(ucfg)),
             # The other name this session answers to. `phase.claim.sessionId` is
             # written by the orchestrator from Bash, where the id available is
             # $CLAUDE_CODE_SESSION_ID; `session_id` above comes from this hook's
