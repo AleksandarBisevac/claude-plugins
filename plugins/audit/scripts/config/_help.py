@@ -867,13 +867,25 @@ def schema_vocab_drift(root=None):
     """[(set-name, problem), …] — every `_manifest_vocab.KNOWN_*` set that has
     stopped agreeing with `schema/audit-plan.schema.json`.
 
-    WHY THIS LIVES HERE AND NOT BESIDE THE SETS. The vocabulary is at layer 1; the
-    tree's only schema walk is `fields()`, in this module, at layer 2. Importing
-    upward is what `_deps.layer_violations()` fails, and writing a second walk down
-    there would move the duplication rather than remove it. `_manifest_vocab` keeps
-    the two claims it is the right owner of — `SCHEMA_ANCHORS` (where each set lives
-    in the document) and `OFF_SCHEMA` (which keys are wider than the schema on
-    purpose, with a reason each) — and this is the comparison.
+    WHY THIS WALK AND NOT THE OTHER ONE. `fields()` is not the tree's only schema
+    walk, and the difference is not cosmetic: `gen-demo-manifest.schema_fields()`
+    asks whether a FIXTURE exercises the schema, so it keys a field
+    `<owner>.<field>` with the owner a `$def` NAME — and an object the schema spells
+    out INLINE has no name to attribute a sub-key to. `meta.ado` is inline, which
+    puts `KNOWN_ADO`, the level this check exists for, outside that walk's reach by
+    construction rather than by accident. `fields()` keys by DOCUMENT PATH
+    (`meta.ado.conventions`), which is the shape a per-LEVEL known-key set needs.
+    `mv34` and `mv35` in `plugins/audit/tests/test__manifest_vocab.py` assert that
+    and print the figures, because "reuse the other walk" is the obvious suggestion
+    and acting on it drops a whole level in silence.
+
+    AND WHY IT LIVES HERE AND NOT BESIDE THE SETS. The vocabulary is at layer 1;
+    `fields()` is in this module at layer 2 and `gen-demo-manifest` is an entry point
+    above it. Importing upward is what `_deps.layer_violations()` fails, and writing
+    another walk down there would move the duplication rather than remove it.
+    `_manifest_vocab` keeps the two claims it is the right owner of — `SCHEMA_ANCHORS`
+    (where each set lives in the document) and `OFF_SCHEMA` (which keys are wider
+    than the schema on purpose, with a reason each) — and this is the comparison.
 
     Everything it can say, and each is a way this has gone wrong or could:
 

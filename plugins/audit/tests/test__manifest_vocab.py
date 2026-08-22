@@ -39,6 +39,7 @@ import _manifest_typos as _typos                   # noqa: E402
 import _manifest_crossrefs as _cross               # noqa: E402
 import _manifest_phases as _phases                 # noqa: E402
 import _help                                       # noqa: E402  (owns the schema walk these sets are checked against)
+import _loader                                     # noqa: E402  (loads gen-demo-manifest.py, the OTHER schema walk)
 
 
 # --- cases --------------------------------------------------------------------
@@ -204,8 +205,11 @@ def _cases(check):
     # The sets restate vocabulary `schema/audit-plan.schema.json` owns, and until
     # v0.40 nothing compared them: the schema could gain a property and the set
     # beside it stayed behind in silence, so the typo-catcher warned about a real
-    # key. `_help.schema_vocab_drift()` is that comparison (it lives there because
-    # the tree's one schema walk does - see this module's SCHEMA_ANCHORS comment).
+    # key. `_help.schema_vocab_drift()` is that comparison, and it lives there
+    # because the walk that can SEE these keys does. It is not the tree's only
+    # schema walk - mv34 to mv36 below are why the other one cannot answer this
+    # question, and why that is counted rather than stated. See this module's
+    # SCHEMA_ANCHORS comment.
     _levels = _help.schema_level_keys()
     _compared = sum(len(v) for v in _levels.values())
     check("mv18 every KNOWN_* set still agrees with audit-plan.schema.json - a "
@@ -425,6 +429,85 @@ def _cases(check):
           "the consequence mv29 protects and cannot see, the same blind spot mv28 "
           "covers for CLAIM_KEYS: %r" % (_unreached,),
           _unreached == [] and (_a0, _w1) == ([], []))
+
+    # --- the OTHER schema walk, and why it cannot answer this ---------------------
+    # "Reuse gen-demo-manifest's walk" is the obvious suggestion, it has been made
+    # here, and acting on it drops the whole `meta.ado` level in silence - so the
+    # reason is a case rather than a sentence. `schema_fields()` keys
+    # `<owner>.<field>` with the owner a $def NAME, and `meta.ado` is an INLINE
+    # object, so that walk has no owner to hang a sub-key on. The day it gains a
+    # $def the other walk COULD answer this question, and these go red instead of
+    # the SCHEMA_ANCHORS comment going quietly stale - which is the fault they were
+    # written for: that comment claimed there was only one walk in this tree, three
+    # times, while the conclusion it supported was still right.
+    _gdm = _loader.load_script("gen-demo-manifest.py", modname="gdm_vocab_walk")
+    _schema = _gdm.load_schema()
+    _defined = _gdm.schema_fields(_schema)
+    _owners = set(f.split(".", 1)[0] for f in _defined)
+    # Two-component by construction, so a DOCUMENT PATH is not expressible at all.
+    # Computed as a list rather than a `max()`: an empty walk would raise there, and
+    # an escape takes mv35 and mv36 out of the run instead of failing this one.
+    _deep = sorted(f for f in _defined if f.count(".") != 1)
+    _ado_lvl = set(_levels.get("KNOWN_ADO") or ())
+    _ado_node = ((((_schema.get("$defs") or {}).get("meta") or {})
+                  .get("properties") or {}).get("ado") or {})
+    # Asked through the other walk's OWN deref, so this is its answer about the node
+    # and not a second opinion about it: None means "no name to own a field".
+    _ado_def = _gdm._deref(_schema, _ado_node)[0]
+    check("mv34 the OTHER schema walk cannot answer this question: "
+          "`gen-demo-manifest.schema_fields()` reports %d fields over %d owners, "
+          "not one of them `ado` and not one of them owning an `ado.*` field, and "
+          "its keys are two-component - so every one of the %d keys KNOWN_ADO "
+          "guards is outside its reach and it sees `meta.ado` as one leaf of `meta` "
+          "and stops. Reusing it here would drop that level silently; this goes red "
+          "the day it COULD answer the question, which is the day `meta.ado` stops "
+          "being inline: %r"
+          % (len(_defined), len(_owners), len(_ado_lvl), _ado_def),
+          _defined and _deep == [] and _ado_lvl
+          and "ado" not in _owners
+          and [f for f in _defined if f.startswith("ado.")] == []
+          and "meta" in _owners and "meta.ado" in _defined
+          and _ado_def is None,
+          repr((sorted(_owners), _deep)))
+    _link = set(f.split(".", 1)[1] for f in _defined if f.startswith("adoLink."))
+    _uncovered = sorted(_ado_lvl - _link)
+    _shared = sorted(_ado_lvl & _link)
+    _suffixes = set(f.split(".", 1)[1] for f in _defined if "." in f)
+    _defs = _schema.get("$defs") or {}
+    check("mv35 ...and `adoLink` is a DIFFERENT $def - the link /audit:sync writes "
+          "ONTO a work item, not the connector config - so its %d fields are not "
+          "that level's coverage wearing another name: %d of the %d keys KNOWN_ADO "
+          "guards are absent from it, the names the two share are %r, and "
+          "`conventions` and `parentWorkItem` - the pair that reached KNOWN_ADO by "
+          "hand and prompted this - are owned by NOTHING in that walk, under any "
+          "owner at all"
+          % (len(_link), len(_uncovered), len(_ado_lvl), _shared),
+          "adoLink" in _defs and "ado" not in _defs
+          and _link and _uncovered
+          and not ({"conventions", "parentWorkItem"} & _suffixes),
+          repr((sorted(_link), _uncovered, sorted(_defs))))
+    # The claim mv34 and mv35 rest on is "this is not the tree's only schema walk",
+    # and its opposite is what three comments said while nothing counted. So count.
+    # A `$defs` read under `scripts/` is one of the two walks or a comment naming
+    # them; a file this table does not know is a third walk or a fourth account of
+    # these two, and either way the SCHEMA_ANCHORS comment has to be re-read rather
+    # than trusted. `_isrc` is the scan mv29 already built - a second walk of the
+    # tree here would be a second answer to what is in it.
+    _walk_files = {"config/_help.py": "the walk this comparison uses, by path",
+                   "demo/gen-demo-manifest.py": "the other walk, by $def name",
+                   "manifest/_manifest_vocab.py": "no walk - prose that names the "
+                                                  "keyword: the SCHEMA_ANCHORS "
+                                                  "comment, and the pointer at "
+                                                  "STATUS"}
+    _defs_readers = sorted(rel for rel, text in _isrc.items() if "$defs" in text)
+    check("mv36 ...and the claim both of those rest on - that this is NOT the "
+          "tree's only schema walk - is COUNTED rather than written down: every one "
+          "of the %d files under scripts/ that reads `$defs` is one this comment "
+          "accounts for. F50 was the opposite claim in three comments with nothing "
+          "counting, so the symmetric difference is the case: %r"
+          % (len(_walk_files), sorted(set(_defs_readers) ^ set(_walk_files))),
+          set(_defs_readers) == set(_walk_files) and len(_walk_files) > 1,
+          repr(_defs_readers))
 
 
 def _selftest():

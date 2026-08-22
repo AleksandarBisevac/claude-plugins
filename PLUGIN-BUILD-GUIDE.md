@@ -1813,10 +1813,14 @@ already shipped once. Topics are derived from the executable rule where one exis
 gate's tiers from `_config.plan_gate_mode`, area resolution from `_areas`' own pinned sentences,
 policy precedence from a worked `_policy.resolve` example) and are pointers, not restatements,
 where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
-so the panel cannot advertise a tool that agent does not hold. Because it owns the tree's only
-schema walk it also owns `schema_vocab_drift()`, which holds `_manifest_vocab`'s `KNOWN_*` sets
-to `audit-plan.schema.json` — the vocabulary is at layer 1 and could not reach up for the walk,
-and a second walk written down there would have moved the duplication rather than removed it.
+so the panel cannot advertise a tool that agent does not hold. Because it owns the schema walk
+that keys by DOCUMENT PATH it also owns `schema_vocab_drift()`, which holds `_manifest_vocab`'s
+`KNOWN_*` sets to `audit-plan.schema.json` — the vocabulary is at layer 1 and could not reach up
+for the walk, and another walk written down there would have moved the duplication rather than
+removed it. This is not the tree's only schema walk: `gen-demo-manifest.schema_fields()` keys a
+field by `$def` NAME instead, so an INLINE level such as `meta.ado` has no owner to attribute a
+sub-key to and is outside its reach — which is why the two are not interchangeable and why
+`test__manifest_vocab.py` asserts it rather than saying so.
 `vocab_drift()` is the comparison on plain arguments, so its own failure modes are tested from
 fixtures instead of by mutating the shipped vocabulary.
 
