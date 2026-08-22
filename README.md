@@ -6,7 +6,8 @@
 
 A [Claude Code](https://code.claude.com) plugin marketplace with one theme:
 **enforced** engineering discipline — plan gates, test gates, sign-off gates,
-secret guards. Deterministic hooks, not prompt suggestions.
+secret guards. The guards are deterministic hooks; the pipeline they govern is an
+orchestrator prompt — [which is which, row by row](#what-is-enforced-and-what-is-followed).
 
 ### ▶ The gate, refusing
 
@@ -30,6 +31,46 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 | Plugin | What it does |
 |---|---|
 | [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:migrate` shards it into one file per phase for **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges), a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
+
+## What is enforced and what is followed
+
+Two halves, and they hold in different ways. The **guards are hooks**: a `PreToolUse`
+handler returns a decision and the tool call does not happen. The **pipeline is a
+prompt**: `plugins/audit/reference/orchestrator.md` is the execution core, read by the
+model on every `/audit:*` call, and its invariants are instructions rather than
+guarantees. Both columns below are the real thing; only the left one holds when the
+model does not comply.
+
+| Enforced by a hook or a script | Followed from `orchestrator.md` |
+|---|---|
+| Secret file **contents** — never read, directly or indirectly | Never `git push`, in any form |
+| Env values and token variables — never dumped | Human confirmation before a `reset` / `rebase` / `clean` |
+| Shell writes into source files no task covers | A task commit stages only that task's files |
+| Commits the manifest records — never orphaned | The phase branch is cut from the development branch |
+| Skills, subagents and MCP tools — the project's `policy` | `risk: "high"` waits for a human before committing |
+| Auth tokens — never logged | `risk: "high"` never runs on `haiku` |
+| The project's own banned patterns, per path | Revalidate the manifest after every write |
+| The plugin's own files — not editable by the model | `attempts >= maxAttempts` sets `blocked` |
+| The plan-first bypass — armed from human prompts only | An infrastructure failure burns no retry |
+| The audit trail — append-only, no hand edits | Red-first TDD where `tests.mode` asks for it |
+| Non-trivial edits — planned, or explicitly opted out | The executor never runs `git stash` |
+| Manifest writes against another live session's lock | The executor never commits; the orchestrator does |
+| Every plan and config write — journalled, hash-chained | Run only what the readiness rule allows |
+| Token spend — attributed to a phase and a task | Parallel only on disjoint file sets |
+| Unaccounted shell writes — reported in-band | Take the narrowest lock, and stop on exit 3 |
+| Source changed with no test — nudged | Sign-off in strict order: review → gates → boot |
+| Explorer cannot write, reviewer cannot edit, executor has no web tools | `--ff-only` into the resolved parent, never a rebase |
+| The manifest — referentially validated, by exit code | `git -C <gitRoot>`; gate commands from the project dir |
+|  | Spawn the executor with the task id in its description |
+|  | Skills invoked before any code is written |
+
+Most of the right column is **verifiable after the fact** — a commit's file list, the
+phase's merge shape, the ledger's model per task — and a few of its rows are verifiable
+by nothing at all, which is worth knowing before you rely on one. The
+[plugin README](plugins/audit/README.md#what-is-enforced-and-what-is-followed) gives the
+per-rule version of both tables: for each enforced rule, the hook and the decision it
+returns; for each invariant, where it is written and what evidence would catch a breach.
+[SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass classes.
 
 ## Install
 

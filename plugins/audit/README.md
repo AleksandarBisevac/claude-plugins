@@ -304,6 +304,87 @@ page behind it, read against the form rather than instead of it. All of it is
   lie. `audit-codebase` also says when **not** to use it: a one-shot look at the working diff
   belongs to `/review`, not to a manifest. See the decision record in `CONTRIBUTING.md`.
 
+## What is enforced and what is followed
+
+The guards are hooks; **the pipeline is a prompt.** Both halves are real and they hold
+in different ways, so this section says which is which, rule by rule — the same shape
+[SECURITY.md](../../SECURITY.md#fail-modes-by-design) uses for fail-open vs fail-loud,
+because it is the same kind of claim.
+
+The sorting question is the one the
+[enforcement essay](../../docs/essays/enforcement-over-persuasion.md#the-claim) asks:
+**what happens when the model does not comply?** If the answer names a returned
+decision, the rule is in the first table. If the answer is "the orchestrator was told
+not to", it is in the second — and that table's last column says what would catch a
+breach anyway.
+
+### Enforced by a hook or a script
+
+Derived from `hooks/hooks.json` (which matcher reaches which hook) and from each hook's
+decision core. Fail modes — what happens with no interpreter, and on an internal error —
+are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
+
+| Rule | Mechanism | What happens when it is broken |
+|---|---|---|
+| Secret **contents** are never read — directly, or through `git show`, `git cat-file`, `source`, a copy-verb, an inline `python3 -c`, or a heredoc fed to an interpreter | `guard-secrets-read.py` — PreToolUse `Read\|Grep\|Bash` | **deny**, at every tier, manifest or not. Reading file *names* is never blocked |
+| Env values are never dumped (`printenv`, `env`) and token-like variables never echoed | `guard-secrets-read.py` | **deny**, ungraded |
+| A **shell** write into a source file that no `in_progress` task covers — `sed -i`, `tee`, `>`/`>>`, heredoc redirects, inline-eval writes | `guard-secrets-read.py` | the plan gate's tier for that file: observe / warn / **ask** / **deny** — the same tier `Edit` would get, so the two channels agree on one file |
+| No commit the manifest records is orphaned: force-push (`--force-with-lease` included), `--orphan`, `filter-branch`/`filter-repo`, `rebase`, an `--amend` of a recorded HEAD, `reset --hard <ref>` past a recorded SHA | `guard-history-rewrite.py` — PreToolUse `Bash` | **deny** while any `task.commit` is set; **inert** with none recorded, and `reset --hard` with no ref is always allowed |
+| Only the skills, subagents and MCP tools the project's `policy` block permits | `guard-capabilities.py` — PreToolUse `Skill\|Task\|Agent\|mcp__.*` | `policy.onViolation`: **deny** (default) / **ask** / warn (a `systemMessage`, never an `allow`). Inert until a rule is written |
+| Auth tokens are never logged via `console.*` / Sentry / `remoteLog` | `guard-edits.py` — PreToolUse `Edit\|Write\|MultiEdit\|NotebookEdit` | **deny**. Prefix-only debug (`token.slice(0, 6)`) is allowed |
+| The project's own banned patterns, per path (`guardEdits.customRules`) | `guard-edits.py` | **deny**. Ships empty — the plugin has no hardcoded project rules |
+| The model does not edit the installed plugin's own files | `guard-edits.py` | **deny**, with a dev-mode exception when the plugin is checked out *inside* the repo |
+| The plan-first bypass cannot be armed by an agent | `guard-edits.py` refuses a forged `<stateDir>/plan-bypass-*.json`; `detect-plan-skip.py` — UserPromptSubmit — arms it only from a submitted prompt | **deny** for the forgery. Hooks see human prompts only, which is what makes the keyword the human's |
+| The audit trail is append-only — no hand edits | `guard-edits.py` | **deny**. Nothing legitimate writes those files with an edit tool |
+| A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits | graded on evidence: no manifest → observe, a manifest with nothing running → warn, a phase `in_progress` → **deny**. `planGate` pins one tier by hand |
+| A manifest or shard write while another **live** session holds the governing lock | `require-plan.py`, reading the lock `scripts/governance/audit-lock.py` wrote | **deny**, naming the holder. An abandoned lock allows, with a notice — [the full verdict table](../../SECURITY.md#the-one-denial-that-is-not-about-the-plan-0270) |
+| Every edit-tool write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows | `journal-writes.py` — Pre + PostToolUse edits | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them |
+| Token spend is attributed to a phase and a task | `meter-usage.py` — Stop / SubagentStop / SessionEnd | records; never blocks. Ledger rows carry `phaseId`, `taskId` and `model` |
+| A shell write that no tool edit and no `in_progress` task accounts for is reported | `guard-bash-writes.py` — PostToolUse `Bash` + edits | non-blocking `additionalContext`. PostToolUse cannot undo the write — the model is told, in-band, that it sidestepped the gate |
+| Source changed with no test touched this session | `remind-tdd.py` — PostToolUse edits | non-blocking nudge, throttled and manifest-aware |
+| The explorer cannot write or run a shell; the reviewer cannot edit; the executor has no web tools and no nested agents | the `tools:` line in each `agents/*.md` | the capability is **absent from the harness** — not a request in a prompt. On older Claude Code the commands fall back to general subagents, and that absence goes with them |
+| A referentially broken manifest cannot pass as valid | `scripts/manifest/validate-manifest.py` | exit 0 valid / 1 findings / 2 unreadable. The checker is deterministic; *running it after each write* is the invariant below |
+
+### Followed from `reference/orchestrator.md`
+
+`reference/orchestrator.md` is the pipeline's execution core, read by the model on every
+`/audit:*` call. Everything below is an instruction to that model. Nothing returns a
+decision when one is broken, so the last column names the evidence that would show it
+afterwards — and where there is none, it says so. An invariant with no basis is exactly
+what this table exists to stop presenting as a guarantee.
+
+| Invariant | Stated in | What makes it checkable |
+|---|---|---|
+| Never `git push`, in any form | § Non-negotiable guardrails | **post-hoc**, from the branch's reflog. The *rewriting* forms are denied outright once a SHA is recorded (first table); a plain `push` is not |
+| `git reset` / `rebase` / `clean` outside the pre-approved branch globs need explicit human confirmation | § Non-negotiable guardrails | **nothing** for the confirmation itself. The rewriting subset is denied while a SHA is recorded |
+| A task commit stages that task's `files`, its phase's manifest file and the journal directory — and **never** the index | § Execute the task, 4c | **post-hoc**: `git show --name-only <task.commit>` against `task.files` |
+| `phase.baseRef` is `HEAD` at phase entry, and the phase branch is cut from the resolved development branch | § Execute the task 1b–1c · § Branch-per-phase | **post-hoc**: `git merge-base` between `phase.baseRef` and `meta.developmentBranch` |
+| A `risk: "high"` task stops for human confirmation before its commit | § Non-negotiable guardrails | **nothing** — an `AskUserQuestion` that never happened leaves no trace |
+| A `risk: "high"` task never runs on `haiku` | § Non-negotiable guardrails | **post-hoc**: the usage ledger's `model` for that `taskId`, against `task.risk` |
+| Every manifest mutation re-runs `validate-manifest.py` and fixes findings before proceeding | § Non-negotiable guardrails | **post-hoc, partly**: each journal row carries a `stateHash` of the bytes it left behind, so a recorded state can be re-validated where those bytes still exist. That the validator ran *at the time* is not recorded |
+| `attempts` increments per execution, and `attempts >= maxAttempts` sets `status = "blocked"` and surfaces to the human | § Non-negotiable guardrails · § Execute the task, 2 | **post-hoc**, from the shard: `attempts`, `maxAttempts` and `status` are all recorded |
+| An infrastructure failure — gates could not run — reverts the `attempts` increment instead of burning a retry | § Execute the task, 4 | **nothing**: a reverted increment and an increment that never happened are the same number |
+| Test discipline follows `tests.mode` — `tdd` proves red first, `regression` locks the corrected behaviour, `gate-only` keeps the gate green | § Execute the task, 3 | **nothing** for the red-first run itself. `task.verifiedBy` names the tests added, which is a claim rather than evidence |
+| The executor subagent never runs `git stash` | § Execute the task, 3 | **post-hoc**, from `git reflog show refs/stash` — which survives a `pop`, though not a dropped ref |
+| The subagent does not commit; the orchestrator does | § Execute the task, 3 | **nothing**: the commit's author is the same either way |
+| Readiness: `pending`, own `blockedBy` and `dependsOn` satisfied, phase `blockedBy` satisfied; phase order from the manifest, then task id | § Readiness rule | `scripts/status/_status_facts.py`'s `ready_tasks()` computes it and `/audit:status` prints it — but nothing stops a run of a task that list omits. **post-hoc**, from `startedAt` order against the dependency graph |
+| Parallel only where `files` sets are disjoint and `dependsOn` lists are mutually satisfied | § Readiness rule | **post-hoc**: two tasks sharing a file with overlapping `startedAt`/`completedAt` windows |
+| Take the narrowest lock — `index` briefly for structural writes, `phase-<id>` for a run's duration — and stop on exit 3 | § Concurrency lock | *taking* it is not enforced; **writing against a live holder is** (first table). `scripts/governance/audit-lock.py status` reports what is held, with the basis per verdict |
+| Sign-off runs in strict order: review → the full `phase.testGate` → optional runtime boot → `status = "done"` | § Phase sign-off | **nothing** for the order. `phase.review.status` and `phase.summary` record the outcome, not the sequence |
+| The sign-off merge is `--ff-only` into the resolved parent, never a rebase — and when that parent is not the development branch, the report says the work has not landed there | § Phase sign-off, 4c | **post-hoc**, from the merge shape and `phase.mergedAt` against the parent branch. That the *report* said so is not recorded |
+| Git runs as `git -C <gitRoot>`; gate commands run verbatim from the project directory | § Non-negotiable guardrails | **nothing** — both spellings agree whenever the layout is flat, which is why this one drifts quietly |
+| The executor is spawned with a `description` starting with the task id, so metering is per-task | § Execute the task, 3 | **post-hoc**: ledger rows fall back to phase level when the id is absent, so the gap shows in `/audit:usage` |
+| Skills are invoked before coding — the area's first, then `task.skills` | § Execute the task, 3 | **nothing** |
+| Completion rows are hook-emitted and never appended by hand | § Execute the task, 4c | **enforced**: a hand edit of the journal is denied (first table) |
+| Never read secrets, never log tokens, and do not work around the guards | § Non-negotiable guardrails | **enforced** — the one invariant whose whole content is a pointer to the first table |
+
+**How a row moves left.** The `post-hoc` rows are the ones worth building for: their
+evidence already exists in git, the shard and the ledger, and what is missing is the
+checker that reads it. Until that ships they are policy, not guarantee, and this table
+calls them policy. The rows marked **nothing** cannot move without recording something
+that is not recorded today — naming them is the point, because those are the ones a
+reader would otherwise assume were covered.
+
 ## Commands
 
 Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--dry-run` to
