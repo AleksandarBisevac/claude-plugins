@@ -17,10 +17,20 @@ Two branches by tool_name:
       the session's last-seen dirty set. Dirty paths are translated back to project-relative
       (gitRoot-prefixed) to match task files and exempt globs. NEW dirty files
       that are SOURCE files, not exempt, not the manifest/lock, not tool-edited,
-      and not covered by an in_progress task → inject a NON-blocking
-      additionalContext warning (once per file per session). PostToolUse cannot
-      undo the write — but the model gets told, in-band, that it just
-      sidestepped the plan gate.
+      not claimed by another session, and not covered by an in_progress task →
+      inject a NON-blocking additionalContext warning (once per file per
+      session). PostToolUse cannot undo the write — but the model gets told,
+      in-band, that it just sidestepped the plan gate.
+
+Attribution reads the OTHER sessions in this checkout before it blames this one.
+Parallel phases in one working tree are a feature of this product, so "new since
+my last snapshot" was never the same claim as "written by this command". Every
+session keeps its own `bash-writes-<sid>.json` naming what it edited through the
+gated tools, and the mtime of that file says when it last acted: a path another
+session claims, from a session that acted inside the window this pass covers, is
+attributed there and said nothing about here. When somebody else was writing in
+the window but nothing names an author, the finding is still reported and the
+authorship claim is dropped — see UNPROVEN_TEMPLATE.
 
 State: <stateDir>/bash-writes-<session_id>.json
   {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...],
@@ -28,6 +38,9 @@ State: <stateDir>/bash-writes-<session_id>.json
   `baselined` marks that the session's FIRST Bash pass has seeded seenDirty
   with the tree's pre-existing dirt (silently) — only dirt appearing after
   that baseline is ever attributed to a shell command.
+  Written for THIS session and read for every other one in the same stateDir
+  (`_other_sessions`), which is what makes a second writer visible at all. The
+  file's mtime is its own timestamp: no field had to be added for the window.
 Read-only sidecar: <stateDir>/bash-writes-plugin-<sid>.json {"pluginWrote": [rel]}
   — journal files the plugin ITSELF appended to (written by journal-writes.py,
   the single writer; hooks on one event run in parallel). Those rels are
@@ -123,6 +136,25 @@ LOCKED_TEMPLATE = (
     "`audit-lock.py status` shows who holds what."
 )
 
+# The same finding as WARN_TEMPLATE with the authorship claim removed, because
+# the evidence for that claim is missing: another session was writing in this
+# checkout inside the same window, and nothing on disk names an author for these
+# paths. Still said rather than swallowed — an unplanned source write is worth a
+# line whoever made it — but what it reports is what IS established, which is the
+# only version of the line a reader can act on. Telling somebody they wrote a
+# file they did not is how a guard teaches people to route around it.
+UNPROVEN_TEMPLATE = (
+    "[bash-write-guard] Source file(s) with no plan coverage became dirty while "
+    "that shell command ran: %s. This guard CANNOT say the command wrote them: "
+    "session(s) %s were writing in this checkout during the same window, and "
+    "nothing on disk names an author for these paths. What is established: the "
+    "file(s) were clean at this session's previous look and are dirty now, and "
+    "no in_progress task covers them. If the change is yours, put the file(s) on "
+    "an in_progress task or use the Edit/Write tools (which the plan gate "
+    "reviews); if it is not, it belongs to the other session. This is a "
+    "non-blocking notice; nothing was reverted."
+)
+
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 # Commands that cannot change a file, whatever their arguments. An ALLOWLIST, not a
@@ -146,7 +178,44 @@ _GIT_WRITES = frozenset((
     "worktree", "config", "update-index", "update-ref", "notes", "replace",
 ))
 # Flags that turn a reader into a writer.
-_WRITE_FLAGS = frozenset(("-i", "--in-place", "-delete", "-exec", "-execdir", "-ok"))
+_WRITE_FLAGS = frozenset(("-i", "--in-place", "-delete"))
+# `-exec` and its relatives are NOT among them, though they were. They run
+# another command, and the only honest question is what THAT command is:
+# `find . -name '*.py' -exec cat {} +` is a read, and calling it a write is how
+# the most ordinary sweep in this repo got blamed for another session's file.
+_EXEC_FLAGS = frozenset(("-exec", "-execdir", "-ok", "-okdir"))
+# find ends an -exec clause with `;` or `+`. The `;` is written `\;`, and by the
+# time this runs the segment splitter below has already eaten the `;` as a
+# separator — so a lone trailing backslash is an ending too.
+_EXEC_END = frozenset((";", "\\;", "+", "\\"))
+# A redirect to /dev/null writes nothing, whatever the descriptor. `2>/dev/null`
+# is the most ordinary read idiom there is, and the blanket `>` scan below read
+# it as hostile — so a command that discards stderr could not be proven to read,
+# and inherited the tree's dirt. The lookahead is what separates `/dev/null`
+# from `/dev/null.bak`.
+_DEVNULL_REDIRECT = re.compile(r"[0-9]*>>?\s*/dev/null(?=\s|$)")
+
+
+def _exec_clauses(words):
+    """The argv of every `-exec`/`-ok` clause in a find command.
+
+    Each is judged by `_command_is_read_only` in turn, so `-exec` costs a proof
+    of the inner command rather than acting as a blanket write flag. A clause
+    with no command comes back empty, and an empty command proves nothing —
+    which is the answer that keeps a malformed find on the watched side.
+    """
+    clauses, i = [], 0
+    while i < len(words):
+        if words[i] not in _EXEC_FLAGS:
+            i += 1
+            continue
+        i += 1
+        argv = []
+        while i < len(words) and words[i] not in _EXEC_END:
+            argv.append(words[i])
+            i += 1
+        clauses.append(argv)
+    return clauses
 
 
 def _command_is_read_only(command):
@@ -169,6 +238,10 @@ def _command_is_read_only(command):
     text = (command or "").strip()
     if not text:
         return False
+    # Removed BEFORE the hostile scan rather than exempted inside it: what is
+    # left is then scanned in full, so a second redirect to a REAL file in the
+    # same command is still there to be caught.
+    text = _DEVNULL_REDIRECT.sub(" ", text)
     # Anything that can name a destination, spawn a shell, or substitute another
     # command is out of scope for a proof. `>` covers redirection wherever it
     # appears, including inside a quoted awk program.
@@ -196,6 +269,9 @@ def _command_is_read_only(command):
                 return False
         if name == "tee":
             return False          # tee's whole purpose is a destination
+        for argv in _exec_clauses(rest):
+            if not _command_is_read_only(" ".join(argv)):
+                return False
         for flag in rest:
             if flag in _WRITE_FLAGS or flag.startswith("--output"):
                 return False
@@ -251,6 +327,81 @@ def _plugin_wrote(state_dir, session_id):
         return {str(x) for x in wrote} if isinstance(wrote, list) else set()
     except Exception:
         return set()
+
+
+def _state_mtime(state_dir, session_id):
+    """When this session last wrote its state — one end of the window a pass
+    covers. 0.0 when there is no file yet, which only happens before the
+    baseline pass has run."""
+    try:
+        return os.path.getmtime(str(_state_file(state_dir, session_id)))
+    except OSError:
+        return 0.0
+
+
+def _other_sessions(state_dir, session_id, since):
+    """What the OTHER sessions in this checkout did inside this pass's window.
+
+    -> {"claimed": {rel: sid}, "active": [sid...]}
+
+    Parallel phases through worktrees are an advertised feature, so more than one
+    writer in a tree is the normal case, not the edge one. This hook was deciding
+    authorship from the TREE alone — anything new since its own snapshot belonged
+    to whatever Bash command ran next — and the evidence that says otherwise was
+    already on disk, unread: each session keeps its own `bash-writes-<sid>.json`,
+    and `toolEdited` in it names the files that session put through the gated
+    edit tools.
+
+    `active` is bound to the WINDOW, not to a timeout: a sibling state file is
+    rewritten on every tool call of its session, so a file touched after `since`
+    means that session acted between this session's previous look at the tree and
+    this one — exactly the interval the new dirt appeared in. An equal timestamp
+    counts as OUTSIDE the window: on a filesystem with coarse mtimes the tie
+    should leave the guard its voice rather than silence it.
+
+    `seenDirty` is deliberately not a claim. Every session records every dirty
+    path it SEES, so reading that as authorship would let two sessions exonerate
+    each other for a file neither of them wrote. `warned` is a claim in the weaker
+    sense that matters here: that session has already been told about the path, so
+    repeating it is noise at best and a second wrong accusation at worst.
+
+    KNOWN RESIDUAL, because a guard that hides its blind spot is worse than one
+    that names it: a sibling state file is only rewritten when a hook fires for
+    that session, so a session that spends the whole window inside ONE long tool
+    call is invisible here, and its writes still reach the plain claim. The lock
+    would close that case — a phase running in parallel holds one, and it carries
+    a sessionId and a liveness verdict — but it names the holder of a MANIFEST
+    path rather than the author of a source file, `manifest_lock_conflict()`
+    already reads it for the paths it does govern, and reading it here would cost
+    every warning a lock-directory scan. Consult it if the residual is ever
+    observed rather than reasoned about.
+    """
+    claimed, active = {}, []
+    try:
+        names = sorted(os.listdir(str(state_dir)))
+    except OSError:
+        return {"claimed": claimed, "active": active}
+    mine = _state_file(state_dir, session_id).name
+    for name in names:
+        if name == mine or name.startswith("bash-writes-plugin-"):
+            continue
+        if not name.startswith("bash-writes-") or not name.endswith(".json"):
+            continue
+        try:
+            if os.path.getmtime(str(state_dir / name)) <= since:
+                continue
+            with open(str(state_dir / name), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        sid = name[len("bash-writes-"):-len(".json")]
+        active.append(sid)
+        for rel in list(data.get("toolEdited") or []) + list(data.get("warned")
+                                                             or []):
+            claimed.setdefault(str(rel), sid)
+    return {"claimed": claimed, "active": sorted(active)}
 
 
 def _git_dirty(root):
@@ -372,6 +523,11 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         return ("silent", "read-only command: %d path(s) appeared but not from "
                           "this call" % (len(absorbed),))
 
+    # Read before this pass overwrites the file: it is the moment this session
+    # last looked at the tree, and therefore the far end of the window in which
+    # everything below became dirty.
+    since = _state_mtime(sd, session_id)
+
     new = [f for f in dirty if f not in state["seenDirty"]]
     state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))
 
@@ -380,7 +536,9 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     exts = _config.source_exts(cfg)
     plugin_wrote = _plugin_wrote(sd, session_id)
     in_prog = None
+    others = None
     suspicious = []
+    attributed = []
     locked = []
     journalled = []
     for rel in new:
@@ -422,6 +580,18 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         if rel in in_prog or any(
                 rel.startswith(f) for f in in_prog if f.endswith("/")):
             continue
+        # The last question before an accusation, and the one this hook never
+        # asked: did somebody ELSE write this? Read lazily, so a session alone in
+        # a tree never pays for the answer. Only the plan-coverage class is
+        # routed through it — the journal and lock classes report a FILE whose
+        # state changed rather than an author, and each already binds its claim
+        # to evidence of its own (the plugin's sidecar; the lock's sessionId).
+        if others is None:
+            others = _other_sessions(sd, session_id, since)
+        owner = others["claimed"].get(rel)
+        if owner:
+            attributed.append((rel, owner))
+            continue
         suspicious.append(rel)
 
     # Every class that fired gets said, rather than the first one winning: a
@@ -439,11 +609,19 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         parts.append(JOURNAL_TEMPLATE % ", ".join(journalled))
     if suspicious:
         state["warned"].extend(suspicious)
-        parts.append(WARN_TEMPLATE % ", ".join(suspicious))
+        active = (others or {}).get("active") or []
+        if active:
+            parts.append(UNPROVEN_TEMPLATE % (", ".join(suspicious),
+                                              ", ".join(active)))
+        else:
+            parts.append(WARN_TEMPLATE % ", ".join(suspicious))
 
     _save_state(sd, session_id, state)
     if parts:
         return ("warn", "\n".join(parts))
+    if attributed:
+        return ("silent", "attributed to another session: %s" % "; ".join(
+            "%s (%s)" % (rel, who) for rel, who in attributed))
     return ("silent", "no unplanned source writes")
 
 

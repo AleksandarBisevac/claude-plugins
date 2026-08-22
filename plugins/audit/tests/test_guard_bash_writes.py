@@ -397,6 +397,155 @@ def _cases(check):
     check("h1 nested gitRoot: git runs in subdir, path project-relative",
           ok, _detail_h)
 
+    # (dn) `2>/dev/null` is the most ordinary read idiom there is, and the
+    # blanket "any `>` is hostile" check read it as a write - which put
+    # `cat x 2>/dev/null` back on the watched side and handed it the blame for a
+    # second session's file. THIS IS THE CASE THE REPORT ASKED FOR: seed the
+    # baseline, then let a file appear while `cat` runs, and expect nothing said.
+    # It is spelled WITH the redirect on purpose - plain `cat` was already
+    # covered by (rw), so a case without it would have been green from the start.
+    s = "bw-dn"
+    seed(s)
+    _expect("dn1 `cat ... 2>/dev/null` is a read, so a file that appeared while "
+            "it ran is not attributed to it", "silent",
+            payload("Bash", sid=s, command="cat tools/where.py 2>/dev/null"),
+            dirty=["src/second-session.ts"])
+    # THE OTHER DIRECTION. Without it, deleting the `>` check entirely would pass
+    # dn1: the exemption is for /dev/null, not for redirection.
+    s = "bw-dn2"
+    seed(s)
+    _expect("dn2 ...while a redirect to a real FILE is still watched", "warn",
+            payload("Bash", sid=s,
+                    command="cat tools/where.py > src/second-session.ts"),
+            dirty=["src/second-session.ts"])
+    for _cmd, _want in (("cat a.py 2>/dev/null", True),
+                        ("ls -la 1>/dev/null", True),
+                        ("grep -rn x . 2>/dev/null | head -5", True),
+                        ("cat a.py >/dev/null", True),
+                        # separates "is /dev/null" from "starts with /dev/null"
+                        ("cat a.py >/dev/null.bak", False),
+                        # a real destination must survive the /dev/null strip
+                        ("grep x a.py > hits.txt 2>/dev/null", False),
+                        ("echo x >> notes.md", False)):
+        check("dnp %r is %s" % (_cmd, "provably read-only" if _want
+                                else "watched"),
+              M._command_is_read_only(_cmd) == _want)
+
+    # (ex) `-exec` was a blanket write flag, so `find ... -exec cat {} +` - a
+    # read - was unprovable and inherited the whole dirty set. What decides is
+    # the command the clause runs.
+    s = "bw-ex"
+    seed(s)
+    _expect("ex1 `find ... -exec cat {} +` is judged by the command it runs, "
+            "which reads", "silent",
+            payload("Bash", sid=s,
+                    command="find plugins -name '*.py' -exec cat {} +"),
+            dirty=["src/second-session.ts"])
+    # THE OTHER DIRECTION: the same shape running a writer stays watched, so this
+    # is not "-exec is fine now".
+    s = "bw-ex2"
+    seed(s)
+    _expect("ex2 ...and the same shape running a WRITER is still watched",
+            "warn",
+            payload("Bash", sid=s,
+                    command="find plugins -name '*.py' -exec cp {} /tmp +"),
+            dirty=["src/second-session.ts"])
+    for _cmd, _want in (("find . -name x -exec cat {} +", True),
+                        ("find . -type f -exec grep -l foo {} \\;", True),
+                        ("find . -type f -exec rm {} \\;", False),
+                        ("find . -type f -exec sh -c 'cat x' \\;", False),
+                        ("find . -type f -execdir chmod +x {} +", False),
+                        ("find . -type f -ok rm {} \\;", False),
+                        # a clause with no command proves nothing
+                        ("find . -name x -exec", False),
+                        ("find . -name x -delete", False)):
+        check("exp %r is %s" % (_cmd, "provably read-only" if _want
+                                else "watched"),
+              M._command_is_read_only(_cmd) == _want)
+
+    # (os) THE STRUCTURAL HALF. A command that is not provably read-only used to
+    # inherit EVERY path that appeared since the last snapshot, and this product
+    # advertises parallel phases - several sessions writing in one checkout. The
+    # evidence was already on disk and unread: every session keeps its own
+    # bash-writes-<sid>.json naming what it edited through the gated tools. An
+    # ISOLATED state dir, because which sibling state files exist IS the fixture.
+    osd = tmp / "state-os"
+    osd.mkdir(parents=True, exist_ok=True)
+
+    def _other(sid, *, tool_edited=(), warned=(), older_than=None):
+        """Write a sibling session's state file, optionally back-dated behind
+        `older_than` so it falls outside the window this pass covers."""
+        p = osd / ("bash-writes-%s.json" % sid)
+        with open(str(p), "w", encoding="utf-8") as fh:
+            json.dump({"toolEdited": list(tool_edited), "seenDirty": [],
+                       "warned": list(warned), "baselined": True}, fh)
+        if older_than is not None:
+            t = os.path.getmtime(str(older_than)) - 60
+            os.utime(str(p), (t, t))
+        return p
+
+    s = "bw-os"
+    seed(s, state_dir=osd)
+    _other("sess-other", tool_edited=["src/theirs.ts"])
+    _os_ok, _os_got = _harness.attempt(
+        M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
+        cfg=cfg, state_dir=osd, dirty=["src/theirs.ts"])
+    _osv, _osdet = _os_got if _os_ok else ("EXC", str(_os_got))
+    check("os1 a file another session edited in this window is attributed to "
+          "THAT session, not to this command, and the detail names it",
+          _osv == "silent" and "sess-other" in _osdet, repr((_osv, _osdet)))
+
+    s = "bw-os2"
+    seed(s, state_dir=osd)
+    _other("sess-other2", tool_edited=["src/unrelated.ts"])
+    _ok2, _got2 = _harness.attempt(
+        M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
+        cfg=cfg, state_dir=osd, dirty=["src/nobody-claims.ts"])
+    _v2, _d2 = _got2 if _ok2 else ("EXC", str(_got2))
+    check("os2 ...while a file NOBODY claims is still reported, with the "
+          "authorship claim dropped - which is what the evidence supports",
+          _v2 == "warn" and "src/nobody-claims.ts" in _d2
+          and "CANNOT say the command wrote them" in _d2
+          and "sess-other2" in _d2,
+          repr((_v2, _d2)))
+
+    s = "bw-os3"
+    seed(s, state_dir=osd)
+    _other("sess-stale", tool_edited=["src/stale-claim.ts"],
+           older_than=osd / ("bash-writes-%s.json" % s))
+    _ok3, _got3 = _harness.attempt(
+        M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
+        cfg=cfg, state_dir=osd, dirty=["src/stale-claim.ts"])
+    _v3, _d3 = _got3 if _ok3 else ("EXC", str(_got3))
+    check("os3 a claim by a session that did nothing in this window does NOT "
+          "exonerate - the evidence is bound to the window the dirt appeared in",
+          _v3 == "warn" and "src/stale-claim.ts" in _d3, repr((_v3, _d3)))
+    # THE OTHER DIRECTION for the hedge itself: with nobody else in the window
+    # the guard still makes the plain authorship claim. A hedge that fired
+    # unconditionally would pass os2 and fail here.
+    check("os4 ...and with no other session in the window the plain claim is "
+          "still made - the hedge is evidence-driven, not unconditional",
+          "That shell command modified source file" in _d3, repr(_d3))
+    # seenDirty is not authorship: every session records every dirty path it
+    # SEES, so reading it as a claim would let two sessions exonerate each other
+    # for a file neither wrote.
+    s = "bw-os5"
+    seed(s, state_dir=osd)
+    _other("sess-seer", tool_edited=[])
+    with open(str(osd / "bash-writes-sess-seer.json"), "r+",
+              encoding="utf-8") as fh:
+        _seer = json.load(fh)
+        _seer["seenDirty"] = ["src/seen-only.ts"]
+        fh.seek(0), fh.truncate()
+        json.dump(_seer, fh)
+    _ok5, _got5 = _harness.attempt(
+        M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
+        cfg=cfg, state_dir=osd, dirty=["src/seen-only.ts"])
+    _v5, _d5 = _got5 if _ok5 else ("EXC", str(_got5))
+    check("os5 another session merely HAVING SEEN the path is not a claim to "
+          "have written it", _v5 == "warn" and "src/seen-only.ts" in _d5,
+          repr((_v5, _d5)))
+
     if prev_env is None:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
     else:
