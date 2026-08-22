@@ -36,6 +36,12 @@ EXEMPTIONS ARE DECLARED, WITH A REASON, AND ARE THEMSELVES CHECKED. An entry in
 either table below that names a gate neither side invokes any more is reported too -
 otherwise the tables become a place where dead exemptions accumulate and the check
 quietly stops covering what it claims.
+
+IT ALSO HOLDS ONE RULE ABOUT THE RUNNER ITSELF, because it is already the thing
+that reads `verify.sh` for a living: no runnable line may name a temp path that a
+second concurrent run would share. That is not a parity question, but it is a
+property of the gate runner, and the alternative was a second reader of the same
+file. See `scratch_isolation()` for what went wrong when the paths were fixed.
 """
 import io
 import os
@@ -191,6 +197,62 @@ def _markdown_fence_lines(text):
             if ln.strip() and not ln.strip().startswith("#")]
 
 
+# --- one scratch root per run, and one place that derives it ------------------
+# `verify.sh` kept every step log AND every parallel leg's exit code at a FIXED
+# /tmp path, so two runs on one machine shared them. A crossed log is a nuisance;
+# `.rc` is not a log. The leg WRITES its exit code there and the reader turns it
+# into the verdict, and both runs number their legs from zero - so one could read
+# the other's success and print `ok` for work it never did. `affected.txt` is the
+# LIST OF STEPS, so a crossed read runs somebody else's gates and skips its own,
+# which the summary spells exactly like a pass.
+#
+# What that repair leaves behind is small enough to check by rule: a runnable line
+# may name a temp root ONLY where `mktemp` derives the per-run directory; everything
+# else goes through the variable holding it. Read over the RUNNABLE region, so the
+# comment above the fix - which has to name the old paths to explain itself - stays
+# legal. Same scoping `_refs.sweep_glob_drift()` uses, for the same reason.
+_TEMP_ROOT = re.compile(r"/tmp/|\$\{?TMPDIR")
+
+
+def _scratch_violations(text):
+    """{"violations": [(line, problem)], "examined": n} for one shell script.
+
+    `examined` sits beside the list because a filter that narrowed to nothing must
+    not be spelled the same way as a script that is clean. An unreadable file or a
+    splitter that stopped working yields no runnable lines at all, and "no
+    violations" over zero lines is the silent pass this repo keeps re-finding.
+    """
+    lines = _shell_command_lines(text)
+    out = []
+    for line in lines:
+        if not _TEMP_ROOT.search(line):
+            continue
+        # The one derivation is allowed to name the root; it is what makes the
+        # path unique. Exempting `mktemp` rather than a spelling keeps this about
+        # WHO derives the directory instead of about how the line looks.
+        if "mktemp" in line:
+            continue
+        out.append((line, "names a temp path directly, so a second run on this "
+                          "machine shares it - route it through the per-run "
+                          "scratch directory"))
+    return {"violations": out, "examined": len(lines)}
+
+
+def scratch_isolation(repo=None):
+    """The same question asked of the real `verify.sh`."""
+    path = os.path.join(repo or REPO, VERIFY_REL)
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        # Loud rather than empty: "I could not read the runner" and "the runner is
+        # clean" are different answers, and returning [] would tell the first as
+        # the second.
+        return {"violations": [(VERIFY_REL, "could not be read: %s" % exc)],
+                "examined": 0}
+    return _scratch_violations(text)
+
+
 def gates_in(path):
     """The set of gate labels a file invokes, or None if it cannot be read.
 
@@ -323,6 +385,31 @@ def _cases():
     out.append(("p1", all(real["counts"].get(label, 0) > 5 for label, _r in SIDES),
                 "...and every side was really READ, so p0 is not three empty sets "
                 "agreeing: %r" % (real["counts"],)))
+
+    live = scratch_isolation()
+    out.append(("sc0", live["violations"] == [] and live["examined"] > 0,
+                "THE LIVE CLAIM: no runnable line in verify.sh names a temp path a "
+                "second run would share, over %d runnable line(s) - the count is "
+                "here so this cannot be an empty read agreeing with itself: %r"
+                % (live["examined"], live["violations"])))
+
+    fixed = _scratch_violations("run() {\n  cmd >/tmp/verify-step.log 2>&1\n}\n")
+    out.append(("sc1", len(fixed["violations"]) == 1,
+                "...and a fixed path IS reported, which is what tells sc0 apart "
+                "from a rule that cannot fire at all: %r" % (fixed["violations"],)))
+
+    derived = _scratch_violations(
+        'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n')
+    out.append(("sc2", derived["violations"] == [] and derived["examined"] == 1,
+                "the ONE derivation may name the root - deriving it is what makes "
+                "the path unique - and the line was READ rather than skipped, so "
+                "this is an exemption and not a blind spot: %r" % (derived,)))
+
+    prose = _scratch_violations("# it used to write /tmp/verify-step.log\n")
+    out.append(("sc3", prose["violations"] == [] and prose["examined"] == 0,
+                "a comment naming the old path is history, not a command - and "
+                "`examined` says 0 instead of letting the empty result read as "
+                "clean, which is the half sc0 pairs with: %r" % (prose,)))
 
     body = _shell_command_lines(
         "# node tools/ghost.mjs\n  ruff check x  # ruff check y\n")

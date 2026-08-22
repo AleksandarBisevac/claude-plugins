@@ -58,6 +58,33 @@ for a in "$@"; do
   esac
 done
 
+# --- scratch state, one directory per run --------------------------------------
+# Every step's log and every parallel leg's exit code used to live at a FIXED /tmp
+# path (`/tmp/verify-step.log`, `/tmp/verify-par-$n.rc`, ...), so two runs on one
+# machine shared them. A log crossing is a nuisance; `.rc` is not a log. A parallel
+# leg WRITES its exit code to that path and the reader below turns it into the
+# verdict - and both runs number their legs from zero, so one could read the
+# other's success and print `ok` for work it never did. A green that covers
+# nothing, in the tool whose whole job is to stop exactly that.
+#
+# `affected.txt` is worse by a nose: it is the LIST OF STEPS. A crossed read runs
+# somebody else's gates and silently skips its own, and a skipped gate looks
+# identical to a passed one in the summary.
+#
+# The repair is to STOP SHARING rather than to arbitrate it. A lock would serialise
+# two runs that have no reason to wait for each other - parallel phases through
+# worktrees are an advertised feature, and several agents running the gates at once
+# is the normal case now, not the edge. `capture-screenshots.mjs` keeps its lock
+# for the opposite reason: its fixed path is load-bearing (F18 - a committed PNG is
+# byte-comparable only against the same path) and it arbitrates one real resource,
+# a single panel-server per project. Neither is true of a throwaway log.
+WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX") || {
+  echo "verify.sh: could not create a scratch directory, so this run is refused." >&2
+  echo "Falling back to a shared path is the defect this exists to prevent." >&2
+  exit 2
+}
+trap 'rm -rf "$WORKDIR"' EXIT INT TERM
+
 # One row per step, appended as each finishes. Printed at the end so the summary
 # reads as a table rather than as scrollback.
 RESULTS=""
@@ -67,14 +94,14 @@ run() {
   label=$1
   shift
   printf '  %-44s' "$label"
-  if "$@" >/tmp/verify-step.log 2>&1; then
+  if "$@" >"$WORKDIR/step.log" 2>&1; then
     printf 'ok\n'
     RESULTS="$RESULTS
   ok    $label"
   else
     code=$?
     printf 'FAILED (exit %s)\n' "$code"
-    sed 's/^/      /' /tmp/verify-step.log | tail -12
+    sed 's/^/      /' "$WORKDIR/step.log" | tail -12
     RESULTS="$RESULTS
   FAIL  $label"
     FAILED=$((FAILED + 1))
@@ -87,9 +114,9 @@ run() {
 # THE FULL SET, not an error, and falling through to it is the whole safety of
 # this mode.
 if [ "$AFFECTED" -eq 1 ]; then
-  if python3 tools/affected.py > /tmp/verify-affected.txt 2>&1; then
+  if python3 tools/affected.py > "$WORKDIR/affected.txt" 2>&1; then
     echo "verify: --affected — running only what the working tree needs"
-    sed 's/^/  /' /tmp/verify-affected.txt
+    sed 's/^/  /' "$WORKDIR/affected.txt"
     rc=0
     # The report documents go concurrently here for the same reason as in the full
     # run: three file:// Chromiums with nothing shared. Running them through the
@@ -102,16 +129,16 @@ if [ "$AFFECTED" -eq 1 ]; then
         "  node tools/check-report-interactive.mjs "*)
           c=$(printf '%s' "$cmd" | sed 's/^  //')
           n=$((n + 1))
-          ( sh -c "$c" >"/tmp/verify-par-$n.log" 2>&1; echo $? >"/tmp/verify-par-$n.rc" ) & ;;
+          ( sh -c "$c" >"$WORKDIR/par-$n.log" 2>&1; echo $? >"$WORKDIR/par-$n.rc" ) & ;;
       esac
-    done < /tmp/verify-affected.txt
+    done < "$WORKDIR/affected.txt"
     [ "$n" -eq 0 ] || wait
     i=0
     while [ "$i" -lt "$n" ]; do
       i=$((i + 1))
       printf '  %-58s' "report gate #$i"
-      if [ "$(cat "/tmp/verify-par-$i.rc" 2>/dev/null || echo 1)" = "0" ]; then printf 'ok\n'
-      else printf 'FAILED\n'; sed 's/^/      /' "/tmp/verify-par-$i.log" | tail -10; rc=1; fi
+      if [ "$(cat "$WORKDIR/par-$i.rc" 2>/dev/null || echo 1)" = "0" ]; then printf 'ok\n'
+      else printf 'FAILED\n'; sed 's/^/      /' "$WORKDIR/par-$i.log" | tail -10; rc=1; fi
     done
     while IFS= read -r cmd; do
       case "$cmd" in
@@ -123,10 +150,10 @@ if [ "$AFFECTED" -eq 1 ]; then
         "  python3 "*|"  node "*|"  npx "*)
           c=$(printf '%s' "$cmd" | sed 's/^  //')
           printf '  %-58s' "$c"
-          if sh -c "$c" >/tmp/verify-step.log 2>&1; then printf 'ok\n'
-          else printf 'FAILED\n'; sed 's/^/      /' /tmp/verify-step.log | tail -10; rc=1; fi ;;
+          if sh -c "$c" >"$WORKDIR/step.log" 2>&1; then printf 'ok\n'
+          else printf 'FAILED\n'; sed 's/^/      /' "$WORKDIR/step.log" | tail -10; rc=1; fi ;;
       esac
-    done < /tmp/verify-affected.txt
+    done < "$WORKDIR/affected.txt"
     echo ""
     if [ "$rc" -ne 0 ]; then
       echo "VERIFY (--affected) FAILED. This was a NARROWED run: re-run without"
@@ -138,7 +165,7 @@ if [ "$AFFECTED" -eq 1 ]; then
     exit 0
   fi
   echo "verify: --affected could not narrow this change, so the full set runs:"
-  sed 's/^/  /' /tmp/verify-affected.txt
+  sed 's/^/  /' "$WORKDIR/affected.txt"
 fi
 
 echo "verify: python"
@@ -212,20 +239,20 @@ echo "verify: browsers"
 # check less trustworthy.
 report_docs="examples/acme-store/acme-store-audit.html docs/index.html docs/demo-large.html"
 for f in $report_docs; do
-  ( node tools/check-report-interactive.mjs "$f" >"/tmp/verify-$(basename "$f").log" 2>&1
-    echo $? >"/tmp/verify-$(basename "$f").rc" ) &
+  ( node tools/check-report-interactive.mjs "$f" >"$WORKDIR/$(basename "$f").log" 2>&1
+    echo $? >"$WORKDIR/$(basename "$f").rc" ) &
 done
 wait
 for f in $report_docs; do
   b=$(basename "$f")
   printf '  %-44s' "report is interactive: $b"
-  if [ "$(cat "/tmp/verify-$b.rc" 2>/dev/null || echo 1)" = "0" ]; then
+  if [ "$(cat "$WORKDIR/$b.rc" 2>/dev/null || echo 1)" = "0" ]; then
     printf 'ok\n'
     RESULTS="$RESULTS
   ok    report is interactive: $b"
   else
     printf 'FAILED\n'
-    sed 's/^/      /' "/tmp/verify-$b.log" | tail -12
+    sed 's/^/      /' "$WORKDIR/$b.log" | tail -12
     RESULTS="$RESULTS
   FAIL  report is interactive: $b"
     FAILED=$((FAILED + 1))
