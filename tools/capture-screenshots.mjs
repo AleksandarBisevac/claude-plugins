@@ -59,6 +59,7 @@
  * claim above, which had been measured once, by hand, and written down.
  */
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { rmSync, mkdirSync, readFileSync, statSync,
          writeFileSync, readdirSync, appendFileSync } from 'node:fs';
@@ -4975,6 +4976,57 @@ async function noDialog(page, name) {
      + `would show it over the view it is supposed to be a picture of`);
 }
 
+/** Where a capture run records WHICH BUILD it photographed. See recordCapture(). */
+const CAPTURED_AT = 'captured-at.json';
+
+/**
+ * Record the version this image was photographed at, beside the image.
+ *
+ * WHY A SIDECAR AND NOT THE PIXELS. The panel paints its own version in the
+ * topbar, so every panel PNG makes a claim about which build it shows, and until
+ * this file nothing could settle that claim: reading it back means reading text
+ * out of an image, and comparing the pixels is the thing this tool refuses for
+ * the reasons in claimScratch's header - font rasterisation differs by host and
+ * no environment variable pins it.
+ *
+ * So the claim is recorded where it CAN be read. It is not a guess either: the
+ * panel leg asserts the live topbar names `plugin.json`'s version before any
+ * shutter opens, so at the moment a file is written the build in the picture is
+ * that version. This writes down what was already checked.
+ *
+ * PER FILE, NOT PER RUN, and that is the load-bearing part. `--only report`
+ * rewrites the report images and leaves the panel ones alone; a single
+ * run-level version would then claim the new build for pictures nobody re-shot.
+ * Each entry is updated only when its own file is written, so a partial run at a
+ * new version leaves the untouched entries naming the old one - which is exactly
+ * the state that must go red.
+ *
+ * Written after EVERY shot rather than once at the end: a run that dies halfway
+ * has still changed the images on disk, and an entry whose hash no longer
+ * matches its file is the loud version of that. The hash is what stops this file
+ * being edited into agreement without the pictures being the ones captured.
+ */
+function recordCapture(name, file) {
+  const sidecar = path.join(OUT, CAPTURED_AT);
+  let body = { note: '', images: {} };
+  try {
+    const prior = JSON.parse(readFileSync(sidecar, 'utf8'));
+    if (prior && typeof prior === 'object' && prior.images) body = prior;
+  } catch { /* absent or unreadable: this run rebuilds what it can vouch for */ }
+  const version = JSON.parse(
+    readFileSync(REPO + '/plugins/audit/.claude-plugin/plugin.json', 'utf8')).version;
+  body.note = 'Written by tools/capture-screenshots.mjs. Each entry is the plugin '
+    + 'version that was in the picture when that file was written, with the hash of '
+    + 'the bytes it was written as. _refs.screenshot_capture_drift() compares both.';
+  body.images[`${name}.png`] = {
+    sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
+    version: version,
+  };
+  const ordered = {};
+  Object.keys(body.images).sort().forEach((k) => { ordered[k] = body.images[k]; });
+  writeFileSync(sidecar, `${JSON.stringify({ note: body.note, images: ordered }, null, 2)}\n`);
+}
+
 async function shot(page, name, { full = false, dialog = false } = {}) {
   await settle(page);
   await noToast(page, name);
@@ -4983,6 +5035,7 @@ async function shot(page, name, { full = false, dialog = false } = {}) {
   mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
   await page.screenshot({ path: file, fullPage: full });
+  recordCapture(name, file);
   note(`wrote ${path.relative(REPO, file)} (${statSync(file).size} B)`);
 }
 

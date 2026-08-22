@@ -64,6 +64,7 @@ fixture path over there is built from `PLUGIN_REL`; the surface changed name
 (`scripts/` to `tests/`, both ANCHORED) and the rule did not.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -1307,6 +1308,113 @@ def artifact_version_drift(repo_root=None):
                     "no page this repo keeps carries a version stamp, so this rule "
                     "cleared nothing rather than clearing the tree - either the "
                     "renderer stopped stamping or the markup moved"))
+    return out
+
+
+SHOT_DIR_REL = "docs/screenshots"
+_CAPTURED_AT = SHOT_DIR_REL + "/captured-at.json"
+
+
+def screenshot_capture_drift(repo_root=None):
+    """[(rel, line, problem), ...] - a committed screenshot that no longer shows this build.
+
+    THE SAME QUESTION AS `artifact_version_drift()` ASKED OF A PICTURE, which is why
+    it cannot be answered the same way. The panel paints its own version in the
+    topbar and every shot starts at the top of the page, so each panel PNG makes a
+    claim about which build it shows - and reading that claim back means reading text
+    out of an image. `tools/capture-screenshots.mjs` refuses to compare these pixels
+    at all, for reasons its own header sets out at length: font rasterisation differs
+    between hosts and no environment variable pins it. F18 settled that, and three
+    repairs that would fake a wider claim are declined there by name.
+
+    So the basis is recorded beside the pictures instead, by the run that took them,
+    and this compares it. The record is not a guess: the panel leg asserts the LIVE
+    topbar names `plugin.json`'s version before any shutter opens, so what the
+    sidecar writes down is what was already checked.
+
+    Four answers, and the first three are the loud ones:
+
+    - no sidecar, or one that will not parse: reported. The pictures make a claim
+      and nothing can settle it, which is the state this rule exists to end - and
+      staying quiet here would be indistinguishable from a tree that is current;
+    - a `plugin.json` with no readable version: reported, for the reason the sibling
+      rule gives - a guessed version would fail every image for the wrong reason;
+    - not one image in the directory: reported. A candidate set that narrowed to
+      nothing must not be spelled the same way as a set that all agrees, and that is
+      the shape a moved output directory takes;
+    - otherwise one finding per image whose recorded version is not the current one,
+      naming BOTH, plus one per image the sidecar does not mention and one per entry
+      whose file is gone or whose bytes have changed since it was written.
+
+    WHAT THE HASH IS FOR. Without it the sidecar could be edited into agreement
+    while the pictures stayed stale, and this rule would pass on a file someone
+    typed. With it, agreeing with `plugin.json` requires the bytes to be the ones a
+    capture wrote. It does not make the claim unforgeable - a hash can be recomputed
+    - but forging it stops being something you do by accident, which is the failure
+    this is about.
+
+    `demo-gate.gif` is deliberately NOT in scope: `tools/capture-demo-gif.py` writes
+    it, so demanding an entry here would report a missing basis against a producer
+    that was never asked to record one. It owes its own answer, not this one's.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    shot_dir = os.path.join(root, SHOT_DIR_REL.replace("/", os.sep))
+    version = plugin_version(root)
+    if version is None:
+        return [(_PLUGIN_JSON_REL, 0,
+                 "carries no readable version, so no screenshot has anything to be "
+                 "compared against")]
+    try:
+        names = sorted(n for n in os.listdir(shot_dir) if n.endswith(".png"))
+    except OSError as exc:
+        return [(SHOT_DIR_REL, 0,
+                 "cannot be listed, so whether its images name this build is "
+                 "unknown rather than fine: %s" % exc)]
+    if not names:
+        return [(SHOT_DIR_REL, 0,
+                 "holds no .png at all - the rule has nothing to check, which is "
+                 "not the same as every image agreeing")]
+    try:
+        recorded = _read_json(os.path.join(root, _CAPTURED_AT.replace("/", os.sep)))
+    except (OSError, ValueError):
+        # `_read_json` propagates both, deliberately - its callers decide what a
+        # missing file means, and here it means the basis is absent, which is the
+        # finding below rather than a reason to fall back to anything.
+        recorded = None
+    images = recorded.get("images") if isinstance(recorded, dict) else None
+    if not isinstance(images, dict):
+        return [(_CAPTURED_AT, 0,
+                 "is missing or unreadable, so %d committed image(s) claim a build "
+                 "with nothing to settle the claim - re-run "
+                 "`node tools/capture-screenshots.mjs`" % (len(names),))]
+    out = []
+    for name in names:
+        rel = SHOT_DIR_REL + "/" + name
+        entry = images.get(name)
+        if not isinstance(entry, dict):
+            out.append((rel, 0, "is not in %s, so the build it shows is unrecorded"
+                                % (_CAPTURED_AT,)))
+            continue
+        try:
+            with open(os.path.join(shot_dir, name), "rb") as fh:
+                digest = hashlib.sha256(fh.read()).hexdigest()
+        except OSError as exc:
+            out.append((rel, 0, "unreadable, so its recorded build cannot be "
+                                "cleared: %s" % exc))
+            continue
+        if entry.get("sha256") != digest:
+            out.append((rel, 0, "has changed since its build was recorded, so the "
+                                "recorded version is about different bytes - re-run "
+                                "the capture"))
+        elif entry.get("version") != version:
+            out.append((rel, 0, "was captured at %s but plugin.json says %s - "
+                                "re-run the capture and commit the result"
+                                % (entry.get("version"), version)))
+    for name in sorted(images):
+        if name not in names:
+            out.append((_CAPTURED_AT, 0,
+                        "records %s, which is not in %s - a record with no picture "
+                        "is a claim about nothing" % (name, SHOT_DIR_REL)))
     return out
 
 

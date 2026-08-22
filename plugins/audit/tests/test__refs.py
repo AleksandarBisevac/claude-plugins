@@ -27,6 +27,7 @@ and the rule did not.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -95,6 +96,18 @@ def _write(root, rel, text):
         os.makedirs(parent)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
+
+
+def _sc_sidecar(root, entries):
+    """The sidecar `screenshot_capture_drift()` reads, written as the tool writes it."""
+    _write(root, M._CAPTURED_AT,
+           json.dumps({"note": "fixture", "images": entries}) + "\n")
+
+
+def _sc_digest(root, rel):
+    """The hash the tool would have recorded for the bytes now on disk."""
+    with open(os.path.join(root, rel.replace("/", os.sep)), "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
 
 
 def _sweep_doc(rel, command, prose=""):
@@ -1324,6 +1337,117 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+
+    # --- screenshot_capture_drift: the same question, asked of a PICTURE -------
+    # The claim cannot be read back out of the pixels - `capture-screenshots.mjs`
+    # refuses to compare them, and F18 records why - so it is recorded beside them
+    # and this is what compares it.
+    _sc = M.screenshot_capture_drift()
+    check("sc1 every committed screenshot records the build plugin.json names - the "
+          "live claim, and the one that goes red the day a bump is not followed by "
+          "a re-capture: %r" % (_sc,), _sc == [])
+
+    _sc_dir = os.path.join(M.REPO_ROOT, M.SHOT_DIR_REL.replace("/", os.sep))
+    _sc_pngs = sorted(n for n in os.listdir(_sc_dir) if n.endswith(".png"))
+    with open(os.path.join(M.REPO_ROOT, M._CAPTURED_AT.replace("/", os.sep)),
+              "r", encoding="utf-8") as fh:
+        _sc_rec = json.load(fh)["images"]
+    check("sc2 ...and it cleared a real set rather than an empty one - sc1 returns "
+          "[] over a directory it never reached too, and telling those two apart is "
+          "the whole point of the rule: every committed .png has an entry, every "
+          "entry names a committed .png, and every recorded version is the one "
+          "plugin.json carries: %r" % (len(_sc_pngs),),
+          len(_sc_pngs) > 5 and sorted(_sc_rec) == _sc_pngs
+          and set(v.get("version") for v in _sc_rec.values()) == set([_pv]))
+
+    tmp = tempfile.mkdtemp()
+    _sc_a = M.SHOT_DIR_REL + "/one.png"
+    _sc_b = M.SHOT_DIR_REL + "/two.png"
+    try:
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
+        _write(tmp, _sc_a, "PIXELS-ONE\n")
+        _write(tmp, _sc_b, "PIXELS-TWO\n")
+        _sc_ok = {"one.png": {"sha256": _sc_digest(tmp, _sc_a), "version": _pv},
+                  "two.png": {"sha256": _sc_digest(tmp, _sc_b), "version": _pv}}
+        _sc_sidecar(tmp, _sc_ok)
+        check("sc3 a fixture whose sidecar agrees with the BYTES and the VERSION is "
+              "green, so every case below fails for the reason it names: %r"
+              % (M.screenshot_capture_drift(tmp),),
+              M.screenshot_capture_drift(tmp) == [])
+
+        os.remove(os.path.join(tmp, M._CAPTURED_AT.replace("/", os.sep)))
+        _sc_none = M.screenshot_capture_drift(tmp)
+        check("sc4 no sidecar is a FINDING, not silence - the pictures still make a "
+              "claim and nothing can settle it, which is the state this rule exists "
+              "to end: %r" % (_sc_none,),
+              len(_sc_none) == 1 and _sc_none[0][0] == M._CAPTURED_AT
+              and "missing or unreadable" in _sc_none[0][2])
+
+        # A version this fixture's plugin.json cannot be mistaken for, so a rule
+        # that compared the sidecar with itself is green here.
+        _sc_stale = dict(_sc_ok)
+        _sc_stale["one.png"] = {"sha256": _sc_ok["one.png"]["sha256"],
+                                "version": "0.0.1"}
+        _sc_sidecar(tmp, _sc_stale)
+        _sc_old = M.screenshot_capture_drift(tmp)
+        check("sc5 a recorded version that is not the current one is named WITH the "
+              "pair - 'stale' without both halves is not something a reader can act "
+              "on: %r" % (_sc_old,),
+              len(_sc_old) == 1 and _sc_old[0][0] == M.SHOT_DIR_REL + "/one.png"
+              and "0.0.1" in _sc_old[0][2] and _pv in _sc_old[0][2])
+
+        # The two branches must not be spelled the same way: here the VERSION is
+        # right and the bytes are not, which is a re-capture that never finished.
+        _sc_sidecar(tmp, _sc_ok)
+        _write(tmp, _sc_a, "PIXELS-ONE-BUT-DIFFERENT\n")
+        _sc_moved = M.screenshot_capture_drift(tmp)
+        check("sc6 bytes that changed since the record was written are reported as "
+              "CHANGED, not as a version mismatch - the recorded version is then "
+              "about different pixels, and saying 'stale build' would send the "
+              "reader to the wrong repair: %r" % (_sc_moved,),
+              len(_sc_moved) == 1 and "has changed since" in _sc_moved[0][2]
+              and "plugin.json says" not in _sc_moved[0][2])
+
+        _write(tmp, _sc_a, "PIXELS-ONE\n")
+        _sc_sidecar(tmp, {"one.png": _sc_ok["one.png"]})
+        _sc_extra = M.screenshot_capture_drift(tmp)
+        check("sc7 an image the sidecar does not mention is named - adding a "
+              "screenshot without re-capturing leaves it claiming a build nothing "
+              "wrote down: %r" % (_sc_extra,),
+              len(_sc_extra) == 1 and _sc_extra[0][0] == M.SHOT_DIR_REL + "/two.png"
+              and "unrecorded" in _sc_extra[0][2])
+
+        _sc_ghost = dict(_sc_ok)
+        _sc_ghost["gone.png"] = {"sha256": "0" * 64, "version": _pv}
+        _sc_sidecar(tmp, _sc_ghost)
+        _sc_orphan = M.screenshot_capture_drift(tmp)
+        check("sc8 an entry whose picture is gone is named too - a record about "
+              "nothing is how a deleted shot keeps being vouched for: %r"
+              % (_sc_orphan,),
+              len(_sc_orphan) == 1 and _sc_orphan[0][0] == M._CAPTURED_AT
+              and "gone.png" in _sc_orphan[0][2])
+
+        _sc_sidecar(tmp, _sc_ok)
+        os.remove(os.path.join(tmp, _sc_a.replace("/", os.sep)))
+        os.remove(os.path.join(tmp, _sc_b.replace("/", os.sep)))
+        _sc_empty = M.screenshot_capture_drift(tmp)
+        check("sc9 a directory with no .png at all is a FINDING - a candidate set "
+              "that narrowed to nothing must not be spelled the same way as a set "
+              "that all agrees, which is the shape a moved output directory takes: "
+              "%r" % (_sc_empty,),
+              len(_sc_empty) == 1 and _sc_empty[0][0] == M.SHOT_DIR_REL
+              and "holds no .png" in _sc_empty[0][2])
+
+        _write(tmp, _sc_a, "PIXELS-ONE\n")
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"name": "x"}) + "\n")
+        _sc_nover = M.screenshot_capture_drift(tmp)
+        check("sc10 a plugin.json with no readable version is reported instead of "
+              "failing every image for the wrong reason - the comparison has no "
+              "basis, and a guessed one would be worse than none: %r" % (_sc_nover,),
+              len(_sc_nover) == 1 and _sc_nover[0][0] == M._PLUGIN_JSON_REL
+              and "no readable version" in _sc_nover[0][2])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     # --- F36: a command's flags vs the README row that catalogues them ---------
     # The defect this exists for was live when it was written: /audit:status had

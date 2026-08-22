@@ -989,6 +989,24 @@ without that, a renamed class would take the rule quiet instead of red, and the 
 template is in the candidate set carrying no stamp precisely so a case can tell the two
 apart.
 
+`screenshot_capture_drift()` (F62) asks it of a PICTURE, which is why it cannot be answered the
+same way. The panel paints its own version in the topbar and every shot starts at the top of the
+page, so each committed PNG under `docs/screenshots/` claims a build — and reading that claim
+back means reading text out of an image. `tools/capture-screenshots.mjs` refuses to compare
+these pixels at all: F18 settled that, and its header declines three repairs by name, including
+masking the topbar box ("a promise never to see drift in the most-looked-at part of the page")
+and writing a fake version into the picture. So the basis is recorded beside the pictures
+instead, by the run that took them — `docs/screenshots/captured-at.json`, one entry per image
+carrying the version and the hash of the bytes it was written as — and this rule compares it.
+The record is not a guess: the panel leg asserts the LIVE topbar names `plugin.json`'s version
+before any shutter opens, so the sidecar writes down what was already checked. Per file rather
+than per run, because `--only report` rewrites some images and leaves others, and a run-level
+version would then claim the new build for pictures nobody re-shot. The hash is what stops the
+sidecar being edited into agreement without the pictures being the ones captured; it does not
+make the claim unforgeable, only impossible to break by accident. `demo-gate.gif` is out of
+scope on purpose — `tools/capture-demo-gif.py` writes it, so demanding an entry would report a
+missing basis against a producer never asked to record one.
+
 `--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_core.py`

@@ -150,6 +150,16 @@ TABLE = (
  ("artifact_version_drift", "docs/demo-large.html", "sub",
   r">audit [0-9]+\.[0-9]+\.[0-9]+</span>",
   (r">audit [0-9]+\.[0-9]+\.[0-9]+</span>", ">audit 0.0.1</span>"), REF, "av1"),
+ # RENAMES ONE ENTRY IN THE SIDECAR, which is the narrowest mutation that reaches
+ # this rule. Two wider ones were tried and rejected: the recorded VERSION is not a
+ # unique anchor (one line per image, so c2 fails), and bumping plugin.json instead
+ # reddens the whole version-pin family - measured, it named p1/p3/p4/p7 and not
+ # sc1, which is the "red through the wrong case" verdict this table exists to
+ # avoid. An image NAME is unique in the sidecar and does not change when the
+ # pictures are re-captured, and renaming one leaves the picture unrecorded and the
+ # record picture-less at once.
+ ("screenshot_capture_drift", "docs/screenshots/captured-at.json", "sub",
+  r'"areas\.png"', (r'"areas\.png"', '"areas-renamed.png"'), REF, "sc1"),
 )
 
 
