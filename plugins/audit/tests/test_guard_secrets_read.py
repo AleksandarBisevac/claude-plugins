@@ -361,9 +361,12 @@ def _cases(check):
     _expect("s32 ...and a read of one file plus a write of another is a write",
           "block",
           bash('python3 -c "s=open(\'a.json\').read(); open(\'src/b.ts\',\'w\').write(s)"'))
-    # The `>` alternative LEFT _WRITE_CALL with this fix, so the case it used to
-    # cover is pinned here against the branch that actually owns it — a shell
-    # redirect is _source_write_hit's grammar, graded like require-plan's gate.
+    # The `>` alternative LEFT the write-call pattern with F-P-7, so the case it
+    # used to cover is pinned here against the branch that actually owns it — a
+    # shell redirect is _source_write_hit's grammar, graded like require-plan's
+    # gate. (That pattern is `_WRITE_CALL_EXPR` now; `_WRITE_CALL` was retired with
+    # F-7 below, and naming a symbol that no longer exists sends a reader grepping
+    # for nothing.)
     _expect("s33 an eval whose OUTPUT is redirected into source is still caught, "
           "by the shell-write branch rather than by the eval one", "block",
           bash('python3 -c "print(1)" > src/app.ts'), use_cfg=cfg_enforced)
@@ -374,6 +377,49 @@ def _cases(check):
                   'python3 -c "d=json.load(open(\'a.json\')); print(len(d)>2)"') == []
               and M._eval_write_targets(
                   'python3 -c "open(\'src/x.ts\',\'w\').write(1)"') == ["src/x.ts"]
+          ) else "block", bash("true"))
+
+    # (F-7) THE PATH DID NOT HAVE TO BE A LITERAL, and requiring one is what let
+    # fifteen source edits through in a single session. F-P-7 narrowed this branch
+    # to "the path the write call NAMES", correctly - and the pattern read a name
+    # only when it was spelled in quotes in the argument, so `p = '...'` followed by
+    # `open(p, 'w')` matched no write call at all. Same capability, same target,
+    # same intent; only the syntactic adjacency differed, and it is the shape every
+    # two-line bulk edit uses.
+    #
+    # Each case below is PAIRED with the literal form above (s31/s32): if the fix
+    # had over-corrected into "a write shape and a path in the same clause", s41
+    # would still pass and s39 would go red, which is the direction that matters.
+    _expect("s50 F-7: a path bound to a VARIABLE is the same write as a path "
+          "spelled inline", "block",
+          bash('python3 -c "p=\'src/app.ts\'; open(p,\'w\').write(x)"'))
+    _expect("s51 ...and through the heredoc form, which is what the session "
+          "actually used", "block",
+          bash('python3 - <<\'PY\'\nimport io\np=\'src/app.ts\'\n'
+               's=io.open(p).read()\nio.open(p,\'w\').write(s)\nPY'))
+    _expect("s52 ...and a path built by CONCATENATION, which names no single "
+          "literal either", "block",
+          bash('python3 -c "open(\'src/\'+\'app.ts\',\'w\').write(x)"'))
+    _expect("s53 ...and the JavaScript spelling, where the binding is a const",
+          "block",
+          bash('node -e "const p=\'src/app.ts\'; require(\'fs\').writeFileSync(p,1)"'))
+    _expect("s54 THE OTHER DIRECTION: a variable bound to a SCRATCH path stays "
+          "allowed, so the resolution did not become 'any path in the clause'",
+          "allow",
+          bash('python3 -c "p=\'/tmp/scratch.json\'; open(p,\'w\').write(x)"'))
+    _expect("s55 ...and a path this cannot read is no target rather than an "
+          "invented one: a name bound to a CALL resolves to nothing, which is the "
+          "limit stated above _WRITE_CALL_EXPR rather than left to be found",
+          "allow",
+          bash('python3 -c "p=find_it(); open(p,\'w\').write(x)"'))
+    _expect("s56 the resolver itself: one hop of binding, a join for a "
+          "concatenation, and None for what it cannot read - asserted directly, "
+          "because three answers through one branch is where a heuristic decays",
+          "allow" if (
+              M._resolve_write_expr("p", {"p": "src/a.ts"}) == "src/a.ts"
+              and M._resolve_write_expr("'src/' + 'a.ts'", {}) == "src/a.ts"
+              and M._resolve_write_expr("find_it()", {}) is None
+              and M._resolve_write_expr("p", {}) is None
           ) else "block", bash("true"))
 
     # (s35+) F20/F22. The original symptom - a read-only one-liner refused as a

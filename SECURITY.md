@@ -226,8 +226,22 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
 1. **Arbitrary Bash writes.** `sed -i`, `tee`, `>`/`>>` redirects (incl. heredoc
    redirects) into source files are blocked since 0.3.0, and inline-eval writes
    (`python -c "open(...,'w')"`) are heuristically blocked — full Bash-write
-   coverage is statically undecidable (heredocs piped into interpreters,
-   obfuscated redirects; upstream: anthropics/claude-code#29709). **Since
+   coverage is statically undecidable (obfuscated redirects; upstream:
+   anthropics/claude-code#29709).
+
+   **What that heuristic reads, stated because the residual is the point of this
+   list.** A heredoc fed to an interpreter is graded exactly like `-c`/`-e`
+   (`python3 - <<PY` is the same capability, spelled differently), and the path a
+   write call names is RESOLVED rather than required to be a quoted literal beside
+   the call: a literal, a concatenation of literals, or one hop of binding
+   (`p = 'src/app.ts'` … `open(p, 'w')`). That last shape is what every two-line
+   bulk edit uses, and it walked through until somebody measured it — the pattern
+   knew the adjacency rather than the capability, which is the same root as the
+   heredoc gap one fix earlier. **Still out of reach, by design rather than by
+   oversight**: a path produced by a CALL (`open(find_it(), 'w')`,
+   `os.path.join(a, b)`), an f-string, or a chain through a second name. Those need
+   dataflow this hook does not do, so it reports no target rather than inventing
+   one — and the PostToolUse check below is what covers them. **Since
    0.6.0** the residual is covered by `guard-bash-writes` — a PostToolUse
    `git status` diff check that detects ANY shell write into an unplanned
    source file after the fact and tells the model in-band. It is advisory by

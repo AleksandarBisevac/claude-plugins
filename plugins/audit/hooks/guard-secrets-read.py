@@ -147,35 +147,120 @@ SECRET_TOKEN_RE = re.compile(_SECRET_TOKEN, re.IGNORECASE)
 # redirect into a source file is `_source_write_hit`'s job (it reads the whole
 # command with the redirect grammar), and duplicating it here is what produced
 # the false positive.
-_WRITE_CALL = re.compile(
-    r"(?:open\s*\(\s*['\"]([\w./-]+)['\"]\s*,\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
-    # `append` alongside `write`: appending to a source file edits it, and
-    # `fs.appendFileSync` walked straight through a pattern that only knew the
-    # word "write".
-    r"|(?:fs\.)?(?:write|append)(?:File)?(?:Sync)?\s*\(\s*['\"]([\w./-]+)['\"]"
-    r"|createWriteStream\s*\(\s*['\"]([\w./-]+)['\"]"
-    r"|File\.(?:open|write)\s*\(\s*['\"]([\w./-]+)['\"]"
-    # The RECEIVER form. `Path('x.py').write_text(...)` names its target before
-    # the call, so a pattern that only looks inside the parentheses cannot reach
-    # it however many call names it is given -- which is why adding names had
-    # not found it. F20 listed `Path.write_*` in its fix shape.
-    r"|Path\s*\(\s*['\"]([\w./-]+)['\"]\s*\)\s*\.\s*write_(?:text|bytes)"
-    # Two-argument forms where the SECOND path is the one written. An atomic
-    # rename and a copy are edits with different spelling.
+# Every write shape this knows, capturing the path ARGUMENT rather than requiring it
+# to be a quoted literal.
+#
+# IT USED TO DEMAND THE LITERAL, and that is F-7: a path arriving through a variable
+# did not match a write call at all, so the write was not merely unclassified, it was
+# invisible. The argument is captured here and RESOLVED by `_resolve_write_expr`,
+# which reads a literal, a join of literals, or one hop of binding.
+#
+# The alternatives below were each earned, and the reasons outlive the pattern that
+# first carried them:
+#
+#   * `append` alongside `write`: appending to a source file edits it, and
+#     `fs.appendFileSync` walked straight through a pattern that only knew the word
+#     "write".
+#   * the RECEIVER form. `Path('x.py').write_text(...)` names its target BEFORE the
+#     call, so a pattern that only looks inside the parentheses cannot reach it
+#     however many call names it is given -- which is why adding names had not found
+#     it. F20 listed `Path.write_*` in its fix shape.
+#   * two-argument forms where the SECOND path is the one written. An atomic rename
+#     and a copy are edits with different spelling.
+#
+# KNOWN LIMIT, said rather than left to be discovered: an argument containing a comma
+# ends the capture, so `open(os.path.join(a, b), 'w')` matches nothing here. The
+# literal-only pattern this replaced missed it too, for the same reason it missed a
+# bare name -- it is a call, not a path. Naming the limit is what keeps a later
+# reader from assuming coverage the expression can not give.
+_WRITE_CALL_EXPR = re.compile(
+    r"(?:open\s*\(\s*([^,)]+?)\s*,\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
+    r"|(?:fs\.)?(?:write|append)(?:File)?(?:Sync)?\s*\(\s*([^,)]+?)\s*[,)]"
+    r"|createWriteStream\s*\(\s*([^,)]+?)\s*[,)]"
+    r"|File\.(?:open|write)\s*\(\s*([^,)]+?)\s*[,)]"
+    r"|Path\s*\(\s*([^,)]+?)\s*\)\s*\.\s*write_(?:text|bytes)"
     r"|(?:os\.(?:replace|rename)|shutil\.(?:copy2?|copyfile|move))\s*\(\s*"
-    r"(?:['\"][^'\"]*['\"]|[\w.]+)\s*,\s*['\"]([\w./-]+)['\"])",
+    r"(?:['\"][^'\"]*['\"]|[\w.]+)\s*,\s*([^,)]+?)\s*[,)])",
     re.IGNORECASE,
 )
 
+# One hop of binding: `p='x.py'`, `const p = 'x.py'`, `p = 'a/' + 'b.py'`. That is
+# what a two-line script writes, and one hop is all this resolves - a chain through
+# a second name, an f-string or a `join()` is dataflow this guard does not do, which
+# is stated here rather than left for somebody to discover.
+# A NEGATIVE LOOKBEHIND, not a list of allowed separators. The list was written
+# first - `[;\n{}(\s]` - and it missed the commonest position of all: the FIRST
+# statement of a one-liner, where the character before the name is the opening quote
+# of `python3 -c "p='...'`. A rule about what may not precede a name is shorter than
+# an inventory of what may, and it cannot be short by one.
+_EVAL_BINDING = re.compile(
+    r"(?<![\w$.])(?:const\s+|let\s+|var\s+)?([A-Za-z_$][\w$]*)\s*=\s*"
+    r"((?:['\"][^'\"\n]*['\"])(?:\s*\+\s*['\"][^'\"\n]*['\"])*)")
+
+_STRING_LITERAL = re.compile(r"['\"]([^'\"\n]*)['\"]")
+
+_BARE_NAME = re.compile(r"^[A-Za-z_$][\w$]*$")
+
+
+def _eval_bindings(clause):
+    """{name: the string it was bound to} for the literal bindings in `clause`."""
+    out = {}
+    for m in _EVAL_BINDING.finditer(clause):
+        joined = "".join(_STRING_LITERAL.findall(m.group(2)))
+        if joined:
+            out.setdefault(m.group(1), joined)
+    return out
+
+
+def _resolve_write_expr(expr, bindings):
+    """The path an argument NAMES: a literal, a join of literals, or a bound name.
+
+    Returns None when the argument is something this cannot read - a call, an
+    f-string, a name bound to anything but literals. None means "no target", not
+    "no write", and the caller treats it as nothing to judge, which keeps this on
+    the same side of the line `_clauses` and `_split_heredocs` are on: unreadable
+    input is never quietly graded as clean by INVENTING a target for it.
+    """
+    expr = expr.strip()
+    literals = _STRING_LITERAL.findall(expr)
+    if literals:
+        return "".join(literals)
+    if _BARE_NAME.match(expr):
+        return bindings.get(expr)
+    return None
+
 
 def _eval_write_targets(clause):
-    """Every path this clause actually WRITES, from the write calls themselves."""
+    """Every path this clause actually WRITES, from the write calls themselves.
+
+    F-P-7 narrowed this from "a write shape and a path in the same clause" to "the
+    path the write call NAMES", and that narrowing is what F-7 walked through: the
+    pattern required the name to be a quoted LITERAL in the argument position, so
+
+        p = 'src/app.ts'
+        open(p, 'w').write(...)
+
+    named nothing and was allowed - while the identical write with the path spelled
+    inline was blocked. Same capability, same target, same intent; only the
+    syntactic adjacency differed, and it is the shape every two-line bulk edit uses.
+    Measured after the fact: fifteen source edits in one session went through it.
+
+    So the argument is RESOLVED rather than required to be a literal - one hop of
+    binding, plus a join for a concatenation. F-P-7's property survives: a path that
+    merely shares the clause is still not a target, because only the expression the
+    write call actually names is read.
+    """
     out = []
-    for m in _WRITE_CALL.finditer(clause):
-        for g in m.groups():
-            if g:
-                out.append(g)
-                break
+    bindings = None
+    for m in _WRITE_CALL_EXPR.finditer(clause):
+        expr = next((g for g in m.groups() if g), None)
+        if expr is None:
+            continue
+        if bindings is None:
+            bindings = _eval_bindings(clause)
+        target = _resolve_write_expr(expr, bindings)
+        if target:
+            out.append(target)
     return out
 _NON_EXEMPT_WRITE_TARGET = re.compile(
     r"['\"][\w./-]+\.(?:tsx?|jsx?|mjs|cjs|json|ya?ml|swift|kt|java|rb|py|sh|gradle|"
