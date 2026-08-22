@@ -233,8 +233,8 @@ function ovDetail(p){
  if(p.desiredOutcome)box.append(el('div',{class:'mut small'},'Desired: '+p.desiredOutcome));
  box.append(el('div',{class:'row',style:'margin-top:.4rem'},
    el('button',{class:'btn small','data-ovedit':p.id,type:'button',
-     title:'Composition is where tasks, models and skills are changed',
-     onclick:()=>openInComp(p.id)},'Edit in Composition')));
+     title:'Plan & models is where tasks, models and skills are changed',
+     onclick:()=>openInComp(p.id)},'Edit in Plan & models')));
  return box;}
 
 /**
@@ -553,7 +553,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
       onclick:e=>ovCopy(e.currentTarget,cmd)},'Copy')));});
  // The remainder is COUNTED rather than dropped, and it names where the rest is.
  if(ready.length>RSHOW)rcard.append(el('div',{class:'mut'},
-   '+'+(ready.length-RSHOW)+' more ready — see Composition'));
+   '+'+(ready.length-RSHOW)+' more ready — see Plan & models'));
  c.append(rcard);
 
  // --- bugs ---------------------------------------------------------------------

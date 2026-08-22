@@ -448,7 +448,13 @@ def _cases(check):
     check("overview: a phase opens IN PLACE, and going to Composition is an "
           "explicit, named press rather than what a click happens to do",
           "onclick:()=>{OVF.open[p.id]=!open;renderOver();}" in M.UI_HTML
-          and "onclick:()=>openInComp(p.id)},'Edit in Composition')" in M.UI_HTML
+          # The visible name moved to "Plan & models" - the ROUTE is still `comp`
+          # and `openInComp` is still the function, the same split Settings has
+          # carried since it was `guards`. The negative below keeps its old
+          # wording on purpose: it names the string the removed behaviour used to
+          # emit, so rewriting it would assert the absence of something that never
+          # existed.
+          and "onclick:()=>openInComp(p.id)},'Edit in Plan & models')" in M.UI_HTML
           and "title:'open '+p.id+' in Composition',onclick:()=>openInComp(p.id)"
           not in M.UI_HTML)
     check("overview: ...and openInComp still exists for that press, unchanged",

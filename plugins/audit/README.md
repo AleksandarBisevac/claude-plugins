@@ -68,7 +68,7 @@ typo'd manifest model looks like from the other side. Every autocomplete searche
 descriptions as well as names, and a long result list says `…N more — keep typing` instead
 of cutting off silently. Same Slate & Teal look, light/dark,
 responsive. It writes only config + composition fields (never structural manifest CRUD, and never
-while a `/audit` run holds the lock), validating before each atomic save. Composition is a
+while a `/audit` run holds the lock), validating before each atomic save. Plan & models is a
 **compact, collapsible, filterable table** (search · phase-status · "needs skills" · expand-all)
 that scales to hundreds of tasks — phases are collapsed by default; expand only what you touch.
 
@@ -92,16 +92,16 @@ persistent notice instead: Save is still checked against the file as it is on di
 dialog's echo), and Discard reloads what is really there. Refreshes hold while any dialog is
 open.
 
-| Settings | Composition (compact/collapsible) | Composition expanded | Save shows every change | Dark |
+| Settings | Plan & models (compact/collapsible) | Plan & models expanded | Save shows every change | Dark |
 |---|---|---|---|---|
 | [![panel guards](../../docs/screenshots/panel-guards.png)](../../docs/screenshots/panel-guards.png) | [![panel composition](../../docs/screenshots/panel-composition.png)](../../docs/screenshots/panel-composition.png) | [![panel composition expanded](../../docs/screenshots/panel-composition-expanded.png)](../../docs/screenshots/panel-composition-expanded.png) | [![the confirm dialog listing three changes](../../docs/screenshots/panel-confirm.png)](../../docs/screenshots/panel-confirm.png) | [![panel dark](../../docs/screenshots/panel-dark.png)](../../docs/screenshots/panel-dark.png) |
 
 The **Overview** tab is a live validation + progress rollup you can steer by — status strips that
 are both legend and filter, search, sort, group-by-area, each phase row carrying its desired
-outcome and opening that phase in Composition, and a *Ready now* card with the `/audit:run <id>`
+outcome and opening that phase in Plan & models, and a *Ready now* card with the `/audit:run <id>`
 to copy — plus a **Plan gate** card: the tier in force, where it came from (`planGate`, legacy
 `enforce`, or the graded ladder), whether a bypass is armed right now, and the latest
-[gate events](#installing-arms-global-hooks) as they land — and the Composition tab lists the
+[gate events](#installing-arms-global-hooks) as they land — and the Plan & models tab lists the
 **building blocks it discovered** (skills · agents · MCP servers, from this repo + `~/.claude/` +
 installed plugins) — the names that feed the autocomplete. The **Usage** tab is the token ledger
 with the filters on top of it (see [Token usage](#token-usage)) — and its filters **persist**:
@@ -1213,7 +1213,7 @@ somebody else owns the writing. Turn writes on only once you have decided this p
 owns the link.
 
 Add `meta.ado` to the manifest — or fill in the **ADO connector card** on the panel's
-Composition tab, which edits the same block — and `/audit:sync` links the tracker to
+Plan & models tab, which edits the same block — and `/audit:sync` links the tracker to
 your board:
 
 ```json

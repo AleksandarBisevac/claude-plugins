@@ -2202,7 +2202,7 @@ async function captureConfirmDialog(page) {
     await box.fill(was === 'opus' ? 'sonnet' : 'opus');
   }
   await page.waitForTimeout(200);
-  await page.locator('#comp').getByRole('button', { name: 'Save composition' }).click();
+  await page.locator('#comp').getByRole('button', { name: 'Save plan & models' }).click();
   await awaitConfirmDialog(page);
   const rows = await page.evaluate(() =>
     [...document.querySelectorAll('dialog.confirm tbody tr')].length);
@@ -2382,7 +2382,7 @@ async function assertConfirmFlowWorks(page) {
     fail(`composition: no row for ${target.id} after opening ${target.phaseId}`); return;
   }
   const modelInput = row.locator('.tmodel input');
-  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save composition' });
+  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save plan & models' });
   const discardBtn = page.locator('#comp [data-discard=comp]');
   const onDisk = () => page.evaluate(async (id) => {
     const s = await api('GET', '/api/state');
@@ -2927,7 +2927,7 @@ async function assertSkillTriState(page) {
     note('skills: "needs skills" keeps the []-task and drops the opted-out one');
   }
   // --- save: the dialog names the answer, the file holds a real null ----------
-  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save composition' });
+  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save plan & models' });
   await saveBtn.click();
   await awaitConfirmDialog(page);
   const dlg = await page.evaluate(() =>

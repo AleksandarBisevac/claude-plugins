@@ -361,7 +361,7 @@ function renderComp(){closeCombo();
  // reachable and stays useful: `manifestPath` decides where the plan lands.
  if(!STATE.rollup){
   const none=el('div',{class:'card'});
-  none.append(el('div',{class:'mut'},'Nothing to compose yet — these are all keys '
+  none.append(el('div',{class:'mut'},'Nothing to set here yet — these are all keys '
     +'of the plan, and there is no plan. "/audit:init" writes one.'),
    el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
      'it would be written to: '+(STATE.manifestPath||'-'),' · ',
@@ -389,7 +389,7 @@ function renderComp(){closeCombo();
  // connector does. It writes patch.meta.branch and nothing else.
  c.append(branchCard(comp,patch));
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
- const tcard=el('div',{class:'card'});tcard.append(h2h('Composition — phases · tasks · skills',MDESC.taskSkills,
+ const tcard=el('div',{class:'card'});tcard.append(h2h('Phases · tasks · skills',MDESC.taskSkills,
    {comp:'taskSkills',label:'Task skills'}));
  // The toolbar and the two editable columns carry hand-back hooks, because this
  // view has no ids of its own and focusSel can only name an element by an id or a
@@ -554,7 +554,7 @@ function renderComp(){closeCombo();
    if(bcBad){toast('meta.buildCommands is not valid JSON — fix it or clear it '
      +'before saving','err');bc.focus();return;}
    const rows=await confirmSave({rows:()=>compChanges(patch),
-     title:'Save composition',scope:'comp',empty:'no values changed',
+     title:'Save plan & models',scope:'comp',empty:'no values changed',
      note:'writes '+STATE.manifestPath});
    if(!rows)return;
    const clean={meta:{},phases:patch.phases,tasks:patch.tasks};
@@ -568,7 +568,7 @@ function renderComp(){closeCombo();
    // part of a patch. COMPF is hoisted, so the filter, the search and which
    // phases were open all survive this.
    STATE=await api('GET','/api/state');renderComp();renderOver();
-   showWriteResult('#comp',res,rows,'the manifest');}},'Save composition');
+   showWriteResult('#comp',res,rows,'the manifest');}},'Save plan & models');
  const discard=discardButton({key:'comp',rows:()=>compChanges(patch),
    title:'Discard unsaved composition edits',
    note:'nothing is written; the table goes back to the saved manifest',
