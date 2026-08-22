@@ -1820,11 +1820,28 @@ def _cases(check):
     #
     # The guard is the rule, not the patch: `||1` on a denominator is legitimate
     # for a bar's WIDTH and a sparkline's RANGE (a scale is a drawing decision,
-    # not a claim) and for `attempts`, where one attempt is the true default. In
-    # any other position it manufactures an answer to a question that has none.
+    # not a claim). In any other position it manufactures an answer to a question
+    # that has none.
+    #
+    # `attempts` USED TO BE EXEMPT HERE, on the stated ground that "one attempt is
+    # the true default". It is not, and this rule's own sentence is what settles it:
+    # `audit-task.py` writes `attempts: 0` for every new task, and two documented
+    # paths take a count back DOWN while the ledger keeps the tokens - the
+    # orchestrator reverting the increment after a specific failure, and
+    # `/audit:run` resetting a blocked or re-opened task. So zero is a recorded
+    # value and `||1` manufactured an answer for it: measured over one such task
+    # and one that ran twice, `mean attempts` read 1.5 against a recorded average
+    # of 1.0. Both readers go through `uAtt()` now, which answers a number, zero,
+    # or null - and the exemption is gone from the regex, so the rule covers the
+    # position it was carved out of.
+    # The comment filter knew `//` and not `*`, so a JSDoc line QUOTING the retired
+    # `||1` form was reported as an offender - prose naming the code is not the
+    # code, the same lesson the stage-wiring guard in tools/ already carries. Both
+    # comment syntaxes are excluded now; a line that merely mentions the shape can
+    # explain why it is retired without tripping the rule against it.
     _or1 = [l.strip() for l in M.UI_HTML.splitlines()
-            if "||1" in l and not l.lstrip().startswith("//")
-            and not re.search(r"peak|\(hi-lo\)|attempts", l)]
+            if "||1" in l and not l.lstrip().startswith(("//", "*", "/*"))
+            and not re.search(r"peak|\(hi-lo\)", l)]
     check("no percentage divides by a `||1` denominator — offenders: %r" % _or1,
           not _or1)
     check("every printed share goes through one helper that returns null when "

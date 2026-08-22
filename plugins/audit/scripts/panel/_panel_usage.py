@@ -206,9 +206,21 @@ def _usage_manifest_slice(manifest):
                 budgets[ph["id"]] = float(b)
         for _ph, t in _mio.iter_tasks(manifest):
             if t.get("id"):
+                # The RECORDED count, zero included, and `null` when the task
+                # records nothing - the same three answers
+                # `_usage_routing.recorded_attempts` gives, because the panel's
+                # JavaScript computes the same mean from this field and the two
+                # must agree. `or 1` here reported one attempt for every task the
+                # manifest says has none, which is what `audit-task.py` writes for
+                # every new one. The budget field two lines up already makes this
+                # distinction ("non-numeric all mean no budget, never a budget of
+                # zero") - in the opposite direction, and for the same reason.
+                _att = t.get("attempts")
+                if isinstance(_att, bool) or not isinstance(_att, int):
+                    _att = None
                 task_meta[t["id"]] = {
                     "status": t.get("status"), "risk": t.get("risk") or "unrated",
-                    "attempts": t.get("attempts") or 1,
+                    "attempts": _att,
                     "title": t.get("title") or ""}
     except Exception:
         return ({}, {}, {})

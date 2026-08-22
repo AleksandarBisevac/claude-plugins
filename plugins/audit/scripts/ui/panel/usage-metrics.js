@@ -141,7 +141,7 @@ function uUnit(facts){const M=USAGE.taskMeta||{},cost={};
 function uRetry(facts){const M=USAGE.taskMeta||{};let tot=0,re=0,bl=0;
  const rs=new Set(),bs=new Set();
  for(const f of facts){tot+=f[F.cost];const t=M[f[F.task]];if(!t)continue;
-  if((t.attempts||1)>1){re+=f[F.cost];rs.add(f[F.task]);}
+  if(uAtt(t)>1){re+=f[F.cost];rs.add(f[F.task]);}
   if(t.status==='blocked'){bl+=f[F.cost];bs.add(f[F.task]);}}
  return {tot,re,bl,rn:rs.size,bn:bs.size,
    overlap:[...rs].filter(x=>bs.has(x)).length};}
@@ -165,11 +165,15 @@ function uRouting(facts){const M=USAGE.taskMeta||{},acc={};
   acc[risk]=acc[risk]||{};
   const c=acc[risk][model]=acc[risk][model]||{cost:0,tasks:new Set(),att:[]};
   c.cost+=f[F.cost];
-  if(!c.tasks.has(f[F.task])){c.tasks.add(f[F.task]);c.att.push(t.attempts||1);}}
+  if(!c.tasks.has(f[F.task])){c.tasks.add(f[F.task]);
+   const a=uAtt(t);if(a!==null)c.att.push(a);}}
  const rows=[];
  for(const risk in acc)for(const model in acc[risk]){const c=acc[risk][model];
   rows.push({risk,model,tasks:c.tasks.size,perTask:c.cost/c.tasks.size,
-    att:c.att.reduce((a,b)=>a+b,0)/c.att.length});}
+    // null, not 0/0. Every task in this cell may record no attempts at all, and
+    // `NaN.toFixed(1)` is the string "NaN" in a table cell - a figure nobody
+    // could compute, printed as though somebody had.
+    att:c.att.length?c.att.reduce((a,b)=>a+b,0)/c.att.length:null});}
  rows.sort((a,b)=>RISKS.indexOf(a.risk)-RISKS.indexOf(b.risk)||
    a.model.localeCompare(b.model));
  return rows;}

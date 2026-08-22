@@ -290,6 +290,31 @@ const uPct=x=>x==null?'—':(x&&Math.abs(x)<1)?'<1%':uFixedHalfEven(x,0)+'%';
  */
 const uShare=(part,whole)=>whole?100*part/whole:null;
 
+/**
+ * The attempt count a task RECORDS - zero included, absence not.
+ *
+ * `t.attempts||1` was written at both readers, on the belief that one attempt is
+ * the true default. It is not: `audit-task.py` writes 0 for every new task, and two
+ * documented paths take a count back DOWN while the ledger keeps the tokens - the
+ * orchestrator reverting the increment after a specific failure, and `/audit:run`
+ * resetting a blocked or re-opened task. So 0 is a value, and reading it as 1
+ * reported one attempt for a task the plan says has none. Measured over one such
+ * task and one that ran twice, the mean read 1.5 against a recorded average of 1.0.
+ *
+ * THREE ANSWERS, like uShare above: a number, zero, or null for "this task records
+ * nothing". Null is not zero - a task with no `attempts` field is unknown, not
+ * unattempted - and every reader renders null as unknown rather than as a figure
+ * nobody could compute.
+ *
+ * It mirrors `_usage_routing.recorded_attempts()`, which answers the same question
+ * for the report and the CLI; the agreement is pinned by a case rather than by this
+ * sentence.
+ * @param {{attempts: *}} t A task-meta entry from USAGE.taskMeta
+ * @returns {number|null} the recorded count, or null when none is recorded
+ */
+const uAtt=(t)=>(typeof (t||{}).attempts==='number'
+ && Number.isInteger(t.attempts)?t.attempts:null);
+
 // --- which entity wears which hue ----------------------------------------------
 // Colour follows the entity, never its rank in the current view: a slot comes from
 // the entity's spend rank across the WHOLE ledger, so filtering cannot repaint a

@@ -35,18 +35,17 @@ def _cases(check):
     # re-opened task to 0. In both, the manifest says zero and the ledger keeps the
     # tokens.
     #
-    # `int(t.get("attempts") or 1)` therefore reports 1 for a task the manifest says
-    # has none, and the arithmetic below is measured, not assumed: over a cell of one
-    # zeroed task and one that ran twice, the mean is 1.5 where the recorded values
+    # `int(t.get("attempts") or 1)` therefore REPORTED 1 for a task the manifest says
+    # has none, and the arithmetic was measured rather than assumed: over a cell of
+    # one zeroed task and one that ran twice it read 1.5 where the recorded values
     # average 1.0.
     #
-    # IT IS PINNED RATHER THAN CHANGED, deliberately. Zeroing attempts while keeping
-    # spend is itself an inconsistency, and it inflates the COST side of the same
-    # cell in the same direction — so `or 1` partly compensates rather than simply
-    # lying, and `meanAttempts` feeds routing ADVICE. Flipping an advice number on a
-    # judgement call is worse than recording the decision. This case is what makes
-    # the next change to it deliberate: if somebody decides zero should read as
-    # zero, this is the case they will have to edit, and the reasoning is here.
+    # ZERO READS AS ZERO now. `_recorded_attempts` gives three answers where the old
+    # expression gave two: a number, a recorded zero, and None for a task that
+    # records nothing at all — because a missing `attempts` field is unknown, not
+    # unattempted, and inventing a number for it is the same defect one step
+    # quieter. A cell where nothing records attempts therefore reports no figure
+    # rather than a computed one, which is the path `meanAttempts` already had.
     _z_man = {"phases": [{"id": "PZ", "tasks": [
         {"id": "PZ.1", "status": "pending", "risk": "high", "attempts": 0},
         {"id": "PZ.2", "status": "done", "risk": "high", "attempts": 2}]}]}
@@ -58,15 +57,36 @@ def _cases(check):
     check("za1 a zeroed task DOES reach the cell - it is joined by taskId from the "
           "ledger, not by status - so its attempts count is in the mean: %d task(s)"
           % (_z_cell["tasks"],), _z_cell["tasks"] == 2)
-    check("za2 ...and the mean reads 1.5, where the recorded 0 and 2 average 1.0: "
-          "`or 1` reports one attempt for a task the manifest says has none. Pinned, "
-          "not fixed - see the note above - so a change here is a decision and not "
-          "a drift (got %r)" % (_z_cell["meanAttempts"],),
-          _z_cell["meanAttempts"] == 1.5)
+    check("za2 ...and the mean reads the RECORDED values: 0 and 2 average 1.0, where "
+          "`or 1` answered 1.5 by reporting one attempt for a task the manifest says "
+          "has none (got %r)" % (_z_cell["meanAttempts"],),
+          _z_cell["meanAttempts"] == 1.0)
     check("za3 THE PAIR: with only the spawned task in the ledger the mean is 2.0, "
           "so za2 is reading the zeroed task's contribution and not a constant",
           M.routing(_z_man, _z_rows[1:])["byRisk"]["high"]["m"]["meanAttempts"]
           == 2.0)
+    # The THIRD answer, which the old two-way expression could not give at all.
+    _n_man = {"phases": [{"id": "PZ", "tasks": [
+        {"id": "PZ.1", "status": "done", "risk": "high"},
+        {"id": "PZ.2", "status": "done", "risk": "high"}]}]}
+    check("za4 a cell where NO task records attempts reports no figure - None, the "
+          "path the caller already had - rather than a mean computed from invented "
+          "ones. Absence is not zero: a task with no `attempts` field is unknown, "
+          "not unattempted (got %r)"
+          % (M.routing(_n_man, _z_rows)["byRisk"]["high"]["m"]["meanAttempts"],),
+          M.routing(_n_man, _z_rows)["byRisk"]["high"]["m"]["meanAttempts"] is None)
+    _b_man = {"phases": [{"id": "PZ", "tasks": [
+        {"id": "PZ.1", "status": "done", "risk": "high", "attempts": True},
+        {"id": "PZ.2", "status": "done", "risk": "high", "attempts": 2}]}]}
+    check("za5 `attempts: true` is not one attempt. `True` is an `int` in Python, "
+          "so a bare isinstance check would have counted it - the same trap the "
+          "validator's `id: true` case exists for (got %r)"
+          % (M.routing(_b_man, _z_rows)["byRisk"]["high"]["m"]["meanAttempts"],),
+          M.routing(_b_man, _z_rows)["byRisk"]["high"]["m"]["meanAttempts"] == 2.0)
+    check("za6 the three answers, asserted on the helper directly: a number, a "
+          "recorded zero, and nothing for what records nothing",
+          M._recorded_attempts([{"attempts": 0}, {"attempts": 3}, {},
+                                {"attempts": "x"}, {"attempts": True}]) == [0, 3])
 
     def mkrow(day, model, author, task, phase, attr, cost, out_tok=100,
               cr=1000, cw=100, fin=10):

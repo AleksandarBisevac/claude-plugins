@@ -66,6 +66,37 @@ _cost = _core._cost
 RISK_ORDER = ("high", "med", "low", "unrated")
 
 
+def _recorded_attempts(tasks):
+    """The attempt counts these tasks actually RECORD — zero included, absence not.
+
+    `int(t.get("attempts") or 1)` was here, and it answered 1 for a task the
+    manifest says has 0. That state is reachable by two documented paths, both of
+    which take a count back DOWN while the ledger keeps the tokens: the
+    orchestrator "revert[s] the attempts increment from step 2" after a specific
+    failure, and `/audit:run` resets a blocked or re-opened task to 0. Measured
+    over one such task and one that ran twice, the mean read 1.5 where the recorded
+    values average 1.0.
+
+    THREE ANSWERS, NOT TWO, and that is the whole shape of this function. A
+    recorded 0 is a value and is counted. A MISSING or non-integer `attempts` is
+    not a zero — it is "this task records nothing", and inventing a number for it
+    is the same defect one step quieter. Those are dropped, so a cell where nothing
+    records attempts yields an empty list, and the caller already spells that
+    `None` rather than a figure.
+
+    `bool` is excluded explicitly: `True` is an `int` in Python, and a manifest
+    carrying `attempts: true` would otherwise count as one attempt — the same trap
+    the validator's own `id: true` case exists for.
+    """
+    out = []
+    for task in tasks:
+        value = task.get("attempts")
+        if isinstance(value, bool) or not isinstance(value, int):
+            continue
+        out.append(value)
+    return out
+
+
 def routing(manifest, rows, pricing=None):
     """Cost per completed task and mean attempts, per model, WITHIN a risk band.
 
@@ -99,7 +130,7 @@ def routing(manifest, rows, pricing=None):
     by_risk, counts_by = {}, {}
     for (risk, model), cell in acc.items():
         n = len(cell["tasks"])
-        attempts = [int(t.get("attempts") or 1) for t in cell["tasks"].values()]
+        attempts = _recorded_attempts(cell["tasks"].values())
         by_risk.setdefault(risk, {})[model] = {
             "tasks": n,
             "cost": round(cell["cost"], 4),
