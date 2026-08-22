@@ -145,10 +145,14 @@ def _cases(check):
           "usage_ledger under usage/. All four are at depth, so this is the case "
           "that goes red if the resolver is ever flattened again: %r" % (_fs_bad,),
           len(_fs_domains) == 4 and not _fs_bad)
-    check("fs5 `_load_scripts_module` really goes through it: the policy module it "
-          "loads at import time is present, which is the fail-open that would "
+    # The load is lazy now (k11), so this asks the accessor rather than reading a
+    # module global - but it is the same claim, and it is the one that matters: a
+    # resolver that quietly returns None is indistinguishable from `policy` never
+    # having shipped, and every caller downstream reads that as "allow".
+    check("fs5 `_load_scripts_module` really goes through it: the policy module "
+          "resolves through the accessor, which is the fail-open that would "
           "otherwise be indistinguishable from `policy` never having shipped",
-          M._POLICY_MOD is not None and "policy" in M.DEFAULTS)
+          M.policy_mod() is not None)
 
     tmp = Path(tempfile.mkdtemp(prefix="config-selftest-"))
 
@@ -588,6 +592,32 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp_k, ignore_errors=True)
 
+    # (k11) the same question as k10, asked of the heaviest passenger `_config`
+    # ever carried. `_config` used to load `_policy.py` at MODULE scope purely to
+    # copy its DEFAULTS into this file's own dict; loading it executes the whole
+    # scripts-side module, whose pinned path preamble imports `_output`, which
+    # imports `ast`. Every hook paid for it - measured at ~9 ms of the ~33 ms a
+    # typical hook costs - and exactly one hook consults a policy, on a matcher
+    # (Skill|Task|Agent|mcp__.*) that can never coincide with an edit or a shell
+    # call. `ast` is a BUILD-TIME dependency: it is there for the house-style
+    # lints, which no hook runs.
+    #
+    # The probe names both leaks rather than asserting one, because they arrive
+    # together and the message has to say WHICH came back. Counted, not found:
+    # an empty list is the only pass, so a second passenger added later fails
+    # here by name instead of hiding behind the first.
+    _leak = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, %r); import _config; "
+         "print(','.join(m for m in ('ast', '_output') if m in sys.modules))"
+         % str(Path(M.__file__).resolve().parent)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    check("k11 importing _config does not execute the scripts-side policy module "
+          "- no `ast`, no `_output`, on the hot path of every hook",
+          _leak.returncode == 0
+          and _leak.stdout.decode("utf-8", "replace").strip() == "",
+          repr(_leak.stdout[-120:]) + repr(_leak.stderr[-200:]))
+
     # (p) the capability policy — the block itself lives in scripts/_policy.py and
     # is exercised there; what this file owns is the delegation and the one piece of
     # evidence a hook cannot get from the config alone: which areas are active.
@@ -596,20 +626,35 @@ def _cases(check):
         _pol = M.policy_mod()
         check("p1 the policy engine ships and is reachable from the hooks",
               _pol is not None)
-        check("p2 DEFAULTS carries the engine's own block rather than a copy of it "
-              "- one statement of what ships inert",
-              _pol is not None and M.DEFAULTS.get("policy") == _pol.DEFAULTS)
+        # p2 used to read `M.DEFAULTS.get("policy") == _pol.DEFAULTS`, back when
+        # this file copied the engine's block into its own defaults at import. The
+        # copy is gone (k11 says why), so the claim it was making has to be made
+        # against the thing that always owned it: `policy_cfg` fills every kind in
+        # from the ENGINE's defaults, so a project that names one kind still gets
+        # the others. Same guarantee, asserted where it actually lives - and the
+        # engine's block is now reachable ONLY through the accessor, which is the
+        # property the second half pins.
+        check("p2 the engine's own block is what fills an unnamed kind - one "
+              "statement of what ships inert, and DEFAULTS no longer copies it",
+              _pol is not None
+              and M.policy_cfg({})["skills"] == _pol.DEFAULTS["skills"]
+              and "policy" not in M.DEFAULTS)
         check("p3 the shipped default is inert, so the guard hook returns before "
               "it reads anything",
               _pol is not None and not _pol.is_active(M.policy_cfg({})))
         check("p4 a project's block merges through the engine, not by hand",
               M.policy_cfg({"policy": {"skills": {"default": "deny"}}})["skills"]
               == {"default": "deny", "allow": [], "deny": [], "areas": {}})
-        _p = M.load(tmp_p)
-        _p["policy"]["skills"]["deny"].append("MUTATED")
-        check("p5 a loaded policy does not alias DEFAULTS",
-              "MUTATED" not in M.DEFAULTS["policy"]["skills"]["deny"]
-              and "MUTATED" not in (_pol.DEFAULTS["skills"]["deny"] if _pol else []))
+        # p5 asked whether `load()` handed out a policy block aliasing DEFAULTS.
+        # `load()` no longer emits one at all, so the aliasing question moved to
+        # the only place a caller can still reach the engine's dict: `policy_cfg`.
+        # It must hand back a fresh block every time - a caller that edits its
+        # result must not be editing what the next hook resolves against.
+        _p = M.policy_cfg({})
+        _p["skills"]["deny"].append("MUTATED")
+        check("p5 a resolved policy does not alias the engine's defaults",
+              "MUTATED" not in (_pol.DEFAULTS["skills"]["deny"] if _pol else [])
+              and "MUTATED" not in M.policy_cfg({})["skills"]["deny"])
 
         rel = "docs/audit/audit-plan.json"
 

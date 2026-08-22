@@ -282,19 +282,6 @@ def _load_scripts_module(name, filename):
         return None
 
 
-# The capability policy's defaults are NOT written out here. _policy.py owns
-# the block — its shape, its resolution order and what "inert" means — and a second
-# copy of the shipped values in this file is the drift this repository has already
-# shipped once (`exemptGlobs` and `tddReminder.testGlobs` disagreeing about what a
-# test file is). So DEFAULTS carries that module's own dict, and `policy_cfg` below
-# delegates rather than merging by hand. If the module is missing there is no policy
-# engine at all, and the key is simply absent — which every reader treats as "allow",
-# the same fail-open the rest of this file uses.
-_POLICY_MOD = _load_scripts_module("audit_policy", "_policy.py")
-if _POLICY_MOD is not None:
-    DEFAULTS["policy"] = copy.deepcopy(_POLICY_MOD.DEFAULTS)
-
-
 def repo_root(data):
     """Locate the CONSUMING repo root: CLAUDE_PROJECT_DIR, else stdin cwd, else getcwd."""
     root = os.environ.get("CLAUDE_PROJECT_DIR")
@@ -495,9 +482,30 @@ def in_journal(root, cfg, path):
 
 
 # --- policy -------------------------------------------------------------------
+# The capability policy's defaults are NOT written out here, and they are no longer
+# copied into DEFAULTS either. _policy.py owns the block — its shape, its resolution
+# order and what "inert" means — and a second copy of the shipped values in this file
+# is the drift this repository has already shipped once (`exemptGlobs` and
+# `tddReminder.testGlobs` disagreeing about what a test file is). `policy_cfg` below
+# delegates rather than merging by hand, and it re-derives the whole block from the
+# project's RAW `policy` key, so a copy in DEFAULTS changed nothing any caller could
+# observe. What it did change was the cost of importing this file: loading the module
+# eagerly executed the scripts-side `_policy.py`, whose pinned preamble imports
+# `_output`, which imports `ast` — a build-time dependency of the house-style lints,
+# dragged onto the hot path of every hook. Exactly one hook consults a policy, on a
+# matcher (Skill|Task|Agent|mcp__.*) that never coincides with an edit or a shell
+# call, so the load is lazy and memoized like the ledger, journal and areas libs.
+# If the module is missing there is no policy engine at all — which every reader
+# treats as "allow", the same fail-open the rest of this file uses.
+_POLICY_LIB = {"tried": False, "mod": None}
+
+
 def policy_mod():
-    """_policy.py, or None when this install has no policy engine."""
-    return _POLICY_MOD
+    """_policy.py, loaded once, or None when this install has no policy engine."""
+    if not _POLICY_LIB["tried"]:
+        _POLICY_LIB["tried"] = True
+        _POLICY_LIB["mod"] = _load_scripts_module("audit_policy", "_policy.py")
+    return _POLICY_LIB["mod"]
 
 
 def policy_cfg(cfg):
@@ -507,10 +515,11 @@ def policy_cfg(cfg):
     to audit-journal: the module that resolves a policy owns what an absent key
     means, and a second merge in this file would be free to disagree with it.
     """
-    if _POLICY_MOD is None:
+    mod = policy_mod()
+    if mod is None:
         return None
     try:
-        return _POLICY_MOD.policy_cfg(cfg or {})
+        return mod.policy_cfg(cfg or {})
     except Exception:
         return None
 
