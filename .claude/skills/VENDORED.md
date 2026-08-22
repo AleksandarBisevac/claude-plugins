@@ -55,6 +55,32 @@ failure-isolated feature registration, `data-` attribute hooks, organize-by-feat
 their "avoid `#private`, module scope already encapsulates" is false in a concatenated script,
 where every top-level name shares one scope.
 
+## Copied from mattpocock/skills
+
+Source: <https://github.com/mattpocock/skills> at commit `733d312884b3` (2026-08-22).
+Licence: **MIT, © 2026 Matt Pocock**.
+
+| Here | Upstream path | Changed |
+|---|---|---|
+| `grill-me/` | `skills/productivity/grill-me/SKILL.md` | verbatim |
+
+The odd one out here, and deliberately so: it is not about this repo. It carries no house
+dialect, no lint, no anti-pattern this tree has hit, which is why `CLAUDE.md` gives it a note
+rather than a row — the table is selected by what you are working on, and this is selected by the
+user asking to be interviewed before a plan is written.
+
+**To refresh:** upstream has already replaced this file, so `main` is the wrong thing to diff
+against. `grill-me/SKILL.md` there is now a router — `disable-model-invocation: true` and a body
+reading `Call the Skill tool with "grilling"` — so a refresh at `main` would land a stub pointing
+at a skill this repo does not vendor. Take newer text from `skills/productivity/grilling/SKILL.md`
+instead, and decide deliberately whether the longer form is wanted: the brevity of what is pinned
+here is the whole of the original's argument.
+
+```bash
+gh api "repos/mattpocock/skills/contents/skills/productivity/grill-me/SKILL.md?ref=733d312884b3" \
+  --jq .content | base64 -d
+```
+
 ## Written here
 
 - **`no-silent-pass/`** — original text, not a copy. Distilled from the reasoning sections of

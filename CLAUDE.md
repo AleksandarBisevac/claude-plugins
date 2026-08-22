@@ -85,6 +85,11 @@ taken before any code is written and is wrong most often when it is taken from a
 | a check that passes locally and fails in CI | `reproducing-ci-locally` |
 | making anything faster, or deferring a slow thing | `choosing-what-to-optimize` |
 
+`grill-me` is deliberately not a row. The column is *what you are working on*, and that is
+not what selects it: the user asks to be interviewed about a plan before it is written, and
+the skill states nothing about this repo. It composes with a row above rather than replacing
+one — the interview settles what to build, the row settles how to write it.
+
 ## The front end is not ordinary files
 
 `plugins/audit/scripts/ui/` holds **ordered parts of one artifact**, not standalone files: Python
