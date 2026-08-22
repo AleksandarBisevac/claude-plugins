@@ -332,7 +332,7 @@ Run all of it; the browser gates are the only ones that can catch a cascade-orde
 substring pin cannot see.
 
 ```bash
-for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
+python3 tools/sweep-selftests.py
 node tools/capture-screenshots.mjs --check
 node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
 ```

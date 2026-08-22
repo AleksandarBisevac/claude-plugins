@@ -26,123 +26,65 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Hook + validator selftests (stdlib only)
+      - name: Selftest sweep (one runner, shared with tools/verify.sh; covers tools/)
         shell: bash
-        run: |
-          set -e
-          # Globbed, not enumerated. The hand-maintained list had drifted three ways
-          # — 19 files here, 10 in CONTRIBUTING.md, 14 in PLUGIN-BUILD-GUIDE.md — and
-          # the drift was not only cosmetic: gen-demo-usage.py's 19 cases were never
-          # run by CI at all, because adding a file and adding a line here are two
-          # separate acts and only one of them is enforced.
-          #
-          # Every .py under hooks/ and scripts/ MUST carry a --selftest. A new file
-          # without one now fails this step rather than being silently skipped, which
-          # is the failure mode a list can never catch.
-          #
-          # RECURSIVE, not `*.py`. The glob was flat, and that is the only reason
-          # CONTRIBUTING.md had to carry a rule forbidding subdirectories: a file one
-          # level down stopped being run here without anything going red. `find`
-          # removes the hazard instead of forbidding the shape. It is a no-op on a
-          # flat tree, so this changes nothing today and everything the day somebody
-          # adds a script one directory down.
-          #
-          # tests/ IS SWEPT HERE TOO, and a MIGRATED production file is skipped. The
-          # --selftest blocks are moving out of the modules they test into
-          # plugins/audit/tests/, one file at a time, so during the migration a
-          # production file either prints the contract itself or has a test file that
-          # does. The skip list comes from _output.selftest_coverage() rather than
-          # from a name transform re-implemented in shell: that same function is what
-          # fails the build on a file with NEITHER suite, so this loop cannot skip a
-          # file nobody is testing. A migrated file still exits 0 on --selftest and
-          # says where its cases went; it just does not print `N/M cases passed`.
-          # `tr` because the membership test below is a space-delimited glob and the
-          # flag prints one path per line. Written without it first, and the skip
-          # silently never fired: the loop reached a migrated file and failed it for
-          # having no suite, which is the LOUD way for this to be wrong and the reason
-          # it was caught in the first local run.
-          # `tr -d '\r'` FIRST, and it is load-bearing on the Windows leg. `print()`
-          # writes CRLF there, so `tr '\n' ' '` alone leaves a `\r` glued to every
-          # path and the `case` below matches nothing — every migrated file gets run,
-          # finds a pointer where the contract should be, and the sweep dies on the
-          # first one. That is how 44c4971 went green on ubuntu and red on windows.
-          # It fails LOUD in this direction, which is the only reason it was cheap:
-          # a stray `\r` can never make a path match something it should not.
-          covered=$(python plugins/audit/scripts/_output.py --covered | tr -d '\r' | tr '\n' ' ')
-          echo "migrated to tests/ (no inline suite expected): ${covered:-(none yet)}"
-          total=0
-          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) \
-                   $(find plugins/audit/tests -name '*.py' | sort); do
-            echo "== $f"
-            case " $covered " in
-              *" $f "*)
-                out=$(python "$f" --selftest 2>&1) || {
-                  echo "$out"
-                  echo "FAIL: $f --selftest exited non-zero"
-                  exit 1
-                }
-                # Not redundant with the lint, and proven so: selftest_coverage()
-                # reads STRING LITERALS, so it classifies a file that assembles the
-                # contract line (`"0/0 cases " + "passed"`) as migrated while the
-                # file still prints it. That is the proxy's one blind spot and this
-                # is its net - shown red on purpose, with that exact mutation.
-                if echo "$out" | grep -qE '[0-9]+/[0-9]+ cases passed'; then
-                  echo "$out"
-                  echo "FAIL: $f is listed as migrated but still prints the suite contract"
-                  exit 1
-                fi
-                echo "   skipped: cases live in plugins/audit/tests/"
-                continue
-                ;;
-            esac
-            # Capture, but PRINT IN FULL on failure. The first version stored stdout
-            # in a variable and echoed only the last line — so when the Windows leg
-            # went red the log showed the filename, then "exit code 1", and nothing
-            # else. A step that hides its output in exactly the case you need it is
-            # worse than one that prints everything.
-            if ! out=$(python "$f" --selftest 2>&1); then
-              echo "$out"
-              echo "FAIL: $f --selftest exited non-zero"
-              exit 1
-            fi
-            echo "$out" | grep -qE '[0-9]+/[0-9]+ cases passed' || {
-              echo "$out"
-              echo "FAIL: $f has no --selftest (every hook/script must carry one)"
-              exit 1
-            }
-            echo "$out" | tail -1
-            n=$(echo "$out" | tail -1 | grep -oE '[0-9]+/[0-9]+' | cut -d/ -f1)
-            total=$((total + n))
-          done
-          echo "== $total cases across $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | wc -l | tr -d ' ') production files + $(find plugins/audit/tests -name '*.py' | wc -l | tr -d ' ') test files"
+        run: python tools/sweep-selftests.py
+        # THE SWEEP USED TO BE INLINED HERE, and `tools/verify.sh` had a second copy
+        # of it that checked LESS: the exit code only, with no `N/M cases passed`
+        # contract and no `--covered` skip. A file that exited 0 having asserted
+        # nothing was therefore green locally and red in this job - a defect whose
+        # whole cause was which of two copies you happened to run.
+        #
+        # Everything the shell version had is kept, in one place:
+        #   * globbed and RECURSIVE, never an enumerated list. The hand-maintained
+        #     list had drifted three ways and gen-demo-usage.py's cases were never
+        #     run by CI at all, because adding a file and adding a line here are two
+        #     separate acts and only one of them was enforced. The runner walks the
+        #     tree through `_output.py_files`, the same walk the lints use.
+        #   * the skip list comes from `_output.selftest_coverage()`, not from a name
+        #     transform re-implemented in shell - the same function that fails the
+        #     build on a file with NEITHER suite, so the sweep cannot skip a file
+        #     nobody is testing.
+        #   * a migrated file that STILL prints the contract fails, which is the net
+        #     under that classifier's one blind spot: it reads STRING LITERALS, so a
+        #     file assembling the line reads as migrated while still printing it.
+        #   * full output on failure. An earlier version stored stdout and echoed
+        #     only the last line, so a red Windows leg showed a filename, an exit
+        #     code, and nothing else.
+        #
+        # The `tr -d '\r'` that used to be load-bearing here is GONE with the shell:
+        # membership is a Python set over paths the runner produced itself, so there
+        # is no line-ending dialect to glue to a path. That was how 44c4971 went
+        # green on ubuntu and red on windows.
+      - name: ...and the runner's own cases (it is what runs every other suite)
+        shell: bash
+        run: python tools/sweep-selftests.py --selftest
+        # Nothing else can vouch for the runner. A version of it that exited 0
+        # without having run anything would make this whole job vacuous, and its
+        # cases include exactly that: the migrated-file trap, the missing-contract
+        # rule, and a count proving the discovery walk reached the tree at all.
+        # Per-OS on purpose - it uses threads, subprocesses and a forced codec, and
+        # all three behave differently on the windows leg.
       - name: ...and again on a stream that cannot spell every character
         shell: bash
-        run: |
-          set -e
-          # A pipe on Windows is not UTF-8, it is the machine's legacy code page, and
-          # Python does not drop a character it cannot encode - it raises. One selftest
-          # case name contained a tick, so the Windows leg died on `print` with the run's
-          # real result never computed, while every other OS stayed green. That is a
-          # one-legged failure for a defect that has nothing to do with Windows.
-          #
-          # PYTHONIOENCODING reproduces it anywhere, so the class is now checked on BOTH
-          # legs: scripts/ are guarded by _output.safe_stdio() (whose own selftest lints
-          # that every entry point installs it), and hooks/ - which stay importless on
-          # purpose - are covered by exactly this pass.
-          #
-          # tests/ is swept too, and NOTHING is skipped here. This pass asserts only
-          # that a file can print whatever it prints on a legacy code page, which a
-          # migrated file's one-line pointer has to survive exactly as much as a suite
-          # does - so the skip the step above needs would only narrow this one.
-          for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) \
-                   $(find plugins/audit/tests -name '*.py' | sort); do
-            if ! out=$(PYTHONIOENCODING=cp1252 python "$f" --selftest 2>&1); then
-              echo "$out"
-              echo "FAIL: $f cannot print its own output on a cp1252 stream"
-              exit 1
-            fi
-          done
-          echo "OK: every suite survives a stream that cannot spell every character"
+        run: python tools/sweep-selftests.py --encoding cp1252
+        # A pipe on Windows is not UTF-8, it is the machine's legacy code page, and
+        # Python does not drop a character it cannot encode - it raises. One selftest
+        # case name contained a tick, so the Windows leg died on `print` with the
+        # run's real result never computed, while every other OS stayed green. That
+        # is a one-legged failure for a defect that has nothing to do with Windows.
+        #
+        # PYTHONIOENCODING reproduces it anywhere, so the class is checked on BOTH
+        # legs: scripts/ are guarded by `_output.safe_stdio()` (whose own selftest
+        # lints that every entry point installs it), and hooks/ - which stay
+        # importless on purpose - are covered by exactly this pass.
+        #
+        # NOTHING IS SKIPPED HERE and no contract is required. This pass asserts only
+        # that a file can print whatever it prints on a legacy code page, which a
+        # migrated file's one-line pointer has to survive exactly as much as a suite
+        # does - so the skip the step above needs would only narrow this one. The
+        # runner encodes that difference in `grade(..., encoding_pass=True)`, and its
+        # own case g5 is the one that pins the two passes as two questions.
       - name: Launcher resolves an interpreter (python3 -> python -> py)
         shell: bash
         run: |
@@ -730,13 +672,28 @@ jobs:
         run: pip install ruff==0.16.2 vermin==1.8.0
       - name: ruff (E9+F, py38 target from pyproject.toml)
         run: ruff check plugins/audit tools
+      - name: The local gate set and this workflow name the same gates
+        run: |
+          # Ubuntu only: this compares two FILES in the repo, so running it per-OS
+          # would assert the same thing three times. It is here rather than in the
+          # selftests job because it is a repo-consistency lint, not a per-platform
+          # one - and it is in CI at all because a check that only the local gate
+          # runs is exactly the asymmetry it exists to report.
+          # Its own cases run inside the selftest job's sweep, which covers tools/.
+          python tools/gate-parity.py
       - name: vermin holds the 3.8 floor
         run: |
           # -t=3.8- carries the trailing dash on purpose: it means "3.8 or lower",
           # i.e. "detected floor must not exceed 3.8". A bare -t=3.8 instead demands
           # the detected floor EQUAL 3.8 — this tree's detected floor is 3.7, so the
           # bare flag fails on code that is already fully compatible.
-          vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks
+          # `tests` IS in scope, and its absence here was a divergence in the
+          # OTHER direction from the sweep's: `tools/verify.sh` and CLAUDE.md
+          # both name three directories, this job named two, so a 3.9+
+          # construct in a test file passed CI and failed locally. Three
+          # hand-maintained copies of one gate set is how that happens.
+          vermin -t=3.8- --no-tips --violations \
+            plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 
   plugin-validate:
     name: claude plugin validate

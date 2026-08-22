@@ -1570,6 +1570,76 @@ def _cases(check):
     finally:
         shutil.rmtree(_u_tmp, ignore_errors=True)
 
+    # --- the scan memo: it must be USED, must not LIE, and must not be POISONED ---
+    # A scan parses every `.py` under `scripts/` and grows the wrapper map to a
+    # fixpoint, and the lints each ask for the whole graph because each judges the
+    # whole graph - profiled, one run of this file entered `_scan_edges` 25 times
+    # and spent most of its wall clock there recomputing one answer. The memo is
+    # what removed that, and these five cases are what keep it honest: a cache is
+    # the one optimisation that can be WRONG rather than merely slow.
+    _fresh = M._scan_edges_once(_output.SCRIPTS_DIR)
+    _cached = M._scan_edges()
+    check("mm0 the memo does not LIE: the cached answer is the same answer an "
+          "uncached scan of the same tree produces, edge for edge (%d static, "
+          "%d runtime, %d broken)"
+          % (len(_cached[0]), len(_cached[1]), len(_cached[2])),
+          _cached[0] == _fresh[0] and _cached[1] == _fresh[1]
+          and _cached[2] == _fresh[2] and len(_cached[0]) > 100)
+
+    _a, _b = M._scan_edges(), M._scan_edges()
+    _a[0].add(("poison-importer", "poison-imported"))
+    _a[2].append("poison.relname")
+    _after = M._scan_edges()
+    check("mm1 ...and each caller gets its OWN containers, proven by MUTATING one "
+          "and reading another: a shared set would make one lint's `.add()` the "
+          "next lint's input, which is the module state the house style bans "
+          "(%d edges after the poison against %d before)"
+          % (len(_after[0]), len(_b[0])),
+          _a[0] is not _b[0] and _after[0] == _b[0]
+          and "poison.relname" not in _after[2])
+
+    _calls = []
+    _real_once = M._scan_edges_once
+
+    def _counting_once(script_dir=None):
+        _calls.append(script_dir)
+        return _real_once(script_dir)
+
+    _mem_tmp = tempfile.mkdtemp(prefix="audit-deps-memo-")
+    try:
+        M._scan_edges_once = _counting_once
+        M._EDGES.clear()
+        M._scan_edges()
+        M._scan_edges()
+        M._scan_edges()
+        check("mm2 the memo is actually IN USE - three default-tree calls after a "
+              "cleared cache reach the real scan exactly ONCE (%d call(s)). Without "
+              "this case a memo whose key never matched would pass every other "
+              "case here and the speedup would be unattributable" % (len(_calls),),
+              len(_calls) == 1)
+
+        os.makedirs(os.path.join(_mem_tmp, "tree"))
+        for _n, _src in (("p.py", "import q\n"), ("q.py", "pass\n")):
+            with open(os.path.join(_mem_tmp, "tree", _n), "w",
+                      encoding="utf-8") as _fh:
+                _fh.write(_src)
+        _own = M._scan_edges(os.path.join(_mem_tmp, "tree"))
+        check("mm3 a caller that hands over its OWN tree is NOT served the cache - "
+              "it gets the fixture's single edge, not the real tree's hundreds. "
+              "This is the case that fails if the memo ignores `script_dir`, and "
+              "every fixture-tree case above silently becomes a claim about "
+              "scripts/ instead: %r" % (sorted(_own[0]),),
+              sorted(_own[0]) == [("p", "q")])
+
+        _still = M._scan_edges()
+        check("mm4 ...and that fixture call did not POISON the cache either: the "
+              "default tree still answers with its own edges afterwards (%d), so "
+              "the isolation holds in both directions" % (len(_still[0]),),
+              _still[0] == _fresh[0])
+    finally:
+        M._scan_edges_once = _real_once
+        M._EDGES.clear()
+        shutil.rmtree(_mem_tmp, ignore_errors=True)
 
 
 def _selftest():

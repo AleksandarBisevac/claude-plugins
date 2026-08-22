@@ -139,19 +139,38 @@ runs in one day, both from a forgotten step rather than a broken change.
 The commands it calls, which remain the definition:
 
 ```bash
-for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
-for f in $(find plugins/audit/tests -name '*.py' | sort); do python3 "$f" --selftest || exit 1; done
+python3 tools/sweep-selftests.py           # hooks + scripts + tests, in parallel
+python3 tools/sweep-selftests.py --selftest
+python3 tools/gate-parity.py               # this list vs .github/workflows/ci.yml
+npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 ```
 
-**The second line is not optional and not decoration.** Every `--selftest` block has moved out
-of the module it tests into `plugins/audit/tests/`, all 83 of them (`73042a1` — print it with
-`python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _output;print(len(_output.selftest_coverage()['covered']))"`); a migrated file still exits
-0 on `--selftest` and prints where its cases went, so the first line stays green over suites it
-no longer runs. `_output.selftest_coverage()` is what keeps the two halves honest — the
-migration is finished, so `covered` is the only clean class: a file with a suite INLINE, with
-both, or with neither is a defect it names.
+**The sweep is one runner, and CI runs the same one.** It used to be a serial `for` loop
+written out twice — here and inlined in `ci.yml` — and the two copies checked different
+things: the local one asserted the exit code alone, so a file that exited 0 having asserted
+nothing was green locally and red in CI. `tools/sweep-selftests.py` is the single copy, it
+holds the union of both rules, and it runs the tree across all cores but two. Re-derive the
+wall clock rather than trusting a figure written here; `--jobs 1` gives the old serial shape
+for a bisect.
+
+**`gate-parity.py` is why that cannot come back.** This list, `tools/verify.sh` and
+`.github/workflows/ci.yml` were three hand-maintained copies of one gate set and had drifted
+in both directions at once — the sweep above, `vitest` (which ran only in CI, so a change under
+`scripts/ui/` could reach a push with none of its suites having run), and `vermin`'s directory
+list. A gate added to one side and not the other now fails the build by name, and every
+declared exemption carries a reason that is itself checked.
+
+**Every `--selftest` block lives in `plugins/audit/tests/`, not in the module it tests**
+(`73042a1` — count them with
+`python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _output;print(len(_output.selftest_coverage()['covered']))"`).
+A migrated file still exits 0 on `--selftest` and prints where its cases went;
+`_output.selftest_coverage()` is what keeps the two halves honest — the migration is finished,
+so `covered` is the only clean class: a file with a suite INLINE, with both, or with neither is
+a defect it names. The runner enforces the other half of that, which the old loop could not: a
+migrated file that STILL prints the contract is red, because the classifier reads string
+literals and a file assembling the line would otherwise slip past both.
 
 `CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set. The
 browser-level gates (`tools/capture-screenshots.mjs --check`,

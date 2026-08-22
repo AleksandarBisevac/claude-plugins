@@ -403,6 +403,8 @@ def _cases(check):
     tb = M.tool_basename_drift()
     check("tb1 no `.py` basename written anywhere in tools/ names a file that is gone: "
           "%r" % (tb["unknown"],), tb["unknown"] == [])
+    check("tb1b ...and no declared tool fixture has outlived what writes it: %r"
+          % (tb["staleFixtures"],), tb["staleFixtures"] == [])
     check("tb2 ...and the run says how much it looked at - %d basename literals across "
           "%d files. `unknown == []` means one thing at the count printed here and "
           "something else entirely at 0, and a regex that quietly stopped matching "
@@ -437,6 +439,37 @@ def _cases(check):
               "- the four trees in TOOL_NAME_TREES are the ones a tool may legitimately "
               "name, and a rule that flagged a usage line would be switched off",
               res["unknown"] == [] and res["checked"] == 4, repr(res))
+        # ---- the declared fixture table, both directions -------------------------
+        # It exists because a tool's own cases WRITE `.py` files into a temp dir, and
+        # those names are not references. The danger of any such table is that it
+        # quietly becomes a blanket, so both halves are asserted here.
+        first_fixture = M.TOOL_FIXTURE_BASENAMES[0][0]
+        _write(tmp, "tools/fx.py",
+               "open(join(tmp, '%s'), 'w').write(src)\n" % (first_fixture,))
+        res = M.tool_basename_drift(tmp)
+        check("tb5b a DECLARED fixture basename is not reported, even though no such "
+              "file exists - that is the whole point of the table: %r"
+              % (res["unknown"],),
+              not any(n == first_fixture for _f, _l, n in res["unknown"]))
+        _write(tmp, "tools/fx.py",
+               "open(join(tmp, 'undeclared-fixture-name.py'), 'w').write(src)\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb5c ...while an UNDECLARED name in the very same position IS reported. "
+              "One entry apart from tb5b and nothing else differs, so a version that "
+              "exempted every fixture-looking name scores both the same: %r"
+              % (res["unknown"],),
+              any(n == "undeclared-fixture-name.py" for _f, _l, n in res["unknown"]))
+        check("tb5d ...and in a tree where NO fixture name is written, every declared "
+              "entry is reported as STALE - a table of exemptions that cannot go out "
+              "of date is a table that stops describing the system: %d of %d"
+              % (len(res["staleFixtures"]), len(M.TOOL_FIXTURE_BASENAMES)),
+              len(res["staleFixtures"]) == len(M.TOOL_FIXTURE_BASENAMES),
+              repr(res["staleFixtures"][:2]))
+        # PUT THE FIXTURE TREE BACK. tb6 below reads the same tmp root, and leaving
+        # `tools/fx.py` behind made its `unknown == []` fail on a name this block
+        # invented - a fixture leaking one case forward, which is the shape that
+        # makes a suite order-dependent.
+        _write(tmp, "tools/fx.py", "# nothing named here\n")
         # THE LIMIT, AS A CASE RATHER THAN AS A SENTENCE IN A DOCSTRING.
         _write(tmp, _FX_SCRIPTS + "domain/moved.py", "# filed under a label\n")
         _write(tmp, "tools/t.mjs", "spawn(PY, [join(S, 'domain', 'moved.py')]);\n")
@@ -680,8 +713,9 @@ def _cases(check):
 
     # --- the sweep -------------------------------------------------------------------
     drift = M.sweep_glob_drift()
-    check("s1 every document that shows the selftest sweep shows the recursive form: "
-          "%r" % (drift,), drift == [])
+    check("s1 every document that shows the selftest sweep runs the RUNNER, and "
+          "neither hand-written loop survives in a runnable region: %r" % (drift,),
+          drift == [])
 
     tmp = tempfile.mkdtemp()
     # One document per format, named rather than indexed, because the three cases that
@@ -692,23 +726,23 @@ def _cases(check):
     _jsn = [r for r in M.SWEEP_DOCS if r.endswith(".json")][0]
     try:
         for rel in M.SWEEP_DOCS:
-            _write(tmp, rel, _sweep_doc(rel, M.SWEEP_FIND))
+            _write(tmp, rel, _sweep_doc(rel, M.SWEEP_RUNNER))
         check("s2 ...and that fixture is green, so the cases below fail for the reason "
               "they name and not because the fixture was broken",
               M.sweep_glob_drift(tmp) == [], repr(M.sweep_glob_drift(tmp)))
         _write(tmp, _yml, _sweep_doc(_yml, M.SWEEP_FLAT))
         _d = M.sweep_glob_drift(tmp)
         check("s3 a document that has drifted back to the flat glob is reported twice "
-              "over - it lost the find form AND regained the glob",
+              "over - it lost the runner AND regained a retired shape",
               len([x for x in _d if x[0] == _yml]) == 2
               and any("flat sweep" in x[1] for x in _d)
-              and any("recursive sweep" in x[1] for x in _d), repr(_d))
+              and any("sweep runner" in x[1] for x in _d), repr(_d))
         _write(tmp, _yml, _sweep_doc(_yml, "make test"))
         _d = M.sweep_glob_drift(tmp)
         check("s4 a document that simply stops carrying the sweep is reported once, "
               "and the two failures stay distinguishable",
               [x for x in _d if x[0] == _yml]
-              == [(_yml, "does not carry the recursive sweep %r" % M.SWEEP_FIND)],
+              == [(_yml, "does not carry the sweep runner %r" % M.SWEEP_RUNNER)],
               repr(_d))
         # Scoped to the executable shape AND to the executable REGION. A version aimed
         # at the substring `scripts/*.py` would fail the first half of this fixture, and
@@ -717,7 +751,7 @@ def _cases(check):
         # second half, which is F21's shape exactly: a document warning against the
         # retired sweep, reported as carrying it.
         _write(tmp, _yml, _sweep_doc(
-            _yml, M.SWEEP_FIND,
+            _yml, M.SWEEP_RUNNER,
             "The map is the import graph of `scripts/*.py`. "
             "Never write `%s ...` - the glob is flat." % M.SWEEP_FLAT))
         check("s5 prose beside a correct sweep is NOT flagged, and that now covers the "
@@ -731,7 +765,7 @@ def _cases(check):
               and "unreadable" in _d[0][1], repr(_d))
 
         # ---- the quiet direction: prose that makes the check PASS ----------------
-        _write(tmp, _yml, _sweep_doc(_yml, M.SWEEP_FIND))
+        _write(tmp, _yml, _sweep_doc(_yml, M.SWEEP_RUNNER))
         # The flat listing is BUILT, never spelled: this file is one of the ANCHORED
         # surfaces `_refs` scans, and an anchor written in front of a glob here would
         # be a real reference the placeholder counts have to account for. Same rule as
@@ -739,15 +773,14 @@ def _cases(check):
         _write(tmp, _md, _sweep_doc(
             _md, "for f in $(ls %s/scripts/*.py); do python3 \"$f\"; done"
                  % M.PLUGIN_REL,
-            "The sweep must be recursive - it is `%s`, never a flat glob."
-            % M.SWEEP_FIND))
+            "The sweep is `%s`, never a hand-written loop." % M.SWEEP_RUNNER))
         _d = M.sweep_glob_drift(tmp)
         check("s8 a document whose PROSE quotes the recursive sweep while the block a "
               "reader would run is a flat listing does NOT satisfy the rule - the "
               "direction that hurts is the mention that makes a check pass, and the "
               "whole-file substring could not tell the two apart",
               [x for x in _d if x[0] == _md]
-              == [(_md, "does not carry the recursive sweep %r" % M.SWEEP_FIND)],
+              == [(_md, "does not carry the sweep runner %r" % M.SWEEP_RUNNER)],
               repr(_d))
 
         # ---- mutation proof: the whole-file scan this replaced misses s8 ----------
@@ -757,9 +790,9 @@ def _cases(check):
                 with open(os.path.join(root, rel.replace("/", os.sep)),
                           "r", encoding="utf-8") as fh:
                     text = fh.read()
-                if M.SWEEP_FIND not in text:
-                    out.append((rel, "does not carry the recursive sweep %r"
-                                % M.SWEEP_FIND))
+                if M.SWEEP_RUNNER not in text:
+                    out.append((rel, "does not carry the sweep runner %r"
+                                % M.SWEEP_RUNNER))
                 if M.SWEEP_FLAT in text:
                     out.append((rel, "still carries the flat sweep %r" % M.SWEEP_FLAT))
             return out
@@ -773,9 +806,26 @@ def _cases(check):
               "catches it - nothing was left mutated behind",
               any(x[0] == _md for x in M.sweep_glob_drift(tmp)))
 
+        # ---- the OTHER retired shape, which is the half this rule just grew -----
+        _write(tmp, _yml, _sweep_doc(_yml, M.SWEEP_FIND))
+        _d = [x for x in M.sweep_glob_drift(tmp) if x[0] == _yml]
+        check("s13 the hand-written recursive loop is RETIRED TOO, and reported for "
+              "both halves: it is not the runner, and it is a shape a document may "
+              "no longer tell anyone to run. It was the REQUIRED form until the "
+              "runner existed, so without this case half the rule could be deleted "
+              "with everything above still green: %r" % (_d,),
+              len(_d) == 2
+              and any("does not carry the sweep runner" in x[1] for x in _d)
+              and any("hand-written sweep" in x[1] for x in _d))
+        check("s14 ...and the two retired shapes are reported under DIFFERENT words, "
+              "so a reader is told which loop they wrote rather than that something "
+              "is wrong",
+              M.RETIRED_SWEEPS[0][1] != M.RETIRED_SWEEPS[1][1]
+              and len(M.RETIRED_SWEEPS) == 2)
+
         # ---- a region that cannot be read is loud, never a fallback --------------
-        _write(tmp, _md, _sweep_doc(_md, M.SWEEP_FIND))
-        _write(tmp, _jsn, "{ this is not json at all\n%s\n" % M.SWEEP_FIND)
+        _write(tmp, _md, _sweep_doc(_md, M.SWEEP_RUNNER))
+        _write(tmp, _jsn, "{ this is not json at all\n%s\n" % M.SWEEP_RUNNER)
         _d = M.sweep_glob_drift(tmp)
         check("s11 a manifest that will not parse is reported as unreadable commands, "
               "not read as text - a fallback to the whole file would let the very "
@@ -785,10 +835,10 @@ def _cases(check):
               repr(_d))
         check("s12 ...and a format with no runnable-region rule is a violation too, "
               "for the same reason: %r"
-              % (M._runnable_text("NOTES.rst", M.SWEEP_FIND),),
-              M._runnable_text("NOTES.rst", M.SWEEP_FIND)[0] is None
+              % (M._runnable_text("NOTES.rst", M.SWEEP_RUNNER),),
+              M._runnable_text("NOTES.rst", M.SWEEP_RUNNER)[0] is None
               and "no runnable-region rule"
-              in M._runnable_text("NOTES.rst", M.SWEEP_FIND)[1])
+              in M._runnable_text("NOTES.rst", M.SWEEP_RUNNER)[1])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -798,7 +848,7 @@ def _cases(check):
         _guide = fh.read()
     check("s7 the real guide writes `scripts/*.py` as prose twice and carries the "
           "recursive sweep, and is green on both counts",
-          _guide.count("scripts/*.py") == 2 and M.SWEEP_FIND in _guide
+          _guide.count("scripts/*.py") == 2 and M.SWEEP_RUNNER in _guide
           and M.SWEEP_FLAT not in _guide, repr(_guide.count("scripts/*.py")))
 
     # --- published fetch instructions -----------------------------------------

@@ -337,5 +337,126 @@ def main(argv):
         shutil.rmtree(d, ignore_errors=True)
 
 
+# --- selftest -----------------------------------------------------------------
+# THE ONE `.py` UNDER tools/ THAT CARRIED NO CASES. `--check` already asserts the
+# expensive half - it runs the real capture and refuses to ship a recording of
+# something the product no longer does - but it says nothing about the pure text and
+# colour logic BELOW that capture, which is where this file's one recorded bug was.
+def _cases():
+    out = []
+
+    # `_wrap`'s docstring names the defect it exists to fix: a hand-rolled split on
+    # spaces turned a two-space indent into two empty tokens and dropped it, so the
+    # deny message's numbered list lost its indent on exactly the items long enough
+    # to wrap. Both halves of that are asserted, because the short line never broke.
+    short = _wrap("  2. short", 40)
+    long_ = _wrap("  2. a numbered item long enough that it has to wrap onto a "
+                  "second line and then a third", 40)
+    out.append(("w0", short == ["  2. short"],
+                "an indented line that does NOT wrap keeps its indent: %r"
+                % (short,)))
+    out.append(("w1", long_[0].startswith("  2.")
+                and all(ln.startswith("  ") for ln in long_) and len(long_) > 1,
+                "THE PAIR, and the half that actually broke: a WRAPPING indented "
+                "paragraph keeps the indent on every line. w0 passed on the broken "
+                "version too, so asserting it alone asserted nothing: %r" % (long_,)))
+    out.append(("w2", _wrap("a\n\nb", 40) == ["a", "", "b"],
+                "a blank line survives as one, so two paragraphs do not become one"))
+    huge = "plugins/audit/scripts/manifest/validate-manifest.py"
+    out.append(("w3", huge in _wrap(huge, 20),
+                "a token longer than the width is NOT broken - a path split across "
+                "two lines is a path a reader cannot copy: %r" % (_wrap(huge, 20),)))
+    out.append(("w4", _wrap("   ", 40) == [""],
+                "a whitespace-only paragraph is one empty line rather than being "
+                "dropped or duplicated"))
+
+    cap = {"status": "AUDIT plan\nREADY NOW  P2.1\nRESUMABLE P3\nplain line",
+           "inplan": None,
+           "outplan": "[require-plan] src/billing.ts is not covered\n  use #no-plan"}
+    steps = build_script(cap, 96)
+    colours = dict((text.strip(), col) for kind, text, col in steps
+                   if kind == "out" and text.strip())
+    out.append(("b0", colours.get("AUDIT plan") == ACCENT
+                and colours.get("READY NOW  P2.1") == OK
+                and colours.get("RESUMABLE P3") == WARN
+                and colours.get("plain line") == TEXT,
+                "the status render is coloured by PREFIX, and all four answers "
+                "differ - one shared colour would make three of these vacuous"))
+
+    denied = dict(cap)
+    denied["inplan"] = "[require-plan] src/checkout.ts refused"
+    other = build_script(denied, 96)
+    # NOT a length comparison, which was the first thing written here: both branches
+    # append exactly one step, so length is the one thing that does NOT differ. What
+    # differs is the step itself, and that is what a reader of the GIF sees.
+    out.append(("b1", other != steps
+                and any(col == DENY and "checkout" in text
+                        for _k, text, col in other)
+                and any(col == OK and "stays out of the way" in text
+                        for _k, text, col in steps),
+                "THE INVERTED PAIR: two fixtures differing only in whether the "
+                "in-plan edit was denied produce different recordings - the demo "
+                "claims that edit is ALLOWED, so the branch that says so has to be "
+                "the one a None takes"))
+
+    kinds = set(k for k, _t, _c in steps)
+    out.append(("b2", all(len(step) == 3 for step in steps)
+                and kinds <= set(["type", "out", "cmt", "gap"]),
+                "every step is a (kind, text, colour) triple of a kind render() "
+                "knows - a fourth kind would draw nothing and say nothing: %r"
+                % (sorted(kinds),)))
+
+    real = resolve_script("audit-status.py")
+    out.append(("r0", os.path.isfile(real)
+                and os.path.join("scripts", "status") in real,
+                "a basename resolves to the file WHEREVER it sits under the scripts "
+                "tree - a join against the scripts root would look one directory too "
+                "high for anything under a domain folder: %s"
+                % (os.path.relpath(real, REPO),)))
+
+    try:
+        resolve_script("no-such-script-in-this-tree.py")
+        found = "returned a path"
+    except ImportError as exc:
+        found = "ImportError" if "no script named" in str(exc) else str(exc)[:40]
+    except Exception as exc:
+        found = type(exc).__name__
+    out.append(("r1", found == "ImportError",
+                "a basename that names nothing FAILS LOUD rather than resolving to "
+                "something plausible - the three refusals are inherited from "
+                "`_loader.script_path`, not restated here (got %s)" % (found,)))
+
+    try:
+        resolve_script(os.path.join("status", "audit-status.py"))
+        sep = "accepted a path"
+    except ValueError as exc:
+        sep = "ValueError" if "directory sep" in str(exc) else str(exc)[:40]
+    except Exception as exc:
+        sep = type(exc).__name__
+    out.append(("r2", sep == "ValueError",
+                "...and a value carrying a directory separator is refused too, "
+                "because the folders under the scripts tree are labels and not "
+                "namespaces (got %s)" % (sep,)))
+    return out
+
+
+def _selftest():
+    rows = _cases()
+    bad = [r for r in rows if not r[1]]
+    for name, ok, why in rows:
+        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
+    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
+                                      len(rows) - len(bad), len(rows)))
+    return 1 if bad else 0
+
+
 if __name__ == "__main__":
+    # `safe_stdio()` first, as every `.py` under scripts/ and hooks/ does - the AST
+    # lint that enforces it does not scan tools/, and this file prints a deny message
+    # captured from the product, which is exactly the kind of text a legacy code page
+    # cannot spell.
+    from _output import safe_stdio
+    safe_stdio()
+    if "--selftest" in sys.argv[1:]:
+        sys.exit(_selftest())
     sys.exit(main(sys.argv[1:]))

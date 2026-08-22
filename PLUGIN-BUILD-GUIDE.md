@@ -1893,9 +1893,7 @@ ubuntu + windows for every push/PR. Locally:
 #    selftest; CI sweeps the directories — stdlib only). `find`, not `*.py`: a glob
 #    stops at the top level, so a file one directory down is silently never run and
 #    the sweep still exits 0 — a green build over a partial tree.
-for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
-  python3 "$f" --selftest || exit 1
-done
+python3 tools/sweep-selftests.py
 # ...plus the suites that have moved out into tests/ (see §2). A migrated file still
 # exits 0 on --selftest, so the loop above stays green over a suite it no longer runs.
 for f in $(find plugins/audit/tests -name '*.py' | sort); do

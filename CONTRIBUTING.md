@@ -46,18 +46,36 @@ the script is only a caller:
 ```bash
 # every selftest suite — stdlib only, no deps. Swept, never enumerated: a list
 # drifted three ways once and CI silently stopped running one suite entirely.
-# `find`, not `*.py`, and for the same reason — the glob was flat, so a file one
-# directory down stopped being run here without anything going red.
-for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort); do
-  python3 "$f" --selftest || exit 1
-done
+#
+# ONE RUNNER, and CI runs the same one. This was a `find` loop written out here, a
+# second copy of it in ci.yml that checked MORE (the `N/M cases passed` contract and
+# the `--covered` skip) and a third in verify.sh that checked LESS (the exit code
+# alone) — so a file that exited 0 having asserted nothing was green locally and red
+# in CI. The runner holds the union of all three rules and walks hooks/, scripts/,
+# tests/ AND tools/ recursively through `_output.py_files`, so a file added one
+# directory down is swept without anyone editing a glob.
+#
+# IT SWEEPS tests/ TOO, which is why the second `find` loop that used to sit here is
+# gone: it re-ran the migrated suites the runner had just run. A migrated file exits 0
+# printing where its cases went, and the runner requires that it NOT print the
+# contract — the net under `selftest_coverage()`'s string-literal blind spot.
+#
+# `--jobs 1` gives the old serial shape for a bisect.
+python3 tools/sweep-selftests.py
 
-# ...and the suites that have MOVED OUT of the files they test. A migrated file still
-# exits 0 on --selftest (it prints where its cases went), so the loop above stays green
-# over a suite it no longer runs — this line is what actually runs it.
-for f in $(find plugins/audit/tests -name '*.py' | sort); do
-  python3 "$f" --selftest || exit 1
-done
+# ...and the runner's OWN cases, read directly rather than through itself: a `grade()`
+# that always answered "ok" would report its own suite as passing while hiding it.
+python3 tools/sweep-selftests.py --selftest
+
+# the meta-gate: this list, verify.sh and ci.yml describe one gate set, and they had
+# drifted in both directions at once before anything compared them. This compares the
+# last two by name. THIS DOCUMENT IS NOT YET COMPARED TO THEM — see the Faults note
+# in the plan; adding a gate here is still a hand-kept act.
+python3 tools/gate-parity.py
+
+# the JavaScript unit tests. They ran only in CI for a long time, so a change under
+# scripts/ui/ could reach a push with none of the suites covering it having run.
+npx vitest run
 
 # manifests: structural validator + JSON Schema
 python3 plugins/audit/scripts/manifest/validate-manifest.py plugins/audit/templates/audit-plan.starter.json

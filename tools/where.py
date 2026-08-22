@@ -10,9 +10,12 @@ WHY. `scripts/ui/` is not a set of files, it is ordered parts of two pages, so
 "where does this come from" has two different answers and only one of them is a
 grep: which FILE contains the text, and which assembled SURFACE it ends up in. A
 string can sit in a part that only the panel joins, or in a shared part that ships
-inside both, and the difference decides which browser gate a change owes - the
-panel gate is ~230s and the report gate is ~31s, so guessing wrong is expensive in
-both directions.
+inside both, and the difference decides which browser gate a change owes. The panel
+gate is by far the longer of the two, so guessing wrong is expensive in both
+directions - re-derive the figures rather than trusting a pair written here:
+
+    node tools/capture-screenshots.mjs --check --only panel
+    node tools/check-report-interactive.mjs docs/index.html
 
 It is a lookup, not a check: nothing here can fail a build. It exists because
 finding the emitter of a control was the single largest tax on a day of UI work -
@@ -107,6 +110,70 @@ def gates_for(surface_names, source_paths):
     return out
 
 
+# --- selftest -----------------------------------------------------------------
+# IT USED TO SAY IT NEEDED NONE: "a read-only lookup that cannot fail a build, and
+# its answers are the assembled pages themselves". The first half is true. The second
+# is the shape that catches people out - nothing compares this file's answers to the
+# pages, so a wrong answer here sends someone to run the wrong browser gate, and the
+# gate they skipped is the one that would have told them.
+def _cases():
+    out = []
+
+    panel = gates_for(["panel (assembled page)"], ["scripts/ui/panel/core.js"])
+    report = gates_for(["report (report script)"], ["scripts/ui/report/areas.js"])
+    out.append(("g0", any("capture-screenshots" in g for g in panel)
+                and not any("check-report-interactive" in g for g in panel),
+                "a panel-only string owes the PANEL gate and not the report one: %r"
+                % (panel,)))
+    out.append(("g1", any("check-report-interactive" in g for g in report)
+                and not any("capture-screenshots" in g for g in report),
+                "THE OTHER HALF, and the reason g0 means anything: a report-only "
+                "string owes the REPORT gate and not the panel one. The panel gate "
+                "is the long one, so an answer that always named both would cost "
+                "minutes per lookup and an answer that always named one would send "
+                "half of all changes to the wrong check: %r" % (report,)))
+
+    both = gates_for([], ["scripts/ui/shared/format.js",
+                          "scripts/ui/panel/core.js",
+                          "scripts/ui/report/areas.js"])
+    out.append(("g2", len(both) == 2,
+                "a string in both surfaces owes both gates: %r" % (both,)))
+
+    neither = gates_for([], ["hooks/require-plan.py"])
+    out.append(("g3", len(neither) == 1 and "no browser gate" in neither[0],
+                "and a string in NEITHER surface gets a sentence saying so rather "
+                "than an empty list - 'no gate applies' and 'I found nothing to "
+                "say' must not print the same way: %r" % (neither,)))
+
+    out.append(("g4", gates_for(["panel (assembled page)"], []) == panel[:1]
+                or any("capture-screenshots" in g
+                       for g in gates_for(["panel (assembled page)"], [])),
+                "the SURFACE alone is enough - a name built at runtime appears in "
+                "no source path, and answering only off paths would report no gate "
+                "for exactly those"))
+
+    hits = hits_in_source("safe_stdio")
+    out.append(("g5", len(hits) > 3
+                and all(len(h) == 3 and isinstance(h[1], int) for h in hits),
+                "the source scan really reads the tree and returns (path, line, "
+                "text) triples a reader can open (%d hits)" % (len(hits),)))
+
+    out.append(("g6", hits_in_source("qzx-no-such-needle-anywhere") == [],
+                "...and a needle that is not there comes back empty, so g5 is a "
+                "scan rather than a function that returns the whole tree"))
+    return out
+
+
+def _selftest():
+    rows = _cases()
+    bad = [r for r in rows if not r[1]]
+    for name, ok, why in rows:
+        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
+    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
+                                      len(rows) - len(bad), len(rows)))
+    return 1 if bad else 0
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__.strip())
@@ -149,8 +216,5 @@ if __name__ == "__main__":
     from _output import safe_stdio
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        print("where.py has no inline --selftest; it is a read-only lookup that "
-              "cannot fail a build, and its answers are the assembled pages "
-              "themselves.")
-        sys.exit(0)
+        sys.exit(_selftest())
     sys.exit(main(sys.argv[1:]))

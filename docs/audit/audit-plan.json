@@ -3,7 +3,7 @@
   "meta": {
     "version": 3,
     "repo": "claude-plugins",
-    "title": "quality-gates roadmap \u2014 the repo dogfooding its own audit plugin",
+    "title": "quality-gates roadmap — the repo dogfooding its own audit plugin",
     "createdISO": "2026-07-07T00:00:00Z",
     "developmentBranch": "main",
     "branchPrefix": "audit",
@@ -16,12 +16,11 @@
       "coauthor": "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     },
     "buildCommands": {
-      "selftests": "for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) $(find plugins/audit/tests -name '*.py' | sort); do python3 \"$f\" --selftest || exit 1; done",
+      "selftests": "python3 tools/sweep-selftests.py",
       "validate": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json",
       "plugin-validate": "claude plugin validate . && claude plugin validate plugins/audit",
       "gate": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate",
       "report": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
-      "sweep": "for f in $(find plugins/audit/hooks plugins/audit/scripts -name '*.py' | sort) $(find plugins/audit/tests -name '*.py' | sort); do python3 \"$f\" --selftest >/dev/null || { echo \"FAIL $f\"; exit 1; }; done",
       "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests",
       "shots": "node tools/capture-screenshots.mjs --check",
       "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
@@ -512,7 +511,7 @@
       "severity": "high",
       "reportedAt": "2026-07-07T00:30:00+02:00",
       "reportedBy": "claude plugin validate (v0.3.0 release gate)",
-      "description": "audit.md's frontmatter description contained ': ' unquoted, so YAML parsing failed and Claude Code loaded the command with EMPTY metadata \u2014 description, argument-hint and allowed-tools never applied, since v0.2.0. init.md's argument-hint parsed as a YAML array instead of a string.",
+      "description": "audit.md's frontmatter description contained ': ' unquoted, so YAML parsing failed and Claude Code loaded the command with EMPTY metadata — description, argument-hint and allowed-tools never applied, since v0.2.0. init.md's argument-hint parsed as a YAML array instead of a string.",
       "repro": [
         "claude plugin validate plugins/audit",
         "observe: 'YAML frontmatter failed to parse ... loads with empty metadata'"

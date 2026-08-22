@@ -759,7 +759,43 @@ def _imported_sibling_names(tree, sibling_names, self_name):
     return found
 
 
+_EDGES = {}
+
+_EDGES_KEY = "default tree"
+
+
 def _scan_edges(script_dir=None):
+    """`_scan_edges_once`, memoised for the DEFAULT tree only.
+
+    WHY THERE IS A MEMO HERE AT ALL. A scan parses every `.py` under `scripts/` and
+    grows the wrapper map to a fixpoint, and the lints above call it independently:
+    `import_graph`, `layer_violations`, `tests_import_violations` and `render` each
+    ask for the whole graph because each judges the whole graph. Profiled, one run of
+    `tests/test__deps.py --selftest` entered this function 25 times and spent 47.5s
+    of its 54s inside - the same answer, computed 25 times, over a tree that cannot
+    change while the process runs.
+
+    ONLY THE DEFAULT TREE IS CACHED, which is the `_loader._INDEX` precedent and the
+    whole safety of it: a caller that hands over its own `script_dir` - every
+    selftest with a fixture tree does - is neither served from the cache nor written
+    into it, so nothing a caller passes can poison what the real tree sees.
+
+    AND EACH CALLER GETS ITS OWN COPY. The cached value is the ANSWER, not the
+    objects: `static` and `runtime` are sets and `broken` is a list, and handing the
+    same three mutable objects to every caller is exactly the module state the house
+    style bans - one caller's `.add()` would silently become another's input. Copying
+    three small containers costs nothing next to a parse of the tree, and it keeps
+    this function's contract byte-identical to the uncached one.
+    """
+    if script_dir is not None and script_dir != _output.SCRIPTS_DIR:
+        return _scan_edges_once(script_dir)
+    if _EDGES_KEY not in _EDGES:
+        _EDGES[_EDGES_KEY] = _scan_edges_once(_output.SCRIPTS_DIR)
+    static, runtime, broken = _EDGES[_EDGES_KEY]
+    return set(static), set(runtime), list(broken)
+
+
+def _scan_edges_once(script_dir=None):
     """`(static, runtime, broken)` - the two kinds of edge kept apart, in one pass.
 
     `static` and `runtime` are SETS of `(importer, imported)` pairs (module names, no

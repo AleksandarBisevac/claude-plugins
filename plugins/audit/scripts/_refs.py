@@ -453,6 +453,42 @@ TOOL_NAME_TREES = (PLUGIN_REL + "/scripts", PLUGIN_REL + "/hooks",
 # the regex, and stating that is cheaper than a filter that can never fire.
 _TOOL_BASENAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\.py(?![A-Za-z0-9_])")
 
+# Basenames a tool INVENTS rather than names, with the reason each one exists.
+#
+# WHY THIS TABLE, AND WHY IT IS NOT A WEAKENING. The rule below is about REFERENCES:
+# a tool naming a plugin script that has been renamed or deleted. A `.py` file a
+# tool's own cases WRITE INTO A TEMP DIRECTORY is not a reference to anything - it is
+# a fixture, and it must end in `.py` because the scanner under test only reads `.py`
+# files, so it cannot be spelled around. The one deliberately-missing name is the
+# same shape from the other side: a case proves the resolver fails loud, which needs
+# a name that resolves to nothing.
+#
+# The distinction is not mechanical - "created here" needs dataflow this lint does
+# not do - so it is DECLARED, one line per name, and the declaration is CHECKED: an
+# entry that no longer appears anywhere under tools/ is reported by `tool_basename_
+# drift()` exactly as a missing reference is. Every basename not named here is still
+# a violation when it names nothing, which is what keeps the table from becoming a
+# blanket.
+TOOL_FIXTURE_BASENAMES = (
+    ("test_fx.py",
+     "count-ui-pins: a fixture suite written into a temp dir so `collect()` has one "
+     "literal and one computed pin to tell apart"),
+    ("test_slice.py",
+     "count-ui-pins: the fixture for the historical defect - one `.index()`-bounded "
+     "slice must count as one order pin, not as the two calls that bound it"),
+    ("test_split.py",
+     "count-ui-pins: a pin whose literal is split across two lines, the blind spot "
+     "that made a documented grep under-report"),
+    ("big.py",
+     "count-ui-pins: the over-the-limit half of `long_files()`'s pair"),
+    ("small.py",
+     "count-ui-pins: the under-the-limit half of that same pair, which is what makes "
+     "the answer 1 rather than 2 or 0"),
+    ("no-such-script-in-this-tree.py",
+     "capture-demo-gif: a name that resolves to NOTHING on purpose, so a case can "
+     "prove `resolve_script()` raises rather than returning something plausible"),
+)
+
 
 def _tool_known_basenames(repo_root):
     """{basename: [repo-relative path, ...]} across TOOL_NAME_TREES, merged.
@@ -495,11 +531,20 @@ def tool_basename_drift(repo_root=None):
     while `files` is the number of files read. Those two counts are the check on the
     check: an empty `unknown` list means one thing when 20 literals across 3 files were
     examined and something entirely different when the walk found nothing at all.
+
+    ONE DECLARED EXCEPTION, ITSELF CHECKED. `TOOL_FIXTURE_BASENAMES` names the `.py`
+    files a tool's own cases write into a temp directory - not references, and not
+    spellable around, because the scanners under test only read `.py`. `staleFixtures`
+    reports any entry nothing writes any more, so the table cannot quietly outlive
+    what it describes; see the comment above it for why the distinction is declared
+    rather than derived.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     known = _tool_known_basenames(root)
+    fixtures = dict(TOOL_FIXTURE_BASENAMES)
     files = _surface_files(root, TOOLS_REL, BARE)
     unknown = []
+    seen_fixtures = set()
     checked = 0
     for rel_file in files:
         path = os.path.join(root, rel_file.replace("/", os.sep))
@@ -508,9 +553,17 @@ def tool_basename_drift(repo_root=None):
         for lineno, line in enumerate(lines, 1):
             for match in _TOOL_BASENAME_RE.finditer(line):
                 checked += 1
-                if match.group(0) not in known:
-                    unknown.append((rel_file, lineno, match.group(0)))
-    return {"unknown": unknown, "checked": checked, "files": len(files)}
+                name = match.group(0)
+                if name in fixtures:
+                    seen_fixtures.add(name)
+                    continue
+                if name not in known:
+                    unknown.append((rel_file, lineno, name))
+    stale = sorted((name, "declared a tool fixture, but nothing under %s writes it "
+                          "any more" % (TOOLS_REL,))
+                   for name in fixtures if name not in seen_fixtures)
+    return {"unknown": unknown, "checked": checked, "files": len(files),
+            "staleFixtures": stale}
 
 
 # --- absolute paths used to REACH a file ----------------------------------------
@@ -664,8 +717,24 @@ def command_flag_drift(repo_root=None):
 # put a file one directory down, the glob does not match it, the loop never runs it, and
 # the sweep EXITS 0. Not a check that fires later — a green build over a partial tree.
 # cf50f9f converted the copies that were still flat; this is what keeps them converted.
+# THE SWEEP IS A RUNNER NOW, and this rule followed the reason rather than the
+# wording. It began as "the documented sweep must be the RECURSIVE find, never the
+# flat glob", because a flat glob silently stopped visiting a subdirectory and
+# nothing went red. `tools/sweep-selftests.py` walks the tree through
+# `_output.py_files` - the same recursive walk the lints use - and adds the two
+# checks neither hand-written loop had: the `N/M cases passed` contract and the
+# `--covered` skip. So a document telling a reader to run EITHER loop is now the
+# defect: the flat one for the old reason, the hand-written recursive one because it
+# is strictly weaker than the thing it would be standing in for.
+SWEEP_RUNNER = "tools/sweep-selftests.py"
 SWEEP_FIND = "find plugins/audit/hooks plugins/audit/scripts -name '*.py'"
 SWEEP_FLAT = "for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py"
+
+# Retired shapes, each with the word a violation is reported under. A tuple so the
+# two are checked by one loop: they failed for different reasons and are now the
+# same kind of finding, and a second `if` is how the two would drift apart.
+RETIRED_SWEEPS = ((SWEEP_FLAT, "flat sweep"),
+                  (SWEEP_FIND, "hand-written sweep"))
 
 # Every document that shows a reader how to run the suites. The commit that did the
 # conversion named three; the tree carries six, and pinning three of six would leave the
@@ -786,7 +855,7 @@ def _runnable_text(rel, text):
 
 
 def sweep_glob_drift(repo_root=None):
-    """[(doc, problem), ...] — every sweep document that has drifted back to the glob.
+    """[(doc, problem), ...] — every sweep document not running the sweep runner.
 
     Scoped to the RUNNABLE REGION of each document (`_runnable_text`), and to the
     EXECUTABLE SHAPE within it — `SWEEP_FLAT`, never the substring `scripts/*.py`. The
@@ -812,10 +881,11 @@ def sweep_glob_drift(repo_root=None):
         if problem is not None:
             out.append((rel, problem))
             continue
-        if SWEEP_FIND not in runnable:
-            out.append((rel, "does not carry the recursive sweep %r" % SWEEP_FIND))
-        if SWEEP_FLAT in runnable:
-            out.append((rel, "still carries the flat sweep %r" % SWEEP_FLAT))
+        if SWEEP_RUNNER not in runnable:
+            out.append((rel, "does not carry the sweep runner %r" % SWEEP_RUNNER))
+        for shape, label in RETIRED_SWEEPS:
+            if shape in runnable:
+                out.append((rel, "still carries the %s %r" % (label, shape)))
     return out
 
 

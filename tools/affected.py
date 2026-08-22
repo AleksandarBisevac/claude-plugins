@@ -7,11 +7,16 @@ Which checks a change actually needs — and, when it cannot tell, all of them.
     tools/affected.py <path> <path>   # ...or an explicit list
     tools/affected.py --json          # machine-readable, for verify.sh
 
-WHY THE BROWSER GATES ARE THE POINT. Measured on this machine: the whole Python
-selftest sweep is ~40s for every file in the tree, while the panel browser gate
-alone is ~230s. So narrowing the Python side saves seconds and narrowing the
-BROWSER side saves minutes. A change that touches only the report's parts does not
-need the panel driven at all, and that single decision is most of what this is for.
+WHY THE BROWSER GATES ARE THE POINT. The whole Python selftest sweep now runs in
+parallel and the panel browser gate is by far the longest leg, so narrowing the
+Python side saves seconds and narrowing the BROWSER side saves minutes. Re-derive
+both rather than trusting a figure written here:
+
+    python3 tools/sweep-selftests.py
+    node tools/capture-screenshots.mjs --check --only panel
+
+A change that touches only the report's parts does not need the panel driven at
+all, and that single decision is most of what this is for.
 
 WHEN IN DOUBT, EVERYTHING. A selector that under-selects is worse than no
 selector: it turns "I ran the tests" into a sentence that is no longer true, and
@@ -56,6 +61,7 @@ import _output  # noqa: E402
 _output.install_path()
 
 import _deps  # noqa: E402  (the import graph this selection is derived from)
+import _refs  # noqa: E402  (the surfaces and sweep documents it reads)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTS = os.path.join("plugins", "audit", "tests")
@@ -77,11 +83,60 @@ REPORT_DOCS = ("examples/acme-store/acme-store-audit.html",
                "docs/index.html", "docs/demo-large.html")
 ARTIFACTS = "python3 tools/check-rendered-artifacts.py"
 
+# The JavaScript unit tests under `tools/ui-tests/`. They were selectable by nothing
+# and runnable only in CI, so a change to a `scripts/ui/` part reached a push with
+# none of the suites covering it having run - the same forgotten-step class
+# `verify.sh` exists to close, one directory over. Cheap enough that widening to it
+# is never the expensive decision.
+VITEST = "npx vitest run"
+
+# The meta-gate: `tools/verify.sh` and `.github/workflows/ci.yml` are two copies of
+# one gate set, and editing either is what makes them disagree.
+PARITY = "python3 tools/gate-parity.py"
+
+# The documents `_refs.sweep_glob_drift()` pins, READ OFF `_refs` rather than listed
+# again here. Two of them start with a dot and were unreachable by every rule below;
+# a third copy of the list is also how the two would come to disagree.
+SWEEP_DOCS = frozenset(d.replace(os.sep, "/") for d in _refs.SWEEP_DOCS)
+
+
+def refs_reads(posix):
+    """True when `_refs` scans this path, so `test__refs.py` can go red for it.
+
+    Derived from `_refs.SURFACES` and `_refs.SWEEP_DOCS` for the same reason
+    `_reverse_imports()` is derived from the real import graph: a hand-kept copy of
+    somebody else's list is a copy that stops agreeing. Editing `CONTRIBUTING.md`
+    selected `test__deps.py` and not this - and `CONTRIBUTING.md` is a `_refs`
+    surface, so a path rotting in it went unchecked by the narrowed run.
+    """
+    if posix in SWEEP_DOCS:
+        return True
+    for surface, _mode in _refs.SURFACES:
+        rel = surface.replace(os.sep, "/")
+        if posix == rel or posix.startswith(rel + "/"):
+            return True
+    return False
+
+
+def _repo_relative(path):
+    """One repo-relative POSIX spelling of `path`.
+
+    `lstrip("./")` was here, and `lstrip` strips CHARACTERS, not a prefix: it turned
+    `.github/workflows/ci.yml` into `github/...` and
+    `.claude/skills/.../SKILL.md` into `claude/...`, so every rule below missed and
+    both fell through to "UNRECOGNISED, select everything". Safe, because that
+    branch widens - and silent, because a widened run looks like a careful one.
+    """
+    posix = path.replace(os.sep, "/")
+    if posix.startswith("./"):
+        posix = posix[2:]
+    return posix
+
 
 def changed_files(base, explicit):
     """The paths this run is about, as repo-relative POSIX strings."""
     if explicit:
-        return sorted(set(p.replace(os.sep, "/").lstrip("./") for p in explicit))
+        return sorted(set(_repo_relative(p) for p in explicit))
     out = set()
     for args in (["diff", "--name-only", base],
                  ["diff", "--name-only", "--cached", base],
@@ -140,10 +195,21 @@ def select(paths):
     full = False
     closure = _reverse_imports()
     touched_py = False
-    panel = report = artifacts = False
+    panel = report = artifacts = vitest = False
 
     for path in paths:
-        posix = path.replace(os.sep, "/")
+        posix = _repo_relative(path)
+        if refs_reads(posix):
+            # Applied to EVERY path rather than added inside four branches by hand,
+            # which is how three of them came to disagree about it.
+            suites.add("test__refs.py")
+        if posix in SWEEP_DOCS:
+            suites.add("test__deps.py")
+            if posix.endswith((".yml", ".yaml")):
+                gates.append(PARITY)
+            reasons.append("%s - a sweep document, so the sweep-shape rule and the "
+                           "gate set are re-checked" % (posix,))
+            continue
         if posix.startswith("docs/screenshots/"):
             reasons.append("%s - a committed PNG, checked by eye and never by a "
                            "gate" % (posix,))
@@ -162,6 +228,11 @@ def select(paths):
             continue
         if posix.startswith("plugins/audit/scripts/ui/"):
             # Assembled surfaces: the part belongs to a page, not to a module.
+            # EVERY ui part selects vitest, whichever surface it belongs to: those
+            # suites test the shared helpers and the per-surface logic alike, they
+            # cost about as much as starting node, and under-selecting here is the
+            # failure this whole file is written to avoid.
+            vitest = True
             if "/panel" in posix:
                 panel = True
                 suites.update(("test__panel_page.py", "test__panel_ui.py",
@@ -228,6 +299,22 @@ def select(paths):
             elif "check-report-interactive" in posix:
                 report = True
                 reasons.append("%s - the report gate itself" % (posix,))
+            elif posix.startswith("tools/ui-tests/"):
+                vitest = True
+                reasons.append("%s - a vitest suite, so vitest runs" % (posix,))
+            elif posix.endswith(("verify.sh", "gate-parity.py")):
+                # Editing either side of the gate set is exactly the change that
+                # breaks parity between them, so the check that compares them runs.
+                gates.append(PARITY)
+                reasons.append("%s - part of the gate set, so gate parity is "
+                               "re-checked" % (posix,))
+            elif "sweep-selftests" in posix:
+                # The runner every other suite is run BY. Nothing else can vouch
+                # for it, so its own cases are the selection - and a broken runner
+                # that still exits 0 would make the whole sweep vacuous.
+                gates.append("python3 tools/sweep-selftests.py --selftest")
+                reasons.append("%s - the selftest runner itself, so its own cases "
+                               "run" % (posix,))
             else:
                 reasons.append("%s - a tool no suite covers" % (posix,))
             continue
@@ -244,6 +331,8 @@ def select(paths):
         reasons.append("a .py changed, so every suite that lints the whole tree "
                        "is included - editing one file turns those red without "
                        "touching them")
+    if vitest:
+        gates.append(VITEST)
     if artifacts:
         gates.append(ARTIFACTS)
     if report:
@@ -300,11 +389,108 @@ def main(argv):
     return 0
 
 
+# --- selftest -----------------------------------------------------------------
+# THIS FILE USED TO SAY IT NEEDED NONE: "its answers are checked by running the full
+# set it defers to". That is false in the one direction that matters. A selector that
+# UNDER-selects is invisible to the full set, because nobody runs the full set to
+# check the selector - they run the narrowed set and believe it. The docstring above
+# says under-selection is worse than no selector at all; these are what hold it.
+def _cases():
+    out = []
+
+    def sel(*paths):
+        suites, gates, _why, full = select(list(paths))
+        return {"suites": suites, "gates": gates, "full": full}
+
+    yml = ".github/workflows/ci.yml"
+    dotted = sel(yml)
+    undotted = sel("github/workflows/ci.yml")
+    out.append(("a0", (not dotted["full"])
+                and "test__refs.py" in dotted["suites"]
+                and PARITY in dotted["gates"],
+                "the workflow is a sweep document and half the gate set, so it "
+                "narrows to the refs pins and the parity check instead of demanding "
+                "everything: %r" % (dotted,)))
+
+    out.append(("a1", dotted["full"] is False and undotted["full"] is True,
+                "THE PAIR: the same path with and without its leading dot give "
+                "OPPOSITE answers. `lstrip(\"./\")` strips CHARACTERS, so it ate the "
+                "dot and BOTH were the full set - asserting the dotted one alone "
+                "would pass on the broken version too (%r vs %r)"
+                % (dotted["full"], undotted["full"])))
+
+    out.append(("a2", sel("./tools/verify.sh") == sel("tools/verify.sh"),
+                "...while a leading `./` IS a prefix and is stripped, so the two "
+                "spellings of one path select the same thing"))
+
+    contributing = sel("CONTRIBUTING.md")
+    out.append(("a3", "test__refs.py" in contributing["suites"],
+                "a root document that is a `_refs` SURFACE selects the refs pins. "
+                "It selected only test__deps.py before, so a path rotting inside it "
+                "went unchecked by every narrowed run: %r" % (contributing,)))
+
+    surfaces = [sfc for sfc, _m in _refs.SURFACES]
+    reached = [sfc for sfc in surfaces if refs_reads(sfc.replace(os.sep, "/"))]
+    out.append(("a4", len(reached) == len(surfaces) and len(surfaces) > 8,
+                "the surface rule is DERIVED from _refs, not copied: every one of "
+                "its %d entries answers True. A hand-kept copy is what let three "
+                "branches disagree about this" % (len(surfaces),)))
+
+    out.append(("a5", refs_reads("node_modules/vitest/index.js") is False,
+                "...and it says False for a path _refs does not read, so a4 is a "
+                "rule rather than a function that returns True"))
+
+    out.append(("a6", sel("some/unknown/place.xyz")["full"] is True,
+                "AN UNRECOGNISED PATH SELECTS EVERYTHING. This is the safety the "
+                "whole file rests on; if it ever narrowed, every other case here "
+                "would still pass and the selector would quietly be wrong"))
+
+    ui = sel("plugins/audit/scripts/ui/panel/core.js")
+    out.append(("a7", VITEST in ui["gates"] and PANEL_GATE in ui["gates"]
+                and not ui["full"],
+                "a panel part selects the JavaScript unit tests AND the panel "
+                "browser gate - vitest ran only in CI before, so a ui change could "
+                "reach a push with none of its suites having run: %r" % (ui["gates"],)))
+
+    tests = sel("tools/ui-tests/parse.test.mjs")
+    out.append(("a8", tests["gates"] == [VITEST],
+                "a vitest suite selects vitest and nothing else: %r" % (tests,)))
+
+    runner = sel("tools/sweep-selftests.py")
+    out.append(("a9", any("sweep-selftests.py --selftest" in g
+                          for g in runner["gates"]),
+                "the runner every other suite is run BY selects its own cases - "
+                "nothing else can vouch for it: %r" % (runner["gates"],)))
+
+    py = sel("plugins/audit/scripts/_output.py")
+    out.append(("a10", "test__output.py" in py["suites"]
+                and "test__deps.py" in py["suites"] and not py["full"],
+                "a .py selects its own suite plus every suite that lints the whole "
+                "tree, because editing one file turns those red without touching "
+                "them (%d suites)" % (len(py["suites"]),)))
+
+    shot = sel("docs/screenshots/panel-blocks.png")
+    out.append(("a11", shot["gates"] == [] and not shot["full"],
+                "a committed PNG selects no gate and does NOT widen - 'nothing "
+                "covers this' is a real answer here, and it is not spelled the same "
+                "way as 'I could not tell': %r" % (shot,)))
+
+    return out
+
+
+def _selftest():
+    rows = _cases()
+    bad = [r for r in rows if not r[1]]
+    for name, ok, why in rows:
+        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
+    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
+                                      len(rows) - len(bad), len(rows)))
+    return 1 if bad else 0
+
+
 if __name__ == "__main__":
     from _output import safe_stdio
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        print("affected.py has no inline --selftest; it is a dev-side selector "
-              "and its answers are checked by running the full set it defers to.")
-        sys.exit(0)
+        sys.exit(_selftest())
     sys.exit(main(sys.argv[1:]))

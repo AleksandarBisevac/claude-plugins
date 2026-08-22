@@ -23,9 +23,15 @@
 # whole wall clock again to discover the next. Every step here runs, and the
 # summary at the end is the whole truth at once.
 #
-# Wall clock, measured on this machine: the panel browser gate is ~230s and
-# everything else together is ~85s, so `--fast` (~160s for the panel leg) is worth
-# it while iterating and worth nothing before a release. It prints what it skipped.
+# Wall clock is dominated by the panel browser gate; `--fast` narrows that leg and
+# is worth it while iterating and worth nothing before a release. It prints what it
+# skipped. The figures that used to sit here rotted the day the selftest sweep
+# became parallel, which is what this repo's own rule about numbers in prose
+# predicts, so the command that re-derives them stands in their place:
+#
+#   python3 tools/sweep-selftests.py                     # the python leg
+#   node tools/capture-screenshots.mjs --check           # the panel leg
+#   node tools/check-report-interactive.mjs docs/index.html   # one report leg
 set -u
 
 here=$(dirname "$0")
@@ -40,7 +46,14 @@ for a in "$@"; do
     --fast) FAST=1 ;;
     --release) RELEASE=1 ;;
     --affected) AFFECTED=1 ;;
-    -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)
+      # Prints the header comment and stops where it stops. This was `sed -n
+      # '2,30p'` - a magic line number into this file's own top - and the header
+      # grew past 30 the first time it was edited, silently truncating --help
+      # mid-sentence. A rule beats a number here for the same reason it does in
+      # prose.
+      awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"
+      exit 0 ;;
     *) echo "verify.sh: unknown argument $a" >&2; exit 2 ;;
   esac
 done
@@ -66,17 +79,6 @@ run() {
   FAIL  $label"
     FAILED=$((FAILED + 1))
   fi
-}
-
-# --- the python side ----------------------------------------------------------
-sweep_selftests() {
-  rc=0
-  for f in $(find plugins/audit/hooks plugins/audit/scripts plugins/audit/tests \
-             -name '*.py' | sort); do
-    python3 "$f" --selftest >/tmp/verify-selftest.log 2>&1 || {
-      echo "RED: $f"; tail -15 /tmp/verify-selftest.log; rc=1; }
-  done
-  return $rc
 }
 
 # --- only what changed, when asked and only when it can be decided -------------
@@ -114,7 +116,11 @@ if [ "$AFFECTED" -eq 1 ]; then
     while IFS= read -r cmd; do
       case "$cmd" in
         "  node tools/check-report-interactive.mjs "*) ;;
-        "  python3 "*|"  node "*)
+        # `npx ` is in the list because `npx vitest run` became selectable and this
+        # case statement did not know the word - so the selector named a gate and
+        # the runner silently skipped it, which is worse than not selecting it at
+        # all: the summary would have said every selected check was green.
+        "  python3 "*|"  node "*|"  npx "*)
           c=$(printf '%s' "$cmd" | sed 's/^  //')
           printf '  %-58s' "$c"
           if sh -c "$c" >/tmp/verify-step.log 2>&1; then printf 'ok\n'
@@ -136,10 +142,33 @@ if [ "$AFFECTED" -eq 1 ]; then
 fi
 
 echo "verify: python"
-run "selftests (hooks + scripts + tests)" sweep_selftests
+# ONE runner, shared with CI, and STRICTER than the loop that used to be here.
+# The old `sweep_selftests()` asserted the exit code and nothing else, while CI's
+# inlined copy also required the `N/M cases passed` contract and applied the
+# `--covered` skip - so a file that exited 0 having asserted nothing was green here
+# and red there. See tools/sweep-selftests.py for the whole story; the point of
+# calling it from both places is that a rule added to it is added to both at once.
+run "selftests (hooks + scripts + tests + tools)" python3 tools/sweep-selftests.py
+# THE ONE SUITE THE SWEEP MAY NOT RUN FOR US. The sweep now covers tools/, so every
+# other tool's cases run inside it and no line here repeats them. The runner's own
+# cases are the exception, and the reason is circularity: a `grade()` that always
+# answered "ok" would report its own suite as passing while hiding the failure. Run
+# directly, the exit code is read by this shell instead of by the thing under test.
+run "...and the runner's own cases, read directly" \
+  python3 tools/sweep-selftests.py --selftest
+# The meta-gate. This file and ci.yml are two hand-maintained copies of one gate
+# set, and they had drifted three ways in both directions before anyone measured
+# it; a gate added to one and not the other now fails by name.
+run "gate parity (this file vs ci.yml)" python3 tools/gate-parity.py
 run "ruff" ruff check plugins/audit tools
 run "vermin (3.8 floor)" vermin -t=3.8- --no-tips --violations \
   plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
+
+echo "verify: javascript unit tests"
+# CI HAS RUN THIS ALL ALONG AND THIS FILE DID NOT, which made the header's claim to
+# be "every gate CI runs" false: a change under scripts/ui/ could be taken all the
+# way to a push with none of the suites that cover it having run once.
+run "vitest (tools/ui-tests)" npx vitest run
 
 echo "verify: manifests and plugin structure"
 run "validate starter manifest" python3 plugins/audit/scripts/manifest/validate-manifest.py \
@@ -156,6 +185,11 @@ run "claude plugin validate (plugin)" claude plugin validate plugins/audit
 
 echo "verify: rendered artifacts"
 run "committed artifacts match a fresh render" python3 tools/check-rendered-artifacts.py
+# CI HAS RUN THIS ALL ALONG AND THIS FILE DID NOT. It replays the plan gate refusing
+# an unplanned edit and asserts the deny still names the file and the way out, so a
+# reworded gate would have shipped a GIF of something the product no longer does.
+# --check writes no file and needs no font, and costs a fraction of a second.
+run "demo preconditions (the gate still refuses)" python3 tools/capture-demo-gif.py --check
 
 echo "verify: browsers"
 # The three shipped reports run CONCURRENTLY: three independent Chromium instances
