@@ -515,6 +515,124 @@ def _cases(check):
     _expect("x2 Read normal (extra cfg) allowed", "allow", read("app/index.ts"),
           use_cfg=cfg_extra)
 
+    # --- P0-S: the env layer reached INDIRECTLY, and the sandbox escape hatch ---
+    # Reported from a live session. A `.envrc` holding one `export VERCEL_SCOPE=`
+    # line, then `direnv exec . printenv VERCEL_SCOPE` with the sandbox turned
+    # off: the secret printed, and NOTHING here saw it. The command names no
+    # `.env*` file (direnv reads it), and `printenv` was anchored to the start of
+    # a clause, so a wrapper in front of it was enough to walk past the guard.
+    #
+    # WHAT THIS BRANCH CAN AND CANNOT DO, because the ceiling is the point: these
+    # matchers read the TEXT of a tool call, never the I/O it performs. They add
+    # friction and they leave evidence; containment is the harness sandbox's job.
+    # SECURITY.md says the same thing in the same words.
+    def bash_unsandboxed(cmd):
+        return {"tool_name": "Bash",
+                "tool_input": {"command": cmd,
+                               "dangerouslyDisableSandbox": True},
+                "cwd": str(tmp)}
+
+    # (d1-d4) the wrapper gap itself. d1 is the reported command.
+    _expect("d1 an env dump behind a wrapper is still an env dump", "block",
+          bash("direnv exec . printenv VERCEL_SCOPE"))
+    _expect("d2 ...and bare, which already held - pinned so the broadening "
+          "cannot be narrowed back by accident", "block",
+          bash("printenv VERCEL_SCOPE"))
+    _expect("d3 ...and `direnv dump`, which prints the whole loaded env",
+          "block", bash("direnv dump"))
+    _expect("d4 ...and `direnv export bash`, the same thing for a shell",
+          "block", bash("direnv export bash"))
+
+    # (d5-d7) THE SECOND-DIRECTION MUTATION for d1-d4. A guard that fires on the
+    # mere presence of `direnv` never fails d1; it fails only these. `direnv`
+    # LOADING an env so a test can run is the tool working as intended, and
+    # refusing it is how a guard teaches people to route around it - the same
+    # lesson F-P-7 cost, one layer up.
+    _expect("d5 `direnv exec` running an ordinary command is not a dump",
+          "allow", bash("direnv exec . npm test"))
+    _expect("d6 ...nor is `direnv allow`, which grants and prints nothing",
+          "allow", bash("direnv allow"))
+    _expect("d7 ...and a word merely CONTAINING the verb is not the verb",
+          "allow", bash("cat ~/.config/direnv/direnvrc"))
+
+    # (d8-d10) `.envrc` was not in the secret set at all, so the file at the
+    # centre of the report could be read directly, by name, through three
+    # different vectors. `.direnvrc`/`direnvrc` are direnv's own configuration
+    # and hold no exports, which is why the token needs the leading dot.
+    _expect("d8 Read .envrc blocked - it holds `export SECRET=` and nothing "
+          "else in this file knew it", "block", read(".envrc"))
+    _expect("d9 ...and `cat .envrc` through the shell", "block",
+          bash("cat .envrc"))
+    _expect("d10 ...and dot-sourcing it, which is how it is normally loaded",
+          "block", bash(". ./.envrc && npm start"))
+
+    # (d11-d13) `process.env`. The dump was already blocked - by the SECRET FILE
+    # branch, because `process.env` ends in a token that pattern reads as a
+    # dotenv file. Right verdict, wrong reason, and the wrong reason is what
+    # made d13 a false positive: reading ONE named variable is not a file read
+    # and never was. Rule #2 owns the environment; Rule #1 owns files.
+    _expect("d11 dumping the whole environment object is Rule #2", "block",
+          bash('node -e "console.log(process.env)"'))
+    _expect("d12 ...and so is a token-SHAPED name, by the same vocabulary "
+          "`echo $API_KEY` is judged by", "block",
+          bash('node -e "console.log(process.env.API_KEY)"'))
+    _expect("d13 ...but one ordinary named variable is neither a dump nor a "
+          "file read - this is the false positive, not the catch", "allow",
+          bash('node -e "console.log(process.env.NODE_ENV)"'))
+    check("d14 the Rule #2 message names the environment, not a secret FILE - "
+          "a guard that misnames what it caught is a guard people argue with",
+          "environment" in str(M.decide(
+              bash('node -e "console.log(process.env)"'), cfg=cfg)[1]).lower()
+          and "secret file" not in str(M.decide(
+              bash('node -e "console.log(process.env)"'), cfg=cfg)[1]).lower(),
+          repr(M.decide(bash('node -e "console.log(process.env)"'), cfg=cfg)))
+
+    # (d15-d18) THE SANDBOX ESCAPE HATCH. `dangerouslyDisableSandbox: true`
+    # arrives in the same `tool_input` every branch above already reads, and
+    # nothing in the plugin looked at it. Denying it outright would be wrong -
+    # a legitimate unsandboxed run is why the flag exists - so the deny is
+    # bounded to the combination that reaches the env layer with the OS layer
+    # switched off. Every OTHER unsandboxed run is journalled instead, by
+    # journal-writes at PostToolUse; that half's cases are in
+    # test_journal_writes.py, because a hook records what RAN, not what was asked.
+    _expect("d15 the sandbox off plus a command that reaches the env layer is "
+          "refused", "block",
+          bash_unsandboxed("direnv exec . npm test"))
+    _expect("d16 ...including one naming a dotenv file directly", "block",
+          bash_unsandboxed("npx dotenv -e .env.local -- node app.js"))
+    # d17 is the second-direction mutation for d15/d16 and it looks vacuous:
+    # it passes on the pre-fix code by construction, because the pre-fix code
+    # never read the flag at all. It is the only case that fails if the flag
+    # becomes an unconditional deny - which would make every sandbox-exempt
+    # command in a user's own settings a refusal, and the guard unusable.
+    _expect("d17 the sandbox off, on a command that touches no environment, is "
+          "NOT the guard's business - it is the journal's", "allow",
+          bash_unsandboxed("ls -la && git status"))
+    # d18 is the mirror: the same env-adjacent command WITH the sandbox on is
+    # allowed, so the deny is bound to the flag and not to the command text.
+    _expect("d18 ...and the same command sandboxed stays allowed - the flag is "
+          "what is being judged", "allow", bash("direnv exec . npm test"))
+    check("d18b the STRING form of the flag counts too. A payload is not this "
+          "hook's to validate, and `is True` alone would read \"true\" as "
+          "SANDBOXED - a default filling a gap, on the side that allows",
+          M.decide({"tool_name": "Bash",
+                    "tool_input": {"command": "direnv exec . npm test",
+                                   "dangerouslyDisableSandbox": "true"},
+                    "cwd": str(tmp)}, cfg=cfg)[0] == "block"
+          and M.decide({"tool_name": "Bash",
+                        "tool_input": {"command": "direnv exec . npm test",
+                                       "dangerouslyDisableSandbox": "false"},
+                        "cwd": str(tmp)}, cfg=cfg)[0] == "allow")
+
+    # (d19) The false positive item 5 names, kept as a pin rather than fixed:
+    # F-P-7 already narrowed the eval branch to the paths a write call NAMES, so
+    # a read-only one-liner over a .json is allowed today. s27/s34 above are the
+    # counting form of this; this is the exact command from the report.
+    _expect("d19 a read-only inline eval over a .json warns about nothing",
+          "allow",
+          bash("python3 -c \"import json; d = json.load("
+               "open('apps/mobile/eas.json')); print(d['cli'])\""))
+
     # --- malformed / unhandled → allow ---
     _expect("u1 unhandled tool allowed", "allow",
           {"tool_name": "Glob", "tool_input": {"pattern": ".env"}, "cwd": str(tmp)})

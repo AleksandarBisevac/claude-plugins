@@ -141,7 +141,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-status.py                 # the command over those facts: human render + --json/--gate
           audit-doctor.py                 # /audit:doctor: the ORDER of the checks, the render and the CLI
           _doctor_report.py               # what the six check modules share: the Report collector + _load
-          _doctor_setup.py                # interpreter, git root, config, manifest, shards, submodules
+          _doctor_setup.py                # interpreter, sandbox + secret rules, git root, config, manifest, shards, submodules
           _doctor_policy.py               # meta.areas, the capability policy, the buildCommands runners
           _doctor_ado.py                  # the ADO connector's operational half (transport, switches, links)
           _doctor_trail.py                # has anything run here: hook state, usage ledger, journal chain
@@ -394,7 +394,7 @@ Maps events → scripts, every entry running through
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
 - PreToolUse `Skill|Task|Agent|mcp__.*` → `guard-capabilities.py` (fail mode **ask**)
 - PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
-- PostToolUse `Bash` → `guard-bash-writes.py` (the diff check; **open**)
+- PostToolUse `Bash` → `guard-bash-writes.py` (the diff check), `journal-writes.py` (only for a run carrying `dangerouslyDisableSandbox`; both **open**)
 - UserPromptSubmit → `detect-plan-skip.py` (**open**)
 
 `py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
@@ -503,6 +503,22 @@ non-exempt source files not covered by an `in_progress` task (source extensions 
 `tddReminder.sourceGlobs`). Listing NAMES stays allowed. `secretPatterns.extra` (config) adds
 patterns. `--selftest` uses fictional paths only.
 
+**P0-S: the environment reached INDIRECTLY, and where this hook's reach ends.** `printenv` was
+anchored to the start of a clause, so any wrapper in front of it walked straight past —
+`direnv exec . printenv X` printed a secret with no deny, no gate message and no journal row.
+The verb is now a dump wherever it stands (a rule about what may not PRECEDE it, because an
+inventory of legal wrappers cannot be written and would be short by one), `direnv dump`/`export`
+join it, and `.envrc` — the file the live report was actually about — joins the secret sets.
+`process.env` moved from the secret-FILE rule to the environment rule: the whole object and a
+token-shaped name are refused, one ordinary named variable is not, and being refused as "reading
+a secret file's contents" was the same false-positive class as F-P-7 one layer up. Finally the
+hook reads `dangerouslyDisableSandbox` off `tool_input` and refuses the COMBINATION of the
+sandbox being off with a command that reaches the environment layer — bounded to the
+combination, because an unsandboxed run is legitimate and denying all of them gets the plugin
+switched off. **The class is not closed and cannot be**: these matchers read tool-call text and
+never observe I/O, so the ceiling is friction plus evidence — `journal-writes` records every
+other unsandboxed run, and SECURITY.md states the boundary in full.
+
 ### `plugins/audit/hooks/guard-history-rewrite.py`
 Refuses a git command that would orphan a commit the manifest records. `task.commit` holds each
 task's SHA and `bug.fixedIn` is derived from it, which is why `reference/orchestrator.md` names
@@ -560,6 +576,16 @@ cannot be written must not break the write it was recording. A hook rather than 
 instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly
 like a covered-up one. Config `journal.enabled`. `--selftest` (incl. an end-to-end
 append + verify).
+
+Also PostToolUse on **Bash**, for one event that is not about the plan: a call carrying
+`dangerouslyDisableSandbox` appends `bash.unsandboxed` with the command and the cwd
+(`command`/`cwd` are `_journal_io.DETAILS_KEYS` entries, clipped like any other value). The
+flag — not the tool name — is what is read, and it is read **before** the repo root or the
+config, so an ordinary Bash call leaves this hook having touched nothing and the journal
+cannot decay into a shell log. It prevents nothing: PostToolUse is after the fact, and the
+escape hatch is legitimate. What was wrong is that the event was invisible everywhere, which
+is the half of P0-S `guard-secrets-read` cannot do — see SECURITY.md's *friction and
+evidence* section for the ceiling this pair reaches together.
 
 ### `plugins/audit/hooks/guard-capabilities.py` (v0.30.0)
 PreToolUse (`Skill|Task|Agent|mcp__.*`) enforcer for the `policy` config block: which skills,
@@ -1279,12 +1305,33 @@ exists: the wrapper is defined here and the `.py` literals are spelled in the si
 without it a dozen real runtime edges would be invisible to the layer lint.
 
 ### `plugins/audit/scripts/status/_doctor_setup.py`
-The six checks everything else stands on: which interpreter `py-launch.sh` will resolve, the
+The checks everything else stands on: which interpreter `py-launch.sh` will resolve, the
 git root the orchestrator will run git against, whether the config parses and validates and
 which plan-gate tier it produces, whether the manifest assembles and validates, whether a
 sharded layout's shards are intact (the assertion that moved out of `ci.yml` so CI and this
 command call one implementation), and whether any `task.files` entry lives inside a submodule
 the parent repo cannot stage. Layer 4, set by `_manifest_rules` at layer 3.
+
+**`check_sandbox` (P0-S) is the same question one layer down**, which is why it sits beside
+`check_interpreter` rather than in `_doctor_hygiene`: that one asks whether the guards can run
+at all, this asks whether the layer they LEAN ON is there. The plugin's secret guards match
+tool-call text and never observe I/O, so what actually contains a read is the harness sandbox
+plus `permissions.deny` — neither of them this plugin's, and neither ever checked. Two rows:
+`sandbox` and `secret rules`.
+
+**Its whole design is about what it may not claim.** Claude Code exposes no environment
+variable carrying sandbox state, and this command is read-only by construction, so it may not
+probe by attempting a write — settings FILES are the entire basis, and two merge layers
+(managed/MDM policy, a `--settings` flag) outrank every file it can read. So the answer is
+THREE-VALUED: declared true, declared false, and **not established**, which is reported as
+exactly that and never as "off". Grading follows the doctor's own taxonomy rather than how
+alarming the subject sounds — an explicitly disabled sandbox is broken now (FINDING), an
+undeclared one will bite later (WARNING), and a missing dotenv deny rule is a WARNING beside a
+working sandbox but a FINDING when neither layer is established, because at that point the only
+thing between a secret and the transcript is a regex over tool-call text. Scalars take the
+highest-precedence file that defines them; rule LISTS merge across scopes, the way Claude Code
+merges them. An unparseable settings file is reported, not skipped — the harness is not
+applying its rules either, and "no rule found" would name the wrong cause.
 
 ### `plugins/audit/scripts/status/_doctor_policy.py`
 The three checks that compare a declaration against the world it claims to describe:

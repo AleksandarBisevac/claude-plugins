@@ -122,9 +122,15 @@ ROW_VERSION = 1
 # not of the file: the hash covers whatever fields are present, so v1 and v2 rows
 # interleave in one file with no migration and no flag day.
 DETAILS_VERSION = 2
+# `command`/`cwd` (P0-S) are the first keys here that describe something the plugin
+# did NOT do. Every other key names a field of the plan that moved; these two name a
+# Bash run that went around the harness sandbox, which no guard can prevent and
+# which was previously invisible to every surface. They are clipped by the same
+# MAX_VALUE_CHARS as any other value -- a command is evidence, not a payload, and a
+# row that carried a whole script would be a log.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
-                "toPhase", "truncated")
+                "toPhase", "truncated", "command", "cwd")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload

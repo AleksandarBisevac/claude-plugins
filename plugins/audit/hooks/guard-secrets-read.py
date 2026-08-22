@@ -26,7 +26,24 @@ Covered read vectors:
                      `install`) that would relocate a secret for later reading;
                  (b) inline-eval reads (python/node/ruby/perl/… -c/-e) whose code text
                      references a secret-file token;
-                 (c) env-value dumps (printenv/env) and echoing token-like variables.
+                 (c) env-value dumps (printenv/env/direnv dump, `process.env`) and
+                     echoing token-like variables;
+                 (d) a command that reaches the environment layer with the harness
+                     sandbox switched off (`dangerouslyDisableSandbox`).
+
+WHAT THIS HOOK CAN AND CANNOT DO — the ceiling, stated here because leaving it
+unstated is what made it a defect. Every matcher above reads the TEXT of a tool
+call. None of them observes I/O. A value loaded INDIRECTLY prints identically and
+names nothing this file can match: that is what `direnv exec . printenv X` did,
+against a `.envrc` holding one `export`, with the sandbox off — no deny, no gate
+message, no journal row. `.envrc`, the wrapper form of `printenv` and the sandbox
+flag are all covered now, and the class is not: a test harness that loads dotenv,
+a script that reads the file itself, any program that already has the value.
+
+So the ceiling here is FRICTION plus EVIDENCE, not containment. Containment is
+the harness sandbox's job and always was — which is why (d) exists at all, and why
+journal-writes records every unsandboxed Bash run whether or not this hook refused
+it. SECURITY.md says the same thing in the same words; keep the two in step.
 
 Plan-first backstop for Bash WRITES (this is the only hook that sees Bash):
   - inline-eval writes to a non-exempt source path;
@@ -71,7 +88,7 @@ import _config  # noqa: E402
 # --- secret FILE paths (used for the Read tool's file_path and Grep path/glob) --
 SECRET_PATH = re.compile(
     r"""(
-        (^|/)\.env(?!\.(?:example|sample|template|dist|defaults)\b)(\.[^/]+)?$
+        (^|/)\.env(?!\.(?:example|sample|template|dist|defaults)\b)(?:rc)?(\.[^/]+)?$
       | (^|/)credentials[^/]*\.(?:json|plist|p8|pem|key|cer|der|txt|cfg|conf|ya?ml)$
       | (^|/)credentials$
       | (^|/)id_(?:rsa|dsa|ecdsa|ed25519)$
@@ -109,8 +126,24 @@ _READ_VERB = (
     r"|cp|mv|rsync|install|source"
     r"|git\s+(?:show|cat-file))"
 )
+# P0-S. Two edits, and both are about the SAME confusion between a dotenv FILE and
+# the process environment:
+#
+#   * `rc\b` -- `.envrc` was in none of the three secret sets, and it is the file the
+#     live report was actually about: one `export VERCEL_SCOPE=` line, read by
+#     direnv. `.direnvrc`/`direnvrc` are direnv's own configuration, hold no
+#     exports, and stay out because the leading dot is required.
+#   * `(?<!process)` -- `process.env` ends in a token this pattern read as a dotenv
+#     file, so `node -e "console.log(process.env.NODE_ENV)"` was refused as
+#     "reading a secret file's contents". Right family, wrong rule: the environment
+#     is Rule #2's subject and files are Rule #1's, and a guard that misnames what
+#     it caught is a guard people learn to argue with. KNOWN COST, stated rather
+#     than discovered: a file genuinely named `*process.env` loses this token in
+#     shell text. The Read and Grep sets are untouched, so that file is still
+#     blocked through the tools that read it.
 _SECRET_TOKEN = (
-    r"(?:\.env(?!\.(?:example|sample|template|dist|defaults))(?:\.|\b)"
+    r"(?:(?<!process)\.env(?!\.(?:example|sample|template|dist|defaults))"
+    r"(?:rc\b|\.|\b)"
     r"|credentials[\w.-]*\.(?:json|plist|p8|pem|key|txt)"
     r"|(?:^|[/\s'\"])credentials(?=$|[\s'\";|&])"       # bare `~/.aws/credentials`
     r"|(?:^|[/\s'\"])id_(?:rsa|dsa|ecdsa|ed25519)\b"    # SSH private keys
@@ -317,12 +350,83 @@ _SED_INPLACE_CLAUSE = re.compile(
 )
 _PATHY_TOKEN = re.compile(r"[\w@~./+-]+\.[A-Za-z][A-Za-z0-9]{0,9}")
 
-ENV_DUMP = re.compile(r"(?:^|[|&;]\s*)(?:printenv\b|env\s*(?:$|[|&>]))", re.IGNORECASE)
-ECHO_SECRET = re.compile(
-    r"\b(?:echo|printf)\b[^|&;\n]*\$\{?\s*[A-Za-z_]*"
-    r"(?:TOKEN|SECRET|BEARER|PASSWORD|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
+# --- Rule #2: the environment itself -------------------------------------------
+# P0-S: `printenv` USED TO BE ANCHORED to the start of a clause, so any wrapper in
+# front of it was enough to walk past this guard entirely --
+# `direnv exec . printenv VERCEL_SCOPE` printed a secret and left no deny, no
+# gate message and no journal row. The verb is a dump wherever it stands, so the
+# rule is now about what may not PRECEDE it rather than about what may: an
+# inventory of legal wrappers cannot be written, and would be short by one the
+# day somebody reaches for `sudo`, `xargs` or a container. Same lesson
+# `_EVAL_BINDING` below carries, in the same shape.
+#
+# `env` keeps its clause anchor deliberately: as a bare word it is the commonest
+# fragment in this whole file's subject matter (`NODE_ENV`, `--env`, `.env.example`),
+# and `env FOO=1 cmd` is a launcher, not a dump. The wrapper case that matters --
+# `env -i printenv X` -- is caught by the `printenv` half anyway.
+#
+# `direnv dump` / `direnv export` print the loaded environment and are the two
+# direnv subcommands that do; `direnv exec`, `direnv allow` and the rest are the
+# tool doing its job and stay allowed (the second-direction cases pin that).
+ENV_DUMP = re.compile(
+    r"(?:(?<![\w.$-])printenv\b"
+    r"|(?:^|[|&;]\s*)env\s*(?:$|[|&>])"
+    r"|\bdirenv\s+(?:dump|export)\b)",
     re.IGNORECASE,
 )
+# ONE definition of "a token-shaped variable name", shared by the shell form and
+# the JavaScript one. It existed only inside ECHO_SECRET, and `process.env.API_KEY`
+# needed the same vocabulary -- a second copy is how the two spellings drift apart.
+_TOKEN_NAME = (
+    r"[A-Za-z_]*"
+    r"(?:TOKEN|SECRET|BEARER|PASSWORD|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)"
+)
+ECHO_SECRET = re.compile(
+    r"\b(?:echo|printf)\b[^|&;\n]*\$\{?\s*" + _TOKEN_NAME,
+    re.IGNORECASE,
+)
+# `process.env` is the environment, not a file. The whole object is a dump; a
+# token-SHAPED name is a secret by the same vocabulary `echo $API_KEY` is judged
+# by; one ordinary named variable (`process.env.NODE_ENV`) is neither, and used to
+# be refused as a secret-file read.
+PROCESS_ENV = re.compile(
+    r"process\.env\s*(?![.\[\w])"
+    r"|process\.env\s*(?:\.\s*|\[\s*['\"])" + _TOKEN_NAME,
+    re.IGNORECASE,
+)
+
+# --- P0-S: the sandbox escape hatch ---------------------------------------------
+# Commands that reach the environment layer, whether or not they name a file. This
+# is the set the sandbox flag is judged against -- NOT a deny list of its own, or
+# `direnv exec . npm test` would be refused for loading an env so a test can run.
+ENV_ADJACENT = re.compile(
+    r"(?:\.envrc\b"
+    r"|(?<!process)\.env(?!\.(?:example|sample|template|dist|defaults))(?:\.|\b)"
+    r"|\bdirenv\b"
+    r"|\bdotenvx?\b"
+    r"|(?<![\w.$-])printenv\b"
+    r"|process\.env\b"
+    r"|(?:^|[|&;]\s*)env\s*(?:$|[|&>]))",
+    re.IGNORECASE,
+)
+
+
+def _sandbox_disabled(ti):
+    """True when the call asked to run OUTSIDE the harness sandbox.
+
+    `dangerouslyDisableSandbox` arrives in the same `tool_input` every branch here
+    already reads, and nothing in this plugin looked at it until P0-S: a Bash call
+    carrying it read `.envrc` through direnv and left no trace anywhere.
+
+    A JSON boolean is what the harness sends. The string form is accepted too
+    because a payload is not this hook's to validate, and testing `is True` alone
+    would grade `"true"` as SANDBOXED -- a default quietly filling a gap, on the
+    side that fails open.
+    """
+    value = (ti or {}).get("dangerouslyDisableSandbox")
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() == "true"
 
 
 def _deny_payload(msg):
@@ -602,10 +706,37 @@ def _decide_core(data, root, cfg):
 
     if tool == "Bash":
         cmd = str(ti.get("command", ""))
+        # FIRST, because it is the only branch that knows the OS layer is off, and
+        # a reader who is told "this reads a secret file" learns less than one who
+        # is told "this reads it with containment switched off".
+        #
+        # Bounded to the COMBINATION on purpose. An unsandboxed run is legitimate
+        # and common -- it is why the flag exists -- so denying every one of them
+        # would make the guard unusable and get it routed around, which is the
+        # failure mode this whole item is about. Every other unsandboxed run is
+        # RECORDED instead, by journal-writes at PostToolUse: a hook that cannot
+        # contain the event can still refuse to let it be invisible.
+        if _sandbox_disabled(ti) and ENV_ADJACENT.search(cmd):
+            return ("block",
+                    "This command reaches the environment layer with the harness "
+                    "sandbox switched off (dangerouslyDisableSandbox), and the "
+                    "sandbox is the only layer that can actually contain a read.\n"
+                    "These hooks match the TEXT of a tool call, not the I/O it "
+                    "performs, so a value loaded indirectly (direnv, dotenv, a "
+                    "test harness) would print with nothing here able to stop it. "
+                    "Run it sandboxed, or ask the user to paste the one value you "
+                    "need. The unsandboxed run is journalled either way.")
         if ENV_DUMP.search(cmd):
             return ("block",
                     "Dumping environment values (printenv/env) is blocked (Rule #2). "
                     "Debug with a prefix only: val[:6] + length.")
+        if PROCESS_ENV.search(cmd):
+            return ("block",
+                    "Reading the process environment is blocked (Rule #2): this "
+                    "prints environment values, not a file.\n"
+                    "One ordinary named variable is fine; the whole object and a "
+                    "token-shaped name are not. Debug with a prefix only: "
+                    "val[:6] + length.")
         if ECHO_SECRET.search(cmd):
             return ("block",
                     "Echoing a token/secret variable is blocked (Rule #2). "

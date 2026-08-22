@@ -2,12 +2,22 @@
 """
 Journal recorder -- registered at BOTH PreToolUse and PostToolUse
 (matcher: Edit|Write|MultiEdit|NotebookEdit), branching on `hook_event_name`
-the way require-plan.py does.
+the way require-plan.py does, and at PostToolUse on Bash for one narrow event.
 
 Appends one row to the tamper-evident journal for every edit-tool write to the
 MANIFEST (index or phase shard) or to `.claude/audit.config.json`. Nothing else is
 recorded: the journal is the audit trail of the plan and the rules, not a log of
 the repository.
+
+THE ONE EXCEPTION, and why it earns the exception (P0-S). A Bash call carrying
+`dangerouslyDisableSandbox: true` runs with the only layer that can actually
+CONTAIN a read switched off, and until P0-S no part of this plugin saw it -- a
+live session read a secret through direnv that way and left no deny, no gate
+message and no row. `bash.unsandboxed` records the command and the cwd. It
+prevents nothing (PostToolUse is after the fact) and it is not meant to: it turns
+an invisible event into tamper-evident history, which is what this file is for.
+An ordinary sandboxed Bash call is still nobody's business here, and the flag --
+not the tool name -- is what is read, so the journal cannot decay into a shell log.
 
 THE TWO PASSES. Edit fragments are not parseable JSON, so a field-level diff can
 only come from remembering the file as it stood BEFORE the write. The Pre pass
@@ -444,6 +454,66 @@ def _journal_flip(old_obj, new_obj):
     return None
 
 
+def sandbox_disabled(ti):
+    """True when a Bash call asked to run OUTSIDE the harness sandbox.
+
+    A JSON boolean is what the harness sends; the string form is accepted too,
+    because a payload is not this hook's to validate and testing `is True` alone
+    would grade `"true"` as sandboxed -- a default quietly filling a gap on the
+    side that records nothing.
+
+    Deliberately a SECOND copy of guard-secrets-read's reader rather than a shared
+    one: hooks may not import each other, and `_config` is the config/manifest
+    core, not a place for tool-payload trivia. Both are three lines over one
+    documented field; the day that field grows a shape, this comment is the
+    pointer to the other copy."""
+    value = (ti or {}).get("dangerouslyDisableSandbox")
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() == "true"
+
+
+def unsandboxed_entries(data, *, cfg=None, root=None):
+    """P0-S: one row for a Bash run that went around the harness sandbox.
+
+    THE FLAG IS READ BEFORE ANYTHING ELSE, and that is a design choice, not an
+    optimisation detail: this hook is now wired to every Bash call, and resolving
+    the repo root and loading the config for each one would charge every command
+    in the session for an event that is rare. A sandboxed call leaves here having
+    touched nothing.
+
+    WHY THIS IS A JOURNAL ROW AND NOT A GUARD. PostToolUse is after the fact, so
+    it stops nothing, and `dangerouslyDisableSandbox` is legitimate -- it is the
+    documented escape hatch, and refusing all of them would simply get the plugin
+    turned off. What was wrong was that the event was INVISIBLE: no deny, no gate
+    message, no row, nothing for `/audit:doctor` or `verify` to find afterwards.
+    guard-secrets-read refuses the narrow combination that reaches the environment
+    layer; everything else is recorded here, and a recorded bypass is a bypass
+    somebody can audit.
+
+    The user's switch still wins: `journal.enabled` false records nothing, exactly
+    as for an edit."""
+    ti = data.get("tool_input", {}) or {}
+    if not sandbox_disabled(ti):
+        return []
+    root = root if root is not None else _config.repo_root(data)
+    cfg = cfg if cfg is not None else _config.load(root)
+    if not _config.journal_enabled(cfg):
+        return []
+    command = str(ti.get("command", ""))
+    return [{
+        "action": "bash.unsandboxed",
+        # No file moved, so no target and no stateHash. `_normalise` allows an
+        # empty target; inventing one would put a hash of nothing in the chain.
+        "target": "",
+        "summary": "Bash ran outside the harness sandbox (recorded, not prevented)",
+        "details": {"command": command, "cwd": str(data.get("cwd") or root)},
+        "actor": {"author": _author(root, cfg),
+                  "sessionId": str(data.get("session_id") or "") or None,
+                  "via": "hook"},
+    }]
+
+
 def post_entries(data, *, cfg=None, root=None):
     """The PostToolUse pass. Returns the list of entries to append: the primary
     row (semantic when the pre-image allows, generic otherwise) followed by any
@@ -453,6 +523,8 @@ def post_entries(data, *, cfg=None, root=None):
     `journal.enabled` is judged against the pre-image, so a true->false flip is
     journalled as a final config.edit row instead of silencing its own record."""
     try:
+        if data.get("tool_name") == "Bash":
+            return unsandboxed_entries(data, cfg=cfg, root=root)
         root = root if root is not None else _config.repo_root(data)
         cfg = cfg if cfg is not None else _config.load(root)
         action, rel, tool, ti = classify(data, cfg=cfg, root=root)

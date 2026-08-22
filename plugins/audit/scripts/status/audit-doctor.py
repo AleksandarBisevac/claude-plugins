@@ -118,6 +118,11 @@ LAUNCHER_INTERPRETERS = _base.LAUNCHER_INTERPRETERS
 RECENT_DAYS = _base.RECENT_DAYS
 
 check_interpreter = _setup.check_interpreter
+check_sandbox = _setup.check_sandbox
+settings_sources = _setup.settings_sources
+read_settings = _setup.read_settings
+sandbox_state = _setup.sandbox_state
+env_deny_rules = _setup.env_deny_rules
 check_git = _setup.check_git
 check_config = _setup.check_config
 check_plan_gate = _setup.check_plan_gate
@@ -151,6 +156,10 @@ def diagnose(project, deep=False):
     cross-check to check_completions (read-only, just slower)."""
     rep = Report()
     check_interpreter(rep)
+    # Next, because it is the same question one layer down: `check_interpreter`
+    # asks whether the guards can run at all, and this asks whether the layer they
+    # lean on is there. Neither takes the cfg/git/manifest trio, so both precede it.
+    check_sandbox(rep, project)
     cfg, cfg_mod = check_config(rep, project)
     git_root = check_git(rep, project, cfg)
     manifest_rel, manifest = check_manifest(rep, project, cfg)

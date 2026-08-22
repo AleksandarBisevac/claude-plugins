@@ -14,21 +14,84 @@ inspection is bypassable in principle. For hard guarantees use OS-level
 sandboxing and Claude Code permission modes; use these hooks as the cheap,
 always-on first line.
 
+## Secrets: friction and evidence, not containment
+
+The sentence above — *every guard inspects tool-call text* — has a consequence
+for secrets specifically that this document used to leave for you to work out.
+Stating it plainly:
+
+**These hooks see intent, not I/O.** `guard-secrets-read` matches the text of a
+tool call. It never observes a file being opened, a byte being read, or a value
+reaching the transcript. So a secret that arrives **indirectly** is invisible to
+it by construction, not by oversight:
+
+```
+$ direnv exec . printenv VERCEL_SCOPE     # .envrc holds `export VERCEL_SCOPE=…`
+```
+
+The command names no `.env` file — `direnv` reads it. The same holds for a test
+runner that loads `dotenv`, a script that opens the file itself, and any process
+that already has the value in its environment. Wrappers around `printenv`,
+`.envrc` by name, `direnv dump`/`export`, `process.env` dumps and the
+`dangerouslyDisableSandbox` combination below are all matched now; **the class is
+not closed and cannot be**, because closing it would mean watching I/O, which a
+`PreToolUse` hook does not do.
+
+**Containment is the harness sandbox's job, and always was.** That is not a
+regression and not a gap in this plugin — it is the boundary between what a hook
+can do and what an OS-level sandbox can do. Claude Code's `sandbox` settings and
+`permissions.deny` rules are the layer that actually stops a read. This plugin
+leans on that layer; it does not replace it, and for a long time it never checked
+whether the layer was there at all. `/audit:doctor` now attests it, and says so
+when it cannot:
+
+```bash
+python3 plugins/audit/scripts/status/audit-doctor.py     # `sandbox` + `secret rules` rows
+```
+
+Because no environment variable carries sandbox state and the doctor is read-only,
+its basis is the settings files alone. **"Not declared" is reported as *not
+established*, never as *off*** — managed policy and a `--settings` flag outrank
+every file it can read.
+
+**So the ceiling here is friction plus evidence.** Friction: the obvious spellings
+cost an extra step and a refusal the human sees. Evidence: a Bash
+call carrying `dangerouslyDisableSandbox` — the documented per-call escape hatch,
+which switches off the only layer that *can* contain a read — appends a
+`bash.unsandboxed` row to the journal, with the command and the cwd. That stops
+nothing; `PostToolUse` is after the fact. It makes the bypass **countable**, which
+is the same bargain the audit trail strikes below: a smoke detector, not a vault.
+
+Two ways this plugin refuses rather than records, for the narrow cases where
+refusing is not merely theatre: the escape hatch combined with a command that
+reaches the environment layer is denied outright, and the ordinary spellings
+(`cat .env`, `printenv`, `source .envrc`, a `process.env` dump) are denied whether
+or not a plan is running. **If your threat model includes a determined adversary
+and real secrets, the load-bearing control is the sandbox and the deny rules — not
+this plugin.**
+
 ## Fail modes (by design)
 
-All **nine** hook scripts launch through `hooks/py-launch.sh`, which resolves
+Every hook script launches through `hooks/py-launch.sh`, which resolves
 `python3` → `python` → `py`. The fail mode when **no interpreter exists** is
 hardcoded per hook in `hooks/hooks.json` — it cannot live in
 `.claude/audit.config.json` because reading that config requires Python
 (chicken-and-egg).
 
-The table has **ten rows for nine scripts**: `require-plan` is registered
-twice, once on `PreToolUse` to decide and once on `PostToolUse` to commit that
-decision, and the two registrations fail differently — which is the whole reason
-this table is per-registration rather than per-script. Elsewhere you may see
-"seven guard hooks": that is the seven that guard, excluding `meter-usage` and
-`journal-writes`, which only record. Three defensible counts, so each one now says
-what it counts.
+The table below is **per hook and event**, not per script and not per
+registration: a script registered on several matchers of one event fails the same
+way on each, while `require-plan` on `PreToolUse` (decide) and on `PostToolUse`
+(commit that decision) fail differently, which is what the split is for. The
+authority is `hooks/hooks.json`, and it prints the full wiring:
+
+```bash
+python3 -c "import json;d=json.load(open('plugins/audit/hooks/hooks.json'));[print(e,b.get('matcher','-'),h['command'].split()[-2].split('/')[-1]) for e,bs in d['hooks'].items() for b in bs for h in b['hooks']]"
+```
+
+This paragraph used to carry three counts — of scripts, of rows, and of "guard
+hooks" — and two of them were wrong by the time anyone read this sentence. They
+are gone rather than corrected, because a corrected number rots on the next
+commit and the command above does not.
 
 | Hook | Event | No interpreter | On internal error |
 |---|---|---|---|
@@ -40,7 +103,7 @@ what it counts.
 | `require-plan` (state commit) | PostToolUse edits | silent | no-op |
 | `guard-bash-writes` | PostToolUse Bash + edits | silent | no-op |
 | `remind-tdd` | PostToolUse edits | silent | no-op |
-| `journal-writes` | PostToolUse edits | silent | no-op |
+| `journal-writes` | PostToolUse edits + Bash | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd | silent | no-op |
 
@@ -138,6 +201,13 @@ Since 0.29.0 every edit-tool write to the manifest or to
 panel's own saves). Each row carries who, when, what changed, a hash of the
 document the write left behind, and the hash of the row before it.
 
+One row is not about the plan at all: a Bash call carrying
+`dangerouslyDisableSandbox` appends `bash.unsandboxed` with the command and the
+cwd. It is here because the same property is what makes it worth having — an
+event nobody can prevent is at least one nobody can quietly deny, and this is
+the file that makes denial expensive. Ordinary sandboxed Bash calls are not
+recorded; the flag is what is read, so the journal cannot decay into a shell log.
+
 The claim it makes is narrower than "an audit log", and the difference is the
 point:
 
@@ -154,11 +224,13 @@ point:
   journal, or a file of it, is the same class of act — and deliberately loud
   rather than silent: `verify` sees the rows go missing and the file's history is
   in git.
-- **What it never sees.** Shell writes (`sed -i`, `>`) do not reach a tool matcher,
-  so nothing records them — they surface instead as out-of-band drift, and
-  `guard-bash-writes` reports a shell write *into the journal directory* after the
-  fact. Anything written while the plugin is disabled is invisible for the same
-  reason every other guard is: the user's own switch outranks it.
+- **What it never sees.** The CONTENT of a shell write. `sed -i` and `>` do not
+  reach an edit-tool matcher, so no row says what they changed — they surface
+  instead as out-of-band drift, and `guard-bash-writes` reports a shell write
+  *into the journal directory* after the fact. (A `bash.unsandboxed` row records
+  that an unsandboxed command RAN, never what it wrote.) Anything written while
+  the plugin is disabled is invisible for the same reason every other guard is:
+  the user's own switch outranks it.
 - **What it records.** The same shape as the ledger's dimensions — the change
   itself (`P1.2 · model · sonnet -> opus`), the resolved author under
   `usage.authorMode`, the session id, the host, and hashes. Never file contents,
@@ -241,14 +313,46 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    oversight**: a path produced by a CALL (`open(find_it(), 'w')`,
    `os.path.join(a, b)`), an f-string, or a chain through a second name. Those need
    dataflow this hook does not do, so it reports no target rather than inventing
-   one — and the PostToolUse check below is what covers them. **Since
-   0.6.0** the residual is covered by `guard-bash-writes` — a PostToolUse
-   `git status` diff check that detects ANY shell write into an unplanned
-   source file after the fact and tells the model in-band. It is advisory by
-   nature (PostToolUse cannot undo the write) and needs a git repo. **Since
-   0.27.0** it also reports a shell write into a manifest or phase shard held
-   by another live session — previously invisible twice over, since
+   one — and the PostToolUse check below is what covers them. **Since 0.6.0**
+   the residual is watched by `guard-bash-writes`, a PostToolUse check that
+   diffs `git status` against its own baseline and tells the model in-band. It
+   is advisory by nature (PostToolUse cannot undo the write) and needs a git
+   repo — no git, a git error or a timeout leaves it silent, and it always exits
+   0. **Since 0.27.0** it also reports a shell write into a manifest or phase
+   shard held by another live session — previously invisible twice over, since
    `manifestPath` was skipped outright and `.json` is not a source extension.
+
+   **This paragraph used to say it detects ANY shell write into an unplanned
+   source file. It does not, and has not since F-P-24.** The real predicate is
+   narrower in four ways, and every exemption is there because the broad version
+   was reporting something that was not true:
+
+   - **A NEW dirty path**, relative to a baseline the session's first Bash pass
+     seeds silently — not every unplanned write, only one that appears between
+     two of this hook's own looks at the tree.
+   - **It can prove a command harmless; it cannot prove one guilty.** F-P-24
+     bound the evidence to the operation instead of to the tree: a command
+     provably unable to write is absorbed and no path is attributed to it. That
+     only ever *removes* an attribution — an unrecognised command is still
+     watched exactly as before. `/dev/null` redirects are substituted out of the
+     command text before the scan (any other `>` in the same command survives),
+     and a `find … -exec` clause is graded on the command it runs — `-exec cat {}
+     +` is absorbed, `-exec sed -i …` is not, and a clause naming no command
+     proves nothing and stays watched.
+   - **With another session writing in the same window it drops the authorship
+     claim, not the finding.** A path another session claims is attributed there
+     and never mentioned here; for the rest, the report states what is actually
+     established — the file was clean at this session's previous look, is dirty
+     now, and no `in_progress` task covers it — rather than naming an author.
+     The signal is the mtime of sibling session state files; a session merely
+     *seeing* a path dirty is deliberately not a claim on it, or two sessions
+     could exonerate each other for a file neither wrote.
+   - **The path must be a source file** — not exempt, not the manifest or its
+     lock, not written by an edit tool, and not covered by an `in_progress` task.
+
+   So the honest ceiling here is not coverage but **attribution**. It sees a tree
+   diff plus the text of one command, and where those two cannot name an author
+   it now says so out loud instead of guessing.
 2. **Subagents do not inherit parent hooks** in all versions
    (anthropics/claude-code#43772). Mitigations: the `/audit` orchestrator —
    not its subagents — performs all manifest writes and commits; since 0.6.0

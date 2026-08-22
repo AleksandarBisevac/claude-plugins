@@ -95,6 +95,116 @@ def _cases(check):
     check("ds4 with all three present the answer is python3 - the launcher's own "
           "order, not PATH order", "will use python3 " in _detail(rep, "interpreter"))
 
+    # ---------------------------------------------------------- check_sandbox
+    # P0-S. The plugin's secret guards match the TEXT of a tool call and never
+    # observe I/O; what actually contains a read is the harness sandbox plus the
+    # permission deny rules. Neither is this plugin's, and until now neither was
+    # checked - so a repo could run with both off, every guard green, and nothing
+    # saying so. A live session did exactly that.
+    #
+    # THE FIXTURES PIN A THREE-VALUED ANSWER, which is the whole point: "declared
+    # false", "declared true" and "nobody declared it" are three different facts,
+    # and collapsing the third into the first would make this check assert
+    # something it cannot observe. Managed policy and a `--settings` flag outrank
+    # every file read here.
+    def sandbox_rep(local=None, proj=None, user=None):
+        box = tempfile.mkdtemp(prefix="doctor-sandbox-")
+        home = os.path.join(box, "home")
+        proj_dir = os.path.join(box, "proj")
+        for base_dir, obj, name in (
+                (proj_dir, local, "settings.local.json"),
+                (proj_dir, proj, "settings.json"),
+                (home, user, "settings.json")):
+            if obj is None:
+                continue
+            os.makedirs(os.path.join(base_dir, ".claude"), exist_ok=True)
+            with open(os.path.join(base_dir, ".claude", name), "w",
+                      encoding="utf-8") as fh:
+                fh.write(obj if isinstance(obj, str) else json.dumps(obj))
+        rep = base.Report()
+        M.check_sandbox(rep, proj_dir, home=home)
+        shutil.rmtree(box, ignore_errors=True)
+        return rep
+
+    rep = sandbox_rep()
+    check("ds0a NO settings file at all: the sandbox is NOT ESTABLISHED, which "
+          "is a warning and not a claim that it is off - no env var carries the "
+          "state and a read-only doctor may not probe by writing: %r"
+          % (_detail(rep, "sandbox"),),
+          _levels(rep, "sandbox") == ["WARNING"]
+          and "cannot be attested" in _detail(rep, "sandbox"))
+    check("ds0b ...and with NEITHER layer established the missing deny rule is a "
+          "FINDING, because the only thing left between a secret and the "
+          "transcript is a regex over tool-call text: %r"
+          % (_detail(rep, "secret rules"),),
+          _levels(rep, "secret rules") == ["FINDING"]
+          and "no sandbox is established" in _detail(rep, "secret rules"))
+
+    rep = sandbox_rep(proj={"sandbox": {"enabled": False}})
+    check("ds0c sandbox.enabled FALSE is a FINDING - broken now, not later: %r"
+          % (_detail(rep, "sandbox"),),
+          _levels(rep, "sandbox") == ["FINDING"]
+          and "project settings" in _detail(rep, "sandbox"))
+
+    # ds0d IS THE SECOND-DIRECTION MUTATION for ds0a/ds0c and it looks vacuous:
+    # a check that reported "no sandbox" unconditionally passes ds0a and ds0c
+    # forever and fails only here. It is also the case that fails if the
+    # three-valued read is collapsed to a truthiness test, since `enabled: true`
+    # and "no sandbox key" are both non-False.
+    rep = sandbox_rep(proj={"sandbox": {"enabled": True},
+                            "permissions": {"deny": ["Read(.env*)"]}})
+    check("ds0d a declared, enabled sandbox with a deny rule is two OK rows and "
+          "no warning anywhere - the guard must be able to say 'this is fine'",
+          _levels(rep, "sandbox") == ["OK"]
+          and _levels(rep, "secret rules") == ["OK"]
+          and "Read(.env*)" in _detail(rep, "secret rules"))
+
+    rep = sandbox_rep(proj={"sandbox": {"enabled": True}})
+    check("ds0e a working sandbox DOWNGRADES the missing rule to a warning - one "
+          "layer is established, so this will bite later rather than now: %r"
+          % (_detail(rep, "secret rules"),),
+          _levels(rep, "secret rules") == ["WARNING"])
+
+    # PRECEDENCE, and it is picked so the two implementations disagree: a scalar
+    # does not merge, so the LOCAL file must win over the project one. Reading
+    # the lowest-precedence file (or the first found in path order) reports the
+    # opposite verdict here.
+    rep = sandbox_rep(local={"sandbox": {"enabled": False}},
+                      proj={"sandbox": {"enabled": True}})
+    check("ds0f settings.local.json outranks settings.json for a scalar - the "
+          "highest-precedence file that DEFINES the key decides: %r"
+          % (_detail(rep, "sandbox"),),
+          _levels(rep, "sandbox") == ["FINDING"]
+          and "project local settings" in _detail(rep, "sandbox"))
+
+    # ...and rule LISTS merge instead of overriding, so a rule in the user scope
+    # counts even when a project file also defines `permissions`. The fixture
+    # gives the project file a deny list that does NOT cover .env, so an
+    # implementation that stopped at the first `permissions` block reports a
+    # FINDING here.
+    rep = sandbox_rep(proj={"permissions": {"deny": ["Bash(rm:*)"]}},
+                      user={"permissions": {"deny": ["Read(.env*)"]}})
+    check("ds0g deny LISTS merge across scopes - a user-scope rule still counts "
+          "when a project file defines its own: %r"
+          % (_detail(rep, "secret rules"),),
+          _levels(rep, "secret rules") == ["OK"]
+          and "Read(.env*)" in _detail(rep, "secret rules"))
+
+    check("ds0h `Edit(.env*)` alone does NOT count - it refuses a write, and "
+          "the leak this is about is a read",
+          M.env_deny_rules([("project", {"permissions": {
+              "deny": ["Edit(.env*)"]}})]) == []
+          and M.env_deny_rules([("project", {"permissions": {
+              "deny": ["Read(./.env)"]}})]) == ["Read(./.env)"])
+
+    rep = sandbox_rep(proj="{not json")
+    check("ds0i an UNPARSEABLE settings file is reported as unreadable, not "
+          "silently skipped - the harness is not applying its rules either, and "
+          "'no rule found' would name the wrong cause: %r"
+          % (_detail(rep, "settings"),),
+          _levels(rep, "settings") == ["WARNING"]
+          and "not applying" in _detail(rep, "settings"))
+
     # -------------------------------------------------------------- check_git
     have_git = bool(shutil.which("git"))
     if not have_git:

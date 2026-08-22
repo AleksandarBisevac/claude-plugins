@@ -89,6 +89,164 @@ def check_interpreter(rep):
            "hooks will use %s (candidates on PATH: %s)" % (found[0], ", ".join(found)))
 
 
+# --- the containment layer the guards lean on (P0-S) ----------------------------
+# The plugin's secret guards match the TEXT of a tool call; they never observe I/O.
+# What actually CONTAINS a read is the harness sandbox, plus the permission system's
+# deny rules. Neither belongs to this plugin, and neither was ever checked -- so a
+# repo could run with both switched off, every guard green, and nothing saying so.
+#
+# WHAT THIS CAN OBSERVE, AND WHAT IT CANNOT. Claude Code exposes no environment
+# variable carrying sandbox state (`CLAUDECODE` says a subprocess was spawned by it,
+# not that the subprocess is sandboxed), and this command is read-only by
+# construction, so it may not probe by attempting a write. Settings FILES are the
+# whole basis available. Two of the merge layers sit outside them -- managed/MDM
+# policy and a `--settings` flag on the command line -- and both outrank everything
+# here, so "not declared" is reported as NOT ESTABLISHED and never as "off". That
+# distinction is the entire reason this check grades the way it does.
+SETTINGS_SCOPES = ("project local", "project", "user")
+
+
+def settings_sources(project, home=None):
+    """The settings files this check can read, HIGHEST precedence first.
+
+    The order is Claude Code's own, minus the two layers no file can show us."""
+    home = home if home is not None else os.path.expanduser("~")
+    return (
+        (os.path.join(project, ".claude", "settings.local.json"), "project local"),
+        (os.path.join(project, ".claude", "settings.json"), "project"),
+        (os.path.join(home, ".claude", "settings.json"), "user"),
+    )
+
+
+def read_settings(project, home=None):
+    """([(scope, obj)] highest precedence first, ["scope: reason"] unreadable).
+
+    An unparseable settings file is RETURNED as a problem rather than skipped:
+    a file the harness also cannot read is silently not applying the very rules
+    this check is looking for, and reporting "no rule found" for it would name
+    the wrong cause."""
+    found, broken = [], []
+    for path, scope in settings_sources(project, home=home):
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                obj = json.load(fh)
+        except Exception as exc:
+            broken.append("%s (%s): %s" % (scope, path, exc))
+            continue
+        if isinstance(obj, dict):
+            found.append((scope, obj))
+        else:
+            broken.append("%s (%s): not a JSON object" % (scope, path))
+    return (found, broken)
+
+
+def sandbox_state(sources):
+    """(enabled, scope) for `sandbox.enabled` -- (None, None) when no file says.
+
+    A scalar key does not merge across scopes: the highest-precedence file that
+    defines it decides, which is why `sources` arrives in that order. None is a
+    THIRD value, not a falsy second one -- "nobody declared it" and "declared
+    false" are different facts and the caller grades them differently."""
+    for scope, obj in sources:
+        sandbox = obj.get("sandbox")
+        if isinstance(sandbox, dict) and "enabled" in sandbox:
+            return (bool(sandbox["enabled"]), scope)
+    return (None, None)
+
+
+def _is_env_read_deny(rule):
+    """True for a deny rule that refuses to READ a dotenv file.
+
+    `Edit(.env*)` is deliberately not enough: it stops a write, and the leak this
+    is about is a read."""
+    text = str(rule).strip()
+    head, sep, rest = text.partition("(")
+    if not sep or not rest.endswith(")"):
+        return False
+    return head.strip().lower() in ("read", "grep") and ".env" in rest[:-1]
+
+
+def env_deny_rules(sources):
+    """Every dotenv READ-deny rule, across every scope. Rule LISTS merge in
+    Claude Code rather than overriding, so all of them count, not the first."""
+    out = []
+    for _scope, obj in sources:
+        perms = obj.get("permissions")
+        if not isinstance(perms, dict):
+            continue
+        for rule in perms.get("deny") or []:
+            if _is_env_read_deny(rule) and str(rule) not in out:
+                out.append(str(rule))
+    return out
+
+
+def check_sandbox(rep, project, home=None):
+    """Is the containment layer this plugin's guards assume actually there?
+
+    TWO ROWS, GRADED BY THE DOCTOR'S OWN TAXONOMY rather than by how alarming the
+    subject sounds. FINDING means broken now; WARNING means it will bite later.
+
+      * sandbox   - explicitly off is broken now (the guards are text matchers and
+                    nothing else is containing anything). Not declared is a
+                    WARNING that says what could not be established and why, since
+                    a managed policy or a `--settings` flag could be enabling it
+                    out of this command's sight. Reporting that as "off" would be
+                    a claim with no basis, which is the defect this whole item is
+                    about repeating in a new place.
+      * env rules - a missing deny rule beside a working sandbox will bite later.
+                    A missing deny rule with NO sandbox established is broken now:
+                    at that point the only thing between a secret and the
+                    transcript is a regex over the text of a tool call, which is
+                    exactly what the live report walked through.
+    """
+    sources, broken = read_settings(project, home=home)
+    for line in broken:
+        rep.warn("settings", "unreadable settings file - the rules in it are not "
+                 "applying, here or in the harness: %s" % line,
+                 "fix the JSON, or delete the file to fall back to the scope below it")
+
+    enabled, scope = sandbox_state(sources)
+    if enabled is False:
+        rep.finding("sandbox",
+                    "sandbox.enabled is false in %s settings - the only layer that "
+                    "can contain a secret read is off, and this plugin's guards "
+                    "match the text of a tool call, not I/O" % scope,
+                    "set sandbox.enabled true, and sandbox.allowUnsandboxedCommands "
+                    "\"forbid\" to close the per-call escape hatch")
+    elif enabled is True:
+        rep.ok("sandbox", "sandbox.enabled is true in %s settings" % scope)
+    else:
+        rep.warn("sandbox",
+                 "no readable settings file declares `sandbox` - this cannot be "
+                 "attested. Claude Code exposes no environment variable for it, "
+                 "managed policy and a --settings flag both outrank these files, "
+                 "and a read-only diagnostic may not probe by writing",
+                 "declare sandbox.enabled in .claude/settings.json so the setup "
+                 "states its own posture, or check the /sandbox panel")
+
+    rules = env_deny_rules(sources)
+    if rules:
+        rep.ok("secret rules",
+               "a permission deny rule refuses dotenv reads: %s"
+               % ", ".join(rules))
+        return
+    detail = ("no permission deny rule refuses reading a dotenv file "
+              "(looked for Read(...)/Grep(...) naming .env across %s settings)"
+              % ", ".join(SETTINGS_SCOPES))
+    fix = ("add \"Read(.env*)\" to permissions.deny in .claude/settings.json; "
+           "the plugin's own guard is a text matcher and cannot see a value "
+           "loaded indirectly (direnv, dotenv, a test harness)")
+    if enabled is True:
+        rep.warn("secret rules", detail, fix)
+    else:
+        rep.finding("secret rules",
+                    "%s - and no sandbox is established either, so nothing "
+                    "outside this plugin is containing a secret read" % detail,
+                    fix)
+
+
 def check_git(rep, project, cfg):
     """The git root the orchestrator will run git against."""
     git_root = os.path.abspath(os.path.join(project, cfg.get("gitRoot") or "."))
