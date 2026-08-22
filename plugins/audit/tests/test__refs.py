@@ -851,6 +851,126 @@ def _cases(check):
           _guide.count("scripts/*.py") == 2 and M.SWEEP_RUNNER in _guide
           and M.SWEEP_FLAT not in _guide, repr(_guide.count("scripts/*.py")))
 
+    # --- is the sweep list the WHOLE set? ---------------------------------------------
+    # `sweep_glob_drift()` above judges the documents in `SWEEP_DOCS`; these judge the
+    # LIST. Until this rule existed a new document teaching the retired glob was green
+    # in both directions at once - unopened by the rule, and unseen by everything else.
+    check("s15 no document in the tree teaches a sweep without being in SWEEP_DOCS, "
+          "and no listed document has become unreachable: %r" % (M.sweep_doc_drift(),),
+          M.sweep_doc_drift() == [])
+
+    tmp = tempfile.mkdtemp()
+    # The directory the fixture declares ignored, and the one a listed document lives
+    # in - both READ off the constant rather than spelled, so a document moving into a
+    # new directory cannot leave these cases asserting about a path nothing uses.
+    _ign_dir = "scratch"
+    _nested = [r for r in M.SWEEP_DOCS if "/" in r][0]
+    _top = _nested.split("/")[0]
+    _unlisted = "docs/onboarding.md"
+    try:
+        for rel in M.SWEEP_DOCS:
+            _write(tmp, rel, _sweep_doc(rel, M.SWEEP_RUNNER))
+        _write(tmp, ".gitignore", "# fixture\n%s/\n" % _ign_dir)
+        check("s16 ...and the fixture that mirrors it is clean, so every case below "
+              "fails for the reason it names rather than because the fixture was "
+              "already red", M.sweep_doc_drift(tmp) == [], repr(M.sweep_doc_drift(tmp)))
+
+        _write(tmp, _unlisted, _sweep_doc(_unlisted, M.SWEEP_RUNNER))
+        _d = M.sweep_doc_drift(tmp)
+        check("s17 a NEW document telling a reader to run the sweep is reported until "
+              "it is listed - correct today is not the point, it is that nothing would "
+              "hold it correct the day the runner is renamed",
+              len(_d) == 1 and _d[0][0] == _unlisted
+              and "sweep runner" in _d[0][1] and "SWEEP_DOCS" in _d[0][1], repr(_d))
+
+        _write(tmp, _unlisted, _sweep_doc(_unlisted, M.SWEEP_FLAT))
+        _d = M.sweep_doc_drift(tmp)
+        check("s18 ...and the case this rule exists for: an unlisted document teaching "
+              "the RETIRED glob, which sweep_glob_drift() never opens and nothing else "
+              "reads a fence for. Reported under the retired shape's own word, so the "
+              "finding says which loop somebody wrote",
+              len(_d) == 1 and _d[0][0] == _unlisted
+              and "flat sweep" in _d[0][1], repr(_d))
+
+        _write(tmp, _unlisted, _sweep_doc(
+            _unlisted, "make test",
+            "The suites are swept by `%s`; never write `%s ...` yourself."
+            % (M.SWEEP_RUNNER, M.SWEEP_FLAT)))
+        check("s19 prose about the sweep does NOT put a document under the rule - the "
+              "region scope is the same one sweep_glob_drift() uses, or half the tree "
+              "would owe an entry for mentioning the command",
+              M.sweep_doc_drift(tmp) == [], repr(M.sweep_doc_drift(tmp)))
+
+        # ---- the candidate set is DERIVED, and both directions are proven ---------
+        _scratch = "%s/notes.md" % _ign_dir
+        _write(tmp, _scratch, _sweep_doc(_scratch, M.SWEEP_FLAT))
+        check("s20 a document inside a directory `.gitignore` names is not a document "
+              "of this repo: `.claude/worktrees/` holds whole checkouts, so without "
+              "this the finding count would be one per recent agent rather than "
+              "anything in the commit", M.sweep_doc_drift(tmp) == [],
+              repr(M.sweep_doc_drift(tmp)))
+        _write(tmp, ".gitignore", "# fixture\n")
+        _d = M.sweep_doc_drift(tmp)
+        check("s21 ...and the other direction, which is the one that proves s20 tests "
+              "the derivation and not the path: drop that one line from `.gitignore` "
+              "and the same file IS reported",
+              [x[0] for x in _d] == [_scratch], repr(_d))
+
+        # ---- the blind direction: the walk stops reaching a listed document -------
+        _write(tmp, ".gitignore", "# fixture\n%s/\n" % _top)
+        _d = M.sweep_doc_drift(tmp)
+        check("s22 a listed document the walk can no longer reach is reported as BLIND, "
+              "never as clean. A derivation is only as good as its pattern, and the day "
+              "one prunes a directory a sweep document lives in, this rule would go "
+              "quiet - which is the failure it exists to prevent",
+              [x for x in _d if x[0] == _nested]
+              == [(_nested, "is in SWEEP_DOCS but the walk cannot reach it, so the "
+                            "scan has gone blind rather than clean")], repr(_d))
+
+        # ---- a premise it cannot read is loud, never a fallback -------------------
+        os.remove(os.path.join(tmp, ".gitignore"))
+        _d = M.sweep_doc_drift(tmp)
+        check("s23 with no readable `.gitignore` the rule reports THAT and stops: it "
+              "cannot know which directories the repo does not keep, and answering "
+              "'none of them' would be a wrong answer wearing the shape of a right one",
+              len(_d) == 1 and _d[0][0] == ".gitignore"
+              and "cannot be derived" in _d[0][1], repr(_d))
+
+        def _empty_prune_drift(root):
+            """The fallback s23 refuses: an unreadable `.gitignore` prunes nothing."""
+            listed = set(M.SWEEP_DOCS)
+            return [(rel, "unlisted") for rel in M._iter_docs(root, (), M.SWEEP_DOC_EXT)
+                    if rel not in listed and M.SWEEP_FLAT
+                    in M._runnable_text(rel, open(
+                        os.path.join(root, rel.replace("/", os.sep)),
+                        encoding="utf-8").read())[0]]
+
+        check("s24 mutation proof for s23: the fallback reads the ignored copy as a "
+              "real unlisted carrier, so the loud path is the difference between a "
+              "finding about this repo and a finding about a scratch directory: %r"
+              % (_empty_prune_drift(tmp),),
+              [x[0] for x in _empty_prune_drift(tmp)] == [_scratch])
+
+        # ---- gitignore's anchoring rule, on the pure function --------------------
+        check("s25 a pattern with no slash matches a directory of that NAME at any "
+              "depth, one with a slash is anchored to the root - collapsing the two "
+              "would either prune every directory called `usage` or miss the one that "
+              "matters, and both readings look right in review",
+              M._is_ignored("a/b/__pycache__", (".claude/usage", "__pycache__"))
+              and M._is_ignored(".claude/usage", (".claude/usage", "__pycache__"))
+              and M._is_ignored(".claude/usage/x", (".claude/usage",))
+              and not M._is_ignored("plugins/usage", (".claude/usage",))
+              and not M._is_ignored("docs/audit", (".claude/usage", "__pycache__")))
+        check("s26 the shapes that put a document under the rule are ONE table with the "
+              "retired ones, reported under distinct words - the runner is in it "
+              "because a correct document still has to be held correct: %r"
+              % (M.SWEEP_SHAPES,),
+              M.SWEEP_SHAPES[0][0] == M.SWEEP_RUNNER
+              and set(M.RETIRED_SWEEPS) <= set(M.SWEEP_SHAPES)
+              and len(set(lbl for _s, lbl in M.SWEEP_SHAPES)) == len(M.SWEEP_SHAPES))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     # --- published fetch instructions -----------------------------------------
     check("p1 the tree publishes no runnable fetch from a moving ref, and no stale "
           "pin in the plugin README", M.raw_url_pin_drift() == [],
@@ -881,6 +1001,10 @@ def _cases(check):
         _pjr = os.path.join(tmp, "plugins", "audit", ".claude-plugin", "plugin.json")
         with open(_pjr, "r", encoding="utf-8") as fh:
             _cur = json.load(fh)["version"]
+        # The candidate set is derived from `.gitignore`, so a fixture without one
+        # exercises the loud path instead of the rule - p8 and p9 filter by path and
+        # went green over that finding, which is exactly the shape they exist to catch.
+        _write(tmp, ".gitignore", "# fixture\n")
 
         check("p3 ...and that fixture is green, so the cases below fail for the "
               "reason they name", M.raw_url_pin_drift(tmp) == [],
@@ -955,6 +1079,105 @@ def _cases(check):
           M._executable_raw_refs(
               "```bash\ncurl https://raw.githubusercontent.com/o/r/main/x\n```") != [],
           "the fence scope must be able to fire here")
+
+
+    # --- the candidate set this rule walks ------------------------------------
+    # It pruned four directory names by hand, and a hand list is the thing that rots:
+    # it reached whatever the browser tool had last left in the tree - so the set moved
+    # with what had recently run on the machine rather than with the commit - and it
+    # pruned `.claude/` wholesale, which held the tracked skills out of a rule that is
+    # exactly about a document publishing a fetch. Both wrong at once, in one list.
+    # Read off the rule's OWN accessor, not off `_iter_docs` with the arguments the
+    # rule is believed to pass: the second form passed with the hand list restored,
+    # because it was testing the helper rather than what the rule hands it.
+    _pats, _ = M._ignored_dirs(M.REPO_ROOT)
+    _fdocs, _pat_problem = M._fetch_docs(M.REPO_ROOT)
+    _ignored_hits = [r for r in _fdocs
+                     if "/" in r and M._is_ignored(r.rsplit("/", 1)[0], _pats)]
+    check("p13 the rule walks the documents this repo KEEPS: no candidate sits inside "
+          "a directory `.gitignore` names, and the tracked documents under `.claude/` "
+          "are judged rather than pruned by name",
+          _pat_problem is None and _ignored_hits == []
+          and [r for r in _fdocs if r.startswith(".claude/")] != [],
+          repr(_ignored_hits[:4]))
+
+    # p9 asserts no JSON is REPORTED, which a rule that reads every JSON in the tree
+    # also satisfies - the identity URLs it must not touch sit in files carrying no
+    # Markdown fence, so nothing separates the two. This is the case that does: the
+    # format set is an argument, and the first version of the shared walk took it and
+    # then judged by the sweep's. Green suites either way, because no candidate the
+    # extra formats added carries a fence today.
+    check("p19 the rule's formats are the ones it was handed: a schema identity is not "
+          "reachable at all, rather than reachable and quiet - which is what p9 needs "
+          "to be about the scope instead of about today's file contents",
+          [r for r in _fdocs if not r.endswith(M._FETCH_DOC_EXT)] == []
+          and [r for r in _fdocs if r.endswith(".json")] == [],
+          repr([r for r in _fdocs if not r.endswith(M._FETCH_DOC_EXT)][:4]))
+
+    tmp = tempfile.mkdtemp()
+    # Built, never spelled: the host lives in the module and a literal here would be a
+    # second copy of it, in a file the same rule reads.
+    _ign_dir = "scratch"
+    _scratch = "%s/notes.md" % _ign_dir
+    _fetch_md = ("```bash\ncurl -O https://%s/o/r/main/x.json\n```\n" % M._RAW_HOST)
+    try:
+        _write(tmp, ".gitignore", "# fixture\n%s/\n" % _ign_dir)
+        _write(tmp, _scratch, _fetch_md)
+        # The currency arm reads this, and reading it is not optional: a root without
+        # one raises rather than reporting, which is a boundary worth meeting here
+        # rather than in whatever consumer tree hits it first.
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": "0.0.0"}) + "\n")
+        check("p14 a runnable fetch inside a directory `.gitignore` names is not "
+              "something this repo published: the walk that reached one read scratch "
+              "output as an instruction a reader could copy",
+              M.raw_url_pin_drift(tmp) == [], repr(M.raw_url_pin_drift(tmp)))
+
+        _write(tmp, ".gitignore", "# fixture\n")
+        _d = M.raw_url_pin_drift(tmp)
+        check("p15 ...and the direction that proves p14 tests the derivation rather "
+              "than the path: drop that one line and the same file IS reported",
+              [(r[0], "moving ref" in r[2]) for r in _d] == [(_scratch, True)],
+              repr(_d))
+
+        os.remove(os.path.join(tmp, ".gitignore"))
+        _d = M.raw_url_pin_drift(tmp)
+        check("p16 with no readable `.gitignore` the rule reports THAT and stops - "
+              "answering 'nothing is ignored' would scan the ignored copies and call "
+              "what they carry published",
+              len(_d) == 1 and _d[0][0] == ".gitignore"
+              and "cannot be derived" in _d[0][2], repr(_d))
+
+        def _no_prune_drift(root):
+            """The fallback p16 refuses: an unreadable `.gitignore` prunes nothing."""
+            out = []
+            for rel in M._iter_docs(root, (), M._FETCH_DOC_EXT):
+                with open(os.path.join(root, rel.replace("/", os.sep)),
+                          "r", encoding="utf-8") as fh:
+                    text = fh.read()
+                out += [(rel, ref) for ref, _ln in M._executable_raw_refs(text)
+                        if ref in M._MOVING_REFS]
+            return out
+
+        check("p17 mutation proof for p16: that fallback reports the ignored copy as a "
+              "published fetch - a finding about a scratch directory wearing the shape "
+              "of a finding about this repo: %r" % (_no_prune_drift(tmp),),
+              [r[0] for r in _no_prune_drift(tmp)] == [_scratch])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # Looks vacuous, and is the only case that fails the other mutation. `EXCLUDED` is
+    # the table that pairs with `SURFACES` (t2), and this walk once carried a filter
+    # against it that could not fire - a path string tested against (path, reason)
+    # pairs. Deleting it changed nothing, and this is what says so: the documents that
+    # table names are CANDIDATES here, spared by the fence scope (p10-p12) and not by
+    # an exemption. Make the filter work and p11 goes green for the wrong reason.
+    check("p18 the documents `EXCLUDED` names are read by this rule rather than held "
+          "out of it - prose is what spares them, which is what keeps p11 measured "
+          "instead of assumed",
+          "CHANGELOG.md" in _fdocs
+          and [r for r in _fdocs if r.startswith("docs/design/")] != [],
+          repr([r for r in _fdocs
+                if r == "CHANGELOG.md" or r.startswith("docs/design/")]))
 
 
     # --- F36: a command's flags vs the README row that catalogues them ---------

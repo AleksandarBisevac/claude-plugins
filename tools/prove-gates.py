@@ -114,6 +114,13 @@ TABLE = (
   None, REF, "tb1"),
  ("sweep_glob_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
   "python3 tools/sweep-selftests.py", "make test", REF, "s1"),
+ # The completeness half, and the mutation has to be the SILENT direction rather than
+ # the convenient one. Deleting an entry from `SWEEP_DOCS` would also turn this red,
+ # and would prove the wrong thing: the defect is a document nobody listed, not a list
+ # somebody shortened. So a plausible new fence lands in a document that is not in the
+ # list - the plugin README, which is where a reader runs commands from.
+ ("sweep_doc_drift", "plugins/audit/README.md", "after", "\n## Install\n",
+  "\nRun the suites:\n\n```bash\npython3 tools/sweep-selftests.py\n```\n", REF, "s15"),
  # The absolute path is BUILT, never spelled - same rule as the `.py` name below,
  # and the same rule `test__refs.py` follows for its own fixtures. This table lives
  # in `tools/`, which `absolute_reach_violations` scans, so a literal here IS the

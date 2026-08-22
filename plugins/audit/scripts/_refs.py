@@ -895,6 +895,181 @@ def sweep_glob_drift(repo_root=None):
     return out
 
 
+# --- is the sweep list the whole set? -----------------------------------------
+# `SWEEP_DOCS` is hand-written, and until this rule existed nothing said it was
+# COMPLETE. A new document telling a reader to run the retired glob was green twice
+# over: `sweep_glob_drift()` never opens a document that is not in the list, and
+# nothing else in the tree reads a runnable region looking for a sweep. So the weaker
+# half of the pair was not the rule but the LIST, and a list nothing checks is the
+# shape every other derived table in this file exists to avoid.
+#
+# Written while the list was still complete - measured, zero unlisted carriers - which
+# is the only cheap moment to start holding it. A completeness rule adopted after the
+# drift arrives is a backlog, not a gate.
+#
+# THE SCAN SEES ONLY FORMATS `_runnable_text` HAS A RULE FOR, and that is the guarantee
+# rather than a gap to apologise for: the extension set is DERIVED from the three format
+# constants, so the day somebody teaches `_runnable_text` a fourth format this scan
+# starts reading it without being told.
+SWEEP_DOC_EXT = _MD_EXT + _YAML_EXT + _JSON_EXT
+
+# Every shape that makes a document a sweep document, with the word it is reported
+# under. The runner belongs here for the same reason the two retired globs do, and it
+# is the half that is easy to leave out: a document teaching the sweep CORRECTLY must
+# be in the list so that `sweep_glob_drift()` keeps it correct the day the runner is
+# renamed, and one teaching a retired glob must be in the list so that the same check
+# can fail it at all. One tuple, one loop - as two `if`s they would drift apart.
+SWEEP_SHAPES = ((SWEEP_RUNNER, "sweep runner"),) + RETIRED_SWEEPS
+
+# DIRECTORIES THIS REPO DOES NOT KEEP, read off `.gitignore` rather than listed here.
+# A hand list is the thing that rots, and this one would have rotted already:
+# `.claude/worktrees/` was ignored long after the walk below it was written, and it
+# holds WHOLE CHECKOUTS of this repo - as many as there were recent agents. A scan that
+# did not know about it would report every sweep document once per worktree, so the
+# finding count would depend on nothing that is in the commit.
+#
+# Only the unambiguous half of the format is honoured: a line ending in `/` with no glob
+# metacharacter names a directory. `docs/audit/*.lock` and
+# `**/.claude/audit-panel.json` are patterns and files, and reading them would be
+# implementing gitignore. The consequence is stated rather than hidden - an ignored FILE
+# of a scanned extension stays a candidate. For the sweep that is a per-developer
+# settings file which cannot carry a command; for the published-fetch rule that shares
+# this walk it is the RENDERED report, which is generated and CAN carry a fence, so
+# that rule's set still moves with whether anyone has rendered one here. Closing that
+# needs the file half of the format, which is a second derivation and owes its own
+# red-first rather than riding in on this one.
+#
+# `git ls-files` would answer "tracked" outright and may not be used: these suites are
+# verified over a `git archive HEAD` export, which has no `.git` at all.
+_IGNORE_GLOB_CHARS = "*?[]!"
+
+
+def _ignored_dirs(root):
+    """`(patterns, problem)` — the directory patterns `.gitignore` declares.
+
+    Exactly one of the two is None, the same contract `_runnable_text` uses, and for
+    the same reason: falling back to "nothing is ignored" would walk the agent
+    worktrees and report every sweep document once per copy, which is a wrong answer
+    wearing the shape of a right one. `.gitignore` is tracked, so a tree without a
+    readable one is broken rather than minimal.
+    """
+    try:
+        with open(os.path.join(root, ".gitignore"), "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, ("unreadable, so the directories this repo does not keep "
+                      "cannot be derived: %s" % exc)
+    # `.git` is never IN `.gitignore` - git does not ignore its own directory - so it
+    # is the one name here, and the only one this function spells.
+    out = [".git"]
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or not line.endswith("/"):
+            continue
+        rel = line.strip("/")
+        if not rel or [ch for ch in _IGNORE_GLOB_CHARS if ch in rel]:
+            continue
+        out.append(rel)
+    return tuple(sorted(set(out))), None
+
+
+def _is_ignored(rel_dir, patterns):
+    """Whether the directory at `rel_dir` is one the patterns name.
+
+    Gitignore's anchoring rule, and the only part of it needed here: a pattern with no
+    slash inside it matches a directory of that NAME at any depth (`__pycache__/`), one
+    with a slash is anchored to the repo root (`.claude/usage/`). Collapsing the two
+    would either prune every directory called `usage` or fail to prune the one that
+    matters, and both readings look right in a review.
+    """
+    name = rel_dir.rsplit("/", 1)[-1]
+    for pattern in patterns:
+        if "/" in pattern:
+            if rel_dir == pattern or rel_dir.startswith(pattern + "/"):
+                return True
+        elif name == pattern:
+            return True
+    return False
+
+
+def _iter_docs(root, patterns, exts):
+    """Relative paths of every document of `exts` this repo KEEPS, sorted.
+
+    ONE walk for both rules that ask the question, because the second one had its own
+    and it was a hand list of four directory names. That list was wrong in both
+    directions at once: it reached whatever the browser tool had last left in the tree,
+    so the candidate set moved with what had recently run on this machine rather than
+    with anything in the commit, and it pruned `.claude/` wholesale, which held the
+    tracked skills out of a rule that is precisely about a document publishing a fetch.
+    Two prune lists is how one of them comes to be wrong without the other noticing.
+    """
+    out = []
+    for base, dirs, files in os.walk(root):
+        rel_base = os.path.relpath(base, root).replace(os.sep, "/")
+        prefix = "" if rel_base == "." else rel_base + "/"
+        dirs[:] = sorted(d for d in dirs if not _is_ignored(prefix + d, patterns))
+        for name in sorted(files):
+            if name.endswith(exts):
+                out.append(prefix + name)
+    return sorted(out)
+
+
+def sweep_doc_drift(repo_root=None):
+    """[(doc, problem), ...] — the ways `SWEEP_DOCS` stops being the whole set.
+
+    `sweep_glob_drift()` judges the documents in the list; this judges the LIST. Two
+    directions, because it has two failure modes and only one of them is obvious:
+
+      * **a document that teaches a sweep and is not listed** — the silent case, and
+        the reason this exists. Nothing else reads a runnable region for a sweep, so a
+        new guide telling a reader to run the flat glob passed both checks at once;
+      * **a listed document the walk cannot reach** — the blind case. The candidate set
+        is derived from `.gitignore`, and a derivation is only as good as its pattern:
+        the day one prunes a directory a sweep document lives in, this rule would go
+        QUIET rather than wrong, which is precisely the failure it exists to prevent.
+        Documents in this list live under `.claude/` as well as at the top level, one
+        directory away from a pruned one.
+
+    A candidate it could not read or could not parse is REPORTED, never skipped: "I
+    cannot clear this file" and "this file is clean" are different answers, and a
+    skipped file is the second one told as the first. Measured over the tree when this
+    was written: no unreadable candidate and no unparseable one, so the loud path costs
+    nothing today and is here for the day it does not.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    patterns, problem = _ignored_dirs(root)
+    if problem is not None:
+        return [(".gitignore", problem)]
+    listed = set(SWEEP_DOCS)
+    seen = set()
+    out = []
+    for rel in _iter_docs(root, patterns, SWEEP_DOC_EXT):
+        if rel in listed:
+            seen.add(rel)
+            continue
+        try:
+            with open(os.path.join(root, rel.replace("/", os.sep)),
+                      "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, "cannot be read, so it cannot be cleared of teaching a "
+                             "sweep: %s" % exc))
+            continue
+        runnable, problem = _runnable_text(rel, text)
+        if problem is not None:
+            out.append((rel, "cannot be cleared of teaching a sweep: %s" % problem))
+            continue
+        for shape, label in SWEEP_SHAPES:
+            if shape in runnable:
+                out.append((rel, "tells a reader to run the %s %r but is not in "
+                                 "SWEEP_DOCS, so nothing holds it to the rule"
+                                 % (label, shape)))
+    for rel in sorted(listed - seen):
+        out.append((rel, "is in SWEEP_DOCS but the walk cannot reach it, so the scan "
+                         "has gone blind rather than clean"))
+    return out
+
+
 # --- published raw URLs -------------------------------------------------------
 # A raw.githubusercontent URL encodes a PATH into somebody else's CI. When it names a
 # moving ref, every layout change here is a silent 404 there, with no deprecation
@@ -919,6 +1094,31 @@ _RAW_RE = re.compile(r"%s/[^/\s]+/[^/\s]+/([^/\s]+)/" % re.escape(_RAW_HOST))
 # use of a tag, so the currency rule must not fail it.
 _PIN_CURRENT_REL = PLUGIN_REL + "/README.md"
 _PLUGIN_JSON_REL = PLUGIN_REL + "/.claude-plugin/plugin.json"
+
+# Derived from the format constants the sweep's scan reads, not spelled again. `.json`
+# is deliberately absent rather than forgotten: every `main` URL this tree keeps in JSON
+# is a schema `$id`/`$schema` identity, and identity is not a download.
+_FETCH_DOC_EXT = _MD_EXT + _YAML_EXT
+
+
+def _fetch_docs(root):
+    """`(rels, problem)` — the documents whose FENCES this rule reads.
+
+    Fences, said precisely rather than "runnable regions": `_executable_raw_refs()`
+    reads a Markdown fence, so the YAML in this set contributes nothing today even
+    though `_runnable_text` has a `run:` rule the scan could use. That is a gap with a
+    finding of its own, not something this docstring should paper over.
+
+    Exactly one of the two is None, the contract `_ignored_dirs()` and `_runnable_text`
+    both use. It is a named function rather than two lines inside the rule so that a
+    case can read the candidate set directly: the defect this replaced was invisible in
+    the rule's OUTPUT - a scratch directory nobody had written a fetch into reports
+    nothing, and reports nothing right up to the day somebody does.
+    """
+    patterns, problem = _ignored_dirs(root)
+    if problem is not None:
+        return None, problem
+    return _iter_docs(root, patterns, _FETCH_DOC_EXT), None
 
 
 def _executable_raw_refs(text):
@@ -958,11 +1158,24 @@ def raw_url_pin_drift(repo_root=None):
     The second is deliberately scoped to one file so that a considered historical pin
     elsewhere stays legal. It fires at release time, when `plugin.json` is bumped and
     the README has not been - which is the moment the pin needs a human.
+
+    A `.gitignore` it cannot read is REPORTED and the scan stops, for the reason
+    `sweep_doc_drift()` gives: answering "nothing is ignored" would read scratch copies
+    as things this repo published.
+
+    There is no CHANGELOG exemption, and that is deliberate rather than an omission: it
+    quotes the dead `main` URL as history, in prose, and the fence scope already spares
+    that - measured, not assumed (test__refs p10-p12, p18). The walk this replaced
+    carried one, against a table of `(path, reason)` pairs it compared a path string to,
+    so it could not fire; deleting it changed nothing, which is what p18 pins.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
+    docs, problem = _fetch_docs(root)
+    if problem is not None:
+        return [(".gitignore", 0, problem)]
     version = plugin_version(root)
     out = []
-    for rel in _iter_text_docs(root):
+    for rel in docs:
         try:
             with open(os.path.join(root, rel.replace("/", os.sep)),
                       "r", encoding="utf-8") as fh:
@@ -977,26 +1190,6 @@ def raw_url_pin_drift(repo_root=None):
                 out.append((rel, line,
                             "pinned to %s but plugin.json says %s" % (ref, version)))
     return out
-
-
-def _iter_text_docs(root):
-    """Relative paths of the documents that may publish a fetch instruction."""
-    out = []
-    for base, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs
-                   if d not in ("node_modules", ".git", "__pycache__", ".claude")]
-        for name in sorted(files):
-            if not name.endswith((".md", ".yml", ".yaml")):
-                continue
-            rel = os.path.relpath(os.path.join(base, name), root).replace(os.sep, "/")
-            if rel in EXCLUDED:
-                continue
-            # No CHANGELOG exemption, and that is deliberate rather than an omission:
-            # it quotes the dead `main` URL as history, in prose. The fence scope
-            # already lets that through, so an exemption here would be dead code
-            # asserting nothing - measured, not assumed (test__refs p10).
-            out.append(rel)
-    return sorted(out)
 
 
 # --- cli ----------------------------------------------------------------------

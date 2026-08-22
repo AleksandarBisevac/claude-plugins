@@ -829,10 +829,36 @@ file — out of the scan while still catching `require-plan.py`'s three real loc
 strings. `CHANGELOG.md` and `docs/design/` are excluded with the reason in the table: a path
 that has since moved was true when it was written. `manifest_moved_files()` splits a MOVE
 (loud: stale reference) from a DELETION (silent: correct history) by asking whether the
-basename still exists anywhere in the plugin, and `sweep_glob_drift()` pins the six documents
-that show the selftest sweep to the recursive `find` form — scoped to the runnable line, so
-the two places this guide writes the flat glob as prose stay legal. This file is an anchored
-surface itself, and its own fixture paths are BUILT rather than spelled for that reason.
+basename still exists anywhere in the plugin, and `sweep_glob_drift()` holds every document
+that shows the selftest sweep to the RUNNER — scoped to the runnable region, so the places
+this guide writes the flat glob as prose stay legal. That sentence said "the recursive `find`
+form" for a while after the runner replaced it, and named a count that had since grown: two
+rotted claims about one rule, in the file that documents it.
+
+`sweep_doc_drift()` is the other half of the same rule, and it judges the LIST rather than the
+documents in it. `SWEEP_DOCS` is hand-written, so until this existed a new document telling a
+reader to run the retired glob was green twice over — never opened by the check, and read by
+nothing else. It walks every document of a format `_runnable_text` has a rule for and reports
+one that teaches a sweep without being listed. Its candidate set is DERIVED from `.gitignore`
+rather than hand-pruned: `.claude/worktrees/` holds whole checkouts of this repo, so a scan
+that walked them would report every sweep document once per recent agent — a finding count
+that depends on nothing in the commit. A derivation is only as good as its pattern, so the
+rule also reports the blind direction, a listed document the walk can no longer reach. This
+file is an anchored surface itself, and its own fixture paths are BUILT rather than spelled
+for that reason.
+
+That walk is now the only one: `raw_url_pin_drift()`, which holds a published `curl` to a
+TAG rather than to a moving ref, had a prune list of its own — a handful of directory names
+— and it was wrong in both directions at once. It reached whatever the browser tool had last
+left in the tree, so its candidate set moved with what had lately run on the machine rather
+than with the commit, and it pruned `.claude/` wholesale, which held the repo's own tracked
+skills out of a rule that is precisely about a document telling a reader to fetch something.
+It also carried an exemption against the `EXCLUDED` table that compared a path string with
+`(path, reason)` pairs and so could never fire: the fence scope is what spares `CHANGELOG.md`
+quoting a dead URL as history, and a case now pins that it is the scope and not an exemption.
+The remaining edge is stated rather than papered over — `.gitignore` is read for DIRECTORIES,
+so a file it ignores of a scanned format stays a candidate, and for this rule that is the
+rendered report, which is generated and can carry a fence.
 
 `tool_basename_drift()` covers the shape none of the above can see. `tools/` never spells a
 route: it says `resolveScript('panel-server.py')`, so there is no `scripts/…py` on the line for

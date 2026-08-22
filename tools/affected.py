@@ -99,17 +99,29 @@ PARITY = "python3 tools/gate-parity.py"
 # a third copy of the list is also how the two would come to disagree.
 SWEEP_DOCS = frozenset(d.replace(os.sep, "/") for d in _refs.SWEEP_DOCS)
 
+# ...and since `sweep_doc_drift()` asks whether that LIST is complete, `_refs` no
+# longer reads only the listed documents: it reads every document of a format
+# `_runnable_text` has a rule for, anywhere the repo keeps files. So the selector owes
+# the refs pins for any of them, which is a WIDENING - the direction this file is
+# allowed to be wrong in. Read off the same constant the scan derives its own
+# extension set from, so the two cannot disagree about what a document is.
+SWEEP_DOC_EXT = tuple(_refs.SWEEP_DOC_EXT)
+
 
 def refs_reads(posix):
     """True when `_refs` scans this path, so `test__refs.py` can go red for it.
 
-    Derived from `_refs.SURFACES` and `_refs.SWEEP_DOCS` for the same reason
-    `_reverse_imports()` is derived from the real import graph: a hand-kept copy of
-    somebody else's list is a copy that stops agreeing. Editing `CONTRIBUTING.md`
-    selected `test__deps.py` and not this - and `CONTRIBUTING.md` is a `_refs`
-    surface, so a path rotting in it went unchecked by the narrowed run.
+    Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS` and `_refs.SWEEP_DOC_EXT` for the
+    same reason `_reverse_imports()` is derived from the real import graph: a hand-kept
+    copy of somebody else's list is a copy that stops agreeing. Editing
+    `CONTRIBUTING.md` selected `test__deps.py` and not this - and `CONTRIBUTING.md` is a
+    `_refs` surface, so a path rotting in it went unchecked by the narrowed run.
+
+    The extension arm needs no ignored-directory test to go with it: the paths this
+    file judges come from git, and git never hands over a file the repo ignores. The
+    scan's own prune list exists for a WALK, which sees files git does not.
     """
-    if posix in SWEEP_DOCS:
+    if posix in SWEEP_DOCS or posix.endswith(SWEEP_DOC_EXT):
         return True
     for surface, _mode in _refs.SURFACES:
         rel = surface.replace(os.sep, "/")
@@ -440,6 +452,17 @@ def _cases():
     out.append(("a5", refs_reads("node_modules/vitest/index.js") is False,
                 "...and it says False for a path _refs does not read, so a4 is a "
                 "rule rather than a function that returns True"))
+
+    # Both paths are under `docs/`, which is NOT a `_refs` surface - so before the
+    # completeness rule they answered False alike, and the extension is the whole
+    # difference between them. A pair inside a surface would prove nothing: everything
+    # there already answered True.
+    out.append(("a12", refs_reads("docs/design/audit-concurrency-report.md") is True
+                and refs_reads("docs/index.html") is False,
+                "a document nowhere near the pinned list selects the refs pins now, "
+                "because the completeness rule reads every document the repo keeps - "
+                "and a non-document beside it still does not, so this is an extension "
+                "rule and not a widening to everything"))
 
     out.append(("a6", sel("some/unknown/place.xyz")["full"] is True,
                 "AN UNRECOGNISED PATH SELECTS EVERYTHING. This is the safety the "
