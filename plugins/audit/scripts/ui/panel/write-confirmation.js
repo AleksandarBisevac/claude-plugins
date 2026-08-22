@@ -160,6 +160,16 @@ addEventListener('beforeunload',ev=>{
  // `some(surfaceDirty)` rather than `dirtyRows().length`: a surface whose rows
  // could not be computed counts as dirty, and its rows cannot appear in a list.
  if(!Object.keys(EDITS).some(surfaceDirty))return;   // never interrupt a clean close
+ // THREE SPELLINGS, AND NONE IS REDUNDANT. `beforeunload` is Baseline *limited*
+ // (references/baseline-snapshot.md), and this repo's rule for limited is
+ // feature-detect with a fallback -- so the trio IS that fallback chain, not
+ // belt-and-braces: `preventDefault()` is the spec form, `returnValue` is what
+ // older Chromium reads, and the returned string is the older Gecko/WebKit path.
+ // A linter calls `returnValue` deprecated and in isolation it is right; deleting
+ // it drops the prompt on whichever engine still needs it, and NOTHING here would
+ // go red -- the selftests read this file as assembled TEXT, and the browser gates
+ // never close a dirty tab. The cost lands on a user, silently: panel edits made,
+ // tab closed, no dialog, changes gone.
  ev.preventDefault();ev.returnValue='';return '';});
 
 // --- change rows: {target, field, from, to} -------------------------------------
