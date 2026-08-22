@@ -587,6 +587,18 @@ def _cases(check):
               bash('node -e "console.log(process.env)"'), cfg=cfg)[1]).lower(),
           repr(M.decide(bash('node -e "console.log(process.env)"'), cfg=cfg)))
 
+    # (d29-d30) The SAME prose false positive d20/d21 caught for the dump verb,
+    # one branch further down. `_executed_text` was threaded into the verb arm and
+    # NOT into this one, so the environment object still weighed the same in an
+    # `echo` argument as in executed code - and the first thing it blocked was the
+    # `grep` used to work on this very rule. One defect, two spellings: fixing only
+    # the reported one leaves the class open, which is what these two pin.
+    _expect("d29 naming the environment object in prose is not reading it - the\n          same span rule the dump verb already gets", "allow",
+          bash("echo the JavaScript expression process.env is mentioned here"))
+    _expect("d30 ...and inside a commit-message heredoc, which is how this was\n          found: the message describing the fix could not be written", "allow",
+          bash("git commit -F - <<'MSG'\nit mentions process.env in prose\nMSG"))
+    # d11 is the other direction and already stands: the real dump stays blocked.
+
     # (d15-d18) THE SANDBOX ESCAPE HATCH. `dangerouslyDisableSandbox: true`
     # arrives in the same `tool_input` every branch above already reads, and
     # nothing in the plugin looked at it. Denying it outright would be wrong -
@@ -632,6 +644,69 @@ def _cases(check):
           "allow",
           bash("python3 -c \"import json; d = json.load("
                "open('apps/mobile/eas.json')); print(d['cli'])\""))
+
+    # (d20-d28) THE REGRESSION P0-S ITSELF SHIPPED, reduced to one line. Removing
+    # the clause anchor from the dump verb was right and stays; implementing "any
+    # command position" as "any SUBSTRING of the command text" was not, and it
+    # made a word weigh exactly as much as a command. Its first victim was the
+    # commit message of that very fix, written as a `git commit -F -` heredoc
+    # that DESCRIBED the work - which is F31's lesson, one branch over, arriving
+    # again because only F31's branch had learned it.
+    #
+    # WHERE THE LINE IS DRAWN, because that is the entire argument. An allow-list
+    # of legal WRAPPERS cannot be written: miss `sudo`, `xargs` or a container
+    # runner and the result is a silent BYPASS. An exemption for places where
+    # text is INERT - a pure text-emitter's arguments, a heredoc body fed to
+    # something that will not execute it - fails the opposite way: miss one and
+    # the result is a false positive, which is loud and on the safe side. That
+    # asymmetry is why the second list is legitimate where the first is not.
+    _expect("d20 a word in an `echo` argument is a word, not a command - the "
+          "regression reduced to one line", "allow",
+          bash("echo the word printenv appears in this sentence"))
+    _expect("d21 ...and the body of a `git commit -F -` heredoc is data, which "
+          "is how this was found: the fix could not describe itself", "allow",
+          bash("git commit -F - <<'MSG'\nfix(guard): `printenv` was anchored to "
+               "a clause, so `direnv exec . printenv X` walked straight past "
+               "it. `direnv dump` and `.envrc` are covered now too.\nMSG"))
+
+    # (d22-d25) THE SECOND DIRECTION, and it is the load-bearing half. The
+    # obvious "fix" for d20/d21 is to put the clause anchor back on the verb:
+    # both of them pass, it looks like a solution, and it quietly restores the
+    # bypass P0-S existed to close. d1-d4 above are the cases that go red under
+    # exactly that mutation; d22 adds the wrapper form that had no case of its
+    # own, and d23-d25 cover the ways an exemption could be laundered into one.
+    _expect("d22 `env -i printenv X` is a dump behind a wrapper - the `env` "
+          "half keeps its clause anchor, so the `printenv` half must not have "
+          "one", "block", bash("env -i printenv X"))
+    _expect("d23 a substitution inside an emitter's arguments is not inert - "
+          "this one really does print the value", "block",
+          bash("echo $(printenv VERCEL_SCOPE)"))
+    _expect("d24 ...nor is an emitter piped into a shell, which hands the text "
+          "back to something that runs it", "block", bash("echo printenv | sh"))
+    _expect("d25 ...and prose about the verb does not launder a real dump later "
+          "in the same command", "block", bash("echo about printenv && printenv"))
+    # d25b: `\b` holds between `o` and `-`, so a word-boundary fence alone hands
+    # the emitter's exemption to any program whose name merely STARTS with it.
+    _expect("d25b a different program that starts with the emitter's name is a "
+          "different program", "block", bash("echo-server printenv"))
+
+    # (d26-d27) F31 is untouched, which is the other thing this could have
+    # broken. A heredoc body is data only when what it feeds does not execute
+    # it; `python3 - <<PY` is `python3 -c` spelled differently and is graded as
+    # one - for Rule #2 now exactly as for Rule #1 before.
+    _expect("d26 a heredoc fed to an interpreter is code, so a dump inside it "
+          "is a dump", "block",
+          bash("python3 - <<'PY'\nimport os\nos.system('printenv')\nPY"))
+    _expect("d27 ...and reading a secret file out of one is still Rule #1",
+          "block", bash("python3 - <<'PY'\nprint(open('.env').read())\nPY"))
+
+    # d28: the verdict alone cannot tell "refused as an env dump" from "refused
+    # by some other rule that happens to agree", and a fix that moved the catch
+    # to another branch would leave d22 green while Rule #2 no longer fired.
+    check("d28 the wrapper form is refused BY the dump branch, named as such",
+          "Dumping environment values" in str(
+              M.decide(bash("env -i printenv X"), cfg=cfg)[1]),
+          repr(M.decide(bash("env -i printenv X"), cfg=cfg)))
 
     # --- malformed / unhandled → allow ---
     _expect("u1 unhandled tool allowed", "allow",

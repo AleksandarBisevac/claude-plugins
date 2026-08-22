@@ -368,6 +368,11 @@ _PATHY_TOKEN = re.compile(r"[\w@~./+-]+\.[A-Za-z][A-Za-z0-9]{0,9}")
 # `direnv dump` / `direnv export` print the loaded environment and are the two
 # direnv subcommands that do; `direnv exec`, `direnv allow` and the rest are the
 # tool doing its job and stay allowed (the second-direction cases pin that).
+#
+# WHAT THIS PATTERN IS SEARCHED OVER IS PART OF THE RULE, and it is not the raw
+# command: see `_executed_text` below. Un-anchoring the verb was right and stays;
+# searching the whole TEXT for it was not, and it made a word in an `echo`
+# argument or in a commit message weigh exactly as much as a command.
 ENV_DUMP = re.compile(
     r"(?:(?<![\w.$-])printenv\b"
     r"|(?:^|[|&;]\s*)env\s*(?:$|[|&>])"
@@ -532,6 +537,70 @@ def _split_heredocs(cmd):
             code.append(body)
         i = end + 1
     return "\n".join(kept), code
+
+
+# --- text that is DATA, for Rule #2's dump verb ---------------------------------
+# The arguments of a pure text-emitter, up to the end of its clause. `echo` and
+# `printf` do not execute what they are handed, so a verb standing there is a word
+# and not a command.
+#
+# TWO THINGS ARE DELIBERATELY NOT MATCHED, and both are the same rule: the emitter's
+# output must not be able to become code again.
+#   * a clause ending in `|` never matches at all -- the lookahead admits only `;`,
+#     `&`, a newline or the end of the command -- because `echo printenv | sh`
+#     hands the text to a shell, which runs it. Not stripping it leaves that
+#     judged exactly as strictly as before this existed;
+#   * a substitution INSIDE the arguments (`$(...)`, backticks, `<(...)`) keeps the
+#     whole span, because `echo $(printenv X)` really does dump the environment.
+#     The argument text is inert; a substitution inside it is not.
+#
+# The verb is fenced on BOTH sides, and `\b` alone is not enough on the right: it
+# holds between `o` and `-`, so `echo-server printenv` would have claimed the
+# exemption while being a different program entirely. A name this exemption cannot
+# read is a name it does not exempt.
+_TEXT_EMITTER_ARGS = re.compile(
+    r"(?<![\w.$/-])(echo|printf)(?![\w.-])([^|&;\n]*)(?=$|[&;\n])")
+_SUBSTITUTION = re.compile(r"\$\(|`|<\(")
+
+
+def _strip_emitter_args(m):
+    """Keep the emitter verb, drop the inert text after it (see the pattern)."""
+    if _SUBSTITUTION.search(m.group(2)):
+        return m.group(0)
+    return m.group(1)
+
+
+def _executed_text(cmd):
+    """`cmd` with the spans that are DATA removed, leaving what a shell would RUN.
+
+    THE ASYMMETRY THAT MAKES THIS LEGITIMATE, and it is the whole justification.
+    P0-S un-anchored the dump verb because an allow-list of legal WRAPPERS cannot
+    be written: `sudo`, `xargs`, a container runner, and the list is short by one
+    entry the day somebody reaches for the next one. Missing an entry there is a
+    BYPASS -- silent, and in the dangerous direction. That reasoning is sound and
+    it stands.
+
+    An exemption for places where text is INERT fails the opposite way. The list
+    here is the argument list of a pure text-emitter and a heredoc body that feeds
+    something which does not execute it. Missing an entry leaves a FALSE POSITIVE:
+    a refusal the user sees, argues with, and reports -- loud, and on the safe
+    side. So the second kind of list is legitimate exactly where the first is not,
+    and that is why this is a fix rather than a hole.
+
+    Heredocs come from `_split_heredocs`, which already draws this line and draws
+    it correctly (F31): a body fed to an interpreter is CODE and comes back, so
+    `python3 - <<PY` is still judged as `python3 -c` is, and only a body fed to
+    something like `git commit -F -` or `cat` leaves. Nothing about that grading
+    changes here; this only spends it on one more branch.
+
+    Scoped to Rule #2's dump verb on purpose, and ECHO_SECRET is the reason it
+    cannot simply be global: there the emitter's argument list is the PAYLOAD --
+    `echo $TOKEN` is the leak -- so stripping it would delete the very text that
+    rule exists to read.
+    """
+    text, code_bodies = _split_heredocs(cmd)
+    text = _TEXT_EMITTER_ARGS.sub(_strip_emitter_args, text)
+    return "\n".join([text] + code_bodies)
 
 
 def _clauses(cmd):
@@ -726,11 +795,22 @@ def _decide_core(data, root, cfg):
                     "test harness) would print with nothing here able to stop it. "
                     "Run it sandboxed, or ask the user to paste the one value you "
                     "need. The unsandboxed run is journalled either way.")
-        if ENV_DUMP.search(cmd):
+        # Over what a shell would RUN, not over the whole text. P0-S un-anchored
+        # the dump verb, correctly, but implemented "any command position" as "any
+        # substring", so a word in an `echo` argument or a commit-message heredoc
+        # became a dump. `_executed_text` says which spans are data and why that
+        # exemption is safe where a wrapper allow-list is not.
+        if ENV_DUMP.search(_executed_text(cmd)):
             return ("block",
                     "Dumping environment values (printenv/env) is blocked (Rule #2). "
                     "Debug with a prefix only: val[:6] + length.")
-        if PROCESS_ENV.search(cmd):
+        # The SAME span rule as the verb above, and it belongs here for the
+        # same reason: naming the environment object in an `echo` argument or
+        # in a heredoc body that nothing executes is prose, not a read. Threading
+        # it into one arm and not the other is how a fixed defect keeps its
+        # second spelling - the first thing this branch blocked was the `grep`
+        # used to work on the arm above.
+        if PROCESS_ENV.search(_executed_text(cmd)):
             return ("block",
                     "Reading the process environment is blocked (Rule #2): this "
                     "prints environment values, not a file.\n"
