@@ -90,8 +90,10 @@ ARTIFACTS = "python3 tools/check-rendered-artifacts.py"
 # is never the expensive decision.
 VITEST = "npx vitest run"
 
-# The meta-gate: `tools/verify.sh` and `.github/workflows/ci.yml` are two copies of
-# one gate set, and editing either is what makes them disagree.
+# The meta-gate. Several files describe one gate set - the runner, the workflow and
+# the two root documents - and editing any of them is what makes them disagree. Which
+# files those are is `gate-parity.py`'s own table and is deliberately not copied here;
+# see the sweep-document branch for what this selects on instead.
 PARITY = "python3 tools/gate-parity.py"
 
 # The documents `_refs.sweep_glob_drift()` pins, READ OFF `_refs` rather than listed
@@ -227,8 +229,15 @@ def select(paths):
             suites.add("test__refs.py")
         if posix in SWEEP_DOCS:
             suites.add("test__deps.py")
-            if posix.endswith((".yml", ".yaml")):
-                gates.append(PARITY)
+            # EVERY sweep document, not only the workflow. Some of them are parity
+            # SIDES and the workflow was the only one selecting the check, so editing
+            # `CONTRIBUTING.md` - a side long before this - narrowed to a run that
+            # skipped the comparison while the reason line below said the gate set had
+            # been re-checked. The parity sides are a subset of these documents plus
+            # `verify.sh`, which the tools/ branch already covers, so selecting on the
+            # whole set is a WIDENING - the direction this file is allowed to be wrong
+            # in - and it buys not keeping a copy of which documents are sides.
+            gates.append(PARITY)
             reasons.append("%s - a sweep document, so the sweep-shape rule and the "
                            "gate set are re-checked" % (posix,))
             continue
@@ -450,6 +459,18 @@ def _cases():
                 "a root document that is a `_refs` SURFACE selects the refs pins. "
                 "It selected only test__deps.py before, so a path rotting inside it "
                 "went unchecked by every narrowed run: %r" % (contributing,)))
+
+    claude = sel("CLAUDE.md")
+    png = sel("docs/screenshots/panel.png")
+    out.append(("a14", PARITY in claude["gates"]
+                and PARITY in contributing["gates"]
+                and PARITY not in png["gates"],
+                "THE PAIR: a root document that describes the gate set selects the "
+                "parity check, and a path that does not describe it does not. Only "
+                "the workflow selected it, so editing either document narrowed to a "
+                "run that skipped the comparison - while the reason line claimed the "
+                "gate set had been re-checked: %r / %r / %r"
+                % (claude["gates"], contributing["gates"], png["gates"])))
 
     surfaces = [sfc for sfc, _m in _refs.SURFACES]
     reached = [sfc for sfc in surfaces if refs_reads(sfc.replace(os.sep, "/"))]

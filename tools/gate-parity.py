@@ -20,11 +20,21 @@ Copies of one list are how that happens, and fixing each instance by hand is how
 happens again. This makes the parity a CHECK: a gate named by one side and not by
 another fails the build, naming both.
 
-IT COMPARES THREE SIDES, and the third was itself a finding. `verify.sh` and `ci.yml`
-were compared for a while and `CONTRIBUTING.md` was not - while saying of itself
-"the individual commands stay documented below, because they are the definition and
-the script is only a caller". A document that claims to be the definition owes every
-gate; it carried seven of thirteen when it was finally read.
+IT COMPARES FOUR SIDES, and every document among them was added because nothing had
+ever compared it. `verify.sh` and `ci.yml` were compared for a while and
+`CONTRIBUTING.md` was not - while saying of itself "the individual commands stay
+documented below, because they are the definition and the script is only a caller".
+A document that claims to be the definition owes every gate; it carried seven of
+thirteen when it was finally read.
+
+`CLAUDE.md` was that shape one file over, and it said so of ITSELF: its list carried
+the comment "this list, verify.sh and ci.yml, compared" while being the one side
+nothing here read. It named the sweep, this check, vitest, ruff and vermin; of the
+rest of the local set it named the two browser gates in prose only, and the hook
+import budget, the artifact comparison and the demo gate not anywhere in the
+document. The manifest and plugin-structure half it leaves out ON PURPOSE and says
+so - that split is rows in the table below now instead of one sentence covering an
+unmeasured remainder, and the remainder is exactly where it had rotted.
 
 WHAT IT COMPARES, AND WHY THAT GRAIN. The set of REPO SCRIPTS and NAMED EXTERNAL
 GATES each side invokes - not the full command lines. Arguments legitimately differ
@@ -65,12 +75,13 @@ import _refs  # noqa: E402  (it owns "the runnable region of a document")
 VERIFY_REL = os.path.join("tools", "verify.sh")
 CI_REL = os.path.join(".github", "workflows", "ci.yml")
 DOC_REL = "CONTRIBUTING.md"
+CLAUDE_REL = "CLAUDE.md"
 
 # (label, path). The label is what a finding names and what a table row exempts, so
 # it is short on purpose - a reader should not have to know the path to read the
 # reason.
 SIDES = (("verify.sh", VERIFY_REL), ("ci.yml", CI_REL),
-         ("CONTRIBUTING.md", DOC_REL))
+         ("CONTRIBUTING.md", DOC_REL), ("CLAUDE.md", CLAUDE_REL))
 
 # A repo script invoked as a command. Anchored on the two directories that hold
 # them, so a bare basename in prose is not mistaken for an invocation.
@@ -88,51 +99,92 @@ _EXTERNAL = (
     ("claude plugin validate", re.compile(r"\bclaude plugin validate\b")),
 )
 
-# THREE SIDES, and one table that can express all of them. `CI_ONLY` and
-# `LOCAL_ONLY` were two tables for two sides, and adding CONTRIBUTING.md as a third
-# would have needed a third - with a gate absent from two sides needing an entry in
-# each. One row per gate, listing the sides it is legitimately absent FROM, and a
-# reason a reader can disagree with.
+# FOUR SIDES, and one table that can express all of them. `CI_ONLY` and `LOCAL_ONLY`
+# were two tables for two sides, and adding CONTRIBUTING.md as a third would have
+# needed a third - with a gate absent from two sides needing an entry in each. One
+# row per gate, listing the sides it is legitimately absent FROM, and a reason a
+# reader can disagree with. The fourth side then cost this table ROWS and not a
+# shape, which is the argument for the shape.
 #
-# CONTRIBUTING.md is here because it says of itself: "The individual commands stay
-# documented below, because they are the definition and the script is only a
-# caller." A document that claims to be the definition owes every gate, and it
-# carried seven of thirteen when somebody finally compared it.
-# `tools/prove-gates.py` is deliberately NOT a row here, and the staleness rule is
-# what said so: a gate no side names can never be reported missing, so a row
-# declaring it absent from all three asserts nothing. It is minutes rather than
-# seconds and mutates the tree while it runs; CLAUDE.md carries the command, and its
-# own cases run in the sweep like every other tool's.
+# Both documents are here because each claims to be the definition. CONTRIBUTING.md
+# says of itself: "The individual commands stay documented below, because they are
+# the definition and the script is only a caller." CLAUDE.md's list says "which
+# remain the definition". A document that claims that owes every gate it does not
+# hand to another document IN WRITING - and the writing is what the rows below are.
+
+# THE SIDES A ROW USUALLY NAMES, named once. A CI-only smoke test is absent from
+# every description of the LOCAL set for one reason, and spelling the labels into
+# each such row is how one of them gets forgotten the next time a side is added -
+# which is most of how CLAUDE.md came to be uncompared in the first place.
+DOC_SIDES = ("CONTRIBUTING.md", "CLAUDE.md")
+LOCAL_SIDES = ("verify.sh",) + DOC_SIDES
+
 ABSENT_BY_DESIGN = (
-    ("plugins/audit/scripts/demo/gen-demo-manifest.py", ("verify.sh", "CONTRIBUTING.md"),
+    ("plugins/audit/scripts/demo/gen-demo-manifest.py", LOCAL_SIDES,
      "builds a throwaway demo tree in /tmp to smoke the pipeline end to end; the "
      "local set checks the COMMITTED artifacts instead"),
-    ("plugins/audit/scripts/demo/gen-demo-usage.py", ("verify.sh", "CONTRIBUTING.md"),
+    ("plugins/audit/scripts/demo/gen-demo-usage.py", LOCAL_SIDES,
      "same throwaway demo tree"),
-    ("plugins/audit/scripts/report/render-report.py", ("verify.sh", "CONTRIBUTING.md"),
+    ("plugins/audit/scripts/report/render-report.py", LOCAL_SIDES,
      "rendered into /tmp as a smoke test; locally the equivalent claim is "
      "check-rendered-artifacts.py, which is stronger because it compares bytes"),
-    ("plugins/audit/scripts/status/audit-doctor.py", ("verify.sh", "CONTRIBUTING.md"),
+    ("plugins/audit/scripts/status/audit-doctor.py", LOCAL_SIDES,
      "an end-to-end CLI smoke test over a fixture project"),
-    ("plugins/audit/scripts/status/audit-status.py", ("verify.sh", "CONTRIBUTING.md"),
+    ("plugins/audit/scripts/status/audit-status.py", LOCAL_SIDES,
      "exercises --gate's exit codes, which need a fixture manifest per case"),
-    ("plugins/audit/hooks/py-launch.sh", ("verify.sh", "CONTRIBUTING.md"),
+    ("plugins/audit/hooks/py-launch.sh", LOCAL_SIDES,
      "the launcher is driven directly with fixture projects and with PATH unset, to "
      "prove the WIRING rather than decide(): the interpreter fallback, the stdin "
      "contract and the emitted JSON. Neither unsetting PATH nor feeding three "
      "fixture manifests is a thing to do to a developer's shell. The hooks it drives "
      "are ARGUMENTS to it, not paths, so this one entry covers all of them"),
-    ("tools/affected.py", ("ci.yml", "CONTRIBUTING.md"),
+    ("tools/affected.py", ("ci.yml",) + DOC_SIDES,
      "a SELECTOR, not a gate: it narrows a local run and CI never narrows. Its own "
      "cases DO run on every side - inside the sweep, which covers tools/ - so what "
      "is exempt is the narrowing, not the checking of it"),
-    ("tools/verify.sh", ("verify.sh", "ci.yml"),
+    ("tools/verify.sh", ("verify.sh", "ci.yml", "CLAUDE.md"),
      "the caller. CONTRIBUTING.md names it as the one command to run; it does not "
-     "invoke itself, and CI runs the gates rather than the wrapper"),
+     "invoke itself, and CI runs the gates rather than the wrapper. CLAUDE.md names "
+     "it in the prose ABOVE its list, and the list is by construction the commands "
+     "it calls"),
+
+    # THE SPLIT BETWEEN THE TWO DOCUMENTS, per gate instead of per sentence.
+    # CLAUDE.md's Tests section says CONTRIBUTING.md "has the manifest and
+    # plugin-structure checks that complete the pre-PR set", and CLAUDE.md's own
+    # preamble says it "deliberately restates no procedure, because two copies of a
+    # procedure is one copy and one lie". That sentence is a real division of labour
+    # and these rows are it, said gate by gate - because as one sentence it also
+    # covered an unmeasured remainder, and the remainder had rotted: the hook import
+    # budget, the artifact comparison and the demo gate were in neither half.
+    ("plugins/audit/scripts/manifest/validate-manifest.py", ("CLAUDE.md",),
+     "a manifest check, and CLAUDE.md hands the manifest half to CONTRIBUTING.md, "
+     "whose list carries both invocations with the reasoning. CLAUDE.md's hard rules "
+     "do name this script - as the thing every mutating command must call, which is "
+     "the rule and not the gate"),
+    ("ajv-cli", ("CLAUDE.md",),
+     "the manifest's JSON Schema: same half, handed to the same document"),
+    ("claude plugin validate", ("CLAUDE.md",),
+     "the plugin and marketplace structure: same half, same document"),
+
+    # NAMED BY CLAUDE.md ALONE, AND NEITHER IS A GATE. Both print and exit 0, so
+    # there is nothing for a runner to fail on. They need rows because a side that
+    # names them makes them reportable - which is the whole difference the fourth
+    # side made to this table.
+    ("tools/count-ui-pins.py", ("verify.sh", "ci.yml", "CONTRIBUTING.md"),
+     "a REPORT, not a gate - its own usage says `Exit codes: 0 always`. It prints "
+     "the change budget for an edit under scripts/ui/, which is a thing to read "
+     "before starting and not a thing to fail. Its own cases run in the sweep, "
+     "which covers tools/"),
+    ("tools/prove-gates.py", ("verify.sh", "ci.yml", "CONTRIBUTING.md"),
+     "minutes rather than seconds, and it MUTATES the tree while it runs, so it is "
+     "not a per-commit gate. This was once the argument for no row at all: a gate no "
+     "side named could never be reported missing, so the row would have asserted "
+     "nothing. That premise died with the fourth side - CLAUDE.md carries the "
+     "command, so this row now goes stale the day one of the other three adopts it"),
 )
 
 
-# --- reading the two gate sets ------------------------------------------------
+# --- reading each side's gate set --------------------------------------------
 def _shell_command_lines(text):
     """Every line of a shell script that could be a command.
 
@@ -183,18 +235,32 @@ def _yaml_run_lines(text):
     return out
 
 
-def _markdown_fence_lines(text):
+def _markdown_fence_lines(rel, text):
     """The fenced blocks of a Markdown document - what it tells a reader to RUN.
 
     `_refs._runnable_text` already owns this question for the sweep-shape rule, and
     a second definition of "the runnable region of a document" is how two rules come
     to disagree about what a document says. Borrowed, not rewritten.
+
+    `rel` is a parameter and not `DOC_REL` because it was `DOC_REL`: hard-coding the
+    one Markdown side made a second one unaddable, which is a small reason a document
+    claiming to be the definition went uncompared for as long as it did. Only the
+    extension is read from it.
     """
-    runnable, problem = _refs._runnable_text(DOC_REL, text)
+    runnable, problem = _refs._runnable_text(rel, text)
     if problem is not None or runnable is None:
         return []
-    return [ln for ln in runnable.split("\n")
-            if ln.strip() and not ln.strip().startswith("#")]
+    out = []
+    for line in runnable.split("\n"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        # Cut the TRAILING comment too, exactly as `_shell_command_lines` does. It did
+        # not, so a fenced command annotated `# see tools/foo.mjs` named a gate on this
+        # side while the identical annotation in verify.sh did not - and a list a
+        # reader is meant to annotate is precisely what this side is.
+        out.append(line.split(" #")[0].strip())
+    return out
 
 
 # --- one scratch root per run, and one place that derives it ------------------
@@ -266,12 +332,12 @@ def gates_in(path):
         return None
     found = set()
     if path.endswith((".yml", ".yaml")):
-        reader = _yaml_run_lines
+        lines = _yaml_run_lines(text)
     elif path.endswith(".md"):
-        reader = _markdown_fence_lines
+        lines = _markdown_fence_lines(path, text)
     else:
-        reader = _shell_command_lines
-    body = "\n".join(reader(text))
+        lines = _shell_command_lines(text)
+    body = "\n".join(lines)
     for match in _SCRIPT_RE.finditer(body):
         found.add(match.group(0))
     for label, pattern in _EXTERNAL:
@@ -280,29 +346,31 @@ def gates_in(path):
     return found
 
 
-def parity(repo=None):
-    """{"missing": [(gate, side, note)], "stale_exemptions": [...], "counts": {}}.
+def compare(read, table=None):
+    """{"missing": [(gate, side, note)], "stale_exemptions": [...]} from READ sets.
 
-    A gate must be named by EVERY side unless a row in `ABSENT_BY_DESIGN` says which
-    sides it is legitimately absent from and why. Two tables for two sides became one
-    table for three, because a gate absent from two sides would otherwise need an
-    entry in each and the two could disagree.
+    A gate must be named by EVERY side unless a row in the table says which sides it
+    is legitimately absent from and why. Two tables for two sides became one table
+    for four, because a gate absent from three sides would otherwise need an entry in
+    each and the three could disagree.
+
+    Takes the gate sets rather than a repo path so a case can hand it four sets that
+    differ in one place. Proving that a particular side is really compared needs a
+    gate withheld from that side alone, and building four real files to do it would
+    be a case about the readers wearing a case about the rule.
     """
-    repo = repo or REPO
-    read = {}
-    unreadable = []
-    for label, rel in SIDES:
-        got = gates_in(os.path.join(repo, rel))
-        if got is None:
-            unreadable.append((rel, label, "could not be read at all"))
-        read[label] = got if got is not None else set()
-    if unreadable:
-        # NOT an empty verdict. A side nothing could read is not a side that agrees.
-        return {"missing": [], "stale_exemptions": unreadable,
-                "counts": dict((k, len(v)) for k, v in read.items())}
+    table = ABSENT_BY_DESIGN if table is None else table
+    absent = [label for label, _rel in SIDES if label not in read]
+    if absent:
+        # Loud, and NOT a verdict over the sides the caller did remember: a side with
+        # no gate set read for it would otherwise be an empty set, and an empty set
+        # agrees with every exemption and disagrees with every gate.
+        return {"missing": [],
+                "stale_exemptions": [(", ".join(sorted(absent)), "-",
+                                      "no gate set was read for this side")]}
 
     exempt = {}
-    for gate, sides, _why in ABSENT_BY_DESIGN:
+    for gate, sides, _why in table:
         exempt[gate] = set(sides)
     every = set()
     for names in read.values():
@@ -324,7 +392,7 @@ def parity(repo=None):
     # naming a side that DOES run the gate is not an exemption, it is a sentence
     # about a state that has passed, and it stays green forever under the first two.
     stale = []
-    for gate, sides, _why in ABSENT_BY_DESIGN:
+    for gate, sides, _why in table:
         if gate not in every:
             stale.append((gate, "-", "declared absent by design, but no side "
                                      "invokes it any more"))
@@ -335,8 +403,37 @@ def parity(repo=None):
             elif gate in read[label]:
                 stale.append((gate, label, "declared absent from this side, which "
                                            "invokes it - the row does nothing"))
-    return {"missing": sorted(missing), "stale_exemptions": sorted(stale),
-            "counts": dict((k, len(v)) for k, v in read.items())}
+    return {"missing": sorted(missing), "stale_exemptions": sorted(stale)}
+
+
+def read_sides(repo=None):
+    """{label: gate set or None} for every side, read once.
+
+    None survives to the caller on purpose - `gates_in` earns the distinction and
+    flattening it here would spend it.
+    """
+    repo = repo or REPO
+    return dict((label, gates_in(os.path.join(repo, rel)))
+                for label, rel in SIDES)
+
+
+def parity(repo=None):
+    """{"missing": [...], "stale_exemptions": [...], "counts": {}} for the tree."""
+    raw = read_sides(repo)
+    read = {}
+    unreadable = []
+    for label, rel in SIDES:
+        got = raw[label]
+        if got is None:
+            unreadable.append((rel, label, "could not be read at all"))
+        read[label] = got if got is not None else set()
+    counts = dict((k, len(v)) for k, v in read.items())
+    if unreadable:
+        # NOT an empty verdict. A side nothing could read is not a side that agrees.
+        return {"missing": [], "stale_exemptions": unreadable, "counts": counts}
+    result = compare(read)
+    result["counts"] = counts
+    return result
 
 
 def render(result, stream=None):
@@ -351,9 +448,35 @@ def render(result, stream=None):
     for gate, side, note in result["stale_exemptions"]:
         out.write("  stale exemption (%s / %s): %s\n" % (gate, side, note))
     if not bad:
-        out.write("  all three sides name the same gates, and every declared "
+        out.write("  every side names the same gates, and every declared "
                   "exemption is still real\n")
     return 1 if bad else 0
+
+
+def render_list(raw, stream=None):
+    """One column per side, headed by its label. Returns the number of gates listed.
+
+    Derived from SIDES, because it was two hard-coded columns spelled `L` and `C`:
+    `CONTRIBUTING.md` was invisible here for as long as it had been a side, in the
+    one output whose whole job is to show what each side invokes. That is the drift
+    this file reports, inside the file that reports it.
+
+    An unreadable side prints `?` rather than an empty column - a side nothing could
+    read must not look like a side that runs nothing.
+    """
+    out = stream if stream is not None else sys.stdout
+    every = set()
+    for names in raw.values():
+        every |= (names or set())
+    out.write("  %s  gate\n" % "  ".join(label for label, _rel in SIDES))
+    for gate in sorted(every):
+        cells = []
+        for label, _rel in SIDES:
+            names = raw.get(label)
+            mark = "?" if names is None else ("x" if gate in names else "-")
+            cells.append("%-*s" % (len(label), mark))
+        out.write("  %s  %s\n" % ("  ".join(cells), gate))
+    return len(every)
 
 
 def main(argv):
@@ -362,12 +485,7 @@ def main(argv):
         return 0
     result = parity()
     if "--list" in argv:
-        local = gates_in(os.path.join(REPO, VERIFY_REL)) or set()
-        ci = gates_in(os.path.join(REPO, CI_REL)) or set()
-        for gate in sorted(local | ci):
-            sys.stdout.write("  %-3s %-3s %s\n"
-                             % ("L" if gate in local else "-",
-                                "C" if gate in ci else "-", gate))
+        render_list(read_sides())
     return render(result)
 
 
@@ -376,15 +494,15 @@ def _cases():
     out = []
     real = parity()
     out.append(("p0", real["missing"] == [] and real["stale_exemptions"] == [],
-                "THE LIVE CLAIM: all three descriptions of the gate set name the "
+                "THE LIVE CLAIM: every description of the gate set names the "
                 "same gates and no exemption has gone stale (%s) - %r"
                 % (", ".join("%s=%d" % (k, v)
                              for k, v in sorted(real["counts"].items())),
                    real["missing"] + real["stale_exemptions"])))
 
     out.append(("p1", all(real["counts"].get(label, 0) > 5 for label, _r in SIDES),
-                "...and every side was really READ, so p0 is not three empty sets "
-                "agreeing: %r" % (real["counts"],)))
+                "...and every side was really READ, so p0 is not a row of empty "
+                "sets agreeing: %r" % (real["counts"],)))
 
     live = scratch_isolation()
     out.append(("sc0", live["violations"] == [] and live["examined"] > 0,
@@ -435,16 +553,21 @@ def _cases():
                 % (yml,)))
 
     md = _markdown_fence_lines(
+        DOC_REL,
         "Prose naming `node tools/ghost.mjs` at length.\n\n"
         "```bash\n# a comment about tools/commented-fixture\n"
-        "node tools/real.mjs\n```\n\nMore prose about tools/after.mjs.\n")
+        "node tools/real.mjs  # a trailing note about tools/trailing-fixture\n"
+        "```\n\nMore prose about tools/after.mjs.\n")
     out.append(("c2", md == ["node tools/real.mjs"],
                 "a Markdown document is mostly PROSE, and this one argues about its "
                 "own gates for pages: only fenced blocks are commands. The reader "
                 "comes from `_refs`, which already owns 'the runnable region of a "
                 "document' for the sweep-shape rule - a second definition of that is "
-                "how two rules come to disagree about what a document says: %r"
-                % (md,)))
+                "how two rules come to disagree about what a document says. The "
+                "TRAILING note is cut as well, which it was not: an annotated command "
+                "in a fence named a gate the identical annotation in verify.sh did "
+                "not, and a list a reader is meant to annotate is what this side is: "
+                "%r" % (md,)))
 
     tmp = _output.REPO_ROOT  # any real directory; the point is the missing file
     res = parity(os.path.join(tmp, "no-such-repo-dir"))
@@ -491,8 +614,8 @@ def _cases():
                 "no exemption names a side that RUNS the gate, and none names a "
                 "gate no side runs. The first stays green under a check that only "
                 "asks about its own side; the second is a row that cannot be "
-                "reported missing and therefore asserts nothing - which is why "
-                "`prove-gates.py` is deliberately not a row: %r" % (dead,)))
+                "reported missing and therefore asserts nothing - the reason "
+                "`prove-gates.py` had no row until a side named it: %r" % (dead,)))
 
     out.append(("e2", all(sides for _g, sides, _w in ABSENT_BY_DESIGN)
                 and all(why.strip() for _g, _s, why in ABSENT_BY_DESIGN),
@@ -512,9 +635,80 @@ def _cases():
     buf = io.StringIO()
     code = render({"missing": [], "stale_exemptions": [],
                    "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
-    out.append(("r1", code == 0 and "all three sides" in buf.getvalue(),
+    out.append(("r1", code == 0 and "every side names" in buf.getvalue(),
                 "and parity exits 0 saying so - 'nothing to report' must not read "
                 "like 'nothing was compared'"))
+
+    # --- the fourth side ------------------------------------------------------
+    # F61: CLAUDE.md's list said of itself that it was one of the sides being
+    # compared, and it was the one side nothing read. These drive `compare()` with
+    # fixture sets, because what has to be shown is that a named side is really
+    # compared - and four real files would put the readers under test instead.
+    agreed = dict((label, set(["tools/alpha.mjs", "tools/beta.mjs"])) for label, _r in SIDES)
+    same = compare(agreed, table=())
+    out.append(("x0", same["missing"] == [] and same["stale_exemptions"] == [],
+                "THE SECOND DIRECTION, and it looks vacuous on purpose: sides that "
+                "name the same gates report nothing. It is the only case that fails "
+                "if the comparison starts firing unconditionally, which is the other "
+                "way x1 could be green for a bad reason: %r" % (same,)))
+
+    short = dict(agreed)
+    short["CLAUDE.md"] = set(["tools/alpha.mjs"])
+    gap = compare(short, table=())
+    out.append(("x1", [(g, s) for g, s, _n in gap["missing"]]
+                == [("tools/beta.mjs", "CLAUDE.md")],
+                "a gate the other sides name and CLAUDE.md does not is reported "
+                "against CLAUDE.md BY NAME, and nothing else is reported. The whole "
+                "of F61 is that this could not happen: the document telling readers "
+                "it was compared was not in SIDES: %r" % (gap["missing"],)))
+
+    lone = dict((label, set()) for label, _r in SIDES)
+    lone["CLAUDE.md"] = set(["tools/lone.mjs"])
+    others = tuple(l for l, _r in SIDES if l != "CLAUDE.md")
+    unrowed = compare(lone, table=())
+    rowed = compare(lone, table=(("tools/lone.mjs", others, "a reason"),))
+    out.append(("x2", sorted(s for _g, s, _n in unrowed["missing"])
+                == sorted(others)
+                and rowed["missing"] == [] and rowed["stale_exemptions"] == [],
+                "THE PAIR behind the two rows CLAUDE.md alone carries: a gate only "
+                "it names is reported against every other side until a row says why, "
+                "and the row then silences exactly those. Neither half was reachable "
+                "before the fourth side, which is why `prove-gates.py` could not be "
+                "given a row that asserted anything: %r vs %r"
+                % (unrowed["missing"], rowed)))
+
+    forgot = dict((label, set(["tools/alpha.mjs"])) for label, _r in SIDES)
+    del forgot["CLAUDE.md"]
+    unread = compare(forgot, table=())
+    out.append(("x3", unread["missing"] == []
+                and [(g, s) for g, s, _n in unread["stale_exemptions"]]
+                == [("CLAUDE.md", "-")],
+                "a caller that read no gate set for a side gets a NAMED failure "
+                "instead of a verdict over the sides it did remember - substituting "
+                "an empty set would report the unread side as absent from nothing "
+                "and disagreeing with everything: %r" % (unread,)))
+
+    doc = gates_in(os.path.join(REPO, CLAUDE_REL))
+    out.append(("x4", doc is not None and "tools/sweep-selftests.py" in doc
+                and "tools/redfirst.sh" not in doc,
+                "REAL DOCUMENT, BOTH DIRECTIONS: CLAUDE.md's fences are read, and "
+                "`tools/redfirst.sh` - which it names in PROSE and no side runs - is "
+                "not. Several rows in the table rest on that scope, and a reader "
+                "widened to the whole document would invent a gate every other side "
+                "is missing: %r" % (sorted(doc or []),)))
+
+    buf = io.StringIO()
+    listed = render_list({"verify.sh": set(["tools/alpha.mjs"]), "ci.yml": set(),
+                          "CONTRIBUTING.md": None,
+                          "CLAUDE.md": set(["tools/alpha.mjs"])}, stream=buf)
+    shown = buf.getvalue()
+    out.append(("l0", listed == 1 and all(label in shown for label, _r in SIDES)
+                and "x" in shown and "?" in shown,
+                "--list heads a column per side, derived from SIDES. It was two "
+                "hard-coded columns, so a side it did not know about was invisible "
+                "in the one output that exists to show what each side invokes - and "
+                "an unreadable side prints `?` rather than reading as a side that "
+                "runs nothing: %r" % (shown,)))
     return out
 
 

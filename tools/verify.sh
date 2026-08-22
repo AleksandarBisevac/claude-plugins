@@ -183,12 +183,12 @@ run "selftests (hooks + scripts + tests + tools)" python3 tools/sweep-selftests.
 # directly, the exit code is read by this shell instead of by the thing under test.
 run "...and the runner's own cases, read directly" \
   python3 tools/sweep-selftests.py --selftest
-# The meta-gate. This file, ci.yml and CONTRIBUTING.md are three hand-maintained
-# descriptions of one gate set, and they had drifted in both directions before
-# anyone measured it; a gate named by one and not another now fails by name. The
-# third side was itself a finding - it was omitted from the comparison while
-# claiming to be the definition, and carried seven of thirteen gates.
-run "gate parity (this file vs ci.yml)" python3 tools/gate-parity.py
+# The meta-gate. This file, ci.yml, CONTRIBUTING.md and CLAUDE.md are hand-maintained
+# descriptions of one gate set, and they had drifted in both directions before anyone
+# measured it; a gate named by one and not another now fails by name. Both documents
+# were findings when they were added - each claimed to be the definition while nothing
+# compared it, and CONTRIBUTING.md carried seven of thirteen gates.
+run "gate parity (every description of the gate set)" python3 tools/gate-parity.py
 # A hook is the only cost in this repo that sits on the critical path of EVERY
 # matching tool call, and hooks.json puts seven of them on one edit. The wall clock
 # is deliberately NOT gated - it swings between repeats by more than a deferred
