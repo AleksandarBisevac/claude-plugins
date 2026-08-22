@@ -387,12 +387,30 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    null**, skip this step — tests are the signer.
 2. **`testGateGreen`** — run the full `phase.testGate` (run `meta.nodePreamble` first, un-piped, if set). All commands
    must pass **after** any review-driven changes. Tests are the final signer. Surface manual items as human action items.
-3. **`runtimeBootGreen`** — **only if `meta.runtimeBoot` is set** and the phase touched app source under
+3. **`invariantsChecked`** — run, from the project directory and **before** the branch is deleted in
+   step 5e (deleting it takes with it the reflog this reads):
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/verify-invariants.py" <manifestPath> <phaseId>
+   ```
+   Exit 0 = no breach found · 1 = at least one · 2 = it could not be asked. It re-derives, from git
+   and the shard and the journal and the usage ledger, the rules **this file states** and nothing
+   enforces: a task commit staged only its own `files`, its phase's manifest file and the journal;
+   no push, no forced update and no `git stash` touched the phase branch; every manifest state the
+   phase committed still validates; a `risk: "high"` task ran on neither a declared nor a metered
+   `haiku`; and `phase.baseRef` is on the resolved parent branch.
+   **A breach is a human decision, not an automatic stop.** Print the lines it printed — verbatim,
+   because each carries the SHA or the file name that makes it checkable, and a paraphrase is a
+   claim with its basis removed — and ask (AskUserQuestion) whether to sign off anyway: a commit
+   that carried one extra file is often explicable, a push is not.
+   Lines reading `no-basis` or `partial` are **not** failures. They name what could not be checked
+   (a deleted branch, an unmetered repository, a manifest state no commit preserved); read them,
+   do not block on them.
+4. **`runtimeBootGreen`** — **only if `meta.runtimeBoot` is set** and the phase touched app source under
    `meta.runtimeBoot.appRootPath`. Cold-boot the app and verify the primary screen renders + one navigation
    away-and-back (jest mocks and tsc miss module-init/require-cycle boot crashes). Use the runtime steps in
    `meta.runtimeBoot`; if the runtime is unreachable, STOP and hand the human an explicit boot-check action item —
    the phase may NOT be signed off until the human confirms. If `meta.runtimeBoot` is null, skip this step.
-4. Only if all applicable gates pass:
+5. Only if all applicable gates pass:
    a. Set `phase.status = "done"`, `phase.review.status = "passed"` (or `"skipped"`), write `phase.review.outcome`
       and `phase.summary` (short paragraph: what was done + impact; when `phase.desiredOutcome` is set,
       the summary must state how the phase met — or didn't meet — it). **Clear `phase.claim`** if set —

@@ -154,6 +154,40 @@ def _cases(check):
     check("g4 with no usage block there are no budget breaches at any threshold",
           M.budget_breaches(s, 0.0) == [])
 
+    # --- the post-hoc condition ------------------------------------------------
+    # THREE STATES, and the middle one is the reason this is not a boolean. The
+    # block is INJECTED by `audit-status.py` (the git and ledger reads live at a
+    # layer this module may not reach), so "there were no breaches" and "nobody
+    # looked" arrive here as different shapes - and only one of them is a pass.
+    check("g5 a summary with NO invariants block trips the condition: a gate that "
+          "reported a clean bill of health over checks that never ran would be "
+          "the exact failure the post-hoc checker was written to end",
+          M.evaluate_gate({}, ("invariant-breach",)) == ["invariant-breach"]
+          and M.invariant_breaches({}) is not None)
+    _clean = {"invariants": {"breaches": [], "gaps": ["a reflog is gone"]}}
+    check("g6 ...and a block that WAS computed and found nothing passes - which "
+          "is the direction that fails if g5 is implemented as 'always trip'",
+          M.evaluate_gate(_clean, ("invariant-breach",)) == []
+          and M.invariant_breaches(_clean) is None)
+    _bad = {"invariants": {"breaches": ["P1 commit-scope: staged src/x.py"],
+                           "gaps": []}}
+    check("g7 ...and a block with a breach trips, handing the caller the lines "
+          "themselves rather than a count it would have to go and re-derive",
+          M.evaluate_gate(_bad, ("invariant-breach",)) == ["invariant-breach"]
+          and M.invariant_breaches(_bad)
+          == ["P1 commit-scope: staged src/x.py"])
+    check("g8 a block whose `breaches` is not a LIST is read as 'nothing was "
+          "verified' too - `{\"error\": ...}` is what audit-status returns when "
+          "the checks raise, and an empty answer there would be a clean bill of "
+          "health produced by a crash",
+          M.invariant_breaches({"invariants": {"error": "boom"}}) is not None
+          and M.evaluate_gate({"invariants": {"error": "boom"}},
+                              ("invariant-breach",)) == ["invariant-breach"])
+    check("g9 it is NOT in the default gate: it costs several git calls per "
+          "started phase, and a default that slow is a default somebody replaces",
+          "invariant-breach" in M.CONDITIONS
+          and "invariant-breach" not in M.DEFAULT_GATE)
+
     # --- the submodule preflight ---------------------------------------------
     check("s1 .gitmodules paths are read out of `path =` lines, whatever the "
           "spacing",

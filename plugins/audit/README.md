@@ -318,6 +318,15 @@ decision, the rule is in the first table. If the answer is "the orchestrator was
 not to", it is in the second — and that table's last column says what would catch a
 breach anyway.
 
+There is a third answer, and it is why the first table's last rows say *(after)*: a
+rule nothing can refuse in advance can still be **re-derived from evidence afterwards**,
+and a breach that cannot pass a gate is enforced even though no hook ever saw it.
+`scripts/governance/verify-invariants.py` is that reader. It runs at Phase sign-off
+(step 3, before the branch is deleted) and under
+`/audit:status --gate --fail-on invariant-breach`, and it answers from git, the phase
+shard, the journal and the usage ledger — or says it has no basis, which is a third
+verdict rather than a quiet pass.
+
 ### Enforced by a hook or a script
 
 Derived from `hooks/hooks.json` (which matcher reaches which hook) and from each hook's
@@ -344,6 +353,11 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | Source changed with no test touched this session | `remind-tdd.py` — PostToolUse edits | non-blocking nudge, throttled and manifest-aware |
 | The explorer cannot write or run a shell; the reviewer cannot edit; the executor has no web tools and no nested agents | the `tools:` line in each `agents/*.md` | the capability is **absent from the harness** — not a request in a prompt. On older Claude Code the commands fall back to general subagents, and that absence goes with them |
 | A referentially broken manifest cannot pass as valid | `scripts/manifest/validate-manifest.py` | exit 0 valid / 1 findings / 2 unreadable. The checker is deterministic; *running it after each write* is the invariant below |
+| *(after)* A task commit staged that task's `files`, its phase's manifest file and the journal — and **never** the index | `scripts/governance/verify-invariants.py` — `commit-scope` | exit **1**, naming the commit and the path. A recorded SHA git no longer has is `no-basis`, not a pass |
+| *(after)* No `push` reached a remote from the phase branch | same — `branch-history` | exit **1**, naming the remote-tracking ref (and the reflog's `update by push` when it is still there). Only THIS clone is read, which the basis says |
+| *(after)* No forced update and no `git stash` touched the phase branch | same — `branch-history` | exit **1**. A force is caught by **ancestry** (the tip moved where the old tip cannot reach), not by matching reflog words. The two standing limits — one clone only, and a DROPPED stash leaving no reflog — are printed in the check's basis, so a `clean` here says what it rests on |
+| *(after)* A `risk: "high"` task ran on neither a declared nor a metered `haiku` | same — `high-risk-model` | exit **1** from either source: `task.model` in the shard, or the ledger's `model` for that `taskId`. With no ledger the check reports `partial`, never `clean` |
+| *(after)* `phase.baseRef` is on the branch the phase forks from | same — `base-ref` | exit **1** when `baseRef` is not an ancestor of the resolved parent, and when a branch exists with no `baseRef` recorded at all |
 
 ### Followed from `reference/orchestrator.md`
 
@@ -355,23 +369,19 @@ what this table exists to stop presenting as a guarantee.
 
 | Invariant | Stated in | What makes it checkable |
 |---|---|---|
-| Never `git push`, in any form | § Non-negotiable guardrails | **post-hoc**, from the branch's reflog. The *rewriting* forms are denied outright once a SHA is recorded (first table); a plain `push` is not |
 | `git reset` / `rebase` / `clean` outside the pre-approved branch globs need explicit human confirmation | § Non-negotiable guardrails | **nothing** for the confirmation itself. The rewriting subset is denied while a SHA is recorded |
-| A task commit stages that task's `files`, its phase's manifest file and the journal directory — and **never** the index | § Execute the task, 4c | **post-hoc**: `git show --name-only <task.commit>` against `task.files` |
-| `phase.baseRef` is `HEAD` at phase entry, and the phase branch is cut from the resolved development branch | § Execute the task 1b–1c · § Branch-per-phase | **post-hoc**: `git merge-base` between `phase.baseRef` and `meta.developmentBranch` |
+| `phase.baseRef` is `HEAD` **at phase entry** | § Execute the task 1b–1c | **nothing** for the moment it was taken. That the value is on the parent branch IS checked (first table); that it was the tip when the branch was cut is not recorded anywhere |
 | A `risk: "high"` task stops for human confirmation before its commit | § Non-negotiable guardrails | **nothing** — an `AskUserQuestion` that never happened leaves no trace |
-| A `risk: "high"` task never runs on `haiku` | § Non-negotiable guardrails | **post-hoc**: the usage ledger's `model` for that `taskId`, against `task.risk` |
-| Every manifest mutation re-runs `validate-manifest.py` and fixes findings before proceeding | § Non-negotiable guardrails | **post-hoc, partly**: each journal row carries a `stateHash` of the bytes it left behind, so a recorded state can be re-validated where those bytes still exist. That the validator ran *at the time* is not recorded |
+| Every manifest mutation re-runs `validate-manifest.py` and fixes findings before proceeding | § Non-negotiable guardrails | **partly checked**: `verify-invariants.py`'s `manifest-revalidated` reassembles the manifest at every commit the phase recorded and re-runs the validator on it, and counts the journal rows whose `stateHash` names bytes no commit preserved. A write between two commits, and that the validator ran *at the time*, remain unrecorded |
 | `attempts` increments per execution, and `attempts >= maxAttempts` sets `status = "blocked"` and surfaces to the human | § Non-negotiable guardrails · § Execute the task, 2 | **post-hoc**, from the shard: `attempts`, `maxAttempts` and `status` are all recorded |
 | An infrastructure failure — gates could not run — reverts the `attempts` increment instead of burning a retry | § Execute the task, 4 | **nothing**: a reverted increment and an increment that never happened are the same number |
 | Test discipline follows `tests.mode` — `tdd` proves red first, `regression` locks the corrected behaviour, `gate-only` keeps the gate green | § Execute the task, 3 | **nothing** for the red-first run itself. `task.verifiedBy` names the tests added, which is a claim rather than evidence |
-| The executor subagent never runs `git stash` | § Execute the task, 3 | **post-hoc**, from `git reflog show refs/stash` — which survives a `pop`, though not a dropped ref |
 | The subagent does not commit; the orchestrator does | § Execute the task, 3 | **nothing**: the commit's author is the same either way |
 | Readiness: `pending`, own `blockedBy` and `dependsOn` satisfied, phase `blockedBy` satisfied; phase order from the manifest, then task id | § Readiness rule | `scripts/status/_status_facts.py`'s `ready_tasks()` computes it and `/audit:status` prints it — but nothing stops a run of a task that list omits. **post-hoc**, from `startedAt` order against the dependency graph |
 | Parallel only where `files` sets are disjoint and `dependsOn` lists are mutually satisfied | § Readiness rule | **post-hoc**: two tasks sharing a file with overlapping `startedAt`/`completedAt` windows |
 | Take the narrowest lock — `index` briefly for structural writes, `phase-<id>` for a run's duration — and stop on exit 3 | § Concurrency lock | *taking* it is not enforced; **writing against a live holder is** (first table). `scripts/governance/audit-lock.py status` reports what is held, with the basis per verdict |
-| Sign-off runs in strict order: review → the full `phase.testGate` → optional runtime boot → `status = "done"` | § Phase sign-off | **nothing** for the order. `phase.review.status` and `phase.summary` record the outcome, not the sequence |
-| The sign-off merge is `--ff-only` into the resolved parent, never a rebase — and when that parent is not the development branch, the report says the work has not landed there | § Phase sign-off, 4c | **post-hoc**, from the merge shape and `phase.mergedAt` against the parent branch. That the *report* said so is not recorded |
+| Sign-off runs in strict order: review → the full `phase.testGate` → the invariant check → optional runtime boot → `status = "done"` | § Phase sign-off | **nothing** for the order. `phase.review.status` and `phase.summary` record the outcome, not the sequence |
+| The sign-off merge is `--ff-only` into the resolved parent, never a rebase — and when that parent is not the development branch, the report says the work has not landed there | § Phase sign-off, 5c | **post-hoc**, from the merge shape and `phase.mergedAt` against the parent branch. That the *report* said so is not recorded |
 | Git runs as `git -C <gitRoot>`; gate commands run verbatim from the project directory | § Non-negotiable guardrails | **nothing** — both spellings agree whenever the layout is flat, which is why this one drifts quietly |
 | The executor is spawned with a `description` starting with the task id, so metering is per-task | § Execute the task, 3 | **post-hoc**: ledger rows fall back to phase level when the id is absent, so the gap shows in `/audit:usage` |
 | Skills are invoked before coding — the area's first, then `task.skills` | § Execute the task, 3 | **nothing** |
@@ -379,11 +389,17 @@ what this table exists to stop presenting as a guarantee.
 | Never read secrets, never log tokens, and do not work around the guards | § Non-negotiable guardrails | **enforced** — the one invariant whose whole content is a pointer to the first table |
 
 **How a row moves left.** The `post-hoc` rows are the ones worth building for: their
-evidence already exists in git, the shard and the ledger, and what is missing is the
-checker that reads it. Until that ships they are policy, not guarantee, and this table
-calls them policy. The rows marked **nothing** cannot move without recording something
-that is not recorded today — naming them is the point, because those are the ones a
-reader would otherwise assume were covered.
+evidence already exists in git, the shard, the journal and the ledger, and what is
+missing is the checker that reads it. The rows that carried that mark for a commit's file
+list, a plain `push`, a stash, a high-risk task's model and `phase.baseRef` have moved —
+`verify-invariants.py` reads them now, and a breach exits 1 at sign-off and under
+`--fail-on invariant-breach`. The ones left here still say `post-hoc` because nothing
+reads them yet, and until something does they are policy, not guarantee.
+
+The rows marked **nothing** cannot move at all without recording something that is not
+recorded today, and naming them is the point: those are the ones a reader would otherwise
+assume were covered. Moving one means adding a record first — not writing a checker that
+infers the answer, which would be a verdict with no basis under it.
 
 ## Commands
 

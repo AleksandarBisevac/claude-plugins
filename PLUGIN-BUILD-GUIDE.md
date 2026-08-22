@@ -114,6 +114,8 @@ claude-plugins/                           # this repo (personal, public)
           audit-lock.py                   # the CLI over it: acquire/release/status as exit codes
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           audit-journal.py                # the CLI over it: append/verify/show/archive
+          _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
+          verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -276,6 +278,7 @@ L4:
   _doctor_policy -> _branch, _doctor_report, _output
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts
   _doctor_trail -> _doctor_report, _journal_io, _output
+  _invariants -> _branch, _commit_trail, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _areas, _branch, _manifest_io, _output, _panel_paths
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -301,7 +304,7 @@ L7:
   audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
-  audit-status -> _areas, _cli_fmt, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
+  audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
   audit-task -> _locks, _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _output
@@ -316,6 +319,7 @@ L7:
   resolve-branch -> _branch, _manifest_io, _output
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output
+  verify-invariants -> _invariants, _manifest_io, _output
 ```
 
 ---
@@ -1351,6 +1355,36 @@ orchestrator uses (`index`, `phase-<id>`), turning the library's answers into ex
 a live holder is refused (exit 3); one that is not alive can be seized with `--takeover`
 (exit 4), because the old "older than 60 minutes = crashed" rule was wrong in both
 directions. `--session`/`--pid` override the identity written into the lock for testing.
+
+### `plugins/audit/scripts/governance/_invariants.py`
+The post-hoc reader of `reference/orchestrator.md` (layer 4). Both READMEs split the
+plugin's rules into what a hook ENFORCES and what the model FOLLOWS, and the second table's
+last column names, per row, what evidence would catch a breach — `post-hoc` where git, the
+shard, the journal or the ledger already holds it. This module reads that evidence, over
+five checks: a task commit staged only its own `files`, its phase's manifest file and the
+journal (`git show --name-only`); no push, no forced update and no stash touched the phase
+branch (the remote-tracking refs, the branch's own reflog compared pairwise for ancestry,
+and `refs/stash`); every manifest state the phase COMMITTED still validates (each commit's
+index and shards reassembled through `git show` and run back through `_manifest_rules`); a
+`risk: "high"` task ran on neither a declared nor a metered `haiku`; and `phase.baseRef` is
+an ancestor of the parent `_branch.parent_branch` resolves.
+
+The verdict vocabulary is the design. `clean` / `breach` / `partial` / `no-basis` /
+`not-applicable`, with `examined` beside each — so a check that looked at nothing prints the
+loudest word rather than the calmest, and a finished phase whose branch was deleted at
+sign-off answers `no-basis` about its reflog instead of `clean`. What it cannot see is in
+the module docstring rather than left for a reader to discover: a dropped stash, a push from
+another clone, and the manifest states written between two commits, which it counts from the
+journal's `stateHash` rows instead of passing over.
+
+### `plugins/audit/scripts/governance/verify-invariants.py`
+The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that
+has started (a branch, a `baseRef` or a recorded commit). `--json` for the whole answer,
+`--project` for the directory holding `.claude/` and the journal. Exit 0 answered, 1 at least
+one breach, 2 usage error or unreadable manifest — and a missing basis is deliberately exit 0
+with the word in the output, because sign-off deletes the phase branch and a gate that fired
+on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
+`/audit:status --gate --fail-on invariant-breach`.
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'

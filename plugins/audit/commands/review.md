@@ -1,5 +1,5 @@
 ---
-description: 'Audit pipeline: re-run Phase sign-off for a phase on demand (e.g. after fixes) — review, test gate, optional runtime boot, merge.'
+description: 'Audit pipeline: re-run Phase sign-off for a phase on demand (e.g. after fixes) — review, test gate, invariant check, optional runtime boot, merge.'
 argument-hint: '<phaseId>'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
@@ -11,8 +11,13 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 (steps 1–5, including the lock) and emit **Progress output** (orchestrator) as you go.
 
 Run **Phase sign-off** (orchestrator) for `<phaseId>` — use when tasks are already `done` and you
-want to re-run the review / test gate / runtime boot / merge (e.g. after applying fixes). Then
-follow **Reporting** and release the lock.
+want to re-run the review / test gate / invariant check / runtime boot / merge (e.g. after applying
+fixes). Then follow **Reporting** and release the lock.
+
+**The invariant check (sign-off step 3) reads the phase BRANCH.** Re-running sign-off after the
+branch was deleted is legitimate, and `verify-invariants.py` will answer `no-basis` for
+`branch-history` rather than `clean` — read that as "the evidence is gone", not as a problem with
+this run.
 
 The reviewer is **`phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`** — the
 first level that is **present** answers, an explicit `null` **is** an answer (skip review; tests are

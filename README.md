@@ -41,36 +41,48 @@ model on every `/audit:*` call, and its invariants are instructions rather than
 guarantees. Both columns below are the real thing; only the left one holds when the
 model does not comply.
 
-| Enforced by a hook or a script | Followed from `orchestrator.md` |
-|---|---|
-| Secret file **contents** — never read, directly or indirectly | Never `git push`, in any form |
-| Env values and token variables — never dumped | Human confirmation before a `reset` / `rebase` / `clean` |
-| Shell writes into source files no task covers | A task commit stages only that task's files |
-| Commits the manifest records — never orphaned | The phase branch is cut from the development branch |
-| Skills, subagents and MCP tools — the project's `policy` | `risk: "high"` waits for a human before committing |
-| Auth tokens — never logged | `risk: "high"` never runs on `haiku` |
-| The project's own banned patterns, per path | Revalidate the manifest after every write |
-| The plugin's own files — not editable by the model | `attempts >= maxAttempts` sets `blocked` |
-| The plan-first bypass — armed from human prompts only | An infrastructure failure burns no retry |
-| The audit trail — append-only, no hand edits | Red-first TDD where `tests.mode` asks for it |
-| Non-trivial edits — planned, or explicitly opted out | The executor never runs `git stash` |
-| Manifest writes against another live session's lock | The executor never commits; the orchestrator does |
-| Every plan and config write — journalled, hash-chained | Run only what the readiness rule allows |
-| Token spend — attributed to a phase and a task | Parallel only on disjoint file sets |
-| Unaccounted shell writes — reported in-band | Take the narrowest lock, and stop on exit 3 |
-| Source changed with no test — nudged | Sign-off in strict order: review → gates → boot |
-| Explorer cannot write, reviewer cannot edit, executor has no web tools | `--ff-only` into the resolved parent, never a rebase |
-| The manifest — referentially validated, by exit code | `git -C <gitRoot>`; gate commands from the project dir |
-|  | Spawn the executor with the task id in its description |
-|  | Skills invoked before any code is written |
+The left column has two kinds of row. Most are a hook refusing a tool call **before** it
+happens. The last few are a script returning an exit code **after** it did —
+`scripts/governance/verify-invariants.py`, which re-derives those rules from git, the
+phase shard, the journal and the usage ledger, and which Phase sign-off and
+`/audit:status --gate --fail-on invariant-breach` both run. A rule nothing can refuse in
+advance is still enforced if a breach cannot pass a gate; a rule nothing checks at all is
+policy, and that is what the right column is.
 
-Most of the right column is **verifiable after the fact** — a commit's file list, the
-phase's merge shape, the ledger's model per task — and a few of its rows are verifiable
-by nothing at all, which is worth knowing before you rely on one. The
+| Enforced by a hook (before) or a script (after) | Followed from `orchestrator.md` |
+|---|---|
+| Secret file **contents** — never read, directly or indirectly | Human confirmation before a `reset` / `rebase` / `clean` |
+| Env values and token variables — never dumped | `risk: "high"` waits for a human before committing |
+| Shell writes into source files no task covers | Revalidate the manifest after **every** write |
+| Commits the manifest records — never orphaned | `attempts >= maxAttempts` sets `blocked` |
+| Skills, subagents and MCP tools — the project's `policy` | An infrastructure failure burns no retry |
+| Auth tokens — never logged | Red-first TDD where `tests.mode` asks for it |
+| The project's own banned patterns, per path | The executor never commits; the orchestrator does |
+| The plugin's own files — not editable by the model | Run only what the readiness rule allows |
+| The plan-first bypass — armed from human prompts only | Parallel only on disjoint file sets |
+| The audit trail — append-only, no hand edits | Take the narrowest lock, and stop on exit 3 |
+| Non-trivial edits — planned, or explicitly opted out | Sign-off in strict order: review → gates → boot |
+| Manifest writes against another live session's lock | `--ff-only` into the resolved parent, never a rebase |
+| Every plan and config write — journalled, hash-chained | `git -C <gitRoot>`; gate commands from the project dir |
+| Token spend — attributed to a phase and a task | Spawn the executor with the task id in its description |
+| Unaccounted shell writes — reported in-band | Skills invoked before any code is written |
+| Source changed with no test — nudged |  |
+| Explorer cannot write, reviewer cannot edit, executor has no web tools |  |
+| The manifest — referentially validated, by exit code |  |
+| *(after)* A task commit staged that task's files, its phase's shard and the journal — never the index |  |
+| *(after)* No `push` reached a remote from the phase branch |  |
+| *(after)* No forced update and no `git stash` touched the phase branch |  |
+| *(after)* A `risk: "high"` task ran on neither a declared nor a metered `haiku` |  |
+| *(after)* `phase.baseRef` is on the branch the phase forks from |  |
+
+The right column is not one thing. Some of it is **verifiable after the fact** and simply
+has no checker yet; some of it is verifiable by **nothing at all** — a human confirmation
+that never happened leaves no trace, and a reverted `attempts` increment is the same
+number as one that never happened. Which is which matters before you rely on a row, so the
 [plugin README](plugins/audit/README.md#what-is-enforced-and-what-is-followed) gives the
-per-rule version of both tables: for each enforced rule, the hook and the decision it
-returns; for each invariant, where it is written and what evidence would catch a breach.
-[SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass classes.
+per-rule version of both tables: for each enforced rule, the hook or script and the
+decision it returns; for each invariant, where it is written and what evidence would catch
+a breach. [SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass classes.
 
 ## Install
 

@@ -331,9 +331,15 @@ def _cases(check):
           all(counts[s] > 0 for s in _load_bearing))
     # SEEN AND ACCEPTED, not unnoticed: both are keys in the tally, so the day one of
     # them stops being scanned at all this reads KeyError rather than a comfortable 0.
-    check("c3 agents/ and the root README name no script path today, and that is "
-          "recorded rather than passed over",
-          counts["plugins/audit/agents"] == 0 and counts["README.md"] == 0,
+    # The root README used to be a zero here too. It stopped being one when its
+    # enforcement table began naming `scripts/governance/verify-invariants.py` — the
+    # script that turns the table's own `post-hoc` rows into checked ones — and a
+    # README that names a script path is exactly what this scanner is FOR, so the
+    # recorded fact moved rather than the rule.
+    check("c3 agents/ names no script path today, and that is recorded rather "
+          "than passed over; the root README names at least one and every one of "
+          "them is stat'd like any other",
+          counts["plugins/audit/agents"] == 0 and counts["README.md"] > 0,
           repr((counts["plugins/audit/agents"], counts["README.md"])))
     check("c4 counts_by_surface is seeded from SURFACES, so every surface appears "
           "including the empty ones",

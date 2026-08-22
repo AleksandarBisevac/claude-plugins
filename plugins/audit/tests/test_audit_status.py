@@ -1190,7 +1190,7 @@ def _cases(_record):
     _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
     check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
           "not exist" % len(M.CONDITIONS),
-          _missing_ap == [] and len(M.CONDITIONS) == 7,
+          _missing_ap == [] and len(M.CONDITIONS) == 8,
           "absent from --help: %r" % (_missing_ap,))
     _help_txt = getattr(M, "CONDITION_HELP", None)
     check("ap9 ...and every condition's MEANING is rendered there too, so the "
@@ -1208,6 +1208,38 @@ def _cases(_record):
           "help-only %r / gate-only %r"
           % (sorted(set(_help_txt or {}) - set(M.CONDITIONS)),
              sorted(set(M.CONDITIONS) - set(_help_txt or {}))))
+
+    # --- (ai) the post-hoc condition, and what it costs when nobody asked -------
+    # The invariant checks read git several times per started phase. That is fine
+    # for a gate somebody opted into and wrong for every other `/audit:status`, so
+    # the block is computed only when the condition is in force - and ai1 is the
+    # case that fails if it ever becomes unconditional.
+    fd, _ai_path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)          # no branch, no baseRef, no commit
+    try:
+        _c_off, _o_off, _e_off = _cli_io([_ai_path, "--gate", "--json"])
+        check("ai1 the default gate does NOT compute the invariants block - it "
+              "costs git calls per started phase, and a status nobody asked for "
+              "must not pay them",
+              _c_off == 0 and "invariants" not in (_parses(_o_off) or {"invariants": 1}))
+        _c_on, _o_on, _e_on = _cli_io([_ai_path, "--gate", "--json",
+                                       "--fail-on", "invariant-breach"])
+        _payload = _parses(_o_on) or {}
+        check("ai2 ...and asking for it DOES compute it. Reads vacuous beside ai1 "
+              "and is the only case that fails if the wiring is dropped: %r"
+              % (sorted(_payload.get("invariants", {}).keys()),),
+              _c_on == 0 and isinstance(_payload.get("invariants"), dict)
+              and isinstance(_payload["invariants"].get("breaches"), list))
+        check("ai3 a manifest where no phase has started PASSES, and the block "
+              "says which phases it skipped - so the pass carries the basis that "
+              "makes it true rather than being silence: %r"
+              % (_payload.get("invariants", {}).get("skipped"),),
+              _payload["invariants"]["checked"] == []
+              and _payload["invariants"]["skipped"] == ["P1", "P2"]
+              and "GATE PASSED" in _e_on)
+    finally:
+        os.unlink(_ai_path)
 
 
 def _selftest():

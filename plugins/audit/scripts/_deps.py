@@ -329,7 +329,17 @@ LAYERS = (
     #                         (the one that also reaches `_panel_discovery`, L3)
     #   `_panel_runstate`     locks, the on-disk change stamp, the Plan gate card
     #   `_panel_usage`        the Usage tab's facts (runtime-loads usage_ledger, L3)
-    ("_panel_page", "_usage_load",
+    # `_invariants` is the post-hoc reader of `reference/orchestrator.md`'s rules:
+    # what a task commit staged, what the phase branch's reflog records, whether
+    # each committed manifest state still validates, which model answered a
+    # high-risk task, and where the phase forked from. It lands here because of
+    # what it reads rather than what reads it - `_manifest_rules` and
+    # `usage_ledger` are both L3, so L4 is the first layer that holds every one of
+    # its edges strictly downward. That is also why it is not beside
+    # `verify-invariants.py`: `audit-status.py` needs the answer for `--gate`, and
+    # an entry point asking another entry point is the KNOWN_LAYER_DEBT shape this
+    # table exists to keep rare.
+    ("_panel_page", "_usage_load", "_invariants",
      "_usage_overview", "_usage_detail", "_usage_markdown",
      "_doctor_setup", "_doctor_trail", "_doctor_completions", "_doctor_policy",
      "_panel_viewer", "_proposals", "_panel_composition", "_panel_policy", "_panel_runstate",
@@ -401,6 +411,12 @@ LAYERS = (
      # truth afterwards - by nulling what is unreachable and journaling what was
      # lost, never by guessing a substitute.
      "repair-commits",
+     # `verify-invariants` is the door onto `_invariants` (L4): one phase, or
+     # every phase that has started. A command for the reason `check-ado-item` is
+     # one - the caller is orchestrator PROSE, which reaches Python only through
+     # Bash, and a `python3 -c` naming a source path is the shape
+     # `guard-secrets-read` refuses (F20/F22).
+     "verify-invariants",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 

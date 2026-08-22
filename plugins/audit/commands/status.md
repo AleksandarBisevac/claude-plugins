@@ -50,7 +50,8 @@ same. Without `--json` stdout is unchanged, which is what the pipeline above rea
 
 `--fail-on <c1,c2,...>` chooses the conditions, and it **replaces** the default set
 (`invalid,open-high-bugs,blocked-tasks`) rather than adding to it — `--fail-on in-progress`
-gates on in-progress work and on nothing else. The seven names:
+gates on in-progress work and on nothing else. `--help` prints the names with their
+meanings, rendered from the same tuple the gate evaluates:
 
 - `invalid` — the structural validator reports findings
 - `open-high-bugs` — a bug of high-or-worse severity is not yet `fixed`/`wontfix`
@@ -59,10 +60,28 @@ gates on in-progress work and on nothing else. The seven names:
 - `in-progress` — any phase or task is `in_progress` (release-freeze gates)
 - `over-budget` — a phase is at or past 100% of its `budgetUSD`
 - `budget-80` — a phase is at or past 80% of its `budgetUSD`
+- `invariant-breach` — a started phase breaks one of the orchestrator's invariants,
+  checked **after the fact** by `scripts/governance/verify-invariants.py` against git,
+  the phase shard, the journal and the usage ledger
 
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
 commitment rather than an estimate.
+
+`invariant-breach` is out of the default for a different reason: it reads git several
+times per started phase, and a default that slow is a default somebody replaces. What
+it buys is the half of this plugin's rules that no hook can enforce — a task commit
+staging only its own files, no push or forced update or stash on the phase branch,
+every committed manifest state still validating, a `risk: "high"` task off `haiku`, and
+`phase.baseRef` on the branch the phase forks from. **A missing basis does not trip
+it**: a phase whose branch was deleted at sign-off has no reflog left to read, and the
+verdict for that check is the word `no-basis` in the output rather than a failed build.
+A block that was never computed *does* trip it — a gate cannot report a clean bill of
+health over checks that did not run. Run the checker directly for the detail:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/verify-invariants.py" <manifestPath> --all
+```
 
 Three things to get right when building the invocation:
 

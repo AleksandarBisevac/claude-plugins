@@ -67,7 +67,7 @@ import _areas  # noqa: E402  (meta.areas registry + the resolution every surface
 
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
-              "in-progress", "over-budget", "budget-80")
+              "in-progress", "over-budget", "budget-80", "invariant-breach")
 # Neither budget condition is in the default gate. Spend is a signal, not a defect:
 # a phase at 105% may be entirely justified, and failing someone's merge over it
 # without them asking would make the whole gate something to switch off. Opt in with
@@ -382,7 +382,31 @@ def evaluate_gate(summary, conditions):
         elif c in ("over-budget", "budget-80") and budget_breaches(
                 summary, BUDGET_WARN_PCT if c == "budget-80" else 100.0):
             failed.append(c)
+        elif c == "invariant-breach" and invariant_breaches(summary) is not None:
+            failed.append(c)
     return failed
+
+
+def invariant_breaches(summary):
+    """The post-hoc breach list, or None when it was never computed. Never [].
+
+    THREE STATES, AND A BOOLEAN WOULD HAVE TWO. The block arrives INJECTED by
+    `audit-status.py`, which is where the git and ledger reads live (this module
+    is layer 2 and `_invariants` is layer 4); the gate itself only reads what it
+    was handed. So the interesting question is not "were there breaches" but
+    "was anything read at all" — and a summary with no block is a summary nobody
+    asked, which must not pass as a clean one. `None` is "no breaches, and the
+    evidence was read"; a list is what was found; and an ABSENT block is also a
+    list, holding the one sentence that says so.
+
+    `evaluate_gate` therefore trips on `is not None`, which reads oddly until you
+    see that it is the only spelling under which the missing block fails.
+    """
+    block = (summary or {}).get("invariants")
+    if not isinstance(block, dict) or not isinstance(block.get("breaches"), list):
+        return ["the invariant checks did not run, so nothing about them was "
+                "verified - this is not a pass"]
+    return block["breaches"] or None
 
 
 # `_budget_detail` sat here between these two and went back to `audit-status.py`

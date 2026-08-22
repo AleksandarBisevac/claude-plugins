@@ -23,7 +23,9 @@ Modes: a bare invocation renders a human report; --json is for machines.
   --phase   scope the human render to one phase (totals stay whole-plan)
   --gate    evaluate fail conditions; exit 1 when any trips (prints a summary)
 
-The seven `--fail-on` conditions are NOT listed a second time here. They live in
+The `--fail-on` conditions are NOT listed a second time here, and they are not
+counted here either - the number was written into this sentence once and went
+stale the first time one was added. They live in
 `CONDITION_HELP` below, keyed by `_status_facts.CONDITIONS`, and `--help` renders
 them - so the names a user can pass and the names the gate evaluates are one list.
 Read them with `audit-status.py --help`; cases `ap8`/`ap10` fail the build if the
@@ -80,6 +82,7 @@ import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a 
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6 — no indirection needed)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, the gate)
+import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
@@ -112,6 +115,36 @@ rollup = _status_facts.rollup
 unmet_refs = _status_facts.unmet_refs
 evaluate_gate = _status_facts.evaluate_gate
 budget_breaches = _status_facts.budget_breaches
+invariant_breaches = _status_facts.invariant_breaches
+
+
+def invariants_block(manifest, manifest_path):
+    """`_invariants.check_manifest` over every started phase, or the reason it could not run.
+
+    The project is CLAUDE_PROJECT_DIR when Claude Code named one and the working
+    directory otherwise — the same anchor `--discovery` uses, and deliberately not
+    the manifest's own directory, which is `docs/audit/` on nearly every plan.
+
+    An exception comes back as a BLOCK WITH NO `breaches` KEY rather than as an
+    empty one. `_status_facts.invariant_breaches` reads that as "nothing was
+    verified" and trips the gate; an empty list would have read as a clean bill of
+    health produced by a crash.
+    """
+    project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    try:
+        return _invariants.check_manifest(
+            manifest, manifest_path,
+            _invariants.git_root_for(manifest, project), project,
+            ledger_dir=_invariants.ledger_dir_for(manifest, manifest_path))
+    except Exception as exc:                       # defensive; the checks fail soft
+        return {"error": "the invariant checks could not run: %s" % (exc,)}
+
+
+def _invariant_detail(summary):
+    """What `GATE FAILED: invariant-breach (...)` says after the name."""
+    found = invariant_breaches(summary) or []
+    return "%d breach(es): %s%s" % (len(found), "; ".join(found[:2]),
+                                    "" if len(found) <= 2 else " ...")
 
 
 def _budget_detail(summary, threshold_pct):
@@ -738,7 +771,7 @@ def _resumable_lines(manifest, summary, pt=None):
 # The one-line meaning of each `--fail-on` condition, keyed by the SAME tuple the
 # gate evaluates (`_status_facts.CONDITIONS`). It is a dict rather than prose so
 # `--help` can render it and a case can compare its keys against `CONDITIONS`: the
-# seven names used to exist only in this file's docstring, unreachable from the
+# names used to exist only in this file's docstring, unreachable from the
 # command line, and a name added to `CONDITIONS` alone would have gone undocumented
 # with nothing going red. `ap8`/`ap10` are what make that impossible now.
 CONDITION_HELP = {
@@ -750,6 +783,10 @@ CONDITION_HELP = {
     "in-progress": 'any phase or task "in_progress" (for release-freeze gates)',
     "over-budget": "a phase at or past 100% of its `budgetUSD`",
     "budget-80": "a phase at or past %g%% of its `budgetUSD`" % BUDGET_WARN_PCT,
+    "invariant-breach": "a started phase breaks an orchestrator invariant "
+                        "(scripts/governance/verify-invariants.py reads git, the "
+                        "shard, the journal and the ledger; several git calls per "
+                        "phase, so it is opt-in)",
 }
 # What `--help` says about a condition CONDITION_HELP has no entry for. It is a
 # `.get` default rather than a KeyError because the caller is `--help`: a condition
@@ -760,7 +797,7 @@ UNDOCUMENTED = "(undocumented - add it to CONDITION_HELP)"
 
 
 def _conditions_epilog():
-    """The seven condition names with their meanings, for `--help`.
+    """Every condition name with its meaning, for `--help`.
 
     Rendered from CONDITIONS + CONDITION_HELP rather than typed, so the listing a
     user reads IS the list the gate evaluates."""
@@ -920,6 +957,13 @@ def main(argv):
         summary["discovery"] = discovery_block(
             os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
+    if want_gate and "invariant-breach" in conditions:
+        # Computed HERE and injected, not inside the rollup. `_status_facts` is
+        # layer 2 and `_invariants` is layer 4, so the gate cannot reach the
+        # checks; and this costs several git calls per started phase, which no
+        # `/audit:status` that was not asked for it should pay.
+        summary["invariants"] = invariants_block(manifest, manifest_path)
+
     if want_gate:
         failed = evaluate_gate(summary, conditions)
         summary["gate"] = {
@@ -967,6 +1011,7 @@ def main(argv):
                     "in-progress": "work in progress",
                     "over-budget": _budget_detail(summary, 100.0),
                     "budget-80": _budget_detail(summary, BUDGET_WARN_PCT),
+                    "invariant-breach": _invariant_detail(summary),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1
