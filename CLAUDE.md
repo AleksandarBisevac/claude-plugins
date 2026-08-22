@@ -67,11 +67,13 @@ New behaviour means new selftest cases — the selftests are this project's test
 
 ## Which skill covers what
 
-Read the one for the language before writing, not after. Each states the house dialect, the
-modular structure, the DRY rule, what makes the code testable, and the anti-patterns that have
-actually bitten here.
+Read the one for the language before writing, not after — and the one for the job before
+deciding how to do it. Each states the house dialect, the modular structure, the DRY rule, what
+makes the code testable, and the anti-patterns that have actually bitten here. The last row is
+not about a language: it is about where an optimisation is worth spending, which is a decision
+taken before any code is written and is wrong most often when it is taken from a profile alone.
 
-| Writing… | Skill |
+| Working on… | Skill |
 |---|---|
 | Python | `writing-python` |
 | browser JavaScript | `writing-javascript` |
@@ -81,6 +83,7 @@ actually bitten here.
 | a sync/batch job against a remote API | `running-resumable-sync-jobs` |
 | anything depending on an external API's behaviour | `verifying-external-behavior` |
 | a check that passes locally and fails in CI | `reproducing-ci-locally` |
+| making anything faster, or deferring a slow thing | `choosing-what-to-optimize` |
 
 ## The front end is not ordinary files
 

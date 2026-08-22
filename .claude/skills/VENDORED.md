@@ -70,6 +70,16 @@ where every top-level name shares one scope.
   written from a measurement of this tree rather than from received wisdom: 734 free functions
   against 6 classes in the Python, 590 arrow functions in `panel.js` against 0 in `report.js`,
   605 `var(--…)` references against 13 raw hex in `panel.css`. Re-measure before rewriting them.
+- **`choosing-what-to-optimize/`** — original text, and the only one here written *from a single
+  pass* rather than from an audit of the tree: every figure in it was measured while making the
+  test machinery faster, including the two decisions that went the other way. Nothing off the
+  shelf covers it, and the reason is structural — public performance skills teach profiling and
+  then assume the hot spot is the target. The three things that actually decide it here are that
+  wall clock, total child CPU and the critical path are different numbers with different
+  consequences; that CI multiplies CPU by four and divides it by the runner's cores; and that a
+  composite score which adds fan-in to shape metrics ranks the most-imported module first for
+  being imported. It also records a declined optimisation with its number, because a deferral
+  written as a measurement can be reopened and one written as "we did not get to it" cannot.
 - **`refactoring-the-assembled-ui/`** — original text. No public skill covers a front end that a
   build-less pipeline concatenates into one inline `<style>` and one inline `<script>`; across
   ~1,100 lines of airails guidance there is no file-size rule, no decomposition heuristic, no

@@ -46,6 +46,26 @@ exempted is worse than no rule, because it is believed.
 This is the same discipline the repo already applies to its lints — they are shown red before
 being trusted. Extend it to every new one.
 
+**An exemption carries a premise. Check the premise, not just whether the exemption still
+fires.** A rule here forbade dividing by a `||1` denominator and carved out one field, "where
+one attempt is the true default". The carve-out worked exactly as written for a long time, and
+the premise was false: the orchestrator writes `attempts: 0` for every new task, and two
+documented paths take a count back down while the spend stays attributed. So the field's zero
+was a recorded value, and `||1` reported one attempt for a task the plan says has none — which
+is what the rule's own next sentence forbids ("in any other position it manufactures an answer
+to a question that has none"). A silently disabled rule is the loud version of this. The quiet
+version is an exemption that fires correctly for a reason that stopped being true, and the way
+to find it is to read the reason and try to measure it.
+
+**A shortcut in a verification can make it circular.** Confirming a cache "does not lie" means
+comparing the cached answer against an *independently* computed one, which costs two
+computations. Seeding the cache from the same value the case compares it against saves one —
+and turns the assertion into a value compared with itself, which cannot fail. That was done
+here to save under a second, in the block whose entire subject is a check that must be able to
+go red. Two computations is the floor, not an oversight; when a verification looks
+suspiciously cheap, work out which two things it is comparing and whether they came from
+different places.
+
 ## Prove the case can fail
 
 Every regression case makes an implicit claim: *this would have caught the bug.* The only way to

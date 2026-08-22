@@ -746,6 +746,12 @@ SWEEP_DOCS = (
     "PLUGIN-BUILD-GUIDE.md",
     "docs/audit/audit-plan.json",
     ".claude/skills/refactoring-the-assembled-ui/SKILL.md",
+    # A skill about deciding what to make faster necessarily quotes the sweep, and a
+    # document that shows it owes the runner like every other. Added WITH the skill
+    # rather than after it: the alternative is one document carrying the command and
+    # standing outside the rule about the command, which is the shape this list
+    # exists to prevent.
+    ".claude/skills/choosing-what-to-optimize/SKILL.md",
 )
 
 
