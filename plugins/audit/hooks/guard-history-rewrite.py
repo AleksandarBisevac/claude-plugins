@@ -44,7 +44,6 @@ This hook carries no `--selftest` of its own; its cases live in
 import json
 import os
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -119,6 +118,7 @@ def orphaned_by(root, git_root, target, shas):
     Returns [] when git cannot answer — an unresolvable ref is a command that is
     about to fail on its own, and guessing here would block work over a typo.
     """
+    import subprocess
     lost = []
     for task_id, sha in shas:
         try:
@@ -136,7 +136,17 @@ def orphaned_by(root, git_root, target, shas):
 
 
 def decide(data):
-    """("deny", reason) or ("allow", "")."""
+    """("deny", reason) or ("allow", "").
+
+    `subprocess` is imported inside the two branches that shell out to git rather
+    than at module scope. This hook runs on EVERY Bash tool call, and it returns
+    "allow" before touching git for a non-Bash call, an empty command, a repo with
+    no recorded task SHAs, and any command that matches none of the rewrite
+    patterns - which is nearly all of them. `subprocess` brings about a dozen
+    modules with it (threading, selectors, select, signal, locale, warnings, ...),
+    and every one of them was being paid for on calls that never spawn anything.
+    `tools/bench-hooks.py --gate` is what keeps it out.
+    """
     if (data.get("tool_name") or "") != "Bash":
         return ("allow", "")
     command = ((data.get("tool_input") or {}).get("command") or "")
@@ -181,6 +191,7 @@ def decide(data):
                     % (len(lost), names, "" if len(lost) <= 3 else ", ..."))
 
     if _AMEND.search(command):
+        import subprocess
         head = ""
         try:
             out = subprocess.run(["git", "-C", git_root or root, "rev-parse", "HEAD"],

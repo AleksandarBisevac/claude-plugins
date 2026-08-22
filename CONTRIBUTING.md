@@ -75,6 +75,14 @@ python3 tools/sweep-selftests.py --selftest
 # with a reason, and a row that no longer describes the system fails too.
 python3 tools/gate-parity.py
 
+# the hook import budget. A hook runs on every matching tool call - seven of them on
+# one edit - so its module-level imports are paid over and over. This diffs
+# sys.modules after loading each hook against a measured floor and fails by name on
+# a newcomer. The wall clock is NOT gated on purpose: it swings between repeats by
+# more than a deferred import is worth. `tools/bench-hooks.py` with no flag prints
+# that measurement for a human deciding whether an optimisation is worth doing.
+python3 tools/bench-hooks.py --gate
+
 # the JavaScript unit tests. They ran only in CI for a long time, so a change under
 # scripts/ui/ could reach a push with none of the suites covering it having run.
 npx vitest run

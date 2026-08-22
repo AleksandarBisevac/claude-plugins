@@ -45,7 +45,6 @@ even though the hook itself may not; see `plugins/audit/tests/_harness.py`.
 import json
 import os
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -56,7 +55,34 @@ import _config  # noqa: E402
 # `test_guard_bash_writes.py`'s k1 drives the REAL writer, so a drift here goes red.
 _SAFE_SID = re.compile(r"[^A-Za-z0-9._-]+")
 
+# --- the git call -------------------------------------------------------------
+# `-uall` is load-bearing, and the measurement is the reason it survives a profile:
+# on a fixture of 4000 untracked, unignored files it costs ~86 ms against ~19 ms for
+# `-unormal` - but `-unormal` collapses a new source file in a new directory to
+# `?? src/`, which `_is_source` does not recognise, so the warning this hook exists
+# to emit would simply disappear. Speed bought with silence is the one trade this
+# guard must not make. Re-derive both numbers before changing the flag.
+#
+# `--no-optional-locks` is NOT a speed change (measured: none). It stops git taking
+# the index lock, which matters because this plugin's headline feature is phases
+# running in parallel worktrees. It goes BEFORE the subcommand - after it, git exits
+# with `unknown option`.
+GIT_STATUS_ARGV = ["git", "--no-optional-locks", "status", "--porcelain", "-uall"]
+_GIT_TIMEOUT_SECONDS = 5
+
 # --- notice templates ---------------------------------------------------------
+# A repo whose `git status` cannot finish inside the budget is a repo where this
+# guard is OFF. That is a fact about the session, not about the command that
+# happened to be running, so it is said once and never repeated - a notice on every
+# shell call in a large monorepo is a notice people disable.
+TIMEOUT_TEMPLATE = (
+    "[bash-write-guard] `git status` did not finish within %s seconds in this "
+    "repository, so unplanned shell writes are NOT being detected for the rest of "
+    "this session. This is said once. Usually it means a large untracked, "
+    "unignored tree - adding it to .gitignore restores the guard. To switch the "
+    "check off deliberately, set bashWriteCheck.enabled to false."
+)
+
 WARN_TEMPLATE = (
     "[bash-write-guard] That shell command modified source file(s) with no "
     "plan coverage: %s. Plan-first applies to shell writes too — add the "
@@ -189,10 +215,12 @@ def _load_state(state_dir, session_id):
             return {"toolEdited": list(data.get("toolEdited") or []),
                     "seenDirty": list(data.get("seenDirty") or []),
                     "warned": list(data.get("warned") or []),
-                    "baselined": bool(data.get("baselined"))}
+                    "baselined": bool(data.get("baselined")),
+                    "gitTimeout": bool(data.get("gitTimeout"))}
     except Exception:
         pass
-    return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False}
+    return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
+            "gitTimeout": False}
 
 
 def _save_state(state_dir, session_id, state):
@@ -226,13 +254,26 @@ def _plugin_wrote(state_dir, session_id):
 
 
 def _git_dirty(root):
-    """Repo-relative dirty/untracked paths, or None when git is unusable."""
+    """(repo-relative dirty/untracked paths, None), or (None, reason) on failure.
+
+    A TUPLE because the two failure modes are not the same event and used to be
+    reported as one. Everything funnelled into `return None`, which `decide` read
+    as "not a git repo" and answered with silence - so a repository big enough to
+    blow the timeout ran with this guard permanently off and was never told. The
+    reasons are `"timeout"` (say so, once), `"git-error"` and `"no-repo"`.
+
+    `subprocess` is imported here rather than at module scope: this hook runs on
+    the Edit matcher too, and that lane returns at "record" without ever reaching
+    git, so the ~6.6 ms was bought for nothing on the more frequent of its two
+    lanes.
+    """
+    import subprocess
     try:
         out = subprocess.run(
-            ["git", "status", "--porcelain", "-uall"], cwd=str(root),
+            GIT_STATUS_ARGV, cwd=str(root),
             capture_output=True, timeout=5, text=True)
         if out.returncode != 0:
-            return None
+            return (None, "no-repo")
         files = []
         for line in out.stdout.splitlines():
             if len(line) < 4:
@@ -241,9 +282,11 @@ def _git_dirty(root):
             if " -> " in path:  # rename: "R  old -> new"
                 path = path.split(" -> ", 1)[1]
             files.append(path.strip('"').replace("\\", "/"))
-        return files
+        return (files, None)
+    except subprocess.TimeoutExpired:
+        return (None, "timeout")
     except Exception:
-        return None
+        return (None, "git-error")
 
 
 # --- decision -----------------------------------------------------------------
@@ -278,10 +321,15 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     # branch 2: Bash — diff the working tree against what we last saw.
     # Run git in the configured gitRoot (subdir-aware) and translate the
     # gitRoot-relative paths back to project-relative to match everything else.
+    reason = None
     if dirty is None:
-        dirty = _git_dirty(_config.git_root_dir(root, cfg))
+        dirty, reason = _git_dirty(_config.git_root_dir(root, cfg))
     if dirty is None:
-        return ("silent", "not a git repo / git unusable")
+        if reason == "timeout" and not state["gitTimeout"]:
+            state["gitTimeout"] = True
+            _save_state(sd, session_id, state)
+            return ("warn", TIMEOUT_TEMPLATE % _GIT_TIMEOUT_SECONDS)
+        return ("silent", "git unusable (%s)" % (reason or "no-repo"))
     prefix = _config.git_root_rel(cfg)
     if prefix:
         dirty = [prefix + "/" + p for p in dirty]

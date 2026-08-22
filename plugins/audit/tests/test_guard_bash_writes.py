@@ -461,6 +461,80 @@ def _cases(check):
                                "provably read-only" if _want else "watched"),
               M._command_is_read_only(_cmd) == _want)
 
+    # (gt) the git call itself, pinned as data rather than spied on.
+    #
+    # `-uall` is LOAD-BEARING and measured: on a fixture of 4000 untracked,
+    # unignored files it costs ~86 ms against ~19 ms for `-unormal`, and it is the
+    # only spelling that names a new source file inside a NEW directory. `-unormal`
+    # collapses that to `?? src/`, which `_is_source` does not recognise as source,
+    # so the warning would simply vanish - speed bought with silence, which is the
+    # one trade this repo does not make. The case says so, because the next person
+    # to profile this hook will reach for the same flag.
+    #
+    # `--no-optional-locks` is NOT a speed change (measured: no difference). It
+    # stops `git status` taking the index lock, which matters precisely because
+    # this plugin's headline feature is phases running in parallel worktrees. It
+    # must sit BEFORE the subcommand: after it, git exits with `unknown option`.
+    _argv = list(M.GIT_STATUS_ARGV)
+    check("gt1 `-uall` is still there - the flag that names a new source file "
+          "inside a new directory",
+          "-uall" in _argv and "-unormal" not in _argv and "-uno" not in _argv)
+    check("gt2 `--no-optional-locks` precedes the subcommand, which is the only "
+          "placement git accepts",
+          "--no-optional-locks" in _argv
+          and _argv.index("--no-optional-locks") < _argv.index("status"))
+
+    # (to) a timeout is not "no git here".
+    #
+    # `_git_dirty` caught every failure into one `return None`, and `decide` read
+    # that as "not a git repo / git unusable" and went SILENT. A repo big enough to
+    # blow the 5 s budget therefore ran with the guard permanently off and was never
+    # told - the exact shape `no-silent-pass` calls a filter narrowing to nothing and
+    # reading as all clear. The two outcomes need distinct sentinels.
+    _real_git_dirty = M._git_dirty
+    try:
+        M._git_dirty = lambda root: (None, "timeout")
+        s = "bw-to"
+        _ok_to, _got_to = _harness.attempt(
+            M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
+            cfg=cfg, state_dir=sd)
+        # Asserted on substance, not wording: it must say the guard is off, and it
+        # must name a way out. A notice that reports a failure without either is
+        # the thing this repo calls a claim with no basis.
+        check("to1 a git-status timeout is reported, not swallowed as 'no repo', "
+              "and the notice says the guard is off and how to restore it",
+              _ok_to and _got_to[0] == "warn"
+              and "NOT being detected" in _got_to[1]
+              and ".gitignore" in _got_to[1]
+              and "bashWriteCheck.enabled" in _got_to[1],
+              repr(_got_to))
+        # The other direction: a real "not a git repo" must STAY silent. Without
+        # this, making every git failure warn would pass to1 and flood any
+        # non-git project with a notice it can do nothing about.
+        M._git_dirty = lambda root: (None, "no-repo")
+        _ok_ng, _got_ng = _harness.attempt(
+            M.decide, payload("Bash", sid="bw-to2", command="python3 tools/gen.py"),
+            cfg=cfg, state_dir=sd)
+        check("to2 ...while a genuine non-git directory stays silent - the "
+              "second-direction case for to1",
+              _ok_ng and _got_ng[0] == "silent", repr(_got_ng))
+        # And the timeout notice fires ONCE: a hook that repeats it on every shell
+        # call in a big repo is a hook people turn off.
+        M._git_dirty = lambda root: (None, "timeout")
+        _ok_2, _got_2 = _harness.attempt(
+            M.decide, payload("Bash", sid=s, command="python3 tools/gen2.py"),
+            cfg=cfg, state_dir=sd)
+        check("to3 ...and it is said once per session, not on every shell call",
+              _ok_2 and _got_2[0] == "silent", repr(_got_2))
+    finally:
+        M._git_dirty = _real_git_dirty
+
+    # The import weight of this hook - the Edit lane returns at "record" without
+    # ever reaching git, so `subprocess` must not be imported at module scope - is
+    # NOT asserted here. It has ONE home, and it is the per-hook budget in
+    # `tools/bench-hooks.py --gate`, which asks the same question of every hook
+    # instead of this one: run that after touching the imports at the top of
+    # guard-bash-writes.py.
 
 
 def _selftest():

@@ -681,6 +681,15 @@ jobs:
           # runs is exactly the asymmetry it exists to report.
           # Its own cases run inside the selftest job's sweep, which covers tools/.
           python tools/gate-parity.py
+      - name: hook import budget
+        run: |
+          # Ubuntu only, and deliberately NOT a timing check: the wall clock of a
+          # hook swings between repeats by more than a deferred import is worth, so
+          # a ceiling would either flake here or fail to see the regression it
+          # exists for. This diffs sys.modules after loading each hook against a
+          # measured floor, which is exact and platform-independent enough to run
+          # once. Its own cases run inside the selftest job's sweep.
+          python tools/bench-hooks.py --gate
       - name: vermin holds the 3.8 floor
         run: |
           # -t=3.8- carries the trailing dash on purpose: it means "3.8 or lower",

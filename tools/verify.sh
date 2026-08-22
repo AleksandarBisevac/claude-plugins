@@ -162,6 +162,13 @@ run "...and the runner's own cases, read directly" \
 # third side was itself a finding - it was omitted from the comparison while
 # claiming to be the definition, and carried seven of thirteen gates.
 run "gate parity (this file vs ci.yml)" python3 tools/gate-parity.py
+# A hook is the only cost in this repo that sits on the critical path of EVERY
+# matching tool call, and hooks.json puts seven of them on one edit. The wall clock
+# is deliberately NOT gated - it swings between repeats by more than a deferred
+# import is worth, so a ceiling either flakes or cannot see the regression. What is
+# gated is the import graph, which is exact: `bench-hooks.py` (no flag) prints the
+# measurement for a human choosing what to optimise.
+run "hook import budget" python3 tools/bench-hooks.py --gate
 run "ruff" ruff check plugins/audit tools
 run "vermin (3.8 floor)" vermin -t=3.8- --no-tips --violations \
   plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
