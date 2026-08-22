@@ -24,7 +24,7 @@ do with a key nobody recognises is to name it and carry on.
 THE `KNOWN_*` SETS ARE CHECKED AGAINST THE SCHEMA, NOT TRUSTED. Every one of
 them restates vocabulary `schema/audit-plan.schema.json` already owns, so
 `SCHEMA_ANCHORS` records where each set lives in that document and `OFF_SCHEMA`
-records, with a reason each, the thirteen keys that deliberately have no schema
+records, with a reason each, every key that deliberately has no schema
 counterpart. `_help.schema_vocab_drift()` compares the two and names what
 disagrees. IF YOU ADD A KEY HERE, the schema is where it has to exist first; if
 it must not, it belongs in `OFF_SCHEMA` with the reason written down. The
@@ -217,7 +217,7 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #
 # LINTED, NOT DERIVED. Three reasons, in order of weight:
 #
-# 1. THE SETS ARE DELIBERATELY WIDER THAN THE SCHEMA. Thirteen keys above have no
+# 1. THE SETS ARE DELIBERATELY WIDER THAN THE SCHEMA. Some keys above have no
 #    schema counterpart at all — `OFF_SCHEMA` names each one and says why. They are
 #    legacy or tolerated spellings the schema dropped in v0.3.0 and the orchestrator
 #    still accepts in a pre-0.3 manifest. Derivation can express "equal to the

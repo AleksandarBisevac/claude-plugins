@@ -32,8 +32,8 @@ Output classes match the rest of the plugin:
 Exit: 0 healthy (warnings allowed) · 1 findings · 2 usage error.
 
 WHAT THIS FILE IS NOW: THE ORDER, AND THE PUBLIC SURFACE. It was 1,456 lines, and
-the size was the symptom rather than the fault — fifteen checks shared one file
-because `diagnose()` calls all fifteen. They are six modules now, cut where the
+the size was the symptom rather than the fault — the checks shared one file
+because `diagnose()` calls every one of them. They are six modules now, cut where the
 file's own section markers already cut it, and the 646-line `hooks, ledger &
 trail` block cut again at the three seams inside it:
 

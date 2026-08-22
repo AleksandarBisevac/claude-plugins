@@ -1447,6 +1447,30 @@ def _cases(check):
               "list, and an empty list is also what a broken scanner returns: %r"
               % (_dpn_hits,),
               _dpn_hits == [("FIXTURE.md", 1, "stayed at 17")])
+        # F59: the docs are where the word-spelled count was FOUND, so the
+        # delegation has to carry that spelling too - a `_deps` that saw only
+        # digits would be the second grammar dpn3 forbids, arriving as a gap
+        # instead of as a `def`. The LAST line is the second direction: a
+        # number-word below the table's floor, sitting in the shape that would
+        # fire on it, and on a line of its own so that nothing else exempts it.
+        # That line is why this case goes red if the table is WIDENED as well as
+        # if the word spelling is dropped - and the first draft of it was wrong,
+        # because it shared a line with the basis and so could never fire.
+        _dpn_word = os.path.join(_dpn_tmp, "WORDS.md")
+        with open(_dpn_word, "w", encoding="utf-8") as fh:
+            fh.write("`OFF_SCHEMA` records the thirteen cases that have no twin.\n"
+                     "It stood at eleven cases that day, and was wrong by Friday.\n"
+                     "all fifteen of them (`73042a1` - print it with\n"
+                     "`python3 -c \"...\"`); a migrated file still exits 0.\n"
+                     "and all three are honest about what a violation does.\n")
+        _dpn_word_hits = M.doc_prose_numbers([_dpn_word])
+        check("dpn5 a count spelled as a WORD is reported by the DOC scan too, "
+              "with its line number, while the historical line, the line whose "
+              "basis lands on the next one, and a number-word below the table's "
+              "floor are all left alone. F59 was found in a comment, and the "
+              "same claim in a document is the same defect: %r"
+              % (_dpn_word_hits,),
+              _dpn_word_hits == [("WORDS.md", 1, "thirteen cases")])
     finally:
         shutil.rmtree(_dpn_tmp, ignore_errors=True)
 

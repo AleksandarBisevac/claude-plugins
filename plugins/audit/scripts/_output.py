@@ -533,7 +533,7 @@ def entries_missing_guard(dirs=None):
 
     "First" is judged on what EXECUTES, via `ast`, not on where text appears. Every one of
     these scripts defines printing functions hundreds of lines above its `__main__` block,
-    so a textual "the call must precede the first `print(`" would name all fifteen of them
+    so a textual "the call must precede the first `print(`" would name every one of them
     for code that cannot possibly run before the guard. The rule is: among the statements
     that actually run — module level, then the entry block — no `print` may precede the
     `safe_stdio()` call. A file that cannot be parsed is reported rather than skipped,
@@ -960,6 +960,71 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 # acts on, and is not the remedy of choice for one that restates a live source.
 _CASE_WORDS = ("cases", "case")
 
+
+# --- a numeral, in either spelling ------------------------------------------------
+# A count SPELLED OUT is the same claim as a count in digits, so it is read by the
+# shapes above rather than by a grammar of its own. THE TABLE'S OMISSIONS ARE THE
+# DESIGN. A bare number-word is not a claim, it is English, and the shapes are all
+# that separates the two.
+#
+# WHERE THE BOUNDARY CAME FROM, and it is a measurement rather than taste. With the
+# small words admitted as well, this lint and `_deps.doc_prose_numbers()` between
+# them reported nineteen sites across `hooks/`, `scripts/` and the three prose
+# documents on the day this landed - every one of them below `ten`, and only two were
+# the defect. Of the rest: thirteen were an ANAPHOR pointing at an enumeration the
+# reader can see in the same breath ("all three are honest about what they are:",
+# and the three are the next lines), which is a number carrying its own basis; one
+# was a RATE, one a UNIQUENESS claim whose sentence dies if the word goes, one a
+# COUNTERFACTUAL about cases that do not exist, and one a noun compound the shape
+# misread. Sixteen good sentences would have had to be rewritten to catch two
+# marginal ones, and the pressure after that is to loosen a shape.
+#
+# At `ten` and above the same run reported four sites, and three had already rotted -
+# two spellings of a check count that had grown by three, and a file count that had
+# doubled. That is the hit rate the earlier families were adopted on.
+#
+# So the band under `ten` is an UNDER-count, and it is documented as one rather than
+# closed. Widening it is the repair to refuse: a pattern loosened to admit prose
+# stops catching the thing it exists for, and the case that would have noticed is
+# the one being changed.
+_NUMERAL_TENS = ("twenty", "thirty", "forty", "fifty", "sixty", "seventy",
+                 "eighty", "ninety")
+
+# Read ONLY as the tail of a tens word, never on its own. A hyphenated compound is
+# punctuation `_words()` has already dropped, so a tens word and its tail arrive as
+# two tokens; without this the compounds this tree really writes would read as a
+# number followed by an unrelated word and slip every shape.
+_NUMERAL_TAILS = ("one", "two", "three", "four", "five", "six", "seven",
+                  "eight", "nine")
+
+_NUMERAL_WORDS = ("ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+                  "sixteen", "seventeen", "eighteen", "nineteen",
+                  "hundred", "thousand") + _NUMERAL_TENS
+
+# NOT the same table as `config/_help._COUNT_WORDS`, and merging them would break
+# both. That one RESOLVES a word to a number by its index, against a phrase a regex
+# has already pinned, so it needs exactly the small words this one leaves out. This
+# one RECOGNISES a numeral in arbitrary prose, where those same words are ambiguous.
+# A single table serving both would have to be ordered and complete, which is the
+# widening the second-direction case exists to stop.
+
+
+def _numeral_span(w, i):
+    """`(text, index past it)` if a numeral starts at `w[i]`, else None.
+
+    ONE entry point for both spellings, so no shape can end up reading a digit and
+    a word by different rules. Returns the text rather than the value: the finding
+    quotes the claim back, and nothing here compares magnitudes.
+    """
+    tok = w[i]
+    if tok.isdigit():
+        return (tok, i + 1)
+    if tok not in _NUMERAL_WORDS:
+        return None
+    if tok in _NUMERAL_TENS and w[i + 1:i + 2] and w[i + 1] in _NUMERAL_TAILS:
+        return ("%s-%s" % (tok, w[i + 1]), i + 2)
+    return (tok, i + 1)
+
 # Token sequences that assert a number has not changed AS OF WRITING. The past
 # tense of `stayed`/`remained` is not what makes them history: "it stayed at N"
 # with no anchor to a past moment means "and it is N now", which is why
@@ -1074,21 +1139,23 @@ def _looks_historical(w):
 
 def _cardinality_claim(w):
     """"its N cases" / "N cases live in" / "--selftest (N cases)" / "all N of them"."""
-    for i, tok in enumerate(w):
-        if not tok.isdigit():
+    for i in range(len(w)):
+        span = _numeral_span(w, i)
+        if span is None:
             continue
-        nxt = w[i + 1] if i + 1 < len(w) else ""
+        num, end = span
+        nxt = w[end] if end < len(w) else ""
         prv = w[i - 1] if i else ""
         if nxt in _CASE_WORDS:
             if prv == "its":
-                return "its %s %s" % (tok, nxt)
-            if w[i + 2:i + 4] == ["live", "in"]:
-                return "%s %s live in" % (tok, nxt)
+                return "its %s %s" % (num, nxt)
+            if w[end + 1:end + 3] == ["live", "in"]:
+                return "%s %s live in" % (num, nxt)
             if "selftest" in w[max(0, i - 4):i]:
-                return "--selftest (%s %s)" % (tok, nxt)
+                return "--selftest (%s %s)" % (num, nxt)
         # "all N of them", the shape selftest_coverage's own docstring used
-        if prv == "all" and w[i + 1:i + 3] == ["of", "them"]:
-            return "all %s of them" % tok
+        if prv == "all" and w[end:end + 2] == ["of", "them"]:
+            return "all %s of them" % num
         # The BARE shape: a number sitting in front of "cases", however it is
         # introduced -- "the N cases in tests/", "across N cases", "the ~N cases
         # below". Every example here spells N on purpose: written with real
@@ -1105,10 +1172,10 @@ def _cardinality_claim(w):
         # one that has to ask whether the line is talking about THEN. Skipping
         # that check turns "it stood at 70 cases that day" into a violation and
         # makes the decision record unwritable.
-        if nxt in _CASE_WORDS or (nxt == "selftest" and w[i + 2:i + 3] and
-                                  w[i + 2] in _CASE_WORDS):
+        if nxt in _CASE_WORDS or (nxt == "selftest" and w[end + 1:end + 2] and
+                                  w[end + 1] in _CASE_WORDS):
             if not _looks_historical(w):
-                return "%s cases" % tok
+                return "%s cases" % num
     return None
 
 
@@ -1116,13 +1183,14 @@ def _persistence_claim(line, w):
     """"`NAME` stayed at N" / "`NAME` is still N" - F43's shape, and F39's."""
     if not _names_code(line):
         return None
-    for i, tok in enumerate(w):
-        if not tok.isdigit():
+    for i in range(len(w)):
+        span = _numeral_span(w, i)
+        if span is None:
             continue
         for phrase in _PERSISTS:
             n = len(phrase)
             if i >= n and tuple(w[i - n:i]) == phrase:
-                return "%s %s" % (" ".join(phrase), tok)
+                return "%s %s" % (" ".join(phrase), span[0])
     return None
 
 
@@ -1136,12 +1204,16 @@ def _completeness_claim(w):
     with it). Both spellings are in this tree, and a window of three is what
     tells them apart.
     """
-    for i, tok in enumerate(w):
-        if not tok.isdigit() or not i or w[i - 1] != "all":
+    for i in range(len(w)):
+        if not i or w[i - 1] != "all":
             continue
-        for aux in w[i + 1:i + 4]:
+        span = _numeral_span(w, i)
+        if span is None:
+            continue
+        num, end = span
+        for aux in w[end:end + 3]:
             if aux in _PRESENT_AUX:
-                return "all %s ... %s" % (tok, aux)
+                return "all %s ... %s" % (num, aux)
     return None
 
 
@@ -1188,7 +1260,9 @@ def prose_number_claims(script_dir=None, hooks_dir=None):
     WHAT IT CANNOT SEE, stated rather than implied, and the direction matters
     more than the list:
 
-      * a count spelled in words ("its forty cases");
+      * a count spelled as one of the small number-words `_NUMERAL_WORDS`
+        leaves out -- under `ten` the word is ordinary English machinery and
+        the shapes cannot tell it from a count;
       * a claim whose NUMBER and whose SHAPE-WORD land on different lines --
         only the basis is read across the wrap, never the claim;
       * a completeness claim with no auxiliary ("(all 64)", "all 8 viz slots"),

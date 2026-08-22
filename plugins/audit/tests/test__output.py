@@ -1183,6 +1183,86 @@ def _cases(check):
               is None
           and M._prose_number_claim("holds the selftest cases that assert")
               is None)
+    check("pn13 a count spelled as a WORD is the same claim in a different "
+          "spelling - F59, which sat in a comment block every gate reads because "
+          "no lint was looking at that spelling. One numeral reader serves every "
+          "shape, so the word form cannot reach one family and miss another",
+          M._prose_number_claim("its thirteen cases live in `tests/test_x.py`")
+              == "its thirteen cases"
+          and M._prose_number_claim("eleven cases live in the suite")
+              == "eleven cases live in"
+          and M._prose_number_claim("Config `x`. `--selftest` (nineteen cases).")
+              == "--selftest (nineteen cases)"
+          and M._prose_number_claim("the migration finished, all fifteen of them")
+              == "all fifteen of them"
+          and M._prose_number_claim("All fifteen files have moved, so the OR is "
+                                    "empty") == "all fifteen ... have"
+          and M._prose_number_claim("`KNOWN_LAYER_DEBT` stayed at seventeen and "
+                                    "the map did not move")
+              == "stayed at seventeen"
+          and M._prose_number_claim("and the ten cases in `tests/` that read it")
+              == "ten cases")
+    # SECOND DIRECTION, and the only case in this family that fails if the numeral
+    # table GROWS. It looks vacuous - none of these lines is a finding before the
+    # word spelling was read either - and it is the whole reason the table stops
+    # where it does. Every line is real prose from this tree, and not one of them
+    # is a count: a rate, a uniqueness claim whose sentence dies if the word goes,
+    # an anaphor pointing at an enumeration the reader can see in the same breath,
+    # and an auxiliary that belongs to the NEXT sentence. Admitting the small words
+    # - the obvious "make it see more" mutation - turns every one of them into a
+    # finding, and the repair reached for next would be loosening a shape, which is
+    # how a pattern stops catching the thing it exists for.
+    check("pn14 ...and a number-word in ordinary prose is NOT a claim, which is "
+          "what the table's omissions buy. These are measured lines from this "
+          "tree, not invented ones, and admitting the words below `ten` makes "
+          "every one of them a violation",
+          M._prose_number_claim("a caller can still report one case per asset")
+              is None
+          and M._prose_number_claim("It is the ONE case that brings the section")
+              is None
+          and M._prose_number_claim("and all three are honest about what a "
+                                    "violation does") is None
+          and M._prose_number_claim("belongs below all four of them, not beside "
+                                    "one") is None
+          and M._prose_number_claim("read 'fixed'. Pinned below by two cases.")
+              is None
+          and M._prose_number_claim("because `diagnose()` calls all six. They "
+                                    "are modules now, cut where the") is None)
+    check("pn15 a tens word and its tail are ONE numeral, because the hyphen is "
+          "punctuation the tokenizer has already dropped - without that a "
+          "written-out compound reads as a number followed by an unrelated word "
+          "and slips every shape. The tail words are not numerals on their own, "
+          "which is what keeps pn14 true, and a tens word with no tail keeps its "
+          "own shape, which is what fails if the span over-consumes",
+          M._prose_number_claim("forty-four cases assert the join") == "forty-four cases"
+          and M._prose_number_claim("its twenty-one cases live in `tests/x.py`")
+              == "its twenty-one cases"
+          and M._prose_number_claim("twenty cases live in the suite")
+              == "twenty cases live in"
+          and M._prose_number_claim("four cases assert the join") is None
+          and M._prose_number_claim("carrying twenty-one upward runtime edges")
+              is None)
+    check("pn16 the word spelling inherits BOTH escape hatches, or the extension "
+          "would make the decision record unwritable and forbid its own remedy - "
+          "the two things every family here is pinned against",
+          M._prose_number_claim("the suite was eleven cases before the split")
+              is None
+          and M._prose_number_claim("it stood at seventy cases that day") is None
+          and M._prose_number_claim("its thirteen cases live in x - re-derive "
+                                    "with `python3 tests/test_x.py --selftest`")
+              is None
+          and M._prose_number_claim("its cases live in `tests/test_x.py`") is None)
+    _pn_isdigit = [ln for ln in open(M.__file__, encoding="utf-8").read().split("\n")
+                   if "isdigit" in ln]
+    check("pn17 every shape reads its number through the ONE span reader - a "
+          "family added later that asked a token whether it is a digit itself "
+          "would see digits and miss words, which is F59 wearing a new shape. "
+          "COUNTED over the source rather than asserted present, because the "
+          "defect is a second reader existing at all: %r" % (_pn_isdigit,),
+          len(_pn_isdigit) == 1
+          and M._numeral_span(["ten"], 0) == ("ten", 1)
+          and M._numeral_span(["17"], 0) == ("17", 1)
+          and M._numeral_span(["four"], 0) is None)
 
 
 

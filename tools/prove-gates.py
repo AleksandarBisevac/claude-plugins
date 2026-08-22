@@ -84,6 +84,14 @@ TABLE = (
  ("prose_number_claims", S + "_fmt.py", "after", INSTALL,
   '\n\ndef _probe_claim():\n    """The table and its 12 cases."""\n    return None\n',
   OUT, "pn0"),
+ # F59: the SAME lint, mutated in the word spelling. The digit row above cannot
+ # notice a numeral table that has stopped reading words - which is the state this
+ # repo shipped in until a count spelled out sat unnoticed in a comment block every
+ # gate reads. Two rows for one lint, the way the house-style lint carries two.
+ ("prose_number_claims", S + "_fmt.py", "after", INSTALL,
+  '\n\ndef _probe_word_claim():\n    """The table and its thirteen cases."""\n'
+  '    return None\n',
+  OUT, "pn0"),
  ("entries_missing_guard", S + "status/audit-status.py", "drop",
   r"^    safe_stdio\(\)$", None, OUT, "f1"),
  ("layer_violations", S + "_fmt.py", "after", INSTALL,
@@ -107,6 +115,8 @@ TABLE = (
   "\nconst probeStore=localStorage.getItem('probe');", DEP, "sc1"),
  ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
   "\nThe tree carries all 12 of them.\n", DEP, "dpn0"),
+ ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
+  "\nThe tree carries all thirteen of them.\n", DEP, "dpn0"),
  ("map_drift", S + "_deps.py", "replace", '    ("_output",),\n',
   '    ("_output", "_probe_layer_name"),\n', DEP, "r3"),
  ("hooks_rule_drift", "PLUGIN-BUILD-GUIDE.md", "replace", None, None, DEP, "g0"),

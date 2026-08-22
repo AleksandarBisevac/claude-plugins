@@ -802,15 +802,20 @@ wrong. Re-derive any of them by breaking the check, never by reading this. All t
 remedy — **delete the number** — and the evidence for choosing that over "make it carry its
 basis" is `CONTRIBUTING.md`, whose files-over-500 figure *does* name a command that prints it
 and rotted in both halves anyway. A basis makes a claim checkable; only deleting the number
-makes it un-rottable. Four things are designed in and each is pinned by its own case: no
+makes it un-rottable. Every property below is designed in and pinned by its own case: no
 regex (this module carries `ast`, `os` and `sys` only, and hooks import it on every tool
 call); history stays writable, so `stood at N` and `was still N` are legal and `stayed at N`
 is not; a number carrying its own re-derivation is allowed, and the basis is read across a
 line wrap because every document here is hard-wrapped; and the repair must itself read clean,
-or the lint forbids its own remedy. What it cannot see is written down with its direction —
-counts spelled in words, claims split across a wrap, completeness with no auxiliary,
-persistence naming no code in backticks — and every one of those is an **under**-count, which
-is the quiet direction, so a clean result means "none of the known shapes", not "no claims".
+or the lint forbids its own remedy. F59 added one more: the number may be written as
+a **word**, and `_numeral_span()` reads both spellings for every shape so there is no second
+grammar to drift. Its table stops below `ten` on a measurement, not on taste — under `ten` a
+written-out number in this tree is a determiner, a pronoun or an anaphor pointing at an
+enumeration in the same breath, and the shapes cannot tell that from a count. What it cannot
+see is written down with its direction — a count spelled as one of the small words that table
+leaves out, claims split across a wrap, completeness with no auxiliary, persistence naming no
+code in backticks — and every one of those is an **under**-count, which is the quiet
+direction, so a clean result means "none of the known shapes", not "no claims".
 
 The consequence worth stating out loud: **the folders under `scripts/` are labels, not
 namespaces.** Everything stays in one flat name-space, `import` and `_loader.load_script()`
@@ -1145,7 +1150,7 @@ at layer 2 and its consumers at layer 3.
 The `KNOWN_*` sets restate vocabulary `schema/audit-plan.schema.json` already owns, and they
 are now **checked against it rather than trusted**. `SCHEMA_ANCHORS` records where each set
 lives in that document, spelled as the dotted path `_help.fields()` produces
-(`phases[].tasks[]`), and `OFF_SCHEMA` records the thirteen keys that deliberately have no
+(`phases[].tasks[]`), and `OFF_SCHEMA` records the keys that deliberately have no
 schema counterpart — legacy names v0.3.0 removed, plus `meta.workspaceRoot`, which
 `reference/orchestrator.md` still names as the pre-0.6 fallback for `gitRoot` — **one written
 reason each**, because an exemption list without reasons is where a lint goes to die.
@@ -1366,9 +1371,9 @@ read-only by construction: it never writes, never takes a lock, and for `buildCo
 resolves whether the named executable exists rather than running it. Output classes match the
 rest of the plugin (OK/WARNING/FINDING); exit 0 healthy, 1 findings, 2 usage error.
 
-It was 1,456 lines and is 242, because fifteen checks shared one file for the single reason
-that `diagnose()` calls all fifteen. What is left here is the thing that could not go into a
-piece: the ORDER (`check_config` produces the `cfg`/`cfg_mod` pair, `check_git` the git root,
+It was 1,456 lines and is 242, because the checks shared one file for the single reason that
+`diagnose()` calls every one of them. What is left here is the thing that could not go into
+a piece: the ORDER (`check_config` produces the `cfg`/`cfg_mod` pair, `check_git` the git root,
 `check_manifest` the manifest — ten of the checks after them take those as arguments), plus
 `render()` and `main()`, because a report's order and its rendering are one subject. Every
 name the six modules hold is re-exported here as a module-level alias, so the suite and the

@@ -38,11 +38,13 @@ two copies of a procedure is one copy and one lie.
   `_output.prose_number_claims()` over `hooks/` + `scripts/` and `_deps.doc_prose_numbers()`
   over this file, `CONTRIBUTING.md` and `PLUGIN-BUILD-GUIDE.md` fail the build on a
   present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``) or
-  completeness (`all N of them`, `all N … have`) claim. Three things stay legal on purpose:
-  **history** (`it stood at N that day`), a number **carrying the command that re-derives it**
-  — the basis may sit on the next line, because prose wraps — and the repair itself, which is
-  to delete the number and keep the pointer. When a number really is informative, carry the
-  basis; a basis makes a claim checkable, but only deleting the number stops it rotting.
+  completeness (`all N of them`, `all N … have`) claim — and the number may be spelled as a
+  word, which is F59: `_numeral_span()` reads both spellings, for every shape, from one fixed
+  table. Three things stay legal on purpose: **history** (`it stood at N that day`), a number
+  **carrying the command that re-derives it** — the basis may sit on the next line, because
+  prose wraps — and the repair itself, which is to delete the number and keep the pointer.
+  When a number really is informative, carry the basis; a basis makes a claim checkable, but
+  only deleting the number stops it rotting.
 - Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
 
 ## Adding a `.py` under `hooks/` or `scripts/`
