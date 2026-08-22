@@ -26,11 +26,13 @@ the layer its own consumers leave free.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (SCRIPTS_DIR + py_files, for the inline scan)
 from _output import safe_stdio                     # noqa: E402
+import _deps                                       # noqa: E402  (the one import graph, for the hook-path premise)
 import _manifest_vocab as M                        # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 import _manifest_rules as _rules                   # noqa: E402
@@ -508,6 +510,71 @@ def _cases(check):
           % (len(_walk_files), sorted(set(_defs_readers) ^ set(_walk_files))),
           set(_defs_readers) == set(_walk_files) and len(_walk_files) > 1,
           repr(_defs_readers))
+
+    # --- the premise point 3 of that comment rests on ----------------------------
+    # Point 3 declines to derive the vocabulary partly because the cost cannot land
+    # on the per-tool-call hook path. `hooks/` may not import `scripts/` at all and
+    # `_deps.layer_violations()` already says so, so the live half of the premise is
+    # what the hooks RUNTIME-load by basename through `_config.find_script()` and
+    # what THOSE import in turn. All but one of those roots is at layer 1 beside
+    # `_manifest_vocab`, where the layer rule refuses the edge as not strictly
+    # downward; `usage_ledger` is at layer 3 and `meter-usage.py` loads it on every
+    # tool call, so the one edge that would falsify the premise is legal, downward,
+    # and invisible to every other gate here. Hence a case rather than a sentence.
+    #
+    # THE WHOLE GRAPH, not a grep and not a walk written here: `import_graph()`
+    # unions static imports with `_loader` runtime loads, and a second reachability
+    # walk over `scripts/` would be a second answer to what this tree imports.
+    _hook_roots = set()
+    _hook_unparsed = []
+    _script_names = set(_deps._module_files(_output.SCRIPTS_DIR)[0])
+    for _hrel, _hpath in _output.py_files(_output.HOOKS_DIR):
+        with open(_hpath, "r", encoding="utf-8") as _hfh:
+            _htext = _hfh.read()
+        try:
+            _htree = ast.parse(_htext)
+        except SyntaxError:
+            # A hook that will not parse is not a hook that loads nothing.
+            _hook_unparsed.append(_hrel)
+            continue
+        for _hname in _deps._py_literal_basenames(_htree):
+            if _hname in _script_names:
+                _hook_roots.add(_hname)
+    _hedges, _hbroken = _deps.import_graph()
+    _hout = {}
+    for _a, _b in _hedges:
+        _hout.setdefault(_a, []).append(_b)
+
+    def _hclosure(start):
+        """Every module reachable from `start` over that graph, `start` included."""
+        seen, todo = set(), [start]
+        while todo:
+            node = todo.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            todo.extend(_hout.get(node, ()))
+        return seen
+
+    _hreach = set()
+    for _hroot in sorted(_hook_roots):
+        _hreach |= _hclosure(_hroot)
+    # Per root as well as unioned, so a failure names the hook-path module that
+    # grew the edge rather than only saying that one did.
+    _hculprits = sorted(r for r in _hook_roots if "_manifest_vocab" in _hclosure(r))
+    check("mv37 ...and the premise point 3 of that comment rests on - that nothing "
+          "on the per-tool-call hook path reaches this module, so deriving the "
+          "vocabulary would cost the validator and the panel rather than every edit "
+          "- is WALKED rather than believed: the %d scripts/ modules hooks/ "
+          "runtime-load by basename reach %d modules between them, `_output` among "
+          "them so the walk is known to have followed an edge, and %s reaches this "
+          "one. `usage_ledger` sits at layer 3, so an import from there would be "
+          "legal and strictly downward - no layer rule can close that hole, which "
+          "is why this case exists"
+          % (len(_hook_roots), len(_hreach), _hculprits or "none of them"),
+          bool(_hook_roots) and not _hook_unparsed and not _hbroken
+          and "_output" in _hreach and not _hculprits,
+          repr((sorted(_hook_roots), _hook_unparsed, _hbroken, sorted(_hreach))))
 
 
 def _selftest():

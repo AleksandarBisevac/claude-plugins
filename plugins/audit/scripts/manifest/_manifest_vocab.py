@@ -257,14 +257,38 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #    lives with the walk it uses, in `_help.schema_vocab_drift()`, and this module
 #    states the two things it is the right place to state: WHERE in the schema each
 #    set lives, and WHICH of its keys the schema does not have.
-# 3. Deriving costs about 0.43 ms per process — read 0.023 + `json.loads` 0.122 +
-#    `_help.fields()` 0.285, the mean of 200 in-process runs over the 46,220-byte
-#    `schema/audit-plan.schema.json` — which measured end to end is 1.2-3.2 ms of a
-#    24-33 ms `import _manifest_vocab` process. This is the WEAKEST of the three and
-#    is recorded so nobody re-argues it from the usual premise: nothing on the
-#    per-tool-call hook path imports this module (hooks resolve `_manifest_io.py` by
-#    basename through `_config.find_script()` and never reach here), so the cost
-#    would land on `validate-manifest.py` and the panel, not on every edit.
+# 3. Deriving costs a fraction of a millisecond per process, against an import that
+#    already costs milliseconds. The read, the `json.loads` and the `_help.fields()`
+#    walk are one call; the import it would join is the other half of the pair:
+#
+#      S=plugins/audit/scripts
+#      PYTHONPATH=$S/config python3 -m timeit -s 'import _help' '_help.manifest_fields()'
+#      PYTHONPATH=$S/manifest python3 -X importtime -c 'import _manifest_vocab'
+#
+#    THE FIGURES ARE NOT WRITTEN DOWN, AND THAT IS THE REPAIR (F60). They were, with
+#    the schema's byte count beside them, and naming the tree is the only reason the
+#    rot was catchable at all — but a timing here moves with the SCHEMA and with the
+#    INTERPRETER independently, and re-running the first line above returned
+#    essentially the figure recorded next to a byte count the file had long outgrown.
+#    Repeats on one machine disagree, too. A number that can be stale and still look
+#    right is not a basis; the command is, and it measures the checkout you are
+#    standing in. Run both lines on the machine you care about — this is CPU,
+#    interpreter version and page cache, so a millisecond taken from someone else's
+#    laptop was never checkable here in the first place.
+#
+#    This is the WEAKEST of the three and is recorded so nobody re-argues it from the
+#    usual premise: nothing on the per-tool-call hook path imports this module, so the
+#    cost would land on `validate-manifest.py` and the panel, not on every edit.
+#
+#    THAT PREMISE IS ASSERTED, NOT STATED. `hooks/` may not import `scripts/` at all,
+#    so the exposure is what they RUNTIME-load by basename through
+#    `_config.find_script()` — `_manifest_io.py` among them — and what those in turn
+#    import. All but one of those roots sits at layer 1 beside this module, where
+#    `_deps.layer_violations()` refuses the edge as not strictly downward; the
+#    exception is `usage_ledger.py` at layer 3, which `meter-usage.py` loads on every
+#    tool call, so an `import _manifest_vocab` there would be legal, downward and
+#    silent. `mv37` in `plugins/audit/tests/test__manifest_vocab.py` walks the real
+#    import graph out of those roots and goes red the day one of them reaches here.
 #
 # `SCHEMA_ANCHORS` says where each set is defined, spelled as the dotted path
 # `_help.fields()` produces and `_help.COMPOSITION_PATHS` already uses; `""` is the
