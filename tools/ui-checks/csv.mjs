@@ -54,5 +54,3 @@ export const firstNonRawNumberLine = (lines, numericCols) => {
   }
   return null;
 };
-
-// --- resolving a script by basename --------------------------------------------

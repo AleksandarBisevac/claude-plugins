@@ -1570,6 +1570,66 @@ def _cases(check):
     finally:
         shutil.rmtree(_u_tmp, ignore_errors=True)
 
+    # --- tools/ is under the marker rule now, and it was under nothing -----------
+    # The largest file in this repository was a browser gate of 8451 lines, and the
+    # marker rule reached scripts/ui/, scripts/ and hooks/ but never the directory
+    # holding the machinery that proves all three. Two extensions had to join the
+    # table for that to mean anything - `.mjs`, which nothing here used, and `.py`,
+    # whose absence would have made the walk SKIP every tool silently.
+    _tn = M.tool_navigability_violations()
+    _tn_names = M.ui_asset_names(M._TOOLS_DIR)
+    _tn_graded = [n for n in _tn_names
+                  if any(n.endswith(e) for e, _r in M._UI_MARKER_RES)]
+    _tn_long = [n for n in _tn_graded
+                if sum(1 for _l in open(os.path.join(M._TOOLS_DIR, n),
+                                        encoding="utf-8", errors="replace"))
+                >= M._NAV_MIN_LINES]
+    check("tn0 every long file under tools/ carries its section markers: %r"
+          % (_tn,), _tn == [])
+    check("tn1 ...and that verdict is over real observations - %d file(s) walked, "
+          "%d gradable by extension, %d long enough to be checked. A clean list "
+          "means one thing at those numbers and something else entirely at zero, "
+          "which is what a table missing an extension would have produced"
+          % (len(_tn_names), len(_tn_graded), len(_tn_long)),
+          len(_tn_long) >= 4 and len(_tn_graded) >= 20)
+
+    _tn_tmp = tempfile.mkdtemp(prefix="audit-deps-tools-")
+    try:
+        _long_js = "".join("  const x%d = %d;\n" % (_i, _i) for _i in range(900))
+        _long_py = "".join("x%d = %d\n" % (_i, _i) for _i in range(900))
+        with open(os.path.join(_tn_tmp, "thin.mjs"), "w", encoding="utf-8") as _fh:
+            _fh.write("// --- only one -------------------------------------\n"
+                      + _long_js)
+        with open(os.path.join(_tn_tmp, "thin.py"), "w", encoding="utf-8") as _fh:
+            _fh.write("# --- only one -------------------------------------\n"
+                      + _long_py)
+        _hits = dict((n, p) for n, p in M.tool_navigability_violations(_tn_tmp))
+        check("tn2 a long `.mjs` with one marker is REPORTED - the extension the "
+              "table gained for this, and the one every tool in the split is "
+              "written in: %r" % (_hits.get("thin.mjs"),),
+              "thin.mjs" in _hits and "section marker" in _hits["thin.mjs"])
+        check("tn3 ...and a long `.py` too, which is the half that would have been "
+              "SKIPPED rather than failed: an extension with no entry in the table "
+              "is passed over, so the docstring claimed a coverage the table did "
+              "not give: %r" % (_hits.get("thin.py"),),
+              "thin.py" in _hits and "section marker" in _hits["thin.py"])
+        with open(os.path.join(_tn_tmp, "thin.mjs"), "w", encoding="utf-8") as _fh:
+            _fh.write("// --- one ------------------------------------------\n"
+                      + _long_js
+                      + "// --- two ------------------------------------------\n"
+                      + "// --- three ----------------------------------------\n")
+        _after = dict(M.tool_navigability_violations(_tn_tmp))
+        check("tn4 THE PAIR: the same file with enough markers is not reported, "
+              "while its `.py` neighbour still is - so tn2 is reading the count "
+              "rather than the extension: %r" % (sorted(_after),),
+              "thin.mjs" not in _after and "thin.py" in _after)
+    finally:
+        shutil.rmtree(_tn_tmp, ignore_errors=True)
+
+    check("tn5 widening the table did not change scripts/ui/, which holds neither "
+          "extension: %r" % (M.ui_navigability_violations(),),
+          M.ui_navigability_violations() == [])
+
     # --- the scan memo: it must be USED, must not LIE, and must not be POISONED ---
     # A scan parses every `.py` under `scripts/` and grows the wrapper map to a
     # fixpoint, and the lints each ask for the whole graph because each judges the

@@ -119,6 +119,12 @@ const EXPECT_SITES = new Set();
 // Without this the grader is a gate that only works on one report. Measured on a
 // plan with no areas, no authors and nothing ready: 29 of 133 sites unreachable
 // and every one of them correct.
+// --- what a document may legitimately lack, and what is conditional ------------
+// This file is a LINEAR SCRIPT, not a set of functions: most of what follows is
+// `const x = await …` at top level, one step after another. The markers therefore
+// name PHASES of one procedure rather than units that could be called separately,
+// which is also why the spans between them are long.
+
 const FEATURE_ABSENT = [
   { note: 'no author chips',
     covers: ['the author view is a link', 'releasing the chip restores the top-8',
@@ -370,6 +376,8 @@ const seg0 = await page.evaluate(() => {
     legacyToggle: !!document.getElementById('audit-arch'),
   };
 });
+// --- the segment order the report must render in -----------------------------------
+
 const SEG_ORDER = ['active', 'pending', 'archived'];
 expect('the segment headers come in active, pending, archived order',
   seg0.heads.join(','),
@@ -813,6 +821,8 @@ await page.waitForTimeout(250);
 // term matching some of a phase's tasks and not the phase's own heading — a term
 // the heading carries makes every task a match, and "3 of 3" is deliberately not
 // drawn. Found in the document rather than hard-coded, so this works on any report.
+// --- partial matches, and the chip state they imply --------------------------------
+
 const partial = await page.evaluate(() => {
   const g = document.querySelector('table.phases');
   const q = (sel) => [...g.querySelectorAll(sel)];
@@ -908,6 +918,8 @@ if (chips.length) {
 //    rather than clicked, because clicking a selector that is not there buys a
 //    30-second Playwright timeout and a stack, which reads as the report being
 //    dead when it is the checker that could not find its footing.
+// --- the panel's parts, as the report shows them -----------------------------------
+
 const panelParts = [];
 if (await page.$('#audit-model .fchip')) {
   for (const sel of ['.fdetails > summary', '.filterpanel']) {
@@ -1028,6 +1040,8 @@ if (await page.$('#audit-authors .fchip')) {
 //     Clear filters restores the hidden phases and takes a= out of the URL.
 //     The a= regex anchors on [!&] on purpose: /a=/ alone also matches au=,
 //     and would read the author fragment as this one.
+// --- the area chips ----------------------------------------------------------------
+
 const areaParts = [];
 if (await page.$('#audit-areas .fchip')) {
   for (const sel of ['.fdetails > summary', '.filterpanel']) {
@@ -1900,6 +1914,8 @@ const shadowAt = async (y) => {
 const atRest = await shadowAt(0);
 expect('at rest the filter bar sits in the flow and casts no shadow', atRest.shadow, false);
 const barY = await page.evaluate(() => window.scrollY + document.querySelector('.sectools').getBoundingClientRect().top);
+// --- the pinned selections ---------------------------------------------------------
+
 const pinned = await shadowAt(barY + 400);
 expect(`stuck against the top bar it reads as a layer over the rows it filters `
   + `(top ${pinned.top}, sticks at ${pinned.stickAt})`, pinned.shadow, true);
@@ -1965,6 +1981,8 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 await page.setViewportSize({ width: 688, height: 900 });
 await page.emulateMedia({ media: 'print' });
 await page.waitForTimeout(150);
+// --- on paper: the print rules -----------------------------------------------------
+
 const onPaper = await page.evaluate(() => {
   const st = document.querySelector('.sectools');
   const fp = document.querySelector('.filterpanel');

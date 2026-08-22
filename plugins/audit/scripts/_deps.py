@@ -1575,7 +1575,26 @@ _UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
 _UI_MARKER_RES = (
     (".css", re.compile(r"^/\*\s+-{2,}\s+(.+?)\s+-{2,}")),
     (".js", re.compile(r"^ {0,2}//\s+-{2,}\s+(.+?)\s+-{2,}")),
+    # `.mjs` shares the `.js` syntax and reaches this table for `tools/`, which the
+    # rule below now covers. A no-op for `scripts/ui/`, which holds none - and the
+    # reason it is a THIRD ENTRY rather than a widened `.js` pattern is that the
+    # extension is what selects a marker syntax, so a file type with no entry is
+    # skipped rather than guessed at, and that property is worth keeping visible.
+    (".mjs", re.compile(r"^ {0,2}//\s+-{2,}\s+(.+?)\s+-{2,}")),
+    # `.py`, for `tools/` only in practice: `scripts/ui/` holds none by rule. This
+    # is the LINE-BASED reading of a marker, so it is weaker than the sibling
+    # `navigability_violations()`, which tokenizes and therefore cannot be fooled by
+    # a marker-shaped line inside a string. Weaker and present beats absent: without
+    # an entry here the walk SKIPS the extension, and the docstring below claimed
+    # coverage the table did not give - which is the shape this whole pass is about.
+    (".py", re.compile(r"^# -{2,}\s+(.+?)\s+-{2,}")),
 )
+
+# `tools/` is checked by the same rule, and until now by nothing. The largest file
+# in this repository lived there - a browser gate of 8451 lines - and the marker
+# rule reached `scripts/ui/`, `scripts/` and `hooks/` but never the directory that
+# holds the machinery proving all three.
+_TOOLS_DIR = os.path.join(_output.REPO_ROOT, "tools")
 
 
 def ui_asset_names(ui_dir):
@@ -2005,6 +2024,26 @@ def ui_navigability_violations(ui_dir=None):
                                 ">= %d (one per %d lines) to stay navigable"
                                 % (len(lines), markers, want, _NAV_MIN_LINES)))
     return violations
+
+
+def tool_navigability_violations(tools_dir=None):
+    """(filename, problem) for every long `tools/` file with too few markers.
+
+    DELEGATES rather than re-derives. `ui_navigability_violations` is already
+    generic over a directory - it walks recursively, picks a marker syntax by
+    extension, and applies one-marker-per-`_NAV_MIN_LINES`-never-fewer-than-two -
+    so the only thing `tools/` needed was `.mjs` in the extension table and a name
+    saying the directory is in scope. A second copy of that arithmetic is how the
+    two would come to disagree about what "navigable" means.
+
+    IT COVERS BOTH FAMILIES, and the `.py` half is the part worth being explicit
+    about: `navigability_violations()` scans `scripts/` and `hooks/` and has never
+    reached `tools/`, so a 490-line tool with one marker was nobody's finding. The
+    `.py` files here are handed to the same asset walk, which selects the `#`
+    syntax the sibling rule uses.
+    """
+    root = tools_dir if tools_dir is not None else _TOOLS_DIR
+    return ui_navigability_violations(root)
 
 
 # --- known layer debt ---------------------------------------------------------

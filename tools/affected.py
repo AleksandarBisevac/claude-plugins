@@ -187,6 +187,7 @@ def _suite_for(module_basename):
     return None
 
 
+# --- the selection rules ------------------------------------------------------
 def select(paths):
     """What to run, and why. Returns (plan, reasons, full)."""
     suites = set()

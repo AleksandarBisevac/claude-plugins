@@ -96,6 +96,12 @@ TABLE = (
   r"^# -{2,}", None, DEP, "n1"),
  ("ui_navigability_violations", "plugins/audit/scripts/ui/panel/composition.js",
   "drop", r"^ {0,2}//\s+-{2,}", None, DEP, "u1"),
+ # Added because `c1` refused the commit that introduced the lint: the coverage
+ # rule caught its own author, which is the whole reason it is derived from the
+ # modules rather than hand-listed. `responsive.mjs` carries exactly the two
+ # markers it needs, so dropping one is the minimal violation.
+ ("tool_navigability_violations", "tools/ui-checks/responsive.mjs", "drop",
+  r"^ {0,2}//\s+-{2,}", None, DEP, "tn0"),
  ("shared_concern_violations", "plugins/audit/scripts/ui/panel/composition.js",
   "suffix", r"^ {0,2}//\s+-{2,}",
   "\nconst probeStore=localStorage.getItem('probe');", DEP, "sc1"),

@@ -95,6 +95,7 @@ def _font(size):
     raise SystemExit("no monospace font found; tried:\n  " + "\n  ".join(FONT_CANDIDATES))
 
 
+# --- building the demo project, and capturing what the gate says about it ------
 def build_fixture(d):
     """A minimal but honest plan: one phase running, one task covering one file.
 

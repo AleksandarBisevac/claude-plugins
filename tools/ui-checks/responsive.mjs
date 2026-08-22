@@ -57,6 +57,8 @@
  * launch with --disable-features=OverlayScrollbar, because it moved geometry by
  * 15px between hosts and decided a release gate once.
  */
+// --- the ladder, and measuring one rung of it ----------------------------------
+
 export const RESPONSIVE_LADDER = [
   320, 390, 544, 545, 640, 641, 688, 768, 769, 832, 833,
   960, 961, 1120, 1121, 1152, 1153, 1200, 1247, 1248, 1512,
@@ -300,6 +302,8 @@ export const measureResponsiveFrame = (opts) => {
  * the bottom traps content only at the end and one pinned to the top only at
  * the start.
  */
+// --- walking the ladder, and whether it measured anything ----------------------
+
 export async function walkResponsiveLadder(page, label, tally,
                                            { report: reportOne, ok, fast = false }) {
   const seen = [];
@@ -435,5 +439,3 @@ export function assertLadderMeasuredSomething(label, tally, { report, ok }) {
 /** A fresh tally, so `assertLadderMeasuredSomething` names every empty oracle. */
 export const newLadderTally = () =>
   ({ widths: 0, elements: 0, controls: 0, hitTested: 0, clipExamined: 0 });
-
-// --- theme and the Overview tab ------------------------------------------------
