@@ -968,6 +968,22 @@ are cased, including the one asserting the move stays green. The four trees it a
 from include `tests/` and `tools/` themselves, because a tool's usage line names itself and a
 docstring names where its behaviour is pinned; excluding them would make every usage string a
 violation, and a lint that cries about correct code is one somebody switches off.
+
+`artifact_version_drift()` (F12) asks the same question of a COMMITTED PAGE rather than of
+prose. A rendered report stamps the plugin version that produced it, so a report in the tree is
+a published claim about which release the reader is looking at — and the scale demo under
+`docs/` served a stamp several releases behind the plugin while every check over it stayed
+green, because they asserted **content**: no invalid-manifest banner, a usage section
+present. Content is what does not change with a release, so content assertions cannot see
+age. The rule compares each stamp with `.claude-plugin/plugin.json` and names **both** versions,
+which is what a byte comparison cannot do. It also **discovers** the pages rather than listing
+them: `tools/check-rendered-artifacts.py` re-renders and compares bytes, and its own docstring
+names the artifact nobody listed as the direction it cannot cover, so a table here would be a
+second copy of that same blind spot. A tree where nothing is stamped is itself a finding —
+without that, a renamed class would take the rule quiet instead of red, and the panel's
+template is in the candidate set carrying no stamp precisely so a case can tell the two
+apart.
+
 `--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_core.py`

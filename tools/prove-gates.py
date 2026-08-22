@@ -132,6 +132,14 @@ TABLE = (
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
   (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, None),
+
+ # The published page whose stamp nothing compared. It is the ARTIFACT that is
+ # mutated, not a source file - the claim lives in the committed bytes, so there is
+ # nothing to break upstream of it, and the byte comparison that would also notice
+ # this reports it as a byte count rather than by name.
+ ("artifact_version_drift", "docs/demo-large.html", "sub",
+  r">audit [0-9]+\.[0-9]+\.[0-9]+</span>",
+  (r">audit [0-9]+\.[0-9]+\.[0-9]+</span>", ">audit 0.0.1</span>"), REF, "av1"),
 )
 
 

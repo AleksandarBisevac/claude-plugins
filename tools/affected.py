@@ -107,11 +107,20 @@ SWEEP_DOCS = frozenset(d.replace(os.sep, "/") for d in _refs.SWEEP_DOCS)
 # extension set from, so the two cannot disagree about what a document is.
 SWEEP_DOC_EXT = tuple(_refs.SWEEP_DOC_EXT)
 
+# ...and the pages `_refs.artifact_version_drift()` reads, derived the same way. A
+# committed report carries the plugin version that rendered it, and that rule is the
+# only thing comparing the stamp with `plugin.json` - so a narrowed run that edited a
+# published page and skipped this suite would be the under-selection this whole file
+# exists to prevent. The other direction is already covered: a `plugin.json` change
+# selects the full set.
+STAMP_EXT = tuple(_refs.STAMP_EXT)
+
 
 def refs_reads(posix):
     """True when `_refs` scans this path, so `test__refs.py` can go red for it.
 
-    Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS` and `_refs.SWEEP_DOC_EXT` for the
+    Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS`, `_refs.SWEEP_DOC_EXT` and
+    `_refs.STAMP_EXT` for the
     same reason `_reverse_imports()` is derived from the real import graph: a hand-kept
     copy of somebody else's list is a copy that stops agreeing. Editing
     `CONTRIBUTING.md` selected `test__deps.py` and not this - and `CONTRIBUTING.md` is a
@@ -121,7 +130,7 @@ def refs_reads(posix):
     file judges come from git, and git never hands over a file the repo ignores. The
     scan's own prune list exists for a WALK, which sees files git does not.
     """
-    if posix in SWEEP_DOCS or posix.endswith(SWEEP_DOC_EXT):
+    if posix in SWEEP_DOCS or posix.endswith(SWEEP_DOC_EXT + STAMP_EXT):
         return True
     for surface, _mode in _refs.SURFACES:
         rel = surface.replace(os.sep, "/")
@@ -456,9 +465,11 @@ def _cases():
     # Both paths are under `docs/`, which is NOT a `_refs` surface - so before the
     # completeness rule they answered False alike, and the extension is the whole
     # difference between them. A pair inside a surface would prove nothing: everything
-    # there already answered True.
+    # there already answered True. The False half was `docs/index.html` until the
+    # version-stamp rule started reading that page, which is exactly the way a pair
+    # like this is supposed to go stale: loudly, in the case, and not in the selector.
     out.append(("a12", refs_reads("docs/design/audit-concurrency-report.md") is True
-                and refs_reads("docs/index.html") is False,
+                and refs_reads("docs/screenshots/panel-blocks.png") is False,
                 "a document nowhere near the pinned list selects the refs pins now, "
                 "because the completeness rule reads every document the repo keeps - "
                 "and a non-document beside it still does not, so this is an extension "
@@ -492,6 +503,14 @@ def _cases():
                 "a .py selects its own suite plus every suite that lints the whole "
                 "tree, because editing one file turns those red without touching "
                 "them (%d suites)" % (len(py["suites"]),)))
+
+    page = sel("docs/demo-large.html")
+    out.append(("a13", "test__refs.py" in page["suites"]
+                and ARTIFACTS in page["gates"] and not page["full"],
+                "a published report selects the version-stamp rule as well as the "
+                "byte comparison. The stamp is the claim the page makes about which "
+                "release it came from, and until it was read by a suite the only "
+                "thing that could notice a stale one was a re-render: %r" % (page,)))
 
     shot = sel("docs/screenshots/panel-blocks.png")
     out.append(("a11", shot["gates"] == [] and not shot["full"],

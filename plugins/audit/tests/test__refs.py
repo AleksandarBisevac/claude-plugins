@@ -1185,6 +1185,145 @@ def _cases(check):
           repr([r for r in _fdocs
                 if r == "CHANGELOG.md" or r.startswith("docs/design/")]))
 
+    # --- F12: the version a committed artifact stamps -------------------------
+    # The defect: the scale demo under `docs/` is published and linked from the
+    # README, and it served a stamp several releases behind the plugin while every
+    # check over it stayed green - they asserted CONTENT (no invalid-manifest
+    # banner, a usage section present), which is true of a report rendered by any
+    # version, for ever.
+    _av = M.artifact_version_drift()
+    check("av1 every committed page stamps the release plugin.json names - the live "
+          "claim, and the one that goes red on the day a bump is not followed by a "
+          "re-render: %r" % (_av,), _av == [])
+
+    _pages, _pprob = M._stamp_pages(M.REPO_ROOT)
+    _seen = []
+    for _rel in (_pages or []):
+        with open(os.path.join(M.REPO_ROOT, _rel.replace("/", os.sep)),
+                  "r", encoding="utf-8") as fh:
+            _seen += [(_rel, _v) for _v, _ln in M._artifact_stamps(fh.read())]
+    check("av2 ...and it cleared real pages rather than an empty set - av1 returns "
+          "[] over a walk that reaches nothing too, and this is what tells the two "
+          "apart: the published reports are all in the candidate set, each carries "
+          "exactly ONE stamp, and every stamp is the version read straight out of "
+          "plugin.json: %r" % (_seen,),
+          _pprob is None and len(_seen) >= 3
+          and len(set(_r for _r, _v in _seen)) == len(_seen)
+          and set(_v for _r, _v in _seen) == set([_pv]))
+
+    _tmpl = _FX_SCRIPTS + "ui/panel.html"
+    check("av3 the panel TEMPLATE is READ and stamps nothing, and that is not a "
+          "finding: this rule is about a claim that is wrong, not about a page that "
+          "makes none. Looks vacuous and is the only case that fails the other "
+          "mutation - a rule demanding a stamp per page would report the template "
+          "for ever",
+          _tmpl in (_pages or []) and [_r for _r, _v in _seen if _r == _tmpl] == [])
+
+    _two = M._artifact_stamps(
+        '<span class="stampv" title="t">audit 1.2.3</span>\n'
+        '<span class="stampv" title="t">audit 4.5.6</span>\n')
+    check("av4 a page carrying two stamps contributes BOTH, with the line each sits "
+          "on - a base template and an override each emitting one is the generated-"
+          "output failure a presence test cannot see: %r" % (_two,),
+          _two == [("1.2.3", 1), ("4.5.6", 2)])
+
+    tmp = tempfile.mkdtemp()
+    # Built from the module's own extension set, so a rule that stops reading this
+    # format cannot leave a fixture behind that silently tests nothing.
+    _av_page = "docs/demo" + M.STAMP_EXT[0]
+    _av_ignored = "scratch"
+    _av_scratch = _av_ignored + "/old" + M.STAMP_EXT[0]
+    _av_html = ('<p class="meta">generated · <span class="stampv" '
+                'title="The plugin version that rendered this file">audit '
+                '%s</span></p>\n')
+    try:
+        _write(tmp, ".gitignore", "# fixture\n%s/\n" % _av_ignored)
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
+        _write(tmp, _av_page, _av_html % _pv)
+        check("av5 a fixture whose page stamps the version plugin.json names is "
+              "green, so every case below fails for the reason it names: %r"
+              % (M.artifact_version_drift(tmp),),
+              M.artifact_version_drift(tmp) == [])
+
+        # A version the fixture's plugin.json cannot be mistaken for, so the buggy
+        # and fixed comparisons disagree about it: a rule that compared a page with
+        # itself, or that read the version off the page, is green here.
+        _stale = "0.0.1"
+        _write(tmp, _av_page, _av_html % _stale)
+        _d = M.artifact_version_drift(tmp)
+        check("av6 a page a release left behind IS reported - by path, by line, and "
+              "with BOTH versions in the message, because 'stale' without the pair "
+              "is not something a reader can act on: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == _av_page and _d[0][1] > 0
+              and _stale in _d[0][2] and _pv in _d[0][2])
+
+        # The shape F12 actually took: plugin.json moves first.
+        _next = "99.0.0"
+        _write(tmp, _av_page, _av_html % _pv)
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _next}) + "\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av7 bumping plugin.json without re-rendering the published page turns "
+              "it red at the moment the gate is needed, which is the release rather "
+              "than whenever somebody next looks: %r" % (_d,),
+              len(_d) == 1 and _pv in _d[0][2] and _next in _d[0][2])
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
+
+        _write(tmp, _av_page, "<p>a page that claims nothing about its version</p>\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av8 a tree where NOTHING is stamped is reported as exactly that: a "
+              "candidate set that narrowed to nothing must not be spelled the same "
+              "way as a tree that is current, and that is the shape a renamed stamp "
+              "or a walk that stopped reaching the reports takes: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == "*" + M.STAMP_EXT[0]
+              and "cleared nothing" in _d[0][2])
+
+        _write(tmp, _av_page, _av_html % _pv)
+        _write(tmp, _av_scratch, _av_html % _stale)
+        check("av9 a page inside a directory `.gitignore` names is not something "
+              "this repo published - a walk that reached one would read whatever a "
+              "scratch render left behind as a live claim: %r"
+              % (M.artifact_version_drift(tmp),),
+              M.artifact_version_drift(tmp) == [])
+
+        _write(tmp, ".gitignore", "# fixture\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av10 ...and the direction that proves av9 tests the derivation rather "
+              "than the path: drop that one line and the same file IS reported: %r"
+              % (_d,), [_r[0] for _r in _d] == [_av_scratch])
+
+        os.remove(os.path.join(tmp, ".gitignore"))
+        _d = M.artifact_version_drift(tmp)
+        check("av11 with no readable `.gitignore` the rule reports THAT and stops - "
+              "answering 'nothing is ignored' would publish a scratch render's "
+              "claim on this repo's behalf: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == ".gitignore"
+              and "cannot be derived" in _d[0][2])
+
+        # Undecodable rather than unreadable: a permission bit does not mean the same
+        # thing on both platforms CI runs, and bytes that are not UTF-8 do.
+        _write(tmp, ".gitignore", "# fixture\n")
+        os.remove(os.path.join(tmp, _av_scratch.replace("/", os.sep)))
+        _bad = "docs/bad" + M.STAMP_EXT[0]
+        with open(os.path.join(tmp, _bad.replace("/", os.sep)), "wb") as fh:
+            fh.write(b"\xff\xfe not utf-8 at all \xff")
+        _d = M.artifact_version_drift(tmp)
+        check("av12 a page that cannot be decoded is REPORTED, never counted as one "
+              "that stamps nothing: 'I could not read this claim' and 'this page "
+              "makes none' are different answers, and the second spares the file: %r"
+              % (_d,),
+              [(_r[0], "unreadable" in _r[2]) for _r in _d] == [(_bad, True)])
+        os.remove(os.path.join(tmp, _bad.replace("/", os.sep)))
+
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"name": "audit"}) + "\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av13 a plugin.json with no readable version is reported, never "
+              "defaulted - the comparison has no basis, and a guessed version would "
+              "fail every page for the wrong reason: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == M._PLUGIN_JSON_REL
+              and "no readable version" in _d[0][2])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
 
     # --- F36: a command's flags vs the README row that catalogues them ---------
     # The defect this exists for was live when it was written: /audit:status had

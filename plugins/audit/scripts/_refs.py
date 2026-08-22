@@ -995,7 +995,7 @@ def _is_ignored(rel_dir, patterns):
 def _iter_docs(root, patterns, exts):
     """Relative paths of every document of `exts` this repo KEEPS, sorted.
 
-    ONE walk for both rules that ask the question, because the second one had its own
+    ONE walk for every rule that asks the question, because the second one had its own
     and it was a hand list of four directory names. That list was wrong in both
     directions at once: it reached whatever the browser tool had last left in the tree,
     so the candidate set moved with what had recently run on this machine rather than
@@ -1189,6 +1189,124 @@ def raw_url_pin_drift(repo_root=None):
             elif rel == _PIN_CURRENT_REL and version is not None and ref != "v" + version:
                 out.append((rel, line,
                             "pinned to %s but plugin.json says %s" % (ref, version)))
+    return out
+
+
+# --- the version a committed artifact stamps ----------------------------------
+# A rendered report stamps the plugin version that produced it, so a COMMITTED report
+# is a published claim about which release the reader is looking at. The scale demo
+# under `docs/` served a stamp several releases behind the plugin, and every check over
+# it stayed green, because they asserted CONTENT - no invalid-manifest banner, a usage
+# section present - and content is exactly what does not change with a release. Content
+# assertions cannot see age.
+#
+# NOT A SECOND LIST OF ARTIFACTS, and that is the design. The byte comparison in
+# `tools/check-rendered-artifacts.py` would also notice a stale stamp, among the bytes,
+# for the artifacts ITS table names - and its own docstring calls the artifact nobody
+# listed the direction it cannot cover. This rule DISCOVERS the claim instead: every
+# page this repo keeps is read, every stamp found is compared, and the finding names
+# BOTH versions rather than a byte count. A page committed tomorrow is covered without
+# anybody adding a row.
+# Public because `tools/affected.py` derives its selection from it: a
+# narrowed local run that skipped this rule for the very file it judges
+# would be the under-selection that file exists to prevent.
+STAMP_EXT = (".html",)
+
+# The stamp as the report writes it. The class is the marker and the version follows
+# the label inside the same element, with the title attribute in between - which is why
+# this is a pattern rather than an offset.
+#
+# The markup literal lives here and in the renderer, and the agreement is pinned by a
+# CASE over the real committed pages rather than by a comment claiming they match: the
+# module that owns paths and process I/O is the wrong home for report markup, and a
+# renamed class does not go quiet here - a tree where nothing is stamped is itself a
+# finding below.
+_STAMP_RE = re.compile(r'class="stampv"[^>]*>audit ([^<]*)<')
+
+
+def _stamp_pages(root):
+    """`(rels, problem)` - the pages whose version stamp this rule reads.
+
+    Every page this repo KEEPS, not a table of the published reports: a table is the
+    thing that goes stale, and an artifact nobody listed is the direction the byte
+    comparison names as the one it cannot cover. The panel's TEMPLATE is in this set
+    and stamps nothing, which is correct and is what a case reads it for.
+
+    Exactly one of the two is None, the contract `_fetch_docs()` uses. A named
+    accessor for the reason that one gives: a walk's defect is invisible in the rule's
+    OUTPUT, because a tree it never reached reports nothing and goes on reporting
+    nothing.
+    """
+    patterns, problem = _ignored_dirs(root)
+    if problem is not None:
+        return None, problem
+    return _iter_docs(root, patterns, STAMP_EXT), None
+
+
+def _artifact_stamps(text):
+    """[(version, line_no), ...] - every version stamp in one page.
+
+    EVERY one, not the first. Generated output is where a base template and an
+    override each emit one and disagree, and a presence test cannot tell that from a
+    page carrying a single correct stamp.
+    """
+    return [(m.group(1), text.count("\n", 0, m.start()) + 1)
+            for m in _STAMP_RE.finditer(text)]
+
+
+def artifact_version_drift(repo_root=None):
+    """[(rel, line, problem), ...] - a committed page stamped with a stale release.
+
+    THE CLAIM A PAGE MAKES ABOUT ITSELF, checked against the only thing that can
+    settle it: the page says which plugin rendered it, `plugin.json` says which plugin
+    this is, and until this rule nothing compared the two.
+
+    Four answers, and three of them are the loud ones:
+
+    - a `.gitignore` it cannot read: reported, and the scan stops, for the reason
+      `sweep_doc_drift()` gives - scratch renders would be read as published pages;
+    - a `plugin.json` with no readable version: reported. The comparison has no basis,
+      and a guessed version would fail every page for the wrong reason;
+    - not one stamped page anywhere: reported. A rule whose candidate set narrowed to
+      nothing must not be spelled the same way as a tree that is current, and that is
+      the shape a renamed stamp or a walk that stopped reaching the reports takes;
+    - otherwise one finding per stamp that is not the current version, naming BOTH -
+      "stale" without the pair is not something a reader can act on.
+
+    A page it cannot decode is reported rather than counted as unstamped, which is the
+    same distinction: "I could not read this claim" is not "this page makes none".
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    pages, problem = _stamp_pages(root)
+    if problem is not None:
+        return [(".gitignore", 0, problem)]
+    version = plugin_version(root)
+    if version is None:
+        return [(_PLUGIN_JSON_REL, 0,
+                 "carries no readable version, so no stamp has anything to be "
+                 "compared against")]
+    out = []
+    stamped = 0
+    for rel in pages:
+        try:
+            with open(os.path.join(root, rel.replace("/", os.sep)),
+                      "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, 0, "unreadable, so the version it publishes cannot be "
+                                "cleared: %s" % exc))
+            continue
+        for stamp, line in _artifact_stamps(text):
+            stamped += 1
+            if stamp != version:
+                out.append((rel, line,
+                            "stamps audit %s but plugin.json says %s - re-render it "
+                            "and commit the result" % (stamp, version)))
+    if not stamped:
+        out.append(("*" + STAMP_EXT[0], 0,
+                    "no page this repo keeps carries a version stamp, so this rule "
+                    "cleared nothing rather than clearing the tree - either the "
+                    "renderer stopped stamping or the markup moved"))
     return out
 
 
