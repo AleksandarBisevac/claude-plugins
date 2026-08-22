@@ -3152,7 +3152,11 @@ async function assertComboDescriptionSearch(page) {
        + `only match for "${term}" (${JSON.stringify(want)}) — re-aim the oracle`);
     return;
   }
-  const inp = page.locator('#comp input[placeholder^="search a skill"]').first();
+  // NAMED, not positional. This used `placeholder^="search a skill"` with
+  // `.first()`, which the task-row adder also matches - it worked only while the
+  // config cards sat above the table, and reordering them pointed it at a control
+  // inside a collapsed phase.
+  const inp = page.locator('#comp input[data-skillpick="reviewSkill"]');
   await inp.click();
   await inp.fill(term);
   // POLL, do not sleep-and-peek. A fixed 300ms then one read made this flaky:

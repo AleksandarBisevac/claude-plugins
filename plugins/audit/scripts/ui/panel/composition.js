@@ -240,9 +240,17 @@ function skillHints(){
  *   beside it name a whole row, not this control
  * @returns {HTMLElement} the box inside its menu wrapper
  */
-function skillPicker(current,onChange,ariaName){
+function skillPicker(current,onChange,ariaName,hook){
+ // `hook` stamps a data- attribute so a caller can be REACHED by name. The
+ // review-skill picker and the task adder both start their placeholder with
+ // "search a skill", so a selector on that text plus `.first()` resolved by
+ // document order - which held only while the config cards were above the table.
+ // Putting the table first made the same selector land on an adder inside a
+ // collapsed phase, and the browser gate spent its timeout on an invisible
+ // control. A styling- or copy-based hook is a hook bound to a layout decision.
  const inp=el('input',{value:current??'',placeholder:'search a skill…  (empty = none)',
    'aria-label':ariaName||'search a skill'});
+ if(hook)inp.setAttribute('data-skillpick',hook);
  inp.addEventListener('input',()=>onChange(inp.value.trim()||null));
  return comboWrap(inp,()=>REG.skills,(name,close)=>{inp.value=name;onChange(name);close();});}
 /**
@@ -372,7 +380,7 @@ function renderComp(){closeCombo();
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,
    {comp:'reviewSkill',label:'Phase sign-off review skill'}));
  meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,
-   v=>patch.meta.reviewSkill=v,'Phase sign-off review skill')));
+   v=>patch.meta.reviewSkill=v,'Phase sign-off review skill','reviewSkill')));
  meta.append(h2h('meta.buildCommands (JSON)',MDESC.buildCommands,
    {comp:'buildCommands',label:'Build commands'}));
  // It had no accessible name at all — not even a placeholder to fall back on —
@@ -383,11 +391,17 @@ function renderComp(){closeCombo();
  bc.oninput=()=>{try{patch.meta.buildCommands=bc.value.trim()?JSON.parse(bc.value):null;
    bcBad=false;bc.style.borderColor='';}
   catch(e){bcBad=true;bc.style.borderColor='var(--err)';}};
- meta.append(bc);c.append(meta);
+ // HELD, not appended here. The table below is what this view is FOR - the
+ // README calls it the tab's main function - and it used to open on three
+ // config cards with the table under them. Construction order is untouched
+ // (these still build first, and the table's closures still read `patch`);
+ // only the insertion point moves, which is the change that cannot break a
+ // build-order dependency.
+ meta.append(bc);
  // meta.branch rides this same form and this same save, so its card is appended
  // as a sibling of the meta card rather than owning an endpoint the way the ADO
  // connector does. It writes patch.meta.branch and nothing else.
- c.append(branchCard(comp,patch));
+ const bcard=branchCard(comp,patch);
  // tasks: filter toolbar + ONE compact collapsible table (scales to 50x20)
  const tcard=el('div',{class:'card'});tcard.append(h2h('Phases · tasks · skills',MDESC.taskSkills,
    {comp:'taskSkills',label:'Task skills'}));
@@ -575,11 +589,17 @@ function renderComp(){closeCombo();
    toast:'discarded — the table is back to the saved manifest',
    revert:renderComp});
  onViewEdit('comp',()=>refreshDiscard(discard,compChanges(patch).length));
- tcard.append(el('div',{class:'row',style:'margin-top:.9rem'},save,discard),
+ // Out of the card and into the view's own savebar, for the reason moving the
+ // table exposed: this Save writes the config cards too, and inside the table it
+ // would have sat ABOVE the fields it saves. Settings and Policy both put one
+ // Save for several cards in a `.savebar` at the foot of the view; this is that
+ // same shape, not a fourth arrangement.
+ const savebar=el('div',{class:'savebar'},save,discard,
+   el('span',{class:'mut small'},'writes '+STATE.manifestPath),
    el('div',{class:'findings-slot'}));
  if(!STATE.manifestExists)tcard.append(el('div',{class:'findings warn'},'No manifest yet — run /audit:init first.'));
  if(STATE.manifestLocked)tcard.append(el('div',{class:'findings warn'},'Manifest is locked by a running /audit command.'));
- c.append(tcard);
+ c.append(tcard,meta,bcard);
  renderAdoCard(c);
  // building blocks — one table, sub-tabs switch context (skills / agents / mcp)
  const bb=el('div',{class:'card'});
@@ -598,7 +618,7 @@ function renderComp(){closeCombo();
  ['skills','agents','mcp'].forEach(k=>subtabs.append(el('button',{class:'subtab'+(k===cur?' on':''),
    onclick:e=>{cur=k;[...subtabs.children].forEach(x=>x.classList.toggle('on',x===e.currentTarget));drawTbl();}},
    k+' ('+(datasets[k]||[]).length+')')));
- drawTbl();bb.append(subtabs,host);c.append(bb);
+ drawTbl();bb.append(subtabs,host);c.append(bb,savebar);
  // Last, after renderAdoCard and the blocks table: a hand-back that runs before
  // the view is finished aims at a node the rest of the build then replaces.
  focusBack(keepBack);}

@@ -1248,7 +1248,13 @@ def _cases(check):
     check("bn1 the branch card is WIRED: the composition view calls it, so a part "
           "that assembles but is never invoked cannot pass. Assembly alone would "
           "- both sides of the byte-identity check are built from the same tuple",
-          "c.append(branchCard(comp,patch));" in M.UI_HTML)
+          # The call and the placement are two statements now: the card is built
+          # with the other config cards and appended AFTER the table, which is what
+          # putting the view's main object on top required. The claim is unchanged
+          # and is spelled as its two halves - invoked, and actually placed - which
+          # says it more exactly than one line doing both ever did.
+          "const bcard=branchCard(comp,patch);" in M.UI_HTML
+          and "c.append(tcard,meta,bcard);" in M.UI_HTML)
     check("bn2 the card writes patch.meta.branch and NOTHING else on the form's "
           "draft - it rides the Composition save, so a stray write to another "
           "meta key would be saved under a confirm dialog that never listed it",
