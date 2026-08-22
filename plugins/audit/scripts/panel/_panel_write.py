@@ -58,6 +58,7 @@ Stdlib only, Python 3.8 compatible.
 import json
 import os
 import sys
+import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -91,6 +92,9 @@ import _panel_state           # noqa: E402  (the read side this write path reads
 # here worked and was still wrong: this file sits below the entry points, so the
 # edge pointed upward and `_deps.layer_violations()` said so by name.
 import _proposals             # noqa: E402  (the proposal lifecycle + its lock)
+import _locks                 # noqa: E402  (take and give back the index lock, at layer 1)
+import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1 -
+#                                            the SAME function set-priority.py asks)
 
 # The write allow-lists: what a composition patch may legally name.
 _META_KEYS = _panel_settings._META_KEYS
@@ -138,6 +142,142 @@ def _atomic_write_json(path, obj):
     (_manifest_io.atomic_write_json) — ensure_ascii=False keeps this module's
     existing byte shape unchanged."""
     _mio.atomic_write_json(path, obj, ensure_ascii=False, indent=2)
+
+
+# --- the CLI writers' shared machinery ------------------------------------------
+# THREE FUNCTIONS AND A LOCK WRAPPER THAT ARE NOT THE PANEL'S, and they live here
+# for the reason every other alias above does: this module is already the shared
+# home the manifest-writing COMMANDS reach into (`audit-task.py` takes eight names
+# from it). `set-priority.py` needs the same four, and the alternatives were both
+# worse than a move — a copy in the second command is two rollbacks that will
+# eventually disagree, and reaching `audit-task.py` through `_loader` is an entry
+# point loading an entry point, which is the shape `KNOWN_LAYER_DEBT` exists to
+# keep at zero new entries.
+#
+# `prefix` is a parameter on the lock wrapper because the message is the CLI's, not
+# this module's: the lock library prints its OWN standard refusal and the caller
+# adds only its next step.
+
+
+def project_of_manifest(mpath):
+    """The project root a NAMED manifest belongs to: the first ancestor of the
+    manifest (starting at its own directory) that holds a `.claude/` dir or a
+    `.git` entry.
+
+    MARKERLESS fallback (F-C-2): when the manifest sits in the default layout
+    (`<T>/docs/audit/<file>`), the root is `<T>` -- taking the manifest's own
+    directory doubled the layout (the journal's default rel re-appended
+    `docs/audit` under `.../docs/audit`). Anywhere else the root is the
+    manifest's own directory. Either way the root stays INSIDE the named
+    manifest's tree, never another repo's."""
+    start = os.path.dirname(os.path.abspath(mpath))
+    cur = start
+    while True:
+        if os.path.isdir(os.path.join(cur, ".claude")) \
+                or os.path.exists(os.path.join(cur, ".git")):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    if os.path.basename(start) == "audit" \
+            and os.path.basename(os.path.dirname(start)) == "docs":
+        return os.path.dirname(os.path.dirname(start))
+    return start
+
+
+def snapshot(paths):
+    """{path: bytes-or-None} for everything a rollback must restore."""
+    snap = {}
+    for path in paths:
+        try:
+            with open(path, "rb") as fh:
+                snap[path] = fh.read()
+        except OSError:
+            snap[path] = None
+    return snap
+
+
+def restore(snap):
+    """Put every snapshotted file back byte-for-byte (temp + os.replace, the
+    same atomicity the write had). A file that did not exist is removed."""
+    for path, data in snap.items():
+        if data is None:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            continue
+        d = os.path.dirname(path) or "."
+        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+
+def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
+    """Take the index lock for a whole read-modify-write. Returns a lock handle
+    dict, or an int exit code AFTER printing the lock module's own message --
+    the standard shape a human already knows from audit-lock.py and the panel;
+    the caller adds only its own next step.
+
+    `_locks.acquire` (layer 1), not a loaded COMMAND. The old spelling built an
+    argv for `audit-lock.py` and reached it through the panel's read-side
+    accessor, which meant a very real dependency on the lock was attributed by
+    `_deps` to whichever module held the literal. A hidden edge is not a retired
+    one; this one is an import.
+    """
+    git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
+    lines = []
+    try:
+        code = _locks.acquire(git_root, "index", note=note,
+                              takeover=bool(takeover), out=lines.append)
+    except Exception:
+        code = None
+    if code == 0:
+        return {"held": True, "mod": _locks, "project": git_root}
+    if code == _locks.E_LIVE:
+        for line in lines:
+            out(line)
+        return _locks.E_LIVE
+    if code == _locks.E_STALE:
+        for line in lines:
+            out(line)
+        out("%s once a human has confirmed, rerun with --takeover." % prefix)
+        return _locks.E_STALE
+    # Not a git repo (or the lock library refused for a reason of its own): fall
+    # through to the legacy working-tree lockfile -- guard a single clone rather
+    # than writing unguarded (`_acquire_write_lock`'s precedent).
+    legacy = mpath + ".lock"
+    try:
+        fd = os.open(legacy, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+        return {"held": True, "legacy": legacy}
+    except FileExistsError:
+        out("%s manifest is locked by a running /audit command (%s exists); try "
+            "again once it finishes" % (prefix, os.path.basename(legacy)))
+        return _locks.E_LIVE
+    except OSError:
+        return {"held": False}
+
+
+def release_index_lock(lock):
+    """Give the lock back. Never raises: a write that succeeded must not be
+    reported as failed because the release did."""
+    if not lock or not lock.get("held"):
+        return
+    try:
+        if lock.get("legacy"):
+            os.unlink(lock["legacy"])
+            return
+        lock["mod"].release(lock["project"], "index",
+                            out=lambda *_a, **_k: None)
+    except Exception:
+        pass
 
 
 def write_policy(project, body):
@@ -483,13 +623,22 @@ def _composition_changes(manifest, patch):
               if isinstance(p, dict)}
     for pid, pv in sorted((patch.get("phases") or {}).items()):
         ph = by_pid.get(pid)
-        if ph is None or "reviewModel" not in (pv or {}):
+        if ph is None:
             continue
-        rev = ph.get("review") if isinstance(ph.get("review"), dict) else {}
-        was, now = rev.get("model"), pv["reviewModel"]
-        if was != now:
-            rows.append({"target": pid, "field": "review model",
-                         "from": was, "to": now})
+        if "reviewModel" in (pv or {}):
+            rev = ph.get("review") if isinstance(ph.get("review"), dict) else {}
+            was, now = rev.get("model"), pv["reviewModel"]
+            if was != now:
+                rows.append({"target": pid, "field": "review model",
+                             "from": was, "to": now})
+        if _priority.FIELD in (pv or {}):
+            # `from` through `_priority.tier_of`, for `_skills_of`'s reason: the
+            # dialog must show the value that is IN FORCE, and an invalid stored
+            # value is in force as "unprioritised" rather than as itself.
+            was, now = _priority.tier_of(ph), pv[_priority.FIELD]
+            if was != now:
+                rows.append({"target": pid, "field": _priority.FIELD,
+                             "from": was, "to": now})
     # `_mio.tasks_by_id` drops a task carrying no id, where this index used to key
     # it under `None`. Nothing reachable changes: the keys looked up here come out
     # of a JSON object, so they are always strings and could never BE `None` --
@@ -881,6 +1030,43 @@ def _reject_unknown(patch):
     return None
 
 
+def _apply_priority(manifest, phase, value):
+    """Set or clear one phase's `priority`. Returns None, or a refusal string.
+
+    THE RULE COMES FROM `_priority.tier_one_holder()`, WHICH IS ALSO WHAT
+    `set-priority.py` ASKS. The Policy tab is the precedent: the verdict the UI
+    shows is produced by the function the hook calls, so the panel cannot promise
+    a write the CLI would refuse. Two places deciding what is legal are two rules,
+    and the disagreement always surfaces as a save that succeeds in one surface
+    and fails in the other.
+
+    `null` is the clear — the same spelling the task `skills` opt-out uses, and
+    the one a select can send for "no pin". There is no --force here on purpose:
+    the panel offers the choices that are legal, and forcing a second holder of a
+    unique tier is a deliberate act that belongs on a command line where the
+    consequence can be typed out.
+    """
+    if value is None:
+        phase.pop(_priority.FIELD, None)
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return ("phase %s priority must be a positive integer, or null to "
+                "clear it - a tier is a rank starting at 1, and an absent "
+                "priority is how a phase says 'unprioritised'"
+                % (phase.get("id"),))
+    if value == _priority.UNIQUE_TIER:
+        others = [p for p in (manifest.get("phases") or [])
+                  if isinstance(p, dict) and p is not phase]
+        holder = _priority.tier_one_holder(others)
+        if holder is not None:
+            return ("phase %s cannot take priority %d: %s already holds it, "
+                    "and that is the one tier that must be unique. Clear %s "
+                    "first, or pick another tier."
+                    % (phase.get("id"), _priority.UNIQUE_TIER, holder, holder))
+    phase[_priority.FIELD] = value
+    return None
+
+
 def apply_composition_patch(manifest, patch):
     """Apply an allow-listed composition patch to `manifest` in place.
     Returns None on success or an error string. Never touches structure."""
@@ -902,6 +1088,10 @@ def apply_composition_patch(manifest, patch):
             if not isinstance(rev, dict):
                 rev = ph["review"] = {}
             rev["model"] = pv["reviewModel"]
+        if _priority.FIELD in (pv or {}):
+            err = _apply_priority(manifest, ph, pv[_priority.FIELD])
+            if err:
+                return err
     # Same index as `_composition_changes` reads, from the same owner, so the
     # dialog's preview and the write cannot disagree about which task a patch key
     # names. An id-less task is not addressable here and never was: a JSON patch
@@ -942,7 +1132,8 @@ def _touched_phase_ids(manifest, patch):
     return touched
 
 
-def _write_back(project, mpath, raw_index, assembled, patch, touched):
+def _write_back(project, mpath, raw_index, assembled, patch, touched,
+                healed_ids=()):
     """Persist a patched manifest into whichever layout it is stored in.
 
     SINGLE FILE: write the assembled dict; it IS the file.
@@ -969,8 +1160,22 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched):
     by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
               if isinstance(p, dict)}
     written = []
+    # A phase whose patch touches ONLY index-only fields gets no shard write. Not
+    # an optimisation: rewriting that shard would renormalise a file nobody edited
+    # and manufacture a merge conflict against the parallel phase branch running
+    # in it, for a value that does not live there.
+    # `healed_ids` is subtracted because a heal is a STATUS change and status
+    # lives in the shard body: a phase whose patch was priority-only but which
+    # the heal also flipped still owes its shard write, and skipping it would
+    # drop the heal silently.
+    index_only_patch = set(
+        pid for pid, pv in (patch.get("phases") or {}).items()
+        if (pv or {}) and all(k in _mio.INDEX_ONLY_FIELDS for k in (pv or {}))
+    ) - set(healed_ids or ())
     for stub in (raw_index.get("phases") or []):
         if not isinstance(stub, dict) or stub.get("id") not in touched:
+            continue
+        if stub.get("id") in index_only_patch:
             continue
         patched = by_pid.get(stub.get("id"))
         if patched is None:
@@ -983,15 +1188,55 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched):
         body = dict(patched)
         # The stub owns identity; the shard body never carries its own pointer.
         body.pop("shard", None)
+        # ...and it never carries an index-only field either. Writing `priority`
+        # here would put it exactly where `_manifest_io.index_only_in_bodies()`
+        # reports it as ignored - a value the panel just promised to save, in a
+        # place the next load discards.
+        for k in _mio.INDEX_ONLY_FIELDS:
+            body.pop(k, None)
         _atomic_write_json(spath, body)
         written.append(os.path.relpath(spath, project))
 
-    if patch.get("meta"):
+    # The INDEX is written for `meta`, and for any index-only field a phase patch
+    # touched. Those two are separate reasons and both are needed: a priority
+    # written only into the shard would vanish on the next load, and a save that
+    # rewrote the index for every phase edit would renormalise a file nobody
+    # touched - the merge conflicts the targeted write-back exists to avoid.
+    index_only_touched = sorted(
+        pid for pid, pv in (patch.get("phases") or {}).items()
+        if any(k in (pv or {}) for k in _mio.INDEX_ONLY_FIELDS))
+    if patch.get("meta") or index_only_touched:
         idx = dict(raw_index)
-        idx["meta"] = assembled.get("meta") or {}
+        if patch.get("meta"):
+            idx["meta"] = assembled.get("meta") or {}
+        if index_only_touched:
+            idx["phases"] = [_index_only_stub(entry, by_pid)
+                             for entry in (raw_index.get("phases") or [])]
         _atomic_write_json(mpath, idx)
         written.append(os.path.relpath(mpath, project))
     return written
+
+
+def _index_only_stub(entry, by_pid):
+    """One index entry with its index-only fields taken from the patched phase.
+
+    A NEW dict per entry rather than a mutation of `raw_index`: the caller reads
+    `raw_index` again after the write (and `_write_back` is called inside a lock
+    whose failure path restores from disk), so editing it in place would leave a
+    half-applied index in memory behind a write that raised.
+    """
+    if not isinstance(entry, dict):
+        return entry
+    patched = by_pid.get(entry.get("id"))
+    if not isinstance(patched, dict):
+        return entry
+    out = dict(entry)
+    for k in _mio.INDEX_ONLY_FIELDS:
+        if k in patched:
+            out[k] = patched[k]
+        else:
+            out.pop(k, None)
+    return out
 
 
 def apply_composition(project, patch):
@@ -1065,7 +1310,8 @@ def apply_composition(project, patch):
     if lock.get("blocked"):
         return lock["response"]
     try:
-        written = _write_back(project, mpath, raw_index, assembled, patch, touched)
+        written = _write_back(project, mpath, raw_index, assembled, patch,
+                              touched, [r["target"] for r in healed])
     except ValueError as exc:
         return {"ok": False, "findings": [str(exc)]}
     finally:

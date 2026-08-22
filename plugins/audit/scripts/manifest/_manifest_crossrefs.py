@@ -51,6 +51,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
+import _manifest_io as _mio  # noqa: E402  (the id -> status map, and what 'satisfied' means)
+import _priority  # noqa: E402  (the ONE expression of execution order and its rules)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -231,6 +233,60 @@ def _cycle_findings(phases, findings):
                 color[nxt] = GRAY
                 stack.append((nxt, iter(edges.get(nxt, ()))))
                 path.append(nxt)
+
+
+# --- phase priority --------------------------------------------------------------
+def _check_priority(manifest, phases):
+    """`phase.priority` — every way a pin can be a claim with nothing behind it.
+
+    Returns (findings, warnings), and the findings list is ALWAYS EMPTY. That is
+    the decision, not an omission: a priority is a wish about the schedule, and a
+    finding here would make the manifest INVALID — which refuses the next
+    `/audit:task add`, reds the `--gate` on the `invalid` condition, and would
+    make `set-priority.py --force` roll back the very write it was asked to force.
+    The pipeline must keep running past a disagreement about order; what it must
+    not do is run past it in silence.
+
+    Four of the five rules live here. The fifth — a `priority` written into a
+    SHARD BODY, where nothing will read it — cannot be asked of an assembled
+    manifest at all (the value is gone by then), so it is asked by
+    `_manifest_io.index_only_in_bodies()` where both halves of the file are open,
+    and printed by `validate-manifest.py`.
+    """
+    w = []
+    real = [p for p in (phases or []) if isinstance(p, dict)]
+
+    for pid, value in _priority.invalid_tiers(real):
+        w.append("phase %s: priority %r is not a positive integer, so the phase "
+                 "is ordered as if it had none - a tier starts at 1"
+                 % (pid or "?", value))
+
+    for tier, holders in _priority.tier_conflicts(real):
+        w.append("phase %s and %s both hold priority %d, which is the one tier "
+                 "that must be unique - %s wins because it comes first in the "
+                 "manifest, and that tie-break is what runs until one of them "
+                 "is changed"
+                 % (holders[0], ", ".join(str(h) for h in holders[1:]), tier,
+                    holders[0]))
+
+    # A pin that leans on unfinished work is a claim its own dependencies
+    # contradict. Reported for EVERY prioritised phase rather than only the top
+    # one: the runtime note (`_status_facts.priority_note`) names the pin that
+    # is being skipped right now, and this names the plan that will skip it.
+    status = _mio.status_index(manifest)
+    for phase in real:
+        if _priority.tier_of(phase) is None:
+            continue
+        if phase.get("status") in _mio.TERMINAL:
+            continue
+        waiting = _mio.unsatisfied(phase.get("blockedBy"), status)
+        if waiting:
+            w.append("phase %s holds priority %d but waits on %s (not done) - "
+                     "priority re-sorts READY work only, so this phase is "
+                     "skipped until the wait clears"
+                     % (phase.get("id") or "?", _priority.tier_of(phase),
+                        ", ".join(waiting)))
+    return ([], w)
 
 
 # --- fileIndex, bugs and proposals -----------------------------------------------

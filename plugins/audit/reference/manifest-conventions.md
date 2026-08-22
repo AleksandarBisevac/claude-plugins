@@ -113,6 +113,27 @@ sign-off reviewer, overriding `meta.reviewSkill`) and `area` — a label, or a *
 labels for cross-cutting concerns (`"backend"` or `["backend","security"]`; any vocabulary —
 devops/security/embedded/data/ml/…) — for grouping/filtering in status/report/panel. Both default to absent.
 
+## Phase priority (`phase.priority`)
+
+An optional positive integer saying which phase to reach for first **among the tasks
+that are already ready**. It never makes an unready task ready and never skips a
+dependency — a pinned phase whose `blockedBy` is unsatisfied is skipped, and
+`/audit:status` prints the note naming what it waits on and which task ran instead.
+
+- **Tier 1 is unique.** Higher tiers are shared. A second holder of tier 1 is refused at
+  write time (the refusal names the current holder), and if one is forced anyway the
+  validator warns and the phase that comes FIRST in the manifest wins.
+- **Absent means unprioritised** — not tier 0, not a middle tier. Such a phase sorts after
+  every pinned one and keeps its written position among its peers, so a manifest with no
+  `priority` anywhere runs exactly as it always did.
+- **Never hand-write it.** `/audit:task priority <phaseId> <tier|--clear>` takes the index
+  lock, revalidates and journals a `phase.priority` row; hand-editing loses all three.
+- **Index-only in the sharded layout.** It belongs on the index stub — which already carries
+  `status`, so the order is computable without opening a shard, and one writer under one lock
+  means two parallel phase runs can never collide on it. A copy found in a shard body is
+  ignored, and the validator reports that it was.
+- **`priority.maxTier`** (`.claude/audit.config.json`) is advisory. Nothing is clamped to it.
+
 ## Areas (`meta.areas`)
 
 A tag on a phase groups it. Registering that tag in `meta.areas` gives it properties:

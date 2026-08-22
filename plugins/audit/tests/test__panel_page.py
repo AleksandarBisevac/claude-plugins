@@ -818,9 +818,45 @@ def _cases(check):
     check("overview: sort and group-by-area consume the rollup's own areas registry",
           # Through fillOptions since the five plain option loops became one; the
           # pair list is what identifies THIS select.
-          "[['plan','plan order'],['progress','progress'],\n   ['status','status']]"
+          "[['plan','plan order'],['progress','progress'],\n   "
+          "['status','status'],['priority','priority']]"
           in M.UI_HTML
           and "OVF.byArea=cb.checked" in M.UI_HTML and "r.areas[tag]" in M.UI_HTML)
+    # --- phase priority (the control, the badge, and the one shared number) ---
+    check("pri1 the Composition tab offers a priority control per phase, and the "
+          "value it sends is a NUMBER or null - a string tier would be refused by "
+          "the write path, and the dialog would have promised it",
+          "'data-priority':ph.id||''" in M.UI_HTML
+          and "pp.priority=prio.value?Number(prio.value):null" in M.UI_HTML)
+    check("pri2 ...and the phase patch is ONE object both controls write into. "
+          "The old spelling replaced it on every keystroke, which was correct "
+          "with a single control and silently drops the other now there are two",
+          "const setRev=v=>{pp.reviewModel=v||null;patch.phases[ph.id]=pp;};"
+          in M.UI_HTML
+          and "patch.phases[ph.id]={reviewModel:" not in M.UI_HTML)
+    check("pri3 the range comes from the config, then from the DEFAULTS the "
+          "server hands over - not from a literal in the browser",
+          "const cfg=((STATE||{}).config||{}).priority||{};" in M.UI_HTML
+          and "const def=((STATE||{}).defaults||{}).priority||{};" in M.UI_HTML)
+    check("pri4 THE ONE VALUE WRITTEN IN TWO LANGUAGES: prioMax()'s last-resort "
+          "literal IS `hooks/_config.py`'s shipped maxTier. A comment claiming "
+          "two implementations agree is not a check; this is",
+          " return %d;}" % (_loader.load_hooks_config(modname="audit__config")
+                            .DEFAULTS["priority"]["maxTier"],) in M.UI_HTML,
+          repr(_loader.load_hooks_config(modname="audit__config")
+               .DEFAULTS["priority"]["maxTier"]))
+    check("pri5 a tier ABOVE the maximum is still offered, because nothing is "
+          "clamped - a control that dropped it would silently unpin the phase on "
+          "the next save",
+          "if(ph.priority!=null&&ph.priority>maxTier)" in M.UI_HTML)
+    check("pri6 the Overview badge says what the tier buys AND what it does not. "
+          "'priority 1' on its own reads as 'skips the queue', which is the one "
+          "thing it never does",
+          "'priority '+p.priority" in M.UI_HTML
+          and "runs first among the tasks that are ALREADY ready" in M.UI_HTML)
+    check("pri7 the confirm dialog computes a priority row, so the client's list "
+          "and the server's echo stay two readings of one pair of values",
+          "if(('priority' in pv)&&!cfSame(p.priority,pv.priority))" in M.UI_HTML)
     check("overview: an empty result says so and offers the way back",
           "No phase matches this filter." in M.UI_HTML
           and "'data-ovclear':'1'" in M.UI_HTML)
@@ -1165,7 +1201,7 @@ def _cases(check):
     check("the composition levers are explained through _help's own map from the "
           "panel's name for a lever to the manifest path that documents it",
           not [k for k in ("reviewSkill", "buildCommands", "taskModel",
-                           "taskSkills", "phaseReviewModel")
+                           "taskSkills", "phaseReviewModel", "phasePriority")
                if ("{comp:'%s'" % k) not in M.UI_HTML]
           and "(doc.composition||{})[ref.comp]" in M.UI_HTML
           and set(M.COMPOSITION_HELP) == set(_help.COMPOSITION_PATHS))

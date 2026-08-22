@@ -64,6 +64,7 @@ _output.install_path()
 
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
+import _priority  # noqa: E402  (the ONE expression of execution order, and the skip note)
 
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
@@ -147,47 +148,51 @@ def submodule_conflicts(manifest, submodule_paths, git_root=""):
 
 
 # --- gate rollup ----------------------------------------------------------------
-def _status_index(manifest):
-    """`{phase id or task id: status}` — what a `blockedBy`/`dependsOn` ref resolves
-    through. `ready_tasks` and `unmet_refs` each built this by hand, identically.
+# `{phase id or task id: status}` — what a `blockedBy`/`dependsOn` ref resolves
+# through. `ready_tasks` and `unmet_refs` each built this by hand, identically; it
+# moved DOWN to `_manifest_io` when a third caller appeared that this module cannot
+# serve — `_manifest_crossrefs` sits at layer 2 beside this one and needs the same
+# map to say whether a PINNED phase is waiting on unfinished work. The name stays
+# here because ~600 lines of rendering in `audit-status.py` spell it unqualified,
+# and the tie-break reasoning went with the body. An alias, never a second walk.
+_status_index = _mio.status_index
 
-    ONE id space, holding PHASES as well as tasks, is why this walk is hand-rolled
-    rather than `_mio.iter_tasks`, and both halves of that matter:
 
-      * a task may be blocked by a whole phase, INCLUDING a phase that carries no
-        tasks of its own — and `iter_tasks` yields nothing at all for such a phase,
-        so its status would be missing and every dependent task would read ready;
-      * because phase and task ids share the map, WHICH ONE WINS on a collision is
-        observable, and document order is what decides it here. Filling the phases
-        in one pass and the tasks in another makes the task win instead. That is a
-        `duplicate id` manifest either way (the validator reports it across phases
-        + tasks + bugs), but this is the read-only surface that has to RENDER an
-        invalid manifest rather than refuse it, so its tie-breaks are held fixed.
+def _phase_positions(manifest):
+    """`{id(phase dict): its index in phases[]}` — the manifest order, by object.
+
+    Keyed by identity rather than by `phase["id"]` because a manifest with a
+    duplicate or absent phase id is exactly the manifest the read-only surfaces
+    must still render: an id-keyed map would give two phases one position and
+    silently re-order the ready list of a plan the validator is already
+    complaining about.
     """
-    status = {}
     if not isinstance(manifest, dict):
-        return status
-    for ph in (manifest.get("phases") or []):
-        if not isinstance(ph, dict):
-            continue
-        if ph.get("id"):
-            status[ph["id"]] = ph.get("status")
-        for t in (ph.get("tasks") or []):
-            if isinstance(t, dict) and t.get("id"):
-                status[t["id"]] = t.get("status")
-    return status
+        return {}
+    return {id(ph): i for i, ph in enumerate(manifest.get("phases") or [])
+            if isinstance(ph, dict)}
 
 
 def ready_tasks(manifest):
     """Task ids ready to run — mirrors /audit's readiness rule: status pending,
     own blockedBy satisfied, own dependsOn all done, phase blockedBy satisfied
-    ('satisfied' = referenced task/phase is done)."""
+    ('satisfied' = referenced task/phase is done), then SORTED by phase priority.
+
+    THE SORT IS THE WHOLE FEATURE AND IT CANNOT CHANGE THE SET. Readiness is
+    decided above, exactly as before; `_priority.rank_ready` only re-orders what
+    is already ready, so a `priority` can never make an unready task ready and
+    can never step over a dependency. A manifest carrying no `priority` at all
+    produces the list it produced before this sort existed — every key falls
+    back to (phase index, walk order), which is the document order this loop
+    already emitted.
+    """
     status = _status_index(manifest)
+    pos = _phase_positions(manifest)
 
     def satisfied(refs):
         return not _mio.unsatisfied(refs, status)
 
-    out = []
+    rows = []
     # The phase arrives WITH the task, so its `blockedBy` needs no second lookup —
     # and a non-dict manifest yields no pairs, which is what makes the old
     # isinstance guard above redundant (case nd2 pins it).
@@ -201,8 +206,28 @@ def ready_tasks(manifest):
         if not satisfied(ph.get("blockedBy")):
             continue
         if t.get("id"):
-            out.append(t["id"])
-    return out
+            rows.append((ph, pos.get(id(ph), len(pos)), len(rows), t["id"]))
+    return _priority.rank_ready(rows)
+
+
+def priority_note(manifest, ready=None):
+    """The one sentence about a pin that could not be honoured, or None.
+
+    Computed here rather than in each renderer so the CLI, the Markdown report,
+    the HTML report and the panel all read ONE key. `rollup()` carries it as
+    `priorityNote`; `audit-status.py` prints it under READY NOW.
+
+    `ready` is accepted so `rollup()` does not compute the ready list twice —
+    the note names the task running INSTEAD of the pinned phase, which is the
+    first ready id.
+    """
+    if not isinstance(manifest, dict):
+        return None
+    order_list = ready if ready is not None else ready_tasks(manifest)
+    pin = _priority.pinned_but_blocked(
+        [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
+        unmet_refs(manifest), finished=TERMINAL)
+    return _priority.note(pin, order_list[0] if order_list else None)
 
 
 def _by_status(items):
@@ -263,6 +288,10 @@ def rollup(manifest, findings, warnings, usage=None):
         "id": p.get("id"), "title": p.get("title"),
         "status": p.get("status"), "area": areas_of(p.get("area")),
         "desiredOutcome": p.get("desiredOutcome"),
+        # The tier as `_priority` reads it, not the raw field: `priority: "1"`
+        # orders nothing, so a badge rendered off the raw value would advertise
+        # a pin the run does not honour. `None` means unprioritised.
+        "priority": _priority.tier_of(p),
         "done": sum(1 for t in (p.get("tasks") or [])
                     if isinstance(t, dict) and t.get("status") == "done"),
         # ca: counted separately, never folded into `done`. A bar that showed
@@ -317,6 +346,12 @@ def rollup(manifest, findings, warnings, usage=None):
                                     and isinstance(x.get("payload"), dict))},
         "ready": ready_tasks(manifest),
     }
+    # The sister key to "ready", and the reason the priority feature needed no
+    # change in four renderers: a pin the dependencies would not let through is
+    # SAID once, here, and the CLI, both reports and the panel each print this
+    # one string. `None` when there is nothing to say — a key that is always
+    # present is a key no consumer has to probe for.
+    out["priorityNote"] = priority_note(manifest, out["ready"])
     # Only present when a ledger exists, so consumers can treat "no key" as
     # "metering not in use" without a second probe.
     if usage:

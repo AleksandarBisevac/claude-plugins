@@ -439,6 +439,40 @@ def _cases(_record):
           M._ready_lines(_fx, _sum)[0] == ""
           and M._ready_lines(_empty, _sum_e)[0] == ""
           and len(M._ready_lines(_empty, _sum_e)) == 2)
+    # --- the pin that could not be honoured, on the CLI ------------------------
+    # ONE `summary` key reaches four surfaces; this is the terminal's leg, and it
+    # goes through the SAME renderer the populated and empty branches share.
+    _pnote = "P5 holds priority 1 but is waiting on P2 (not done) - running P1.1 instead"
+    _pn_lines = M._ready_lines(_fx, dict(_sum, priorityNote=_pnote))
+    check("rs3p the note prints under READY NOW, once, prefixed so it reads as a "
+          "note about the list rather than as another ready task",
+          sum(1 for ln in _pn_lines if ln.strip() == "note: " + _pnote) == 1,
+          repr(_pn_lines[:3]))
+    _pn_empty = M._ready_lines(_empty, dict(_sum_e, priorityNote=_pnote))
+    check("rs3q ...and it prints in the EMPTY branch too, which is the branch "
+          "that would otherwise absorb it: 'nothing is ready' and 'the phase you "
+          "pinned is blocked' are different news",
+          any(ln.strip() == "note: " + _pnote for ln in _pn_empty),
+          repr(_pn_empty))
+    check("rs3r SECOND-DIRECTION CASE: with no note both branches are "
+          "byte-identical to what they were. Reads vacuous, and is the only case "
+          "that fails if the note becomes unconditional",
+          M._ready_lines(_fx, dict(_sum, priorityNote=None))
+          == M._ready_lines(_fx, _sum)
+          and M._ready_lines(_empty, dict(_sum_e, priorityNote=None))
+          == M._ready_lines(_empty, _sum_e))
+    _pfx = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "a", "status": "pending", "priority": 2,
+         "tasks": [{"id": "P1.1", "title": "t", "status": "pending"}]},
+        {"id": "P2", "title": "b", "status": "pending",
+         "tasks": [{"id": "P2.1", "title": "t", "status": "pending"}]}]}
+    _ptxt = "\n".join(M._phase_table_lines(_pfx, M.rollup(_pfx, [], [])))
+    check("rs3s a pinned phase wears its tier in the phase row, and an unpinned "
+          "one wears nothing - the table itself stays in MANIFEST order, because "
+          "the written plan is the plan",
+          _ptxt.count("prio 2") == 1 and "prio" not in _ptxt.split("P2")[-1]
+          and _ptxt.index("P1") < _ptxt.index("prio 2"),
+          repr(_ptxt))
     # ONE width measurement across the whole table is why `fmt_row` closes over
     # `widths` and why the table is one function: a long id in the second phase
     # has to move the first phase's title column too. Per-phase widths are what

@@ -123,6 +123,33 @@ def _cases(check):
     check("md8 ...and a ledger appends it once, not twice",
           M.render_md(manifest, summary, _u).count("## Usage") == 1)
 
+    # --- the pin that could not be honoured -----------------------------------
+    # ONE `summary` key reaches four surfaces; this is the Markdown twin's leg.
+    _pnote = dict(summary)
+    _pnote["priorityNote"] = "P5 holds priority 1 but is waiting on P2"
+    check("md9 SECOND-DIRECTION CASE: with no note the Ready section is exactly "
+          "what it always was. It reads vacuous and is the only case that fails "
+          "if the note becomes unconditional",
+          "> " not in md.split("## Ready now")[1], repr(md.split("## Ready now")[1]))
+    check("md10 the note prints under Ready now, once, as a quote",
+          M.render_md(manifest, _pnote).count(
+              "> P5 holds priority 1 but is waiting on P2") == 1,
+          repr(M.render_md(manifest, _pnote).split("## Ready now")[1][:120]))
+    _empty = dict(_pnote)
+    _empty["ready"] = []
+    check("md11 ...and it prints with an EMPTY ready list too, under a heading "
+          "of its own: 'nothing is ready' and 'the phase you pinned is blocked' "
+          "are different news, and folding the second into the silence of the "
+          "first is the failure the note exists to stop",
+          "## Ready now" in M.render_md(manifest, _empty)
+          and "> P5 holds priority 1" in M.render_md(manifest, _empty),
+          repr(M.render_md(manifest, _empty)[-300:]))
+    _quiet = dict(summary)
+    _quiet["ready"] = []
+    check("md12 SECOND-DIRECTION CASE: an empty ready list with NO note draws no "
+          "Ready section at all, which is what md11 would otherwise be reading",
+          "## Ready now" not in M.render_md(manifest, _quiet))
+
 
 def _selftest():
     return _harness.run(_cases)

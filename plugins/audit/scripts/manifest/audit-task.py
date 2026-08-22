@@ -90,7 +90,6 @@ import argparse
 import json
 import os
 import sys
-import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -115,7 +114,6 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
-import _locks                 # noqa: E402  (take and give back the index lock, at layer 1)
 import _panel_write           # noqa: E402  (one answer to "where is the manifest", the
 #                                            byte-shape writer, the A4 heal, the lock and
 #                                            journal module handles -- reused by identity,
@@ -152,31 +150,12 @@ def _parse_skills(val):
 
 
 # --- project resolution --------------------------------------------------------
-def _project_of_manifest(mpath):
-    """The project root a NAMED manifest belongs to: the first ancestor of the
-    manifest (starting at its own directory) that holds a `.claude/` dir or a
-    `.git` entry.
-
-    MARKERLESS fallback (F-C-2): when the manifest sits in the default layout
-    (`<T>/docs/audit/<file>`), the root is `<T>` -- taking the manifest's own
-    directory doubled the layout (the journal's default rel re-appended
-    `docs/audit` under `.../docs/audit`). Anywhere else the root is the
-    manifest's own directory. Either way the root stays INSIDE the named
-    manifest's tree, never another repo's."""
-    start = os.path.dirname(os.path.abspath(mpath))
-    cur = start
-    while True:
-        if os.path.isdir(os.path.join(cur, ".claude")) \
-                or os.path.exists(os.path.join(cur, ".git")):
-            return cur
-        parent = os.path.dirname(cur)
-        if parent == cur:
-            break
-        cur = parent
-    if os.path.basename(start) == "audit" \
-            and os.path.basename(os.path.dirname(start)) == "docs":
-        return os.path.dirname(os.path.dirname(start))
-    return start
+# An ALIAS, not a copy. The body moved into `_panel_write` when `set-priority.py`
+# needed the same answer: a second command deriving "which project owns this
+# manifest" by its own walk is a second answer, and the two would drift on exactly
+# the markerless case F-C-2 was about. The name stays here because this file spells
+# it unqualified and its suite asks for it by hand.
+_project_of_manifest = _panel_write.project_of_manifest
 
 
 def _resolve_project(args):
@@ -205,66 +184,20 @@ def _resolve_project(args):
 
 # --- the lock ------------------------------------------------------------------
 def _acquire_lock(project, config, mpath, takeover, out):
-    """Take the index lock for the whole read-allocate-write. Returns a lock
-    handle dict, or an int exit code AFTER printing the lock module's own
-    message -- the standard shape a human already knows from audit-lock.py
-    and the panel; this script adds only its own next step."""
-    # `_locks.acquire` (layer 1), not `_panel_write._lockmod().main([...])`. The
-    # old spelling built an argv for a COMMAND and reached it through the panel's
-    # read-side accessor, which meant this file's very real dependency on the lock
-    # was attributed by `_deps` to `_panel_state` — the module holding the literal.
-    # A hidden edge is not a retired one; this one is an import now.
-    lockmod = _locks
-    git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
-    if lockmod is not None:
-        lines = []
-        try:
-            code = _locks.acquire(git_root, "index", note="task add",
-                                  takeover=bool(takeover), out=lines.append)
-        except Exception:
-            code = None
-        if code == 0:
-            return {"held": True, "mod": lockmod, "project": git_root}
-        if code == getattr(lockmod, "E_LIVE", 3):
-            for line in lines:
-                out(line)
-            return E_LIVE
-        if code == getattr(lockmod, "E_STALE", 4):
-            for line in lines:
-                out(line)
-            out("[audit-task] once a human has confirmed, rerun this add "
-                "with --takeover.")
-            return E_STALE
-        # Not a git repo (or the lock library refused for a reason of its
-        # own): fall through to the legacy working-tree lockfile -- guard a
-        # single clone rather than writing unguarded (_panel_write precedent).
-    legacy = mpath + ".lock"
-    try:
-        fd = os.open(legacy, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(fd)
-        return {"held": True, "legacy": legacy}
-    except FileExistsError:
-        out("[audit-task] manifest is locked by a running /audit command "
-            "(%s exists); try again once it finishes"
-            % os.path.basename(legacy))
-        return E_LIVE
-    except OSError:
-        return {"held": False}
+    """Take the index lock for the whole read-allocate-write, with this
+    command's prefix on the one line it adds to the lock module's own message.
+
+    The body moved into `_panel_write` when `set-priority.py` needed the same
+    acquire: the lock library prints the standard refusal either way, and the
+    only thing that differs between two commands is which name goes in front of
+    "rerun with --takeover". Two copies of the fallback path would have been two
+    answers about what happens outside a git repo."""
+    return _panel_write.acquire_index_lock(project, config, mpath, takeover,
+                                           out, "[audit-task]", "task add")
 
 
-def _release_lock(lock):
-    """Give the lock back. Never raises: a write that succeeded must not be
-    reported as failed because the release did (_panel_write precedent)."""
-    if not lock or not lock.get("held"):
-        return
-    try:
-        if lock.get("legacy"):
-            os.unlink(lock["legacy"])
-            return
-        lock["mod"].release(lock["project"], "index",
-                            out=lambda *_a, **_k: None)
-    except Exception:
-        pass
+# An ALIAS, for `_project_of_manifest`'s reason.
+_release_lock = _panel_write.release_index_lock
 
 
 # --- phase resolution + id allocation ------------------------------------------
@@ -345,37 +278,11 @@ def _allocate_id(assembled, phase_id):
 
 
 # --- write-back + rollback -----------------------------------------------------
-def _snapshot(paths):
-    """{path: bytes-or-None} for everything a rollback must restore."""
-    snap = {}
-    for path in paths:
-        try:
-            with open(path, "rb") as fh:
-                snap[path] = fh.read()
-        except OSError:
-            snap[path] = None
-    return snap
-
-
-def _restore(snap):
-    """Put every snapshotted file back byte-for-byte (temp + os.replace, the
-    same atomicity the write had). A file that did not exist is removed."""
-    for path, data in snap.items():
-        if data is None:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-            continue
-        d = os.path.dirname(path) or "."
-        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(data)
-            os.replace(tmp, path)
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
+# ALIASES, for `_project_of_manifest`'s reason: two commands that both refuse to
+# leave an invalid manifest behind must roll back the same way, or one of them
+# eventually learns something the other does not.
+_snapshot = _panel_write.snapshot
+_restore = _panel_write.restore
 
 
 def _write_paths(project, mpath, raw_index, phase_id):

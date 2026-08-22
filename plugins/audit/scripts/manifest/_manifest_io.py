@@ -91,12 +91,32 @@ def is_sharded(data):
     return any(isinstance(p, dict) and "shard" in p for p in phases)
 
 
+# Fields the INDEX owns outright in the sharded layout — a value found in a shard
+# body is ignored, never merged. `claim` is the coordination field that fell back
+# from the stub; `priority` is stricter than that and the difference is the point:
+#
+#   * the stub already carries `status`, so execution order is computable WITHOUT
+#     opening a single shard — which is the entire reason the sharded layout exists;
+#   * there is ONE writer. Priority is a structural field written under the index
+#     lock, while a phase run touches only its own shard;
+#   * two phases running in parallel therefore cannot collide on it.
+#
+# Ignored is not the same as dropped in silence: `index_only_in_bodies()` below
+# reports a value sitting where nothing will read it, and `validate-manifest.py`
+# prints it as a finding.
+INDEX_ONLY_FIELDS = ("priority",)
+
+
 def _merge_phase(stub, body):
     """Assemble one phase from its index `stub` and shard `body`.
 
     The shard body is the source of truth for the phase (status / tasks / branch /
     baseRef / ...). Identity and index-only coordination fields (`claim`) fall back
     from the stub when the body omits them. Returns a NEW dict; never mutates inputs.
+
+    `INDEX_ONLY_FIELDS` are the exception to that fallback direction: the STUB wins
+    outright and a body value is discarded, so the assembled manifest can never
+    honour an ordering nobody could see without reading every shard.
     """
     merged = dict(body) if isinstance(body, dict) else {}
     if isinstance(stub, dict):
@@ -107,6 +127,10 @@ def _merge_phase(stub, body):
             merged["status"] = stub.get("status")
         if "claim" in stub and "claim" not in merged:
             merged["claim"] = stub.get("claim")
+        for k in INDEX_ONLY_FIELDS:
+            merged.pop(k, None)
+            if k in stub:
+                merged[k] = stub.get(k)
     return merged
 
 
@@ -131,6 +155,45 @@ def load_manifest(path):
             assembled.append(stub)          # already an inline phase (mixed/defensive)
     out = dict(data)
     out["phases"] = assembled
+    return out
+
+
+def index_only_in_bodies(path):
+    """`[(phase id, field)]` for every `INDEX_ONLY_FIELDS` value sitting in a shard.
+
+    THE ONE QUESTION `validate()` CANNOT ASK. The validator is a pure
+    `dict -> (findings, warnings)` over the ASSEMBLED manifest, and by the time a
+    manifest is assembled the ignored value is gone — which is exactly the state
+    the reader must be told about, because a `priority` written into a shard body
+    looks like it was accepted and orders nothing. So the question is asked here,
+    where both halves of the file are open, and `validate-manifest.py` folds the
+    answer into its findings.
+
+    Returns [] for the single-file layout (there are no bodies) and for an
+    unreadable shard — a shard nobody can read is a louder failure that
+    `load_manifest` already raises for its own callers, and inventing a finding
+    about a file this function could not open would name the wrong defect.
+    """
+    try:
+        data = _read_json(path)
+    except Exception:
+        return []
+    if not is_sharded(data):
+        return []
+    base = os.path.dirname(os.path.abspath(path))
+    out = []
+    for stub in (data.get("phases") or []):
+        if not isinstance(stub, dict) or "shard" not in stub:
+            continue
+        try:
+            body = _read_json(os.path.join(base, stub["shard"]))
+        except Exception:
+            continue
+        if not isinstance(body, dict):
+            continue
+        for field in INDEX_ONLY_FIELDS:
+            if field in body:
+                out.append((stub.get("id") or body.get("id"), field))
     return out
 
 
@@ -196,6 +259,44 @@ def tasks_by_id(manifest):
     tasks would hide the thing being reported.
     """
     return {t["id"]: t for _, t in iter_tasks(manifest) if t.get("id")}
+
+
+def status_index(manifest):
+    """`{phase id or task id: status}` — what a `blockedBy`/`dependsOn` ref
+    resolves through.
+
+    Lives here, beside the other traversals, because it had two consumers that
+    cannot import each other: `_status_facts` (L2) builds readiness from it and
+    `_manifest_crossrefs` (L2) needs the same answer to say whether a PINNED
+    phase is waiting on something unfinished. Two walks would be two answers,
+    and the tie-breaks below are exactly the kind of detail one copy learns and
+    the other does not.
+
+    ONE id space, holding PHASES as well as tasks, is why this walk is hand-rolled
+    rather than `iter_tasks`, and both halves of that matter:
+
+      * a task may be blocked by a whole phase, INCLUDING a phase that carries no
+        tasks of its own — and `iter_tasks` yields nothing at all for such a phase,
+        so its status would be missing and every dependent task would read ready;
+      * because phase and task ids share the map, WHICH ONE WINS on a collision is
+        observable, and document order is what decides it here. Filling the phases
+        in one pass and the tasks in another makes the task win instead. That is a
+        `duplicate id` manifest either way (the validator reports it across phases
+        + tasks + bugs), but this is the read-only surface that has to RENDER an
+        invalid manifest rather than refuse it, so its tie-breaks are held fixed.
+    """
+    status = {}
+    if not isinstance(manifest, dict):
+        return status
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        if ph.get("id"):
+            status[ph["id"]] = ph.get("status")
+        for t in (ph.get("tasks") or []):
+            if isinstance(t, dict) and t.get("id"):
+                status[t["id"]] = t.get("status")
+    return status
 
 
 def phase_of_task(manifest):
@@ -324,9 +425,18 @@ def split_manifest(manifest, shard_rel_dir="phases"):
             continue
         pid = ph["id"]
         rel = "%s/%s.json" % (shard_rel_dir, _shard_name(pid))
-        shards[pid] = ph
         stub = {k: ph.get(k) for k in _STUB_KEYS if k in ph}
         stub["shard"] = rel
+        # The index-only fields MOVE: into the stub, out of the body. A migration
+        # that left `priority` in the shard would produce, in one step, exactly the
+        # state `index_only_in_bodies()` exists to report.
+        body = ph
+        if any(k in ph for k in INDEX_ONLY_FIELDS):
+            body = dict(ph)
+            for k in INDEX_ONLY_FIELDS:
+                if k in body:
+                    stub[k] = body.pop(k)
+        shards[pid] = body
         index["phases"].append(stub)
     for k in ("fileIndex", "bugs", "deferred", "proposals"):
         if k in manifest:

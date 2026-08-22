@@ -266,6 +266,27 @@ the human explicitly says no skills apply to that task — null is the conscious
 opt-out that STOPS the area fallback, and an init that invents opt-outs silently
 turns the area defaults off.
 
+### Phase priority (optional, and only when the interview said so)
+
+When the interview made it plain that something has to go **first** — a security
+finding they came here for, a release they are blocked on — set `priority` on that
+phase: a positive integer, tier 1 for the one thing that leads. Leave every other
+phase without the field; absent means unprioritised, and a plan where everything is
+pinned has said nothing.
+
+Say what you assigned, in the approval step, one line per pinned phase:
+
+```
+    P3  fix the SQL injection path              priority 1  (from: "this is why we called you")
+```
+
+**Only tier 1 is unique**, so never assign it twice; higher tiers are shared and are
+for "roughly after that". And priority re-sorts work that is **already ready** — it
+never makes an unready task ready and never skips a dependency. If a phase you would
+pin depends on unfinished work, say that out loud instead of pinning it or rewriting
+its `blockedBy`: a pin that its own dependencies contradict is a contradiction to
+REPORT, not to repair.
+
 Then ask ONE AskUserQuestion:
 
 1. **Materialize all N phases** (Recommended) — write the manifest exactly as

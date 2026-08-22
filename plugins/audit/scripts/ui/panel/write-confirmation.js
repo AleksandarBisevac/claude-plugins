@@ -212,7 +212,7 @@ const cfRow=(target,field,from,to)=>({target,field,from:cfNorm(from),to:cfNorm(t
  * cannot make. A phase or task the snapshot does not know is skipped for the same
  * reason — there is no "from" to show, so there is no honest row.
  *
- * @param {{meta: (Object<string, *>|undefined), phases: (Object<string, {reviewModel: *}>|undefined), tasks: (Object<string, {model: *, skills: *}>|undefined)}} patch -
+ * @param {{meta: (Object<string, *>|undefined), phases: (Object<string, {reviewModel: *, priority: *}>|undefined), tasks: (Object<string, {model: *, skills: *}>|undefined)}} patch -
  *   the patch this form would send
  * @returns {Array<{target: string, field: string, from: *, to: *}>} one row per
  *   real difference, in the server's field order; empty when nothing changed
@@ -225,9 +225,14 @@ function compChanges(patch){
  const byP={};(comp.phases||[]).forEach(p=>{byP[p.id]=p;});
  Object.keys(patch.phases||{}).sort().forEach(pid=>{
   const p=byP[pid],pv=patch.phases[pid]||{};
-  if(!p||!('reviewModel' in pv))return;
-  if(!cfSame(p.reviewModel,pv.reviewModel))
-   rows.push(cfRow(pid,'review model',p.reviewModel,pv.reviewModel));});
+  if(!p)return;
+  if(('reviewModel' in pv)&&!cfSame(p.reviewModel,pv.reviewModel))
+   rows.push(cfRow(pid,'review model',p.reviewModel,pv.reviewModel));
+  // The server writes this row as `priority`, from `_priority.tier_of` on the
+  // stored value — so the dialog reads the SAME `from` the echo will, and a
+  // phase carrying a value nobody honours shows as unpinned on both sides.
+  if(('priority' in pv)&&!cfSame(p.priority,pv.priority))
+   rows.push(cfRow(pid,'priority',p.priority,pv.priority));});
  const byT={};(comp.tasks||[]).forEach(t=>{byT[t.id]=t;});
  Object.keys(patch.tasks||{}).sort().forEach(tid=>{
   const t=byT[tid],tv=patch.tasks[tid]||{};

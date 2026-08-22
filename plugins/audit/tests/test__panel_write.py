@@ -1166,6 +1166,108 @@ def _cases(check):
           M._JOURNAL is _panel_state._JOURNAL
           and "\n_JOURNAL = _panel_state._JOURNAL\n" in _panel_src)
 
+    # --- phase priority: one rule, two writers --------------------------------
+    # The panel writes priority as COMPOSITION (the class of the per-task model
+    # and skills it already writes), so the panel's boundary does not move. What
+    # is legal is NOT decided here: both writers ask `_priority.tier_one_holder`,
+    # which is the Policy tab's arrangement applied to a second feature.
+    import shutil as _sh2
+    import tempfile as _tf2
+    import _priority as _prio
+    _pp_tmp = _tf2.mkdtemp(prefix="panel-write-priority-")
+    try:
+        _pp_proj = os.path.join(_pp_tmp, "proj")
+        os.makedirs(os.path.join(_pp_proj, ".claude"))
+        os.makedirs(os.path.join(_pp_proj, "docs", "audit"))
+        _pp_mpath = os.path.join(_pp_proj, "docs", "audit", "audit-plan.json")
+        with open(os.path.join(_pp_proj, ".claude", "audit.config.json"),
+                  "w", encoding="utf-8") as _fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, _fh)
+        _pp_manifest = {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "One", "status": "pending",
+             "tasks": [{"id": "P1.1", "title": "a", "status": "pending"}]},
+            {"id": "P2", "title": "Two", "status": "pending",
+             "tasks": [{"id": "P2.1", "title": "b", "status": "pending"}]}]}
+        _mio.save_sharded(_pp_mpath, _pp_manifest)
+        _pp_shard = os.path.join(_pp_proj, "docs", "audit", "phases", "P2.json")
+        _pp_before = open(_pp_shard, "rb").read()
+
+        res = M.apply_composition(_pp_proj, {"phases": {"P2": {"priority": 1}}})
+        check("pp1 the panel writes a phase priority, and echoes it as an "
+              "ordinary composition row",
+              res["ok"] and res["applied"] == [{"target": "P2",
+                                                "field": "priority",
+                                                "from": None, "to": 1}],
+              repr(res))
+        with open(_pp_mpath, encoding="utf-8") as _fh:
+            _pp_idx = json.load(_fh)
+        check("pp2 ...onto the INDEX STUB, which is what makes the order "
+              "computable without opening a shard",
+              _pp_idx["phases"][1].get("priority") == 1,
+              repr(_pp_idx["phases"][1]))
+        check("pp3 ...and the SHARD is byte-identical: a priority-only save "
+              "must not renormalise a file nobody edited, which is how the "
+              "sharded layout manufactures a merge conflict",
+              open(_pp_shard, "rb").read() == _pp_before)
+        check("pp4 ...and only the index is reported as written",
+              [w for w in res["written"] if w.endswith("P2.json")] == [],
+              repr(res["written"]))
+
+        res = M.apply_composition(_pp_proj, {"phases": {"P1": {"priority": 1}}})
+        check("pp5 a second holder of tier 1 is REFUSED by the panel too, and "
+              "the refusal names the holder - a UI that promised a write the "
+              "CLI refuses is the drift this shares a function to prevent",
+              not res["ok"] and any("P2 already holds it" in f
+                                    for f in res["findings"]), repr(res))
+        with open(_pp_mpath, encoding="utf-8") as _fh:
+            check("pp6 ...and nothing was written",
+                  json.load(_fh)["phases"][0].get("priority") is None)
+
+        # PARITY, on the same input. Both writers are handed a manifest where P2
+        # holds tier 1 and both are asked to give it to P1; the answers must be
+        # the same KIND of answer, and they are because they come from the same
+        # function.
+        _sp = _loader.load_script("set-priority.py", modname="set_priority_parity")
+        _cli_lines = []
+        _cli_code = _sp.main([_pp_mpath, "P1", "1"], out=_cli_lines.append)
+        check("pp7 PARITY: the CLI refuses the same write, names the same "
+              "holder, and both verdicts come from `_priority.tier_one_holder` "
+              "- pinned by identity, so a second implementation on either side "
+              "fails here rather than being discovered by a user",
+              _cli_code == 2
+              and any("P2 already holds priority 1" in ln for ln in _cli_lines)
+              and M._priority.tier_one_holder is _prio.tier_one_holder
+              and _sp._priority.tier_one_holder is _prio.tier_one_holder,
+              repr(_cli_lines))
+        check("pp8 SECOND-DIRECTION CASE: with tier 1 free BOTH writers accept "
+              "it. This is what goes red if either side starts refusing every "
+              "pin - the refusal above would then be reading nothing",
+              M.apply_composition(_pp_proj,
+                                  {"phases": {"P1": {"priority": 2}}})["ok"]
+              and _sp.main([_pp_mpath, "P1", "--clear"],
+                           out=lambda *_a: None) == 0)
+
+        for bad in ("1", 0, -2, True, 1.5):
+            res = M.apply_composition(_pp_proj, {"phases": {"P1": {"priority": bad}}})
+            check("pp9 %r is refused with a reason, never written as a tier"
+                  % (bad,),
+                  not res["ok"] and any("positive integer" in f
+                                        for f in res["findings"]), repr(res))
+        M.apply_composition(_pp_proj, {"phases": {"P1": {"priority": 3}}})
+        res = M.apply_composition(_pp_proj, {"phases": {"P1": {"priority": None}}})
+        check("pp10 null is the CLEAR - the same spelling the task skills "
+              "opt-out uses, and what a select can send for 'no pin'",
+              res["ok"], repr(res))
+        with open(_pp_mpath, encoding="utf-8") as _fh:
+            check("pp11 ...and the KEY is removed rather than set to null, "
+                  "because an absent priority is how a phase says unprioritised",
+                  "priority" not in json.load(_fh)["phases"][0])
+        check("pp12 `priority` is in the phase write allow-list, so this whole "
+              "block is exercising a field a patch may legally name",
+              "priority" in M._PHASE_KEYS, repr(M._PHASE_KEYS))
+    finally:
+        _sh2.rmtree(_pp_tmp, ignore_errors=True)
+
     _shutil.rmtree(tmp, ignore_errors=True)
 
 def _selftest():

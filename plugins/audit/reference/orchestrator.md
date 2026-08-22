@@ -171,6 +171,17 @@ A task is **ready** when ALL of:
 
 A phase becomes `done` only after **Phase sign-off**. Phase order follows the manifest; within a phase, order by task id.
 
+**`phase.priority` re-sorts that order, and nothing else.** An optional positive integer on a
+phase says which of the **already ready** tasks to reach for first: tier 1 (unique) leads, then
+higher tiers, then every phase with no priority at all — which keeps its written position among
+its peers, so a plan carrying no `priority` runs exactly as this rule describes. It never makes an
+unready task ready and never skips a dependency: a pinned phase whose `blockedBy` is unsatisfied
+is **skipped**, and `/audit:status` prints the note that says so and names the task running
+instead. Read it, never repair it — a pinned phase that depends on unfinished work is a
+contradiction to REPORT (`/audit:task priority` is what changes it). In the sharded layout the
+field lives on the **index stub** only; a copy in a shard body is ignored, and the validator says
+it was.
+
 **Parallel safety:** tasks whose `files` sets are disjoint AND whose `dependsOn` lists are mutually satisfied may
 run in parallel (spawn multiple Agents in one message). Tasks sharing a file or linked via `dependsOn` run sequentially.
 

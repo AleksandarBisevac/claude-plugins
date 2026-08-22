@@ -73,7 +73,12 @@ _META_KEYS = ("reviewSkill", "buildCommands", "branch", "areas", "ado")
 # dotted rows and saves via PUT /api/ado, mirroring `areas`.)
 _META_API_ONLY = ("areas", "ado")
 _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
-_PHASE_KEYS = ("reviewModel",)
+# `priority` joins `reviewModel` because it is COMPOSITION, not structural CRUD:
+# the same class as the per-task `model`/`skills` the panel already writes, so the
+# panel's boundary does not move. What legality means is NOT decided here - the
+# write path asks `_priority.tier_one_holder()`, the same function
+# `set-priority.py` asks, so the UI cannot promise a write the CLI refuses.
+_PHASE_KEYS = ("reviewModel", "priority")
 _TASK_KEYS = ("model", "skills")
 
 
@@ -211,6 +216,12 @@ FIELD_HELP = {
         "(the default) leaves detection to the journal and the doctor. There is "
         "deliberately no deny: the pipeline completes tasks through the same "
         "edit tools this guard watches.",
+    "priority.maxTier":
+        "The highest tier the phase-priority control offers, and the highest one "
+        "set-priority.py suggests. ADVISORY - nothing is clamped to it: a phase "
+        "pinned above it keeps the tier it was given and simply sorts after every "
+        "tier at or under the maximum. Priority re-sorts work that is ALREADY "
+        "ready; it never makes an unready task ready and never skips a dependency.",
     "usage.pricing":
         "Rates in this project's currency per MILLION tokens. Lookup is exact match, "
         "then longest matching prefix — so a dated model id resolves to its family — "
@@ -244,6 +255,13 @@ COMPOSITION_HELP = {
                       "git's.",
     "branchSlugMax": "Cap on the slug taken from the phase title.",
     "phaseReviewModel": "Model used for this phase's sign-off review.",
+    "phasePriority": "Which phase the pipeline reaches for first among the tasks "
+                     "that are ALREADY ready. It never makes an unready task "
+                     "ready and never skips a dependency: a pinned phase still "
+                     "waiting on something is skipped, and /audit:status says so. "
+                     "Tier 1 is unique; higher tiers are shared. No priority means "
+                     "unprioritised - the phase sorts after every pinned one and "
+                     "keeps its written position. Display order never changes.",
     "taskModel": "Model the executor uses to implement this task.",
     "taskSkills": "Skills the executor loads (via the Skill tool) before writing code "
                   "for this task.",
@@ -387,6 +405,18 @@ SETTINGS_GROUPS = (
             {"path": "journal.strictManifestState",
              "label": "Confirm manifest state edits",
              "kind": "enum", "enum": "strictManifestState"},
+        ),
+    },
+    {
+        "id": "priority",
+        "title": "Execution order",
+        "blurb": "Which phase the pipeline reaches for first among the work that is "
+                 "already ready. A priority never makes an unready task ready and "
+                 "never skips a dependency - a pinned phase that is still waiting is "
+                 "skipped, and the status output says so rather than going quiet.",
+        "fields": (
+            {"path": "priority.maxTier", "label": "Highest tier offered",
+             "kind": "int", "min": 1},
         ),
     },
 )

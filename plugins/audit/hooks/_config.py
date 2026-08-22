@@ -63,6 +63,9 @@ Config keys (all optional; defaults in DEFAULTS below):
         bands (obj: highUSD / outlierUSD, both null = calibrate from the project)
   journal                 obj   — the tamper-evident audit trail (audit-journal.py,
         journal-writes.py): enabled (bool), dir (str or null = beside the manifest)
+  priority                obj   — phase prioritisation (_priority.py, set-priority.py):
+        maxTier (int) — the highest tier the panel offers. Advisory; nothing is
+        clamped to it, and no hook reads it.
   policy                  obj   — which skills, subagents and MCP tools may be used
         here (guard-capabilities.py): enabled (bool), onViolation
         ("deny"|"ask"|"warn"), and one block per kind (skills/agents/mcp) of
@@ -221,6 +224,15 @@ DEFAULTS = {
     # config's shape is stated, and a key the validator knows but this file does
     # not is how the two drifted before.
     "ui": {"theme": None},
+    # Phase prioritisation (scripts/manifest/_priority.py). ADVISORY, AND NOTHING
+    # IS CLAMPED: `maxTier` is the highest tier the panel's control offers and the
+    # CLI suggests, not a ceiling anything enforces. A phase pinned above it keeps
+    # the tier it was given and sorts after every tier at or under the maximum by
+    # ordinary arithmetic. Clamping would make the file say one thing and the run
+    # do another. No hook reads this either -- it is here for `ui`'s reason: this
+    # dict is the one place the whole config's shape is stated, and a key the
+    # validator knows and this file does not is how the two drifted before.
+    "priority": {"maxTier": 9},
 }
 
 

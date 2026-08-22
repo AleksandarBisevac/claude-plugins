@@ -45,7 +45,8 @@ def _cases(check):
     _vc = M._validate_config()
     _containers = {"secretPatterns": _vc.KNOWN_SECRET, "guardEdits": _vc.KNOWN_GUARD,
                    "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
-                   "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL}
+                   "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL,
+                   "priority": _vc.KNOWN_PRIORITY}
     # `policy` is a root key with no control on this form, on purpose — the one
     # kind of exemption, and it is stated rather than silently subtracted. It is
     # not a setting with a value; it is a rule set whose meaning is the verdict it
@@ -107,7 +108,7 @@ def _cases(check):
                   and not _f["label"][0].islower())
     check("the groups are the decisions the config makes, not one list",
           tuple(g["id"] for g in M.SETTINGS_GROUPS)
-          == ("paths", "guards", "tdd", "usage", "journal")
+          == ("paths", "guards", "tdd", "usage", "journal", "priority")
           and all(g["blurb"] for g in M.SETTINGS_GROUPS))
     check("the audit trail's card states the limit of the claim, where someone "
           "deciding whether to rely on it will read it",

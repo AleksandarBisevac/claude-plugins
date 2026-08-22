@@ -1,13 +1,15 @@
 ---
-description: Add a tracked task to the audit manifest (interactive), move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task or a whole phase as terminal-but-not-done, recording the reason, the moment and a journal row.
-argument-hint: 'add "<title>" [--phase <id>] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+description: Add a tracked task to the audit manifest (interactive), move one between phases, cancel work that will not be done, or say which phase runs first. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task or a whole phase as terminal-but-not-done, recording the reason, the moment and a journal row; `priority` pins a phase ahead of the others among the work that is already ready, never over a dependency.
+argument-hint: 'add "<title>" [--phase <id>] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>" | priority <phaseId> <tier|--clear>'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
-# /audit:task — add a task to the manifest, or move one between phases
+# /audit:task — add a task to the manifest, move one between phases, or order the plan
 
 **`$ARGUMENTS`**: subcommand `add` followed by a quoted title, optional `--phase <id>`;
-or subcommand `move` followed by a task id and `--to <phaseId>`.
+or subcommand `move` followed by a task id and `--to <phaseId>`;
+or subcommand `cancel` followed by an id and `--reason "<why>"`;
+or subcommand `priority` followed by a phase id and a tier (or `--clear`).
 Unknown/empty subcommand → print usage and stop.
 
 ## 0. Conventions
@@ -137,6 +139,49 @@ back** on findings.
 Readiness treats a cancelled blocker as settled, so a plan never deadlocks on work nobody
 will do — a task that was waiting on the cancelled one becomes ready, and is worth a look
 before it runs.
+
+## Subcommand: `priority <phaseId> <tier>` (or `priority <phaseId> --clear`)
+
+Say which phase the pipeline should reach for first. Until this verb the order was implicit
+in the array — `phases[]` as written, then task id inside a phase — so "run this one next"
+meant physically moving the phase, a structural edit of the whole file that nobody performs
+in flight.
+
+**It re-sorts only work that is ALREADY ready.** A priority never makes an unready task ready
+and never skips a dependency: a pinned phase still waiting on its `blockedBy` is skipped, and
+`/audit:status` prints the note saying so and naming the task that ran instead. It is a wish
+about the schedule, not a permission.
+
+Like `add` and `cancel`, this is a SCRIPT call — it takes the index lock itself:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/set-priority.py" \
+  <manifestPath> P5 1 [--force] [--json]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/set-priority.py" \
+  <manifestPath> P5 --clear
+```
+
+- **Tier 1 is unique**; 2, 3, 4 … are shared. Without `--force` a second holder of tier 1 is
+  refused and the refusal **names the phase that already has it** — relay that name, and offer
+  clearing it or picking another tier before reaching for `--force`. With `--force` both are
+  written and the one that comes FIRST in the manifest wins; the validator says so as a warning.
+- **No priority at all means unprioritised** — the phase sorts after every pinned one and keeps
+  its written position among its peers. Clearing a pin is `--clear`, which removes the key; there
+  is no "priority 0".
+- **`priority.maxTier`** in `.claude/audit.config.json` is advisory. A phase pinned above it keeps
+  the tier it was given and simply sorts after every tier at or under the maximum — nothing is
+  clamped, and the command says so.
+- The value lives on the **index stub** in the sharded layout, so one file is written and a phase
+  run editing its own shard cannot collide with it.
+
+**Exit codes:** `0` written (or already that value — it says so and writes nothing). `1` the
+manifest was already invalid, or the write would have left it invalid and was rolled back.
+`2` unknown phase, a tier that is not a positive integer, or a second holder of tier 1 without
+`--force`. `3`/`4` the index lock, exactly as `add` describes them.
+
+**Display order does not change.** `/audit:status`, both reports and the panel keep showing the
+plan in the order it was written — the written plan IS the plan. The pin shows as a badge on the
+phase row and decides which READY task comes first.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

@@ -228,6 +228,86 @@ def _cases(check):
     check("mc25 ...and every word and shape check it reads is "
           "`_manifest_vocab`'s object: %r" % (_drift,), _drift == [])
 
+    # --- phase priority: a claim with nothing behind it ------------------------
+    # EVERY ONE OF THESE IS A WARNING, AND THAT IS THE DECISION RATHER THAN AN
+    # OVERSIGHT. A finding would make the manifest INVALID, which refuses the next
+    # `/audit:task add`, reds `--gate` on the `invalid` condition, and would make
+    # `set-priority.py --force` roll back the very write it was asked to force. A
+    # disagreement about ORDER must not stop the pipeline; it must not be silent
+    # either, which is what these say.
+    def _pplan(phases):
+        return {"meta": {"version": 2}, "phases": phases}
+
+    def _pw(phases):
+        f, w = M._check_priority(_pplan(phases), phases)
+        return (f, w)
+
+    _clean = [{"id": "P1", "title": "a", "status": "pending", "tasks": []},
+              {"id": "P2", "title": "b", "status": "pending",
+               "priority": 1, "tasks": []},
+              {"id": "P3", "title": "c", "status": "pending",
+               "priority": 3, "tasks": []}]
+    check("pc0 SECOND-DIRECTION CASE: a clean plan - one holder of tier 1, a "
+          "shared tier, an unpinned phase - produces NOT ONE priority line. "
+          "This is the case that goes red if any of the four rules below "
+          "becomes unconditional, and every one of them would then fire on "
+          "nearly every manifest",
+          _pw(_clean) == ([], []), repr(_pw(_clean)))
+    _two = [{"id": "P1", "title": "a", "status": "pending",
+             "priority": 1, "tasks": []},
+            {"id": "P2", "title": "b", "status": "pending",
+             "priority": 1, "tasks": []}]
+    _f, _w = _pw(_two)
+    check("pc1 two holders of tier 1: a WARNING, not a finding - the pipeline "
+          "keeps running, which is the only way the tie-break below can ever be "
+          "used",
+          _f == [] and len(_w) == 1, repr((_f, _w)))
+    check("pc2 ...and the warning NAMES the tie-break and its winner, because a "
+          "silent tie-break is an order nobody can explain",
+          "P1 wins because it comes first in the manifest" in _w[0], repr(_w))
+    _blocked = [{"id": "P2", "title": "b", "status": "pending", "tasks": []},
+                {"id": "P5", "title": "e", "status": "pending", "priority": 1,
+                 "blockedBy": ["P2"], "tasks": []}]
+    _f, _w = _pw(_blocked)
+    check("pc3 a pinned phase waiting on unfinished work is reported: a "
+          "priority whose own dependencies contradict it is a claim with no "
+          "basis",
+          _f == [] and len(_w) == 1 and "waits on P2" in _w[0], repr((_f, _w)))
+    _done = [{"id": "P2", "title": "b", "status": "done", "tasks": []},
+             {"id": "P5", "title": "e", "status": "pending", "priority": 1,
+              "blockedBy": ["P2"], "tasks": []}]
+    check("pc4 SECOND-DIRECTION CASE: the SAME pin with its blocker DONE draws "
+          "nothing. The fixture differs from pc3 in one status, so a version "
+          "that reported every prioritised phase with a blockedBy would fail "
+          "here and pass there",
+          _pw(_done) == ([], []), repr(_pw(_done)))
+    _finished = [{"id": "P2", "title": "b", "status": "pending", "tasks": []},
+                 {"id": "P5", "title": "e", "status": "cancelled",
+                  "priority": 1, "blockedBy": ["P2"], "tasks": []}]
+    check("pc5 ...and a phase that is itself finished is not reported either - "
+          "a cancelled or done phase will not run again, so its pin is history "
+          "rather than a wait",
+          _pw(_finished) == ([], []), repr(_pw(_finished)))
+    _junk = [{"id": "P1", "title": "a", "status": "pending",
+              "priority": "1", "tasks": []},
+             {"id": "P2", "title": "b", "status": "pending",
+              "priority": 0, "tasks": []}]
+    _f, _w = _pw(_junk)
+    check("pc6 a priority that is not a positive integer is named, once per "
+          "phase, with the value - it orders nothing, and a value with no "
+          "effect that nobody mentions is the silent drop this refuses",
+          _f == [] and len(_w) == 2 and "'1'" in _w[0] and "0" in _w[1],
+          repr((_f, _w)))
+    check("pc7 ...and the whole check runs through `validate()` too, so these "
+          "reach every consumer of the rules rather than only a direct caller",
+          any("both hold priority 1" in line
+              for line in _rules.validate(_pplan(_two))[1]),
+          repr(_rules.validate(_pplan(_two))[1]))
+    check("pc8 ...and `validate()` still reports NO findings for them, which is "
+          "what keeps a scheduling wish from locking the pipeline",
+          _rules.validate(_pplan(_two))[0] == [],
+          repr(_rules.validate(_pplan(_two))[0]))
+
 
 def _selftest():
     return _harness.run(_cases)

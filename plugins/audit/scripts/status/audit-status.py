@@ -444,6 +444,13 @@ def _phase_table_lines(manifest, summary, only_phase=None):
             pe.get("id") or "?", _clip(pe.get("title") or "", 26),
             _theme.label(pe.get("status")) or "?",
             _fmt.fmt_bar(pdone, ptotal, 12), pdone, ptotal)
+        # The badge, off the rollup's already-resolved tier rather than the raw
+        # field: an invalid `priority` orders nothing, and a badge rendered from
+        # the raw value would advertise a pin the run does not honour. The table
+        # itself stays in MANIFEST order - the written plan is the plan, and
+        # priority is an overlay on which of its READY tasks runs first.
+        if pe.get("priority") is not None:
+            head += "  prio %d" % pe["priority"]
         if ph.get("branch"):
             head += "  %s" % ph["branch"]
         out.append(head)
@@ -472,10 +479,19 @@ def _ready_lines(manifest, summary, pt=None):
     pt = pt or _cli_fmt.PLAIN
     out = [""]
     ready_list = summary["ready"]
+    # The same sentence the panel and both reports print, from the same key. A
+    # phase pinned first that its own dependencies will not let through is
+    # SKIPPED, and a silent skip reads as "the plan is being followed" - which
+    # is the failure this whole block already exists to refuse one line down.
+    # It prints in the empty case too: "nothing is ready" and "the phase you
+    # pinned is blocked" are different news.
+    pnote = summary.get("priorityNote")
     if not ready_list:
         out.append(pt.paint("  READY NOW  nothing - every pending task is "
                             "waiting on something, or the plan is complete",
                             "header"))
+        if pnote:
+            out.append("    note: %s" % pnote)
         return out
     shown = ready_list[:READY_LIST_MAX]
     out.append(pt.paint("  READY NOW  %d task(s)%s"
@@ -483,6 +499,8 @@ def _ready_lines(manifest, summary, pt=None):
                            "" if len(shown) == len(ready_list)
                            else ", first %d shown" % len(shown)),
                         "header"))
+    if pnote:
+        out.append("    note: %s" % pnote)
     task_by_id = _mio.tasks_by_id(manifest)
     for tid in shown:
         t = task_by_id.get(tid) or {}

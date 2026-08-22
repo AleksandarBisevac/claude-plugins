@@ -337,7 +337,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  const sortSel=el('select',{'aria-label':'sort phases',
    onchange:e=>{OVF.sort=e.target.value;renderOver();}});
  fillOptions(sortSel,[['plan','plan order'],['progress','progress'],
-   ['status','status']],OVF.sort);
+   ['status','status'],['priority','priority']],OVF.sort);
  const tools=el('div',{class:'ovtools'},qIn,el('span',{class:'filtlbl'},'sort:'),sortSel);
  const areaTags=Object.keys(r.areas||{});
  if(areaTags.length){
@@ -375,11 +375,20 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  const pct=p=>p.total?100*p.done/p.total:0;
  if(OVF.sort==='progress')ordered.sort((a,b)=>pct(b)-pct(a));
  else if(OVF.sort==='status')ordered.sort((a,b)=>ovRank(OVORDER,a.status)-ovRank(OVORDER,b.status));
+ // Priority as a SORT OPTION, never as the default: the written plan is the
+ // plan, and priority is an overlay on which of its ready tasks runs first. The
+ // key mirrors _priority.sort_key — pinned phases by tier, then everything
+ // unprioritised, and manifest order inside each group, which is what `ordered`
+ // already carries.
+ else if(OVF.sort==='priority')ordered.sort((a,b)=>
+   (a.priority==null?1:0)-(b.priority==null?1:0)
+   ||(a.priority||0)-(b.priority||0));
  /**
   * One phase as a pressable row, with its detail beneath when it is open.
   * @param {{id: string, status: string, title: (string|undefined),
   *   area: (string[]|undefined), done: number, total: number,
-  *   desiredOutcome: (string|undefined)}} p - the phase, from the rollup
+  *   priority: (number|null|undefined), desiredOutcome: (string|undefined)}} p -
+  *   the phase, from the rollup
   * @returns {HTMLElement} the row itself when the phase is closed, or a wrapper
   *   holding the row and its detail when it is open — so the caller appends one
   *   node either way
@@ -415,6 +424,12 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
    el('span',{class:'ptitle'},p.title||''),
    el('span',{class:'st','data-status':p.status||''},label(p.status)),
    areaBadges,runBadge,
+   // The pin, where the eye already looks for what a phase IS. It says what the
+   // tier buys and what it does not, because "priority 1" alone reads as
+   // "skips the queue" and it does not: a dependency always wins.
+   p.priority!=null?el('span',{class:'badge prio',
+     title:'runs first among the tasks that are ALREADY ready - never over a '
+       +'dependency'},'priority '+p.priority):null,
    // Only when the phase itself is not blocked: the status pill already says
    // that, and two words for one fact reads as two problems.
    nBlocked&&p.status!=='blocked'?el('span',{class:'pblocked',

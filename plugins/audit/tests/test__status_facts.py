@@ -205,6 +205,87 @@ def _cases(check):
     check("s3 an empty submodule list finds nothing and says nothing",
           M.submodule_conflicts(_sm, []) == [])
 
+    # --- priority: the sort re-orders the ready list and cannot change it -----
+    # THE FIXTURE VALUES ARE CHOSEN SO THE TWO IMPLEMENTATIONS DISAGREE. The
+    # pinned phase is written LAST, so a version that ignored priority would
+    # answer P1.1 first and the pinned one third - which is the only reason
+    # these assertions can fail.
+    def _plan(pin=None, blocked=None):
+        phases = [
+            {"id": "P1", "title": "a", "status": "pending",
+             "tasks": [{"id": "P1.1", "title": "t", "status": "pending"},
+                       {"id": "P1.2", "title": "t", "status": "pending"}]},
+            {"id": "P2", "title": "b", "status": "pending",
+             "tasks": [{"id": "P2.1", "title": "t", "status": "pending"}]},
+            {"id": "P5", "title": "e", "status": "pending",
+             "tasks": [{"id": "P5.1", "title": "t", "status": "pending"}]},
+        ]
+        if pin is not None:
+            phases[2]["priority"] = pin
+        if blocked is not None:
+            phases[2]["blockedBy"] = blocked
+        return {"meta": {"version": 2}, "phases": phases}
+
+    _plain, _pinned = _plan(), _plan(pin=1)
+    check("pr1 SECOND-DIRECTION CASE: with no priority anywhere the ready list "
+          "is document order, byte for byte what the pre-priority loop emitted. "
+          "It reads vacuous and is the PROPERTY every case below is measured "
+          "against - what goes red the day the ready list starts being ranked by "
+          "something else entirely (pr2 is what catches the pin being ignored)",
+          M.ready_tasks(_plain) == ["P1.1", "P1.2", "P2.1", "P5.1"],
+          repr(M.ready_tasks(_plain)))
+    check("pr2 pinning the LAST phase moves its task to the front - the fixture "
+          "puts the pin last precisely so a version that ignored priority would "
+          "answer differently",
+          M.ready_tasks(_pinned) == ["P5.1", "P1.1", "P1.2", "P2.1"],
+          repr(M.ready_tasks(_pinned)))
+    check("pr3 THE SET IS UNCHANGED: not one id appears or disappears. Priority "
+          "re-sorts work that is ALREADY ready; it can reorder the answer and "
+          "must never be able to alter it",
+          sorted(M.ready_tasks(_pinned)) == sorted(M.ready_tasks(_plain)),
+          repr(M.ready_tasks(_pinned)))
+    check("pr4 ...and the unpinned phases keep their order relative to each "
+          "other, so adding one pin does not re-sort the rest of the plan",
+          [t for t in M.ready_tasks(_pinned) if not t.startswith("P5")]
+          == M.ready_tasks(_plain)[:3])
+    _blocked = _plan(pin=1, blocked=["P2"])
+    check("pr5 a PINNED phase whose blockedBy is unsatisfied is skipped: its "
+          "task is not ready, and priority never makes an unready task ready",
+          M.ready_tasks(_blocked) == ["P1.1", "P1.2", "P2.1"],
+          repr(M.ready_tasks(_blocked)))
+    check("pr6 ...and the skip is SAID, naming what it waits on and what runs "
+          "instead - one key, so the CLI, both reports and the panel print one "
+          "sentence rather than four",
+          M.priority_note(_blocked)
+          == "P5 holds priority 1 but is waiting on P2 (not done) - running "
+             "P1.1 instead",
+          repr(M.priority_note(_blocked)))
+    check("pr7 SECOND-DIRECTION CASE: an honoured pin produces NO note. This is "
+          "what goes red if the note becomes unconditional and every run starts "
+          "carrying a sentence about a pin that was fine",
+          M.priority_note(_pinned) is None and M.priority_note(_plain) is None,
+          repr(M.priority_note(_pinned)))
+    _roll = M.rollup(_blocked, [], [])
+    check("pr8 rollup carries the note under `priorityNote`, ALWAYS present so "
+          "no consumer has to probe for the key",
+          "priorityNote" in _roll and _roll["priorityNote"]
+          == M.priority_note(_blocked), repr(_roll.get("priorityNote")))
+    check("pr9 ...and it is None rather than absent when there is nothing to "
+          "say, so 'no pin was skipped' and 'nobody looked' stay different",
+          M.rollup(_plain, [], [])["priorityNote"] is None)
+    check("pr10 each phase row carries the tier the run actually honours - "
+          "resolved through `_priority.tier_of`, so a badge can never advertise "
+          "a pin the sort ignores",
+          [p["priority"] for p in _roll["phases"]] == [None, None, 1],
+          repr([p.get("priority") for p in _roll["phases"]]))
+    _junk = _plan()
+    _junk["phases"][2]["priority"] = "1"
+    check("pr11 ...and a `priority` that is not a positive integer reads as no "
+          "pin in BOTH the badge and the order - one answer, from one function",
+          M.rollup(_junk, [], [])["phases"][2]["priority"] is None
+          and M.ready_tasks(_junk) == M.ready_tasks(_plain),
+          repr(M.ready_tasks(_junk)))
+
 
 def _selftest():
     return _harness.run(_cases)

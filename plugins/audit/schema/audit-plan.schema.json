@@ -660,6 +660,11 @@
         "claim": {
           "$ref": "#/$defs/claim"
         },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which phase the orchestrator reaches for first among the tasks that are ALREADY ready. It never makes an unready task ready and never skips a dependency: a pinned phase whose blockedBy is unsatisfied is skipped, and /audit:status says so. Tier 1 is unique (a second holder is a warning naming the manifest-order tie-break); higher tiers are shared. An ABSENT priority means unprioritised — it sorts after every prioritised phase and keeps manifest order among its peers, so a plan with no priority anywhere runs exactly as it did before the field existed. INDEX-ONLY in the v3 sharded layout: it belongs on the index stub, which already carries status, so execution order is computable without opening a shard; a copy found in a shard body is ignored and reported."
+        },
         "status": {
           "$ref": "#/$defs/status"
         },

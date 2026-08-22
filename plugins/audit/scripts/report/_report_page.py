@@ -823,11 +823,26 @@ def _ready_block(manifest, summary):
     section at all, because the hero's "Nothing ready / nothing left to run" line
     already IS the empty state, with more context than a heading over nothing
     could carry."""
+    # The pin that could not be honoured, from the same `summary` key the CLI, the
+    # Markdown twin and the panel read. It is the ONE case that brings the section
+    # back when nothing is ready: the hero's "Nothing ready" line is the empty
+    # state, but a phase pinned first and skipped is news the empty state does not
+    # carry, and a skip nobody mentions reads as the plan being followed.
+    pnote = summary.get("priorityNote")
+    # `.muted` rather than a class of its own: the note is a sentence, the
+    # stylesheet already has a voice for a sentence, and a new selector would be
+    # a CSS change to carry for one paragraph. `data-note` is what a pin (and a
+    # reader in devtools) identifies it by.
+    note_html = ('<p class="muted" data-note="priority">%s</p>'
+                 % e(pnote)) if pnote else ""
     if not summary["ready"]:
-        return [], []
+        if not pnote:
+            return [], []
+        record = ("ready", "Ready now", 0, False)
+        return ['<h2 id="%s">Ready now</h2>%s' % (_anchor(record), note_html)], [record]
     record = ("ready", "Ready now", len(summary["ready"]), False)
-    return ['<h2 id="%s">Ready now</h2>%s'
-            % (_anchor(record),
+    return ['<h2 id="%s">Ready now</h2>%s%s'
+            % (_anchor(record), note_html,
                _ready_now_dl(manifest, summary["ready"]))], [record]
 
 

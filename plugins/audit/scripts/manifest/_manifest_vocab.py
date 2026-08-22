@@ -168,6 +168,12 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # may carry an optimistic parallel-run claim (both surface on the
                # assembled phase via _manifest_io):
                "shard", "claim",
+               # Which phase the orchestrator reaches for first among the work
+               # that is ALREADY ready. INDEX-ONLY in the sharded layout, like
+               # `claim` (_manifest_io.INDEX_ONLY_FIELDS), and never a permission:
+               # a dependency always wins, so a pinned phase that is blocked is
+               # skipped and the skip is reported.
+               "priority",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a

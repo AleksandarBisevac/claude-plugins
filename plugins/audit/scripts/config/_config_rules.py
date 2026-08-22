@@ -69,7 +69,7 @@ KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "planGate",
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
-    "journal", "policy", "ui",
+    "journal", "policy", "ui", "priority",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
@@ -94,6 +94,9 @@ KNOWN_BANDS = {"highUSD", "outlierUSD"}
 # so a repo that moves its plan takes the record of it along. Same shape as
 # usage.bands: a null here is an answer, not a missing value.
 KNOWN_JOURNAL = {"enabled", "dir", "strictManifestState"}
+# Phase prioritisation. One key, and it is advisory: see `_check_root`'s note on
+# why nothing clamps to it.
+KNOWN_PRIORITY = {"maxTier"}
 # "deny" is deliberately absent: the orchestrator completes tasks through the
 # same edit tools the guard watches, so strict mode can only ever ASK.
 STRICT_MANIFEST_STATE = ("off", "ask")
@@ -263,6 +266,27 @@ def validate_config(obj):
             if th is not None and not (isinstance(th, str) and th.strip()):
                 findings.append("ui.theme must be a non-empty string (a preset "
                                 "name or a path) or null")
+
+    # Phase prioritisation. `maxTier` is ADVISORY and nothing clamps to it, so
+    # the only thing worth a finding is a value that could not be a tier at all:
+    # a phase pinned above the maximum still runs, in tier order, and the write
+    # path says so — but `maxTier: 0` or `"9"` would make the panel's control
+    # offer an empty range while reading like a setting.
+    pri = obj.get("priority")
+    if pri is not None:
+        if not isinstance(pri, dict):
+            findings.append("priority must be an object, got %s"
+                            % type(pri).__name__)
+        else:
+            for k in _real_keys(pri):
+                if k not in KNOWN_PRIORITY:
+                    warnings.append("unknown priority key %r" % k)
+            if "maxTier" in pri:
+                mt = pri["maxTier"]
+                if isinstance(mt, bool) or not isinstance(mt, int) or mt < 1:
+                    findings.append("priority.maxTier must be a positive "
+                                    "integer - it is the highest tier the panel "
+                                    "offers, and nothing is clamped to it")
 
     us = obj.get("usage")
     if us is not None:

@@ -11,6 +11,9 @@
  *   which is the only part of it this tab edits
  * @property {string[]} area - the phase's area tags
  * @property {string|null} reviewSkill
+ * @property {number|null} priority - the tier as `_priority.tier_of` reads it, so
+ *   a value the run does not honour never reaches a control. null is
+ *   unprioritised, which is a class of its own rather than tier 0
  */
 
 /**
@@ -74,6 +77,31 @@ let MITEMS=null;
  * @returns {ModelItem[]} manifest names first, then rate names, then ledger
  *   names, each group sorted and each name appearing once
  */
+/**
+ * The highest tier the phase-priority control offers.
+ *
+ * The project's `priority.maxTier` when it sets one, otherwise the DEFAULT the
+ * server hands over in `STATE.defaults` — which is `hooks/_config.py`'s dict, the
+ * one place the whole config's shape is stated. A literal here would be a second
+ * copy of that setting, free to disagree with the validator and with
+ * `set-priority.py` about what the panel is allowed to offer.
+ *
+ * It is a CEILING ON THE MENU, not on the value: nothing is clamped, so a phase
+ * already pinned above it keeps its tier and the control offers that tier too.
+ *
+ * @returns {number} a positive integer; the shipped default when the config and
+ *   the defaults block are both unusable, because a control with no range is a
+ *   control that silently unpins every phase. That last-resort literal is the
+ *   one value written twice in two languages, so the agreement is PINNED by a
+ *   case against `hooks/_config.py` rather than asserted in this sentence
+ */
+function prioMax(){
+ const cfg=((STATE||{}).config||{}).priority||{};
+ const def=((STATE||{}).defaults||{}).priority||{};
+ for(const v of [cfg.maxTier,def.maxTier])
+  if(typeof v==='number'&&Number.isInteger(v)&&v>=1)return v;
+ return 9;}
+
 function modelItems(){
  if(MITEMS)return MITEMS;
  const out=new Map();
@@ -389,10 +417,34 @@ function renderComp(){closeCombo();
   // all fifty of them — a <label> here would name fifty controls identically,
   // which conforms and helps nobody. The name folds in the phase id and still
   // contains the visible word, so SC 2.5.3 Label in Name holds as well.
+  // ONE patch object per phase, the shape the task rows already use. The old
+  // spelling assigned a fresh `{reviewModel:…}` on every keystroke, which was
+  // correct while a phase had exactly one control and silently DISCARDS the
+  // other the moment it has two.
+  const pp={};
   const rev=el('input',{value:ph.reviewModel??'','data-revmodel':ph.id||'',placeholder:'review model',
     'aria-label':'review model for phase '+(ph.id||'')});
-  const setRev=v=>{patch.phases[ph.id]={reviewModel:v||null};};
+  const setRev=v=>{pp.reviewModel=v||null;patch.phases[ph.id]=pp;};
   rev.oninput=()=>setRev(rev.value.trim());
+  // Which phase the pipeline reaches for first AMONG THE WORK THAT IS ALREADY
+  // READY. The range comes from the config (falling back to the shipped default
+  // the server hands over), never from a literal here: a second copy of maxTier
+  // in the browser is a second setting.
+  const maxTier=prioMax();
+  const prio=el('select',{'data-priority':ph.id||'',
+    'aria-label':'priority for phase '+(ph.id||'')});
+  prio.append(el('option',{value:''},'no priority'));
+  for(let i=1;i<=maxTier;i++)prio.append(el('option',{value:String(i)},String(i)));
+  // A tier ABOVE the maximum is still a real pin — nothing is clamped — so the
+  // control offers it rather than silently resetting the phase to "no priority".
+  if(ph.priority!=null&&ph.priority>maxTier)
+   prio.append(el('option',{value:String(ph.priority)},String(ph.priority)));
+  prio.value=ph.priority==null?'':String(ph.priority);
+  prio.onchange=()=>{pp.priority=prio.value?Number(prio.value):null;
+    patch.phases[ph.id]=pp;};
+  // Same STOP as the review combo: the phase row toggles on click, and choosing
+  // a tier must not also collapse the phase under the menu.
+  prio.onclick=e=>e.stopPropagation();
   const revCombo=comboWrap(rev,modelItems,(name,close)=>{
     rev.value=name;setRev(name);close();});
   // The STOP moved from the input to its combo WRAPPER: the phase row toggles
@@ -413,7 +465,9 @@ function renderComp(){closeCombo();
           'all tasks done — awaiting sign-off (/audit:review)')
       :null,
     el('span',{class:'comp-review'},flabel('review',MDESC.phaseReviewModel,
-      {comp:'phaseReviewModel',label:'Phase review model'}),revCombo))));
+      {comp:'phaseReviewModel',label:'Phase review model'}),revCombo),
+    el('span',{class:'comp-priority'},flabel('priority',MDESC.phasePriority,
+      {comp:'phasePriority',label:'Phase priority'}),prio))));
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
   tbody.append(pr);
   const taskEls=[];

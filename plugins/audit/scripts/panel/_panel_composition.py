@@ -40,6 +40,7 @@ _output.install_path()
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _branch                # noqa: E402  (the naming convention, one expansion path)
+import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -291,7 +292,12 @@ def _composition_view(manifest):
         review = ph.get("review") if isinstance(ph.get("review"), dict) else {}
         phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
                            "status": ph.get("status"), "reviewModel": review.get("model"),
-                           "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill")})
+                           "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill"),
+                           # Through `_priority.tier_of`, never off the raw field:
+                           # a value that is not a positive integer orders nothing,
+                           # and a control showing it as a tier would offer to keep
+                           # a pin the run does not honour.
+                           "priority": _priority.tier_of(ph)})
     for ph, t in _mio.iter_tasks(manifest):
         tasks_out.append({
             "id": t.get("id"), "title": t.get("title"),

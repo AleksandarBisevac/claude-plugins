@@ -688,6 +688,16 @@ SCHEMA_EXEMPTIONS = {
         "ABOUT WHAT IS PUBLISHED, NOT A GAP IN THE GENERATOR: "
         "generate(with_claim=True) stamps one for a suite that throws its fixture "
         "away, and no CLI flag reaches it. See the section above _claim_for.",
+    "phase.priority":
+        "which phase the pipeline reaches for first among the work that is "
+        "ALREADY ready. Absent is not a gap here, it is the demonstrated state: "
+        "the fixture's whole point is a plan running in written order, and a pin "
+        "in it would reorder the ready list under a report and a panel whose "
+        "committed screenshots show that order. The field is index-only, so in "
+        "the sharded form it would also have to be stamped on a stub this "
+        "generator does not build. Coverage lives in tests/test__priority.py "
+        "(the comparator) and tests/test_set_priority.py (the write). REVISIT "
+        "when the panel's phase row grows a priority badge worth a screenshot.",
     "claim.at":
         "a field of phase.claim, which the default fixture does not take: the "
         "timestamp a lease nobody holds would carry is not a fact about the demo. "

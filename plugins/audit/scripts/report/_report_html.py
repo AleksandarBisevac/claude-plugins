@@ -60,6 +60,7 @@ _output.install_path()
 import _ui_theme as _theme  # noqa: E402  (tokens + labels shared with the panel)
 import _areas  # noqa: E402  (one home for tag derivation; stdlib-only, no cycle)
 import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
+import _priority  # noqa: E402  (what a valid tier is - one answer, shared with the CLI)
 
 
 # Chip and pipeline-rail colors live in the report's CSS theme tokens (see
@@ -735,9 +736,20 @@ def _risk_chip(risk):
 
 
 def _phase_meta_div(phase):
-    """Muted sub-line for a phase group-row: desired outcome, branch, merge
-    timestamp, and (once signed off) the summary — all escaped."""
+    """Muted sub-line for a phase group-row: the priority pin, desired outcome,
+    branch, merge timestamp, and (once signed off) the summary — all escaped.
+
+    The pin leads because it is the only bit that answers "when does this run"
+    rather than "what is it". It reads the tier through `_priority.tier_of`, not
+    off the raw field: a `priority` that is not a positive integer orders
+    nothing, and a badge rendered from the raw value would advertise a pin the
+    run does not honour. The table itself stays in MANIFEST order — the written
+    plan is the plan, and priority only re-sorts which READY task goes first.
+    """
     bits = []
+    tier = _priority.tier_of(phase)
+    if tier is not None:
+        bits.append("priority %d" % tier)
     if phase.get("desiredOutcome"):
         bits.append("Desired: " + e(phase["desiredOutcome"]))
     if phase.get("branch"):

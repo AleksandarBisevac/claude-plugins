@@ -157,8 +157,19 @@ def render_md(manifest, summary, usage=None):
                 cell(prop.get("id")), cell(prop.get("name")), cell(status),
                 cell(len(tasks)), cell(note or "—")))
         out.append("")
+    # The pin that could not be honoured, from the same `summary` key the CLI,
+    # the HTML report and the panel read. It prints with an EMPTY ready list too,
+    # under a heading of its own: "nothing is ready" and "the phase you pinned is
+    # blocked" are different news, and folding the second into the silence of the
+    # first is what this note exists to stop.
+    pnote = summary.get("priorityNote")
     if summary["ready"]:
-        out += ["## Ready now", "", ", ".join(cell(r) for r in summary["ready"]), ""]
+        out += ["## Ready now", ""]
+        if pnote:
+            out += ["> %s" % cell(pnote), ""]
+        out += [", ".join(cell(r) for r in summary["ready"]), ""]
+    elif pnote:
+        out += ["## Ready now", "", "> %s" % cell(pnote), ""]
     usage_md = _usage_md(usage)
     if usage_md:
         out.append(usage_md)

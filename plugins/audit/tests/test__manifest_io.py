@@ -401,6 +401,79 @@ def _cases(check):
         check("effective_bug_status: an EMPTY taskId never matches an '' key either",
               M.effective_bug_status({"id": "B9", "status": "in_progress",
                                       "taskId": ""}, unfiltered_idx) == "in_progress")
+
+        # --- index-only fields ------------------------------------------------
+        # `claim` falls BACK from the stub; an index-only field is stricter than
+        # that and the difference is the whole point: the stub wins outright, so
+        # a value in a body can never quietly become the one in force.
+        check("io1 an index-only field on the stub reaches the assembled phase",
+              M._merge_phase({"id": "P1", "priority": 2},
+                             {"id": "P1", "status": "pending"}
+                             ).get("priority") == 2)
+        check("io2 a value in the BODY is dropped, not merged - it would "
+              "otherwise order a run nobody could see without opening every "
+              "shard, which is the cost the sharded layout exists to avoid",
+              "priority" not in M._merge_phase(
+                  {"id": "P1"}, {"id": "P1", "priority": 2}))
+        check("io3 ...and when BOTH carry one the stub's wins, in the direction "
+              "opposite to `claim` - so the two cannot be confused for one rule",
+              M._merge_phase({"id": "P1", "priority": 1},
+                             {"id": "P1", "priority": 9}).get("priority") == 1)
+        check("io4 SECOND-DIRECTION CASE: a phase with no index-only field "
+              "anywhere assembles byte-identically to before - this reads "
+              "vacuous and is what fails if the merge ever writes a default",
+              M._merge_phase({"id": "P1", "title": "t"},
+                             {"id": "P1", "status": "pending", "tasks": []})
+              == {"id": "P1", "title": "t", "status": "pending", "tasks": []})
+        _src = {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "a", "status": "pending", "priority": 1,
+             "tasks": []},
+            {"id": "P2", "title": "b", "status": "pending", "tasks": []}]}
+        _idx, _shards = M.split_manifest(_src)
+        check("io5 split MOVES the field onto the stub...",
+              _idx["phases"][0].get("priority") == 1, repr(_idx["phases"][0]))
+        check("io6 ...and OUT of the shard body, so a migration cannot produce "
+              "in one step the state `index_only_in_bodies()` exists to report",
+              "priority" not in _shards["P1"], repr(_shards["P1"]))
+        check("io7 ...while leaving the caller's own phase dict untouched - "
+              "split must not mutate the manifest it was handed",
+              _src["phases"][0].get("priority") == 1)
+        check("io8 ...and a phase with no such field keeps the stub it always "
+              "had, so an existing manifest splits to the same bytes",
+              set(_idx["phases"][1]) == {"id", "title", "shard"},
+              repr(_idx["phases"][1]))
+        _iodir = os.path.join(tmp, "io-index-only")
+        os.makedirs(_iodir)
+        _iop = os.path.join(_iodir, "audit-plan.json")
+        M.save_sharded(_iop, _src)
+        check("io9 the round trip preserves it: split writes the stub, load "
+              "reads it back",
+              M.load_manifest(_iop)["phases"][0].get("priority") == 1)
+        check("io10 SECOND-DIRECTION CASE: a clean sharded manifest reports no "
+              "index-only field in any body. An empty list is also what a "
+              "scanner that never opened a shard returns, which is why io11 "
+              "exists beside it",
+              M.index_only_in_bodies(_iop) == [], repr(M.index_only_in_bodies(_iop)))
+        _body_path = os.path.join(_iodir, "phases", "P2.json")
+        with open(_body_path, encoding="utf-8") as fh:
+            _body = json.load(fh)
+        _body["priority"] = 4
+        with open(_body_path, "w", encoding="utf-8") as fh:
+            json.dump(_body, fh)
+        check("io11 ...and a value written into a body IS named, with its phase "
+              "and its field - the assembled manifest has already dropped it, "
+              "so this is the only place the reader can be told",
+              M.index_only_in_bodies(_iop) == [("P2", "priority")],
+              repr(M.index_only_in_bodies(_iop)))
+        _flat = os.path.join(_iodir, "flat.json")
+        with open(_flat, "w", encoding="utf-8") as fh:
+            json.dump(_src, fh)
+        check("io12 a SINGLE-FILE manifest has no bodies, so the answer is "
+              "empty rather than an error about a layout it does not use - and "
+              "the file really exists, because a missing one answers the same "
+              "way and would make this assert nothing",
+              os.path.isfile(_flat) and M.index_only_in_bodies(_flat) == [],
+              repr(M.index_only_in_bodies(_flat)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

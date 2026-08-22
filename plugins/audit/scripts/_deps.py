@@ -135,6 +135,16 @@ LAYERS = (
      # doctor (L5) and the naming guard all need the SAME answer. A second
      # expansion of the template would be a second set of branch names.
      "_branch",
+     # `_priority` answers which READY task the orchestrator reaches for first.
+     # Same shape and same reason as `_branch`: it is arithmetic over the manifest
+     # dict, it reaches nothing but `_output`, and it sits at L1 because four
+     # surfaces need the SAME answer - `_status_facts` (L2) for the ready list,
+     # `_manifest_crossrefs` (L2) for the findings, `_panel_composition` (L4) for
+     # the control and `set-priority` for the write. A second expression of the
+     # order would BE a second order. `TERMINAL` and the unmet-refs map are
+     # `_manifest_io`'s and arrive as ARGUMENTS for exactly this reason: that
+     # module is a layer-mate, and readiness must never have a second opinion.
+     "_priority",
      # `_commit_trail` answers "is this recorded task.commit still reachable?".
      # L1 because BOTH the doctor (L5) and `repair-commits` (an entry point) ask
      # it, and a second walk over the same tasks putting the same question to git
@@ -417,6 +427,13 @@ LAYERS = (
      # Bash, and a `python3 -c` naming a source path is the shape
      # `guard-secrets-read` refuses (F20/F22).
      "verify-invariants",
+     # `set-priority` is the writer behind `/audit:task priority`: one integer on
+     # the index stub, under the index lock, revalidated. A command rather than a
+     # prose instruction because the rule it enforces (tier 1 is unique, and a
+     # refusal must NAME the current holder) is the same rule the panel's write
+     # path asks `_priority.tier_one_holder()` for - two places deciding what is
+     # legal are two rules that will disagree.
+     "set-priority",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 

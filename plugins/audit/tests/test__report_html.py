@@ -435,6 +435,25 @@ def _cases(check):
           '--w:50%' in M._bar(1, 2) and "1/2" in M._bar(1, 2))
     check("_bar is 0% for a zero total (never a ZeroDivisionError)",
           '--w:0%' in M._bar(0, 0) and "0/0" in M._bar(0, 0))
+    check("_phase_meta_div leads with the priority pin - the only bit that "
+          "answers WHEN this runs rather than what it is",
+          M._phase_meta_div({"priority": 2, "branch": "audit/p1"})
+          .index("priority 2")
+          < M._phase_meta_div({"priority": 2, "branch": "audit/p1"})
+          .index("branch audit/p1"),
+          M._phase_meta_div({"priority": 2, "branch": "audit/p1"}))
+    check("...and a `priority` the run does not honour draws NO badge, because "
+          "it is read through `_priority.tier_of` rather than off the field - a "
+          "badge from the raw value would advertise a pin nothing follows",
+          M._phase_meta_div({"priority": "2"}) == ""
+          and M._phase_meta_div({"priority": 0}) == "",
+          M._phase_meta_div({"priority": "2"}))
+    check("SECOND-DIRECTION CASE: an unpinned phase's sub-line is what it always "
+          "was. Reads vacuous, and is the only case that fails if the badge "
+          "becomes unconditional and every phase grows a 'priority None'",
+          M._phase_meta_div({"branch": "audit/p1"}) == M._phase_meta_div(
+              {"branch": "audit/p1", "priority": None}),
+          M._phase_meta_div({"branch": "audit/p1"}))
 
 
 def _selftest():

@@ -98,6 +98,8 @@ claude-plugins/                           # this repo (personal, public)
           materialize-proposal.py         # the command door onto it: arguments, printing, exit codes
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
           _branch.py                      # where a phase's branch forks from, and what it is called
+          _priority.py                    # which READY task runs first: the one expression of execution order
+          set-priority.py                 # the door onto it: pin a phase, or unpin it, under the index lock
           _commit_trail.py                # is a recorded task.commit still reachable from any ref?
           _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
@@ -240,6 +242,7 @@ L1:
   _manifest_io -> _output
   _manifest_vocab -> _output
   _policy -> _output
+  _priority -> _output
   _refs -> _output
   _ui_theme -> _output
   _usage_core -> _output
@@ -250,13 +253,13 @@ L2:
   _doctor_report -> _loader, _output
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _manifest_vocab, _output
-  _manifest_crossrefs -> _manifest_vocab, _output
+  _manifest_crossrefs -> _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
-  _report_html -> _areas, _manifest_io, _output, _ui_theme
+  _report_html -> _areas, _manifest_io, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
-  _status_facts -> _areas, _manifest_io, _output
+  _status_facts -> _areas, _manifest_io, _output, _priority
   _usage_coverage -> _output, _usage_core
   _usage_economics -> _output, _usage_core
   _usage_routing -> _output, _usage_core
@@ -279,7 +282,7 @@ L4:
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _areas, _branch, _manifest_io, _output, _panel_paths
+  _panel_composition -> _areas, _branch, _manifest_io, _output, _panel_paths, _priority
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _locks, _output, _panel_paths
@@ -297,7 +300,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _areas, _manifest_io, _output, _panel_settings, _panel_state, _policy, _proposals, _ui_theme
+  _panel_write -> _areas, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
@@ -305,7 +308,7 @@ L7:
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
   audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
-  audit-task -> _locks, _manifest_io, _output, _panel_write
+  audit-task -> _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _output
   explain-ado-drift -> _ado_drift, _output
@@ -317,6 +320,7 @@ L7:
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-branch -> _branch, _manifest_io, _output
+  set-priority -> _manifest_io, _output, _panel_write, _priority
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output
   verify-invariants -> _invariants, _manifest_io, _output
@@ -652,6 +656,68 @@ here is the version that says why. Everything else reports and returns 0: a type
 `meta.branch.types` warns that branch operations on it will prompt, and a phase whose parent is
 not the development branch prints the note the sign-off report must repeat — that the work has
 **not** reached the development branch until that parent is itself merged.
+
+### `plugins/audit/scripts/manifest/_priority.py`
+Which READY task the orchestrator reaches for first. Execution order used to be implicit in the
+array — `phases[]` in written order, then task id inside a phase — so the only way to say "this
+phase first" was to physically move the phase, which is a structural edit of the whole file and,
+in the sharded layout, an edit of the index. Nobody does that in flight, and the workaround was to
+hang `blockedBy` off every *other* phase.
+
+**One sentence closes the whole class of bugs a scheduler would open:** *priority re-sorts only
+tasks that are already ready; it never makes an unready task ready and never skips a dependency.*
+`_status_facts.ready_tasks()` decides readiness exactly as before and this only sorts its output,
+so a pin cannot break correctness — only order. A phase pinned first whose own `blockedBy` is
+unsatisfied is therefore **skipped**, and `pinned_but_blocked()` exists so the skip is *said*:
+`rollup()` carries the sentence as `priorityNote`, and the CLI, both reports and the panel each
+print that one key rather than four renderings that drift.
+
+**An absent priority means unprioritised** — not tier 0, not a middle tier. It sorts after every
+pinned phase and keeps manifest order among its peers, which is a testable property rather than a
+taste: adding a pin to one phase must not re-sort the rest, and a plan with no `priority` anywhere
+must order exactly as it did before the field existed. That last one is the case that goes red if
+`sort_key` ever becomes unconditional.
+
+Layer 1, for `_branch`'s reason and in the same words: four surfaces need the same answer —
+`_status_facts` for the ready list, `_manifest_crossrefs` for the warnings, `_panel_composition`
+for the control and `set-priority.py` for the write — and a second expression of the order would
+*be* a second order. It reaches nothing but `_output`. Two things it deliberately does not own:
+`TERMINAL` and the unmet-refs map are `_manifest_io`'s, at the same layer and so not importable,
+and they arrive as arguments — readiness must never have a second opinion. `maxTier` is a *config*
+value, so `over_max()` takes it rather than carrying a default that would be a second copy of
+`hooks/_config.py`'s.
+
+Tier 1 is the only unique tier, and uniqueness is held three ways rather than one: the write path
+refuses a second holder and **names the current one**, the validator reports a doubled tier as a
+**warning** (never a finding — see below), and `tier_one_holder()` gives a deterministic tie-break,
+first in manifest order. `priority` is **index-only** in the sharded layout
+(`_manifest_io.INDEX_ONLY_FIELDS`); a copy found in a shard body is ignored *and reported*, by
+`_manifest_io.index_only_in_bodies()`, because the assembled manifest has already dropped it and
+that is precisely the state a reader must be told about.
+
+**Every priority rule is a warning, and that is the decision.** A finding would make the manifest
+invalid — refusing the next `/audit:task add`, redding `--gate` on the `invalid` condition, and
+making `set-priority.py --force` roll back the write it was explicitly asked to force. A
+disagreement about *order* must not stop the pipeline; it must not be silent either.
+
+### `plugins/audit/scripts/manifest/set-priority.py`
+The door onto `_priority`, and the writer behind `/audit:task priority`.
+`set-priority.py <manifest> <phaseId> <tier>` pins a phase, `--clear` unpins it, `--force` writes a
+second holder of tier 1 anyway. It writes **one file, the index** — in the sharded layout the stub,
+in the single-file layout the manifest itself — under the index lock, revalidates from disk, rolls
+every written byte back on findings, and appends a `phase.priority` journal row carrying both ends
+of the change.
+
+Whether tier 1 is free is asked of `_priority.tier_one_holder()`, **the same function the panel's
+write path asks**. That is the Policy tab's arrangement applied to a second feature: the verdict a
+UI shows comes from the function the writer calls, so the panel cannot promise a write the CLI
+refuses. `priority.maxTier` is printed as a note and nothing is clamped to it — a clamped value is
+a file that says one thing and a run that does another.
+
+Its lock, project resolution, snapshot and rollback are `_panel_write`'s functions rather than
+copies: two writers with two rollbacks are two answers, and reaching `audit-task.py` through the
+loader would have been an entry point loading an entry point — the edge `KNOWN_LAYER_DEBT` exists
+to keep at zero new entries.
 
 ### `plugins/audit/scripts/manifest/_commit_trail.py` + `repair-commits.py`
 Is every recorded `task.commit` still reachable, and what to write when one is not. The manifest
@@ -1327,8 +1393,13 @@ THREE-VALUED: declared true, declared false, and **not established**, which is r
 exactly that and never as "off". Grading follows the doctor's own taxonomy rather than how
 alarming the subject sounds — an explicitly disabled sandbox is broken now (FINDING), an
 undeclared one will bite later (WARNING), and a missing dotenv deny rule is a WARNING beside a
-working sandbox but a FINDING when neither layer is established, because at that point the only
-thing between a secret and the transcript is a regex over tool-call text. Scalars take the
+working sandbox but a FINDING beside an explicitly disabled one, because at that point the only
+thing between a secret and the transcript is a regex over tool-call text. When the sandbox is
+merely UNATTESTED the missing rule is a WARNING as well, and that is the same principle rather
+than a discount: a finding there would assert the layer is absent, which is exactly what this
+check cannot establish, and `/audit:doctor` exits non-zero on findings — so grading it that way
+failed the doctor for every repo that had configured neither layer, on upgrade, in CI. The
+warning says WHICH of the two it is. Scalars take the
 highest-precedence file that defines them; rule LISTS merge across scopes, the way Claude Code
 merges them. An unparseable settings file is reported, not skipped — the harness is not
 applying its rules either, and "no rule found" would name the wrong cause.

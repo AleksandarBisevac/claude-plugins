@@ -78,6 +78,18 @@ def main(argv):
         print("FINDING: internal validator error: %s" % exc)
         return 1
 
+    # The one question `validate()` cannot be asked. It takes the ASSEMBLED
+    # manifest, and an index-only field written into a shard body is already gone
+    # by then - which is precisely the state worth saying out loud, because the
+    # value LOOKS accepted and orders nothing. This command has the path, so it
+    # asks `_manifest_io` where both halves of the file are open.
+    warnings = list(warnings) + [
+        "phase %s: %r sits in the shard body, where nothing reads it - it is an "
+        "INDEX-ONLY field (the stub carries it so the order is computable "
+        "without opening a shard); this copy was ignored"
+        % (pid or "?", field)
+        for pid, field in _mio.index_only_in_bodies(argv[0])]
+
     for line in warnings:
         print("WARNING: " + line)
 

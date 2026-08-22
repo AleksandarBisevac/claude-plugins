@@ -321,6 +321,28 @@ def _cases(check):
           and M._bugs_block(dict(_m, bugs=[]), _s) == ([], [])
           and M._ready_block(_m, dict(_s, ready=[])) == ([], []))
 
+    # --- the pin that could not be honoured (one summary key, four surfaces) ---
+    _pn = "P5 holds priority 1 but is waiting on P2 (not done) - running P1.1 instead"
+    _withnote = M._ready_block(_m, dict(_s, priorityNote=_pn))[0][0]
+    check("pg14 the note rides the Ready section, once, identified by an "
+          "attribute rather than a class of its own - the stylesheet already has "
+          "a voice for a sentence, and a new selector for one paragraph is a CSS "
+          "change to carry forever",
+          _withnote.count('data-note="priority"') == 1 and _pn in _withnote,
+          repr(_withnote[:200]))
+    check("pg15 ...and it is the ONE case that brings the section back when "
+          "nothing is ready. The hero's 'Nothing ready' line is the empty state; "
+          "a phase pinned first and skipped is news the empty state cannot carry",
+          M._ready_block(_m, dict(_s, ready=[], priorityNote=_pn))[1]
+          == [("ready", "Ready now", 0, False)],
+          repr(M._ready_block(_m, dict(_s, ready=[], priorityNote=_pn))))
+    check("pg16 SECOND-DIRECTION CASE: with no note the section is what it "
+          "always was, and an empty ready list still emits nothing. This reads "
+          "vacuous and is what fails if the note becomes unconditional",
+          'data-note="priority"' not in M._ready_block(_m, _s)[0][0]
+          and M._ready_block(_m, dict(_s, ready=[], priorityNote=None))
+          == ([], []))
+
 
 def _selftest():
     return _harness.run(_cases)
