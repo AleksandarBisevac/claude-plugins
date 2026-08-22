@@ -56,6 +56,7 @@ def _cases(check):
     check("a6 a nonsense `default` falls back to allow rather than being trusted",
           M.policy_cfg({"policy": {"mcp": {"default": "denied"}}})["mcp"]["default"]
           == "allow")
+
     check("a6b ...and a nonsense `onViolation` falls back to deny, which is the "
           "written intent: the file says refuse, and only the WORD for how is "
           "unreadable (the validator calls it a finding either way)",
@@ -65,6 +66,27 @@ def _cases(check):
           M.policy_cfg({"policy": {"skills": {"allow": "just-this-one",
                                               "deny": 7}}})["skills"]
           == {"default": "allow", "allow": [], "deny": [], "areas": {}})
+
+    # a6d/a6e: `_merge_kind` copied the shipped block with `dict(base)`, so every
+    # resolved policy handed out the SAME `allow`/`deny` lists that live in
+    # DEFAULTS. One caller appending to its own result poisoned the engine for the
+    # whole process - the panel and the doctor both resolve more than once. It
+    # survived because the only aliasing case in the tree asked the question of
+    # `_config.load()`, which deep-copied on the way out and hid this.
+    #
+    # A sentinel that could never be a real capability name, appended to the list a
+    # DENY consults: if the copy is shallow again, a6e's independent call refuses it.
+    _al = M.policy_cfg({})
+    _al["skills"]["deny"].append("ALIAS-PROBE-*")
+    _al["skills"]["areas"]["probe"] = {"deny": ["ALIAS-PROBE-*"]}
+    check("a6d mutating a resolved policy does not reach the engine's defaults",
+          "ALIAS-PROBE-*" not in M.DEFAULTS["skills"]["deny"]
+          and "probe" not in M.DEFAULTS["skills"]["areas"])
+    check("a6e ...nor the next call, which is the one a long-lived panel makes",
+          M.policy_cfg({})["skills"]["deny"] == []
+          and M.policy_cfg({})["skills"]["areas"] == {}
+          and M.resolve(M.policy_cfg({}), "skills",
+                        "ALIAS-PROBE-x")["verdict"] != "violation")
     check("a7 enabled:false is off, not inert-by-accident",
           M.is_active(M.policy_cfg({"policy": {"enabled": False,
                                                "skills": {"deny": ["x"]}}})) is False)

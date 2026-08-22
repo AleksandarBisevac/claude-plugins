@@ -64,6 +64,7 @@ This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__policy.py`, byte-identical labels and all - see
 `plugins/audit/tests/_harness.py`.
 """
+import copy
 import fnmatch
 import os
 import sys
@@ -193,7 +194,18 @@ def matches(name, patterns):
 
 
 def _merge_kind(base, over):
-    out = dict(base)
+    """`base` overlaid with `over`, sharing nothing mutable with `base`.
+
+    `dict(base)` is a SHALLOW copy, so the `allow`/`deny` lists and the `areas`
+    dict it returned were the very objects inside DEFAULTS. One caller appending
+    to a resolved policy poisoned the engine's shipped defaults for the rest of
+    the process, and every later `policy_cfg()` in that process resolved against
+    the poisoned list - a panel or doctor run is long enough to see it. It went
+    unnoticed because the only case asking about aliasing asked it of
+    `_config.load()`, which deep-copied its own DEFAULTS on the way out and hid
+    the fact that this function never did.
+    """
+    out = copy.deepcopy(base)
     if isinstance(over, dict):
         for k, v in over.items():
             out[k] = v
@@ -229,8 +241,11 @@ def policy_cfg(config):
             out[kind] = merged
         return out
     except Exception:
-        return {k: (dict(v) if isinstance(v, dict) else v)
-                for k, v in DEFAULTS.items()}
+        # Same reason as `_merge_kind`: `dict(v)` left the lists inside each kind
+        # aliased to DEFAULTS, so the FALLBACK path handed out a poisonable block
+        # too - and it is the path taken when a project's policy is malformed,
+        # which is exactly when nobody is looking closely.
+        return copy.deepcopy(DEFAULTS)
 
 
 def _area_rules(kind_cfg, key, active_tags):
