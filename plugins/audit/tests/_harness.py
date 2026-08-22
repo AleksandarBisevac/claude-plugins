@@ -69,6 +69,7 @@ the rest of the suite - `remind-tdd`'s selftest already hand-rolled exactly that
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import os
 import sys
 import traceback
@@ -148,6 +149,56 @@ def module_source(mod):
         return fh.read()
 
 
+def _module_body_offset(text):
+    """Where the CODE starts, for text that is a Python module with a docstring.
+
+    A marker quoted in a module's own docstring is prose ABOUT the code, so a
+    slice that starts there is a check about the wrong region - F21 was that
+    twice in one day. Both firings were loud, and the polarity that is not
+    happened to be absent rather than impossible: with the two markers named
+    either side of the flag in one plausible sentence, the `--name-only`
+    security case in `test__panel_viewer.py` passes on the docstring's prose
+    while guarding nothing - measured by injecting such a sentence into that
+    module's docstring and taking the slice, not argued from the shape.
+    Rewording the docstring - the repair that closed F21 - leaves that one edit
+    away, for every marker in every suite. Starting below the docstring does
+    not.
+
+    Text that is not a Python module keeps every byte: `ast.parse` refuses it
+    and the offset is zero. Text that IS one and has no docstring keeps every
+    byte too, because the first statement is then code the caller may point at.
+    """
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return 0
+    if not tree.body:
+        return 0
+    first = tree.body[0]
+    if not isinstance(first, ast.Expr):
+        return 0
+    if not isinstance(first.value, ast.Constant):
+        return 0
+    if not isinstance(first.value.value, str):
+        return 0
+    end_line = getattr(first, "end_lineno", None)
+    if end_line is None:
+        return 0
+    return len("".join(text.splitlines(True)[:end_line]))
+
+
+def _only_in_docstring(text, offset, marker):
+    """The half of a missing-marker message that says where the marker actually is.
+
+    "You moved it" and "you are pointing at your own prose" are different
+    diagnoses and the caller cannot tell them apart from the marker alone.
+    """
+    if offset and marker in text[:offset]:
+        return (" below its module docstring - it appears only INSIDE that "
+                "docstring, which is prose ABOUT the code and not the code")
+    return ""
+
+
 def between(text, start, end):
     """The slice of `text` after the first `start` and before the next `end`.
 
@@ -163,19 +214,26 @@ def between(text, start, end):
 
     An escape from here is not a crash: `run()` records it as a failing case with
     the traceback, so a marker that has moved is reported by name.
+
+    THE SLICE STARTS BELOW A MODULE DOCSTRING, which is where every marker this
+    is ever pointed at lives. `_module_body_offset` carries the reason and the
+    measurement; F21 is the entry.
     """
-    i = text.find(start)
+    offset = _module_body_offset(text)
+    body = text[offset:]
+    i = body.find(start)
     if i < 0:
-        raise ValueError("between(): start marker %r is not in the text - the "
+        raise ValueError("between(): start marker %r is not in the text%s - the "
                          "slice cannot be taken, and a whole-text fallback would "
-                         "be a check about the wrong region" % (start,))
-    j = text.find(end, i + len(start))
+                         "be a check about the wrong region"
+                         % (start, _only_in_docstring(text, offset, start)))
+    j = body.find(end, i + len(start))
     if j < 0:
-        raise ValueError("between(): end marker %r is not in the text after %r - "
+        raise ValueError("between(): end marker %r is not in the text after %r%s - "
                          "the slice would silently run to the end of the file and "
                          "every `not in` case over it would pass vacuously"
-                         % (end, start))
-    return text[i + len(start):j]
+                         % (end, start, _only_in_docstring(text, offset, end)))
+    return body[i + len(start):j]
 
 
 def _render(cases):
@@ -418,6 +476,56 @@ def _cases(check):
     check("s5 END is looked for AFTER start, so a marker that also appears "
           "before it cannot produce an empty slice",
           between("END aaa START middle END zzz", "START", "END") == " middle ")
+
+    # -- between(): a marker in the module docstring is prose, not code --------
+    # F21's remainder. Each fixture below is chosen so the pre-fix and post-fix
+    # implementations DISAGREE - a fixture both versions answer the same way
+    # would leave these green against a `between()` that never learned this.
+    _prose = ('"""`def target` runs with PAYLOAD before `def stop` ranks it.\n'
+              '"""\n'
+              'def target():\n'
+              '    return 1\n'
+              '\n'
+              'def stop():\n'
+              '    return 2\n')
+    # Through `attempt`, not bare: a mutation that makes this marker unfindable
+    # would otherwise escape and stop the suite AT this line, so the cases below
+    # would not run and a red-first proof would learn nothing about them.
+    _p_ok, _p_sl = attempt(between, _prose, "def target", "def stop")
+    check("s6 the QUIET polarity of F21: with both markers named either side of "
+          "a payload in the docstring, the pre-fix slice was that sentence and "
+          "the payload was IN it, so the case passed guarding nothing. The slice "
+          "is now the code, and the payload is absent from it",
+          _p_ok is True and "PAYLOAD" not in _p_sl and "return 1" in _p_sl,
+          repr(_p_sl))
+    _only_doc = ('"""The slice runs from `def gone` to `def alsogone`.\n'
+                 '"""\n'
+                 'def real():\n'
+                 '    return 1\n')
+    _d_ok, _d_msg = attempt(between, _only_doc, "def gone", "def alsogone")
+    check("s7 ...and F21's LOUD polarity now says which of the two diagnoses it "
+          "is: a marker that exists only in the docstring raises, and the "
+          "message names the docstring rather than only the marker",
+          _d_ok is False and "module docstring" in _d_msg, _d_msg)
+    # s8 LOOKS VACUOUS AND IS THE SECOND-DIRECTION CASE. It passes on the
+    # pre-fix code by construction; it is the only one here that fails if
+    # `_module_body_offset` starts returning an offset for anything - a broad
+    # `except`, or dropping the `isinstance` guards - because this text opens
+    # with a quoted string and is NOT a Python module.
+    _notpy = '"START only-in-the-leading-string END" {not python at all\n'
+    _n_ok, _n_sl = attempt(between, _notpy, "START", "END")
+    check("s8 text that is not a Python module keeps every byte: a leading "
+          "quoted string is not a docstring just because it looks like one",
+          _n_ok is True and _n_sl == " only-in-the-leading-string ", repr(_n_sl))
+    _nodoc = 'import os\n\n\ndef target():\n    return 1\n\n\ndef stop():\n    return 2\n'
+    check("s9 a module whose first statement is CODE keeps every byte too - the "
+          "caller may legitimately point at it, so only a docstring is skipped",
+          _module_body_offset(_nodoc) == 0, repr(_nodoc[:12]))
+    check("s10 the offset lands exactly where the docstring ends, not a line "
+          "either side of it - an off-by-one here would either re-admit the "
+          "prose or eat the first line of code",
+          _prose[_module_body_offset(_prose):].startswith("def target"),
+          repr(_prose[_module_body_offset(_prose):][:20]))
 
 
 def _selftest():
