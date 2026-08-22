@@ -126,25 +126,53 @@ def _cases(check):
         shutil.rmtree(box, ignore_errors=True)
         return rep
 
-    rep = sandbox_rep()
+    unattested = sandbox_rep()
     check("ds0a NO settings file at all: the sandbox is NOT ESTABLISHED, which "
           "is a warning and not a claim that it is off - no env var carries the "
           "state and a read-only doctor may not probe by writing: %r"
-          % (_detail(rep, "sandbox"),),
-          _levels(rep, "sandbox") == ["WARNING"]
-          and "cannot be attested" in _detail(rep, "sandbox"))
+          % (_detail(unattested, "sandbox"),),
+          _levels(unattested, "sandbox") == ["WARNING"]
+          and "cannot be attested" in _detail(unattested, "sandbox"))
     check("ds0b ...and with NEITHER layer established the missing deny rule is a "
-          "FINDING, because the only thing left between a secret and the "
-          "transcript is a regex over tool-call text: %r"
-          % (_detail(rep, "secret rules"),),
-          _levels(rep, "secret rules") == ["FINDING"]
-          and "no sandbox is established" in _detail(rep, "secret rules"))
+          "WARNING too, never a finding. A finding would assert the sandbox is "
+          "ABSENT, and absence is the one thing this check cannot establish - "
+          "managed policy and a --settings flag outrank every file it reads: %r"
+          % (_detail(unattested, "secret rules"),),
+          _levels(unattested, "secret rules") == ["WARNING"]
+          and "could not be established" in _detail(unattested, "secret rules"))
+    check("ds0b2 ...and the two warnings are not one generic line printed twice: "
+          "each names ITS OWN layer, and they carry different bases - the "
+          "deny-rule row says what it looked for and did not find, the sandbox "
+          "row says it could not look at all: %r / %r"
+          % (_detail(unattested, "sandbox"), _detail(unattested, "secret rules")),
+          _detail(unattested, "sandbox") != _detail(unattested, "secret rules")
+          and "no permission deny rule" in _detail(unattested, "secret rules")
+          and "no permission deny rule" not in _detail(unattested, "sandbox")
+          and "declares `sandbox`" in _detail(unattested, "sandbox"))
 
-    rep = sandbox_rep(proj={"sandbox": {"enabled": False}})
-    check("ds0c sandbox.enabled FALSE is a FINDING - broken now, not later: %r"
-          % (_detail(rep, "sandbox"),),
-          _levels(rep, "sandbox") == ["FINDING"]
-          and "project settings" in _detail(rep, "sandbox"))
+    # ds0c/ds0c2/ds0c3 ARE THE SECOND-DIRECTION CASES for ds0b, and they are the
+    # reason ds0b could be softened at all: collapse the graded branch into one
+    # unconditional warning and ds0b stays green forever while these go red. An
+    # explicitly disabled sandbox IS established - by the file that says so - so
+    # it keeps the finding and keeps failing the doctor.
+    off = sandbox_rep(proj={"sandbox": {"enabled": False}})
+    check("ds0c sandbox.enabled FALSE is a FINDING - broken now, not later, and "
+          "read from a file rather than inferred from silence: %r"
+          % (_detail(off, "sandbox"),),
+          _levels(off, "sandbox") == ["FINDING"]
+          and "project settings" in _detail(off, "sandbox"))
+    check("ds0c2 ...and the missing deny rule BESIDE a disabled sandbox is a "
+          "FINDING as well, naming the file that establishes it: both halves "
+          "are observed, so neither is a claim without a basis: %r"
+          % (_detail(off, "secret rules"),),
+          _levels(off, "secret rules") == ["FINDING"]
+          and "is false in project settings" in _detail(off, "secret rules"))
+    check("ds0c3 ...so the two states diverge at the EXIT CODE, which is the "
+          "user-visible half: a setup that cannot be attested does not fail the "
+          "doctor, an explicitly disabled sandbox does. Asserted as one pair, "
+          "because either half alone is green on a wrong implementation: %r vs %r"
+          % (unattested.exit_code(), off.exit_code()),
+          unattested.exit_code() == 0 and off.exit_code() == 1)
 
     # ds0d IS THE SECOND-DIRECTION MUTATION for ds0a/ds0c and it looks vacuous:
     # a check that reported "no sandbox" unconditionally passes ds0a and ds0c

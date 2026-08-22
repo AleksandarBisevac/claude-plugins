@@ -25,7 +25,9 @@ build; and one that mutates state cannot be run on a repo mid-phase.
 
 Output classes match the rest of the plugin:
   OK       — checked and healthy
-  WARNING  — works, but something will bite later (exit stays 0)
+  WARNING  — works, but something will bite later; or a fact this read-only
+             command may not establish, named as such rather than as its
+             absence (`sandbox`, `secret rules`). Exit stays 0 either way
   FINDING  — broken now (exit 1)
 Exit: 0 healthy (warnings allowed) · 1 findings · 2 usage error.
 
@@ -204,7 +206,8 @@ def render(rep, project, pt=None):
     if c["FINDING"]:
         lines.append("  Findings are broken now. Fix those first.")
     elif c["WARNING"]:
-        lines.append("  No findings - warnings are things that will bite later.")
+        lines.append("  No findings - a warning will bite later, or names "
+                     "something this command could not establish.")
     else:
         lines.append("  Healthy.")
     return "\n".join(lines)

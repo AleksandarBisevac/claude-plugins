@@ -49,6 +49,11 @@ differently:
   uncommitted for over a week (the git anchor only pins committed history), an area owner
   the ledger's author column has never seen (usually an identity written differently from
   what `usage.authorMode` records). Worth reading, not worth blocking on.
+  It also covers a second, different thing: a fact this read-only command **could not
+  establish**. The `sandbox` and `secret rules` rows read settings files, and managed
+  policy plus a `--settings` flag outrank every file they can see — so "no file declares
+  it" is reported as *not established*, never as *off*, and never fails the run. An
+  explicitly disabled sandbox is a FINDING, because that one is read off a file.
 - **OK** — checked and healthy. Included deliberately: knowing the plan gate is in `warn`
   rather than `deny` is as useful as knowing something is broken. The plan-gate line names
   the tier **and what put it there** — `planGate`, legacy `enforce`, or the graded ladder —

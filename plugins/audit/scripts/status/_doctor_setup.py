@@ -196,10 +196,30 @@ def check_sandbox(rep, project, home=None):
                     a claim with no basis, which is the defect this whole item is
                     about repeating in a new place.
       * env rules - a missing deny rule beside a working sandbox will bite later.
-                    A missing deny rule with NO sandbox established is broken now:
-                    at that point the only thing between a secret and the
-                    transcript is a regex over the text of a tool call, which is
-                    exactly what the live report walked through.
+                    A missing deny rule beside an explicitly DISABLED sandbox is
+                    broken now, and both halves of that are read off a file: at
+                    that point the only thing between a secret and the transcript
+                    is a regex over the text of a tool call, which is exactly what
+                    the live report walked through. A missing deny rule with the
+                    sandbox UNATTESTED is a WARNING - see below.
+
+    WHY THE UNATTESTABLE CASE IS A WARNING AND NOT A FINDING. It was a finding,
+    and `/audit:doctor` exits non-zero on one - so a repo that had configured
+    neither layer began failing the doctor, in CI, on upgrade, having asked for
+    nothing. That is the symptom; it is not the argument. A FINDING here would
+    assert that the layer is ABSENT, and absence is precisely what this check
+    cannot establish: settings files are the entire basis, managed/MDM policy and
+    a `--settings` flag both outrank them, and a read-only diagnostic may not
+    probe by writing. "I cannot see either layer" and "neither layer is there"
+    are different claims, and grading them the same is this repo's own recurring
+    defect - a claim without the basis that would make it true - committed by the
+    very check written to name that defect elsewhere. So the WARNING says which
+    of the two it is, and points at the fix rather than disappearing.
+
+    Explicitly DISABLED stays a FINDING and must: that one IS established, by the
+    file that says so, and softening it would trade one baseless claim for
+    another. The suite pins the difference at the exit code, in both directions
+    at once.
     """
     sources, broken = read_settings(project, home=home)
     for line in broken:
@@ -240,11 +260,21 @@ def check_sandbox(rep, project, home=None):
            "loaded indirectly (direnv, dotenv, a test harness)")
     if enabled is True:
         rep.warn("secret rules", detail, fix)
-    else:
+    elif enabled is False:
         rep.finding("secret rules",
-                    "%s - and no sandbox is established either, so nothing "
-                    "outside this plugin is containing a secret read" % detail,
+                    "%s - and sandbox.enabled is false in %s settings, so "
+                    "nothing outside this plugin is containing a secret read"
+                    % (detail, scope),
                     fix)
+    else:
+        rep.warn("secret rules",
+                 "%s, and the sandbox could not be established either - so "
+                 "neither containment layer is confirmed, for different "
+                 "reasons: the deny rule is absent from the files read, the "
+                 "sandbox is merely unattested. This plugin's guards match the "
+                 "INTENT in a tool call and never the I/O, so those two layers "
+                 "are what actually contains a read (SECURITY.md)" % detail,
+                 fix)
 
 
 def check_git(rep, project, cfg):
