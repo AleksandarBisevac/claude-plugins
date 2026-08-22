@@ -122,6 +122,14 @@ def _cases(check):
               levels(rep, "manifest") == ["WARNING"], repr(levels(rep, "manifest")))
         check("fresh repo: plan gate reports the observe tier",
               "observe" in detail(rep, "plan gate"), detail(rep, "plan gate"))
+        # F52: the shell-write guard shares this tier and goes SILENT in it, where
+        # the plan gate still records. A quiet guard and a broken guard look the
+        # same from outside, so the tier line is the one place that can say which
+        # this is - and a line nothing asserts is a line that rots.
+        check("fresh repo: the observe line says the shell-write guard is quiet "
+              "here too, so silence is not mistaken for a broken hook",
+              "shell-write guard" in detail(rep, "plan gate"),
+              detail(rep, "plan gate"))
         hooks_fix = " ".join(r["fix"] or "" for r in rep.rows
                              if r["check"] == "hooks")
         check("fresh repo: no hook state is a WARNING",

@@ -274,7 +274,10 @@ page behind it, read against the form rather than instead of it. All of it is
   - `guard-bash-writes.py` (PostToolUse: Bash + edits) — **non-blocking** git-status diff
     check: when a shell command modifies a source file that no tool edit and no
     `in_progress` task accounts for, the model is told — in-band — that it just sidestepped
-    the plan gate (the statically-undecidable residual of the PreToolUse checks).
+    the plan gate (the statically-undecidable residual of the PreToolUse checks). That
+    class is **graded like the plan gate**: a repo with no manifest has no plan to be
+    outside of, so it stays quiet there unless `enforce`/`planGate` says otherwise. Its
+    journal and lock classes are not graded — they carry their own evidence.
   - `remind-tdd.py` (PostToolUse: edits) — **non-blocking** nudge when source
     changes with no test touched in the session; throttled, manifest-aware, configurable.
   - `journal-writes.py` (PreToolUse + PostToolUse: edits) — appends one hash-chained
@@ -349,7 +352,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | A manifest or shard write while another **live** session holds the governing lock | `require-plan.py`, reading the lock `scripts/governance/audit-lock.py` wrote | **deny**, naming the holder. An abandoned lock allows, with a notice — [the full verdict table](../../SECURITY.md#the-one-denial-that-is-not-about-the-plan-0270) |
 | Every edit-tool write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows | `journal-writes.py` — Pre + PostToolUse edits | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them |
 | Token spend is attributed to a phase and a task | `meter-usage.py` — Stop / SubagentStop / SessionEnd | records; never blocks. Ledger rows carry `phaseId`, `taskId` and `model` |
-| A shell write that no tool edit and no `in_progress` task accounts for is reported | `guard-bash-writes.py` — PostToolUse `Bash` + edits | non-blocking `additionalContext`. PostToolUse cannot undo the write — the model is told, in-band, that it sidestepped the gate |
+| A shell write that no tool edit and no `in_progress` task accounts for is reported — **where a plan exists**, graded on the same evidence as the plan gate | `guard-bash-writes.py` — PostToolUse `Bash` + edits | non-blocking `additionalContext`. PostToolUse cannot undo the write — the model is told, in-band, that it sidestepped the gate. With no manifest the class is silent: "no task covers this" is true of every file, so it carries nothing. `enforce`/`planGate` restores it |
 | Source changed with no test touched this session | `remind-tdd.py` — PostToolUse edits | non-blocking nudge, throttled and manifest-aware |
 | The explorer cannot write or run a shell; the reviewer cannot edit; the executor has no web tools and no nested agents | the `tools:` line in each `agents/*.md` | the capability is **absent from the harness** — not a request in a prompt. On older Claude Code the commands fall back to general subagents, and that absence goes with them |
 | A referentially broken manifest cannot pass as valid | `scripts/manifest/validate-manifest.py` | exit 0 valid / 1 findings / 2 unreadable. The checker is deterministic; *running it after each write* is the invariant below |
@@ -667,7 +670,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `secretPatterns.extra` | Extra secret-path regexes (added to the built-in set) | `[]` |
 | `guardEdits.tokenVars` | Identifier names treated as auth tokens | `accessToken`, `refreshToken`, `idToken` |
 | `guardEdits.customRules` | Project banned patterns `{pathPrefix, bannedPattern, message}`. `pathPrefix` is matched as a **substring** of the path the edit tool reported (usually absolute) — `realtime/` covers every `realtime/` directory in the tree, not only one root | `[]` |
-| `bashWriteCheck.enabled` | PostToolUse git-status diff check for shell writes into source (a session's first pass baselines pre-existing dirt silently — only NEW dirt is attributed) | `true` |
+| `bashWriteCheck.enabled` | PostToolUse git-status diff check for shell writes into source (a session's first pass baselines pre-existing dirt silently — only NEW dirt is attributed). Default-on, but the plan-coverage class is graded: no manifest, no report | `true` |
 | `tddReminder.enabled` | Master switch for the non-blocking TDD nudge | `true` |
 | `tddReminder.sourceGlobs` / `testGlobs` | What counts as source vs test files (source also feeds the shell-write guard) | common code (incl. `.ipynb`) / test patterns |
 | `tddReminder.throttleMinutes` | Minimum gap between nudges | `10` |
