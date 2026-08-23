@@ -2441,10 +2441,17 @@ def _cases(check):
     check("co: a click on the still-focused input reopens a closed menu (F-P-1c)",
           "inp.addEventListener('click',()=>{if(!(CMOWNER===me&&comboOpen()))render();});"
           in M.UI_HTML)
-    check("co: the disk refresh defers while a combo is open or a control in a "
-          "CLEAN form is focused, exactly as it defers for an open dialog - FP "
-          "stays put and the poll after the interaction lands it; a dirty form "
-          "defers nothing, since the refresh never rebuilds it (F-P-1b)",
+    # F90: this case used to be LABELLED with the deferral behaviour while
+    # asserting only how the predicate is spelled, so it stayed green through a
+    # release in which the behaviour did not hold - the poll consulted
+    # `interacting()` three round trips before it acted on the answer. The
+    # behaviour is driven in tools/ui-tests/refresh-deferral.test.mjs, which now
+    # covers the await window; what is left here is the CONSTRUCTS that suite
+    # depends on, labelled as constructs.
+    check("co: the constructs behind the deferral - interacting() exists, "
+          "answers an open combo first, DERIVES its selector from dirtyViews, "
+          "and the poll re-asks it after the fetches instead of acting on the "
+          "answer it got before them (F-P-1b, F90)",
           "function interacting(" in M.UI_HTML
           and "if(comboOpen())return true;" in M.UI_HTML
           # The selector is DERIVED from dirtyViews, never typed here as a
@@ -2458,7 +2465,11 @@ def _cases(check):
           # ...and ONLY there: a caret in Overview's or Usage's search box is a
           # filter, whose state the refresh preserves, so it defers nothing.
           and "return !!v&&!views[v.id];}" in M.UI_HTML
-          and "&&!interacting()){FP=fp;refreshFromDisk();}" in M.UI_HTML)
+          and "&&!interacting()){const back=FP;FP=fp;refreshFromDisk(back);}"
+              in M.UI_HTML
+          # The re-ask, and the rewind that keeps a deferred change from being
+          # swallowed. Without both, the predicate above is correct and unused.
+          and "if(interacting()){FP=fpBack;return;}" in M.UI_HTML)
 
     # --- v0.34 C2 (mc): the model combo, three sources -------------------------
     # The ledger-only listing and the collapse-safety of the review combo are
@@ -2583,13 +2594,13 @@ def _cases(check):
     check("lv: a changed fingerprint hands off to refreshFromDisk, is "
           "DEFERRED while any dialog is open (FP stays put, so the next poll "
           "retries), and the first sight only seeds",
-          "refreshFromDisk();" in _poll
+          "refreshFromDisk(back);" in _poll
           and "!document.querySelector('dialog[open]')" in _poll
           and "if(FP===null)FP=fp;" in _poll)
     check("lv: refreshFromDisk is defined OUTSIDE the D9 slice - the poll "
           "path still never touches renderSettings",
-          "async function refreshFromDisk()" in M.UI_HTML
-          and M.UI_HTML.index("async function refreshFromDisk()")
+          "async function refreshFromDisk(" in M.UI_HTML
+          and M.UI_HTML.index("async function refreshFromDisk(")
           > M.UI_HTML.index("// ---------- Overview"))
     _rfd = M.UI_HTML[M.UI_HTML.index("function staleNote("):M.UI_HTML.index("const OVF=")]
     check("lv: dirtiness is judged BEFORE the state swap and only clean views "

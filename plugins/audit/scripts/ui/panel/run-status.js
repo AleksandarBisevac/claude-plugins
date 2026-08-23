@@ -121,7 +121,10 @@ async function pollRunStatus(){
   const fp=next.fingerprint;
   if(fp&&fp!==FP){
    if(FP===null)FP=fp;
-   else if(!document.querySelector('dialog[open]')&&!interacting()){FP=fp;refreshFromDisk();}
+   // FP moves BEFORE the await so an overlapping tick cannot start a second
+   // refresh; refreshFromDisk rewinds it if it bails, so a change is deferred
+   // rather than swallowed. See F90 - the answer below is re-asked there.
+   else if(!document.querySelector('dialog[open]')&&!interacting()){const back=FP;FP=fp;refreshFromDisk(back);}
   }
   if(runStatusKey(next)===runStatusKey(RUNSTATUS))return;   // no repaint on no change
   RUNSTATUS=next;

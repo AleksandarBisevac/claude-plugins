@@ -46,18 +46,32 @@ function staleNote(id){const slot=$('#'+id+' .findings-slot');
  * @returns {Promise<void>} resolves once the re-render is queued and the scroll
  *   position has been scheduled for restoration
  */
-async function refreshFromDisk(){
- // BEFORE the state swap, and that is this line's position rather than
- // dirtyViews' business: the registered closures compare each form against
- // STATE, so a swapped STATE would misjudge every open form. What counts as
- // dirty - and why an unreadable surface counts - belongs to dirtyViews.
- const dirty=dirtyViews();
+async function refreshFromDisk(fpBack){
  const y=window.scrollY;
  try{
-  STATE=await api('GET','/api/state');
-  USAGE=await api('GET','/api/usage').catch(()=>USAGE);
-  BANDS=null;MITEMS=null;
+  // Fetched into LOCALS, so nothing global has moved yet if this tick bails.
+  const st=await api('GET','/api/state');
+  const us=await api('GET','/api/usage').catch(()=>USAGE);
   const pol=await api('GET','/api/policy').catch(()=>null);
+  // F90. The caller answered `interacting()` three round trips ago, and it
+  // answers a question about a person who is free to change their mind inside
+  // that window: whoever opened a combo menu while these were in flight had it
+  // closed by `renderComp`, which opens with `closeCombo()`, on a decision
+  // taken before they touched anything. The predicate was never wrong - it is
+  // consulted at the wrong moment - so re-ask it HERE, where the answer is
+  // about to be used. FP rewinds to what it was, which is the same promise the
+  // dialog branch makes: the poll after the interaction lands this change
+  // rather than swallowing it.
+  if(interacting()){FP=fpBack;return;}
+  // BEFORE the state swap, and that is this line's position rather than
+  // dirtyViews' business: the registered closures compare each form against
+  // STATE, so a swapped STATE would misjudge every open form. What counts as
+  // dirty - and why an unreadable surface counts - belongs to dirtyViews.
+  // It is read after the fetches for the same reason as the re-check above: a
+  // form the reader dirtied while they were in flight is dirty NOW.
+  const dirty=dirtyViews();
+  STATE=st;USAGE=us;
+  BANDS=null;MITEMS=null;
   renderViewer();
   // Only CLEAN views re-render: renderComp resets its patch and renderSettings
   // reclones cfg, so re-rendering a dirty one would eat the human's edits.
