@@ -1337,9 +1337,11 @@ def _real_source_files(script_dir=None, hooks_dir=None):
 _PROSE_DOCS = (_GUIDE_REL_PATH, "CLAUDE.md", "CONTRIBUTING.md")
 
 # Every document here is hard-wrapped markdown, which is why the scan hands
-# `_prose_number_claim` the FOLLOWING line as well: "print it with" ends a line and
-# the command that is the claim's basis begins the next one, and judging a claim by
-# its own line alone would report a line that has already satisfied the house rule.
+# `_prose_number_claim` BOTH neighbouring lines: "print it with" ends a line and the
+# command that is the claim's basis begins the next one, and a sentence's past tense
+# wraps the same way, so judging a claim by its own line alone would report a line
+# that has already satisfied the house rule and a recollection that never claimed
+# anything.
 
 
 def doc_prose_numbers(doc_paths=None):
@@ -1395,7 +1397,8 @@ def doc_prose_numbers(doc_paths=None):
         lines = text.split("\n")
         for lineno, line in enumerate(lines, 1):
             nxt = lines[lineno] if lineno < len(lines) else ""
-            claim = _output._prose_number_claim(line, nxt)
+            prv = lines[lineno - 2] if lineno >= 2 else ""
+            claim = _output._prose_number_claim(line, nxt, prv)
             if claim is not None:
                 out.append((label, lineno, claim))
     return out

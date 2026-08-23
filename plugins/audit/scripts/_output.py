@@ -1043,6 +1043,11 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 #                collection's whole is N. 2 sites beyond the first shape, BOTH
 #                wrong (48 against a real 83).
 #
+# TWO MORE WERE SURVEYED AND REFUSED - a measurement family and a before/after
+# family - and what the survey found is in `prose_number_claims()`'s list of what
+# this cannot see, beside the other gaps, because a refusal is only useful to the
+# next author if it is filed where they will look for the shape.
+#
 # WHY EVERY ONE OF THEM TAKES "REMOVE THE NUMBER" AND NOT "REQUIRE THE BASIS".
 # Both remedies satisfy the house rule on paper. What separated them was a
 # measurement taken the day this was written: `CONTRIBUTING.md`'s files-over-500
@@ -1200,9 +1205,49 @@ def _words(line):
     so the comma keeps being dropped, which leaves two numerals and lets the second
     one keep whatever noun follows it. That is how a line pairing a line count with
     a case count still reports its live half.
+
+    THE WALK ITSELF IS `_tokenize()`, which answers this question and the sentence
+    question in one pass. This name stays the contract every shape reads and the
+    cases pin.
+    """
+    return _tokenize(line)["words"]
+
+
+# A sentence terminator, and it is read as one only where the character after it is
+# not alphanumeric - which is what keeps `x.py has` one sentence while `x.py. Next`
+# is two, with no table of abbreviations and no lookahead past one character.
+_SENTENCE_ENDS = ".!?"
+
+
+def _in_dot_run(text, i):
+    """True if `text[i]` is one stop of an ellipsis rather than a sentence end.
+
+    A run of stops is a MARKUP elision here, not a full stop - the panel's own
+    docstring writes a tag pair with the body elided, and reading each stop as a
+    boundary cut that one sentence into four, which threw away the past tense the
+    sentence opened with and reported its history as a claim.
+    """
+    before = text[i - 1:i] if i else ""
+    return text[i] == "." and "." in (before, text[i + 1:i + 2])
+
+
+def _tokenize(line):
+    """`{"words", "sentence"}` - `line`'s tokens, and which sentence each sits in.
+
+    ONE walk for both answers, because they read the same characters and the
+    hardest rule is shared: a separator kept INSIDE a number is not a sentence
+    end. A second walk asking only about boundaries would be a second home for
+    that rule, and the two would disagree about a decimal the first time either
+    was edited.
+
+    `sentence` is an ordinal PER TOKEN, parallel to `words`, rather than a list
+    of sentences. Every shape below indexes the line's tokens positionally, so
+    the tokens have to arrive as one flat list; which sentence a token sits in is
+    an extra fact about it, not a different shape of the same data.
     """
     low = line.lower()
-    out, cur = [], []
+    words, sentence = [], []
+    cur, index = [], 0
     for i, ch in enumerate(low):
         if ch.isalnum():
             cur.append(ch)
@@ -1212,11 +1257,16 @@ def _words(line):
             cur.append(ch)
             continue
         if cur:
-            out.append("".join(cur))
+            words.append("".join(cur))
+            sentence.append(index)
             cur = []
+        if (ch in _SENTENCE_ENDS and not low[i + 1:i + 2].isalnum()
+                and not _in_dot_run(low, i)):
+            index += 1
     if cur:
-        out.append("".join(cur))
-    return out
+        words.append("".join(cur))
+        sentence.append(index)
+    return {"words": words, "sentence": sentence}
 
 
 def _backtick_chunks(line):
@@ -1267,22 +1317,95 @@ def _names_code(line):
 # Past-tense markers. The broadest family below ("N cases", with no "its" and no
 # "live in" in front of it) is the only one wide enough to catch ordinary
 # recollection, and recollection is exactly what a decision record is made of.
-# Anything on this list means the line is talking about THEN, so the number is
-# not a claim about now and must stay writable.
+# Anything on this list means the SENTENCE is talking about THEN, so the number is
+# not a claim about now and must stay writable. The sentence and not the line -
+# `_historical_sentences()` below carries the two directions the line got wrong.
 _PAST = ("was", "were", "had", "used", "stood", "down", "up", "once",
          "previously", "then", "before", "originally", "until", "old")
 
 
 def _looks_historical(w):
-    """True if this line is recollection rather than a present-tense claim."""
+    """True if these tokens are recollection rather than a present-tense claim."""
     for tok in w:
         if tok in _PAST:
             return True
     return False
 
 
-def _cardinality_claim(w):
-    """"its N cases" / "N cases live in" / "--selftest (N cases)" / "all N of them"."""
+# What a hard-wrapped sentence may trail after its stop: quotes, brackets and
+# markdown emphasis. Without them a bolded sentence ending in a stop reads as
+# unfinished, and the next line would inherit a tense that is not its own.
+_SENTENCE_TAIL = " \t\"'`)]}*_"
+
+
+def _ends_sentence(text):
+    """True if `text` finishes a sentence, so a following line starts a new one."""
+    tail = text.rstrip(_SENTENCE_TAIL)
+    return bool(tail) and tail[-1] in _SENTENCE_ENDS
+
+
+def _edge_sentences(text):
+    """`{"first", "last"}` - the tokens of `text`'s opening and closing sentences.
+
+    The two halves a wrap can join to: a line continues whatever sentence its
+    predecessor left open, and leaves one open for its successor to finish. Both
+    come from one tokenize because both are that walk's answer, and a text with no
+    tokens yields two empty lists rather than None - there is nothing to join,
+    which is an answer and not a failure.
+    """
+    tok = _tokenize(text or "")
+    words, sent = tok["words"], tok["sentence"]
+    if not words:
+        return {"first": [], "last": []}
+    return {"first": [w for w, k in zip(words, sent) if k == sent[0]],
+            "last": [w for w, k in zip(words, sent) if k == sent[-1]]}
+
+
+def _historical_sentences(line, preceding, following):
+    """The ordinals of `line`'s sentences that read as recollection, not a claim.
+
+    A SENTENCE, NEVER THE PHYSICAL LINE, and F76 is both directions of that
+    difference, met on one day. A past marker in the sentence BEFORE the number -
+    two clauses earlier on the same line, about something else entirely - was
+    excusing a live count: the escape reading too widely. And a marker in the SAME
+    sentence one line up was not reaching the number at all, because prose wraps:
+    the escape reading too narrowly. One scope fixes both, and the first half is
+    why this is not a loosening - a marker that used to excuse a whole line now
+    excuses one sentence of it.
+
+    The join reaches ONE line each way, the window `_carries_basis()` already
+    reads and for the same reason. A sentence running further keeps its marker out
+    of reach and its number reported, which is the direction a reader meets by
+    disagreeing with a finding; the other direction is met by silence.
+    """
+    tok = _tokenize(line)
+    words, sent = tok["words"], tok["sentence"]
+    if not words:
+        return set()
+    before = ([] if _ends_sentence(preceding or "")
+              else _edge_sentences(preceding)["last"])
+    after = [] if _ends_sentence(line) else _edge_sentences(following)["first"]
+    out = set()
+    for s in set(sent):
+        scope = [w for w, k in zip(words, sent) if k == s]
+        if s == sent[0]:
+            scope = before + scope
+        if s == sent[-1]:
+            scope = scope + after
+        if _looks_historical(scope):
+            out.add(s)
+    return out
+
+
+def _cardinality_claim(tok, historical):
+    """"its N cases" / "N cases live in" / "--selftest (N cases)" / "all N of them".
+
+    `historical` is the set of sentence ordinals `_historical_sentences()` read as
+    recollection. It arrives as an argument rather than being derived here because
+    that reading needs the neighbouring LINES, which a shape holding one line's
+    tokens cannot see.
+    """
+    w, sent = tok["words"], tok["sentence"]
     for i in range(len(w)):
         span = _numeral_span(w, i)
         if span is None:
@@ -1313,12 +1436,14 @@ def _cardinality_claim(w):
         # argument: it is one added case away from joining the other seven.
         #
         # This family is wide enough to catch ordinary recollection, so it is the
-        # one that has to ask whether the line is talking about THEN. Skipping
-        # that check turns "it stood at 70 cases that day" into a violation and
-        # makes the decision record unwritable.
+        # one that has to ask whether the SENTENCE is talking about THEN. Skipping
+        # that check turns "it stood at N cases that day" into a violation and
+        # makes the decision record unwritable. The sentence the NUMERAL sits in,
+        # not the line: a marker two clauses back, about something else, used to
+        # excuse a live count on the same line.
         if nxt in _CASE_WORDS or (nxt == "selftest" and w[end + 1:end + 2] and
                                   w[end + 1] in _CASE_WORDS):
-            if not _looks_historical(w):
+            if sent[i] not in historical:
                 return "%s cases" % num
     return None
 
@@ -1361,12 +1486,18 @@ def _completeness_claim(w):
     return None
 
 
-def _prose_number_claim(line, following=None):
+def _prose_number_claim(line, following=None, preceding=None):
     """The claim's text if this line writes a present-tense number, else None.
 
     A line that names the command recomputing the number is NOT a finding: the
     house rule is that a claim carries the basis that makes it true, and such a
     line has done exactly that.
+
+    `following` and `preceding` are the neighbouring PHYSICAL lines, and neither
+    is decoration: every document here is hard-wrapped, so a claim's basis and
+    the tense of the sentence carrying it both routinely land one line away from
+    its number. Called with neither - which is what a caller handing over a
+    single string means - this reads the line as one whole sentence.
 
     THIS IS THE ONLY DEFINITION OF THE SHAPES. `_deps` scans the documents and
     delegates here rather than restating them; a second copy of the pattern
@@ -1375,8 +1506,9 @@ def _prose_number_claim(line, following=None):
     """
     if _carries_basis(line, following):
         return None
-    w = _words(line)
-    return (_cardinality_claim(w)
+    tok = _tokenize(line)
+    w = tok["words"]
+    return (_cardinality_claim(tok, _historical_sentences(line, preceding, following))
             or _persistence_claim(line, w)
             or _completeness_claim(w))
 
@@ -1501,7 +1633,8 @@ def prose_claims_in(root, rels):
         lines = text.split("\n")
         for lineno, line in enumerate(lines, 1):
             nxt = lines[lineno] if lineno < len(lines) else ""
-            claim = _prose_number_claim(line, nxt)
+            prv = lines[lineno - 2] if lineno >= 2 else ""
+            claim = _prose_number_claim(line, nxt, prv)
             if claim is not None:
                 out.append((rel, lineno, claim))
     return out
@@ -1545,7 +1678,24 @@ def prose_number_claims(repo_root=None):
         leaves out -- under `ten` the word is ordinary English machinery and
         the shapes cannot tell it from a count;
       * a claim whose NUMBER and whose SHAPE-WORD land on different lines --
-        only the basis is read across the wrap, never the claim;
+        the basis and the SENTENCE the number sits in are both read across the
+        wrap, but never the claim itself;
+      * a MEASUREMENT -- a duration, a byte count, a line count. A units family
+        was surveyed over this whole tree before being refused, and the refusal
+        IS the measurement: on the widest vocabulary honest prose outran real
+        claims by better than two to one, and on the narrowest defensible cut
+        (size units, on a line naming code, the gate the persistence family
+        uses) it still outran them. A size or a duration here is usually a
+        threshold, a budget, a hypothetical, or a fact about somebody else's
+        system, and in every one of those the number is what the sentence is
+        for. `pn27` holds the lines that decided it, so adopting one without
+        measuring again goes red;
+      * a BEFORE/AFTER sentence -- "it was N lines and is M". The first number
+        is history and legal for ever, the second is a live claim, and the tense
+        that makes the first legal sits in the same sentence as the second,
+        which is exactly why a reader trusts both. The `is N` shape that would
+        reach it was surveyed too: real claims were about a quarter of its hits
+        and the rest were arithmetic, format shapes and external facts. `pn28`;
       * a completeness claim with no auxiliary ("(all 64)", "all 8 viz slots"),
         because recognising an arbitrary present-tense verb needs a lexicon;
       * a persistence claim that names no code in backticks on its own line;

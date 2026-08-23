@@ -1516,6 +1516,30 @@ def _cases(check):
               "same claim in a document is the same defect: %r"
               % (_dpn_word_hits,),
               _dpn_word_hits == [("WORDS.md", 1, "thirteen cases")])
+        # F76: the delegation carries the SENTENCE scope too, and a document is
+        # where wrapping is worst - every one of these is hard-wrapped, so a
+        # tense marker and its number routinely land on different lines. Both
+        # directions are in one fixture: line 2's number is excused by a marker
+        # that sits on line 1 (the counterfactual this scan reported as a claim
+        # before), and line 3's is NOT excused by the marker two clauses earlier
+        # on its own line (the stale count that sat unread behind one). A single
+        # expected finding is what separates them - a scan reading physical lines
+        # reports the first and misses the second, so it can match neither.
+        _dpn_wrap = os.path.join(_dpn_tmp, "WRAP.md")
+        with open(_dpn_wrap, "w", encoding="utf-8") as fh:
+            fh.write("nothing pinned it, so the count was replaced by a "
+                     "constant and all\n"
+                     "146 cases stayed green after the split.\n"
+                     "TWO NAMES, BECAUSE IT ALREADY HAD ITS OWN `check`. 102 of "
+                     "the 131 cases\n"
+                     "go through a wrapper.\n")
+        _dpn_wrap_hits = M.doc_prose_numbers([_dpn_wrap])
+        check("dpn6 the document scan reads the sentence across the WRAP, in "
+              "both directions - a marker one line up excuses the number under "
+              "it, and a marker in an earlier sentence on the number's own line "
+              "does not. One finding, and which line it names is the whole "
+              "assertion: %r" % (_dpn_wrap_hits,),
+              _dpn_wrap_hits == [("WRAP.md", 3, "131 cases")])
     finally:
         shutil.rmtree(_dpn_tmp, ignore_errors=True)
 

@@ -1410,6 +1410,110 @@ def _cases(check):
           and M._words("1,254 lines") == ["1", "254", "lines"]
           and M._words("7/7 and 0.01") == ["7/7", "and", "0.01"])
 
+    # --- pn24-pn28: the SENTENCE a number sits in, and two families refused ---
+    # F76. The tense escape read the physical line, and a line is neither the unit
+    # a tense belongs to nor the unit prose arrives in. The first line below is the
+    # real one it was found on: a stale count sat unread behind a past marker two
+    # clauses earlier, about something else entirely.
+    check("pn24 the tense escape reads the SENTENCE the numeral sits in, not the "
+          "physical line - a marker in an earlier sentence on the same line used "
+          "to excuse a live count (F76's false negative, on the line it was found "
+          "on). The second half is what fails if the scope narrows past a "
+          "sentence to a clause: a marker inside the number's OWN sentence still "
+          "excuses it, which is what keeps the decision record writable",
+          M._prose_number_claim("THIS SUITE ALREADY HAD ITS OWN `check`. 102 of "
+                                "the 131 cases go") == "131 cases"
+          and M._prose_number_claim("the split was measured. 131 cases go "
+                                    "through the wrapper") == "131 cases"
+          and M._prose_number_claim("it had 131 cases then") is None)
+    check("pn25 ...and the sentence is JOINED across the wrap, one line each way "
+          "- the window `_carries_basis()` already reads, for the same reason: "
+          "prose wraps, so a marker and its number land on different lines. Both "
+          "directions of the join are here, and so is the half that fails if the "
+          "join stops asking where a sentence ENDS - a marker in a sentence that "
+          "finished before the wrap must not reach across it",
+          M._prose_number_claim("146 cases stayed green afterwards", "",
+                                "nothing pinned it, so the count was replaced by "
+                                "a constant and all") is None
+          and M._prose_number_claim("146 cases stayed green afterwards", "",
+                                    "nothing pinned it, so the count was "
+                                    "replaced by a constant.") == "146 cases"
+          and M._prose_number_claim("the suite keeps all 146 cases",
+                                    "before the split") is None
+          and M._prose_number_claim("the suite keeps all 146 cases.",
+                                    "It was different before.") == "146 cases"
+          # A markdown sentence ends after its emphasis, not before it. Without
+          # that the bolded line below would read as unfinished and hand its past
+          # tense down to the next line, which is a document-shaped hole: `.md` is
+          # half of what these shapes now read.
+          and M._prose_number_claim("146 cases go through the wrapper", "",
+                                    "**it was measured then.**") == "146 cases"
+          # Called with no neighbours at all - one string, read as one whole
+          # sentence. Every case above this section hands over exactly that.
+          and M._prose_number_claim("the suite keeps all 146 cases") == "146 cases")
+    # SECOND DIRECTION, and it is the only case here that fails when the boundary
+    # rule gets GREEDY. It looks vacuous - both lines are ordinary recollection
+    # and neither was a finding before F76 either - and it is the whole reason the
+    # rule asks what follows a stop. Each half names its own mutation: read every
+    # stop as a boundary and a dotted filename cuts the sentence in two, leaving
+    # the tense behind in the first half; read a run of stops as boundaries and an
+    # elided tag pair cuts one sentence into four, which is how a docstring's own
+    # history was reported as a claim while this was being written.
+    check("pn26 a stop INSIDE a name, and a run of stops standing for elided "
+          "markup, are not sentence ends - a fragmenting boundary rule throws "
+          "away the tense the sentence opened with and reports recollection as a "
+          "claim. The third line is the same shape with the marker removed, so "
+          "this fails if the joining stops firing at all rather than reading as "
+          "two silent lines",
+          M._prose_number_claim("it was rewritten in `x.py` and has 7 cases")
+              is None
+          and M._prose_number_claim("used to hold `<style>...</style>` and 7 "
+                                    "cases") is None
+          and M._prose_number_claim("it holds `x.py` and 7 cases") == "7 cases")
+    # F70 AND F65: two families MEASURED AND REFUSED, recorded as cases because a
+    # docstring saying "cannot see" is not checkable and the next author will
+    # reach for exactly these shapes.
+    #
+    # A MEASUREMENT - a duration, a byte count, a line count - is invisible here,
+    # and the units family that would read it was surveyed over this whole tree
+    # before being declined. Every hit was read: on the widest unit vocabulary
+    # honest prose outran real claims by better than two to one, and on the
+    # narrowest defensible cut (size units, on a line naming code, the gate the
+    # persistence family uses) it still outran them. The lines below are the
+    # reason and they are real ones from this tree: a THRESHOLD, a configured
+    # constant and a hypothetical are numbers that must stay, and they are the
+    # shape a units family cannot tell from a claim.
+    check("pn27 a MEASUREMENT is not read - the units family was surveyed over "
+          "this tree and refused, because a size or a duration here is usually a "
+          "threshold, a budget or a hypothetical, and those numbers are the point "
+          "of their sentences. This is the case that goes red if one is adopted "
+          "without measuring again",
+          M._prose_number_claim("Files of 400+ lines need at least two markers")
+              is None
+          and M._prose_number_claim("Events are the newest ~20 lines of")
+              is None
+          and M._prose_number_claim("a banner would let a 2,000-line module pass")
+              is None
+          # WHAT THE REFUSAL GIVES UP, in the same case so it cannot be read as
+          # an accident: a real measurement of this tree is not read either.
+          and M._prose_number_claim("front-matter reads, 159 ms cold and 31 ms "
+                                    "warm - and it runs on a POLL") is None
+          and M._prose_number_claim("the 46,220-byte `audit-plan.schema.json`")
+              is None)
+    check("pn28 ...and a BEFORE/AFTER sentence is not read either, for a "
+          "different reason: its first number is history and legal for ever, its "
+          "second is a live claim, and the tense that makes the first one legal "
+          "sits in the same sentence as the second. The `is N` shape that would "
+          "reach it was surveyed too and refused - real claims were a quarter of "
+          "its hits, the rest arithmetic, format shapes and external facts. The "
+          "repair is the prose, and the repaired form reads clean",
+          M._prose_number_claim("It was 1,456 lines and is 242, because the "
+                                "checks shared one file") is None
+          and M._prose_number_claim("`E_USAGE` is 2 and the reason is arithmetic")
+              is None
+          and M._prose_number_claim("It was one file and is six, because the "
+                                    "checks shared it for one reason") is None)
+
 
 
 def _selftest():
