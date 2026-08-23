@@ -60,7 +60,7 @@
  */
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { rmSync, mkdirSync, readFileSync, statSync,
+import { rmSync, mkdirSync, readFileSync, statSync, cpSync,
          writeFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir, release } from 'node:os';
@@ -475,6 +475,133 @@ async function openUsageFilters(page) {
 }
 
 /** The defect this whole script exists to prevent. */
+/**
+ * Does the phases table's `Sort:` control actually MOVE the phase blocks?
+ *
+ * A substring pin can say the `<option>` was emitted and `_priority.ranks()`
+ * stamped a `data-porder`. It cannot say a block moved, because the move walks
+ * real siblings inside each segment with `insertBefore` — and the report's own
+ * interactive gate cannot say it either, since it drives the COMMITTED example
+ * and that plan carries no priority at all, so the control is not on the page.
+ * A conditional check on a page that never has the control is spelled exactly
+ * like a passing one.
+ *
+ * So this drives a fixture the gate builds: the committed example plan, copied
+ * and then pinned through `set-priority.py` — the real write path, not a hand-
+ * edited JSON. `examples/` is untouched, which keeps `gen-demo-manifest.py`'s
+ * recorded reason intact ("the fixture's whole point is a plan running in
+ * written order", and the committed screenshots show that order).
+ *
+ * The block boundary is the next phase row OR the next `tr.seghead`. A seghead
+ * PRECEDES its segment and stays put, so walking only to the next phase absorbs
+ * the following segment's heading into whichever block is last — and "last"
+ * changes when the order does, which reads as rows crossing a boundary when
+ * nothing moved.
+ */
+async function assertPhaseOrderMoves(page) {
+  const sel = '#audit-sort';
+  if (!(await page.$(sel))) {
+    fail('report/order: the prioritised fixture rendered no Sort control, so the '
+       + 'phase-order checks below would assert nothing about a page nobody ships');
+    return;
+  }
+  const opts = await page.$$eval(`${sel} option`, (o) => o.map((x) => x.value));
+  if (opts.join() !== 'plan,priority') {
+    fail(`report/order: the Sort control offers ${JSON.stringify(opts)}; the panel `
+       + 'offers plan and priority, and one name per surface is the rule');
+  }
+  if (await page.$eval(sel, (s) => s.value) !== 'plan') {
+    fail('report/order: the report does not open in plan order — written order is '
+       + 'the plan, and priority is an overlay a reader chooses');
+  }
+
+  const shape = () => Array.from(document.querySelectorAll('tr.phase')).map((tr) => {
+    const rows = [];
+    let n = tr.nextElementSibling;
+    while (n && !n.classList.contains('phase') && !n.classList.contains('seghead')) {
+      rows.push([n.className, n.getAttribute('data-phase'),
+                 n.getAttribute('data-detail') || ''].join('|'));
+      n = n.nextElementSibling;
+    }
+    return { id: tr.getAttribute('data-phase'), seg: tr.getAttribute('data-seg'),
+             rank: Number(tr.getAttribute('data-porder')), rows };
+  });
+  const heads = () => Array.from(document.querySelectorAll('tr.seghead'))
+    .map((r) => r.getAttribute('data-seg'));
+
+  const plan = await page.evaluate(shape);
+  const planHeads = await page.evaluate(heads);
+  if (!plan.length) {
+    fail('report/order: no phase rows in the prioritised fixture');
+    return;
+  }
+  if (plan.some((p) => !p.rows.length)) {
+    fail('report/order: a phase block reads as having no rows of its own, so the '
+       + 'comparison below would be between two empty lists');
+    return;
+  }
+
+  await page.selectOption(sel, 'priority');
+  await page.waitForTimeout(200);
+  const prio = await page.evaluate(shape);
+
+  const ids = (s) => s.map((p) => p.id);
+  if (ids(plan).slice().sort().join() !== ids(prio).slice().sort().join()) {
+    fail(`report/order: re-ordering changed the SET of phases, ${JSON.stringify(ids(plan))} `
+       + `-> ${JSON.stringify(ids(prio))}`);
+  }
+  if (ids(plan).join() === ids(prio).join()) {
+    fail('report/order: picking priority moved nothing, so every assertion here is '
+       + 'about one list read twice — the fixture must pin a phase that is not '
+       + 'already first in its segment');
+  }
+  for (const seg of [...new Set(prio.map((p) => p.seg))]) {
+    const ranks = prio.filter((p) => p.seg === seg).map((p) => p.rank);
+    const asc = ranks.slice().sort((a, b) => a - b);
+    if (ranks.join() !== asc.join()) {
+      fail(`report/order: segment ${seg} lists ranks ${JSON.stringify(ranks)}, which is `
+         + 'not the order the server stamped — the client is deciding an order the '
+         + 'comparator already decided');
+    }
+  }
+  const bySeg = (s) => JSON.stringify(s.reduce((a, p) => {
+    (a[p.seg] = a[p.seg] || []).push(p.id); return a;
+  }, {}));
+  if (new Set(prio.map((p) => p.seg)).size !== new Set(plan.map((p) => p.seg)).size) {
+    fail(`report/order: a phase left its segment, ${bySeg(plan)} -> ${bySeg(prio)} — `
+       + 'priority sorts inside a segment and never promotes across one');
+  }
+  const rowsOf = (s) => JSON.stringify(s.slice()
+    .sort((a, b) => a.id.localeCompare(b.id)).map((p) => [p.id, p.rows]));
+  if (rowsOf(prio) !== rowsOf(plan)) {
+    fail('report/order: a phase did not keep its own rows through the move — the '
+       + 'block moved without the rows that belong to it');
+  }
+  const strays = prio.flatMap((p) => p.rows
+    .map((r) => r.split('|')[1]).filter((d) => d !== p.id));
+  if (strays.length) {
+    fail(`report/order: ${strays.length} row(s) now sit under a phase they do not `
+       + 'belong to');
+  }
+
+  await page.selectOption(sel, 'plan');
+  await page.waitForTimeout(200);
+  const back = await page.evaluate(shape);
+  if (ids(back).join() !== ids(plan).join()) {
+    fail(`report/order: plan order did not come back exactly, ${JSON.stringify(ids(plan))} `
+       + `-> ${JSON.stringify(ids(back))}`);
+  }
+  if (rowsOf(back) !== rowsOf(plan)) {
+    fail('report/order: the rows did not come back with their phases');
+  }
+  if ((await page.evaluate(heads)).join() !== planHeads.join()) {
+    fail('report/order: the segment headings moved, so a block was inserted past one');
+  }
+  note(`report/order: ${ids(plan).join(',')} -> ${ids(prio).join(',')} by priority and `
+     + `back, rows and ${planHeads.length} segment heading(s) intact`);
+}
+
+
 async function assertBarsPainted(page, label) {
   const bars = await page.evaluate(() => {
     const out = [];
@@ -5702,6 +5829,48 @@ async function main() {
            + `resized across the ladder: ${[...new Set(ladderErrors)].slice(0, 3).join(' | ')}`);
       }
       await ladderCtx.close();
+
+      // ---- the same example, PINNED, so the Sort control is on the page ------
+      // No shot is taken here: the published pictures show written order on
+      // purpose. This exists because the control cannot be reached from the
+      // committed artifact at all, and an unreachable check is a green one.
+      const prioDir = path.join(work, 'acme-prio');
+      mkdirSync(prioDir, { recursive: true });
+      cpSync(path.join(REPO, 'examples', 'acme-store', 'audit-plan.json'),
+             path.join(prioDir, 'audit-plan.json'));
+      cpSync(path.join(REPO, 'examples', 'acme-store', 'phases'),
+             path.join(prioDir, 'phases'), { recursive: true });
+      // Through the real write path, so a change that breaks writing a priority
+      // breaks this too. BF1 is last in the array and P3 is held by P2, which is
+      // the pair the feature exists for: one phase reached first, one pinned and
+      // still waiting.
+      py([resolveScript('set-priority.py'),
+          path.join(prioDir, 'audit-plan.json'), 'BF1', '1']);
+      py([resolveScript('set-priority.py'),
+          path.join(prioDir, 'audit-plan.json'), 'P3', '2']);
+      const prioOut = path.join(prioDir, 'out');
+      py([resolveScript('render-report.py'),
+          path.join(prioDir, 'audit-plan.json'), '--out-dir', prioOut],
+         { CLAUDE_PROJECT_DIR: prioDir });
+
+      const { server: prioServer, port: prioPort } = await serveDir(prioOut);
+      servers.push(prioServer);
+      const prioCtx = await browser.newContext({
+        viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
+        reducedMotion: 'reduce', colorScheme: 'light',
+      });
+      const prioPage = await prioCtx.newPage();
+      const prioErrors = [];
+      prioPage.on('pageerror', (e) => prioErrors.push(String(e.message).split('\n')[0]));
+      await prioPage.goto(`http://127.0.0.1:${prioPort}/acme-store-audit.html`,
+                          { waitUntil: 'load' });
+      await settle(prioPage);
+      await assertPhaseOrderMoves(prioPage);
+      if (prioErrors.length) {
+        fail(`report/order: the prioritised report logged ${prioErrors.length} script `
+           + `error(s): ${[...new Set(prioErrors)].slice(0, 3).join(' | ')}`);
+      }
+      await prioCtx.close();
     }
 
     // ---- panel shots, from a generated 50 x 20 fixture --------------------------
@@ -6453,6 +6622,14 @@ async function main() {
       // for (any host frame clipped it; the screen edge now clamps it).
       await tabTo(mob, 'usage');
       await mob.waitForTimeout(400);
+      // The task combo lives inside the Filters fold, and Playwright will not
+      // click into a shut `<details>` — it waits the full 30s and the timeout
+      // reads like a dead panel rather than a closed disclosure. This is the
+      // fourth leg that drives a usage filter; the other three call the same
+      // helper, and a leg that opens the fold itself would be a second way of
+      // doing it. `mob` keeps its own first-visit assertions, so the fold is
+      // held to arriving shut at 390px too, not only at desktop width.
+      await openUsageFilters(mob);
       const mobInp = mob.locator('#usage input[aria-label="filter by task"]');
       if (!(await mobInp.count())) {
         fail('usage at 390px: no task combo to open');

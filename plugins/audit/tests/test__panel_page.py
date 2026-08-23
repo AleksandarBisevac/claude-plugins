@@ -2541,7 +2541,16 @@ def _cases(check):
         "button.dtopic": ("ok", "343x78.6"),
         "button.filt": ("ok", "47.6x29.2"),
         "button.ovpill": ("ok", "60.5x29.9"),
-        "button.ovrow": ("ok", "301x147.2"),
+        # was ("ok", "301x147.2"), a TWO-LINE row: the abbreviated outcome
+        # used to sit on its own line under the title. That line moved to the
+        # row's tooltip and the opened detail, so the recorded figure stopped
+        # describing the shape it is the evidence for. Re-measured in Chromium
+        # at all three densities - 42.2 comfortable, 40.5 compact, 44.2
+        # spacious - and the TIGHTEST is the one recorded, because that is the
+        # reading the >= 24 verdict has to survive. The width is whatever the
+        # container gives the row, which is why the old 301 does not reappear
+        # and why only the height says anything here.
+        "button.ovrow": ("ok", "860.4x40.5"),
         "button.subtab": ("ok", "72.3x30"),
         "button.tab": ("ok", "60.1x38.7"),
         "button.tab.on": ("ok", "62.2x38.7"),
