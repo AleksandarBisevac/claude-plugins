@@ -3680,6 +3680,24 @@ async function assertModelCombo(page, project) {
   if (!rev) {
     fail('composition: no review-model input to drive the combo on');
   } else {
+    // WHAT CLOSES THE MENU, asked directly. The F90 fix is in and the first
+    // attempt still fails, so the previous reading - "the poll re-rendered under
+    // it" - is either wrong or incomplete, and a sixth guess is worth less than
+    // one measurement. `closeCombo` is the only thing that hides a menu holding
+    // items, so count its calls across the interaction and keep the first stack.
+    // `renderComp` is counted beside it because it opens with `closeCombo()`: if
+    // the counts move together the re-render is the caller, and if closeCombo
+    // moves alone something else is closing it.
+    await page.evaluate(() => {
+      window.__cc = { close: 0, comp: 0, firstStack: null };
+      const origClose = closeCombo, origComp = renderComp;
+      closeCombo = function () {
+        window.__cc.close += 1;
+        if (!window.__cc.firstStack) window.__cc.firstStack = new Error('closeCombo').stack;
+        return origClose.apply(this, arguments);
+      };
+      renderComp = function () { window.__cc.comp += 1; return origComp.apply(this, arguments); };
+    });
     await rev.click();
     // WAIT FOR THE MENU, and when it does not come, SAY WHAT THE PANEL LOOKED LIKE.
     // This is not a fix for the CI-only failure below it - I do not know the cause,
@@ -3689,7 +3707,7 @@ async function assertModelCombo(page, project) {
     // menu was merely slow this passes; if it never opens the dump says whether the
     // input was reached, focused, disabled, or reached at all.
     const items = page.locator('.combo-menu:not(.hidden) .combo-it');
-    let nItems = 0, opened = 'first';
+    let nItems = 0, opened = 'first', firstFail = null;
     const tryOpen = async () => {
       try {
         await page.waitForSelector('.combo-menu:not(.hidden) .combo-it', { timeout: 5000 });
@@ -3710,10 +3728,19 @@ async function assertModelCombo(page, project) {
       // A second attempt after the view settles distinguishes the two answers
       // instead of assuming one: if this opens, it was the re-render; if it does
       // not, the menu genuinely will not open and the dump below says so.
+      // Read the counters BEFORE retrying, or the retry's own renders pollute them.
+      firstFail = await page.evaluate(() => ({
+        closeCombo: window.__cc.close, renderComp: window.__cc.comp,
+        comboOpen: (typeof comboOpen === 'function') ? comboOpen() : 'unreachable',
+        CMENU: (typeof CMENU !== 'undefined' && CMENU) ? (CMENU.className || '(no class)') : null,
+        owner: (typeof CMOWNER !== 'undefined') ? !!CMOWNER : 'unreachable',
+        FP: (typeof FP !== 'undefined') ? String(FP).slice(0, 12) : 'unreachable',
+        stack: (window.__cc.firstStack || '').split('\n').slice(1, 5).join(' | '),
+      }));
       await page.waitForTimeout(1200);
       await rev.click();
       nItems = await tryOpen();
-      opened = nItems ? 'second (the first was closed by a re-render)' : 'neither';
+      opened = nItems ? 'second' : 'neither';
     }
     if (!nItems) {
       const st = await page.evaluate(() => {
@@ -3750,7 +3777,8 @@ async function assertModelCombo(page, project) {
       fail('composition: the review-model combo opened no menu on either attempt. '
          + 'Panel state: ' + JSON.stringify(st));
     } else if (opened !== 'first') {
-      note('composition: the review-model combo opened on the ' + opened);
+      note('composition: the review-model combo opened on the ' + opened
+         + ' attempt; at the first failure ' + JSON.stringify(firstFail));
     }
     // The menu is FILTERED by whatever the input already holds, so its first
     // entry is routinely the current value verbatim - `opus` filtering to
