@@ -96,14 +96,31 @@ def _build_demo_fixture(work):
     return project
 
 
+def render_args(project, manifest_name="audit-plan.json"):
+    """ABSOLUTE `(manifest, project)` for a render, and never a relative pair.
+
+    THE ROUND TRIP THIS REPLACES WORKED BY ACCIDENT. The caller used to make the
+    pair relative with `os.path.relpath(..., REPO)` so `_render` could rejoin it
+    to `REPO` - a no-op whenever the path was under the repo, and a `ValueError:
+    path is on mount 'C:', start on mount 'D:'` when it was not. A generated
+    fixture lives in a temp directory, and on Windows a temp directory routinely
+    sits on a different drive from the checkout, so CI raised where every POSIX run
+    had quietly normalised the `../../..` back to the right place.
+
+    `relpath` is the only operation in that chain that can fail on a path, so the
+    repair is to never perform it: absolute in, absolute out, nothing re-based.
+    """
+    return os.path.join(project, manifest_name), project
+
+
 def _render(manifest, project, out_dir, epoch):
     env = dict(os.environ)
-    env["CLAUDE_PROJECT_DIR"] = os.path.join(REPO, project)
+    env["CLAUDE_PROJECT_DIR"] = project
     env["SOURCE_DATE_EPOCH"] = str(epoch)
     script = os.path.join(REPO, "plugins", "audit", "scripts", "report",
                           "render-report.py")
     return subprocess.call(
-        [sys.executable, script, os.path.join(REPO, manifest),
+        [sys.executable, script, manifest,
          "--out-dir", out_dir],
         cwd=REPO, env=env,
         stdout=open(os.devnull, "w"), stderr=subprocess.STDOUT)
@@ -132,7 +149,8 @@ def drifted(artifacts=None):
             if key not in rendered:
                 sub = os.path.join(work, "r%d" % len(rendered))
                 os.makedirs(sub)
-                if _render(manifest, project, sub, epoch) != 0:
+                if _render(os.path.join(REPO, manifest),
+                           os.path.join(REPO, project), sub, epoch) != 0:
                     out.append((rel, "the renderer exited non-zero on %s" % manifest))
                     continue
                 rendered[key] = sub
@@ -165,9 +183,8 @@ def drifted(artifacts=None):
                 continue
             sub = os.path.join(work, "genout")
             os.makedirs(sub)
-            if _render(os.path.relpath(os.path.join(project, "audit-plan.json"),
-                                       REPO),
-                       os.path.relpath(project, REPO), sub, epoch) != 0:
+            _fx_manifest, _fx_project = render_args(project)
+            if _render(_fx_manifest, _fx_project, sub, epoch) != 0:
                 out.append((rel, "the renderer exited non-zero on the generated "
                                  "fixture"))
                 continue
@@ -195,6 +212,25 @@ def _cases(check):
     # it asserted was "parsing did not crash" while claiming to assert the epoch.
     _ra_stamp = "generated 2023-11-14 22:13 UTC"
     _ra_want = calendar.timegm((2023, 11, 14, 22, 13, 0, 0, 0, 0))
+    # F89. The pair a render is given must be ABSOLUTE and must not be re-based on
+    # the repo, because a generated fixture lives in a temp directory and on Windows
+    # a temp directory routinely sits on another drive - where `relpath` raises
+    # rather than returning something wrong. The old form made the pair relative to
+    # REPO so `_render` could rejoin it; these two cases are what fail if anyone
+    # reintroduces that, and they fail on every platform rather than only the one
+    # that raised.
+    _fx = os.path.join(tempfile.gettempdir(), "audit-fresh-probe")
+    _ra_manifest, _ra_project = render_args(_fx)
+    check("ra6 a render is handed ABSOLUTE paths - the relative pair this replaces "
+          "was rejoined to REPO by the callee, which is a no-op under the repo and "
+          "a ValueError across drives: %r" % ((_ra_manifest, _ra_project),),
+          os.path.isabs(_ra_manifest) and os.path.isabs(_ra_project))
+    check("ra7 ...and neither is re-based on REPO, so a fixture OUTSIDE the "
+          "checkout comes back as itself: the manifest hangs off the project and "
+          "the project is unchanged",
+          _ra_project == _fx
+          and _ra_manifest == os.path.join(_fx, "audit-plan.json")
+          and not _ra_manifest.startswith(REPO))
     check("ra1 a stamp is read back as the epoch that produced it, so a render "
           "pinned to it reproduces the same minute: %r vs %r"
           % (stamp_epoch(_ra_stamp), _ra_want),
