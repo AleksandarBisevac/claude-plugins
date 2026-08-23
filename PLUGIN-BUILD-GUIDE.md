@@ -779,7 +779,7 @@ the list it installed** — never None, never empty — so a caller can assert w
 instead of trusting that an import worked. `scripts/ui/` drops out on its own because it
 holds no `.py`, which turns an editorial rule into a mechanical one.
 
-**`PATH_PREAMBLE` is the eleven lines every other `.py` under `scripts/` carries**, byte
+**`PATH_PREAMBLE` is the block every other `.py` under `scripts/` carries**, byte
 for byte, after the stdlib imports and above the first sibling import. It walks UP until it
 finds the directory containing `_output.py`, so it encodes no depth and terminates at the
 filesystem root with a named `ImportError` rather than looping; then it imports `_output`
@@ -2053,7 +2053,9 @@ rather than loudly if carried:
   `_harness.between()`, which raises on either. `_panel_state`'s `--name-only` case is the one
   that makes this a security rule rather than a tidiness one: a plain `git config --list` hands
   back credential helpers and tokens, and the vacuous form was measured passing over a
-  71,084-character slice of a module whose real slice is 3,747.
+  71,084-character slice where the real one was 3,747 - both figures as they stood that
+  day, which is the only tense either can be stated in: the slice has since moved to
+  `_panel_viewer` and shrunk, and `_harness.between()` will print its length on request.
 
 **A moved case may have to become a better case.** Not licence to rewrite: labels move
 byte-identical and the multiset is proven. But where the inline spelling depended on the suite's

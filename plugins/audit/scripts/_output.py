@@ -7,7 +7,7 @@ TWO JOBS, AND THE SECOND ONE IS WHY THIS FILE NEVER MOVES. `safe_stdio()` is the
 first and the older one. The second is the path bootstrap: `SCRIPTS_DIR` and its
 four companions below are the one written-down statement of where the tree's
 directories are, `install_path()` puts `scripts/` AND every subdirectory of it
-holding a `.py` on `sys.path`, and `PATH_PREAMBLE` is the eleven lines every other
+holding a `.py` on `sys.path`, and `PATH_PREAMBLE` is the block every other
 `.py` here carries to reach this module without knowing how deep it sits.
 `path_preamble_violations()` counts them. The consequence is worth stating where the
 mechanism lives: the folders under `scripts/` are LABELS, NOT NAMESPACES — every

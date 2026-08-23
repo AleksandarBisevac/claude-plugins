@@ -524,6 +524,42 @@ were not merely stale, they were unscoped. What remains is the standing split
 list, tracked as work rather than as a decision — there is nothing left to
 decide here.
 
+### Writing a count that is allowed
+
+The rule above is stated as a prohibition, and that is half of it. Every repair in this class
+deletes a number, and authors keep writing them because nothing says what the permitted form
+looks like — so here it is, three shapes, and a lint reads all three.
+
+**Delete it and keep the pointer.** The default, and the only one that cannot rot. Name the thing
+that holds the answer and the command that prints it, and say nothing about how many:
+
+> The largest file is `_deps.py`; `python3 tools/count-ui-pins.py` reports the split by directory.
+
+**Carry the basis on the same claim.** Legal when the figure is genuinely informative — a ratio a
+reader needs, a threshold an argument turns on. The command may sit on the following line, because
+prose wraps, and the scanner joins one line each way to find it:
+
+> Roughly a third of the suites reach the browser gates:
+> `grep -rln capture-screenshots plugins/audit/tests | wc -l`
+
+A basis makes a claim checkable. It does not make it true, and nothing runs a command on a
+reader's behalf — which is why this is the second choice and not the first.
+
+**Put it in the past.** A measurement is a fact about a moment, and a moment does not rot. Say
+when, and the tense carries it:
+
+> Two consecutive captures agreed on every image the day this shipped.
+
+The scanner reads the SENTENCE the number sits in, not the line, so a past marker earlier in the
+same sentence covers a number further along it — and a marker in the previous sentence does not.
+That is F76, and it cuts both ways on purpose.
+
+**What none of these buys you.** A unit is not a count and is not read at all: a duration, a byte
+size or a line count passes the lint whatever tense it is in, because the family was surveyed over
+this tree and refused — honest prose outnumbered real claims in every cut of it, and `pn27` holds
+the measurement that decided so. A stale measurement is therefore YOUR job, not the build's. The
+same is true of `the N <noun>` with an ordinary noun, which is the shape F59's own instance wore.
+
 ### typing/dataclasses/annotations stay banned (standing since P9.3's AST enforcement)
 
 The 3.8 floor and hooks that must start fast on every tool call rule out the

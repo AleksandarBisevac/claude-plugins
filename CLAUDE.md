@@ -45,6 +45,8 @@ two copies of a procedure is one copy and one lie.
   table. Three things stay legal on purpose: **history** (`it stood at N that day`), a number
   **carrying the command that re-derives it** — the basis may sit on the next line, because
   prose wraps — and the repair itself, which is to delete the number and keep the pointer.
+  `CONTRIBUTING.md`'s *Writing a count that is allowed* states those three affirmatively, with
+  one example each; read it before writing a number rather than after a build refuses one.
   When a number really is informative, carry the basis; a basis makes a claim checkable, but
   only deleting the number stops it rotting.
 - Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
