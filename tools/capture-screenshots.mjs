@@ -3706,6 +3706,23 @@ async function assertModelCombo(page, project) {
           menus: menus.map((m) => (m.className || '(no class)')
                                   + ':' + m.querySelectorAll('.combo-it').length),
           regSkills: (typeof REG === 'object' && REG && REG.skills) ? REG.skills.length : 'REG unreachable',
+          // The menu closes itself when there is nothing to show, so an empty
+          // hidden menu means `modelItems()` came back empty - and it has THREE
+          // sources. Report each, because "empty" without which source is the same
+          // dead end the bare timeout was.
+          models: (typeof modelItems === 'function') ? modelItems().length : 'unreachable',
+          fromManifest: (() => {
+            const c = (typeof STATE === 'object' && STATE && STATE.composition) || {};
+            return { tasksWithModel: (c.tasks || []).filter((t) => t.model).length,
+                     phasesWithReview: (c.phases || []).filter((p) => p.reviewModel).length };
+          })(),
+          fromRates: (() => {
+            const st = (typeof STATE === 'object' && STATE) || {};
+            return { defaults: Object.keys(((st.defaults || {}).usage || {}).pricing || {}).length,
+                     config: Object.keys(((st.config || {}).usage || {}).pricing || {}).length };
+          })(),
+          fromLedger: (typeof USAGE === 'object' && USAGE && USAGE.facts)
+            ? USAGE.facts.length : 'USAGE absent',
         };
       });
       fail('composition: the review-model combo opened no menu within 5s. Panel state: '
