@@ -53,6 +53,7 @@ S = "plugins/audit/scripts/"
 OUT = "plugins/audit/tests/test__output.py"
 DEP = "plugins/audit/tests/test__deps.py"
 REF = "plugins/audit/tests/test__refs.py"
+CFG = "plugins/audit/tests/test__config_rules.py"
 
 # The anchor every scripts/ row appends after: present once in every module, and
 # nothing below it depends on what follows.
@@ -72,8 +73,14 @@ _GATE_NAMED = ("selftest_coverage", "entries_missing_guard",
 # lint's needle planted in the tree the lint walks. The house repair is to build
 # the literal rather than write it, so the count arrives through `%` and the line
 # carries no numeral in front of the noun. `doc_prose_numbers()` reads every `.md`,
-# which is why the CLAUDE.md payload gets the same treatment.
-#
+# which is why the CLAUDE.md payload gets the same treatment.# Where those lints live, relative to `scripts/`. A list, because it is what
+# `coverage()` under-claims by if a module holding one is left off it - and that
+# happened: `config/_config_rules.py` grew the config-vocabulary comparison and its
+# `*_drift` names were invisible here until this tuple named the directory.
+_GATE_MODULES = ("_output.py", "_deps.py", "_refs.py",
+                 os.path.join("config", "_config_rules.py"))
+
+# (lint, file, kind, anchor, payload, suite, expected case label)#
 # `count` is a number OR the word for it: the second row of each pair exists to
 # prove the numeral table still reads the word spelling (F59), and one builder
 # serving both is what stops the two payloads drifting into different sentences.
@@ -231,8 +238,32 @@ TABLE = (
  # pictures are re-captured, and renaming one leaves the picture unrecorded and the
  # record picture-less at once.
  ("screenshot_capture_drift", "docs/screenshots/captured-at.json", "sub",
-  r'"areas\.png"', (r'"areas\.png"', '"areas-renamed.png"'), REF, "sc1"),
-)
+  r'"areas\.png"', (r'"areas\.png"', '"areas-renamed.png"'), REF, "sc1"), # The config vocabulary. Three rows for the tree-bound half, because it has three
+ # failure modes and only the first announces itself. `ui` was read by `_ui_theme`,
+ # written by the panel, validated and defaulted - and unpublished in the schema for
+ # its whole life, because `additionalProperties: true` accepts anything (F79). So
+ # the row that would have caught that goes first: rename the schema property and a
+ # key the plugin reads stops being published.
+ ("config_vocab_drift", "plugins/audit/schema/audit-config.schema.json", "replace",
+  '    "ui": {\n', '    "uiRenamed": {\n', CFG, "cv1"),
+ # The same rule one surface further (F80): a lever with a panel control and no
+ # published row. A RENAME rather than a deletion - deleting the row would also cut
+ # the table's contiguous run and take every key below it down at once, which proves
+ # the wrong thing.
+ ("config_vocab_drift", "plugins/audit/README.md", "sub",
+  r"^\| `bypassKeyword` \|", ("`bypassKeyword`", "`bypassKeywordd`"), CFG, "cv1"),
+ # ...and the direction a markdown table makes possible at all: the heading moves,
+ # nothing can be located, and the reader must SAY that rather than hand back the
+ # empty finding list a clean table hands back. A parser that fails quiet is worse
+ # than no parser, and this is the row that keeps it loud.
+ ("config_vocab_drift", "plugins/audit/README.md", "replace",
+  "## Configuration (`.claude/audit.config.json`)", "## Config keys", CFG, "cv1"),
+ # The comparison itself, on the branch only it owns. Its cases are fixture-driven
+ # for the reason `_help.vocab_drift()`'s are - a lint you can only run against the
+ # real tree is a lint whose own failure modes are untested - so this row breaks the
+ # rule and the fixture case goes red where the three above cannot.
+ ("root_vocab_drift", S + "config/_config_rules.py", "replace",
+  "set(known) - published - set(exempt)", "set()", CFG, "cv4"),)
 
 
 # --- deriving the mutation ----------------------------------------------------
@@ -307,12 +338,12 @@ def mutation(row, repo=None):
 
 # --- the coverage claim -------------------------------------------------------
 def gate_names(script_dir=None):
-    """Every load-bearing lint, derived from the three modules by name."""
+    """Every load-bearing lint, derived by name from the modules that hold one."""
     import ast
     root = script_dir or _output.SCRIPTS_DIR
     found = []
-    for mod in ("_output", "_deps", "_refs"):
-        path = os.path.join(root, mod + ".py")
+    for rel in _GATE_MODULES:
+        path = os.path.join(root, rel)
         try:
             tree = ast.parse(io.open(path, encoding="utf-8").read())
         except (OSError, SyntaxError):

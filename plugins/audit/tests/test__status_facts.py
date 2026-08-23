@@ -20,6 +20,12 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _status_facts as M                          # noqa: E402
+# The comparator itself, and the OTHER surface that reads it. Both are here so
+# the `porder` cases can measure the stamped rank against something derived a
+# different way: `_priority.sort_key` is the rule, `_report_html.phase_ranks` is
+# the report's own call, and a rank compared with itself could not fail.
+import _priority as _prio                          # noqa: E402
+import _report_html as _rhtml                      # noqa: E402
 
 _CMD = _loader.load_script("audit-status.py", modname="audit_status_boundary")
 
@@ -285,6 +291,72 @@ def _cases(check):
           M.rollup(_junk, [], [])["phases"][2]["priority"] is None
           and M.ready_tasks(_junk) == M.ready_tasks(_plain),
           repr(M.ready_tasks(_junk)))
+
+    # --- porder: the rank the client sorts by, so the client holds no rule -----
+    # ONE COMPARATOR, TWO READERS. `_priority.sort_key` is the tree's only
+    # expression of phase order; both surfaces are handed a NUMBER instead of the
+    # rule - the report stamps it as `data-porder`, the panel ships it on this
+    # row. Every case below measures the stamped number against the comparator
+    # itself, or against the OTHER surface's function, rather than against a
+    # re-typed permutation: an expectation typed out here could only agree with
+    # whichever version was in front of the person typing it.
+    _rp = M.rollup(_pinned, [], [])["phases"]
+    _pinned_ph = _pinned["phases"]
+    check("pd1 every phase row carries `porder`, and it orders two phases "
+          "exactly as `sort_key` compares them - asserted as a PROPERTY against "
+          "the comparator, which is the half a hand-typed list cannot do",
+          all("porder" in r for r in _rp)
+          and all((_rp[i]["porder"] < _rp[j]["porder"])
+                  == (_prio.sort_key(_pinned_ph[i], i)
+                      < _prio.sort_key(_pinned_ph[j], j))
+                  for i in range(len(_rp)) for j in range(len(_rp)) if i != j),
+          repr([r.get("porder") for r in _rp]))
+    check("pd2 ...and the FIXTURE separates the two implementations: the pin is "
+          "written last, so a rollup that stamped document order would answer "
+          "0, 1, 2 and this is the only reason the case can fail",
+          [r["porder"] for r in _rp] == [1, 2, 0],
+          repr([r.get("porder") for r in _rp]))
+    check("pd3 the tier and the rank are DIFFERENT numbers and not "
+          "interchangeable - the tier-1 phase here ranks 0 - which is what makes "
+          "a surface that sorted on `priority`, or showed `porder` as a badge, "
+          "observably wrong rather than merely unidiomatic",
+          [(r["priority"], r["porder"]) for r in _rp]
+          == [(None, 1), (None, 2), (1, 0)],
+          repr([(r.get("priority"), r.get("porder")) for r in _rp]))
+    _plain_order = [r["porder"] for r in M.rollup(_plain, [], [])["phases"]]
+    check("pd4 SECOND-DIRECTION CASE: with no priority anywhere the ranks are "
+          "the identity, so a client sorting by them changes nothing and the "
+          "panel's priority option degrades to plan order rather than to a "
+          "second opinion about it. Reads vacuous, and is what goes red the day "
+          "an absent tier becomes tier 0 and every plan grows a pin",
+          _plain_order == list(range(len(_plain_order))) and _plain_order,
+          repr(_plain_order))
+    # A NON-DICT in `phases[]` is the fixture value that tells a rank computed
+    # over the whole array from one computed over the rows: the two lists have
+    # different lengths, so any off-by-one shows up as a shifted number rather
+    # than as nothing at all.
+    _gappy = _plan(pin=1)
+    _gappy["phases"].insert(1, "not a phase")
+    _gr = M.rollup(_gappy, [], [])["phases"]
+    check("pd5 the ranks are computed over the SAME filtered list the rows are, "
+          "so a non-dict entry in `phases[]` cannot shift them - a rank taken "
+          "over a different sequence is a different number wearing the same name",
+          len(_gr) == 3 and [r["porder"] for r in _gr] == [1, 2, 0],
+          repr([(r.get("id"), r.get("porder")) for r in _gr]))
+    check("pd6 THE TWO SURFACES ARE HANDED THE SAME NUMBER: this row's `porder` "
+          "IS the report's `data-porder`. Both are layer 2 and cannot import "
+          "each other, so two callers of `_priority.ranks` is structural - and "
+          "this is what fails if either grows its own idea of the order",
+          [r["porder"] for r in _rp] == _rhtml.phase_ranks(_pinned),
+          repr((([r["porder"] for r in _rp]), _rhtml.phase_ranks(_pinned))))
+    check("pd7 ...and its second direction: with nothing pinned the report emits "
+          "NO ranks, because it hides the sort control in the same breath, while "
+          "the panel offers the control always and stamps the identity. Same "
+          "ORDER, different decision about emitting the number - said as a case "
+          "so it is never read as the two surfaces disagreeing",
+          _rhtml.phase_ranks(_plain) == []
+          and _plain_order == list(range(len(_plain_order))),
+          repr(_rhtml.phase_ranks(_plain)))
 
 
 def _selftest():

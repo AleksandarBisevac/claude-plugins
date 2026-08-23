@@ -250,7 +250,7 @@ L1:
 
 L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
-  _config_rules -> _output, _policy
+  _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _manifest_vocab, _output
@@ -1923,11 +1923,26 @@ sub-key to and is outside its reach — which is why the two are not interchange
 fixtures instead of by mutating the shipped vocabulary.
 
 ### `plugins/audit/scripts/config/_config_rules.py`
-The rules for `.claude/audit.config.json` (layer 2), dependency-free, mirroring
-`hooks/_config.py` DEFAULTS. Complements `schema/audit-config.schema.json` with checks a
+The rules for `.claude/audit.config.json` (layer 2), and the vocabulary the config is held
+to. Complements `schema/audit-config.schema.json` with checks a
 schema pass doesn't surface nicely (regex compilability of custom rules, positive
 thresholds) and hands the control panel a machine-usable findings list. Permissive: unknown
-keys are WARNINGs, not findings. It also owns the four enum tuples (`PLAN_GATE_MODES`,
+keys are WARNINGs, not findings.
+
+`KNOWN_ROOT` is the AUTHORITY on the root key set, and `hooks/_config.py` DEFAULTS is a proper
+subset of it rather than a mirror: `policy` is accepted here and deliberately absent there,
+because `_policy.py` owns that block and copying its defaults back would put a scripts-side
+module on the hot path of every tool call. `config_vocab_drift()` compares the authority against
+every surface that PUBLISHES it — the schema's root properties, the plugin README's
+Configuration table, and those DEFAULTS — in both directions, with `OFF_ROOT` carrying the
+reason for each exemption and reporting one that has gone stale. It exists because only the
+other direction was ever held: the panel's Settings coverage derives its controls FROM this
+validator, so "documented, therefore reachable" was checked while "runs, therefore published"
+was not, and `ui` was live in four files and missing from the schema for its whole life.
+`root_vocab_drift()` is the comparison on plain arguments, so its own failure modes are tested
+from fixtures rather than by mutating the shipped vocabulary — the same split
+`_help.vocab_drift()` is on, and the reason this lives here rather than beside that one is that
+`_help` is a PEER at layer 2, so neither may import the other. It also owns the four enum tuples (`PLAN_GATE_MODES`,
 `AUTHOR_MODES`, `IN_PROGRESS_POLICY`, `STRICT_MANIFEST_STATE`) the panel's Settings form
 reads, so the form can never offer a value the validator rejects. Three modules needed it
 and all three used to load `validate-config.py` through `_loader` — including
@@ -1958,7 +1973,11 @@ meta fields (`signOffChecklist`, `autoMode`, `modelPolicy`, `testPolicy`, `revie
 ### `plugins/audit/schema/audit-config.schema.json`
 JSON Schema for the per-repo `.claude/audit.config.json`. The control panel validates edits
 against it (alongside `validate-config.py`) before every atomic save, so a malformed config is
-refused in the UI instead of silently dropping custom rules at hook time.
+refused in the UI instead of silently dropping custom rules at hook time. `additionalProperties`
+is `true` for forward compatibility, which means the schema cannot refuse a key it has never
+heard of and could not report one it was never told about either —
+`_config_rules.config_vocab_drift()` is what holds its root property list against the validator's
+own, in both directions.
 
 ### `plugins/audit/templates/audit.config.example.json`
 Copy to `<repo>/.claude/audit.config.json`. Every key optional. Contains an **illustrative**

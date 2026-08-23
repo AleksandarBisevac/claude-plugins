@@ -84,9 +84,13 @@ documented defaults. `plugins/audit/schema/audit-config.schema.json` is where th
 keys are published and the
 [plugin README](plugins/audit/README.md#configuration-claudeauditconfigjson) is the
 per-key table; `plugins/audit/scripts/config/_config_rules.py` is what actually runs,
-and it is the authority when the three disagree. The promise below is therefore
-phrased over **a key the plugin reads**, not over a list — a key that works is
-covered whether or not the published list has caught up with it.
+and it is the authority when the three disagree. On **which top-level keys exist** they
+can no longer disagree quietly: `_config_rules.config_vocab_drift()` compares that
+module's key set against the schema's root properties, against the README's table and
+against the hooks' own defaults, in both directions, and a gap fails the build naming
+the surface and the key. Below the top level nothing compares them, so the promise
+below stays phrased over **a key the plugin reads**, not over a list — the wording that
+is still true of a nested key.
 
 ### Promised
 
