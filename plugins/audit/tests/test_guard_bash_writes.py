@@ -57,6 +57,46 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-bash-writes.py"),
 
 
 # --- cases --------------------------------------------------------------------
+# --- the tagged fixture tables ------------------------------------------------
+# HOISTED SO THE TAGS ARE ADDRESSABLE DATA. Each tag names its fixture's
+# construct so a mutation row can point at one case; an index would renumber
+# every fixture below an inserted one and the row would still resolve, to a
+# different construct. The tags therefore have to be distinct, and `tag1` below
+# is what says so - the harness cannot: all fixtures in one loop share a single
+# `check()` CALL SITE, which is exactly the shape `label_faults` is right to stay
+# silent about, so a duplicated tag here would otherwise be caught only by
+# `prove-gates.py` refusing a row that happened to name it.
+DNP_CASES = (("stderr", "cat a.py 2>/dev/null", True),
+             ("stdout", "ls -la 1>/dev/null", True),
+             ("piped", "grep -rn x . 2>/dev/null | head -5", True),
+             ("bare", "cat a.py >/dev/null", True),
+             # separates "is /dev/null" from "starts with /dev/null"
+             ("baksuffix", "cat a.py >/dev/null.bak", False),
+             # a real destination must survive the /dev/null strip
+             ("realdest", "grep x a.py > hits.txt 2>/dev/null", False),
+             ("append", "echo x >> notes.md", False))
+
+EXP_CASES = (("execcat", "find . -name x -exec cat {} +", True),
+             ("execgrep", "find . -type f -exec grep -l foo {} \\;", True),
+             ("execrm", "find . -type f -exec rm {} \\;", False),
+             ("execsh", "find . -type f -exec sh -c 'cat x' \\;", False),
+             ("execdir", "find . -type f -execdir chmod +x {} +", False),
+             ("okrm", "find . -type f -ok rm {} \\;", False),
+             # a clause with no command proves nothing
+             ("execbare", "find . -name x -exec", False),
+             ("delete", "find . -name x -delete", False))
+
+RWP_CASES = (("gitstatus", "git status --porcelain", True),
+             ("greppipe", "grep -rn x plugins | head -5", True),
+             ("catpipe", "cat a.py | wc -l", True),
+             ("gitadd", "git add .", False),
+             ("redirect", "echo hi > f.txt", False),
+             ("tee", "cat a | tee b", False),
+             ("finddelete", "find . -name x -delete", False),
+             ("npminstall", "npm install", False),
+             ("empty", "", False))
+
+
 def _cases(check):
     tmp = Path(tempfile.mkdtemp(prefix="bash-writes-selftest-"))
     sd = tmp / "state"
@@ -418,17 +458,15 @@ def _cases(check):
             payload("Bash", sid=s,
                     command="cat tools/where.py > src/second-session.ts"),
             dirty=["src/second-session.ts"])
-    for _cmd, _want in (("cat a.py 2>/dev/null", True),
-                        ("ls -la 1>/dev/null", True),
-                        ("grep -rn x . 2>/dev/null | head -5", True),
-                        ("cat a.py >/dev/null", True),
-                        # separates "is /dev/null" from "starts with /dev/null"
-                        ("cat a.py >/dev/null.bak", False),
-                        # a real destination must survive the /dev/null strip
-                        ("grep x a.py > hits.txt 2>/dev/null", False),
-                        ("echo x >> notes.md", False)):
-        check("dnp %r is %s" % (_cmd, "provably read-only" if _want
-                                else "watched"),
+    # A TAG PER FIXTURE, NAMING THE CONSTRUCT, not the loop index: an index
+    # renumbers every fixture below an inserted one and a mutation row then still
+    # resolves - to a different construct than it was written for. The family
+    # carries a digit because `_harness.case_id()` is what makes an id
+    # addressable at all, and a token with no digit is indistinguishable from an
+    # English word.
+    for _tag, _cmd, _want in DNP_CASES:
+        check("dnp1-%s %r is %s" % (_tag, _cmd, "provably read-only" if _want
+                                    else "watched"),
               M._command_is_read_only(_cmd) == _want)
 
     # (ex) `-exec` was a blanket write flag, so `find ... -exec cat {} +` - a
@@ -450,17 +488,9 @@ def _cases(check):
             payload("Bash", sid=s,
                     command="find plugins -name '*.py' -exec cp {} /tmp +"),
             dirty=["src/second-session.ts"])
-    for _cmd, _want in (("find . -name x -exec cat {} +", True),
-                        ("find . -type f -exec grep -l foo {} \\;", True),
-                        ("find . -type f -exec rm {} \\;", False),
-                        ("find . -type f -exec sh -c 'cat x' \\;", False),
-                        ("find . -type f -execdir chmod +x {} +", False),
-                        ("find . -type f -ok rm {} \\;", False),
-                        # a clause with no command proves nothing
-                        ("find . -name x -exec", False),
-                        ("find . -name x -delete", False)):
-        check("exp %r is %s" % (_cmd, "provably read-only" if _want
-                                else "watched"),
+    for _tag, _cmd, _want in EXP_CASES:
+        check("exp1-%s %r is %s" % (_tag, _cmd, "provably read-only" if _want
+                                    else "watched"),
               M._command_is_read_only(_cmd) == _want)
 
     # (os) THE STRUCTURAL HALF. A command that is not provably read-only used to
@@ -597,18 +627,28 @@ def _cases(check):
             dirty=["src/other-session.ts"])
 
     # (rwp) the predicate itself, so a spelling cannot quietly join either side.
-    for _cmd, _want in (("git status --porcelain", True),
-                        ("grep -rn x plugins | head -5", True),
-                        ("cat a.py | wc -l", True),
-                        ("git add .", False),
-                        ("echo hi > f.txt", False),
-                        ("cat a | tee b", False),
-                        ("find . -name x -delete", False),
-                        ("npm install", False),
-                        ("", False)):
-        check("rwp %r is %s" % (_cmd or "(empty)",
-                               "provably read-only" if _want else "watched"),
+    for _tag, _cmd, _want in RWP_CASES:
+        check("rwp1-%s %r is %s" % (_tag, _cmd or "(empty)",
+                                    "provably read-only" if _want else "watched"),
               M._command_is_read_only(_cmd) == _want)
+
+    # THE GUARD FOR THE TAGS THEMSELVES, and it has to live here. Every fixture
+    # in one of those tables goes through a single `check()` call site, so
+    # `_harness.label_faults()` is right to say nothing about a repeated id
+    # there - that is the legitimate family shape. A duplicated TAG would
+    # therefore be invisible until `prove-gates.py` refused a row that happened
+    # to name it, which is late and only if somebody wrote such a row.
+    _tag_tables = (("dnp1", DNP_CASES), ("exp1", EXP_CASES), ("rwp1", RWP_CASES))
+    _tag_ids = ["%s-%s" % (_fam, _row[0]) for _fam, _rows in _tag_tables
+                for _row in _rows]
+    _tag_dupes = sorted(set(_i for _i in _tag_ids if _tag_ids.count(_i) > 1))
+    _tag_unaddressable = [_i for _i in _tag_ids if _harness.case_id(_i + " x") is None]
+    check("tag1 every tagged fixture prints a distinct, addressable case id - the "
+          "point of a tag over an index, and a property no shared rule can check "
+          "for a one-call-site family: %r / %r"
+          % (_tag_dupes, _tag_unaddressable),
+          _tag_dupes == [] and _tag_unaddressable == []
+          and all(_rows for _fam, _rows in _tag_tables))
 
     # (gt) the git call itself, pinned as data rather than spied on.
     #
